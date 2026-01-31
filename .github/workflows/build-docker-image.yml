@@ -82,7 +82,10 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: ${{ github.event_name == 'release' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          platforms: ${{ 
+            (github.event_name == 'release' || 
+             (github.event_name == 'workflow_dispatch' && github.event.inputs.push_image == 'true')) 
+            && 'linux/amd64,linux/arm64' || 'linux/amd64'}}
           # Only push if it's a release, manual trigger with push enabled, or push to main
           push: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.push_image == 'true') || github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
