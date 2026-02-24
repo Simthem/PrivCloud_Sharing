@@ -6,6 +6,7 @@ type User = {
   isLdap: boolean;
   totpVerified: boolean;
   hasPassword: boolean;
+  hasEncryptionKey: boolean;
 };
 
 export type CreateUser = {

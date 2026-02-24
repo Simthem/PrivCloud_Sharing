@@ -18,16 +18,29 @@ import shareService from "../../services/share.service";
 import { FileUpload } from "../../types/File.type";
 import { CreateShare, Share } from "../../types/share.type";
 import toast from "../../utils/toast.util";
+import {
+  generateEncryptionKey,
+  exportKeyToBase64,
+  importKeyFromBase64,
+  encryptFile,
+  computeKeyHash,
+  getUserKey,
+  storeUserKey,
+  extractKeyFromHash,
+} from "../../utils/crypto.util";
+import userService from "../../services/user.service";
 import { useRouter } from "next/router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const promiseLimit = pLimit(3);
 let errorToastShown = false;
 let createdShare: Share;
+let e2eKeyEncoded: string | null = null;
 
 type UploadProps = {
   maxShareSize?: number;
   isReverseShare: boolean;
+  isE2EEncrypted?: boolean;
   simplified: boolean;
   name?: string;
 }
@@ -35,6 +48,7 @@ type UploadProps = {
 const Upload = ({
   maxShareSize,
   isReverseShare = false,
+  isE2EEncrypted = false,
   simplified,
   name,
 }: UploadProps) => {
@@ -77,14 +91,51 @@ const Upload = ({
   const uploadFiles = async (share: CreateShare, files: FileUpload[]) => {
     setisUploading(true);
 
+    // ── E2E : récupérer ou créer la clé de chiffrement ──
+    let cryptoKey: CryptoKey | null = null;
+    let storedKey = user ? getUserKey() : null;
+
+    if (isReverseShare && isE2EEncrypted) {
+      // Reverse share E2E : lire K_rs depuis le fragment d'URL
+      const rsKeyEncoded = extractKeyFromHash();
+      if (rsKeyEncoded) {
+        cryptoKey = await importKeyFromBase64(rsKeyEncoded);
+        e2eKeyEncoded = rsKeyEncoded;
+        share.isE2EEncrypted = true;
+      } else {
+        // Clé absente du fragment → pas de chiffrement
+        e2eKeyEncoded = null;
+      }
+    } else if (user) {
+      if (storedKey) {
+        // Clé existante → réutiliser
+        cryptoKey = await importKeyFromBase64(storedKey);
+        e2eKeyEncoded = storedKey;
+      } else {
+        // Première utilisation → générer, stocker et enregistrer le hash
+        cryptoKey = await generateEncryptionKey();
+        e2eKeyEncoded = await exportKeyToBase64(cryptoKey);
+        storeUserKey(e2eKeyEncoded);
+        const hash = await computeKeyHash(cryptoKey);
+        await userService.setEncryptionKeyHash(hash);
+      }
+      share.isE2EEncrypted = true;
+    } else {
+      // Upload anonyme : pas de chiffrement E2E
+      e2eKeyEncoded = null;
+    }
+
     try {
       const isReverseShare = router.pathname != "/upload";
       createdShare = await shareService.create(share, isReverseShare);
     } catch (e) {
       toast.axiosError(e);
       setisUploading(false);
+      e2eKeyEncoded = null;
       return;
     }
+
+    // Stocker la clé localement pour le propriétaire (déjà fait dans storeUserKey ci-dessus)
 
     const fileUploadPromises = files.map(async (file, fileIndex) =>
       // Limit the number of concurrent uploads to 3
@@ -104,7 +155,17 @@ const Upload = ({
 
         setFileProgress(1);
 
-        let chunks = Math.ceil(file.size / chunkSize.current);
+        // Chiffrer le fichier avant upload si E2E activé
+        let uploadBlob: Blob;
+        if (share.isE2EEncrypted) {
+          const plainBuf = await file.arrayBuffer();
+          const encryptedBuf = await encryptFile(plainBuf, cryptoKey!);
+          uploadBlob = new Blob([encryptedBuf]);
+        } else {
+          uploadBlob = file;
+        }
+
+        let chunks = Math.ceil(uploadBlob.size / chunkSize.current);
 
         // If the file is 0 bytes, we still need to upload 1 chunk
         if (chunks == 0) chunks++;
@@ -112,7 +173,7 @@ const Upload = ({
         for (let chunkIndex = 0; chunkIndex < chunks; chunkIndex++) {
           const from = chunkIndex * chunkSize.current;
           const to = from + chunkSize.current;
-          const blob = file.slice(from, to);
+          const blob = uploadBlob.slice(from, to);
           try {
             await shareService
               .uploadFile(
@@ -215,11 +276,12 @@ const Upload = ({
         .completeShare(createdShare.id)
         .then((share) => {
           setisUploading(false);
-          showCompletedUploadModal(modals, share);
+          showCompletedUploadModal(modals, share, e2eKeyEncoded);
           queryClient.invalidateQueries({
             queryKey: ["share.pastRecipients"],
           })
           setFiles([]);
+          e2eKeyEncoded = null;
         })
         .catch(() => toast.error(t("upload.notify.generic-error")));
     }

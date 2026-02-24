@@ -17,6 +17,7 @@ import { useClipboard } from "@mantine/hooks";
 import { useModals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import moment from "moment";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { TbInfoCircle, TbLink, TbLock, TbPlus, TbTrash, TbWorld, TbWorldCancel, TbWorldCheck, TbWorldOff } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import Meta from "../../components/Meta";
@@ -30,6 +31,12 @@ import shareService from "../../services/share.service";
 import { MyReverseShare } from "../../types/share.type";
 import { byteToHumanSizeString } from "../../utils/fileSize.util";
 import toast from "../../utils/toast.util";
+import {
+  getUserKey,
+  importKeyFromBase64,
+  exportKeyToBase64,
+  unwrapReverseShareKey,
+} from "../../utils/crypto.util";
 
 const MyShares = () => {
   const modals = useModals();
@@ -59,6 +66,82 @@ const MyShares = () => {
       toast.error(t("account.shares.notify.delete-fail"));
     },
   });
+
+  // ── Copier le lien reverse share avec fragment E2E si applicable ──
+  // Cache des clés K_rs déchiffrées : reverseShareId → base64url de K_rs
+  const [rsKeyCache, setRsKeyCache] = useState<Record<string, string>>({});
+
+  const unwrapRsKey = useCallback(
+    async (reverseShare: MyReverseShare): Promise<string | null> => {
+      if (!reverseShare.encryptedReverseShareKey) return null;
+
+      // Retourner depuis le cache si disponible
+      if (rsKeyCache[reverseShare.id]) return rsKeyCache[reverseShare.id];
+
+      try {
+        const masterKeyEncoded = getUserKey();
+        if (!masterKeyEncoded) return null;
+        const masterKey = await importKeyFromBase64(masterKeyEncoded);
+        const rsKey = await unwrapReverseShareKey(
+          reverseShare.encryptedReverseShareKey,
+          masterKey,
+        );
+        const rsKeyEncoded = await exportKeyToBase64(rsKey);
+        setRsKeyCache((prev) => ({ ...prev, [reverseShare.id]: rsKeyEncoded }));
+        return rsKeyEncoded;
+      } catch (e) {
+        console.error("Erreur lors du déchiffrement de la clé reverse share", e);
+        return null;
+      }
+    },
+    [rsKeyCache],
+  );
+
+  // Pré-déchiffrer les clés au chargement
+  useEffect(() => {
+    if (!reverseShares) return;
+    reverseShares.forEach((rs) => {
+      if (rs.encryptedReverseShareKey && !rsKeyCache[rs.id]) {
+        unwrapRsKey(rs);
+      }
+    });
+  }, [reverseShares]);
+
+  const handleCopyReverseShareLink = async (reverseShare: MyReverseShare) => {
+    let link = `${config.get("general.appUrl")}/upload/${reverseShare.token}`;
+
+    const rsKeyEncoded = await unwrapRsKey(reverseShare);
+    if (rsKeyEncoded) {
+      link += `#key=${rsKeyEncoded}`;
+    }
+
+    if (window.isSecureContext) {
+      clipboard.copy(link);
+      toast.success(t("common.notify.copied-link"));
+    } else {
+      showReverseShareLinkModal(modals, link);
+    }
+  };
+
+  // Copier le lien d'un share reçu via reverse share (avec K_rs)
+  const handleCopyShareLink = async (
+    shareId: string,
+    reverseShare: MyReverseShare,
+  ) => {
+    let link = `${config.get("general.appUrl")}/s/${shareId}`;
+
+    const rsKeyEncoded = await unwrapRsKey(reverseShare);
+    if (rsKeyEncoded) {
+      link += `#key=${rsKeyEncoded}`;
+    }
+
+    if (window.isSecureContext) {
+      clipboard.copy(link);
+      toast.success(t("common.notify.copied-link"));
+    } else {
+      showShareLinkModal(modals, shareId);
+    }
+  };
 
   if (isError) {
     return (
@@ -180,7 +263,11 @@ const MyShares = () => {
                             {reverseShare.shares.map((share) => (
                               <Group key={share.id} mb={4} spacing="xs">
                                 <Anchor
-                                  href={`${config.get("general.appUrl")}/share/${share.id}`}
+                                  href={
+                                    rsKeyCache[reverseShare.id]
+                                      ? `${config.get("general.appUrl")}/share/${share.id}#key=${rsKeyCache[reverseShare.id]}`
+                                      : `${config.get("general.appUrl")}/share/${share.id}`
+                                  }
                                   target="_blank"
                                 >
                                   <Text maw={120} truncate>
@@ -196,18 +283,9 @@ const MyShares = () => {
                                   color="victoria"
                                   variant="light"
                                   size={25}
-                                  onClick={() => {
-                                    if (window.isSecureContext) {
-                                      clipboard.copy(
-                                        `${config.get("general.appUrl")}/s/${share.id}`,
-                                      );
-                                      toast.success(
-                                        t("common.notify.copied-link"),
-                                      );
-                                    } else {
-                                      showShareLinkModal(modals, share.id);
-                                    }
-                                  }}
+                                  onClick={() =>
+                                    handleCopyShareLink(share.id, reverseShare)
+                                  }
                                 >
                                   <TbLink />
                                 </ActionIcon>
@@ -240,19 +318,7 @@ const MyShares = () => {
                         color="victoria"
                         variant="light"
                         size={25}
-                        onClick={() => {
-                          if (window.isSecureContext) {
-                            clipboard.copy(
-                              `${config.get("general.appUrl")}/upload/${reverseShare.token}`,
-                            );
-                            toast.success(t("common.notify.copied-link"));
-                          } else {
-                            showReverseShareLinkModal(
-                              modals,
-                              reverseShare.token,
-                            );
-                          }
-                        }}
+                        onClick={() => handleCopyReverseShareLink(reverseShare)}
                       >
                         <TbLink />
                       </ActionIcon>

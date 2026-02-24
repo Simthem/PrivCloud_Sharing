@@ -28,6 +28,9 @@ model User {
   totpSecret         String?
   resetPasswordToken ResetPasswordToken?
 
+  // E2E encryption: SHA-256 hex hash of the user's AES-256 key (never the key itself)
+  encryptionKeyHash  String?
+
   oAuthUsers OAuthUser[]
 }
 
@@ -96,6 +99,7 @@ model Share {
   recipients ShareRecipient[]
   files      File[]
   storageProvider String @default("LOCAL")
+  isE2EEncrypted  Boolean @default(false)
 }
 
 model ReverseShare {
@@ -110,6 +114,10 @@ model ReverseShare {
   remainingUses         Int
   simplified            Boolean  @default(false)
   publicAccess          Boolean  @default(true)
+
+  // E2E encryption: K_rs chiffré par la clé maître (K_master) de l'owner.
+  // Stocké en base64url. Le serveur ne connaît jamais K_rs en clair.
+  encryptedReverseShareKey String?
 
   creatorId String
   creator   User   @relation(fields: [creatorId], references: [id], onDelete: Cascade)

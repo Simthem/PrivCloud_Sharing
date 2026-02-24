@@ -12,6 +12,7 @@ import useTranslate from "../../hooks/useTranslate.hook";
 import shareService from "../../services/share.service";
 import { FileListItem, FileMetaData, FileUpload } from "../../types/File.type";
 import toast from "../../utils/toast.util";
+import { getUserKey, importKeyFromBase64, encryptFile } from "../../utils/crypto.util";
 import { useQueryClient } from "@tanstack/react-query";
 
 const promiseLimit = pLimit(3);
@@ -21,11 +22,13 @@ const EditableUpload = ({
   maxShareSize,
   shareId,
   files: savedFiles = [],
+  isE2EEncrypted,
 }: {
   maxShareSize?: number;
   isReverseShare?: boolean;
   shareId: string;
   files?: FileMetaData[];
+  isE2EEncrypted?: boolean;
 }) => {
   const t = useTranslate();
   const router = useRouter();
@@ -64,6 +67,15 @@ const EditableUpload = ({
   maxShareSize ??= parseInt(config.get("share.maxSize"));
 
   const uploadFiles = async (files: FileUpload[]) => {
+    // Pour les partages E2E, récupérer la clé utilisateur depuis localStorage
+    let e2eCryptoKey: CryptoKey | null = null;
+    if (isE2EEncrypted) {
+      const userKey = getUserKey();
+      if (userKey) {
+        e2eCryptoKey = await importKeyFromBase64(userKey);
+      }
+    }
+
     const fileUploadPromises = files.map(async (file, fileIndex) =>
       // Limit the number of concurrent uploads to 3
       promiseLimit(async () => {
@@ -82,7 +94,15 @@ const EditableUpload = ({
 
         setFileProgress(1);
 
-        let chunks = Math.ceil(file.size / chunkSize.current);
+        // Chiffrer le fichier si E2E
+        let uploadBlob: Blob = file;
+        if (e2eCryptoKey) {
+          const plainBuf = await file.arrayBuffer();
+          const encryptedBuf = await encryptFile(plainBuf, e2eCryptoKey);
+          uploadBlob = new Blob([encryptedBuf]);
+        }
+
+        let chunks = Math.ceil(uploadBlob.size / chunkSize.current);
 
         // If the file is 0 bytes, we still need to upload 1 chunk
         if (chunks == 0) chunks++;
@@ -90,7 +110,7 @@ const EditableUpload = ({
         for (let chunkIndex = 0; chunkIndex < chunks; chunkIndex++) {
           const from = chunkIndex * chunkSize.current;
           const to = from + chunkSize.current;
-          const blob = file.slice(from, to);
+          const blob = uploadBlob.slice(from, to);
           try {
             await shareService
               .uploadFile(

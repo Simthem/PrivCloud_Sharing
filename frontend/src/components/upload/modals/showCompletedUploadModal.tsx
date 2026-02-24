@@ -10,10 +10,12 @@ import useTranslate, {
 import { CompletedShare } from "../../../types/share.type";
 import CopyTextField from "../CopyTextField";
 import useConfig from "../../../hooks/config.hook";
+import { buildKeyFragment } from "../../../utils/crypto.util";
 
 const showCompletedUploadModal = (
   modals: ModalsContextProps,
   share: CompletedShare,
+  e2eKeyEncoded?: string | null,
 ) => {
   const t = translateOutsideContext();
   return modals.openModal({
@@ -21,11 +23,11 @@ const showCompletedUploadModal = (
     withCloseButton: false,
     closeOnEscape: false,
     title: t("upload.modal.completed.share-ready"),
-    children: <Body share={share} />,
+    children: <Body share={share} e2eKeyEncoded={e2eKeyEncoded} />,
   });
 };
 
-const Body = ({ share }: { share: CompletedShare }) => {
+const Body = ({ share, e2eKeyEncoded }: { share: CompletedShare; e2eKeyEncoded?: string | null }) => {
   const modals = useModals();
   const router = useRouter();
   const t = useTranslate();
@@ -33,7 +35,8 @@ const Body = ({ share }: { share: CompletedShare }) => {
   const isReverseShare = !!router.query["reverseShareToken"];
 
   const config = useConfig();
-  const link = `${config.get("general.appUrl")}/s/${share.id}`;
+  const keyFragment = e2eKeyEncoded ? buildKeyFragment(e2eKeyEncoded) : "";
+  const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
 
   return (
     <Stack align="stretch">

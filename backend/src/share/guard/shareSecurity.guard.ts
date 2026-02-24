@@ -25,12 +25,11 @@ export class ShareSecurityGuard extends JwtGuard {
   async canActivate(context: ExecutionContext) {
     const request: Request = context.switchToHttp().getRequest();
 
-    const shareId = Object.prototype.hasOwnProperty.call(
-      request.params,
-      "shareId",
-    )
-      ? request.params.shareId
-      : request.params.id;
+    const shareId = String(
+      Object.prototype.hasOwnProperty.call(request.params, "shareId")
+        ? request.params.shareId
+        : request.params.id,
+    );
 
     const shareToken = request.cookies[`share_${shareId}_token`];
 

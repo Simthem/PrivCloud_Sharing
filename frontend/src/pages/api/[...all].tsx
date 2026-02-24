@@ -8,7 +8,7 @@ export const config = {
   },
 };
 
-const apiURL = process.env.API_URL || "http://localhost:8080";
+const apiURL = process.env.API_URL || "http://127.0.0.1:8080";
 
 // A proxy to the API server only used in development.
 // In production this route gets overridden by Caddy.

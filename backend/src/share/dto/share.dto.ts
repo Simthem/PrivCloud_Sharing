@@ -27,6 +27,9 @@ export class ShareDTO {
   hasPassword: boolean;
 
   @Expose()
+  isE2EEncrypted: boolean;
+
+  @Expose()
   size: number;
 
   from(partial: Partial<ShareDTO>) {

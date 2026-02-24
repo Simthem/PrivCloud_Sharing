@@ -7,6 +7,9 @@ export class ShareMetaDataDTO {
   @Expose()
   isZipReady: boolean;
 
+  @Expose()
+  isE2EEncrypted: boolean;
+
   from(partial: Partial<ShareMetaDataDTO>) {
     return plainToClass(ShareMetaDataDTO, partial, {
       excludeExtraneousValues: true,

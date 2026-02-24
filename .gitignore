@@ -45,6 +45,3 @@ yarn-error.log*
 /docs/.docusaurus
 /docs/.cache-loader
 /config.yaml
-
-# Jetbrains specific (webstorm)
-.idea/**/**

@@ -194,7 +194,8 @@ export class ShareService {
     }
 
     // Asynchronously create a zip of all files
-    if (share.files.length > 1) {
+    // Skip ZIP for E2E encrypted shares (server can't read encrypted content)
+    if (share.files.length > 1 && !share.isE2EEncrypted) {
       this.logger.debug(`Scheduling zip creation: shareId=${id} fileCount=${share.files.length}`);
       this.createZip(id)
         .then(async () => {
@@ -246,8 +247,13 @@ export class ShareService {
     }
 
     // Check if any file is malicious with ClamAV
-    this.logger.debug(`Scheduling malware scan: shareId=${id}`);
-    void this.clamScanService.checkAndRemove(share.id);
+    // Skip ClamAV for E2E encrypted shares (can't scan encrypted content)
+    if (!share.isE2EEncrypted) {
+      this.logger.debug(`Scheduling malware scan: shareId=${id}`);
+      void this.clamScanService.checkAndRemove(share.id);
+    } else {
+      this.logger.debug(`Skipping malware scan (E2E encrypted): shareId=${id}`);
+    }
 
     // Decrement reverse share remaining uses if applicable
     if (share.reverseShare) {

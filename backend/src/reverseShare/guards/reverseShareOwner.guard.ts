@@ -9,7 +9,7 @@ export class ReverseShareOwnerGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext) {
     const request: Request = context.switchToHttp().getRequest();
-    const { reverseShareId } = request.params;
+    const reverseShareId = String(request.params.reverseShareId);
 
     const reverseShare = await this.prisma.reverseShare.findUnique({
       where: { id: reverseShareId },

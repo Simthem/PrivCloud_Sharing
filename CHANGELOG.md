@@ -1,3 +1,57 @@
+## [1.16.0](https://github.com/aottr/ottrbox/compare/v1.15.0...v1.16.0) (2026-02-24)
+
+
+### Features
+
+* **e2e:** end-to-end encryption for reverse shares (AES-256-GCM, Web Crypto API)
+* **e2e:** per-share key (K_rs) wrapped with user master key, stored encrypted in DB
+* **e2e:** key propagated via URL fragment for anonymous senders
+* **e2e:** owner-side pre-decryption of K_rs keys in reverse share view
+* **reverse-share:** share link copy includes E2E key fragment
+
+
+### Security
+
+* **cve:** upgrade base image from node:22-alpine to node:24-alpine (LTS Krypton)
+* **cve:** replace Alpine Caddy package (v2.10.2) with official caddy:2-alpine multi-stage (v2.11.1)
+  - fixes CVE-2025-44005 (severity 10), CVE-2025-47913, CVE-2025-59530, CVE-2025-58181, CVE-2025-47914, CVE-2025-64702, CVE-2025-47911, CVE-2025-58190, CVE-2025-66406, CVE-2025-62820, CVE-2026-23950, CVE-2026-26958, GHSA-mqqf-5wvp-8fh8
+  - affected Go modules: smallstep/certificates, slackhq/nebula, x/crypto, x/net, quic-go, edwards25519, go-chi/chi
+* **cve:** remove tar from frontend devDependencies (CVE-2026-23950, CVE-2026-23745, CVE-2026-24842, CVE-2026-26960)
+* **cve:** override diff 4.0.4 -> 8.0.3 in backend (CVE-2026-24001)
+* **cve:** override glob ^10.5.0 and minimatch ^10.2.1 (CVE-2025-64756, CVE-2026-26996)
+* **cve:** all three npm projects report 0 vulnerabilities (npm audit --omit=dev)
+* **proxy:** make HTTP_PROXY/HTTPS_PROXY fully configurable (not hardcoded in Dockerfile)
+* **proxy:** clear proxy env vars in runner stage to prevent leaking into published image
+
+
+### CI/CD
+
+* add npm-audit job (native npm advisory API, more reliable than trivy fs for npm CVEs)
+* add image-scan stage with trivy-image (scans built Docker image, detects Go binary CVEs)
+* add grype-image job (independent secondary scanner for cross-validation)
+* add syft-sbom job (generates SBOM/SPDX for compliance and future CVE response)
+* update security-summary report to include all new scanner results
+
+
+### Bug Fixes
+
+* **frontend:** fix share links missing E2E key fragment in reverse share accordion
+* **frontend:** localhost -> 127.0.0.1 for Alpine IPv6 resolution (middleware, _app, api proxy)
+* **docker:** fix Caddyfile localhost -> 127.0.0.1 via sed for both normal and trust-proxy configs
+* **backend:** String() wrapper in 5 guards for Prisma 6 stricter types
+* **frontend:** useTranslate hook type cast fix for Prisma 6
+* **frontend:** SiMicrosoft -> FaMicrosoft icon rename (react-icons v5)
+
+
+### Dependencies
+
+* next.js 14 -> 15.5.12
+* @ducanh2912/next-pwa (replaces next-pwa, compatible with Next.js 15)
+* NestJS 11, Prisma 6.19
+* nodemailer ^7.0.11
+* global-agent 3.0.0 (v4 ships uncompiled TS)
+
+
 ## [1.15.0](https://github.com/aottr/ottrbox/compare/v1.14.2...v1.15.0) (2025-12-21)
 
 

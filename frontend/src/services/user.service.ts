@@ -40,6 +40,21 @@ const getCurrentUser = async (): Promise<CurrentUser | null> => {
   }
 };
 
+// ─── E2E Encryption Key Management ─────────────────────────────
+
+const setEncryptionKeyHash = async (keyHash: string) => {
+  return (await api.put("/users/me/encryption-key", { keyHash })).data;
+};
+
+const removeEncryptionKey = async () => {
+  await api.delete("/users/me/encryption-key");
+};
+
+const verifyEncryptionKey = async (keyHash: string): Promise<boolean> => {
+  const result = (await api.post("/users/me/encryption-key/verify", { keyHash })).data;
+  return result.valid;
+};
+
 export default {
   list,
   create,
@@ -48,4 +63,7 @@ export default {
   getCurrentUser,
   updateCurrentUser,
   removeCurrentUser,
+  setEncryptionKeyHash,
+  removeEncryptionKey,
+  verifyEncryptionKey,
 };

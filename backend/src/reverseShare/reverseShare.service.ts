@@ -53,6 +53,7 @@ export class ReverseShareService {
         sendEmailNotification: data.sendEmailNotification,
         simplified: data.simplified,
         publicAccess: data.publicAccess,
+        encryptedReverseShareKey: data.encryptedReverseShareKey || null,
         creatorId,
       },
     });

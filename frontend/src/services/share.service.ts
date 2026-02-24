@@ -1,6 +1,11 @@
 import { deleteCookie, setCookie } from "cookies-next";
 import mime from "mime-types";
 import { FileUploadResponse } from "../types/File.type";
+import {
+  decryptFile,
+  downloadDecryptedBlob,
+  importKeyFromBase64,
+} from "../utils/crypto.util";
 
 import {
   CreateReverseShare,
@@ -86,6 +91,43 @@ const downloadFile = async (shareId: string, fileId: string) => {
   window.location.href = `/api/shares/${shareId}/files/${fileId}`;
 };
 
+/**
+ * Télécharge un fichier chiffré E2E, le déchiffre côté client,
+ * puis déclenche le téléchargement du fichier en clair.
+ */
+const downloadFileE2E = async (
+  shareId: string,
+  fileId: string,
+  fileName: string,
+  encodedKey: string,
+) => {
+  const key = await importKeyFromBase64(encodedKey);
+  const response = await api.get(`shares/${shareId}/files/${fileId}`, {
+    responseType: "arraybuffer",
+  });
+  const decrypted = await decryptFile(response.data, key);
+  const mimeType =
+    (mime.contentType(fileName) || "application/octet-stream").split(";")[0];
+  const blob = new Blob([decrypted], { type: mimeType });
+  downloadDecryptedBlob(blob, fileName);
+};
+
+/**
+ * Récupère un fichier chiffré E2E sous forme d'ArrayBuffer déchiffré.
+ * Utilisé pour les previews.
+ */
+const fetchDecryptedFile = async (
+  shareId: string,
+  fileId: string,
+  encodedKey: string,
+): Promise<ArrayBuffer> => {
+  const key = await importKeyFromBase64(encodedKey);
+  const response = await api.get(`shares/${shareId}/files/${fileId}`, {
+    responseType: "arraybuffer",
+  });
+  return decryptFile(response.data, key);
+};
+
 const removeFile = async (shareId: string, fileId: string) => {
   await api.delete(`shares/${shareId}/files/${fileId}`);
 };
@@ -149,6 +191,8 @@ export default {
   getMyShares,
   isShareIdAvailable,
   downloadFile,
+  downloadFileE2E,
+  fetchDecryptedFile,
   removeFile,
   uploadFile,
   getReverseShare,
@@ -157,3 +201,5 @@ export default {
   removeReverseShare,
   getStoredRecipients
 };
+
+export { fetchDecryptedFile, downloadFileE2E };

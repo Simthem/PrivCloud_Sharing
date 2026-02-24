@@ -20,12 +20,11 @@ export class ShareOwnerGuard extends JwtGuard {
 
   async canActivate(context: ExecutionContext) {
     const request: Request = context.switchToHttp().getRequest();
-    const shareId = Object.prototype.hasOwnProperty.call(
-      request.params,
-      "shareId",
-    )
-      ? request.params.shareId
-      : request.params.id;
+    const shareId = String(
+      Object.prototype.hasOwnProperty.call(request.params, "shareId")
+        ? request.params.shareId
+        : request.params.id,
+    );
 
     const share = await this.prisma.share.findUnique({
       where: { id: shareId },

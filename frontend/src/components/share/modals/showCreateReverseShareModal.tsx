@@ -27,6 +27,13 @@ import { getExpirationPreview } from "../../../utils/date.util";
 import toast from "../../../utils/toast.util";
 import FileSizeInput from "../../core/FileSizeInput";
 import showCompletedReverseShareModal from "./showCompletedReverseShareModal";
+import {
+  generateEncryptionKey,
+  exportKeyToBase64,
+  importKeyFromBase64,
+  getUserKey,
+  wrapReverseShareKey,
+} from "../../../utils/crypto.util";
 
 const showCreateReverseShareModal = (
   modals: ModalsContextProps,
@@ -116,17 +123,39 @@ const Body = ({
       return;
     }
 
+    // ── E2E : générer K_rs et chiffrer avec K_master ──
+    let rsKeyEncoded: string | null = null;
+    let wrappedKey: string | undefined;
+    const masterKeyEncoded = getUserKey();
+
+    if (masterKeyEncoded) {
+      try {
+        const rsKey = await generateEncryptionKey();
+        rsKeyEncoded = await exportKeyToBase64(rsKey);
+        const masterKey = await importKeyFromBase64(masterKeyEncoded);
+        wrappedKey = await wrapReverseShareKey(rsKey, masterKey);
+      } catch (e) {
+        console.error("Erreur lors de la génération de la clé E2E reverse share", e);
+        rsKeyEncoded = null;
+        wrappedKey = undefined;
+      }
+    }
+
     shareService
       .createReverseShare(
         {
           ...values,
           shareExpiration: values.expiration_num + values.expiration_unit,
           maxShareSize: values.maxShareSize.toString(),
+          encryptedReverseShareKey: wrappedKey,
         }
       )
       .then(({ link }) => {
+        const finalLink = rsKeyEncoded
+          ? `${link}#key=${rsKeyEncoded}`
+          : link;
         modals.closeAll();
-        showCompletedReverseShareModal(modals, link, getReverseShares);
+        showCompletedReverseShareModal(modals, finalLink, getReverseShares);
       })
       .catch(toast.axiosError);
   });

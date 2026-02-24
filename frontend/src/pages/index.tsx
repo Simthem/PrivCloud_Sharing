@@ -166,7 +166,7 @@ export default function Home() {
               </Button>
               <Button
                 component={Link}
-                href="https://github.com/aottr/ottrbox"
+                href="https://github.com/Simthem/PrivCloud_Sharing"
                 target="_blank"
                 variant="default"
                 radius="xl"

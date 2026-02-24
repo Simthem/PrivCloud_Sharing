@@ -106,6 +106,33 @@ export class UserSevice {
     return await this.prisma.user.delete({ where: { id } });
   }
 
+  // ─── E2E Encryption Key Management ──────────────────────────────
+
+  async setEncryptionKeyHash(userId: string, keyHash: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { encryptionKeyHash: keyHash },
+    });
+  }
+
+  async removeEncryptionKeyHash(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { encryptionKeyHash: null },
+    });
+  }
+
+  async verifyEncryptionKeyHash(
+    userId: string,
+    keyHash: string,
+  ): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user?.encryptionKeyHash) return false;
+    return user.encryptionKeyHash === keyHash;
+  }
+
   async findOrCreateFromLDAP(
     providedCredentials: AuthSignInDTO,
     ldapEntry: Entry,

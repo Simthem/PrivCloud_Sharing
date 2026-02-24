@@ -24,10 +24,10 @@ const Intro = () => {
             <Title order={2}>Welcome to OttrBox</Title>
           </Center>
           <Text>
-            If you enjoy OttrBox please ⭐️ it on{" "}
+            If you enjoy PrivCloud_Sharing please ⭐️ it on{" "}
             <Anchor
               target="_blank"
-              href="https://github.com/aottr/ottrbox"
+              href="https://github.com/Simthem/PrivCloud_Sharing"
             >
               GitHub
             </Anchor>{" "}
@@ -36,7 +36,7 @@ const Intro = () => {
               target="_blank"
               href="https://github.com/sponsors/aottr"
             >
-              buy me a coffee
+              buy a coffee to Aottr
             </Anchor>{" "}
             if you want to support my work.
           </Text>

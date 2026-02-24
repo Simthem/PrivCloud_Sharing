@@ -26,10 +26,12 @@ const FileList = ({
   files,
   share,
   isLoading,
+  e2eKey,
 }: {
   files: FileMetaData[];
   share?: Share;
   isLoading: boolean;
+  e2eKey?: string | null;
 }) => {
   const clipboard = useClipboard();
   const modals = useModals();
@@ -110,14 +112,14 @@ const FileList = ({
                     {shareService.doesFileSupportPreview(file.name) && (
                       <ActionIcon
                         onClick={() =>
-                          showFilePreviewModal(share.id, file, modals)
+                          showFilePreviewModal(share.id, file, modals, e2eKey)
                         }
                         size={25}
                       >
                         <TbEye />
                       </ActionIcon>
                     )}
-                    {!share.hasPassword && (
+                    {!share.hasPassword && !share.isE2EEncrypted && (
                       <ActionIcon
                         size={25}
                         onClick={() => copyFileLink(file)}
@@ -128,7 +130,11 @@ const FileList = ({
                     <ActionIcon
                       size={25}
                       onClick={async () => {
-                        await shareService.downloadFile(share.id, file.id);
+                        if (share.isE2EEncrypted && e2eKey) {
+                          await shareService.downloadFileE2E(share.id, file.id, file.name, e2eKey);
+                        } else {
+                          await shareService.downloadFile(share.id, file.id);
+                        }
                       }}
                     >
                       <TbDownload />

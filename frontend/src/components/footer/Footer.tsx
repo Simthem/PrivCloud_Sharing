@@ -31,10 +31,10 @@ const Footer = () => {
           Powered by{" "}
           <Anchor
             size="xs"
-            href="https://github.com/aottr/ottrbox"
+            href="https://github.com/Simthem/PrivCloud_Sharing"
             target="_blank"
           >
-            OttrBox
+            PrivCloud_Sharing
           </Anchor>
         </Text>
         <div>

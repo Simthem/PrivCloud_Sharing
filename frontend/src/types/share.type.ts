@@ -9,6 +9,7 @@ export type Share = {
   expiration: Date;
   size: number;
   hasPassword: boolean;
+  isE2EEncrypted: boolean;
 };
 
 export type ReverseShare = {
@@ -18,6 +19,7 @@ export type ReverseShare = {
   shareExpiration: Date;
   token: string;
   simplified: boolean;
+  isE2EEncrypted: boolean;
 }
 
 export type CompletedShare = Share & {
@@ -36,6 +38,7 @@ export type CreateShare = {
   recipients: string[];
   expiration: string;
   security: ShareSecurity;
+  isE2EEncrypted?: boolean;
 };
 
 export type CreateReverseShare = {
@@ -46,11 +49,13 @@ export type CreateReverseShare = {
   sendEmailNotification: boolean;
   simplified: boolean;
   publicAccess: boolean;
+  encryptedReverseShareKey?: string;
 };
 
 export type ShareMetaData = {
   id: string;
   isZipReady: boolean;
+  isE2EEncrypted: boolean;
 };
 
 export type MyShare = Omit<Share, "hasPassword"> & {
@@ -68,6 +73,7 @@ export type MyReverseShare = {
   publicAccess: boolean;
   token: string;
   shares: MyShare[];
+  encryptedReverseShareKey?: string;
 };
 
 export type ShareSecurity = {

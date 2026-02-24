@@ -26,6 +26,7 @@ import useTranslate from "../../hooks/useTranslate.hook";
 import shareService from "../../services/share.service";
 import { MyShare } from "../../types/share.type";
 import toast from "../../utils/toast.util";
+import { getUserKey, buildKeyFragment } from "../../utils/crypto.util";
 
 const MyShares = () => {
   const modals = useModals();
@@ -177,13 +178,14 @@ const MyShares = () => {
                         variant="light"
                         size={25}
                         onClick={() => {
+                          const storedKey = share.isE2EEncrypted ? getUserKey() : null;
+                          const keyFragment = storedKey ? buildKeyFragment(storedKey) : "";
+                          const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
                           if (window.isSecureContext) {
-                            clipboard.copy(
-                              `${config.get("general.appUrl")}/s/${share.id}`,
-                            );
+                            clipboard.copy(link);
                             toast.success(t("common.notify.copied-link"));
                           } else {
-                            showShareLinkModal(modals, share.id);
+                            showShareLinkModal(modals, share.id, keyFragment);
                           }
                         }}
                       >

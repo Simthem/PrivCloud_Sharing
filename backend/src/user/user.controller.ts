@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Res,
   UseGuards,
 } from "@nestjs/common";
@@ -17,6 +18,7 @@ import { AdministratorGuard } from "src/auth/guard/isAdmin.guard";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
 import { ConfigService } from "../config/config.service";
 import { CreateUserDTO } from "./dto/createUser.dto";
+import { EncryptionKeyHashDTO } from "./dto/encryptionKey.dto";
 import { UpdateOwnUserDTO } from "./dto/updateOwnUser.dto";
 import { UpdateUserDto } from "./dto/updateUser.dto";
 import { UserDTO } from "./dto/user.dto";
@@ -69,6 +71,38 @@ export class UserController {
       maxAge: -1,
       secure: isSecure,
     });
+  }
+
+  // ─── E2E Encryption Key Management ──────────────────────────────
+
+  @Put("me/encryption-key")
+  @UseGuards(JwtGuard)
+  async setEncryptionKey(
+    @GetUser() user: User,
+    @Body() dto: EncryptionKeyHashDTO,
+  ) {
+    await this.userService.setEncryptionKeyHash(user.id, dto.keyHash);
+    return { hasEncryptionKey: true };
+  }
+
+  @Delete("me/encryption-key")
+  @HttpCode(204)
+  @UseGuards(JwtGuard)
+  async removeEncryptionKey(@GetUser() user: User) {
+    await this.userService.removeEncryptionKeyHash(user.id);
+  }
+
+  @Post("me/encryption-key/verify")
+  @UseGuards(JwtGuard)
+  async verifyEncryptionKey(
+    @GetUser() user: User,
+    @Body() dto: EncryptionKeyHashDTO,
+  ) {
+    const valid = await this.userService.verifyEncryptionKeyHash(
+      user.id,
+      dto.keyHash,
+    );
+    return { valid };
   }
 
   // Global user operations

@@ -1,9 +1,10 @@
-import { Box, Group, Text, Title } from "@mantine/core";
+import { Alert, Box, Group, Text, Title } from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import { GetServerSidePropsContext } from "next";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { FormattedMessage } from "react-intl";
 import { useQuery } from "@tanstack/react-query";
+import { TbLock } from "react-icons/tb";
 import Meta from "../../../components/Meta";
 import DownloadAllButton from "../../../components/share/DownloadAllButton";
 import FileList from "../../../components/share/FileList";
@@ -14,6 +15,7 @@ import shareService from "../../../services/share.service";
 import { Share as ShareType } from "../../../types/share.type";
 import toast from "../../../utils/toast.util";
 import { byteToHumanSizeString } from "../../../utils/fileSize.util";
+import { extractKeyFromHash, getUserKey } from "../../../utils/crypto.util";
 import { AxiosError } from "axios";
 
 export function getServerSideProps(context: GetServerSidePropsContext) {
@@ -31,6 +33,16 @@ const Share = ({ shareId }: { shareId: string }) => {
   });
 
   const t = useTranslate();
+
+  // ── E2E : récupérer la clé depuis le fragment d'URL ou localStorage utilisateur ──
+  const [e2eKey, setE2eKey] = useState<string | null>(null);
+  useEffect(() => {
+    const hashKey = extractKeyFromHash();
+    const userKey = getUserKey();
+    setE2eKey(hashKey || userKey || null);
+  }, [shareId]);
+
+  const isE2EMissingKey = share?.isE2EEncrypted && !e2eKey;
 
   const getShareToken = async (password?: string) => {
     await shareService
@@ -129,13 +141,23 @@ const Share = ({ shareId }: { shareId: string }) => {
           )}
         </Box>
 
-        {share?.files.length > 1 && <DownloadAllButton shareId={shareId} />}
+        {share?.files.length > 1 && !isE2EMissingKey && (
+          <DownloadAllButton shareId={shareId} isE2EEncrypted={share?.isE2EEncrypted} e2eKey={e2eKey} files={share?.files} />
+        )}
       </Group>
+
+      {isE2EMissingKey && (
+        <Alert icon={<TbLock size={16} />} title="Chiffrement de bout en bout" color="red" mb="lg">
+          Ce partage est chiffré de bout en bout. La clé de déchiffrement est manquante dans l'URL.
+          Veuillez utiliser le lien complet fourni par l'expéditeur (avec le fragment #key=...).
+        </Alert>
+      )}
 
       <FileList
         files={share?.files || []}
         share={share}
         isLoading={isLoading}
+        e2eKey={e2eKey}
       />
     </>
   );

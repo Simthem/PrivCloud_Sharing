@@ -28,7 +28,10 @@ export async function middleware(request: NextRequest) {
   };
 
   // Get config from backend
-  const apiUrl = process.env.API_URL || "http://localhost:8080";
+  // Use 127.0.0.1 instead of localhost: Alpine resolves localhost to ::1 (IPv6)
+  // but NestJS only listens on IPv4. Next.js 15 uses native fetch() which follows
+  // the OS DNS resolution order, causing requests to hang on IPv6.
+  const apiUrl = process.env.API_URL || "http://127.0.0.1:8080";
   const config = await (await fetch(`${apiUrl}/api/configs`)).json();
 
   const getConfig = (key: string) => {

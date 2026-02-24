@@ -9,7 +9,7 @@ const useTranslate = () => {
     values?: Parameters<typeof intl.formatMessage>[1],
     opts?: Parameters<typeof intl.formatMessage>[2],
   ) => {
-    return intl.formatMessage({ id }, values, opts) as string;
+    return intl.formatMessage({ id }, values, opts) as unknown as string;
   };
 };
 
@@ -34,7 +34,7 @@ export const translateOutsideContext = () => {
     values?: Parameters<typeof intl.formatMessage>[1],
     opts?: Parameters<typeof intl.formatMessage>[2],
   ) => {
-    return intl.formatMessage({ id }, values, opts) as string;
+    return intl.formatMessage({ id }, values, opts) as unknown as string;
   };
 };
 

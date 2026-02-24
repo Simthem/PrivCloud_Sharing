@@ -33,11 +33,17 @@ export class UserDTO {
   @Expose()
   totpVerified: boolean;
 
+  @Expose()
+  hasEncryptionKey: boolean;
+
+  encryptionKeyHash?: string;
+
   from(partial: Partial<UserDTO>) {
     const result = plainToClass(UserDTO, partial, {
       excludeExtraneousValues: true,
     });
     result.isLdap = partial.ldapDN?.length > 0;
+    result.hasEncryptionKey = !!(partial as any).encryptionKeyHash;
     return result;
   }
 

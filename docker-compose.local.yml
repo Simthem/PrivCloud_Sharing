@@ -1,5 +1,5 @@
 services:
-  ottrbox:
+  privcloud-sharing:
     build: .
     restart: unless-stopped
     ports:
@@ -9,4 +9,4 @@ services:
     volumes:
       - "./data:/opt/app/backend/data"
       - "./data/images:/opt/app/frontend/public/img"
-#      - "./config.yaml:/opt/app/config.yaml"
+      # - "./config.yaml:/opt/app/config.yaml"
