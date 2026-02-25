@@ -34,9 +34,9 @@ const Intro = () => {
             or{" "}
             <Anchor
               target="_blank"
-              href="https://github.com/sponsors/aottr"
+              href="https://github.com/sponsors/Simthem"
             >
-              buy a coffee to Aottr
+              buy me a coffee
             </Anchor>{" "}
             if you want to support my work.
           </Text>
