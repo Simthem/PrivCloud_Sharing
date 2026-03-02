@@ -1,7 +1,18 @@
 # ---------------------------
-# Stage 0: Caddy binary (official image = latest Go deps, fixes Go CVEs)
+# Stage 0: Build Caddy from source with patched Go dependencies
 # ---------------------------
-FROM caddy:2-alpine AS caddy-binary
+# CVE-2026-27141: caddy:2-alpine (v2.11.1) embarque golang.org/x/net v0.50.0 (vuln).
+# On clone les sources Caddy, on force golang.org/x/net >= v0.51.0, puis on compile.
+FROM golang:1.25-alpine AS caddy-builder
+RUN apk add --no-cache git
+RUN git clone --depth 1 --branch v2.11.1 \
+      https://github.com/caddyserver/caddy.git /caddy
+WORKDIR /caddy
+# Forcer la mise à jour de la dépendance vulnérable
+RUN go get golang.org/x/net@latest && go mod tidy
+# Compiler Caddy
+RUN CGO_ENABLED=0 go build -trimpath -o /usr/bin/caddy ./cmd/caddy \
+    && go clean -cache -modcache
 
 # ---------------------------
 # Stage 1: Base
@@ -21,12 +32,20 @@ ENV HTTPS_PROXY=${HTTPS_PROXY}
 ENV http_proxy=${HTTP_PROXY}
 ENV https_proxy=${HTTPS_PROXY}
 ENV NO_PROXY=${NO_PROXY}
-# Caddy n'est PAS installé via apk : on utilise le binaire officiel
-# copié depuis caddy:2-alpine (stage caddy-binary) pour avoir les
-# dernières corrections de sécurité Go (x/crypto, x/net, quic-go, etc.)
+# Caddy n'est PAS installé via apk : on utilise le binaire
+# recompilé depuis les sources (stage caddy-builder) pour forcer
+# golang.org/x/net >= v0.51.0 et corriger CVE-2026-27141.
 RUN apk update && \
     apk add --no-cache curl su-exec openssl python3 bash git && \
-    npm install -g npm@latest
+    npm install -g npm@latest && \
+    # CVE-2026-27903/04 : npm@11.11.0 embarque minimatch 10.2.2 (vuln).
+    # On ne peut PAS faire "npm install" dans le répertoire de npm :
+    # ça résout toutes ses deps internes dont @npmcli/docs (privé, 404).
+    # -> Remplacement direct du package via tarball.
+    MINIMATCH_URL=$(npm view minimatch@latest dist.tarball) && \
+    rm -rf /usr/local/lib/node_modules/npm/node_modules/minimatch && \
+    mkdir -p /usr/local/lib/node_modules/npm/node_modules/minimatch && \
+    curl -sL "$MINIMATCH_URL" | tar xz -C /usr/local/lib/node_modules/npm/node_modules/minimatch --strip-components=1
 
 # ---------------------------
 # Stage 1: Frontend dependencies
@@ -155,8 +174,8 @@ COPY --from=backend-deps /opt/app/backend/node_modules/has-property-descriptors 
 COPY --from=backend-deps /opt/app/backend/node_modules/object-keys ./node_modules/object-keys
 COPY --from=backend-deps /opt/app/backend/node_modules/type-fest ./node_modules/type-fest
 
-# --- Caddy : binaire officiel (Go deps à jour, pas de CVE) ---
-COPY --from=caddy-binary /usr/bin/caddy /usr/bin/caddy
+# --- Caddy : recompilé depuis les sources (golang.org/x/net patché) ---
+COPY --from=caddy-builder /usr/bin/caddy /usr/bin/caddy
 
 # --- Scripts & reverse proxy ---
 WORKDIR /opt/app

@@ -1,8 +1,33 @@
-> Forked from [aottr/ottrbox](https://github.com/aottr/ottrbox)
-> see diffreneces between the original and the forked version for more details :
-> [aottr/ottrbox...Simthem/PrivCloud_Sharing](https://github.com/aottr/ottrbox/compare/v1.15.0...Simthem:PrivCloud_Sharing:v1.16.0)
+## [1.16.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.0...v1.16.1) (2026-03-02)
 
-## [1.16.0](https://github.com/aottr/ottrbox/compare/v1.15.0...Simthem:PrivCloud_Sharing:v1.16.0) (2026-02-24)
+
+### Security
+
+* **cve:** recompile Caddy v2.11.1 from source (`go build`) to force `golang.org/x/net >= v0.51.0` (fixes CVE-2026-27141)
+* **cve:** patch npm-internal minimatch 10.2.2 -> latest via tarball hotswap (fixes CVE-2026-27903, CVE-2026-27904)
+* **cve:** override `serialize-javascript` 6.0.2 -> 7.0.3 in frontend & backend (CVE-2026-27520)
+* **cve:** override `minimatch` 10.2.2 -> 10.2.4 in frontend & backend (CVE-2026-27903, CVE-2026-27904)
+* **cve:** override `fast-xml-parser` 5.3.7 -> 5.4.1 in backend (CVE-2026-27634)
+* **docker-scout:** integrate Docker Scout into GitLab CI/CD pipeline (SARIF output)
+* **ci:** dual-fallback for Scout binary (GitLab Package Registry -> GitHub)
+
+
+### Bug Fixes
+
+* **ci:** fix trufflehog `grep -c` producing "0\n0" - use `|| true` + `${VAR:-0}`
+* **ci:** fix nginx-security `PARENT_HEADERS` same grep pattern
+* **ci:** fix `SCAN_IMAGE` self-referencing variable in GitLab CI
+* **ci:** add `dependency-auto-fix` job (Renovate-style MR creation)
+
+
+### Known Issues
+
+* **multer ≤ 2.0.2** - 6 medium CVEs via `@nestjs/platform-express`; no upstream fix available
+* **node:24-alpine** - 2 low CVEs in base image; no fix available
+
+
+## [1.16.0](https://github.com/aottr/ottrbox/compare/v1.15.0...v1.16.0) (2026-02-24)
+
 
 ### Features
 
