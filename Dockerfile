@@ -48,15 +48,14 @@ RUN apk update && \
     curl -sL "$MINIMATCH_URL" | tar xz -C /usr/local/lib/node_modules/npm/node_modules/minimatch --strip-components=1
 
 # ---------------------------
-# Stage 1: Frontend dependencies
+# Stage 1b: Frontend dependencies
 # ---------------------------
 FROM base AS frontend-deps
 WORKDIR /opt/app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 
-# Installer global-agent localement (v3 : v4 ship du TS non compilé, bootstrap cassé)
-RUN npm install global-agent@3.0.0
-RUN npm install
+RUN npm install && \
+    npm install global-agent@3.0.0 --no-save
 
 # ---------------------------
 # Stage 2: Frontend build
@@ -79,9 +78,8 @@ FROM base AS backend-deps
 WORKDIR /opt/app/backend
 COPY backend/package.json backend/package-lock.json ./
 
-# Installer global-agent localement (v3 : v4 ship du TS non compilé, bootstrap cassé)
-RUN npm install global-agent@3.0.0
-RUN npm install
+RUN npm install && \
+    npm install global-agent@3.0.0 --no-save
 
 # ---------------------------
 # Stage 4: Backend build
@@ -140,18 +138,9 @@ COPY --from=backend-builder /opt/app/backend/dist ./dist
 COPY --from=backend-builder /opt/app/backend/prisma ./prisma
 COPY --from=backend-builder /opt/app/backend/package.json ./
 COPY --from=backend-builder /opt/app/backend/tsconfig.json ./
-# ts-node + typescript sont des devDependencies prunées dans backend-builder.
-# Elles sont néanmoins indispensables au runtime pour `prisma db seed`
-# (le seed s'exécute au démarrage du container, pas au build).
-COPY --from=backend-deps /opt/app/backend/node_modules/ts-node ./node_modules/ts-node
-COPY --from=backend-deps /opt/app/backend/node_modules/typescript ./node_modules/typescript
-COPY --from=backend-deps /opt/app/backend/node_modules/@tsconfig ./node_modules/@tsconfig
 
-# --- global-agent : indispensable au RUNTIME ---
-# Node.js n'honore PAS nativement HTTP_PROXY / HTTPS_PROXY.
-# global-agent patche http.globalAgent / https.globalAgent pour router
-# les requêtes sortantes (S3, API externes) via Squid.
-# Sans ça, les uploads S3 contournent le proxy -> bloqués par le firewall -> timeout.
+# global-agent : indispensable au RUNTIME (Node.js n'honore pas HTTP_PROXY nativement).
+# Installé via --no-save dans backend-deps, supprimé par le prune → on le copie.
 COPY --from=backend-deps /opt/app/backend/node_modules/global-agent ./node_modules/global-agent
 COPY --from=backend-deps /opt/app/backend/node_modules/boolean ./node_modules/boolean
 COPY --from=backend-deps /opt/app/backend/node_modules/roarr ./node_modules/roarr

@@ -1,6 +1,6 @@
 {
-  "name": "ottrbox-frontend",
-  "version": "1.15.0",
+  "name": "privcloud-sharing-frontend",
+  "version": "1.16.2",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

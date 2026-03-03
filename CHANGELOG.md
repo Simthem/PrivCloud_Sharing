@@ -1,3 +1,29 @@
+## [1.16.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.1...v1.16.2) (2026-03-03)
+
+### Size Optimizations
+* **docker:** save ~24M by removing `prisma` and `typescript` from backend devDependencies (now in dependencies for runtime use) - reduces final image size from 834M to 810M
+
+
+### Security
+
+* **cve:** override `multer` -> `^2.1.0` in backend (GHSA-xf7r-hgr6-v32p - DoS via incomplete cleanup, GHSA-v52c-386h-88mc - DoS via resource exhaustion)
+* **cve:** override `minimatch` -> `^10.2.3` in backend (GHSA-7r86-cg39-jmmj - ReDoS via GLOBSTAR segments, GHSA-23c5-xmqv-rm74 - ReDoS via nested extglobs)
+
+
+### Dependencies
+
+* **backend:** upgrade `@nestjs/cache-manager` v2 -> v3 (NestJS 11 compatible - fixes ERESOLVE conflicts on `reflect-metadata` and `cache-manager`)
+* **backend:** upgrade `@nestjs/schedule` v2 -> v5 (NestJS 11 compatible - fixes ERESOLVE conflict on `@nestjs/common@^7||^8||^9`)
+* **backend:** move `prisma` and `typescript` from devDependencies to dependencies (required at runtime for `prisma migrate deploy` and `prisma db seed`)
+* **backend:** remove now-unnecessary overrides on `@nestjs/cache-manager` (`@nestjs/common`, `cache-manager`, `reflect-metadata`)
+
+
+### Bug Fixes
+
+* **docker:** remove `--legacy-peer-deps` from all `npm install` stages (frontend-deps, backend-deps, backend-builder) - no longer needed after NestJS packages upgrade
+* **docker:** clean up runner stage - remove ~15 individual `COPY --from=backend-deps` for `ts-node`, `typescript`, `@tsconfig`, `prisma`, `@prisma`, `.bin/prisma` - these modules now survive `npm prune --omit=dev`
+
+
 ## [1.16.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.0...v1.16.1) (2026-03-02)
 
 
