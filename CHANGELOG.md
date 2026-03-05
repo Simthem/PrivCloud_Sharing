@@ -1,3 +1,20 @@
+## [1.16.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.2...v1.16.3) (2026-03-05)
+
+
+### Security
+
+* **cve:** patch npm-internal `tar` 7.5.9 -> 7.5.10 via tarball hotswap in Docker base stage (GHSA-qffp-2rhf-9h96 - path traversal, HIGH 8.2)
+* **cve:** override `underscore` -> ^1.13.8 in backend (GHSA-qpx9-hpmf-5gmw - DoS via unlimited recursion in `_.flatten` / `_.isEqual`)
+* **cve:** override `serialize-javascript` -> ^7.0.4 in docs (GHSA-5c6j-r48x-rmvq - RCE via `RegExp.flags` / `Date.prototype.toISOString`)
+
+
+### Dependencies
+
+* **backend:** upgrade `@nestjs/cache-manager` ^2.0.0 -> ^3.1.0 (adds NestJS 11 + `cache-manager` v6 peer support - eliminates ERESOLVE cascade on `npm audit fix`)
+* **backend:** upgrade `@nestjs/schedule` ^2.2.3 -> ^6.1.1 (adds NestJS 10/11 + `@nestjs/core` v10/11 peer support - eliminates ERESOLVE cascade)
+* **docs:** upgrade `@docusaurus/core` and `@docusaurus/preset-classic` ^3.5.2 -> 3.9.2 (aligns with devDependencies already pinned at 3.9.2)
+
+
 ## [1.16.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.1...v1.16.2) (2026-03-03)
 
 ### Size Optimizations

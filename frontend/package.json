@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-frontend",
-  "version": "1.16.2",
+  "version": "1.16.3",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -56,7 +56,7 @@
     "minimatch": "^10.2.3",
     "serialize-javascript": "^7.0.3",
     "glob": "^10.5.0",
-    "tar": "^7.5.9",
+    "tar": "^7.5.10",
     "diff": "^8.0.3",
     "eslint-config-next": {
       "@next/eslint-plugin-next": {

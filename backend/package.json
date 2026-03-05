@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-backend",
-  "version": "1.16.2",
+  "version": "1.16.3",
   "scripts": {
     "build": "nest build",
     "dev": "cross-env NODE_ENV=development nest start --watch",
@@ -15,14 +15,14 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.787.0",
     "@keyv/redis": "^4.4.0",
-    "@nestjs/cache-manager": "^3.0.0",
+    "@nestjs/cache-manager": "^3.1.0",
     "@nestjs/common": "^11.0.17",
     "@nestjs/config": "^4.0.2",
-    "@nestjs/core": "^11.1.14",
+    "@nestjs/core": "^11.1.15",
     "@nestjs/jwt": "^11.0.0",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.17",
-    "@nestjs/schedule": "^5.0.0",
+    "@nestjs/schedule": "^6.1.1",
     "@nestjs/swagger": "^11.2.6",
     "@nestjs/throttler": "^6.4.0",
     "@prisma/client": "^6.6.0",
@@ -61,7 +61,7 @@
   "devDependencies": {
     "@nestjs/cli": "^11.0.6",
     "@nestjs/schematics": "^11.0.5",
-    "@nestjs/testing": "^11.1.14",
+    "@nestjs/testing": "^11.1.15",
     "@types/archiver": "^6.0.3",
     "@types/clamscan": "^2.4.1",
     "@types/cookie-parser": "^1.4.8",
@@ -82,7 +82,7 @@
     "eslint": "^9.24.0",
     "eslint-config-prettier": "^10.1.2",
     "eslint-plugin-prettier": "^5.2.6",
-    "newman": "^6.2.1",
+    "newman": "^6.2.2",
     "prettier": "^3.5.3",
     "source-map-support": "^0.5.21",
     "ts-loader": "^9.5.2",
@@ -110,7 +110,8 @@
     "@angular-devkit/core": {
       "ajv": "^8.18.0"
     },
-    "tar": "^7.5.9",
-    "diff": "^8.0.3"
+    "tar": "^7.5.10",
+    "diff": "^8.0.3",
+    "underscore": "^1.13.8"
   }
 }

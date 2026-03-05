@@ -45,7 +45,13 @@ RUN apk update && \
     MINIMATCH_URL=$(npm view minimatch@latest dist.tarball) && \
     rm -rf /usr/local/lib/node_modules/npm/node_modules/minimatch && \
     mkdir -p /usr/local/lib/node_modules/npm/node_modules/minimatch && \
-    curl -sL "$MINIMATCH_URL" | tar xz -C /usr/local/lib/node_modules/npm/node_modules/minimatch --strip-components=1
+    curl -sL "$MINIMATCH_URL" | tar xz -C /usr/local/lib/node_modules/npm/node_modules/minimatch --strip-components=1 && \
+    # GHSA-qffp-2rhf-9h96 : npm bundle tar <= 7.5.9 (path traversal).
+    # Même technique que minimatch : remplacement direct via tarball.
+    TAR_URL=$(npm view tar@latest dist.tarball) && \
+    rm -rf /usr/local/lib/node_modules/npm/node_modules/tar && \
+    mkdir -p /usr/local/lib/node_modules/npm/node_modules/tar && \
+    curl -sL "$TAR_URL" | tar xz -C /usr/local/lib/node_modules/npm/node_modules/tar --strip-components=1
 
 # ---------------------------
 # Stage 1b: Frontend dependencies
@@ -140,7 +146,7 @@ COPY --from=backend-builder /opt/app/backend/package.json ./
 COPY --from=backend-builder /opt/app/backend/tsconfig.json ./
 
 # global-agent : indispensable au RUNTIME (Node.js n'honore pas HTTP_PROXY nativement).
-# Installé via --no-save dans backend-deps, supprimé par le prune → on le copie.
+# Installé via --no-save dans backend-deps, supprimé par le prune -> on le copie.
 COPY --from=backend-deps /opt/app/backend/node_modules/global-agent ./node_modules/global-agent
 COPY --from=backend-deps /opt/app/backend/node_modules/boolean ./node_modules/boolean
 COPY --from=backend-deps /opt/app/backend/node_modules/roarr ./node_modules/roarr
