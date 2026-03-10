@@ -1,3 +1,12 @@
+## [1.16.4](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.3...v1.16.4) (2026-03-10)
+
+
+### Security
+
+* **cve:** pin Go builder image to `golang:1.25.8-alpine` (fixes CVE-2026-27142 - CVSS 7.5, CVE-2026-25679 - CVSS 7.5, CVE-2026-27139 - CVSS 2.5 in golang/stdlib < 1.25.8, package location `/usr/bin/caddy`)
+* **cve:** force `zlib >= 1.3.2-r0` in Docker base stage (fixes CVE-2026-22184 - CVSS 4.6, CVE-2026-27171 - CVSS 2.9 in alpine/zlib 1.3.1-r2, package location `/lib/apk/db/installed`)
+
+
 ## [1.16.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.2...v1.16.3) (2026-03-05)
 
 

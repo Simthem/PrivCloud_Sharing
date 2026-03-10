@@ -3,7 +3,9 @@
 # ---------------------------
 # CVE-2026-27141: caddy:2-alpine (v2.11.1) embarque golang.org/x/net v0.50.0 (vuln).
 # On clone les sources Caddy, on force golang.org/x/net >= v0.51.0, puis on compile.
-FROM golang:1.25-alpine AS caddy-builder
+# Go 1.25.8 requis pour fixer CVE-2026-27142, CVE-2026-25679, CVE-2026-27139
+# (golang/stdlib < 1.25.8).
+FROM golang:1.25.8-alpine AS caddy-builder
 RUN apk add --no-cache git
 RUN git clone --depth 1 --branch v2.11.1 \
       https://github.com/caddyserver/caddy.git /caddy
@@ -36,6 +38,9 @@ ENV NO_PROXY=${NO_PROXY}
 # recompilé depuis les sources (stage caddy-builder) pour forcer
 # golang.org/x/net >= v0.51.0 et corriger CVE-2026-27141.
 RUN apk update && \
+    apk upgrade --no-cache && \
+    # CVE-2026-22184 / CVE-2026-27171 : zlib 1.3.1-r2 -> >= 1.3.2-r0
+    apk add --no-cache 'zlib>=1.3.2-r0' && \
     apk add --no-cache curl su-exec openssl python3 bash git && \
     npm install -g npm@latest && \
     # CVE-2026-27903/04 : npm@11.11.0 embarque minimatch 10.2.2 (vuln).
