@@ -1,3 +1,17 @@
+## [1.16.5](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.4...v1.16.5) (2026-03-11)
+
+
+### Security
+
+* **cve:** upgrade Caddy from v2.11.1 to v2.11.2 in builder stage (fixes CVE-2026-30851 - CVSS 7.5 HIGH, CVE-2026-30852 - MEDIUM, affected range `>=2.10.0 <2.11.2`)
+
+
+### Known Issues
+
+* **curl 8.17.0-r1** - 5 medium + 1 low CVEs (CVE-2025-14017, CVE-2025-13034, CVE-2025-15079, CVE-2025-14819, CVE-2025-14524, CVE-2025-15224); no fix available in Alpine repos
+* **busybox 1.37.0-r30** - 1 medium CVE (CVE-2025-60876); no fix available in Alpine repos
+
+
 ## [1.16.4](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.3...v1.16.4) (2026-03-10)
 
 

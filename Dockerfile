@@ -1,13 +1,14 @@
 # ---------------------------
 # Stage 0: Build Caddy from source with patched Go dependencies
 # ---------------------------
-# CVE-2026-27141: caddy:2-alpine (v2.11.1) embarque golang.org/x/net v0.50.0 (vuln).
+# CVE-2026-27141: caddy:2-alpine embarque golang.org/x/net v0.50.0 (vuln).
 # On clone les sources Caddy, on force golang.org/x/net >= v0.51.0, puis on compile.
 # Go 1.25.8 requis pour fixer CVE-2026-27142, CVE-2026-25679, CVE-2026-27139
 # (golang/stdlib < 1.25.8).
+# Caddy 2.11.2 requis pour fixer CVE-2026-30851 (HIGH), CVE-2026-30852 (MEDIUM).
 FROM golang:1.25.8-alpine AS caddy-builder
 RUN apk add --no-cache git
-RUN git clone --depth 1 --branch v2.11.1 \
+RUN git clone --depth 1 --branch v2.11.2 \
       https://github.com/caddyserver/caddy.git /caddy
 WORKDIR /caddy
 # Forcer la mise à jour de la dépendance vulnérable
@@ -37,6 +38,7 @@ ENV NO_PROXY=${NO_PROXY}
 # Caddy n'est PAS installé via apk : on utilise le binaire
 # recompilé depuis les sources (stage caddy-builder) pour forcer
 # golang.org/x/net >= v0.51.0 et corriger CVE-2026-27141.
+# Caddy 2.11.2 corrige aussi CVE-2026-30851 et CVE-2026-30852.
 RUN apk update && \
     apk upgrade --no-cache && \
     # CVE-2026-22184 / CVE-2026-27171 : zlib 1.3.1-r2 -> >= 1.3.2-r0
