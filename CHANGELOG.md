@@ -1,3 +1,36 @@
+## [1.16.6](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.5...v1.16.6) (2026-03-18)
+
+
+### Security
+
+* **cve:** override `file-type` -> ^21.3.2 in backend (CVE-2026-31808 - MEDIUM, CVE-2026-32630 - MEDIUM)
+* **cve:** bump `tar` override ^7.5.10 -> ^7.5.11 in backend (CVE-2026-26960 - HIGH 8.2, CVE-2026-29786 - HIGH, CVE-2026-31802 - HIGH)
+* **cve:** upgrade `newman` ^4.4.0 -> ^6.2.2 in devDependencies (eliminates 22 vulnerabilities from legacy postman-* transitive tree)
+* **cve:** override `async` -> ^3.2.6 (GHSA-fwr7-v2mv-hh25 - Prototype Pollution, HIGH)
+* **cve:** override `crypto-js` -> ^4.2.0 (GHSA-xwcq-pm8m-c4vf - weak PBKDF2, CRITICAL)
+* **cve:** override `flatted` -> ^3.4.0 (GHSA-25h7-pfq9-p65f - unbounded recursion DoS, HIGH)
+* **cve:** override `handlebars` -> ^4.7.8 (GHSA-f2jv-r9rf-7988 - RCE, CRITICAL + GHSA-765h-qjxv-5f44 - Prototype Pollution)
+* **cve:** override `marked` -> ^4.3.0 (GHSA-rrrm-qjm4-v8hf - ReDoS, HIGH)
+* **cve:** override `minimist` -> ^1.2.8 (GHSA-vh95-rmgr-6w4m - Prototype Pollution, CRITICAL)
+* **cve:** override `postcss` -> ^8.4.31 (GHSA-7fh5-64p2-3v2j - line return parsing, MODERATE)
+* **cve:** override `semver` -> ^7.5.4 (GHSA-c2qf-rxjj-qqgw - ReDoS, HIGH)
+* **cve:** override `tough-cookie` -> ^4.1.3 (GHSA-72xf-g2v4-qvf3 - Prototype Pollution, MODERATE)
+* **cve:** override `word-wrap` -> ^1.2.4 (GHSA-j8xg-fqg3-53r7 - ReDoS, MODERATE)
+* **sast:** add `set -eu` strict mode to `create-user.sh` and `entrypoint.sh` (Semgrep bash/set-euo-pipefail)
+* **sast:** guard `$CADDY_DISABLED` / `$TRUST_PROXY` with `${VAR:-}` for `set -u` compatibility
+
+
+### Bug Fixes
+
+* **build:** fix Next.js 16 Turbopack build error - add `turbopack: {}` to `next.config.js` (withPWA plugin injects webpack config, Next.js 16 defaults to Turbopack and refuses mixed configs)
+
+
+### Known Issues
+
+* **curl 8.17.0-r1** - 5 medium + 1 low CVEs (CVE-2025-14017, CVE-2025-13034, CVE-2025-15079, CVE-2025-14819, CVE-2025-14524, CVE-2025-15224); no fix available in Alpine repos
+* **busybox 1.37.0-r30** - 1 medium CVE (CVE-2025-60876); no fix available in Alpine repos
+
+
 ## [1.16.5](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.4...v1.16.5) (2026-03-11)
 
 

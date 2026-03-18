@@ -16,7 +16,12 @@ const withPWA = require("@ducanh2912/next-pwa").default({
 });
 
 module.exports = withPWA({
-  output: "standalone", env: {
+  output: "standalone",
+  // Next.js 16 : Turbopack est activé par défaut.
+  // Le plugin @ducanh2912/next-pwa injecte une config webpack interne ;
+  // déclarer turbopack: {} évite l'erreur "webpack config without turbopack config".
+  turbopack: {},
+  env: {
     VERSION: version,
   },
 });
