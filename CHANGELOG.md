@@ -1,3 +1,15 @@
+## [1.16.8](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.7...v1.16.8) (2026-03-19)
+
+
+### Security
+
+* **docker:** fix CVE-2026-33186 (CVSS 9.1, CRITICAL) - upgrade `google.golang.org/grpc` from 1.79.1 to 1.79.3 in Caddy binary
+* **docker:** upgrade Go toolchain from 1.25.8 to 1.26.1 (fixes additional stdlib CVEs)
+* **docker:** strip debug symbols from Caddy binary (`-ldflags='-s -w'`) to reduce attack surface
+* **docker:** remove `python3` and `git` from runner image (not needed at runtime)
+* **docker:** clean temporary caches in runner stage (`/tmp`, `/root/.npm`, `/root/.cache`)
+
+
 ## [1.16.7](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.6...v1.16.7) (2026-03-19)
 
 

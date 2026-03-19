@@ -3,18 +3,21 @@
 # ---------------------------
 # CVE-2026-27141: caddy:2-alpine embarque golang.org/x/net v0.50.0 (vuln).
 # On clone les sources Caddy, on force golang.org/x/net >= v0.51.0, puis on compile.
-# Go 1.25.8 requis pour fixer CVE-2026-27142, CVE-2026-25679, CVE-2026-27139
-# (golang/stdlib < 1.25.8).
+# Go 1.26.1 : corrige CVE-2026-27142, CVE-2026-25679, CVE-2026-27139
+# + correctifs stdlib supplémentaires (dernière version stable).
 # Caddy 2.11.2 requis pour fixer CVE-2026-30851 (HIGH), CVE-2026-30852 (MEDIUM).
-FROM golang:1.25.8-alpine AS caddy-builder
+FROM golang:1.26.1-alpine AS caddy-builder
 RUN apk add --no-cache git
 RUN git clone --depth 1 --branch v2.11.2 \
       https://github.com/caddyserver/caddy.git /caddy
 WORKDIR /caddy
-# Forcer la mise à jour de la dépendance vulnérable
-RUN go get golang.org/x/net@latest && go mod tidy
-# Compiler Caddy
-RUN CGO_ENABLED=0 go build -trimpath -o /usr/bin/caddy ./cmd/caddy \
+# Forcer la mise à jour des dépendances vulnérables
+# CVE-2026-33186 (CVSS 9.1, CRITICAL) : google.golang.org/grpc < 1.79.3
+RUN go get golang.org/x/net@latest \
+    && go get google.golang.org/grpc@v1.79.3 \
+    && go mod tidy
+# Compiler Caddy (binaire statique, stripped, sans symboles de debug)
+RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/caddy \
     && go clean -cache -modcache
 
 # ---------------------------
@@ -132,6 +135,12 @@ ENV NO_PROXY=
 # create-user.sh puisse chown les volumes (data/, images/) avant de
 # drop les privilèges via su-exec.
 RUN deluser --remove-home node
+
+# Durcissement du runner : supprimer les outils inutiles en production.
+# python3/git ne servent qu'au build (node-gyp / deps git). bash est gardé
+# car certains scripts entrypoint peuvent en dépendre.
+RUN apk del --no-cache python3 git && \
+    rm -rf /tmp/* /root/.npm /root/.cache /root/.config
 
 # --- Frontend ---
 WORKDIR /opt/app/frontend
