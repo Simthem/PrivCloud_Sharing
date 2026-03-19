@@ -22,10 +22,14 @@ const Share = ({ shareId }: { shareId: string }) => {
   const t = useTranslate();
   const modals = useModals();
 
-  const { data: share, error, isLoading } = useQuery<ShareType>({
+  const {
+    data: share,
+    error,
+    isLoading,
+  } = useQuery<ShareType>({
     queryKey: ["share", shareId],
     retry: false,
-    queryFn: () => shareService.getFromOwner(shareId)
+    queryFn: () => shareService.getFromOwner(shareId),
   });
 
   useConfirmLeave({
@@ -69,7 +73,11 @@ const Share = ({ shareId }: { shareId: string }) => {
   return (
     <>
       <Meta title={t("share.edit.title", { shareId })} />
-      <EditableUpload shareId={shareId} files={share?.files || []} isE2EEncrypted={share?.isE2EEncrypted} />
+      <EditableUpload
+        shareId={shareId}
+        files={share?.files || []}
+        isE2EEncrypted={share?.isE2EEncrypted}
+      />
     </>
   );
 };

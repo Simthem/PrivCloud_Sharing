@@ -119,18 +119,23 @@ const AudioPreview = () => {
     React.useContext(FilePreviewContext);
   const { blobUrl, loading } = useDecryptedBlobUrl("audio/mpeg");
 
-  if (e2eKey && loading) return <Center style={{ minHeight: 200 }}><Loader /></Center>;
+  if (e2eKey && loading)
+    return (
+      <Center style={{ minHeight: 200 }}>
+        <Loader />
+      </Center>
+    );
 
-  const src = e2eKey && blobUrl ? blobUrl : `/api/shares/${shareId}/files/${fileId}?download=false`;
+  const src =
+    e2eKey && blobUrl
+      ? blobUrl
+      : `/api/shares/${shareId}/files/${fileId}?download=false`;
 
   return (
     <Center style={{ minHeight: 200 }}>
       <Stack align="center" spacing={10} style={{ width: "100%" }}>
         <audio controls style={{ width: "100%" }}>
-          <source
-            src={src}
-            onError={() => setIsNotSupported(true)}
-          />
+          <source src={src} onError={() => setIsNotSupported(true)} />
         </audio>
       </Stack>
     </Center>
@@ -142,16 +147,21 @@ const VideoPreview = () => {
     React.useContext(FilePreviewContext);
   const { blobUrl, loading } = useDecryptedBlobUrl("video/mp4");
 
-  if (e2eKey && loading) return <Center style={{ minHeight: 200 }}><Loader /></Center>;
+  if (e2eKey && loading)
+    return (
+      <Center style={{ minHeight: 200 }}>
+        <Loader />
+      </Center>
+    );
 
-  const src = e2eKey && blobUrl ? blobUrl : `/api/shares/${shareId}/files/${fileId}?download=false`;
+  const src =
+    e2eKey && blobUrl
+      ? blobUrl
+      : `/api/shares/${shareId}/files/${fileId}?download=false`;
 
   return (
     <video width="100%" controls>
-      <source
-        src={src}
-        onError={() => setIsNotSupported(true)}
-      />
+      <source src={src} onError={() => setIsNotSupported(true)} />
     </video>
   );
 };
@@ -161,9 +171,17 @@ const ImagePreview = () => {
     React.useContext(FilePreviewContext);
   const { blobUrl, loading } = useDecryptedBlobUrl(mimeType);
 
-  if (e2eKey && loading) return <Center style={{ minHeight: 200 }}><Loader /></Center>;
+  if (e2eKey && loading)
+    return (
+      <Center style={{ minHeight: 200 }}>
+        <Loader />
+      </Center>
+    );
 
-  const src = e2eKey && blobUrl ? blobUrl : `/api/shares/${shareId}/files/${fileId}?download=false`;
+  const src =
+    e2eKey && blobUrl
+      ? blobUrl
+      : `/api/shares/${shareId}/files/${fileId}?download=false`;
 
   return (
     // eslint-disable-next-line @next/next/no-img-element
@@ -223,7 +241,8 @@ const TextPreview = () => {
 };
 
 const PdfPreview = () => {
-  const { shareId, fileId, e2eKey, setIsNotSupported } = React.useContext(FilePreviewContext);
+  const { shareId, fileId, e2eKey, setIsNotSupported } =
+    React.useContext(FilePreviewContext);
 
   useEffect(() => {
     if (e2eKey) {

@@ -20,7 +20,11 @@ const Share = ({ reverseShareToken }: { reverseShareToken: string }) => {
   const modals = useModals();
   const t = useTranslate();
 
-  const { data: reverseShare, isLoading, error } = useQuery<ReverseShare>({
+  const {
+    data: reverseShare,
+    isLoading,
+    error,
+  } = useQuery<ReverseShare>({
     queryKey: ["reverseShare", reverseShareToken],
     queryFn: () => shareService.getReverseShare(reverseShareToken),
     retry: false,

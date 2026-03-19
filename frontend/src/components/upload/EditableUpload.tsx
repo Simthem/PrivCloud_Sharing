@@ -12,7 +12,11 @@ import useTranslate from "../../hooks/useTranslate.hook";
 import shareService from "../../services/share.service";
 import { FileListItem, FileMetaData, FileUpload } from "../../types/File.type";
 import toast from "../../utils/toast.util";
-import { getUserKey, importKeyFromBase64, encryptFile } from "../../utils/crypto.util";
+import {
+  getUserKey,
+  importKeyFromBase64,
+  encryptFile,
+} from "../../utils/crypto.util";
 import { useQueryClient } from "@tanstack/react-query";
 
 const promiseLimit = pLimit(3);

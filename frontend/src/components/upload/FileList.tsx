@@ -68,7 +68,7 @@ const FileList = <T extends FileListItem = FileListItem>({
   setFiles,
 }: {
   files: T[];
-  setFiles: (files: T[]) => void;
+  setFiles: (_files: T[]) => void;
 }) => {
   const remove = (index: number) => {
     const file = files[index];

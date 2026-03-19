@@ -32,10 +32,7 @@ const Intro = () => {
               GitHub
             </Anchor>{" "}
             or{" "}
-            <Anchor
-              target="_blank"
-              href="https://github.com/sponsors/Simthem"
-            >
+            <Anchor target="_blank" href="https://github.com/sponsors/Simthem">
               buy me a coffee
             </Anchor>{" "}
             if you want to support my work.

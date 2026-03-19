@@ -17,7 +17,9 @@ const showShareInformationsModal = (
 
   return modals.openModal({
     title: t("account.shares.modal.share-informations"),
-    children: <ShareInformationsContent share={share} maxShareSize={maxShareSize} />,
+    children: (
+      <ShareInformationsContent share={share} maxShareSize={maxShareSize} />
+    ),
   });
 };
 

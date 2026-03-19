@@ -3,7 +3,7 @@ import { useModals } from "@mantine/modals";
 import { TbCheck, TbEdit, TbTrash } from "react-icons/tb";
 import User from "../../../types/user.type";
 import showUpdateUserModal from "./showUpdateUserModal";
-import { FormattedMessage, useIntl } from "react-intl";
+import { FormattedMessage } from "react-intl";
 
 const ManageUserTable = ({
   users,
@@ -13,7 +13,7 @@ const ManageUserTable = ({
 }: {
   users: User[];
   getUsers: () => void;
-  deleteUser: (user: User) => void;
+  deleteUser: (_user: User) => void;
   isLoading: boolean;
 }) => {
   const modals = useModals();

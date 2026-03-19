@@ -26,10 +26,15 @@ export function getServerSideProps(context: GetServerSidePropsContext) {
 
 const Share = ({ shareId }: { shareId: string }) => {
   const modals = useModals();
-  const { data: share, error, refetch, isLoading } = useQuery<ShareType>({
+  const {
+    data: share,
+    error,
+    refetch,
+    isLoading,
+  } = useQuery<ShareType>({
     queryKey: ["share", shareId],
     retry: false,
-    queryFn: () => shareService.get(shareId)
+    queryFn: () => shareService.get(shareId),
   });
 
   const t = useTranslate();
@@ -109,7 +114,7 @@ const Share = ({ shareId }: { shareId: string }) => {
         "go-home",
       );
     }
-  }, [error])
+  }, [error]);
 
   return (
     <>
@@ -142,14 +147,25 @@ const Share = ({ shareId }: { shareId: string }) => {
         </Box>
 
         {share?.files.length > 1 && !isE2EMissingKey && (
-          <DownloadAllButton shareId={shareId} isE2EEncrypted={share?.isE2EEncrypted} e2eKey={e2eKey} files={share?.files} />
+          <DownloadAllButton
+            shareId={shareId}
+            isE2EEncrypted={share?.isE2EEncrypted}
+            e2eKey={e2eKey}
+            files={share?.files}
+          />
         )}
       </Group>
 
       {isE2EMissingKey && (
-        <Alert icon={<TbLock size={16} />} title="Chiffrement de bout en bout" color="red" mb="lg">
-          Ce partage est chiffré de bout en bout. La clé de déchiffrement est manquante dans l'URL.
-          Veuillez utiliser le lien complet fourni par l'expéditeur (avec le fragment #key=...).
+        <Alert
+          icon={<TbLock size={16} />}
+          title="Chiffrement de bout en bout"
+          color="red"
+          mb="lg"
+        >
+          Ce partage est chiffré de bout en bout. La clé de déchiffrement est
+          manquante dans l'URL. Veuillez utiliser le lien complet fourni par
+          l'expéditeur (avec le fragment #key=...).
         </Alert>
       )}
 

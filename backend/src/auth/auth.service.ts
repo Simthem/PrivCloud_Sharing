@@ -33,7 +33,7 @@ export class AuthService {
     private ldapService: LdapService,
     private userService: UserSevice,
     @Inject(forwardRef(() => OAuthService)) private oAuthService: OAuthService,
-  ) { }
+  ) {}
   private readonly logger = new Logger(AuthService.name);
 
   async signUp(dto: AuthRegisterDTO, ip: string, isAdmin?: boolean) {
@@ -245,8 +245,8 @@ export class AuthService {
         where: { id: refreshTokenId },
       })
       .then((refreshToken) => {
-        this.logger.debug(`Sign out for user ${refreshToken?.userId} `)
-        return refreshToken?.oauthIDToken
+        this.logger.debug(`Sign out for user ${refreshToken?.userId} `);
+        return refreshToken?.oauthIDToken;
       })
       .catch((e) => {
         // Ignore error if refresh token doesn't exist
@@ -267,7 +267,7 @@ export class AuthService {
         signOutFromProviderSupportedAndActivated = this.config.get(
           `oauth.${providerName}-signOut`,
         );
-      } catch (_) {
+      } catch {
         // Ignore error if the provider is not supported or if the provider sign out is not activated
       }
       if (

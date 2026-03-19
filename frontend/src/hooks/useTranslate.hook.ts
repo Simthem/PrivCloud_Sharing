@@ -24,7 +24,10 @@ export const translateOutsideContext = () => {
   const intl = createIntl(
     {
       locale,
-      messages: {...englishMessages, ...i18nUtil.getLocaleByCode(locale)?.messages},
+      messages: {
+        ...englishMessages,
+        ...i18nUtil.getLocaleByCode(locale)?.messages,
+      },
       defaultLocale: "en",
     },
     cache,

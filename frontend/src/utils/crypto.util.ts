@@ -27,9 +27,7 @@ export async function exportKeyToBase64(key: CryptoKey): Promise<string> {
   return arrayBufferToBase64Url(raw);
 }
 
-export async function importKeyFromBase64(
-  encoded: string,
-): Promise<CryptoKey> {
+export async function importKeyFromBase64(encoded: string): Promise<CryptoKey> {
   const raw = base64UrlToArrayBuffer(encoded);
   return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, [
     "encrypt",
@@ -88,7 +86,9 @@ export function storeUserKey(encodedKey: string): void {
   try {
     localStorage.setItem(USER_KEY_STORAGE, encodedKey);
   } catch {
-    console.warn("Impossible de stocker la clé E2E utilisateur dans localStorage");
+    console.warn(
+      "Impossible de stocker la clé E2E utilisateur dans localStorage",
+    );
   }
 }
 
@@ -245,7 +245,10 @@ function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 function base64UrlToArrayBuffer(base64url: string): ArrayBuffer {

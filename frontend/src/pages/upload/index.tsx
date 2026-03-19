@@ -43,7 +43,7 @@ type UploadProps = {
   isE2EEncrypted?: boolean;
   simplified: boolean;
   name?: string;
-}
+};
 
 const Upload = ({
   maxShareSize,
@@ -68,10 +68,11 @@ const Upload = ({
     enabled: isUploading,
   });
 
-  const enableRecipientRetrieval = !isReverseShare
-    && config.get("email.enableShareEmailRecipients")
-    && config.get("email.enableShareEmailPastRecipients")
-    && !!user;
+  const enableRecipientRetrieval =
+    !isReverseShare &&
+    config.get("email.enableShareEmailRecipients") &&
+    config.get("email.enableShareEmailPastRecipients") &&
+    !!user;
 
   const { data: pastRecipients } = useQuery({
     queryKey: ["share.pastRecipients"],
@@ -81,7 +82,7 @@ const Upload = ({
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-  })
+  });
 
   const chunkSize = useRef(parseInt(config.get("share.chunkSize")));
 
@@ -279,7 +280,7 @@ const Upload = ({
           showCompletedUploadModal(modals, share, e2eKeyEncoded);
           queryClient.invalidateQueries({
             queryKey: ["share.pastRecipients"],
-          })
+          });
           setFiles([]);
           e2eKeyEncoded = null;
         })
@@ -290,10 +291,11 @@ const Upload = ({
   return (
     <>
       <Meta title={t("upload.title")} />
-      <Group {...(name ? { position: "apart" } : { position: "right" })} mb={20}>
-        {name && (
-          <Title order={3}>{name}</Title>
-        )}
+      <Group
+        {...(name ? { position: "apart" } : { position: "right" })}
+        mb={20}
+      >
+        {name && <Title order={3}>{name}</Title>}
         <Button
           loading={isUploading}
           disabled={files.length <= 0}

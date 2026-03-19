@@ -31,7 +31,7 @@ const FileSizeInput = ({
 }: {
   label?: string;
   value: number;
-  onChange: (number: number) => void;
+  onChange: (_number: number) => void;
   [key: string]: any;
 }) => {
   const [unit, setUnit] = useState(getLargestApplicableUnit(value).value);

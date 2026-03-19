@@ -17,8 +17,16 @@ import { useClipboard } from "@mantine/hooks";
 import { useModals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import moment from "moment";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { TbInfoCircle, TbLink, TbLock, TbPlus, TbTrash, TbWorld, TbWorldCancel, TbWorldCheck, TbWorldOff } from "react-icons/tb";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  TbInfoCircle,
+  TbLink,
+  TbLock,
+  TbPlus,
+  TbTrash,
+  TbWorldCheck,
+  TbWorldOff,
+} from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import Meta from "../../components/Meta";
 import showReverseShareLinkModal from "../../components/account/showReverseShareLinkModal";
@@ -50,14 +58,15 @@ const MyShares = () => {
     data: reverseShares,
     isLoading,
     isError,
-    refetch
+    refetch,
   } = useQuery<MyReverseShare[]>({
     queryKey: ["myReverseShares"],
     queryFn: shareService.getMyReverseShares,
   });
 
   const deleteReverseShareMutation = useMutation({
-    mutationFn: (reverseShare: string) => shareService.removeReverseShare(reverseShare),
+    mutationFn: (reverseShare: string) =>
+      shareService.removeReverseShare(reverseShare),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["myReverseShares"] });
       toast.success(t("account.shares.notify.deleted-success"));
@@ -90,7 +99,10 @@ const MyShares = () => {
         setRsKeyCache((prev) => ({ ...prev, [reverseShare.id]: rsKeyEncoded }));
         return rsKeyEncoded;
       } catch (e) {
-        console.error("Erreur lors du déchiffrement de la clé reverse share", e);
+        console.error(
+          "Erreur lors du déchiffrement de la clé reverse share",
+          e,
+        );
         return null;
       }
     },
@@ -252,11 +264,11 @@ const MyShares = () => {
                             <Text size="sm">
                               {reverseShare.shares.length == 1
                                 ? `1 ${t(
-                                  "account.reverseShares.table.count.singular",
-                                )}`
+                                    "account.reverseShares.table.count.singular",
+                                  )}`
                                 : `${reverseShare.shares.length} ${t(
-                                  "account.reverseShares.table.count.plural",
-                                )}`}
+                                    "account.reverseShares.table.count.plural",
+                                  )}`}
                             </Text>
                           </Accordion.Control>
                           <Accordion.Panel>
@@ -275,8 +287,15 @@ const MyShares = () => {
                                   </Text>
                                 </Anchor>
                                 {share.security.passwordProtected && (
-                                  <Tooltip label={t("account.reverseShares.table.password-protected")} withArrow>
-                                    <ThemeIcon color="orange" variant="light"><TbLock size="1rem" /></ThemeIcon>
+                                  <Tooltip
+                                    label={t(
+                                      "account.reverseShares.table.password-protected",
+                                    )}
+                                    withArrow
+                                  >
+                                    <ThemeIcon color="orange" variant="light">
+                                      <TbLock size="1rem" />
+                                    </ThemeIcon>
                                   </Tooltip>
                                 )}
                                 <ActionIcon
@@ -297,12 +316,17 @@ const MyShares = () => {
                     )}
                   </td>
                   <td>{reverseShare.name}</td>
-                  <td style={{ textAlign: "center" }}>{reverseShare.publicAccess ? (
-                      <ThemeIcon color="green" variant="light"><TbWorldCheck size="1.2rem" /></ThemeIcon>
+                  <td style={{ textAlign: "center" }}>
+                    {reverseShare.publicAccess ? (
+                      <ThemeIcon color="green" variant="light">
+                        <TbWorldCheck size="1.2rem" />
+                      </ThemeIcon>
                     ) : (
-                      <ThemeIcon color="red" variant="light"><TbWorldOff size="1.2rem" /></ThemeIcon>
-                    )
-                  }</td>
+                      <ThemeIcon color="red" variant="light">
+                        <TbWorldOff size="1.2rem" />
+                      </ThemeIcon>
+                    )}
+                  </td>
                   <td>{reverseShare.remainingUses}</td>
                   <td>
                     {byteToHumanSizeString(parseInt(reverseShare.maxShareSize))}
@@ -343,7 +367,10 @@ const MyShares = () => {
                               confirm: t("common.button.delete"),
                               cancel: t("common.button.cancel"),
                             },
-                            onConfirm: () => deleteReverseShareMutation.mutate(reverseShare.id),
+                            onConfirm: () =>
+                              deleteReverseShareMutation.mutate(
+                                reverseShare.id,
+                              ),
                           });
                         }}
                       >

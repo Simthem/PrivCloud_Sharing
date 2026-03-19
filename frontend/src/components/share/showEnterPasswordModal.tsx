@@ -8,7 +8,7 @@ import useTranslate, {
 
 const showEnterPasswordModal = (
   modals: ModalsContextProps,
-  submitCallback: (password: string) => Promise<void>,
+  submitCallback: (_password: string) => Promise<void>,
 ) => {
   const t = translateOutsideContext();
   return modals.openModal({
@@ -23,7 +23,7 @@ const showEnterPasswordModal = (
 const Body = ({
   submitCallback,
 }: {
-  submitCallback: (password: string) => Promise<void>;
+  submitCallback: (_password: string) => Promise<void>;
 }) => {
   const [password, setPassword] = useState("");
   const [passwordWrong, setPasswordWrong] = useState(false);

@@ -43,7 +43,7 @@ export class UserDTO {
       excludeExtraneousValues: true,
     });
     result.isLdap = partial.ldapDN?.length > 0;
-    result.hasEncryptionKey = !!(partial as any).encryptionKeyHash;
+    result.hasEncryptionKey = !!(partial as Record<string, unknown>).encryptionKeyHash;
     return result;
   }
 

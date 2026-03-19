@@ -10,7 +10,7 @@
     "quotes": ["warn", "double", { "allowTemplateLiterals": true }],
     "react-hooks/exhaustive-deps": ["off"],
     "import/no-anonymous-default-export": ["off"],
-    "no-unused-vars": ["warn"],
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
     "react/no-unescaped-entities": ["off"],
     "@next/next/no-img-element": ["off"]
   }

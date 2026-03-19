@@ -1,11 +1,10 @@
 import { Box, Menu } from "@mantine/core";
 import Link from "next/link";
-import { TbArrowLoopLeft, TbLink, TbUser } from "react-icons/tb";
+import { TbArrowLoopLeft, TbLink } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import { useStyles } from "./Header.styles";
 
 const NavbarShareMneu = () => {
-
   const { classes, cx } = useStyles();
 
   return (

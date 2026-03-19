@@ -20,7 +20,7 @@ export type ReverseShare = {
   token: string;
   simplified: boolean;
   isE2EEncrypted: boolean;
-}
+};
 
 export type CompletedShare = Share & {
   /**

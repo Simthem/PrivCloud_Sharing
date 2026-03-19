@@ -41,7 +41,7 @@ const Dropzone = ({
   title?: string;
   isUploading: boolean;
   maxShareSize: number;
-  onFilesChanged: (files: FileUpload[]) => void;
+  onFilesChanged: (_files: FileUpload[]) => void;
 }) => {
   const t = useTranslate();
 

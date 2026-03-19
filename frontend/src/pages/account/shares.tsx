@@ -39,7 +39,7 @@ const MyShares = () => {
     data: shares,
     isLoading,
     isError,
-    refetch
+    refetch,
   } = useQuery<MyShare[]>({
     queryKey: ["myShares"],
     queryFn: shareService.getMyShares,
@@ -178,8 +178,12 @@ const MyShares = () => {
                         variant="light"
                         size={25}
                         onClick={() => {
-                          const storedKey = share.isE2EEncrypted ? getUserKey() : null;
-                          const keyFragment = storedKey ? buildKeyFragment(storedKey) : "";
+                          const storedKey = share.isE2EEncrypted
+                            ? getUserKey()
+                            : null;
+                          const keyFragment = storedKey
+                            ? buildKeyFragment(storedKey)
+                            : "";
                           const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
                           if (window.isSecureContext) {
                             clipboard.copy(link);
@@ -212,7 +216,8 @@ const MyShares = () => {
                               confirm: t("common.button.delete"),
                               cancel: t("common.button.cancel"),
                             },
-                            onConfirm: () => deleteShareMutation.mutate(share.id),
+                            onConfirm: () =>
+                              deleteShareMutation.mutate(share.id),
                           });
                         }}
                       >

@@ -24,7 +24,6 @@ import { CreateShareDTO } from "./dto/createShare.dto";
 
 @Injectable()
 export class ShareService {
-
   private readonly logger = new Logger(ShareService.name);
 
   constructor(
@@ -36,25 +35,26 @@ export class ShareService {
     private jwtService: JwtService,
     private reverseShareService: ReverseShareService,
     private clamScanService: ClamScanService,
-  ) { }
+  ) {}
 
   async create(share: CreateShareDTO, user?: User, reverseShareToken?: string) {
     if (!(await this.isShareIdAvailable(share.id)).isAvailable)
       throw new BadRequestException("Share id already in use");
 
     this.logger.debug(
-      `Creating share: shareId=${share.id} userId=${user?.id ?? "anonymous"} reverseShareToken=${reverseShareToken ? "provided" : "none"}`
+      `Creating share: shareId=${share.id} userId=${user?.id ?? "anonymous"} reverseShareToken=${reverseShareToken ? "provided" : "none"}`,
     );
 
-    const hasSecurity = !!share.security && Object.keys(share.security).length > 0;
+    const hasSecurity =
+      !!share.security && Object.keys(share.security).length > 0;
     const hasPassword = !!share.security?.password;
-    
+
     if (!hasSecurity) {
       this.logger.debug(`No security provided: shareId=${share.id}`);
       share.security = undefined;
     } else {
       this.logger.debug(
-        `Security provided: shareId=${share.id} passwordProtected=${hasPassword} maxViews=${share.security?.maxViews ?? "none"}`
+        `Security provided: shareId=${share.id} passwordProtected=${hasPassword} maxViews=${share.security?.maxViews ?? "none"}`,
       );
     }
     if (hasPassword) {
@@ -70,22 +70,22 @@ export class ShareService {
     if (reverseShare) {
       expirationDate = reverseShare.shareExpiration;
       this.logger.debug(
-        `Using reverse share expiration: shareId=${share.id} reverseShareToken=provided expiration=${expirationDate.toISOString()}`
+        `Using reverse share expiration: shareId=${share.id} reverseShareToken=provided expiration=${expirationDate.toISOString()}`,
       );
     } else {
       const parsedExpiration = parseRelativeDateToAbsolute(share.expiration);
       const expiresNever = moment(0).toDate() == parsedExpiration;
       const maxExpiration = this.config.get("share.maxExpiration");
-      const maxExpiryDate = moment().add(maxExpiration.value, maxExpiration.unit).toDate();
+      const maxExpiryDate = moment()
+        .add(maxExpiration.value, maxExpiration.unit)
+        .toDate();
 
       if (
         maxExpiration.value !== 0 &&
-        (expiresNever ||
-          parsedExpiration >
-          maxExpiryDate)
+        (expiresNever || parsedExpiration > maxExpiryDate)
       ) {
         this.logger.warn(
-          `Expiration exceeds maximum: shareId=${share.id} requested=${parsedExpiration.toISOString()} max=${maxExpiryDate.toISOString()}`
+          `Expiration exceeds maximum: shareId=${share.id} requested=${parsedExpiration.toISOString()} max=${maxExpiryDate.toISOString()}`,
         );
         throw new BadRequestException(
           "Expiration date exceeds maximum expiration date",
@@ -94,18 +94,23 @@ export class ShareService {
 
       expirationDate = parsedExpiration;
       this.logger.debug(
-        `Computed expiration: shareId=${share.id} expiration=${expirationDate.toISOString()}`
+        `Computed expiration: shareId=${share.id} expiration=${expirationDate.toISOString()}`,
       );
     }
 
     fs.mkdirSync(`${SHARE_DIRECTORY}/${share.id}`, {
       recursive: true,
     });
-    this.logger.debug(`Ensured share directory: shareId=${share.id} path=${SHARE_DIRECTORY}/${share.id}`);
+    this.logger.debug(
+      `Ensured share directory: shareId=${share.id} path=${SHARE_DIRECTORY}/${share.id}`,
+    );
 
-    const storageProvider = this.configService.get("s3.enabled") ? "S3" : "LOCAL";
-    this.logger.debug(`Selected storage provider: shareId=${share.id} provider=${storageProvider}`);
-
+    const storageProvider = this.configService.get("s3.enabled")
+      ? "S3"
+      : "LOCAL";
+    this.logger.debug(
+      `Selected storage provider: shareId=${share.id} provider=${storageProvider}`,
+    );
 
     const shareTuple = await this.prisma.share.create({
       data: {
@@ -123,7 +128,7 @@ export class ShareService {
     });
 
     this.logger.debug(
-      `Share created: shareId=${share.id} userId=${user?.id ?? "anonymous"} recipients=${share.recipients?.length ?? 0} storage=${storageProvider} expires=${expirationDate.toISOString()}`
+      `Share created: shareId=${share.id} userId=${user?.id ?? "anonymous"} recipients=${share.recipients?.length ?? 0} storage=${storageProvider} expires=${expirationDate.toISOString()}`,
     );
 
     if (reverseShare) {
@@ -165,8 +170,9 @@ export class ShareService {
   }
 
   async complete(id: string, reverseShareToken?: string) {
-
-    this.logger.debug(`Completing share: shareId=${id} reverseShareToken=${reverseShareToken ? "provided" : "none"}`);
+    this.logger.debug(
+      `Completing share: shareId=${id} reverseShareToken=${reverseShareToken ? "provided" : "none"}`,
+    );
 
     const share = await this.prisma.share.findUnique({
       where: { id },
@@ -190,27 +196,38 @@ export class ShareService {
 
     if (share.files.length === 0) {
       this.logger.warn(`Attempt to complete without files: shareId=${id}`);
-      throw new BadRequestException("You need at least on file in your share to complete it.");
+      throw new BadRequestException(
+        "You need at least on file in your share to complete it.",
+      );
     }
 
     // Asynchronously create a zip of all files
     // Skip ZIP for E2E encrypted shares (server can't read encrypted content)
     if (share.files.length > 1 && !share.isE2EEncrypted) {
-      this.logger.debug(`Scheduling zip creation: shareId=${id} fileCount=${share.files.length}`);
+      this.logger.debug(
+        `Scheduling zip creation: shareId=${id} fileCount=${share.files.length}`,
+      );
       this.createZip(id)
         .then(async () => {
-          await this.prisma.share.update({ where: { id }, data: { isZipReady: true } });
+          await this.prisma.share.update({
+            where: { id },
+            data: { isZipReady: true },
+          });
           this.logger.debug(`Zip ready: shareId=${id}`);
         })
         .catch((err) => {
-          this.logger.error(`Zip creation failed: shareId=${id} error=${(err as Error).message}`);
+          this.logger.error(
+            `Zip creation failed: shareId=${id} error=${(err as Error).message}`,
+          );
         });
     }
 
     // Send email for each recipient
     const recipientCount = share.recipients.length;
     if (recipientCount > 0 && this.config.get("smtp.enabled")) {
-      this.logger.debug(`Sending recipient emails: shareId=${id} recipients=${recipientCount}`);
+      this.logger.debug(
+        `Sending recipient emails: shareId=${id} recipients=${recipientCount}`,
+      );
       for (const recipient of share.recipients) {
         try {
           await this.emailService.sendMailToShareRecipients(
@@ -220,19 +237,27 @@ export class ShareService {
             share.description,
             share.expiration,
           );
-          this.logger.debug(`Recipient email sent: shareId=${id} recipient=${recipient.email}`);
+          this.logger.debug(
+            `Recipient email sent: shareId=${id} recipient=${recipient.email}`,
+          );
         } catch (err) {
           // Log and continue sending to others
-          this.logger.error(`Recipient email failed: shareId=${id} recipient=${recipient.email} error=${(err as Error).message}`);
+          this.logger.error(
+            `Recipient email failed: shareId=${id} recipient=${recipient.email} error=${(err as Error).message}`,
+          );
         }
       }
     } else {
-      this.logger.debug(`Skipping recipient emails: shareId=${id} recipients=${recipientCount} smtpEnabled=${this.config.get("smtp.enabled")}`);
+      this.logger.debug(
+        `Skipping recipient emails: shareId=${id} recipients=${recipientCount} smtpEnabled=${this.config.get("smtp.enabled")}`,
+      );
     }
 
     // Optionally notify reverse share creator
-    const notifyReverseShareCreator =
-      share.reverseShare ? this.config.get("smtp.enabled") && share.reverseShare.sendEmailNotification : undefined;
+    const notifyReverseShareCreator = share.reverseShare
+      ? this.config.get("smtp.enabled") &&
+        share.reverseShare.sendEmailNotification
+      : undefined;
 
     if (notifyReverseShareCreator) {
       try {
@@ -242,7 +267,9 @@ export class ShareService {
         );
         this.logger.debug(`Reverse share creator notified: shareId=${id}`);
       } catch (err) {
-        this.logger.error(`Reverse share notification failed: shareId=${id} error=${(err as Error).message}`);
+        this.logger.error(
+          `Reverse share notification failed: shareId=${id} error=${(err as Error).message}`,
+        );
       }
     }
 
@@ -262,9 +289,13 @@ export class ShareService {
           where: { token: reverseShareToken },
           data: { remainingUses: { decrement: 1 } },
         });
-        this.logger.debug(`Reverse share remainingUses decremented: shareId=${id}`);
+        this.logger.debug(
+          `Reverse share remainingUses decremented: shareId=${id}`,
+        );
       } catch (err) {
-        this.logger.error(`Failed to decrement reverse share uses: shareId=${id} error=${(err as Error).message}`);
+        this.logger.error(
+          `Failed to decrement reverse share uses: shareId=${id} error=${(err as Error).message}`,
+        );
       }
     }
 
@@ -273,7 +304,9 @@ export class ShareService {
       where: { id },
       data: { uploadLocked: true },
     });
-    this.logger.debug(`Share completed: shareId=${id} files=${share.files.length} recipients=${recipientCount} uploadLocked=true`);
+    this.logger.debug(
+      `Share completed: shareId=${id} files=${share.files.length} recipients=${recipientCount} uploadLocked=true`,
+    );
 
     return {
       ...updatedShare,
@@ -282,7 +315,6 @@ export class ShareService {
   }
 
   async revertComplete(id: string) {
-
     this.logger.debug(`Revert completion of share: shareId=${id}`);
     return this.prisma.share.update({
       where: { id },
@@ -310,22 +342,22 @@ export class ShareService {
     const recipients = await this.prisma.shareRecipient.findMany({
       where: {
         share: {
-          creatorId: userId
+          creatorId: userId,
         },
         email: {
           contains: query,
-        }
+        },
       },
       orderBy: {
-        email: "asc"
+        email: "asc",
       },
       select: {
-        email: true
+        email: true,
       },
-      distinct: Prisma.ShareRecipientScalarFieldEnum.email
+      distinct: Prisma.ShareRecipientScalarFieldEnum.email,
     });
 
-    return recipients.map(recipient => recipient.email);
+    return recipients.map((recipient) => recipient.email);
   }
 
   async getSharesByUser(userId: string) {
@@ -358,7 +390,7 @@ export class ShareService {
     });
   }
 
-  async get(id: string): Promise<any> {
+  async get(id: string): Promise<unknown> {
     const share = await this.prisma.share.findUnique({
       where: { id },
       include: {
@@ -395,7 +427,9 @@ export class ShareService {
   }
 
   async remove(shareId: string, isDeleterAdmin = false) {
-    this.logger.debug(`Removing share: shareId=${shareId} isDeleterAdmin=${isDeleterAdmin}`);
+    this.logger.debug(
+      `Removing share: shareId=${shareId} isDeleterAdmin=${isDeleterAdmin}`,
+    );
     const share = await this.prisma.share.findUnique({
       where: { id: shareId },
     });
@@ -407,7 +441,9 @@ export class ShareService {
 
     // Anonymous shares can only be deleted by admins
     if (!share.creatorId && !isDeleterAdmin) {
-      this.logger.warn(`Forbidden remove for anonymous share: shareId=${shareId}`);
+      this.logger.warn(
+        `Forbidden remove for anonymous share: shareId=${shareId}`,
+      );
       throw new ForbiddenException("Anonymous shares can't be deleted");
     }
 
@@ -416,14 +452,18 @@ export class ShareService {
       await this.fileService.deleteAllFiles(shareId);
       this.logger.debug(`All files deleted: shareId=${shareId}`);
     } catch (err) {
-      this.logger.error(`File deletion failed: shareId=${shareId} error=${(err as Error).message}`);
-      throw new InternalServerErrorException("Failed to delete all files of the share. Share has not been removed.");
+      this.logger.error(
+        `File deletion failed: shareId=${shareId} error=${(err as Error).message}`,
+      );
+      throw new InternalServerErrorException(
+        "Failed to delete all files of the share. Share has not been removed.",
+      );
     }
 
     // Only if files deletion succeeded, remove DB record
     await this.prisma.share.delete({ where: { id: shareId } });
     this.logger.debug(
-      `Share removed: shareId=${shareId} deletedBy=${share.creatorId ? "owner_or_user" : (isDeleterAdmin ? "admin" : "unknown")}`
+      `Share removed: shareId=${shareId} deletedBy=${share.creatorId ? "owner_or_user" : isDeleterAdmin ? "admin" : "unknown"}`,
     );
   }
 

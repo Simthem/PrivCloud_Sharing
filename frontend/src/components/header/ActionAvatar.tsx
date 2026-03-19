@@ -1,9 +1,12 @@
-import { ActionIcon, Avatar, Box, Button, MediaQuery, Menu } from "@mantine/core";
+import {
+  Box,
+  Menu,
+} from "@mantine/core";
 import Link from "next/link";
 import { TbDoorExit, TbSettings, TbUser } from "react-icons/tb";
 import useUser from "../../hooks/user.hook";
 import authService from "../../services/auth.service";
-import { FormattedMessage, useIntl } from "react-intl";
+import { FormattedMessage } from "react-intl";
 import { useStyles } from "./Header.styles";
 
 const ActionAvatar = () => {

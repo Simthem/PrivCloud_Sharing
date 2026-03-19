@@ -18,7 +18,15 @@ import {
 import { useForm, yupResolver } from "@mantine/form";
 import { useModals } from "@mantine/modals";
 import { useEffect, useState } from "react";
-import { TbAuth2Fa, TbCopy, TbCheck, TbEye, TbEyeOff, TbKey, TbShieldLock } from "react-icons/tb";
+import {
+  TbAuth2Fa,
+  TbCopy,
+  TbCheck,
+  TbEye,
+  TbEyeOff,
+  TbKey,
+  TbShieldLock,
+} from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
 import Meta from "../../components/Meta";
@@ -43,12 +51,7 @@ import {
 } from "../../utils/crypto.util";
 
 // ─── E2E Encryption Section ───────────────────────────────────────────
-const E2EEncryptionSection = ({
-  refreshUser,
-}: {
-  refreshUser: () => void;
-}) => {
-  const t = useTranslate();
+const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
   const modals = useModals();
   const { user } = useUser();
 

@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-backend",
-  "version": "1.16.6",
+  "version": "1.16.7",
   "scripts": {
     "build": "nest build",
     "dev": "cross-env NODE_ENV=development nest start --watch",
@@ -59,6 +59,7 @@
     "yaml": "^2.7.1"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@nestjs/cli": "^11.0.6",
     "@nestjs/schematics": "^11.0.5",
     "@nestjs/testing": "^11.1.15",
@@ -87,6 +88,7 @@
     "source-map-support": "^0.5.21",
     "ts-loader": "^9.5.2",
     "tsconfig-paths": "4.2.0",
+    "typescript-eslint": "^8.57.1",
     "wait-on": "^8.0.3"
   },
   "overrides": {

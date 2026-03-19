@@ -45,7 +45,7 @@ function App({ Component, pageProps }: AppProps) {
   const systemTheme = useColorScheme(pageProps.colorScheme);
   const router = useRouter();
 
-  const [queryClient] = useState(() => new QueryClient())
+  const [queryClient] = useState(() => new QueryClient());
   const [colorScheme, setColorScheme] = useState<ColorScheme>(systemTheme);
 
   const [user, setUser] = useState<CurrentUser | null>(pageProps.user);
@@ -140,35 +140,35 @@ function App({ Component, pageProps }: AppProps) {
                   }}
                 >
                   <ModalsProvider>
-                  <UserContext.Provider
-                    value={{
-                      user,
-                      refreshUser: async () => {
-                        const user = await userService.getCurrentUser();
-                        setUser(user);
-                        return user;
-                      },
-                    }}
-                  >
-                    {excludeDefaultLayoutRoutes.includes(route) ? (
-                      <Component {...pageProps} />
-                    ) : (
-                      <>
-                        <Stack
-                          justify="space-between"
-                          sx={{ minHeight: "100vh" }}
-                        >
-                          <div>
-                            <Header />
-                            <Container>
-                              <Component {...pageProps} />
-                            </Container>
-                          </div>
-                          <Footer />
-                        </Stack>
-                      </>
-                    )}
-                  </UserContext.Provider>
+                    <UserContext.Provider
+                      value={{
+                        user,
+                        refreshUser: async () => {
+                          const user = await userService.getCurrentUser();
+                          setUser(user);
+                          return user;
+                        },
+                      }}
+                    >
+                      {excludeDefaultLayoutRoutes.includes(route) ? (
+                        <Component {...pageProps} />
+                      ) : (
+                        <>
+                          <Stack
+                            justify="space-between"
+                            sx={{ minHeight: "100vh" }}
+                          >
+                            <div>
+                              <Header />
+                              <Container>
+                                <Component {...pageProps} />
+                              </Container>
+                            </div>
+                            <Footer />
+                          </Stack>
+                        </>
+                      )}
+                    </UserContext.Provider>
                   </ModalsProvider>
                 </ConfigContext.Provider>
               </ColorSchemeProvider>

@@ -1,11 +1,11 @@
 {
   "name": "privcloud-sharing-frontend",
-  "version": "1.16.6",
+  "version": "1.16.7",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint src/",
     "format": "prettier --end-of-line=auto --write \"src/**/*.ts*\""
   },
   "dependencies": {

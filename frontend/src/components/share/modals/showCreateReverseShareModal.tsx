@@ -135,25 +135,24 @@ const Body = ({
         const masterKey = await importKeyFromBase64(masterKeyEncoded);
         wrappedKey = await wrapReverseShareKey(rsKey, masterKey);
       } catch (e) {
-        console.error("Erreur lors de la génération de la clé E2E reverse share", e);
+        console.error(
+          "Erreur lors de la génération de la clé E2E reverse share",
+          e,
+        );
         rsKeyEncoded = null;
         wrappedKey = undefined;
       }
     }
 
     shareService
-      .createReverseShare(
-        {
-          ...values,
-          shareExpiration: values.expiration_num + values.expiration_unit,
-          maxShareSize: values.maxShareSize.toString(),
-          encryptedReverseShareKey: wrappedKey,
-        }
-      )
+      .createReverseShare({
+        ...values,
+        shareExpiration: values.expiration_num + values.expiration_unit,
+        maxShareSize: values.maxShareSize.toString(),
+        encryptedReverseShareKey: wrappedKey,
+      })
       .then(({ link }) => {
-        const finalLink = rsKeyEncoded
-          ? `${link}#key=${rsKeyEncoded}`
-          : link;
+        const finalLink = rsKeyEncoded ? `${link}#key=${rsKeyEncoded}` : link;
         modals.closeAll();
         showCompletedReverseShareModal(modals, finalLink, getReverseShares);
       })

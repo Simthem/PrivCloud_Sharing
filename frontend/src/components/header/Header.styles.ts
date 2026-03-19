@@ -40,7 +40,7 @@ export const useStyles = createStyles((theme) => ({
   withIcon: {
     display: "flex",
     alignItems: "center",
-    gap: '0.3rem',
+    gap: "0.3rem",
   },
 
   link: {
@@ -66,14 +66,14 @@ export const useStyles = createStyles((theme) => ({
     },
 
     "&:active": {
-      transform: 'translateY(1px)',
+      transform: "translateY(1px)",
     },
 
     [theme.fn.smallerThan("sm")]: {
       borderRadius: 0,
       padding: theme.spacing.md,
       "&:active": {
-        transform: 'none',
+        transform: "none",
       },
     },
   },

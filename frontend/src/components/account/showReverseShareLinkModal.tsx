@@ -13,11 +13,7 @@ const showReverseShareLinkModal = (
   });
 };
 
-const ReverseShareLinkContent = ({
-  link,
-}: {
-  link: string;
-}) => {
+const ReverseShareLinkContent = ({ link }: { link: string }) => {
   return (
     <Stack align="stretch">
       <TextInput variant="filled" value={link} />

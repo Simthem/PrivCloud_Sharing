@@ -51,7 +51,9 @@ const removeEncryptionKey = async () => {
 };
 
 const verifyEncryptionKey = async (keyHash: string): Promise<boolean> => {
-  const result = (await api.post("/users/me/encryption-key/verify", { keyHash })).data;
+  const result = (
+    await api.post("/users/me/encryption-key/verify", { keyHash })
+  ).data;
   return result.valid;
 };
 

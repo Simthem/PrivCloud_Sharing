@@ -27,7 +27,13 @@ const showCompletedUploadModal = (
   });
 };
 
-const Body = ({ share, e2eKeyEncoded }: { share: CompletedShare; e2eKeyEncoded?: string | null }) => {
+const Body = ({
+  share,
+  e2eKeyEncoded,
+}: {
+  share: CompletedShare;
+  e2eKeyEncoded?: string | null;
+}) => {
   const modals = useModals();
   const router = useRouter();
   const t = useTranslate();

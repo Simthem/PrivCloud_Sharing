@@ -61,7 +61,7 @@ const getMyShares = async (): Promise<MyShare[]> => {
 
 const getStoredRecipients = async (): Promise<Array<string>> => {
   return (await api.get("shares/recipients")).data;
-}
+};
 
 const getShareToken = async (id: string, password?: string) => {
   await api.post(`/shares/${id}/token`, { password });
@@ -106,8 +106,9 @@ const downloadFileE2E = async (
     responseType: "arraybuffer",
   });
   const decrypted = await decryptFile(response.data, key);
-  const mimeType =
-    (mime.contentType(fileName) || "application/octet-stream").split(";")[0];
+  const mimeType = (
+    mime.contentType(fileName) || "application/octet-stream"
+  ).split(";")[0];
   const blob = new Blob([decrypted], { type: mimeType });
   downloadDecryptedBlob(blob, fileName);
 };
@@ -155,19 +156,17 @@ const uploadFile = async (
   ).data;
 };
 
-const createReverseShare = async (
-  reverseShare: CreateReverseShare
-) => {
-  return (
-    await api.post("reverseShares", reverseShare)
-  ).data;
+const createReverseShare = async (reverseShare: CreateReverseShare) => {
+  return (await api.post("reverseShares", reverseShare)).data;
 };
 
 const getMyReverseShares = async (): Promise<MyReverseShare[]> => {
   return (await api.get("reverseShares")).data;
 };
 
-const getReverseShare = async (reverseShareToken: string): Promise<ReverseShare> => {
+const getReverseShare = async (
+  reverseShareToken: string,
+): Promise<ReverseShare> => {
   const { data } = await api.get(`/reverseShares/${reverseShareToken}`);
   setCookie("reverse_share_token", reverseShareToken);
   return data;
@@ -199,7 +198,7 @@ export default {
   createReverseShare,
   getMyReverseShares,
   removeReverseShare,
-  getStoredRecipients
+  getStoredRecipients,
 };
 
 export { fetchDecryptedFile, downloadFileE2E };

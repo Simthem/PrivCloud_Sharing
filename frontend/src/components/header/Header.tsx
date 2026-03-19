@@ -1,8 +1,6 @@
 import {
-  Box,
   Burger,
   Container,
-  createStyles,
   Group,
   Header as MantineHeader,
   MediaQuery,

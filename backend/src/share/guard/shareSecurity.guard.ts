@@ -38,19 +38,24 @@ export class ShareSecurityGuard extends JwtGuard {
       include: { security: true, reverseShare: true },
     });
 
-    if (!share)
-      throw new NotFoundException("Share not found");
+    if (!share) throw new NotFoundException("Share not found");
 
     // Run the JWTGuard to set the user
     await super.canActivate(context);
     const user = request.user as User;
 
     // If admin access is enabled and user is admin, allow access
-    if (user?.isAdmin && this.configService.get("share.allowAdminAccessAllShares")) {
+    if (
+      user?.isAdmin &&
+      this.configService.get("share.allowAdminAccessAllShares")
+    ) {
       return true;
     }
 
-    if(moment().isAfter(share.expiration) && !moment(share.expiration).isSame(0)) {
+    if (
+      moment().isAfter(share.expiration) &&
+      !moment(share.expiration).isSame(0)
+    ) {
       throw new NotFoundException("Share not found");
     }
 

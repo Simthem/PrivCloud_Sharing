@@ -61,9 +61,9 @@ const FileList = ({
   }, [files, sort]);
 
   const copyFileLink = (file: FileMetaData) => {
-
-    const link = `${config.get("general.appUrl")}/api/shares/${share!.id
-      }/files/${file.id}`;
+    const link = `${config.get("general.appUrl")}/api/shares/${
+      share!.id
+    }/files/${file.id}`;
 
     if (window.isSecureContext) {
       clipboard.copy(link);
@@ -104,45 +104,54 @@ const FileList = ({
           {isLoading || !share
             ? skeletonRows
             : sortedFiles.map((file, index) => (
-              <tr key={index}>
-                <td>{file.name}</td>
-                <td>{file.size ? byteToHumanSizeString(parseInt(file.size)) : "-"}</td>
-                <td>
-                  <Group position="right">
-                    {shareService.doesFileSupportPreview(file.name) && (
+                <tr key={index}>
+                  <td>{file.name}</td>
+                  <td>
+                    {file.size
+                      ? byteToHumanSizeString(parseInt(file.size))
+                      : "-"}
+                  </td>
+                  <td>
+                    <Group position="right">
+                      {shareService.doesFileSupportPreview(file.name) && (
+                        <ActionIcon
+                          onClick={() =>
+                            showFilePreviewModal(share.id, file, modals, e2eKey)
+                          }
+                          size={25}
+                        >
+                          <TbEye />
+                        </ActionIcon>
+                      )}
+                      {!share.hasPassword && !share.isE2EEncrypted && (
+                        <ActionIcon
+                          size={25}
+                          onClick={() => copyFileLink(file)}
+                        >
+                          <TbLink />
+                        </ActionIcon>
+                      )}
                       <ActionIcon
-                        onClick={() =>
-                          showFilePreviewModal(share.id, file, modals, e2eKey)
-                        }
                         size={25}
+                        onClick={async () => {
+                          if (share.isE2EEncrypted && e2eKey) {
+                            await shareService.downloadFileE2E(
+                              share.id,
+                              file.id,
+                              file.name,
+                              e2eKey,
+                            );
+                          } else {
+                            await shareService.downloadFile(share.id, file.id);
+                          }
+                        }}
                       >
-                        <TbEye />
+                        <TbDownload />
                       </ActionIcon>
-                    )}
-                    {!share.hasPassword && !share.isE2EEncrypted && (
-                      <ActionIcon
-                        size={25}
-                        onClick={() => copyFileLink(file)}
-                      >
-                        <TbLink />
-                      </ActionIcon>
-                    )}
-                    <ActionIcon
-                      size={25}
-                      onClick={async () => {
-                        if (share.isE2EEncrypted && e2eKey) {
-                          await shareService.downloadFileE2E(share.id, file.id, file.name, e2eKey);
-                        } else {
-                          await shareService.downloadFile(share.id, file.id);
-                        }
-                      }}
-                    >
-                      <TbDownload />
-                    </ActionIcon>
-                  </Group>
-                </td>
-              </tr>
-            ))}
+                    </Group>
+                  </td>
+                </tr>
+              ))}
         </tbody>
       </Table>
     </Box>

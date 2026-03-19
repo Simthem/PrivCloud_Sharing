@@ -11,7 +11,7 @@ const TimespanInput = ({
 }: {
   label?: string;
   value: Timespan;
-  onChange: (timespan: Timespan) => void;
+  onChange: (_timespan: Timespan) => void;
   [key: string]: any;
 }) => {
   const [unit, setUnit] = useState(value.unit);

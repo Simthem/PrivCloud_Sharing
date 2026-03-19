@@ -25,7 +25,7 @@ const ManageShareTable = ({
   isLoading,
 }: {
   shares: MyShare[];
-  deleteShare: (share: MyShare) => void;
+  deleteShare: (_share: MyShare) => void;
   isLoading: boolean;
 }) => {
   const modals = useModals();

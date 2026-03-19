@@ -1,3 +1,26 @@
+## [1.16.7](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.6...v1.16.7) (2026-03-19)
+
+
+### Bug Fixes
+
+* **lint:** replace `next lint` with direct `eslint src/` call in frontend (Next.js 16 removed the built-in lint command)
+* **lint:** migrate backend ESLint config to flat config format (`eslint.config.mjs`) for ESLint 9 compatibility
+
+
+### Code Refactoring
+
+* **frontend:** remove unused imports across 8 components (`useIntl`, `ActionIcon`, `Avatar`, `Button`, `MediaQuery`, `Box`, `createStyles`, `TbUser`, `useMemo`, `TbWorld`, `TbWorldCancel`)
+* **frontend:** prefix unused callback parameters with `_` (`no-unused-vars`)
+* **backend:** replace all `any` types with proper alternatives (`unknown`, `Record<string, unknown>`, `LogLevel`, `string`, `never`)
+* **backend:** refactor `S3Service.getZip()` - remove async Promise executor antipattern
+* **backend:** use argument-less `catch {}` for intentionally ignored exceptions
+
+
+### Dependencies
+
+* **backend:** add `@eslint/js` ^9.28.0 and `typescript-eslint` ^8.35.1 (required for ESLint 9 flat config)
+
+
 ## [1.16.6](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.5...v1.16.6) (2026-03-18)
 
 

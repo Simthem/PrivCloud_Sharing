@@ -17,7 +17,7 @@ const AdminConfigInput = ({
   updateConfigVariable,
 }: {
   configVariable: AdminConfig;
-  updateConfigVariable: (variable: UpdateConfig) => void;
+  updateConfigVariable: (_variable: UpdateConfig) => void;
 }) => {
   const form = useForm({
     initialValues: {

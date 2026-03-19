@@ -42,7 +42,7 @@ export class S3FileService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
-  ) { }
+  ) {}
 
   async create(
     data: string,
@@ -54,11 +54,11 @@ export class S3FileService {
     if (!file.id) {
       file.id = crypto.randomUUID();
       this.logger.debug(
-        `Upload started: shareId=${shareId} fileId=${file.id} fileName="${file.name}" note="generated fileId"`
+        `Upload started: shareId=${shareId} fileId=${file.id} fileName="${file.name}" note="generated fileId"`,
       );
     } else if (!isValidUUID(file.id)) {
       this.logger.warn(
-        `Invalid fileId format on upload: shareId=${shareId} fileId="${originalFileId}"`
+        `Invalid fileId format on upload: shareId=${shareId} fileId="${originalFileId}"`,
       );
       throw new BadRequestException("Invalid file ID format");
     }
@@ -169,7 +169,7 @@ export class S3FileService {
         },
       });
       this.logger.debug(
-        `File uploaded: shareId=${shareId} fileId=${file.id} fileName="${file.name}" size=${fileSize} mimeType=${mime.contentType(file.name.split(".").pop() ?? "") || false}`
+        `File uploaded: shareId=${shareId} fileId=${file.id} fileName="${file.name}" size=${fileSize} mimeType=${mime.contentType(file.name.split(".").pop() ?? "") || false}`,
       );
     }
 
@@ -190,10 +190,11 @@ export class S3FileService {
       }),
     );
 
-    const mimeType = mime.contentType(fileId.split(".").pop()) || "application/octet-stream";
+    const mimeType =
+      mime.contentType(fileId.split(".").pop()) || "application/octet-stream";
     const size = response.ContentLength?.toString() || "0";
     this.logger.debug(
-      `File downloaded: shareId=${shareId} fileId=${fileId} fileName="${fileName}" size=${size} mimeType=${mimeType}`
+      `File downloaded: shareId=${shareId} fileId=${fileId} fileName="${fileName}" size=${size} mimeType=${mimeType}`,
     );
 
     return {
@@ -233,7 +234,7 @@ export class S3FileService {
 
     await this.prisma.file.delete({ where: { id: fileId } });
     this.logger.debug(
-      `File deleted: shareId=${shareId} fileId=${fileMetaData.id} fileName="${fileMetaData.name}" size=${fileMetaData.size}`
+      `File deleted: shareId=${shareId} fileId=${fileMetaData.id} fileName="${fileMetaData.name}" size=${fileMetaData.size}`,
     );
   }
 
@@ -290,7 +291,7 @@ export class S3FileService {
 
       // Return ContentLength which is the file size in bytes
       return headObjectResponse.ContentLength ?? 0;
-    } catch (error) {
+    } catch {
       throw new Error("Could not retrieve file size");
     }
   }
@@ -312,95 +313,83 @@ export class S3FileService {
     });
   }
 
-  getZip(shareId: string) {
-    return new Promise<Readable>(async (resolve, reject) => {
-      const s3Instance = this.getS3Instance();
-      const bucketName = this.config.get("s3.bucketName");
-      const compressionLevel = this.config.get("share.zipCompressionLevel");
+  async getZip(shareId: string): Promise<Readable> {
+    const s3Instance = this.getS3Instance();
+    const bucketName = this.config.get("s3.bucketName");
+    const compressionLevel = this.config.get("share.zipCompressionLevel");
 
-      const prefix = `${this.getS3Path()}${shareId}/`;
+    const prefix = `${this.getS3Path()}${shareId}/`;
+
+    const listResponse = await s3Instance.send(
+      new ListObjectsV2Command({
+        Bucket: bucketName,
+        Prefix: prefix,
+      }),
+    );
+
+    if (!listResponse.Contents || listResponse.Contents.length === 0) {
+      throw new NotFoundException(`No files found for share ${shareId}`);
+    }
+
+    const archive = archiver("zip", {
+      zlib: { level: parseInt(compressionLevel) },
+    });
+
+    archive.on("error", (err) => {
+      this.logger.error("Archive error", err);
+    });
+
+    const fileKeys = listResponse.Contents.filter(
+      (object) => object.Key && object.Key !== prefix,
+    ).map((object) => object.Key as string);
+
+    if (fileKeys.length === 0) {
+      throw new NotFoundException(
+        `No valid files found for share ${shareId}`,
+      );
+    }
+
+    const processNextFile = async (index: number) => {
+      if (index >= fileKeys.length) {
+        archive.finalize();
+        return;
+      }
+
+      const key = fileKeys[index];
+      const fileName = key.replace(prefix, "");
 
       try {
-        const listResponse = await s3Instance.send(
-          new ListObjectsV2Command({
+        const response = await s3Instance.send(
+          new GetObjectCommand({
             Bucket: bucketName,
-            Prefix: prefix,
+            Key: key,
           }),
         );
 
-        if (!listResponse.Contents || listResponse.Contents.length === 0) {
-          throw new NotFoundException(`No files found for share ${shareId}`);
-        }
+        if (response.Body instanceof Readable) {
+          const fileStream = response.Body;
 
-        const archive = archiver("zip", {
-          zlib: { level: parseInt(compressionLevel) },
-        });
-
-        archive.on("error", (err) => {
-          this.logger.error("Archive error", err);
-          reject(new InternalServerErrorException("Error creating ZIP file"));
-        });
-
-        const fileKeys = listResponse.Contents.filter(
-          (object) => object.Key && object.Key !== prefix,
-        ).map((object) => object.Key as string);
-
-        if (fileKeys.length === 0) {
-          throw new NotFoundException(
-            `No valid files found for share ${shareId}`,
-          );
-        }
-
-        let filesAdded = 0;
-
-        const processNextFile = async (index: number) => {
-          if (index >= fileKeys.length) {
-            archive.finalize();
-            return;
-          }
-
-          const key = fileKeys[index];
-          const fileName = key.replace(prefix, "");
-
-          try {
-            const response = await s3Instance.send(
-              new GetObjectCommand({
-                Bucket: bucketName,
-                Key: key,
-              }),
-            );
-
-            if (response.Body instanceof Readable) {
-              const fileStream = response.Body;
-
-              fileStream.on("end", () => {
-                filesAdded++;
-                processNextFile(index + 1);
-              });
-
-              fileStream.on("error", (err) => {
-                this.logger.error(`Error streaming file ${fileName}`, err);
-                processNextFile(index + 1);
-              });
-
-              archive.append(fileStream, { name: fileName });
-            } else {
-              processNextFile(index + 1);
-            }
-          } catch (error) {
-            this.logger.error(`Error processing file ${fileName}`, error);
+          fileStream.on("end", () => {
             processNextFile(index + 1);
-          }
-        };
+          });
 
-        resolve(archive);
-        processNextFile(0);
+          fileStream.on("error", (err) => {
+            this.logger.error(`Error streaming file ${fileName}`, err);
+            processNextFile(index + 1);
+          });
+
+          archive.append(fileStream, { name: fileName });
+        } else {
+          processNextFile(index + 1);
+        }
       } catch (error) {
-        this.logger.error("Error creating ZIP file", error);
-
-        reject(new InternalServerErrorException("Error creating ZIP file"));
+        this.logger.error(`Error processing file ${fileName}`, error);
+        processNextFile(index + 1);
       }
-    });
+    };
+
+    processNextFile(0);
+    return archive;
   }
 
   getS3Path(): string {
