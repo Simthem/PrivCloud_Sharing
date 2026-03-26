@@ -75,6 +75,25 @@ export class ShareService {
     } else {
       const parsedExpiration = parseRelativeDateToAbsolute(share.expiration);
       const expiresNever = moment(0).toDate() == parsedExpiration;
+
+      // Enforce stricter limits for anonymous (unauthenticated) shares
+      if (!user) {
+        const anonMax = this.config.get("share.anonymousMaxExpiration");
+        if (anonMax.value !== 0) {
+          const anonMaxDate = moment()
+            .add(anonMax.value, anonMax.unit)
+            .toDate();
+          if (expiresNever || parsedExpiration > anonMaxDate) {
+            this.logger.warn(
+              `Anonymous share expiration exceeds limit: shareId=${share.id} requested=${expiresNever ? "never" : parsedExpiration.toISOString()} max=${anonMaxDate.toISOString()}`,
+            );
+            throw new BadRequestException(
+              "Anonymous shares cannot exceed the maximum allowed expiration",
+            );
+          }
+        }
+      }
+
       const maxExpiration = this.config.get("share.maxExpiration");
       const maxExpiryDate = moment()
         .add(maxExpiration.value, maxExpiration.unit)

@@ -16,6 +16,7 @@ import {
   Share,
   ShareMetaData,
 } from "../types/share.type";
+import { isTextBasedMimeType } from "../components/share/FilePreview";
 import api from "./api.service";
 
 const list = async (): Promise<MyShare[]> => {
@@ -78,15 +79,13 @@ const doesFileSupportPreview = (fileName: string) => {
 
   if (!mimeType) return false;
 
-  const supportedMimeTypes = [
-    mimeType.startsWith("video/"),
-    mimeType.startsWith("image/"),
-    mimeType.startsWith("audio/"),
-    mimeType.startsWith("text/"),
-    mimeType == "application/pdf",
-  ];
-
-  return supportedMimeTypes.some((isSupported) => isSupported);
+  return (
+    mimeType.startsWith("video/") ||
+    mimeType.startsWith("image/") ||
+    mimeType.startsWith("audio/") ||
+    mimeType === "application/pdf" ||
+    isTextBasedMimeType(mimeType)
+  );
 };
 
 const downloadFile = async (shareId: string, fileId: string) => {

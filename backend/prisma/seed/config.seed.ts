@@ -46,6 +46,11 @@ export const configVariables = {
       defaultValue: "false",
       secret: false,
     },
+    anonymousMaxExpiration: {
+      type: "timespan",
+      defaultValue: "5 days",
+      secret: false,
+    },
     maxExpiration: {
       type: "timespan",
       defaultValue: "0 days",

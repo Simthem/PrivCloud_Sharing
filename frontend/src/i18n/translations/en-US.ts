@@ -328,7 +328,7 @@ export default {
   "upload.modal.link.error.taken": "This link is already in use",
   "upload.modal.not-signed-in": "You're not signed in",
   "upload.modal.not-signed-in-description":
-    "You will be unable to delete your share manually and view the visitor count.",
+    "You will be unable to delete your share manually and view the visitor count. Anonymous shares are automatically deleted after a limited time (files and access link included).",
 
   "upload.modal.expires.never": "never",
   "upload.modal.expires.never-long": "Permanent share",
@@ -531,6 +531,10 @@ export default {
   "admin.config.share.max-expiration": "Max expiration",
   "admin.config.share.max-expiration.description":
     "Maximum share expiration. Set to 0 to allow unlimited expiration.",
+  "admin.config.share.anonymous-max-expiration":
+    "Anonymous share max expiration",
+  "admin.config.share.anonymous-max-expiration.description":
+    "Maximum expiration for anonymous (unauthenticated) shares. Files, S3 objects and access links are automatically deleted after this period. Set to 0 to use the global max expiration instead.",
   "admin.config.share.share-id-length": "Default share ID length",
   "admin.config.share.share-id-length.description":
     "Default length for the generated ID of a share. This value is also used to generate links for reverse shares. A value below 8 is not considered secure.",

@@ -243,7 +243,7 @@ export default {
   "upload.modal.link.error.invalid": "Ne peut contenir que des lettres, des chiffres, des tirets bas et des traits d'union",
   "upload.modal.link.error.taken": "Ce lien est déjà utilisé",
   "upload.modal.not-signed-in": "Vous n'êtes pas connecté",
-  "upload.modal.not-signed-in-description": "Vous ne pourrez pas supprimer votre partage manuellement et afficher le nombre de visiteurs.",
+  "upload.modal.not-signed-in-description": "Vous ne pourrez pas supprimer votre partage manuellement et afficher le nombre de visiteurs. Les partages anonymes sont automatiquement supprimés après un délai limité (fichiers et lien d'accès inclus).",
   "upload.modal.expires.never": "jamais",
   "upload.modal.expires.never-long": "Partage permanent",
   "upload.modal.expires.error.too-long": "La date d'expiration dépasse le maximum de {max}.",
@@ -388,6 +388,10 @@ export default {
   "admin.config.share.allow-unauthenticated-shares.description": "Permet aux visiteurs de créer des partages",
   "admin.config.share.max-expiration": "Échéance",
   "admin.config.share.max-expiration.description": "Expiration du partage en heures. Réglez sur 0 pour qu'il n'expire jamais.",
+  "admin.config.share.anonymous-max-expiration":
+    "Échéance max des partages anonymes",
+  "admin.config.share.anonymous-max-expiration.description":
+    "Expiration maximale des partages anonymes (non authentifiés). Les fichiers, objets S3 et liens d'accès sont automatiquement supprimés après ce délai. Réglez sur 0 pour utiliser l'échéance globale.",
   "admin.config.share.share-id-length": "Taille de l'identifiant généré",
   "admin.config.share.share-id-length.description": "Taille par défaut de l'identifiant généré pour un partage. Cette valeur est aussi utilisée pour générer les liens des partages inverses. Une valeur inférieure à 8 n'est pas considérée sûre.",
   "admin.config.share.max-size": "Taille max",

@@ -2,6 +2,7 @@ import {
   Button,
   Center,
   Loader,
+  ScrollArea,
   Stack,
   Text,
   Title,
@@ -14,6 +15,53 @@ import React, { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { FormattedMessage } from "react-intl";
 import api from "../../services/api.service";
 import { fetchDecryptedFile } from "../../services/share.service";
+
+/**
+ * MIME types that are safe to preview as raw text / code.
+ * These are non-dangerous structured or code files with
+ * application/* MIME types (text/* is already handled).
+ */
+const TEXT_SAFE_APPLICATION_TYPES = new Set([
+  "application/json",
+  "application/ld+json",
+  "application/manifest+json",
+  "application/schema+json",
+  "application/vnd.api+json",
+  "application/xml",
+  "application/xhtml+xml",
+  "application/javascript",
+  "application/x-javascript",
+  "application/ecmascript",
+  "application/typescript",
+  "application/x-sh",
+  "application/x-shellscript",
+  "application/x-python",
+  "application/x-perl",
+  "application/x-ruby",
+  "application/x-php",
+  "application/x-httpd-php",
+  "application/sql",
+  "application/graphql",
+  "application/toml",
+  "application/x-toml",
+  "application/yaml",
+  "application/x-yaml",
+  "application/x-latex",
+  "application/x-tex",
+  "application/x-csh",
+]);
+
+/**
+ * Returns true when the given MIME type is safe (no XSS / code execution
+ * risk when rendered as plain text) and can be previewed in the browser.
+ */
+export const isTextBasedMimeType = (mimeType: string): boolean => {
+  if (mimeType.startsWith("text/")) return true;
+  if (TEXT_SAFE_APPLICATION_TYPES.has(mimeType)) return true;
+  // Structured suffixes: application/vnd.foo+json, +xml, +yaml
+  if (/^application\/.*\+(json|xml|yaml)$/.test(mimeType)) return true;
+  return false;
+};
 
 const FilePreviewContext = React.createContext<{
   shareId: string;
@@ -106,8 +154,14 @@ const FileDecider = () => {
     return <ImagePreview />;
   } else if (mimeType.startsWith("audio/")) {
     return <AudioPreview />;
-  } else if (mimeType.startsWith("text/")) {
+  } else if (
+    mimeType === "text/markdown" ||
+    mimeType === "text/plain" ||
+    mimeType === "text/x-markdown"
+  ) {
     return <TextPreview />;
+  } else if (isTextBasedMimeType(mimeType)) {
+    return <CodePreview />;
   } else {
     setIsNotSupported(true);
     return null;
@@ -238,6 +292,60 @@ const TextPreview = () => {
   };
 
   return <Markdown options={options}>{text}</Markdown>;
+};
+
+const CodePreview = () => {
+  const { shareId, fileId, e2eKey } = React.useContext(FilePreviewContext);
+  const [text, setText] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const { colorScheme } = useMantineTheme();
+
+  useEffect(() => {
+    if (e2eKey) {
+      fetchDecryptedFile(shareId, fileId, e2eKey)
+        .then((buf) => setText(new TextDecoder().decode(buf)))
+        .catch(() => setText("Preview couldn't be fetched."))
+        .finally(() => setLoading(false));
+    } else {
+      api
+        .get(`/shares/${shareId}/files/${fileId}?download=false`)
+        .then((res) => setText(res.data ?? "Preview couldn't be fetched."))
+        .finally(() => setLoading(false));
+    }
+  }, [shareId, fileId, e2eKey]);
+
+  if (loading)
+    return (
+      <Center style={{ minHeight: 200 }}>
+        <Loader />
+      </Center>
+    );
+
+  return (
+    <ScrollArea style={{ maxHeight: "70vh" }}>
+      <pre
+        style={{
+          backgroundColor:
+            colorScheme == "dark"
+              ? "rgba(30, 30, 30, 0.9)"
+              : "rgba(245, 245, 245, 0.9)",
+          color: colorScheme == "dark" ? "#d4d4d4" : "#1e1e1e",
+          padding: "1em",
+          borderRadius: "8px",
+          fontSize: "0.85em",
+          lineHeight: 1.5,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          fontFamily:
+            '"Fira Code", "Cascadia Code", "JetBrains Mono", Consolas, Monaco, monospace',
+          margin: 0,
+          overflow: "auto",
+        }}
+      >
+        <code>{text}</code>
+      </pre>
+    </ScrollArea>
+  );
 };
 
 const PdfPreview = () => {

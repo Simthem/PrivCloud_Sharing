@@ -43,6 +43,7 @@ const showCreateUploadModal = (
     enableEmailRecepients: boolean;
     enableE2EKeyEmailSharing: boolean;
     maxExpiration: Timespan;
+    anonymousMaxExpiration: Timespan;
     shareIdLength: number;
     simplified: boolean;
   },
@@ -120,6 +121,7 @@ const CreateUploadModalBody = ({
     enableEmailRecepients: boolean;
     enableE2EKeyEmailSharing: boolean;
     maxExpiration: Timespan;
+    anonymousMaxExpiration: Timespan;
     shareIdLength: number;
   };
   pastRecipients?: string[];
@@ -192,13 +194,18 @@ const CreateUploadModalBody = ({
         ) as moment.unitOfTime.DurationConstructor,
       );
 
+      // Use anonymous limit when user is not signed in, otherwise use global max
+      const effectiveMax = !options.isUserSignedIn && options.anonymousMaxExpiration.value !== 0
+        ? options.anonymousMaxExpiration
+        : options.maxExpiration;
+
       if (
-        options.maxExpiration.value != 0 &&
+        effectiveMax.value != 0 &&
         (form.values.never_expires ||
           expirationDate.isAfter(
             moment().add(
-              options.maxExpiration.value,
-              options.maxExpiration.unit,
+              effectiveMax.value,
+              effectiveMax.unit,
             ),
           ))
       ) {
@@ -206,7 +213,7 @@ const CreateUploadModalBody = ({
           "expiration_num",
           t("upload.modal.expires.error.too-long", {
             max: moment
-              .duration(options.maxExpiration.value, options.maxExpiration.unit)
+              .duration(effectiveMax.value, effectiveMax.unit)
               .humanize(),
           }),
         );
@@ -344,7 +351,7 @@ const CreateUploadModalBody = ({
                   />
                 </Col>
               </Grid>
-              {options.maxExpiration.value == 0 && (
+              {options.maxExpiration.value == 0 && options.isUserSignedIn && (
                 <Checkbox
                   label={t("upload.modal.expires.never-long")}
                   {...form.getInputProps("never_expires")}
@@ -513,6 +520,7 @@ const SimplifiedCreateUploadModalModal = ({
     enableEmailRecepients: boolean;
     enableE2EKeyEmailSharing: boolean;
     maxExpiration: Timespan;
+    anonymousMaxExpiration: Timespan;
     shareIdLength: number;
   };
 }) => {
@@ -549,11 +557,16 @@ const SimplifiedCreateUploadModalModal = ({
       return;
     }
 
+    // For anonymous users, enforce the anonymous max expiration instead of "never"
+    const expiration = !options.isUserSignedIn && options.anonymousMaxExpiration.value !== 0
+      ? `${options.anonymousMaxExpiration.value}-${options.anonymousMaxExpiration.unit}`
+      : "never";
+
     uploadCallback(
       {
         id: link,
         name: values.name,
-        expiration: "never",
+        expiration,
         recipients: [],
         description: values.description,
         security: {

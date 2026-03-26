@@ -230,6 +230,7 @@ const Upload = ({
         enableEmailRecepients: config.get("email.enableShareEmailRecipients"),
         enableE2EKeyEmailSharing: config.get("email.enableE2EKeyEmailSharing"),
         maxExpiration: config.get("share.maxExpiration"),
+        anonymousMaxExpiration: config.get("share.anonymousMaxExpiration"),
         shareIdLength: config.get("share.shareIdLength"),
         simplified,
       },

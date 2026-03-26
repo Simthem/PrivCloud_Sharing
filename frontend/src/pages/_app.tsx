@@ -42,11 +42,16 @@ import Footer from "../components/footer/Footer";
 const excludeDefaultLayoutRoutes = ["/admin/config/[category]"];
 
 function App({ Component, pageProps }: AppProps) {
+  // Use the cookie value for the initial render to avoid SSR hydration mismatch.
+  // useColorScheme uses window.matchMedia which is not available on the server,
+  // so the server always renders with the cookie value. We must match that on the client.
   const systemTheme = useColorScheme(pageProps.colorScheme);
   const router = useRouter();
 
   const [queryClient] = useState(() => new QueryClient());
-  const [colorScheme, setColorScheme] = useState<ColorScheme>(systemTheme);
+  const [colorScheme, setColorScheme] = useState<ColorScheme>(
+    pageProps.colorScheme ?? "light",
+  );
 
   const [user, setUser] = useState<CurrentUser | null>(pageProps.user);
   const [route, setRoute] = useState<string>(pageProps.route);

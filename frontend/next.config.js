@@ -1,27 +1,20 @@
 /** @type {import('next').NextConfig} */
 const { version } = require('./package.json');
 
-const withPWA = require("@ducanh2912/next-pwa").default({
-  dest: "public",
-  disable: process.env.NODE_ENV === "development",
-  reloadOnOnline: false,
-  workboxOptions: {
-    runtimeCaching: [
-      {
-        urlPattern: /^https?.*/,
-        handler: 'NetworkOnly',
-      },
-    ],
-  },
-});
+// PWA plugin disabled – @ducanh2912/next-pwa generates its precache
+// manifest via webpack, but Next.js 16 builds with Turbopack by default.
+// The stale manifest was referencing non-existent chunks (dynamic-css-manifest.json,
+// old webpack chunk hashes) causing the service-worker install to fail and
+// serving cached content from a previous build → React hydration error #418.
+//
+// A cleanup service worker (public/sw.js) purges all caches and unregisters
+// itself on the first visit after deploy.  The manifest.json in public/
+// still provides basic PWA "add to home screen" support.
 
-module.exports = withPWA({
+module.exports = {
   output: "standalone",
-  // Next.js 16 : Turbopack est activé par défaut.
-  // Le plugin @ducanh2912/next-pwa injecte une config webpack interne ;
-  // déclarer turbopack: {} évite l'erreur "webpack config without turbopack config".
   turbopack: {},
   env: {
     VERSION: version,
   },
-});
+};
