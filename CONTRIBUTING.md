@@ -70,7 +70,7 @@ PrivCloud_Sharing consists of a frontend and a backend.
 The backend is built with [NestJS 11](https://nestjs.com) and uses TypeScript.
 
 - **ORM**: Prisma 6 with SQLite
-- **Runtime**: Node 22 (Alpine in Docker)
+- **Runtime**: Node 24 (Debian Trixie slim in Docker)
 
 #### Setup
 
@@ -82,7 +82,7 @@ The backend is built with [NestJS 11](https://nestjs.com) and uses TypeScript.
 
 ### Frontend
 
-The frontend is built with [Next.js 15](https://nextjs.org) and uses TypeScript.
+The frontend is built with [Next.js 16](https://nextjs.org) and uses TypeScript.
 
 - **UI**: Mantine 6
 - **PWA**: `@ducanh2912/next-pwa`
@@ -107,10 +107,13 @@ At the moment we only have system tests for the backend. To run these tests, run
 
 The production Docker image uses a multi-stage build:
 
-1. **base** - Node 22 Alpine with Caddy, su-exec, and build tools
-2. **frontend-deps** / **frontend-builder** - Installs dependencies and builds the Next.js standalone output
-3. **backend-deps** / **backend-builder** - Installs dependencies, generates Prisma client, builds NestJS, and prunes dev dependencies
-4. **runner** - Final image with Caddy as reverse proxy (port 3000 -> frontend:3333 + backend:8080)
+1. **caddy-builder** - Compiles Caddy from source (Go Alpine) with patched modules
+2. **gosu-builder** - Compiles gosu from source (Go 1.26.1 Alpine, static binary)
+3. **base** - Node 24 Debian Bookworm slim with build tools (build stages only)
+4. **frontend-deps** / **frontend-builder** - Installs dependencies and builds the Next.js standalone output
+5. **backend-deps** / **backend-builder** - Installs dependencies, generates Prisma client, builds NestJS, and prunes dev dependencies
+6. **caddyfile-patcher** - Patches Caddyfiles (localhost-127.0.0.1) in a build-only stage
+7. **runner** - Debian Trixie (13) slim with Node.js copied from base, Caddy + gosu static binaries, aggressive hardening
 
 Proxy environment variables are **not hardcoded** in the image. If you need a proxy at build time, pass `--build-arg HTTP_PROXY=...` and `--build-arg HTTPS_PROXY=...`. At runtime, set them in `docker-compose.yaml` (see the commented examples).
 
@@ -151,7 +154,7 @@ Key files:
 All three `package-lock.json` files (backend, frontend, docs) have been audited and patched to **zero known vulnerabilities**:
 
 - **Backend**: `nodemailer` upgraded, 13 dependency overrides for transitive CVEs
-- **Frontend**: Next.js 14 -> 15 migration, `next-pwa` replaced with `@ducanh2912/next-pwa`, overrides for `minimatch`/`glob`
+- **Frontend**: Next.js 16 with `@ducanh2912/next-pwa`, overrides for `picomatch`/`minimatch`/`glob`
 - **Docs**: Docusaurus 3.5 -> 3.9, `minimatch` override
 
 ### Prisma 6 Compatibility

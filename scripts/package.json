@@ -11,5 +11,9 @@
   "devDependencies": {
     "@types/node": "^22.13.5",
     "ts-node": "^10.9.2"
+  },
+  "overrides": {
+    "diff": "^5.2.0",
+    "picomatch": ">=4.0.4"
   }
 }

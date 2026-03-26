@@ -1,3 +1,40 @@
+## [1.16.9](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.8...v1.16.9) (2026-03-26)
+
+
+### Security
+
+* **docker:** migrate runner from `node:24-slim` (Debian Bookworm 12) to `debian:trixie-slim` (Debian 13)
+  - Bookworm system packages carried ~86 CVEs (Trivy) / ~12 CVEs (Scout):
+    glibc 2.36 (CVE-2026-0861 HIGH), zlib 1.2.13 (CVE-2023-45853 CRITICAL),
+    ncurses 6.4 (CVE-2025-69720 CRITICAL), systemd 252, util-linux 2.38,
+    libpam 1.5.2 (CVE-2024-10041 MEDIUM), gpgv 2.2.40
+  - Trixie (stable since mid-2025) brings: glibc 2.40+, zlib 1.3.1+,
+    ncurses 6.5+, systemd 256+, util-linux 2.40+, libpam 1.5.3+, gnupg 2.4+
+  - Node.js binary copied from `node:24-slim` build stage (glibc backwards-compatible 2.36->2.40)
+  - `libssl3t64` (OpenSSL 3.x, renamed for time64 transition on Trixie)
+  - npm copied from build stage (patched minimatch + tar)
+* **docker:** add `caddyfile-patcher` intermediate build stage
+  - patches Caddyfiles (localhost->127.0.0.1) in a build-only stage
+  - runner no longer needs sed at runtime (defense-in-depth)
+* **docker:** build `gosu` from source with Go 1.26.1 instead of Debian apt package
+  - Debian-packaged gosu compiled with Go 1.19.8 injected 54 Go stdlib CVEs
+    (4 CRITICAL, 20 HIGH, 28 MEDIUM, 2 LOW) into the final image
+  - static binary, zero system dependencies, zero Go stdlib CVEs
+* **docker:** aggressive 2-phase runner hardening (Trixie):
+  - Phase 1 (apt purge): e2fsprogs, logsave, mount
+  - Phase 2 (dpkg --force): bash + ncurses chain, tar, util-linux stack
+    (bsdutils, util-linux, sysvinit-utils + libsystemd0/libudev1/libblkid1/
+    libmount1/libsmartcols1), perl-base, apt + gpgv + full gnutls/gcrypt/
+    tasn1/p11-kit/nettle chain, dpkg itself
+  - final cleanup: remove /var/lib/apt, /var/lib/dpkg, /etc/apt, /var/log
+* **docker:** replace curl-based HEALTHCHECK with Node.js `fetch()` API
+* **docker:** replace `su-exec` with `gosu` (Debian equivalent, drop-in replacement)
+* **docker:** replace Alpine `addgroup`/`adduser` with Debian `groupadd`/`useradd` in create-user.sh
+* **cve:** add `picomatch` >= 4.0.4 override in all package.json (fixes CVE-2026-33671 HIGH ReDoS, CVE-2026-33672 MEDIUM Prototype Pollution)
+* **docker:** patch picomatch 4.0.3 in npm bundled `tinyglobby` (stage base, tarball replacement like minimatch/tar)
+* **docker:** patch Next.js 16.x pre-compiled picomatch in `dist/compiled/` via require() proxy + post-build standalone override
+
+
 ## [1.16.8](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.7...v1.16.8) (2026-03-19)
 
 

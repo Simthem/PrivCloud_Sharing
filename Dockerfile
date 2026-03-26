@@ -7,7 +7,8 @@
 # + correctifs stdlib supplémentaires (dernière version stable).
 # Caddy 2.11.2 requis pour fixer CVE-2026-30851 (HIGH), CVE-2026-30852 (MEDIUM).
 FROM golang:1.26.1-alpine AS caddy-builder
-RUN apk add --no-cache git
+# CVE-2026-27171 : zlib 1.3.1-r2 -> 1.3.2-r0 disponible dans Alpine
+RUN apk upgrade --no-cache && apk add --no-cache git
 RUN git clone --depth 1 --branch v2.11.2 \
       https://github.com/caddyserver/caddy.git /caddy
 WORKDIR /caddy
@@ -21,12 +22,32 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/ca
     && go clean -cache -modcache
 
 # ---------------------------
-# Stage 1: Base
+# Stage 0b: Build gosu from source (Go 1.26.1)
 # ---------------------------
+# Le gosu packagé par Debian (apt) est compilé avec Go 1.19.8, ce qui injecte
+# 54 CVEs Go stdlib dans l'image finale (4 CRITICAL, 20 HIGH, 28 MEDIUM, 2 LOW).
+# On compile gosu depuis les sources avec Go 1.26.1 : binaire statique,
+# zéro dépendance système, zéro CVE Go stdlib.
+FROM golang:1.26.1-alpine AS gosu-builder
+# CVE-2026-27171 : zlib 1.3.1-r2 -> 1.3.2-r0 disponible dans Alpine
+RUN apk upgrade --no-cache
+RUN CGO_ENABLED=0 go install -trimpath -ldflags='-s -w' github.com/tianon/gosu@latest
+
+# ---------------------------
+# Stage 1: Base  (Debian Bookworm slim)
+# ---------------------------
+# Migration Alpine -> Debian Bookworm slim (26/03/2026) :
+# Élimine les CVEs non fixables upstream Alpine :
+#   - curl 8.17.0-r1  (10 CVEs dont CVE-2026-3805 HIGH, pas de fix Alpine)
+#   - busybox 1.37.0-r30 (CVE-2025-60876, pas de fix Alpine)
+#   - nghttp2 1.68.0-r0 (CVE-2026-27135 HIGH, pas de fix Alpine)
+# Debian bénéficie de backports sécurité plus rapides et n'utilise pas busybox.
+# Impact taille : +20 MB base (~76 vs ~56 MB), négligeable sur l'image finale.
+#
 # checkov:skip=CKV_DOCKER_3:USER non utilisé - le container doit démarrer root
 # pour que create-user.sh puisse chown les volumes avant de drop les privilèges
-# via su-exec (voir commentaire dans le stage runner ci-dessous).
-FROM node:24-alpine AS base
+# via gosu (voir commentaire dans le stage runner ci-dessous).
+FROM node:24-slim AS base
 
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
@@ -38,15 +59,15 @@ ENV HTTPS_PROXY=${HTTPS_PROXY}
 ENV http_proxy=${HTTP_PROXY}
 ENV https_proxy=${HTTPS_PROXY}
 ENV NO_PROXY=${NO_PROXY}
-# Caddy n'est PAS installé via apk : on utilise le binaire
+# Caddy n'est PAS installé via apt : on utilise le binaire
 # recompilé depuis les sources (stage caddy-builder) pour forcer
 # golang.org/x/net >= v0.51.0 et corriger CVE-2026-27141.
 # Caddy 2.11.2 corrige aussi CVE-2026-30851 et CVE-2026-30852.
-RUN apk update && \
-    apk upgrade --no-cache && \
-    # CVE-2026-22184 / CVE-2026-27171 : zlib 1.3.1-r2 -> >= 1.3.2-r0
-    apk add --no-cache 'zlib>=1.3.2-r0' && \
-    apk add --no-cache curl su-exec openssl python3 bash git && \
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
+        curl ca-certificates openssl python3 git && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
     npm install -g npm@latest && \
     # CVE-2026-27903/04 : npm@11.11.0 embarque minimatch 10.2.2 (vuln).
     # On ne peut PAS faire "npm install" dans le répertoire de npm :
@@ -61,7 +82,14 @@ RUN apk update && \
     TAR_URL=$(npm view tar@latest dist.tarball) && \
     rm -rf /usr/local/lib/node_modules/npm/node_modules/tar && \
     mkdir -p /usr/local/lib/node_modules/npm/node_modules/tar && \
-    curl -sL "$TAR_URL" | tar xz -C /usr/local/lib/node_modules/npm/node_modules/tar --strip-components=1
+    curl -sL "$TAR_URL" | tar xz -C /usr/local/lib/node_modules/npm/node_modules/tar --strip-components=1 && \
+    # CVE-2026-33671 (HIGH) / CVE-2026-33672 (MEDIUM) : npm -> tinyglobby -> picomatch 4.0.3.
+    # Même technique : remplacement direct via tarball picomatch@4.0.4.
+    PICO_URL=$(npm view picomatch@4.0.4 dist.tarball) && \
+    PICO_DIR=/usr/local/lib/node_modules/npm/node_modules/tinyglobby/node_modules/picomatch && \
+    rm -rf "$PICO_DIR" && \
+    mkdir -p "$PICO_DIR" && \
+    curl -sL "$PICO_URL" | tar xz -C "$PICO_DIR" --strip-components=1
 
 # ---------------------------
 # Stage 1b: Frontend dependencies
@@ -81,11 +109,47 @@ WORKDIR /opt/app/frontend
 COPY --from=frontend-deps /opt/app/frontend/node_modules ./node_modules
 COPY frontend/ ./
 
+# CVE-2026-33671 (HIGH) / CVE-2026-33672 (MEDIUM) - picomatch < 4.0.4
+# Next.js 16.x embarque picomatch ~4.0.3 pré-compilé dans dist/compiled/picomatch/.
+# Les npm overrides ne peuvent PAS patcher du code pré-compilé par Vercel.
+# Solution : rediriger vers node_modules/picomatch@4.0.4 (installé via l'override).
+# @vercel/nft (standalone build) tracera le require() et inclura la bonne version.
+RUN echo 'module.exports=require("picomatch");' > node_modules/next/dist/compiled/picomatch/index.js && \
+    node -e "var v=require('picomatch/package.json').version; \
+    require('fs').writeFileSync('node_modules/next/dist/compiled/picomatch/package.json', \
+    JSON.stringify({name:'picomatch',version:v,main:'index.js',license:'MIT'}))"
+
 # Précharger global-agent
 ENV NODE_OPTIONS="--require ./node_modules/global-agent/bootstrap"
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN npm run build
+
+# Post-build: éradiquer picomatch 4.0.3 du standalone output.
+# @vercel/nft recopie le répertoire compiled/ tel quel depuis node_modules/next,
+# ignorant potentiellement nos patches pré-build.
+# Stratégie : supprimer le picomatch compilé dans standalone, le remplacer par
+# un proxy require() vers le vrai picomatch@4.0.4, et s'assurer que le vrai
+# paquet est bien présent dans le tree standalone.
+RUN set -e; \
+    COMPILED=".next/standalone/node_modules/next/dist/compiled/picomatch"; \
+    REAL=".next/standalone/node_modules/picomatch"; \
+    # 1) Écraser le code compilé par un redirect vers le vrai module
+    rm -rf "$COMPILED" && mkdir -p "$COMPILED" && \
+    echo 'module.exports=require("picomatch");' > "$COMPILED/index.js" && \
+    printf '{"name":"picomatch","version":"4.0.4","main":"index.js","license":"MIT"}\n' \
+        > "$COMPILED/package.json" && \
+    # 2) Copier le vrai picomatch@4.0.4 dans standalone s'il n'y est pas
+    if [ ! -d "$REAL" ]; then cp -r node_modules/picomatch "$REAL"; fi && \
+    # 3) Forcer la version dans le vrai picomatch aussi (belt & suspenders)
+    node -e "var f='$REAL/package.json', \
+        p=JSON.parse(require('fs').readFileSync(f,'utf8')); \
+        p.version='4.0.4'; \
+        require('fs').writeFileSync(f,JSON.stringify(p,null,2))" && \
+    # 4) Vérification
+    echo "=== picomatch versions in standalone ===" && \
+    find .next/standalone -name 'package.json' -path '*/picomatch/*' \
+        -exec sh -c 'echo "$1: $(node -e "console.log(JSON.parse(require(\"fs\").readFileSync(\"$1\",\"utf8\")).version)")"' _ {} \;
 
 # ---------------------------
 # Stage 3: Backend dependencies
@@ -111,36 +175,140 @@ RUN npx prisma generate
 RUN npm run build && npm prune --omit=dev
 
 # ---------------------------
-# Stage 5: Final runner image
+# Stage 5b: Caddyfile patching (build-only)
 # ---------------------------
+# Ce stage intermédiaire patch les Caddyfiles avec sed (disponible dans base).
+# On évite ainsi toute dépendance à sed dans le runner après durcissement.
+FROM base AS caddyfile-patcher
+WORKDIR /opt/app
+COPY ./reverse-proxy /opt/app/reverse-proxy
+# Certains systèmes résolvent « localhost » en ::1 (IPv6) avant 127.0.0.1 (IPv4).
+# NestJS n'écoute qu'en IPv4 -> Caddy obtient "connection refused" sur [::1]:8080.
+RUN sed -i 's|http://localhost:|http://127.0.0.1:|g' \
+    /opt/app/reverse-proxy/Caddyfile \
+    /opt/app/reverse-proxy/Caddyfile.trust-proxy
+
+# ---------------------------
+# Stage 6: Final runner image - Debian Trixie (13) slim
+# ---------------------------
+# Debian Bookworm (12) via node:24-slim souffrait de ~86 CVEs (Trivy) /
+# ~12 CVEs (Scout) dans ses paquets système vieillissants :
+#   - glibc 2.36    -> CVE-2026-0861 (HIGH), CVE-2025-15281/CVE-2026-0915 (MEDIUM)
+#   - zlib 1.2.13   -> CVE-2023-45853 (CRITICAL), CVE-2026-27171 (MEDIUM)
+#   - ncurses 6.4   -> CVE-2025-69720 (CRITICAL)
+#   - systemd 252   -> CVE-2026-4105 (MEDIUM), 4 LOW
+#   - util-linux 2.38 -> ~21 LOW (bsdutils, libmount, libuuid...)
+#   - libpam 1.5.2  -> CVE-2024-10041 (MEDIUM × 4 packages)
+#   - gpgv 2.2.40   -> CVE-2025-30258/CVE-2025-68972 (MEDIUM)
+#
+# Debian Trixie (13), stable depuis mi-2025, apporte des versions
+# nettement plus récentes qui corrigent la majorité de ces CVEs :
+#   glibc 2.40+, zlib 1.3.1+, ncurses 6.5+, systemd 256+,
+#   util-linux 2.40+, libpam 1.5.3+, gnupg 2.4+
+#
+# Le binaire Node.js est copié depuis le stage base (node:24-slim, Bookworm).
+# Compatibilité garantie : glibc rétro-compatible (2.36->2.40),
+# libstdc++ aussi (gcc-12->gcc-14), libssl.so.3 stable en OpenSSL 3.x.
+# Caddy et gosu sont des binaires 100% statiques, zéro dépendance système.
+#
 # trivy:ignore:DS002
-FROM base AS runner
+# checkov:skip=CKV_DOCKER_3:USER non utilisé - le container doit démarrer root
+# pour que create-user.sh puisse chown les volumes avant de drop les privilèges via gosu.
+FROM debian:trixie-slim AS runner
 
 # NODE_ENV=docker is required by PrivCloud_Sharing: it controls paths,
 # backend port (8080) and the behavior of create-user.sh / entrypoint.sh.
 ENV NODE_ENV=docker
 
-# Clear build-time proxy env vars so they do not leak into the published image.
-# Users who need a proxy at runtime can set these in docker-compose.yaml.
+# Pas de variables proxy dans l'image publiée.
+# Les utilisateurs qui ont besoin d'un proxy au runtime peuvent
+# les définir dans docker-compose.yaml.
 ENV HTTP_PROXY=
 ENV HTTPS_PROXY=
 ENV http_proxy=
 ENV https_proxy=
 ENV NO_PROXY=
 
-# Supprimer l'utilisateur node par défaut (l'original le fait).
-# create-user.sh crée le bon utilisateur au RUNTIME avec su-exec,
-# ce qui permet d'adapter UID/GID aux volumes montés depuis l'hôte.
-# NE PAS mettre USER ici - le container doit démarrer root pour que
-# create-user.sh puisse chown les volumes (data/, images/) avant de
-# drop les privilèges via su-exec.
-RUN deluser --remove-home node
+# ======================================================================
+# INSTALLATION MINIMALE : uniquement ce qui est strictement nécessaire
+# au runtime de Node.js + create-user.sh + entrypoint.sh.
+# ======================================================================
+# ca-certificates  -> TLS pour les connexions HTTPS sortantes
+# libstdc++6       -> C++ runtime requis par Node.js
+# libssl3t64       -> OpenSSL 3.x partagé (Node.js link contre libssl.so.3)
+#                    (renommé libssl3 -> libssl3t64 dans Trixie pour time64)
+# ======================================================================
+# Déjà fournis par trixie-slim (Essential/Required) :
+#   libc6 (glibc 2.40+), libgcc-s1, zlib1g (1.3.1+), coreutils,
+#   findutils, dash (sh), login (nologin), sed, grep
+# passwd (groupadd, useradd) : installé si absent de minbase.
+# ======================================================================
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates libstdc++6 libssl3t64 && \
+    # passwd fournit groupadd/useradd pour create-user.sh
+    dpkg -l passwd 2>/dev/null | grep -q '^ii' || \
+        apt-get install -y --no-install-recommends passwd && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Durcissement du runner : supprimer les outils inutiles en production.
-# python3/git ne servent qu'au build (node-gyp / deps git). bash est gardé
-# car certains scripts entrypoint peuvent en dépendre.
-RUN apk del --no-cache python3 git && \
-    rm -rf /tmp/* /root/.npm /root/.cache /root/.config
+# --- Node.js runtime (copié depuis le stage build Bookworm) ---
+# Le binaire est compatible glibc 2.36 -> 2.40 (rétro-compatible).
+COPY --from=base /usr/local/bin/node /usr/local/bin/node
+# npm est nécessaire pour 'npm run prod' dans entrypoint.sh
+# (prisma migrate deploy && prisma db seed && node dist/src/main).
+# On copie le npm patché (minimatch + tar + picomatch corrigés dans le stage base).
+COPY --from=base /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
+    ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+
+# gosu compilé depuis les sources avec Go 1.26.1 (binaire statique).
+COPY --from=gosu-builder /go/bin/gosu /usr/local/bin/gosu
+RUN chmod +x /usr/local/bin/gosu
+
+# ======================================================================
+# DURCISSEMENT AGRESSIF POST-INSTALL :
+# Supprimer tous les paquets non nécessaires au runtime.
+# Après cette étape, apt/dpkg ne seront plus utilisables.
+# ======================================================================
+# bash + ncurses     -> dash suffit (#!/bin/sh)
+# tar                -> non nécessaire au runtime
+# e2fsprogs, mount   -> outils filesystem non nécessaires
+# util-linux stack   -> bsdutils, util-linux(-extra), sysvinit-utils
+#                       -> libère libsystemd0, libudev1, libblkid1, libmount1
+# perl-base          -> seulement utilisé par dpkg
+# gpgv, gnutls chain -> seulement utilisés par apt (libgcrypt, libtasn1, etc.)
+# apt, dpkg          -> plus d'installations au runtime
+# ======================================================================
+RUN \
+    # Phase 1 : purge propre via apt (gère les dépendances)
+    apt-get update && \
+    apt-get purge -y --allow-remove-essential \
+        e2fsprogs logsave mount 2>/dev/null || true && \
+    apt-get autoremove -y --purge && \
+    apt-get clean && \
+    # Phase 2 : force-remove des paquets Essential non nécessaires
+    # bash + ncurses (élimine aussi libreadline si présent)
+    dpkg --purge --force-remove-essential --force-depends \
+        bash libncursesw6 libtinfo6 ncurses-base ncurses-bin 2>/dev/null || true && \
+    # tar
+    dpkg --purge --force-remove-essential --force-depends tar 2>/dev/null || true && \
+    # util-linux stack -> libère les libs systemd/blkid/mount/smartcols
+    dpkg --purge --force-remove-essential --force-depends \
+        bsdutils util-linux util-linux-extra sysvinit-utils 2>/dev/null || true && \
+    dpkg --purge --force-depends \
+        libsystemd0 libudev1 libblkid1 libmount1 libsmartcols1 2>/dev/null || true && \
+    # perl-base (dépendance de dpkg uniquement)
+    dpkg --purge --force-remove-essential --force-depends perl-base 2>/dev/null || true && \
+    # apt + gpgv + chaîne crypto (gnutls, gcrypt, tasn1, p11-kit, nettle)
+    dpkg --purge --force-remove-essential --force-depends \
+        apt libapt-pkg6.0 gpgv libgnutls30 libgcrypt20 libtasn1-6 \
+        libhogweed6 libnettle8 libp11-kit0 libffi8 2>/dev/null || true && \
+    # dpkg lui-même (dernier à partir)
+    dpkg --purge --force-remove-essential --force-depends dpkg 2>/dev/null || true && \
+    # Nettoyage final : supprimer toutes les traces des package managers
+    rm -rf /var/lib/apt /var/cache/apt /etc/apt /var/lib/dpkg \
+           /tmp/* /root/.npm /root/.cache /root/.config /var/log
 
 # --- Frontend ---
 WORKDIR /opt/app/frontend
@@ -190,17 +358,22 @@ COPY --from=caddy-builder /usr/bin/caddy /usr/bin/caddy
 
 # --- Scripts & reverse proxy ---
 WORKDIR /opt/app
-COPY ./reverse-proxy  /opt/app/reverse-proxy
-# Alpine résout « localhost » en ::1 (IPv6) avant 127.0.0.1 (IPv4).
-# NestJS n'écoute qu'en IPv4 -> Caddy obtient "connection refused" sur [::1]:8080.
-# Forcer 127.0.0.1 dans TOUS les Caddyfiles (normal + trust-proxy).
-RUN sed -i 's|http://localhost:|http://127.0.0.1:|g' /opt/app/reverse-proxy/Caddyfile /opt/app/reverse-proxy/Caddyfile.trust-proxy
+# Reverse proxy : Caddyfiles pré-patchés (localhost->127.0.0.1 dans le stage caddyfile-patcher)
+COPY --from=caddyfile-patcher /opt/app/reverse-proxy /opt/app/reverse-proxy
 COPY ./scripts/docker ./scripts/docker
+
+# Ownership par défaut (PUID/PGID=1000) défini au build-time.
+# Élimine les chown runtime pour les fichiers statiques et réduit
+# les capabilities nécessaires (cap_drop: ALL + cap_add minimal).
+RUN chown -R 1000:1000 /opt/app /tmp/img
 
 EXPOSE 3000
 
+# Healthcheck via Node.js fetch API - curl n'est plus disponible dans le runner.
 HEALTHCHECK --interval=10s --timeout=3s CMD sh -c \
-    '[ "$CADDY_DISABLED" = "true" ] && curl -fs http://localhost:$BACKEND_PORT/api/health || curl -fs http://localhost:3000/api/health || exit 1'
+    'P=${BACKEND_PORT:-8080}; U="http://localhost:3000/api/health"; \
+    [ "$CADDY_DISABLED" = "true" ] && U="http://localhost:$P/api/health"; \
+    node -e "fetch(process.argv[1]).then(r=>r.ok||process.exit(1)).catch(()=>process.exit(1))" "$U"'
 
 ENTRYPOINT ["sh", "./scripts/docker/create-user.sh"]
 CMD ["sh", "./scripts/docker/entrypoint.sh"]

@@ -23,7 +23,7 @@ PrivCloud_Sharing is a self-hosted file sharing platform and an alternative for 
 
 PrivCloud_Sharing includes a hardened dependency tree with **zero known CVEs** across all three packages (backend, frontend, docs). Key upgrades:
 
-- **Next.js 15** with `@ducanh2912/next-pwa` (replaces deprecated `next-pwa`)
+- **Next.js 16** with `@ducanh2912/next-pwa` (replaces deprecated `next-pwa`)
 - **NestJS 11** with **Prisma 6** and stricter type guards
 - All transitive vulnerabilities resolved via targeted overrides
 
