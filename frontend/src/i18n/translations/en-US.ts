@@ -364,6 +364,10 @@ export default {
   "upload.modal.accordion.security.password.placeholder": "No password",
   "upload.modal.accordion.security.max-views.label": "Maximum views",
   "upload.modal.accordion.security.max-views.placeholder": "No limit",
+  "upload.modal.accordion.security.e2e-key-email.label":
+    "Share E2E decryption key via email",
+  "upload.modal.accordion.security.e2e-key-email.description":
+    "Include the decryption key in the email sent to recipients. They will be able to decrypt and preview files directly.\n⚠️ Not recommended: email is not a secure channel. It is safer to share the key fragment (#key=…) separately via an encrypted messaging app or another secure method.",
 
   // showCompletedUploadModal.tsx
   "upload.modal.completed.never-expires": "This share will never expire.",
@@ -483,6 +487,10 @@ export default {
     "Enable retrieal of past recipients",
   "admin.config.email.enable-share-email-past-recipients.description":
     "Whether to allow retrieval of past recipients in shares. Only enable this if SMTP is activated.",
+  "admin.config.email.enable-e2ekey-email-sharing":
+    "Allow E2E key sharing via email",
+  "admin.config.email.enable-e2ekey-email-sharing.description":
+    "Allow users to include the E2E decryption key in emails sent to share recipients. When enabled, a per-share toggle appears in the share creation modal.\n⚠️ This is NOT recommended: email is not a secure channel. The decryption key fragment (#key=…) should ideally be shared through a separate, more secure method (e.g. encrypted messaging, in person).",
   "admin.config.email.reply-to-email": "Reply to email",
   "admin.config.email.reply-to-email.description":
     "(Optional) The email address which should be used as the reply-to address for emails sent. If not set, the default email address will be used.",

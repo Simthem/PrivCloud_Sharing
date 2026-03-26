@@ -272,6 +272,10 @@ export default {
   "upload.modal.accordion.security.password.placeholder": "Aucun mot de passe",
   "upload.modal.accordion.security.max-views.label": "Nombre de vues maximum",
   "upload.modal.accordion.security.max-views.placeholder": "Aucune limite",
+  "upload.modal.accordion.security.e2e-key-email.label":
+    "Partager la clé de déchiffrement E2E par email",
+  "upload.modal.accordion.security.e2e-key-email.description":
+    "Inclure la clé de déchiffrement dans l'email envoyé aux destinataires. Ils pourront déchiffrer et prévisualiser les fichiers directement.\n⚠️ Non recommandé : l'email n'est pas un canal sécurisé. Il est préférable de transmettre le fragment de clé (#key=…) séparément via une messagerie chiffrée ou un autre moyen sûr.",
   // showCompletedUploadModal.tsx
   "upload.modal.completed.never-expires": "Ce partage n’expirera jamais.",
   "upload.modal.completed.expires-on": "Ce partage expirera le {expiration}.",
@@ -352,6 +356,10 @@ export default {
   "admin.config.email.enable-share-email-past-recipients": "Activer la récupération des destinataires précédents",
   "admin.config.email.enable-share-email-past-recipients.description":
     "Autoriser ou non la récupération des destinataires précédents dans les partages. N'activer cette option que si SMTP est activé.",
+  "admin.config.email.enable-e2ekey-email-sharing":
+    "Autoriser le partage de la clé E2E par email",
+  "admin.config.email.enable-e2ekey-email-sharing.description":
+    "Permettre aux utilisateurs d'inclure la clé de déchiffrement E2E dans les emails envoyés aux destinataires. Lorsqu'elle est activée, une option par partage apparaît dans la popup de création de partage.\n⚠️ Non recommandé : l'email n'est pas un canal sécurisé. Le fragment de clé (#key=…) devrait idéalement être transmis par un autre moyen plus sûr (ex : messagerie chiffrée, en personne).",
   "admin.config.email.reply-to-email": "Adresse de réponse",
   "admin.config.email.reply-to-email.description":
     "(Optionnel) L'adresse courriel qui doit être utilisée comme adresse de réponse pour les courriels envoyés. Si non définie, l'adresse courriel par défaut sera utilisée.",

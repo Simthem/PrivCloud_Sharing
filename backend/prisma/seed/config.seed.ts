@@ -112,6 +112,11 @@ export const configVariables = {
       secret: false,
       experimental: true,
     },
+    enableE2EKeyEmailSharing: {
+      type: "boolean",
+      defaultValue: "false",
+      secret: false,
+    },
     replyToEmail: {
       type: "string",
       secret: false,

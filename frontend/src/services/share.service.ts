@@ -29,8 +29,10 @@ const create = async (share: CreateShare, isReverseShare = false) => {
   return (await api.post("shares", share)).data;
 };
 
-const completeShare = async (id: string) => {
-  const response = (await api.post(`shares/${id}/complete`)).data;
+const completeShare = async (id: string, e2eKey?: string) => {
+  const response = (
+    await api.post(`shares/${id}/complete`, e2eKey ? { e2eKey } : {})
+  ).data;
   deleteCookie("reverse_share_token");
   return response;
 };

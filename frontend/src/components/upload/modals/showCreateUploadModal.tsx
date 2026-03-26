@@ -41,6 +41,7 @@ const showCreateUploadModal = (
     isReverseShare: boolean;
     allowUnauthenticatedShares: boolean;
     enableEmailRecepients: boolean;
+    enableE2EKeyEmailSharing: boolean;
     maxExpiration: Timespan;
     shareIdLength: number;
     simplified: boolean;
@@ -117,6 +118,7 @@ const CreateUploadModalBody = ({
     isReverseShare: boolean;
     allowUnauthenticatedShares: boolean;
     enableEmailRecepients: boolean;
+    enableE2EKeyEmailSharing: boolean;
     maxExpiration: Timespan;
     shareIdLength: number;
   };
@@ -169,6 +171,7 @@ const CreateUploadModalBody = ({
       expiration_num: 1,
       expiration_unit: "-days",
       never_expires: false,
+      shareE2EKeyViaEmail: false,
     },
     validate: yupResolver(validationSchema),
   });
@@ -221,6 +224,7 @@ const CreateUploadModalBody = ({
             password: values.password || undefined,
             maxViews: values.maxViews || undefined,
           },
+          shareE2EKeyViaEmail: values.shareE2EKeyViaEmail,
         },
         files,
       );
@@ -467,6 +471,21 @@ const CreateUploadModalBody = ({
                     label={t("upload.modal.accordion.security.max-views.label")}
                     {...form.getInputProps("maxViews")}
                   />
+                  {options.isUserSignedIn &&
+                    options.enableEmailRecepients &&
+                    options.enableE2EKeyEmailSharing && (
+                      <Checkbox
+                        label={t(
+                          "upload.modal.accordion.security.e2e-key-email.label",
+                        )}
+                        description={t(
+                          "upload.modal.accordion.security.e2e-key-email.description",
+                        )}
+                        {...form.getInputProps("shareE2EKeyViaEmail", {
+                          type: "checkbox",
+                        })}
+                      />
+                    )}
                 </Stack>
               </Accordion.Panel>
             </Accordion.Item>
@@ -492,6 +511,7 @@ const SimplifiedCreateUploadModalModal = ({
     isReverseShare: boolean;
     allowUnauthenticatedShares: boolean;
     enableEmailRecepients: boolean;
+    enableE2EKeyEmailSharing: boolean;
     maxExpiration: Timespan;
     shareIdLength: number;
   };

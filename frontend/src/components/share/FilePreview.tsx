@@ -243,17 +243,29 @@ const TextPreview = () => {
 const PdfPreview = () => {
   const { shareId, fileId, e2eKey, setIsNotSupported } =
     React.useContext(FilePreviewContext);
+  const { blobUrl, loading } = useDecryptedBlobUrl("application/pdf");
 
-  useEffect(() => {
-    if (e2eKey) {
-      // PDF preview not supported for E2E encrypted files (browser needs direct URL)
-      setIsNotSupported(true);
-    } else if (typeof window !== "undefined") {
-      window.location.href = `/api/shares/${shareId}/files/${fileId}?download=false`;
-    }
-  }, [shareId, fileId, e2eKey, setIsNotSupported]);
+  if (e2eKey && loading)
+    return (
+      <Center style={{ minHeight: 200 }}>
+        <Loader />
+      </Center>
+    );
 
-  return null;
+  const src =
+    e2eKey && blobUrl
+      ? blobUrl
+      : `/api/shares/${shareId}/files/${fileId}?download=false`;
+
+  return (
+    <iframe
+      src={src}
+      title="PDF preview"
+      width="100%"
+      style={{ minHeight: "70vh", border: "none" }}
+      onError={() => setIsNotSupported(true)}
+    />
+  );
 };
 
 const UnSupportedFile = () => {

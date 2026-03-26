@@ -39,6 +39,7 @@ export type CreateShare = {
   expiration: string;
   security: ShareSecurity;
   isE2EEncrypted?: boolean;
+  shareE2EKeyViaEmail?: boolean;
 };
 
 export type CreateReverseShare = {
