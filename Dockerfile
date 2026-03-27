@@ -14,8 +14,10 @@ RUN git clone --depth 1 --branch v2.11.2 \
 WORKDIR /caddy
 # Forcer la mise à jour des dépendances vulnérables
 # CVE-2026-33186 (CVSS 9.1, CRITICAL) : google.golang.org/grpc < 1.79.3
+# GHSA-q4r8-xm5f-56gw (CRITICAL) : github.com/smallstep/certificates v0.30.0-rc3 -> 0.30.0
 RUN go get golang.org/x/net@latest \
     && go get google.golang.org/grpc@v1.79.3 \
+    && go get github.com/smallstep/certificates@v0.30.0 \
     && go mod tidy
 # Compiler Caddy (binaire statique, stripped, sans symboles de debug)
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/caddy \
@@ -89,7 +91,15 @@ RUN apt-get update && \
     PICO_DIR=/usr/local/lib/node_modules/npm/node_modules/tinyglobby/node_modules/picomatch && \
     rm -rf "$PICO_DIR" && \
     mkdir -p "$PICO_DIR" && \
-    curl -sL "$PICO_URL" | tar xz -C "$PICO_DIR" --strip-components=1
+    curl -sL "$PICO_URL" | tar xz -C "$PICO_DIR" --strip-components=1 && \
+    # CVE-2026-33750 (MEDIUM) : npm -> minimatch -> brace-expansion 5.0.4 (ReDoS).
+    # Le minimatch@latest patchée ci-dessus tire brace-expansion@^5.0.2 qui résout
+    # en 5.0.4 (vulnérable). On force 5.0.5 via tarball.
+    BRACE_URL=$(npm view brace-expansion@5.0.5 dist.tarball) && \
+    BRACE_DIR=/usr/local/lib/node_modules/npm/node_modules/brace-expansion && \
+    rm -rf "$BRACE_DIR" && \
+    mkdir -p "$BRACE_DIR" && \
+    curl -sL "$BRACE_URL" | tar xz -C "$BRACE_DIR" --strip-components=1
 
 # ---------------------------
 # Stage 1b: Frontend dependencies
@@ -212,8 +222,11 @@ RUN sed -i 's|http://localhost:|http://127.0.0.1:|g' \
 # Caddy et gosu sont des binaires 100% statiques, zéro dépendance système.
 #
 # trivy:ignore:DS002
+# kics-scan ignore-line - USER omis intentionnellement : create-user.sh crée l'user au runtime
+# puis drop_privileges via gosu
 # checkov:skip=CKV_DOCKER_3:USER non utilisé - le container doit démarrer root
 # pour que create-user.sh puisse chown les volumes avant de drop les privilèges via gosu.
+# cis-skip:CIS-4.1 - USER omis : create-user.sh + gosu drop les privilèges au runtime
 FROM debian:trixie-slim AS runner
 
 # NODE_ENV=docker is required by PrivCloud_Sharing: it controls paths,
@@ -291,19 +304,34 @@ RUN \
     # bash + ncurses (élimine aussi libreadline si présent)
     dpkg --purge --force-remove-essential --force-depends \
         bash libncursesw6 libtinfo6 ncurses-base ncurses-bin 2>/dev/null || true && \
+    # bash t64 variants (Trixie transition)
+    dpkg --purge --force-remove-essential --force-depends \
+        libncursesw6t64 libtinfo6t64 2>/dev/null || true && \
     # tar
     dpkg --purge --force-remove-essential --force-depends tar 2>/dev/null || true && \
     # util-linux stack -> libère les libs systemd/blkid/mount/smartcols
     dpkg --purge --force-remove-essential --force-depends \
         bsdutils util-linux util-linux-extra sysvinit-utils 2>/dev/null || true && \
+    # Try both traditional and t64 naming (Trixie transition)
     dpkg --purge --force-depends \
-        libsystemd0 libudev1 libblkid1 libmount1 libsmartcols1 2>/dev/null || true && \
+        libsystemd0 libsystemd0t64 \
+        libudev1 libudev1t64 \
+        libblkid1 libblkid1t64 \
+        libmount1 libmount1t64 \
+        libsmartcols1 libsmartcols1t64 2>/dev/null || true && \
     # perl-base (dépendance de dpkg uniquement)
     dpkg --purge --force-remove-essential --force-depends perl-base 2>/dev/null || true && \
     # apt + gpgv + chaîne crypto (gnutls, gcrypt, tasn1, p11-kit, nettle)
+    # Include both traditional and t64 names
     dpkg --purge --force-remove-essential --force-depends \
-        apt libapt-pkg6.0 gpgv libgnutls30 libgcrypt20 libtasn1-6 \
-        libhogweed6 libnettle8 libp11-kit0 libffi8 2>/dev/null || true && \
+        apt libapt-pkg6.0 libapt-pkg6.0t64 \
+        gpgv libgnutls30 libgnutls30t64 \
+        libgcrypt20 libgcrypt20t64 \
+        libtasn1-6 libtasn1-6t64 \
+        libhogweed6 libhogweed6t64 \
+        libnettle8 libnettle8t64 \
+        libp11-kit0 libp11-kit0t64 \
+        libffi8 libffi8t64 2>/dev/null || true && \
     # dpkg lui-même (dernier à partir)
     dpkg --purge --force-remove-essential --force-depends dpkg 2>/dev/null || true && \
     # Nettoyage final : supprimer toutes les traces des package managers
@@ -356,9 +384,8 @@ COPY --from=backend-deps /opt/app/backend/node_modules/type-fest ./node_modules/
 # --- Caddy : recompilé depuis les sources (golang.org/x/net patché) ---
 COPY --from=caddy-builder /usr/bin/caddy /usr/bin/caddy
 
-# --- Scripts & reverse proxy ---
+# --- Reverse proxy : Caddyfiles pré-patchés (sed dans le stage caddyfile-patcher) ---
 WORKDIR /opt/app
-# Reverse proxy : Caddyfiles pré-patchés (localhost->127.0.0.1 dans le stage caddyfile-patcher)
 COPY --from=caddyfile-patcher /opt/app/reverse-proxy /opt/app/reverse-proxy
 COPY ./scripts/docker ./scripts/docker
 
