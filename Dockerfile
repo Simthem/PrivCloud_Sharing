@@ -171,7 +171,7 @@ WORKDIR /opt/app/backend
 COPY backend/package.json backend/package-lock.json ./
 
 RUN npm install && \
-    npm install global-agent@3.0.0 --no-save
+    npm install global-agent@3.0.0 undici@latest --no-save
 
 # ---------------------------
 # Stage 4: Backend build
@@ -340,6 +340,7 @@ RUN \
     rm -rf /var/lib/apt /var/cache/apt /etc/apt /var/lib/dpkg \
            /tmp/* /root/.npm /root/.cache /root/.config /var/log
 
+
 # --- Frontend ---
 WORKDIR /opt/app/frontend
 # Next.js standalone : le contenu de .next/standalone va à la racine de frontend/
@@ -362,6 +363,10 @@ COPY --from=backend-builder /opt/app/backend/tsconfig.json ./
 # global-agent : indispensable au RUNTIME (Node.js n'honore pas HTTP_PROXY nativement).
 # Installé via --no-save dans backend-deps, supprimé par le prune -> on le copie.
 COPY --from=backend-deps /opt/app/backend/node_modules/global-agent ./node_modules/global-agent
+# undici : requis pour configurer le ProxyAgent du fetch() natif Node.js.
+# Installé via --no-save dans backend-deps (même pattern que global-agent).
+# Sans ce paquet, les appels OAuth OIDC (Google) ignorent le proxy HTTP -> timeout.
+COPY --from=backend-deps /opt/app/backend/node_modules/undici ./node_modules/undici
 COPY --from=backend-deps /opt/app/backend/node_modules/boolean ./node_modules/boolean
 COPY --from=backend-deps /opt/app/backend/node_modules/roarr ./node_modules/roarr
 COPY --from=backend-deps /opt/app/backend/node_modules/serialize-error ./node_modules/serialize-error
@@ -394,7 +399,12 @@ COPY ./scripts/docker ./scripts/docker
 # Ownership par défaut (PUID/PGID=1000) défini au build-time.
 # Élimine les chown runtime pour les fichiers statiques et réduit
 # les capabilities nécessaires (cap_drop: ALL + cap_add minimal).
-RUN chown -R 1000:1000 /opt/app /tmp/img
+# Caddy home dirs: prevent cosmetic "permission denied" errors at startup
+# (config autosave + TLS storage lock). Created with build-time UID since
+# the runtime user does not exist yet.
+RUN mkdir -p /home/privcloud-sharing/.config/caddy \
+             /home/privcloud-sharing/.local/share/caddy && \
+    chown -R 1000:1000 /opt/app /tmp/img /home/privcloud-sharing
 
 EXPOSE 3000
 
