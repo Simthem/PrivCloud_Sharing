@@ -1,3 +1,38 @@
+## [1.17.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.9...v1.17.1) (2026-03-28)
+
+
+### Bug Fixes
+
+* **oauth:** resolve OAuth callback hang caused by `cache.del()` blocking on unreachable Redis
+  - cache-manager with dual-store (in-memory + Redis via @keyv/redis) blocks indefinitely
+    when Redis is slow or unreachable; nonce has 5-min TTL so deletion is non-critical
+  - switch `cache.del()` to fire-and-forget with `.catch()` guard
+* **oauth:** wrap entire OAuth callback handler in try-catch safety net
+  - with `@Res({ passthrough: true })`, unhandled non-HttpException errors left the
+    connection open and the browser spinning; the handler now always sends an HTTP response
+* **oauth:** route native `fetch()` through HTTP proxy via undici `setGlobalDispatcher()`
+  - Node.js 24 uses an internal undici-based `fetch()` that ignores `HTTP_PROXY` and
+    the `global-agent` http/https patches; OIDC discovery and token exchange calls
+    bypassed Squid and timed out behind restrictive network setups
+  - install undici at build time (`--no-save`, same pattern as `global-agent`) and
+    call `setGlobalDispatcher(new ProxyAgent(proxyUrl))` at bootstrap
+* **docker:** create Caddy home directories at build time with UID 1000
+  - suppresses cosmetic "permission denied" errors on startup (config autosave,
+    TLS storage lock); runtime user does not exist at build time
+
+
+### Security
+
+* **cve:** add npm override `path-to-regexp` >= 8.4.0 (CVE-2026-4926 HIGH, CVE-2026-4923 HIGH)
+* **deps:** upgrade `@nestjs/core` to ^11.1.17 (latest patch)
+* **cookies:** add `secure` attribute to OAuth state cookie (`oauth_{provider}_state`)
+  - cookie was set with `sameSite: "lax"` but without `secure`, allowing transmission
+    over plain HTTP when `secureCookies` config is enabled
+* **cookies:** add `secure` attribute to share token cookie (`share_{id}_token`)
+  - cookie was set with `httpOnly: true` but without `secure`, same issue as above
+  - inject `ConfigService` into `ShareController` to read `general.secureCookies`
+
+
 ## [1.16.9](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.8...v1.16.9) (2026-03-26)
 
 

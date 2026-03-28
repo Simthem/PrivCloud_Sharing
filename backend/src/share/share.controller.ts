@@ -30,11 +30,13 @@ import { ShareSecurityGuard } from "./guard/shareSecurity.guard";
 import { ShareTokenSecurity } from "./guard/shareTokenSecurity.guard";
 import { ShareService } from "./share.service";
 import { CompletedShareDTO } from "./dto/shareComplete.dto";
+import { ConfigService } from "../config/config.service";
 @Controller("shares")
 export class ShareController {
   constructor(
     private shareService: ShareService,
     private jwtService: JwtService,
+    private config: ConfigService,
   ) {}
 
   @Get("all")
@@ -145,9 +147,11 @@ export class ShareController {
     const token = await this.shareService.getShareToken(id, body.password);
 
     this.clearShareTokenCookies(request, response);
+    const isSecure = this.config.get("general.secureCookies");
     response.cookie(`share_${id}_token`, token, {
       path: "/",
       httpOnly: true,
+      secure: isSecure,
     });
 
     return { token };
