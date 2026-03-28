@@ -14,7 +14,7 @@ export default {
   "home.title": "منصة لمشاركة الملفات <h>باستضافة ذاتية</h>.",
   "home.description": "أحقًا تريد تسليم ملفاتك الشخصية لطرف ثالث مثل WeTransfer؟",
   "home.bullet.a.name": "استضافة ذاتية",
-  "home.bullet.a.description": "قم باستضافة Pingvin Share على جهازك.",
+  "home.bullet.a.description": "قم باستضافة PrivCloud_Sharing على جهازك.",
   "home.bullet.b.name": "الخصوصية",
   "home.bullet.b.description": "Your files are yours and will never be accessed by third parties.",
   "home.bullet.c.name": "ليس هناك أية قيود على حجم الملفات",
@@ -308,7 +308,7 @@ export default {
   // END /privacy
   // /admin/config
   "admin.config.config-file-warning.title": "Configuration file present",
-  "admin.config.config-file-warning.description": "As you have a configured Pingvin Share with a configuration file, you can't change the configuration through the UI.",
+  "admin.config.config-file-warning.description": "As you have a configured PrivCloud_Sharing with a configuration file, you can't change the configuration through the UI.",
   "admin.config.title": "الإعدادات",
   "admin.config.category.general": "عام",
   "admin.config.category.share": "مشاركة",
@@ -334,7 +334,7 @@ export default {
   "admin.config.cache.max-items": "Maximum items",
   "admin.config.cache.max-items.description": "Maximum number of items inside the cache.",
   "admin.config.cache.redis-enabled": "Redis enabled",
-  "admin.config.cache.redis-enabled.description": "Normally Pingvin Share caches information in memory. If you run multiple instances of Pingvin Share, you need to enable Redis caching to share the cache between the instances.",
+  "admin.config.cache.redis-enabled.description": "Normally PrivCloud_Sharing caches information in memory. If you run multiple instances of PrivCloud_Sharing, you need to enable Redis caching to share the cache between the instances.",
   "admin.config.cache.redis-url": "Redis URL",
   "admin.config.cache.redis-url.description": "Url to connect to the Redis instance used for caching.",
   "admin.config.email.enable-share-email-recipients": "Enable email recipient sharing",

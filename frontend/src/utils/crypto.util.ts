@@ -1,5 +1,5 @@
 /**
- * E2E Encryption utilities for OttrBox
+ * E2E Encryption utilities for PrivCloud_Sharing
  *
  * Algorithme : AES-256-GCM (Web Crypto API)
  * Format fichier chiffré : [IV 12 octets][ciphertext + tag 16 octets]
@@ -80,7 +80,10 @@ export async function decryptFile(
 
 // ─── Stockage de la clé utilisateur (localStorage) ───────────────
 
-const USER_KEY_STORAGE = "ottrbox_e2e_user_key";
+const USER_KEY_STORAGE = "privcloud_e2e_user_key";
+
+// Legacy key for backward compatibility with existing browser storage
+const LEGACY_USER_KEY_STORAGE = "ottrbox_e2e_user_key";
 
 export function storeUserKey(encodedKey: string): void {
   try {
@@ -94,7 +97,9 @@ export function storeUserKey(encodedKey: string): void {
 
 export function getUserKey(): string | null {
   try {
-    return localStorage.getItem(USER_KEY_STORAGE);
+    // Try new key first, fall back to legacy
+    return localStorage.getItem(USER_KEY_STORAGE)
+      ?? localStorage.getItem(LEGACY_USER_KEY_STORAGE);
   } catch {
     return null;
   }
@@ -103,6 +108,7 @@ export function getUserKey(): string | null {
 export function removeUserKey(): void {
   try {
     localStorage.removeItem(USER_KEY_STORAGE);
+    localStorage.removeItem(LEGACY_USER_KEY_STORAGE);
   } catch {
     // silencieux
   }
@@ -136,7 +142,10 @@ export async function computeKeyHashFromEncoded(
 
 // ─── Stockage local des clés par share (legacy / migration) ──────
 
-const STORAGE_PREFIX = "ottrbox_e2e_key_";
+const STORAGE_PREFIX = "privcloud_e2e_key_";
+
+// Legacy prefix for backward compatibility
+const LEGACY_STORAGE_PREFIX = "ottrbox_e2e_key_";
 
 export function storeShareKey(shareId: string, encodedKey: string): void {
   try {
@@ -148,7 +157,8 @@ export function storeShareKey(shareId: string, encodedKey: string): void {
 
 export function getStoredShareKey(shareId: string): string | null {
   try {
-    return localStorage.getItem(`${STORAGE_PREFIX}${shareId}`);
+    return localStorage.getItem(`${STORAGE_PREFIX}${shareId}`)
+      ?? localStorage.getItem(`${LEGACY_STORAGE_PREFIX}${shareId}`);
   } catch {
     return null;
   }
@@ -157,6 +167,7 @@ export function getStoredShareKey(shareId: string): string | null {
 export function removeStoredShareKey(shareId: string): void {
   try {
     localStorage.removeItem(`${STORAGE_PREFIX}${shareId}`);
+    localStorage.removeItem(`${LEGACY_STORAGE_PREFIX}${shareId}`);
   } catch {
     // silencieux
   }

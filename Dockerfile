@@ -164,6 +164,8 @@ RUN set -e; \
 # ---------------------------
 # Stage 3: Backend dependencies
 # ---------------------------
+# CVE-2026-4926 / CVE-2026-4923 : path-to-regexp 8.3.0 (via @nestjs/core, @nestjs/platform-express,
+# @nestjs/swagger, router). Corrige par npm override "path-to-regexp": ">=8.4.0" dans package.json.
 FROM base AS backend-deps
 WORKDIR /opt/app/backend
 COPY backend/package.json backend/package-lock.json ./

@@ -15,18 +15,18 @@ export default {
   // END navbar
 
   // /
-  "home.title": "A <h>self-hosted</h> file sharing platform.",
+  "home.title": "A <h>secure, self-hosted</h> file sharing platform.",
 
   "home.description":
-    "Do you really want to give your personal files in the hand of third parties like WeTransfer?",
+    "Take back control of your data. PrivCloud_Sharing is built by THEMIOT Informatique - cybersecurity experts who believe your files belong to you.",
   "home.bullet.a.name": "Self-Hosted",
-  "home.bullet.a.description": "Host Pingvin Share on your own machine.",
-  "home.bullet.b.name": "Privacy",
+  "home.bullet.a.description": "Deploy PrivCloud_Sharing on your own infrastructure in minutes.",
+  "home.bullet.b.name": "Privacy & Encryption",
   "home.bullet.b.description":
-    "Your files are yours and will never be accessed by third parties.",
-  "home.bullet.c.name": "No annoying file size limit",
+    "End-to-end AES-256 encryption ensures nobody - not even us - can access your files.",
+  "home.bullet.c.name": "No file size limit",
   "home.bullet.c.description":
-    "Upload files as big as you want. Only your hard drive will be your limit.",
+    "Upload files as large as you need. Your storage is your only limit.",
 
   "home.button.start": "Get started",
   "home.button.source": "Source code",
@@ -437,7 +437,7 @@ export default {
   // /admin/config
   "admin.config.config-file-warning.title": "Configuration file present",
   "admin.config.config-file-warning.description":
-    "As you have a configured Pingvin Share with a configuration file, you can't change the configuration through the UI.",
+    "As you have a configured PrivCloud_Sharing with a configuration file, you can't change the configuration through the UI.",
 
   "admin.config.title": "Configuration",
   "admin.config.category.general": "General",
@@ -451,7 +451,7 @@ export default {
   "admin.config.general.app-name.description": "Name of the application",
   "admin.config.general.app-url": "App URL",
   "admin.config.general.app-url.description":
-    "On which URL Pingvin Share is available",
+    "On which URL PrivCloud_Sharing is available",
   "admin.config.general.secure-cookies": "Secure cookies",
   "admin.config.general.secure-cookies.description":
     "Whether to set the secure flag on cookies. If enabled, the site will not function when accessed over HTTP.",
@@ -474,7 +474,7 @@ export default {
     "Maximum number of items inside the cache.",
   "admin.config.cache.redis-enabled": "Redis enabled",
   "admin.config.cache.redis-enabled.description":
-    "Normally Pingvin Share caches information in memory. If you run multiple instances of Pingvin Share, you need to enable Redis caching to share the cache between the instances.",
+    "Normally PrivCloud_Sharing caches information in memory. If you run multiple instances of PrivCloud_Sharing, you need to enable Redis caching to share the cache between the instances.",
   "admin.config.cache.redis-url": "Redis URL",
   "admin.config.cache.redis-url.description":
     "Url to connect to the Redis instance used for caching.",

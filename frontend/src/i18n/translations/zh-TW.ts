@@ -308,7 +308,7 @@ export default {
   // END /privacy
   // /admin/config
   "admin.config.config-file-warning.title": "Configuration file present",
-  "admin.config.config-file-warning.description": "As you have a configured Pingvin Share with a configuration file, you can't change the configuration through the UI.",
+  "admin.config.config-file-warning.description": "As you have a configured PrivCloud_Sharing with a configuration file, you can't change the configuration through the UI.",
   "admin.config.title": "配置管理",
   "admin.config.category.general": "通用",
   "admin.config.category.share": "分享",
@@ -319,7 +319,7 @@ export default {
   "admin.config.general.app-name": "App 名稱",
   "admin.config.general.app-name.description": "這個 App 的名稱",
   "admin.config.general.app-url": "App 網址",
-  "admin.config.general.app-url.description": "Pingvin Share 的 URL",
+  "admin.config.general.app-url.description": "PrivCloud_Sharing 的 URL",
   "admin.config.general.secure-cookies": "安全 cookies",
   "admin.config.general.secure-cookies.description": "是否要在cookies中設定安全標籤。若啟用，這個網站將無法透過HTTP瀏覽。",
   "admin.config.general.show-home-page": "顯示首頁",
@@ -334,7 +334,7 @@ export default {
   "admin.config.cache.max-items": "Maximum items",
   "admin.config.cache.max-items.description": "Maximum number of items inside the cache.",
   "admin.config.cache.redis-enabled": "Redis enabled",
-  "admin.config.cache.redis-enabled.description": "Normally Pingvin Share caches information in memory. If you run multiple instances of Pingvin Share, you need to enable Redis caching to share the cache between the instances.",
+  "admin.config.cache.redis-enabled.description": "Normally PrivCloud_Sharing caches information in memory. If you run multiple instances of PrivCloud_Sharing, you need to enable Redis caching to share the cache between the instances.",
   "admin.config.cache.redis-url": "Redis URL",
   "admin.config.cache.redis-url.description": "Url to connect to the Redis instance used for caching.",
   "admin.config.email.enable-share-email-recipients": "啟用電子郵件收件者分享",
