@@ -235,14 +235,18 @@ FROM debian:trixie-slim AS runner
 # backend port (8080) and the behavior of create-user.sh / entrypoint.sh.
 ENV NODE_ENV=docker
 
-# Pas de variables proxy dans l'image publiée.
-# Les utilisateurs qui ont besoin d'un proxy au runtime peuvent
-# les définir dans docker-compose.yaml.
-ENV HTTP_PROXY=
-ENV HTTPS_PROXY=
-ENV http_proxy=
-ENV https_proxy=
-ENV NO_PROXY=
+# Proxy build-args : nécessaires pour apt-get (le stage runner est indépendant
+# de base, il n'hérite pas de ses ARG). Positionnés comme ENV temporairement
+# pour que apt-get puisse télécharger via Squid, puis écrasés à vide après
+# l'installation pour ne pas les embarquer dans l'image publiée.
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY=localhost,127.0.0.1,::1
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV http_proxy=${HTTP_PROXY}
+ENV https_proxy=${HTTPS_PROXY}
+ENV NO_PROXY=${NO_PROXY}
 
 # ======================================================================
 # INSTALLATION MINIMALE : uniquement ce qui est strictement nécessaire
@@ -266,6 +270,15 @@ RUN apt-get update && \
     dpkg -l passwd 2>/dev/null | grep -q '^ii' || \
         apt-get install -y --no-install-recommends passwd && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Pas de variables proxy dans l'image publiée.
+# Les utilisateurs qui ont besoin d'un proxy au runtime peuvent
+# les définir dans docker-compose.yaml.
+ENV HTTP_PROXY=
+ENV HTTPS_PROXY=
+ENV http_proxy=
+ENV https_proxy=
+ENV NO_PROXY=
 
 # --- Node.js runtime (copié depuis le stage build Bookworm) ---
 # Le binaire est compatible glibc 2.36 -> 2.40 (rétro-compatible).
