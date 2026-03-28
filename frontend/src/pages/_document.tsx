@@ -8,7 +8,7 @@ export default class _Document extends Document {
 
   render() {
     return (
-      <Html>
+      <Html suppressHydrationWarning>
         <Head>
           <link rel="manifest" href="/manifest.json" />
           <link rel="icon" type="image/x-icon" href="/img/favicon.ico" />

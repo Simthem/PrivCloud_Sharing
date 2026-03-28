@@ -3,15 +3,15 @@ import type { Config } from "@docusaurus/types";
 import { themes as prismThemes } from "prism-react-renderer";
 
 const config: Config = {
-  title: "Pingvin Share",
+  title: "PrivCloud_Sharing",
   tagline:
-    "Pingvin Share is self-hosted file sharing platform and an alternative for WeTransfer.",
+    "PrivCloud_Sharing is self-hosted file sharing platform and an alternative for WeTransfer.",
   favicon: "img/pingvinshare.svg",
 
-  url: "https://stonith404.github.io",
-  baseUrl: "/pingvin-share/",
-  organizationName: "stonith404",
-  projectName: "pingvin-share",
+  url: "https://simthem.github.io",
+  baseUrl: "/privcloud-sharing/",
+  organizationName: "Simthem",
+  projectName: "PrivCloud_Sharing",
 
   onBrokenLinks: "warn",
   onBrokenMarkdownLinks: "warn",
@@ -28,7 +28,7 @@ const config: Config = {
         docs: {
           routeBasePath: "/",
           sidebarPath: "./sidebars.ts",
-          editUrl: "https://github.com/stonith404/pingvin-share/edit/main/docs",
+          editUrl: "https://github.com/Simthem/PrivCloud_Sharing/edit/main/docs",
         },
         blog: false,
       } satisfies Preset.Options,
@@ -41,14 +41,14 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: "Pingvin Share",
+      title: "PrivCloud_Sharing",
       logo: {
-        alt: "Pingvin Share Logo",
+        alt: "PrivCloud_Sharing Logo",
         src: "img/pingvinshare.svg",
       },
       items: [
         {
-          href: "https://github.com/stonith404/pingvin-share",
+          href: "https://github.com/Simthem/PrivCloud_Sharing",
           label: "GitHub",
           position: "right",
         },

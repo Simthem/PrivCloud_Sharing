@@ -12,7 +12,7 @@ export const configVariables = {
   general: {
     appName: {
       type: "string",
-      defaultValue: "OttrBox",
+      defaultValue: "PrivCloud_Sharing",
       secret: false,
     },
     appUrl: {
@@ -44,6 +44,11 @@ export const configVariables = {
     allowUnauthenticatedShares: {
       type: "boolean",
       defaultValue: "false",
+      secret: false,
+    },
+    anonymousMaxExpiration: {
+      type: "timespan",
+      defaultValue: "5 days",
       secret: false,
     },
     maxExpiration: {
@@ -88,7 +93,7 @@ export const configVariables = {
     },
     "redis-url": {
       type: "string",
-      defaultValue: "redis://ottrbox-redis:6379",
+      defaultValue: "redis://privcloud-redis:6379",
       secret: true,
     },
     ttl: {
@@ -112,6 +117,11 @@ export const configVariables = {
       secret: false,
       experimental: true,
     },
+    enableE2EKeyEmailSharing: {
+      type: "boolean",
+      defaultValue: "false",
+      secret: false,
+    },
     replyToEmail: {
       type: "string",
       secret: false,
@@ -127,7 +137,7 @@ export const configVariables = {
     shareRecipientsMessage: {
       type: "text",
       defaultValue:
-        "Hey!\n\n{creator} ({creatorEmail}) shared some files with you. You can view or download the files with this link: {shareUrl}\n\nThe share will expire {expires}.\n\nNote: {desc}\n\nShared securely with OttrBox 🦦",
+        "Hey!\n\n{creator} ({creatorEmail}) shared some files with you. You can view or download the files with this link: {shareUrl}\n\nThe share will expire {expires}.\n\nNote: {desc}\n\nShared securely with PrivCloud_Sharing 🔒",
     },
     reverseShareSubject: {
       type: "string",
@@ -136,25 +146,25 @@ export const configVariables = {
     reverseShareMessage: {
       type: "text",
       defaultValue:
-        "Hey!\n\nA share was just created with your reverse share link: {shareUrl}\n\nShared securely with OttrBox 🦦",
+        "Hey!\n\nA share was just created with your reverse share link: {shareUrl}\n\nShared securely with PrivCloud_Sharing 🔒",
     },
     resetPasswordSubject: {
       type: "string",
-      defaultValue: "OttrBox password reset",
+      defaultValue: "PrivCloud_Sharing password reset",
     },
     resetPasswordMessage: {
       type: "text",
       defaultValue:
-        "Hey!\n\nYou requested a password reset. Click this link to reset your password: {url}\nThe link expires in an hour.\n\nOttrBox 🦦",
+        "Hey!\n\nYou requested a password reset. Click this link to reset your password: {url}\nThe link expires in an hour.\n\nPrivCloud_Sharing 🔒",
     },
     inviteSubject: {
       type: "string",
-      defaultValue: "OttrBox invite",
+      defaultValue: "PrivCloud_Sharing invite",
     },
     inviteMessage: {
       type: "text",
       defaultValue:
-        'Hey!\n\nYou were invited to OttrBox. Click this link to accept the invite: {url}\n\nYou can use the email "{email}" and the password "{password}" to sign in.\n\nOttrBox 🦦',
+        'Hey!\n\nYou were invited to PrivCloud_Sharing. Click this link to accept the invite: {url}\n\nYou can use the email "{email}" and the password "{password}" to sign in.\n\nPrivCloud_Sharing 🔒',
     },
   },
   smtp: {
@@ -395,12 +405,41 @@ export const configVariables = {
   legal: {
     enabled: {
       type: "boolean",
-      defaultValue: "false",
+      defaultValue: "true",
       secret: false,
     },
     imprintText: {
       type: "text",
-      defaultValue: "",
+      defaultValue:
+        "# Legal Notice\n\n" +
+        "## Service Operator\n\n" +
+        "**THEMIOT Informatique**  \n" +
+        "Cybersecurity Expert - System & Network Architecture  \n" +
+        "Contact: [simon.themiot@informatiquenevers.fr](mailto:simon.themiot@informatiquenevers.fr)  \n" +
+        "Website: [www.stprive.net](https://www.stprive.net)\n\n" +
+        "## About This Service\n\n" +
+        "PrivCloud\\_Sharing is a self-hosted file sharing platform operated by THEMIOT Informatique. " +
+        "This instance is hosted on a dedicated infrastructure located in the European Union, " +
+        "managed in compliance with EU data protection regulations.\n\n" +
+        "## Intellectual Property\n\n" +
+        "PrivCloud\\_Sharing is an open-source project released under the BSD 2-Clause license. " +
+        "The source code is available at [github.com/Simthem/PrivCloud\\_Sharing](https://github.com/Simthem/PrivCloud_Sharing). " +
+        "The PrivCloud brand and associated logos are the property of THEMIOT Informatique.\n\n" +
+        "## Hosting Provider\n\n" +
+        "GENIUSWEER SAS  \n" +
+        "78 Avenue des Champs-Élysées, Bureau 562, 75008 Paris, France  \n" +
+        "[holycloud.fr](https://holycloud.fr)\n\n" +
+        "## Applicable Law\n\n" +
+        "This service is governed by the laws of France and the European Union. " +
+        "Any disputes shall be submitted to the competent courts of Nevers, France.\n\n" +
+        "## Regulatory Compliance\n\n" +
+        "This infrastructure is operated in accordance with:\n\n" +
+        "- **GDPR** (EU 2016/679) - General Data Protection Regulation\n" +
+        "- **NIS2** (EU 2022/2555) - Network and Information Security Directive\n" +
+        "- **ISO 27001:2022** - Information Security Management (best practices)\n\n" +
+        "## Contact\n\n" +
+        "For any legal inquiry or to exercise your data protection rights, please contact: " +
+        "[simon.themiot@informatiquenevers.fr](mailto:simon.themiot@informatiquenevers.fr)",
       secret: false,
     },
     imprintUrl: {
@@ -410,7 +449,61 @@ export const configVariables = {
     },
     privacyPolicyText: {
       type: "text",
-      defaultValue: "",
+      defaultValue:
+        "# Privacy Policy\n\n" +
+        "*Last updated: March 2026*\n\n" +
+        "## 1. Data Controller\n\n" +
+        "**THEMIOT Informatique**  \n" +
+        "Contact: [simon.themiot@informatiquenevers.fr](mailto:simon.themiot@informatiquenevers.fr)  \n" +
+        "Website: [www.stprive.net](https://www.stprive.net)\n\n" +
+        "## 2. Data We Collect\n\n" +
+        "When you use PrivCloud\\_Sharing, we may collect:\n\n" +
+        "| Data | Purpose | Retention |\n" +
+        "|---|---|---|\n" +
+        "| Email address | Account creation, notifications | Until account deletion |\n" +
+        "| Username | Authentication, display | Until account deletion |\n" +
+        "| IP address | Security logs, abuse prevention | 90 days |\n" +
+        "| Uploaded files | File sharing (core service) | Until share expiration or manual deletion |\n" +
+        "| Browser user-agent | Security monitoring | 90 days |\n\n" +
+        "## 3. How We Use Your Data\n\n" +
+        "Your data is processed exclusively to provide the file sharing service. We do **not**:\n\n" +
+        "- Sell or share your data with third parties\n" +
+        "- Use your data for advertising or profiling\n" +
+        "- Transfer your data outside the European Union\n" +
+        "- Access the content of your shared files\n\n" +
+        "When end-to-end encryption (E2E) is enabled, the encryption key exists only in the share URL fragment and is **never** transmitted to the server. " +
+        "We have zero knowledge of the file contents.\n\n" +
+        "## 4. Legal Basis (GDPR Art. 6)\n\n" +
+        "- **Consent** (Art. 6(1)(a)): Account creation\n" +
+        "- **Contract performance** (Art. 6(1)(b)): Providing the file sharing service\n" +
+        "- **Legitimate interest** (Art. 6(1)(f)): Security monitoring, abuse prevention\n\n" +
+        "## 5. Data Security\n\n" +
+        "We implement industry-standard security measures including:\n\n" +
+        "- TLS 1.3 encryption for all connections\n" +
+        "- AES-256-GCM end-to-end encryption (optional, per share)\n" +
+        "- Hardened infrastructure (CIS benchmarks, regular vulnerability scanning)\n" +
+        "- Intrusion detection and monitoring (Wazuh, Zabbix)\n" +
+        "- Automated backups with Restic (encrypted, off-site)\n" +
+        "- Compliance with NIS2 (EU 2022/2555) and ISO 27001:2022 best practices\n\n" +
+        "## 6. Your Rights (GDPR Art. 15-22)\n\n" +
+        "You have the right to:\n\n" +
+        "- **Access** your personal data\n" +
+        "- **Rectify** inaccurate data\n" +
+        "- **Erase** your data (\"right to be forgotten\")\n" +
+        "- **Restrict** processing\n" +
+        "- **Data portability** (receive your data in a structured format)\n" +
+        "- **Object** to processing\n" +
+        "- **Lodge a complaint** with the French DPA (CNIL): [www.cnil.fr](https://www.cnil.fr)\n\n" +
+        "To exercise your rights, contact: [simon.themiot@informatiquenevers.fr](mailto:simon.themiot@informatiquenevers.fr)\n\n" +
+        "## 7. Cookies\n\n" +
+        "PrivCloud\\_Sharing uses only **strictly necessary cookies** for authentication and session management. " +
+        "No tracking cookies, analytics, or third-party cookies are used.\n\n" +
+        "## 8. Data Breach Notification\n\n" +
+        "In the event of a personal data breach, we will notify the CNIL within 72 hours " +
+        "and affected users without undue delay, as required by GDPR Art. 33-34.\n\n" +
+        "## 9. Changes to This Policy\n\n" +
+        "We may update this privacy policy from time to time. The latest version is always " +
+        "available on this page with the \"Last updated\" date.",
       secret: false,
     },
     privacyPolicyUrl: {

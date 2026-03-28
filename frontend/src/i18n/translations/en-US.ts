@@ -15,18 +15,18 @@ export default {
   // END navbar
 
   // /
-  "home.title": "A <h>self-hosted</h> file sharing platform.",
+  "home.title": "A <h>secure, self-hosted</h> file sharing platform.",
 
   "home.description":
-    "Do you really want to give your personal files in the hand of third parties like WeTransfer?",
+    "Take back control of your data. PrivCloud_Sharing is built by THEMIOT Informatique - cybersecurity experts who believe your files belong to you.",
   "home.bullet.a.name": "Self-Hosted",
-  "home.bullet.a.description": "Host Pingvin Share on your own machine.",
-  "home.bullet.b.name": "Privacy",
+  "home.bullet.a.description": "Deploy PrivCloud_Sharing on your own infrastructure in minutes.",
+  "home.bullet.b.name": "Privacy & Encryption",
   "home.bullet.b.description":
-    "Your files are yours and will never be accessed by third parties.",
-  "home.bullet.c.name": "No annoying file size limit",
+    "End-to-end AES-256 encryption ensures nobody - not even us - can access your files.",
+  "home.bullet.c.name": "No file size limit",
   "home.bullet.c.description":
-    "Upload files as big as you want. Only your hard drive will be your limit.",
+    "Upload files as large as you need. Your storage is your only limit.",
 
   "home.button.start": "Get started",
   "home.button.source": "Source code",
@@ -328,7 +328,7 @@ export default {
   "upload.modal.link.error.taken": "This link is already in use",
   "upload.modal.not-signed-in": "You're not signed in",
   "upload.modal.not-signed-in-description":
-    "You will be unable to delete your share manually and view the visitor count.",
+    "You will be unable to delete your share manually and view the visitor count. Anonymous shares are automatically deleted after a limited time (files and access link included).",
 
   "upload.modal.expires.never": "never",
   "upload.modal.expires.never-long": "Permanent share",
@@ -364,6 +364,10 @@ export default {
   "upload.modal.accordion.security.password.placeholder": "No password",
   "upload.modal.accordion.security.max-views.label": "Maximum views",
   "upload.modal.accordion.security.max-views.placeholder": "No limit",
+  "upload.modal.accordion.security.e2e-key-email.label":
+    "Share E2E decryption key via email",
+  "upload.modal.accordion.security.e2e-key-email.description":
+    "Include the decryption key in the email sent to recipients. They will be able to decrypt and preview files directly.\n⚠️ Not recommended: email is not a secure channel. It is safer to share the key fragment (#key=…) separately via an encrypted messaging app or another secure method.",
 
   // showCompletedUploadModal.tsx
   "upload.modal.completed.never-expires": "This share will never expire.",
@@ -433,7 +437,7 @@ export default {
   // /admin/config
   "admin.config.config-file-warning.title": "Configuration file present",
   "admin.config.config-file-warning.description":
-    "As you have a configured Pingvin Share with a configuration file, you can't change the configuration through the UI.",
+    "As you have a configured PrivCloud_Sharing with a configuration file, you can't change the configuration through the UI.",
 
   "admin.config.title": "Configuration",
   "admin.config.category.general": "General",
@@ -447,7 +451,7 @@ export default {
   "admin.config.general.app-name.description": "Name of the application",
   "admin.config.general.app-url": "App URL",
   "admin.config.general.app-url.description":
-    "On which URL Pingvin Share is available",
+    "On which URL PrivCloud_Sharing is available",
   "admin.config.general.secure-cookies": "Secure cookies",
   "admin.config.general.secure-cookies.description":
     "Whether to set the secure flag on cookies. If enabled, the site will not function when accessed over HTTP.",
@@ -470,7 +474,7 @@ export default {
     "Maximum number of items inside the cache.",
   "admin.config.cache.redis-enabled": "Redis enabled",
   "admin.config.cache.redis-enabled.description":
-    "Normally Pingvin Share caches information in memory. If you run multiple instances of Pingvin Share, you need to enable Redis caching to share the cache between the instances.",
+    "Normally PrivCloud_Sharing caches information in memory. If you run multiple instances of PrivCloud_Sharing, you need to enable Redis caching to share the cache between the instances.",
   "admin.config.cache.redis-url": "Redis URL",
   "admin.config.cache.redis-url.description":
     "Url to connect to the Redis instance used for caching.",
@@ -483,6 +487,10 @@ export default {
     "Enable retrieal of past recipients",
   "admin.config.email.enable-share-email-past-recipients.description":
     "Whether to allow retrieval of past recipients in shares. Only enable this if SMTP is activated.",
+  "admin.config.email.enable-e2ekey-email-sharing":
+    "Allow E2E key sharing via email",
+  "admin.config.email.enable-e2ekey-email-sharing.description":
+    "Allow users to include the E2E decryption key in emails sent to share recipients. When enabled, a per-share toggle appears in the share creation modal.\n⚠️ This is NOT recommended: email is not a secure channel. The decryption key fragment (#key=…) should ideally be shared through a separate, more secure method (e.g. encrypted messaging, in person).",
   "admin.config.email.reply-to-email": "Reply to email",
   "admin.config.email.reply-to-email.description":
     "(Optional) The email address which should be used as the reply-to address for emails sent. If not set, the default email address will be used.",
@@ -523,6 +531,10 @@ export default {
   "admin.config.share.max-expiration": "Max expiration",
   "admin.config.share.max-expiration.description":
     "Maximum share expiration. Set to 0 to allow unlimited expiration.",
+  "admin.config.share.anonymous-max-expiration":
+    "Anonymous share max expiration",
+  "admin.config.share.anonymous-max-expiration.description":
+    "Maximum expiration for anonymous (unauthenticated) shares. Files, S3 objects and access links are automatically deleted after this period. Set to 0 to use the global max expiration instead.",
   "admin.config.share.share-id-length": "Default share ID length",
   "admin.config.share.share-id-length.description":
     "Default length for the generated ID of a share. This value is also used to generate links for reverse shares. A value below 8 is not considered secure.",

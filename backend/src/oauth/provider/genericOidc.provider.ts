@@ -84,20 +84,32 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
   async getToken(query: OAuthCallbackDto): Promise<OAuthToken<OidcToken>> {
     const configuration = await this.getConfiguration();
     const endpoint = configuration.token_endpoint;
+    const redirectUri = this.getRedirectUri();
+
+    const body = new URLSearchParams({
+      client_id: this.config.get(`oauth.${this.name}-clientId`),
+      client_secret: this.config.get(`oauth.${this.name}-clientSecret`),
+      grant_type: "authorization_code",
+      code: query.code,
+      redirect_uri: redirectUri,
+    }).toString();
+
     const res = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({
-        client_id: this.config.get(`oauth.${this.name}-clientId`),
-        client_secret: this.config.get(`oauth.${this.name}-clientSecret`),
-        grant_type: "authorization_code",
-        code: query.code,
-        redirect_uri: this.getRedirectUri(),
-      }).toString(),
+      body,
     });
+
     const token = (await res.json()) as OidcToken;
+
+    if ((token as any).error) {
+      this.logger.error(
+        `Token exchange failed: ${JSON.stringify(token, undefined, 2)}`,
+      );
+    }
+
     return {
       accessToken: token.access_token,
       expiresIn: token.expires_in,
@@ -129,14 +141,17 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
 
     const key = `oauth-${this.name}-nonce-${query.state}`;
     const nonce = await this.cache.get(key);
-    await this.cache.del(key);
+    // Fire-and-forget: do NOT await cache.del — it can hang if Redis is unreachable
+    this.cache.del(key).catch((err) =>
+      this.logger.warn(`cache.del(${key}) failed: ${err?.message}`),
+    );
+
     if (nonce !== idTokenData.nonce) {
       this.logger.error(
         `Invalid nonce. Expected ${nonce}, but got ${idTokenData.nonce}`,
       );
       throw new ErrorPageException("invalid_token");
     }
-
     const username = claim
       ? idTokenData[claim]
       : idTokenData.preferred_username ||

@@ -21,7 +21,7 @@ const Intro = () => {
             <Logo height={80} width={80} />
           </Center>
           <Center>
-            <Title order={2}>Welcome to OttrBox</Title>
+            <Title order={2}>Welcome to PrivCloud Sharing</Title>
           </Center>
           <Text>
             If you enjoy PrivCloud_Sharing please ⭐️ it on{" "}
@@ -37,14 +37,14 @@ const Intro = () => {
             </Anchor>{" "}
             if you want to support my work.
           </Text>
-          <Text>Enough talked, have fun with OttrBox!</Text>
+          <Text>Enough talked, have fun with PrivCloud Sharing!</Text>
           <Text mt="lg">How to you want to continue?</Text>
           <Stack>
             <Button href="/admin/config/general" component={Link}>
               Customize configuration
             </Button>
             <Button href="/" component={Link} variant="light">
-              Explore OttrBox
+              Explore PrivCloud Sharing
             </Button>
           </Stack>
         </Stack>

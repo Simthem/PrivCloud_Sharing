@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Inject,
+  Logger,
   Param,
   Post,
   Query,
@@ -27,6 +28,8 @@ import { OAuthExceptionFilter } from "./filter/oauthException.filter";
 
 @Controller("oauth")
 export class OAuthController {
+  private readonly logger = new Logger("OAuthController");
+
   constructor(
     private authService: AuthService,
     private oauthService: OAuthService,
@@ -68,35 +71,48 @@ export class OAuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const oauthToken = await this.providers[provider].getToken(query);
-    const user = await this.providers[provider].getUserInfo(oauthToken, query);
-    const id = await this.authService.getIdOfCurrentUser(request);
+    try {
+      const oauthToken = await this.providers[provider].getToken(query);
+      const user = await this.providers[provider].getUserInfo(oauthToken, query);
+      const id = await this.authService.getIdOfCurrentUser(request);
 
-    if (id) {
-      await this.oauthService.link(
-        id,
-        provider,
-        user.providerId,
-        user.providerUsername,
-      );
-      response.redirect(this.config.get("general.appUrl") + "/account");
-    } else {
-      const token: {
-        accessToken?: string;
-        refreshToken?: string;
-        loginToken?: string;
-      } = await this.oauthService.signIn(user, request.ip);
-      if (token.accessToken) {
-        this.authService.addTokensToResponse(
-          response,
-          token.refreshToken,
-          token.accessToken,
+      if (id) {
+        await this.oauthService.link(
+          id,
+          provider,
+          user.providerId,
+          user.providerUsername,
         );
-        response.redirect(this.config.get("general.appUrl"));
+        response.redirect(this.config.get("general.appUrl") + "/account");
       } else {
-        response.redirect(
-          this.config.get("general.appUrl") + `/auth/totp/${token.loginToken}`,
-        );
+        const token: {
+          accessToken?: string;
+          refreshToken?: string;
+          loginToken?: string;
+        } = await this.oauthService.signIn(user, request.ip);
+        if (token.accessToken) {
+          this.authService.addTokensToResponse(
+            response,
+            token.refreshToken,
+            token.accessToken,
+          );
+          response.redirect(this.config.get("general.appUrl"));
+        } else {
+          response.redirect(
+            this.config.get("general.appUrl") + `/auth/totp/${token.loginToken}`,
+          );
+        }
+      }
+    } catch (error) {
+      this.logger.error(`OAuth callback error: ${error?.message || error}`);
+      // Re-throw HttpException / ErrorPageException so NestJS filters handle them
+      if (error instanceof Error && (error as any).status) {
+        throw error;
+      }
+      // For non-HTTP errors, ensure a response is still sent
+      if (!response.headersSent) {
+        const appUrl = this.config.get("general.appUrl");
+        response.redirect(`${appUrl}/error?error=default&redirect=/auth/signIn`);
       }
     }
   }

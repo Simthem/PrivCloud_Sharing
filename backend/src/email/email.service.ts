@@ -59,11 +59,13 @@ export class EmailService {
     creator?: User,
     description?: string,
     expiration?: Date,
+    e2eKeyFragment?: string,
   ) {
     if (!this.config.get("email.enableShareEmailRecipients"))
       throw new InternalServerErrorException("Email service disabled");
 
-    const shareUrl = `${this.config.get("general.appUrl")}/s/${shareId}`;
+    const baseUrl = `${this.config.get("general.appUrl")}/s/${shareId}`;
+    const shareUrl = e2eKeyFragment ? `${baseUrl}#key=${e2eKeyFragment}` : baseUrl;
 
     await this.sendMail(
       recipientEmail,
@@ -78,8 +80,8 @@ export class EmailService {
         .replaceAll(
           "{expires}",
           moment(expiration).unix() != 0
-            ? moment(expiration).fromNow()
-            : "in: never",
+            ? moment(expiration).format("DD.MM.YYYY HH:mm")
+            : "never",
         ),
     );
   }

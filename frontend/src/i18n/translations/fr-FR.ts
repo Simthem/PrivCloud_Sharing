@@ -11,10 +11,10 @@ export default {
   "navbar.avatar.signout": "Se déconnecter",
   // END navbar
   // /
-  "home.title": "Une plateforme de partage de fichiers <h>autohébergée</h>.",
+  "home.title": "Une plateforme de partage de fichiers <h>auto-hébergée</h>.",
   "home.description": "Voulez-vous vraiment remettre vos fichiers personnels dans les mains de tiers comme WeTransfer ?",
   "home.bullet.a.name": "Auto-hébergé",
-  "home.bullet.a.description": "Hébergez Pingvin Share sur votre propre machine.",
+  "home.bullet.a.description": "Hébergez PrivCloud_Sharing sur votre propre machine.",
   "home.bullet.b.name": "Confidentialité",
   "home.bullet.b.description": "Vos fichiers sont les vôtres et ne seront jamais consultés par des tiers.",
   "home.bullet.c.name": "Aucune rébarbative limite de taille",
@@ -243,7 +243,7 @@ export default {
   "upload.modal.link.error.invalid": "Ne peut contenir que des lettres, des chiffres, des tirets bas et des traits d'union",
   "upload.modal.link.error.taken": "Ce lien est déjà utilisé",
   "upload.modal.not-signed-in": "Vous n'êtes pas connecté",
-  "upload.modal.not-signed-in-description": "Vous ne pourrez pas supprimer votre partage manuellement et afficher le nombre de visiteurs.",
+  "upload.modal.not-signed-in-description": "Vous ne pourrez pas supprimer votre partage manuellement et afficher le nombre de visiteurs. Les partages anonymes sont automatiquement supprimés après un délai limité (fichiers et lien d'accès inclus).",
   "upload.modal.expires.never": "jamais",
   "upload.modal.expires.never-long": "Partage permanent",
   "upload.modal.expires.error.too-long": "La date d'expiration dépasse le maximum de {max}.",
@@ -272,6 +272,10 @@ export default {
   "upload.modal.accordion.security.password.placeholder": "Aucun mot de passe",
   "upload.modal.accordion.security.max-views.label": "Nombre de vues maximum",
   "upload.modal.accordion.security.max-views.placeholder": "Aucune limite",
+  "upload.modal.accordion.security.e2e-key-email.label":
+    "Partager la clé de déchiffrement E2E par email",
+  "upload.modal.accordion.security.e2e-key-email.description":
+    "Inclure la clé de déchiffrement dans l'email envoyé aux destinataires. Ils pourront déchiffrer et prévisualiser les fichiers directement.\n⚠️ Non recommandé : l'email n'est pas un canal sécurisé. Il est préférable de transmettre le fragment de clé (#key=…) séparément via une messagerie chiffrée ou un autre moyen sûr.",
   // showCompletedUploadModal.tsx
   "upload.modal.completed.never-expires": "Ce partage n’expirera jamais.",
   "upload.modal.completed.expires-on": "Ce partage expirera le {expiration}.",
@@ -318,7 +322,7 @@ export default {
   // END /privacy
   // /admin/config
   "admin.config.config-file-warning.title": "Fichier de configuration présent",
-  "admin.config.config-file-warning.description": "Puisque vous avez configuré Pingvin Share avec un fichier de configuration, vous ne pouvez pas modifier la configuration via l'interface utilisateur.",
+  "admin.config.config-file-warning.description": "Puisque vous avez configuré PrivCloud_Sharing avec un fichier de configuration, vous ne pouvez pas modifier la configuration via l'interface utilisateur.",
   "admin.config.title": "Paramètres",
   "admin.config.category.general": "Général",
   "admin.config.category.share": "Partage",
@@ -344,7 +348,7 @@ export default {
   "admin.config.cache.max-items": "Maximum d'éléments",
   "admin.config.cache.max-items.description": "Nombre maximum d'éléments conservés en cache.",
   "admin.config.cache.redis-enabled": "Redis activé",
-  "admin.config.cache.redis-enabled.description": "Usuellement, Pingvin Share conserve les informations en mémoire vive. Si vous exécutez plusieurs instances de Pingvin Share, vous devez activer la mise en cache Redis pour partager le cache entre ces instances.",
+  "admin.config.cache.redis-enabled.description": "Usuellement, PrivCloud_Sharing conserve les informations en mémoire vive. Si vous exécutez plusieurs instances de PrivCloud_Sharing, vous devez activer la mise en cache Redis pour partager le cache entre ces instances.",
   "admin.config.cache.redis-url": "URL de Redis",
   "admin.config.cache.redis-url.description": "URL de connexion à l’instance de Redis pour servir de cache.",
   "admin.config.email.enable-share-email-recipients": "Activer le partage par courriel",
@@ -352,6 +356,10 @@ export default {
   "admin.config.email.enable-share-email-past-recipients": "Activer la récupération des destinataires précédents",
   "admin.config.email.enable-share-email-past-recipients.description":
     "Autoriser ou non la récupération des destinataires précédents dans les partages. N'activer cette option que si SMTP est activé.",
+  "admin.config.email.enable-e2ekey-email-sharing":
+    "Autoriser le partage de la clé E2E par email",
+  "admin.config.email.enable-e2ekey-email-sharing.description":
+    "Permettre aux utilisateurs d'inclure la clé de déchiffrement E2E dans les emails envoyés aux destinataires. Lorsqu'elle est activée, une option par partage apparaît dans la popup de création de partage.\n⚠️ Non recommandé : l'email n'est pas un canal sécurisé. Le fragment de clé (#key=…) devrait idéalement être transmis par un autre moyen plus sûr (ex : messagerie chiffrée, en personne).",
   "admin.config.email.reply-to-email": "Adresse de réponse",
   "admin.config.email.reply-to-email.description":
     "(Optionnel) L'adresse courriel qui doit être utilisée comme adresse de réponse pour les courriels envoyés. Si non définie, l'adresse courriel par défaut sera utilisée.",
@@ -380,6 +388,10 @@ export default {
   "admin.config.share.allow-unauthenticated-shares.description": "Permet aux visiteurs de créer des partages",
   "admin.config.share.max-expiration": "Échéance",
   "admin.config.share.max-expiration.description": "Expiration du partage en heures. Réglez sur 0 pour qu'il n'expire jamais.",
+  "admin.config.share.anonymous-max-expiration":
+    "Échéance max des partages anonymes",
+  "admin.config.share.anonymous-max-expiration.description":
+    "Expiration maximale des partages anonymes (non authentifiés). Les fichiers, objets S3 et liens d'accès sont automatiquement supprimés après ce délai. Réglez sur 0 pour utiliser l'échéance globale.",
   "admin.config.share.share-id-length": "Taille de l'identifiant généré",
   "admin.config.share.share-id-length.description": "Taille par défaut de l'identifiant généré pour un partage. Cette valeur est aussi utilisée pour générer les liens des partages inverses. Une valeur inférieure à 8 n'est pas considérée sûre.",
   "admin.config.share.max-size": "Taille max",

@@ -14,8 +14,10 @@ RUN git clone --depth 1 --branch v2.11.2 \
 WORKDIR /caddy
 # Forcer la mise à jour des dépendances vulnérables
 # CVE-2026-33186 (CVSS 9.1, CRITICAL) : google.golang.org/grpc < 1.79.3
+# GHSA-q4r8-xm5f-56gw (CRITICAL) : github.com/smallstep/certificates v0.30.0-rc3 -> 0.30.0
 RUN go get golang.org/x/net@latest \
     && go get google.golang.org/grpc@v1.79.3 \
+    && go get github.com/smallstep/certificates@v0.30.0 \
     && go mod tidy
 # Compiler Caddy (binaire statique, stripped, sans symboles de debug)
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/caddy \
@@ -89,7 +91,15 @@ RUN apt-get update && \
     PICO_DIR=/usr/local/lib/node_modules/npm/node_modules/tinyglobby/node_modules/picomatch && \
     rm -rf "$PICO_DIR" && \
     mkdir -p "$PICO_DIR" && \
-    curl -sL "$PICO_URL" | tar xz -C "$PICO_DIR" --strip-components=1
+    curl -sL "$PICO_URL" | tar xz -C "$PICO_DIR" --strip-components=1 && \
+    # CVE-2026-33750 (MEDIUM) : npm -> minimatch -> brace-expansion 5.0.4 (ReDoS).
+    # Le minimatch@latest patchée ci-dessus tire brace-expansion@^5.0.2 qui résout
+    # en 5.0.4 (vulnérable). On force 5.0.5 via tarball.
+    BRACE_URL=$(npm view brace-expansion@5.0.5 dist.tarball) && \
+    BRACE_DIR=/usr/local/lib/node_modules/npm/node_modules/brace-expansion && \
+    rm -rf "$BRACE_DIR" && \
+    mkdir -p "$BRACE_DIR" && \
+    curl -sL "$BRACE_URL" | tar xz -C "$BRACE_DIR" --strip-components=1
 
 # ---------------------------
 # Stage 1b: Frontend dependencies
@@ -154,12 +164,14 @@ RUN set -e; \
 # ---------------------------
 # Stage 3: Backend dependencies
 # ---------------------------
+# CVE-2026-4926 / CVE-2026-4923 : path-to-regexp 8.3.0 (via @nestjs/core, @nestjs/platform-express,
+# @nestjs/swagger, router). Corrige par npm override "path-to-regexp": ">=8.4.0" dans package.json.
 FROM base AS backend-deps
 WORKDIR /opt/app/backend
 COPY backend/package.json backend/package-lock.json ./
 
 RUN npm install && \
-    npm install global-agent@3.0.0 --no-save
+    npm install global-agent@3.0.0 undici@latest --no-save
 
 # ---------------------------
 # Stage 4: Backend build
@@ -212,8 +224,11 @@ RUN sed -i 's|http://localhost:|http://127.0.0.1:|g' \
 # Caddy et gosu sont des binaires 100% statiques, zéro dépendance système.
 #
 # trivy:ignore:DS002
+# kics-scan ignore-line - USER omis intentionnellement : create-user.sh crée l'user au runtime
+# puis drop_privileges via gosu
 # checkov:skip=CKV_DOCKER_3:USER non utilisé - le container doit démarrer root
 # pour que create-user.sh puisse chown les volumes avant de drop les privilèges via gosu.
+# cis-skip:CIS-4.1 - USER omis : create-user.sh + gosu drop les privilèges au runtime
 FROM debian:trixie-slim AS runner
 
 # NODE_ENV=docker is required by PrivCloud_Sharing: it controls paths,
@@ -291,24 +306,40 @@ RUN \
     # bash + ncurses (élimine aussi libreadline si présent)
     dpkg --purge --force-remove-essential --force-depends \
         bash libncursesw6 libtinfo6 ncurses-base ncurses-bin 2>/dev/null || true && \
+    # bash t64 variants (Trixie transition)
+    dpkg --purge --force-remove-essential --force-depends \
+        libncursesw6t64 libtinfo6t64 2>/dev/null || true && \
     # tar
     dpkg --purge --force-remove-essential --force-depends tar 2>/dev/null || true && \
     # util-linux stack -> libère les libs systemd/blkid/mount/smartcols
     dpkg --purge --force-remove-essential --force-depends \
         bsdutils util-linux util-linux-extra sysvinit-utils 2>/dev/null || true && \
+    # Try both traditional and t64 naming (Trixie transition)
     dpkg --purge --force-depends \
-        libsystemd0 libudev1 libblkid1 libmount1 libsmartcols1 2>/dev/null || true && \
+        libsystemd0 libsystemd0t64 \
+        libudev1 libudev1t64 \
+        libblkid1 libblkid1t64 \
+        libmount1 libmount1t64 \
+        libsmartcols1 libsmartcols1t64 2>/dev/null || true && \
     # perl-base (dépendance de dpkg uniquement)
     dpkg --purge --force-remove-essential --force-depends perl-base 2>/dev/null || true && \
     # apt + gpgv + chaîne crypto (gnutls, gcrypt, tasn1, p11-kit, nettle)
+    # Include both traditional and t64 names
     dpkg --purge --force-remove-essential --force-depends \
-        apt libapt-pkg6.0 gpgv libgnutls30 libgcrypt20 libtasn1-6 \
-        libhogweed6 libnettle8 libp11-kit0 libffi8 2>/dev/null || true && \
+        apt libapt-pkg6.0 libapt-pkg6.0t64 \
+        gpgv libgnutls30 libgnutls30t64 \
+        libgcrypt20 libgcrypt20t64 \
+        libtasn1-6 libtasn1-6t64 \
+        libhogweed6 libhogweed6t64 \
+        libnettle8 libnettle8t64 \
+        libp11-kit0 libp11-kit0t64 \
+        libffi8 libffi8t64 2>/dev/null || true && \
     # dpkg lui-même (dernier à partir)
     dpkg --purge --force-remove-essential --force-depends dpkg 2>/dev/null || true && \
     # Nettoyage final : supprimer toutes les traces des package managers
     rm -rf /var/lib/apt /var/cache/apt /etc/apt /var/lib/dpkg \
            /tmp/* /root/.npm /root/.cache /root/.config /var/log
+
 
 # --- Frontend ---
 WORKDIR /opt/app/frontend
@@ -332,6 +363,10 @@ COPY --from=backend-builder /opt/app/backend/tsconfig.json ./
 # global-agent : indispensable au RUNTIME (Node.js n'honore pas HTTP_PROXY nativement).
 # Installé via --no-save dans backend-deps, supprimé par le prune -> on le copie.
 COPY --from=backend-deps /opt/app/backend/node_modules/global-agent ./node_modules/global-agent
+# undici : requis pour configurer le ProxyAgent du fetch() natif Node.js.
+# Installé via --no-save dans backend-deps (même pattern que global-agent).
+# Sans ce paquet, les appels OAuth OIDC (Google) ignorent le proxy HTTP -> timeout.
+COPY --from=backend-deps /opt/app/backend/node_modules/undici ./node_modules/undici
 COPY --from=backend-deps /opt/app/backend/node_modules/boolean ./node_modules/boolean
 COPY --from=backend-deps /opt/app/backend/node_modules/roarr ./node_modules/roarr
 COPY --from=backend-deps /opt/app/backend/node_modules/serialize-error ./node_modules/serialize-error
@@ -356,16 +391,20 @@ COPY --from=backend-deps /opt/app/backend/node_modules/type-fest ./node_modules/
 # --- Caddy : recompilé depuis les sources (golang.org/x/net patché) ---
 COPY --from=caddy-builder /usr/bin/caddy /usr/bin/caddy
 
-# --- Scripts & reverse proxy ---
+# --- Reverse proxy : Caddyfiles pré-patchés (sed dans le stage caddyfile-patcher) ---
 WORKDIR /opt/app
-# Reverse proxy : Caddyfiles pré-patchés (localhost->127.0.0.1 dans le stage caddyfile-patcher)
 COPY --from=caddyfile-patcher /opt/app/reverse-proxy /opt/app/reverse-proxy
 COPY ./scripts/docker ./scripts/docker
 
 # Ownership par défaut (PUID/PGID=1000) défini au build-time.
 # Élimine les chown runtime pour les fichiers statiques et réduit
 # les capabilities nécessaires (cap_drop: ALL + cap_add minimal).
-RUN chown -R 1000:1000 /opt/app /tmp/img
+# Caddy home dirs: prevent cosmetic "permission denied" errors at startup
+# (config autosave + TLS storage lock). Created with build-time UID since
+# the runtime user does not exist yet.
+RUN mkdir -p /home/privcloud-sharing/.config/caddy \
+             /home/privcloud-sharing/.local/share/caddy && \
+    chown -R 1000:1000 /opt/app /tmp/img /home/privcloud-sharing
 
 EXPOSE 3000
 

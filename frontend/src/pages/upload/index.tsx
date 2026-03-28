@@ -36,6 +36,7 @@ const promiseLimit = pLimit(3);
 let errorToastShown = false;
 let createdShare: Share;
 let e2eKeyEncoded: string | null = null;
+let shouldShareE2EKeyViaEmail = false;
 
 type UploadProps = {
   maxShareSize?: number;
@@ -91,6 +92,7 @@ const Upload = ({
 
   const uploadFiles = async (share: CreateShare, files: FileUpload[]) => {
     setisUploading(true);
+    shouldShareE2EKeyViaEmail = !!share.shareE2EKeyViaEmail;
 
     // ── E2E : récupérer ou créer la clé de chiffrement ──
     let cryptoKey: CryptoKey | null = null;
@@ -226,7 +228,9 @@ const Upload = ({
           "share.allowUnauthenticatedShares",
         ),
         enableEmailRecepients: config.get("email.enableShareEmailRecipients"),
+        enableE2EKeyEmailSharing: config.get("email.enableE2EKeyEmailSharing"),
         maxExpiration: config.get("share.maxExpiration"),
+        anonymousMaxExpiration: config.get("share.anonymousMaxExpiration"),
         shareIdLength: config.get("share.shareIdLength"),
         simplified,
       },
@@ -273,8 +277,10 @@ const Upload = ({
       files.every((file) => file.uploadingProgress >= 100) &&
       fileErrorCount == 0
     ) {
+      const e2eKeyForComplete =
+        shouldShareE2EKeyViaEmail && e2eKeyEncoded ? e2eKeyEncoded : undefined;
       shareService
-        .completeShare(createdShare.id)
+        .completeShare(createdShare.id, e2eKeyForComplete)
         .then((share) => {
           setisUploading(false);
           showCompletedUploadModal(modals, share, e2eKeyEncoded);
@@ -283,6 +289,7 @@ const Upload = ({
           });
           setFiles([]);
           e2eKeyEncoded = null;
+          shouldShareE2EKeyViaEmail = false;
         })
         .catch(() => toast.error(t("upload.notify.generic-error")));
     }

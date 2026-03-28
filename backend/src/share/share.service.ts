@@ -75,6 +75,25 @@ export class ShareService {
     } else {
       const parsedExpiration = parseRelativeDateToAbsolute(share.expiration);
       const expiresNever = moment(0).toDate() == parsedExpiration;
+
+      // Enforce stricter limits for anonymous (unauthenticated) shares
+      if (!user) {
+        const anonMax = this.config.get("share.anonymousMaxExpiration");
+        if (anonMax.value !== 0) {
+          const anonMaxDate = moment()
+            .add(anonMax.value, anonMax.unit)
+            .toDate();
+          if (expiresNever || parsedExpiration > anonMaxDate) {
+            this.logger.warn(
+              `Anonymous share expiration exceeds limit: shareId=${share.id} requested=${expiresNever ? "never" : parsedExpiration.toISOString()} max=${anonMaxDate.toISOString()}`,
+            );
+            throw new BadRequestException(
+              "Anonymous shares cannot exceed the maximum allowed expiration",
+            );
+          }
+        }
+      }
+
       const maxExpiration = this.config.get("share.maxExpiration");
       const maxExpiryDate = moment()
         .add(maxExpiration.value, maxExpiration.unit)
@@ -169,9 +188,9 @@ export class ShareService {
     this.logger.debug(`Created zip: shareId=${shareId}`);
   }
 
-  async complete(id: string, reverseShareToken?: string) {
+  async complete(id: string, reverseShareToken?: string, e2eKey?: string) {
     this.logger.debug(
-      `Completing share: shareId=${id} reverseShareToken=${reverseShareToken ? "provided" : "none"}`,
+      `Completing share: shareId=${id} reverseShareToken=${reverseShareToken ? "provided" : "none"} e2eKeyProvided=${!!e2eKey}`,
     );
 
     const share = await this.prisma.share.findUnique({
@@ -224,9 +243,14 @@ export class ShareService {
 
     // Send email for each recipient
     const recipientCount = share.recipients.length;
+    // Only include the E2E key in the email if the global admin setting allows it
+    const e2eKeyForEmail =
+      e2eKey && this.config.get("email.enableE2EKeyEmailSharing")
+        ? e2eKey
+        : undefined;
     if (recipientCount > 0 && this.config.get("smtp.enabled")) {
       this.logger.debug(
-        `Sending recipient emails: shareId=${id} recipients=${recipientCount}`,
+        `Sending recipient emails: shareId=${id} recipients=${recipientCount} e2eKeyInEmail=${!!e2eKeyForEmail}`,
       );
       for (const recipient of share.recipients) {
         try {
@@ -236,6 +260,7 @@ export class ShareService {
             share.creator,
             share.description,
             share.expiration,
+            e2eKeyForEmail,
           );
           this.logger.debug(
             `Recipient email sent: shareId=${id} recipient=${recipient.email}`,

@@ -20,6 +20,30 @@ import {
   LOG_LEVEL_ENV,
 } from "./constants";
 
+// global-agent (loaded via NODE_OPTIONS --require) patches http/https.globalAgent
+// but does NOT patch the native fetch() built-in de Node.js 24.
+// Le paquet npm "undici" est installé via --no-save dans le Dockerfile
+// (même pattern que global-agent). Son setGlobalDispatcher() affecte
+// le built-in fetch() via le symbole partagé undici.globalDispatcher.
+const proxyUrl =
+  process.env.GLOBAL_AGENT_HTTP_PROXY ||
+  process.env.HTTPS_PROXY ||
+  process.env.HTTP_PROXY ||
+  process.env.https_proxy ||
+  process.env.http_proxy;
+
+if (proxyUrl) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { ProxyAgent, setGlobalDispatcher } = require("undici");
+    setGlobalDispatcher(new ProxyAgent(proxyUrl));
+    console.log(`[Proxy] undici setGlobalDispatcher -> ${proxyUrl}`);
+  } catch (err: any) {
+    console.error(`[Proxy] Failed to load undici: ${err.message}`);
+    console.error(`[Proxy] OAuth calls to external providers may fail/timeout.`);
+  }
+}
+
 function generateNestJsLogLevels(): LogLevel[] {
   if (LOG_LEVEL_ENV) {
     const levelIndex = LOG_LEVEL_AVAILABLE.indexOf(LOG_LEVEL_ENV as LogLevel);
