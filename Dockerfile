@@ -68,7 +68,7 @@ ENV NO_PROXY=${NO_PROXY}
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-        curl ca-certificates openssl python3 git && \
+        curl ca-certificates openssl python3 make g++ git && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
     npm install -g npm@latest && \
     # CVE-2026-27903/04 : npm@11.11.0 embarque minimatch 10.2.2 (vuln).
@@ -180,9 +180,10 @@ FROM base AS backend-builder
 WORKDIR /opt/app/backend
 COPY --from=backend-deps /opt/app/backend/node_modules ./node_modules
 COPY backend/ ./
-# Fix upstream TS7053 bug in seed: ts-node type-checks fail on dynamic key access.
-# --transpile-only skips type checking at seed runtime without altering the compiled output.
-RUN sed -i 's/ts-node prisma\/seed/ts-node --transpile-only prisma\/seed/g' package.json
+# Prisma 7 : la commande seed est désormais dans prisma.config.ts (pas package.json).
+# On patch les deux fichiers par sécurité (belt & suspenders) pour garantir --transpile-only.
+RUN sed -i 's/ts-node prisma\/seed/ts-node --transpile-only prisma\/seed/g' package.json && \
+    sed -i 's/ts-node prisma\/seed/ts-node --transpile-only prisma\/seed/g' prisma.config.ts
 RUN npx prisma generate
 RUN npm run build && npm prune --omit=dev
 
@@ -358,66 +359,73 @@ RUN \
 WORKDIR /opt/app/frontend
 # Next.js standalone : le contenu de .next/standalone va à la racine de frontend/
 # pour que server.js soit à /opt/app/frontend/server.js
-COPY --from=frontend-builder /opt/app/frontend/.next/standalone ./
-COPY --from=frontend-builder /opt/app/frontend/.next/static ./.next/static
-COPY --from=frontend-builder /opt/app/frontend/public ./public
+COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/.next/standalone ./
+COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/.next/static ./.next/static
+COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/public ./public
 # Images par défaut copiées dans /tmp/img - create-user.sh les déplace
 # vers public/img avec les bonnes permissions au démarrage
-COPY --from=frontend-builder /opt/app/frontend/public/img /tmp/img
+COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/public/img /tmp/img
 
 # --- Backend ---
 WORKDIR /opt/app/backend
-COPY --from=backend-builder /opt/app/backend/node_modules ./node_modules
-COPY --from=backend-builder /opt/app/backend/dist ./dist
-COPY --from=backend-builder /opt/app/backend/prisma ./prisma
-COPY --from=backend-builder /opt/app/backend/package.json ./
-COPY --from=backend-builder /opt/app/backend/tsconfig.json ./
+COPY --chown=1000:1000 --from=backend-builder /opt/app/backend/node_modules ./node_modules
+COPY --chown=1000:1000 --from=backend-builder /opt/app/backend/dist ./dist
+COPY --chown=1000:1000 --from=backend-builder /opt/app/backend/prisma ./prisma
+COPY --chown=1000:1000 --from=backend-builder /opt/app/backend/package.json ./
+COPY --chown=1000:1000 --from=backend-builder /opt/app/backend/tsconfig.json ./
+# Prisma 7 : prisma.config.ts requis au runtime pour prisma migrate deploy & db seed.
+# Le CLI Prisma charge nativement les fichiers .ts via jiti (pas besoin de ts-node).
+COPY --chown=1000:1000 --from=backend-builder /opt/app/backend/prisma.config.ts ./
 
 # global-agent : indispensable au RUNTIME (Node.js n'honore pas HTTP_PROXY nativement).
 # Installé via --no-save dans backend-deps, supprimé par le prune -> on le copie.
-COPY --from=backend-deps /opt/app/backend/node_modules/global-agent ./node_modules/global-agent
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/global-agent ./node_modules/global-agent
 # undici : requis pour configurer le ProxyAgent du fetch() natif Node.js.
 # Installé via --no-save dans backend-deps (même pattern que global-agent).
 # Sans ce paquet, les appels OAuth OIDC (Google) ignorent le proxy HTTP -> timeout.
-COPY --from=backend-deps /opt/app/backend/node_modules/undici ./node_modules/undici
-COPY --from=backend-deps /opt/app/backend/node_modules/boolean ./node_modules/boolean
-COPY --from=backend-deps /opt/app/backend/node_modules/roarr ./node_modules/roarr
-COPY --from=backend-deps /opt/app/backend/node_modules/serialize-error ./node_modules/serialize-error
-COPY --from=backend-deps /opt/app/backend/node_modules/matcher ./node_modules/matcher
-COPY --from=backend-deps /opt/app/backend/node_modules/globalthis ./node_modules/globalthis
-COPY --from=backend-deps /opt/app/backend/node_modules/semver ./node_modules/semver
-COPY --from=backend-deps /opt/app/backend/node_modules/detect-node ./node_modules/detect-node
-COPY --from=backend-deps /opt/app/backend/node_modules/es6-error ./node_modules/es6-error
-COPY --from=backend-deps /opt/app/backend/node_modules/escape-string-regexp ./node_modules/escape-string-regexp
-COPY --from=backend-deps /opt/app/backend/node_modules/json-stringify-safe ./node_modules/json-stringify-safe
-COPY --from=backend-deps /opt/app/backend/node_modules/semver-compare ./node_modules/semver-compare
-COPY --from=backend-deps /opt/app/backend/node_modules/sprintf-js ./node_modules/sprintf-js
-COPY --from=backend-deps /opt/app/backend/node_modules/define-data-property ./node_modules/define-data-property
-COPY --from=backend-deps /opt/app/backend/node_modules/define-properties ./node_modules/define-properties
-COPY --from=backend-deps /opt/app/backend/node_modules/es-define-property ./node_modules/es-define-property
-COPY --from=backend-deps /opt/app/backend/node_modules/es-errors ./node_modules/es-errors
-COPY --from=backend-deps /opt/app/backend/node_modules/gopd ./node_modules/gopd
-COPY --from=backend-deps /opt/app/backend/node_modules/has-property-descriptors ./node_modules/has-property-descriptors
-COPY --from=backend-deps /opt/app/backend/node_modules/object-keys ./node_modules/object-keys
-COPY --from=backend-deps /opt/app/backend/node_modules/type-fest ./node_modules/type-fest
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/undici ./node_modules/undici
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/boolean ./node_modules/boolean
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/roarr ./node_modules/roarr
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/serialize-error ./node_modules/serialize-error
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/matcher ./node_modules/matcher
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/globalthis ./node_modules/globalthis
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/semver ./node_modules/semver
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/detect-node ./node_modules/detect-node
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/es6-error ./node_modules/es6-error
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/escape-string-regexp ./node_modules/escape-string-regexp
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/json-stringify-safe ./node_modules/json-stringify-safe
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/semver-compare ./node_modules/semver-compare
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/sprintf-js ./node_modules/sprintf-js
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/define-data-property ./node_modules/define-data-property
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/define-properties ./node_modules/define-properties
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/es-define-property ./node_modules/es-define-property
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/es-errors ./node_modules/es-errors
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/gopd ./node_modules/gopd
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/has-property-descriptors ./node_modules/has-property-descriptors
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/object-keys ./node_modules/object-keys
+COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/type-fest ./node_modules/type-fest
 
 # --- Caddy : recompilé depuis les sources (golang.org/x/net patché) ---
 COPY --from=caddy-builder /usr/bin/caddy /usr/bin/caddy
 
 # --- Reverse proxy : Caddyfiles pré-patchés (sed dans le stage caddyfile-patcher) ---
 WORKDIR /opt/app
-COPY --from=caddyfile-patcher /opt/app/reverse-proxy /opt/app/reverse-proxy
-COPY ./scripts/docker ./scripts/docker
+COPY --chown=1000:1000 --from=caddyfile-patcher /opt/app/reverse-proxy /opt/app/reverse-proxy
+COPY --chown=1000:1000 ./scripts/docker ./scripts/docker
 
-# Ownership par défaut (PUID/PGID=1000) défini au build-time.
-# Élimine les chown runtime pour les fichiers statiques et réduit
-# les capabilities nécessaires (cap_drop: ALL + cap_add minimal).
+# Ownership applicatif défini via COPY --chown=1000:1000 (build-time, zero-cost).
+# Les répertoires créés par WORKDIR restent root:root - on les chown (non-récursif).
+# /opt/app/backend/data : pré-créé pour Prisma SQLite (prisma migrate deploy
+# crée le fichier .db ici, mais ne peut pas mkdir si le parent est root).
 # Caddy home dirs: prevent cosmetic "permission denied" errors at startup
 # (config autosave + TLS storage lock). Created with build-time UID since
 # the runtime user does not exist yet.
 RUN mkdir -p /home/privcloud-sharing/.config/caddy \
-             /home/privcloud-sharing/.local/share/caddy && \
-    chown -R 1000:1000 /opt/app /tmp/img /home/privcloud-sharing
+             /home/privcloud-sharing/.local/share/caddy \
+             /opt/app/backend/data && \
+    chown 1000:1000 /opt/app /opt/app/frontend /opt/app/backend \
+                    /opt/app/backend/data && \
+    chown -R 1000:1000 /home/privcloud-sharing
 
 EXPOSE 3000
 

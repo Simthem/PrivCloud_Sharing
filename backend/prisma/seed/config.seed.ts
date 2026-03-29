@@ -556,15 +556,26 @@ type ConfigVariables = {
   };
 };
 
-const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url:
-        process.env.DATABASE_URL ||
-        "file:../data/pingvin-share.db?connection_limit=1",
-    },
-  },
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import * as path from "path";
+
+// Prisma CLI resolves file: URLs relative to schema.prisma directory,
+// but better-sqlite3 resolves relative to CWD. We must match Prisma's
+// resolution so the adapter opens the same DB that 'migrate deploy' created.
+function resolveDbUrl(url: string): string {
+  if (!url.startsWith("file:")) return url;
+  const raw = url.slice(5);
+  const filePath = raw.split("?")[0];
+  if (path.isAbsolute(filePath)) return url;
+  const schemaDir = path.join(process.cwd(), "prisma");
+  return path.resolve(schemaDir, filePath);
+}
+
+const dbUrl = process.env.DATABASE_URL || "file:../data/pingvin-share.db?connection_limit=1";
+const adapter = new PrismaBetterSqlite3({
+  url: resolveDbUrl(dbUrl),
 });
+const prisma = new PrismaClient({ adapter });
 
 async function seedConfigVariables() {
   for (const [category, configVariablesOfCategory] of Object.entries(

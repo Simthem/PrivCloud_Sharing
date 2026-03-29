@@ -1,3 +1,42 @@
+## [1.17.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.17.2...v1.17.3) (2026-03-29)
+
+
+### Dependencies
+
+* **prisma:** major upgrade from Prisma 6 (6.19.2) to Prisma 7 (7.6.0)
+  - migrate to `@prisma/adapter-better-sqlite3` driver adapter pattern
+    (PrismaClient constructor now requires `adapter` instead of `datasourceUrl`)
+  - add `prisma.config.ts` with `defineConfig()` for datasource URL, schema path,
+    and seed command configuration (replaces schema-level `url` and package.json seed)
+  - remove `url = env("DATABASE_URL")` from `schema.prisma` datasource block
+  - fix `PrismaClientKnownRequestError` imports: use `Prisma` namespace
+    (`Prisma.PrismaClientKnownRequestError`) instead of direct import
+  - remove deprecated `@prisma/client/runtime/library` import path
+* **deps:** add `@prisma/adapter-better-sqlite3` ^7.6.0, `better-sqlite3` ^12.8.0
+* **deps-dev:** add `@types/better-sqlite3`
+
+
+### Bug Fixes
+
+* **prisma:** fix SQLite database path resolution mismatch between Prisma CLI and
+  better-sqlite3 adapter -- Prisma CLI resolves `file:` relative URLs from the
+  schema.prisma directory, but the adapter resolves from process.cwd(), causing the
+  seed command to open an empty database instead of the migrated one; add
+  `resolveDbUrl()` helper in constants.ts to normalize the path consistently
+* **docker:** fix Prisma 7 deployment failures in Docker runner stage
+  - copy `prisma.config.ts` to runner (required by `prisma migrate deploy`)
+  - add `make` and `g++` to base stage for `better-sqlite3` native rebuild fallback
+  - patch seed command in both `package.json` and `prisma.config.ts` with
+    `--transpile-only` flag
+* **docker:** fix ~300s build bottleneck caused by recursive `chown -R` on /opt/app
+  - add `--chown=1000:1000` to all application COPY instructions in the runner stage
+    (35 instructions, zero-cost ownership at copy time)
+  - pre-create `/opt/app/backend/data` directory for Prisma SQLite at build time
+  - add non-recursive chown on WORKDIR-created directories (`/opt/app`,
+    `/opt/app/frontend`, `/opt/app/backend`, `/opt/app/backend/data`)
+  - reduce final RUN to only chown the small Caddy home directory
+
+
 ## [1.17.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.17.1...v1.17.2) (2026-03-29)
 
 

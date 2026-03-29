@@ -8,8 +8,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { User } from "@prisma/client";
-import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
+import { User, Prisma } from "@prisma/client";
 import * as argon from "argon2";
 import { Request, Response } from "express";
 import * as moment from "moment";
@@ -58,7 +57,7 @@ export class AuthService {
       this.logger.log(`User ${user.email} signed up from IP ${ip}`);
       return { accessToken, refreshToken, user };
     } catch (e) {
-      if (e instanceof PrismaClientKnownRequestError) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code == "P2002") {
           const duplicatedField: string = e.meta.target[0];
           throw new BadRequestException(

@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-backend",
-  "version": "1.17.2",
+  "version": "1.17.3",
   "scripts": {
     "build": "nest build",
     "dev": "cross-env NODE_ENV=development nest start --watch",
@@ -8,9 +8,6 @@
     "lint": "eslint 'src/**/*.ts'",
     "format": "prettier --end-of-line=auto --write 'src/**/*.ts'",
     "test:system": "prisma migrate reset -f && nest start & wait-on http://localhost:8080/api/configs && newman run ./test/newman-system-tests.json"
-  },
-  "prisma": {
-    "seed": "ts-node prisma/seed/config.seed.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.787.0",
@@ -25,10 +22,12 @@
     "@nestjs/schedule": "^6.1.1",
     "@nestjs/swagger": "^11.2.6",
     "@nestjs/throttler": "^6.4.0",
-    "@prisma/client": "^6.6.0",
+    "@prisma/adapter-better-sqlite3": "^7.6.0",
+    "@prisma/client": "^7.6.0",
     "@types/jmespath": "^0.15.2",
     "archiver": "^7.0.1",
     "argon2": "^0.41.1",
+    "better-sqlite3": "^12.8.0",
     "body-parser": "^2.2.0",
     "cache-manager": "^6.4.2",
     "cacheable": "^1.9.0",
@@ -47,7 +46,7 @@
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
-    "prisma": "^6.6.0",
+    "prisma": "^7.6.0",
     "qrcode-svg": "^1.1.0",
     "reflect-metadata": "^0.2.2",
     "rimraf": "^6.0.1",
@@ -64,6 +63,7 @@
     "@nestjs/schematics": "^10.1.1",
     "@nestjs/testing": "^11.1.15",
     "@types/archiver": "^6.0.3",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/clamscan": "^2.4.1",
     "@types/cookie-parser": "^1.4.8",
     "@types/cron": "^2.4.0",
