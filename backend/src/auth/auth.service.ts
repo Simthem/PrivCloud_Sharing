@@ -341,7 +341,7 @@ export class AuthService {
       response.cookie("access_token", accessToken, {
         sameSite: "lax",
         secure: isSecure,
-        maxAge: 1000 * 60 * 60 * 24 * 30 * 3, // 3 months
+        maxAge: 1000 * 60 * 13, // 13 min (JWT lives 15 min - 2 min safety margin)
       });
     if (refreshToken) {
       const now = moment();

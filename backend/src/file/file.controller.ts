@@ -18,6 +18,7 @@ import { ShareOwnerGuard } from "src/share/guard/shareOwner.guard";
 import { FileService } from "./file.service";
 import { FileSecurityGuard } from "./guard/fileSecurity.guard";
 import * as mime from "mime-types";
+import { SafeIdPipe } from "src/share/pipe/safeId.pipe";
 
 @Controller("shares/:shareId/files")
 export class FileController {
@@ -35,7 +36,7 @@ export class FileController {
       totalChunks: string;
     },
     @Body() body: string,
-    @Param("shareId") shareId: string,
+    @Param("shareId", SafeIdPipe) shareId: string,
   ) {
     const { id, name, chunkIndex, totalChunks } = query;
 
@@ -52,7 +53,7 @@ export class FileController {
   @UseGuards(FileSecurityGuard)
   async getZip(
     @Res({ passthrough: true }) res: Response,
-    @Param("shareId") shareId: string,
+    @Param("shareId", SafeIdPipe) shareId: string,
   ) {
     const zipStream = await this.fileService.getZip(shareId);
 
@@ -68,8 +69,8 @@ export class FileController {
   @UseGuards(FileSecurityGuard)
   async getFile(
     @Res({ passthrough: true }) res: Response,
-    @Param("shareId") shareId: string,
-    @Param("fileId") fileId: string,
+    @Param("shareId", SafeIdPipe) shareId: string,
+    @Param("fileId", SafeIdPipe) fileId: string,
     @Query("download") download = "true",
   ) {
     const file = await this.fileService.get(shareId, fileId);
@@ -98,8 +99,8 @@ export class FileController {
   @SkipThrottle()
   @UseGuards(ShareOwnerGuard)
   async remove(
-    @Param("fileId") fileId: string,
-    @Param("shareId") shareId: string,
+    @Param("fileId", SafeIdPipe) fileId: string,
+    @Param("shareId", SafeIdPipe) shareId: string,
   ) {
     await this.fileService.remove(shareId, fileId);
   }

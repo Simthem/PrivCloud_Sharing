@@ -1,3 +1,83 @@
+## [1.17.4](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.17.3...v1.17.4) (2026-03-29)
+
+
+### Security
+
+* **cwe-23:** add `SafeIdPipe` NestJS validation pipe to reject route parameters
+  containing path traversal sequences (`/`, `\`, `..`, null bytes)
+  - applied to all `@Param("id")` in `share.controller.ts` (9 endpoints)
+  - applied to all `@Param` in `file.controller.ts` (5 endpoints: shareId, fileId)
+  - applied to `@Param("provider")` in `oauth.controller.ts` (unlink endpoint)
+* **cwe-23:** harden `share.service.ts` `createZip()` with `path.resolve()` +
+  prefix check - ensures resolved file paths cannot escape `SHARE_DIRECTORY`; both
+  the share directory and individual file IDs are validated before `fs.createReadStream`
+* **cwe-347:** remove client-side JWT decode via `jose` library - access token
+  refresh is now driven by cookie expiration instead of parsing the JWT `exp` claim;
+  `access_token` cookie maxAge reduced from 3 months to 13 minutes (2 min safety
+  margin before the 15 min JWT lifetime)
+* **deps:** remove `jose` ^5.9.2 from frontend dependencies (no longer needed)
+* **cve-2026-2673:** add `APT_CACHE_BUST` build arg to Dockerfile runner stage to
+  force apt cache invalidation on rebuild, allowing openssl upgrade to >=3.5.6
+* **deps:** add npm override `sirv` >=3.0.2 in `docs/package.json` to fix path
+  traversal vulnerability via `@docusaurus/core` 3.9.2
+* **headers:** add defense-in-depth security headers to both Caddyfile variants
+  (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, X-XSS-Protection,
+  X-Download-Options, X-Permitted-Cross-Domain-Policies, Permissions-Policy)
+
+
+### Known Issues (Snyk Code false positives)
+
+* **oauth.controller.ts:** Snyk reports `unlink()` method as `fs.unlink` path
+  traversal - actual implementation calls `prisma.oAuthUser.delete()` and
+  `ProviderGuard` whitelists provider values; not actionable
+* **generate-example-config.ts:** Snyk reports hardcoded password - value is the
+  placeholder `"my-secure-password"` in example YAML config generation; not a real
+  credential
+
+
+### Bug Fixes
+
+* **e2e/reverse-share:** fix `OperationError` when owner downloads files from an
+  E2E-encrypted reverse share without the `#key=` URL fragment - the encrypted
+  reverse share key (`encryptedReverseShareKey`) is now included directly in the
+  `GET /shares/:id` response and exposed via `ShareDTO`, eliminating the need for
+  a separate authenticated API call that was unreliable due to permissive JWT guard
+  behaviour
+  - backend `share.service.ts` `get()`: include `reverseShare` relation, flatten
+    `encryptedReverseShareKey` into the response (AES-GCM ciphertext, harmless
+    without K_master)
+  - backend `share.dto.ts`: add `@Expose() encryptedReverseShareKey`
+  - frontend `share.type.ts`: add `encryptedReverseShareKey` to `Share` type
+  - frontend `/share/[shareId]/index.tsx`: rewrite phase 2 key resolution to read
+    `share.encryptedReverseShareKey` directly - if present, unwrap K_rs client-side
+    with K_master; if absent, fall back to K_master for regular shares
+  - frontend `share.service.ts`: remove silent error swallowing in
+    `getEncryptedE2eKey()` - errors now propagate to callers
+  - backend `@Get(":id/e2e-key")` endpoint kept for external API compatibility
+* **preview/react-31:** fix `Objects are not valid as a React child` crash (React
+  error #31) when previewing JSON-based files - Axios
+  silently auto-parsed `application/json` responses into JavaScript objects instead
+  of strings
+  - add `responseType: "text"` to non-E2E preview fetches in `CodePreview` and
+    `TextPreview` to prevent Axios JSON auto-parsing
+  - add `ensureString()` defence-in-depth helper that safely converts any value
+    to a renderable string (JSON.stringify fallback for objects)
+  - add `truncateForPreview()` with 1 MiB limit to prevent browser freeze on
+    very large text files
+
+
+### Known Issues
+
+* reverse share with password: password prompt is bypassed when the owner is
+  already authenticated - the `ShareSecurityGuard` grants access based on
+  ownership without requiring the share password
+* sharing without any account is currently not possible (requires authentication to 
+  have a reverse share link or having by someone that has an account and is the owner
+  of the share)
+* reverse share without simplified mode enabled allows the uploader to re-share
+  files to other recipients
+
+
 ## [1.17.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.17.2...v1.17.3) (2026-03-29)
 
 
@@ -35,7 +115,7 @@
   - add non-recursive chown on WORKDIR-created directories (`/opt/app`,
     `/opt/app/frontend`, `/opt/app/backend`, `/opt/app/backend/data`)
   - reduce final RUN to only chown the small Caddy home directory
-* **prisma:** fix `prisma.config.ts` path resolution — `defineConfig()` datasource URL
+* **prisma:** fix `prisma.config.ts` path resolution - `defineConfig()` datasource URL
   resolved `file:../data/` relative to the config file location (backend root) instead
   of the `prisma/` directory, causing `prisma migrate deploy` to create a new empty
   database at `/opt/app/data/` while the application data lived in

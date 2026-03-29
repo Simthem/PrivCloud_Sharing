@@ -30,6 +30,9 @@ export class ShareDTO {
   isE2EEncrypted: boolean;
 
   @Expose()
+  encryptedReverseShareKey?: string;
+
+  @Expose()
   size: number;
 
   from(partial: Partial<ShareDTO>) {

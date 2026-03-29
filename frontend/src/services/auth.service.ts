@@ -1,5 +1,4 @@
 import { getCookie } from "cookies-next";
-import * as jose from "jose";
 import api from "./api.service";
 
 const signIn = async (emailOrUsername: string, password: string, captchaToken?: string) => {
@@ -39,13 +38,11 @@ const signOut = async () => {
 
 const refreshAccessToken = async () => {
   try {
-    const accessToken = getCookie("access_token") as string;
-
-    // If the access token expires in less than 2 minutes refresh it
-    if (
-      accessToken &&
-      (jose.decodeJwt(accessToken).exp ?? 0) * 1000 < Date.now() + 2 * 60 * 1000
-    ) {
+    // The access_token cookie maxAge (13 min) is shorter than the JWT
+    // lifetime (15 min). When the cookie disappears the token is about
+    // to expire, so we proactively request a new one via the refresh
+    // token. No client-side JWT decode is needed.
+    if (!getCookie("access_token")) {
       await api.post("/auth/token");
     }
   } catch (e) {

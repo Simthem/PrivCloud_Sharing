@@ -25,6 +25,7 @@ import { ProviderGuard } from "./guard/provider.guard";
 import { OAuthService } from "./oauth.service";
 import { OAuthProvider } from "./provider/oauthProvider.interface";
 import { OAuthExceptionFilter } from "./filter/oauthException.filter";
+import { SafeIdPipe } from "../share/pipe/safeId.pipe";
 
 @Controller("oauth")
 export class OAuthController {
@@ -124,7 +125,8 @@ export class OAuthController {
   @Post("unlink/:provider")
   @UseGuards(JwtGuard, ProviderGuard)
   @UseFilters(ErrorPageExceptionFilter)
-  unlink(@GetUser() user: User, @Param("provider") provider: string) {
+  // snyk:ignore PT - This is not fs.unlink; it calls prisma.oAuthUser.delete(). ProviderGuard whitelists provider values.
+  unlink(@GetUser() user: User, @Param("provider", SafeIdPipe) provider: string) {
     return this.oauthService.unlink(user, provider);
   }
 }

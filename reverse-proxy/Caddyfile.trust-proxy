@@ -1,4 +1,16 @@
 :3000 {
+	# Defense-in-depth security headers (primary enforcement is at the
+	# upstream reverse proxy / WAF level; these act as a fallback).
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-XSS-Protection "1; mode=block"
+		X-Download-Options "noopen"
+		X-Permitted-Cross-Domain-Policies "none"
+		Permissions-Policy "geolocation=(), microphone=(), camera=(), fullscreen=(), payment=()"
+	}
+
 	# Reverse proxy for /api
 	reverse_proxy /api/* http://localhost:{$BACKEND_PORT:8080} {
 		trusted_proxies 0.0.0.0/0

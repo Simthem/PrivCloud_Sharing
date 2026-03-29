@@ -10,6 +10,7 @@ export type Share = {
   size: number;
   hasPassword: boolean;
   isE2EEncrypted: boolean;
+  encryptedReverseShareKey?: string | null;
 };
 
 export type ReverseShare = {

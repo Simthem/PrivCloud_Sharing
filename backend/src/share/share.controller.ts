@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -32,6 +33,7 @@ import { HCaptchaGuard } from "src/auth/guard/hcaptcha.guard";
 import { ShareService } from "./share.service";
 import { CompletedShareDTO } from "./dto/shareComplete.dto";
 import { ConfigService } from "../config/config.service";
+import { SafeIdPipe } from "./pipe/safeId.pipe";
 @Controller("shares")
 export class ShareController {
   constructor(
@@ -63,20 +65,51 @@ export class ShareController {
 
   @Get(":id")
   @UseGuards(ShareSecurityGuard)
-  async get(@Param("id") id: string) {
+  async get(@Param("id", SafeIdPipe) id: string) {
     return new ShareDTO().from(await this.shareService.get(id));
   }
 
   @Get(":id/from-owner")
   @UseGuards(ShareOwnerGuard)
-  async getFromOwner(@Param("id") id: string) {
+  async getFromOwner(@Param("id", SafeIdPipe) id: string) {
     return new ShareDTO().from(await this.shareService.get(id));
   }
 
   @Get(":id/metaData")
   @UseGuards(ShareSecurityGuard)
-  async getMetaData(@Param("id") id: string) {
+  async getMetaData(@Param("id", SafeIdPipe) id: string) {
     return new ShareMetaDataDTO().from(await this.shareService.getMetaData(id));
+  }
+
+  /**
+   * Returns the encrypted reverse share key for E2E decryption.
+   * Only the reverse share creator (owner) can access this.
+   * The key is encrypted with K_master — the server never sees K_rs in clear.
+   *
+   * Returns:
+   *  - 200 { encryptedReverseShareKey: null }   → not a reverse share (use K_master)
+   *  - 200 { encryptedReverseShareKey: "..." }  → reverse share key (unwrap with K_master)
+   *  - 403                                       → reverse share but user is not owner
+   */
+  @Get(":id/e2e-key")
+  @UseGuards(JwtGuard)
+  async getEncryptedE2eKey(
+    @Param("id", SafeIdPipe) id: string,
+    @GetUser() user: User,
+  ) {
+    const result = await this.shareService.getEncryptedReverseShareKey(id);
+
+    // Not a reverse share or no encrypted key stored → client should use K_master
+    if (!result) {
+      return { encryptedReverseShareKey: null };
+    }
+
+    // Reverse share exists but user is not authenticated or not the owner → 403
+    if (!user || result.creatorId !== user.id) {
+      throw new ForbiddenException("Not the reverse share owner");
+    }
+
+    return { encryptedReverseShareKey: result.encryptedReverseShareKey };
   }
 
   @Post()
@@ -87,7 +120,7 @@ export class ShareController {
     @GetUser() user: User,
   ) {
     const { reverse_share_token } = request.cookies;
-    // Strip captchaToken — it was consumed by HCaptchaGuard and must not reach Prisma
+    // Strip captchaToken - it was consumed by HCaptchaGuard and must not reach Prisma
     const { captchaToken: _, ...shareData } = body;
     return new ShareDTO().from(
       await this.shareService.create(shareData as CreateShareDTO, user, reverse_share_token),
@@ -98,7 +131,7 @@ export class ShareController {
   @HttpCode(202)
   @UseGuards(CreateShareGuard, ShareOwnerGuard)
   async complete(
-    @Param("id") id: string,
+    @Param("id", SafeIdPipe) id: string,
     @Req() request: Request,
     @Body() body?: { e2eKey?: string },
   ) {
@@ -110,13 +143,13 @@ export class ShareController {
 
   @Delete(":id/complete")
   @UseGuards(ShareOwnerGuard)
-  async revertComplete(@Param("id") id: string) {
+  async revertComplete(@Param("id", SafeIdPipe) id: string) {
     return new ShareDTO().from(await this.shareService.revertComplete(id));
   }
 
   @Delete(":id")
   @UseGuards(ShareOwnerGuard)
-  async remove(@Param("id") id: string, @GetUser() user: User) {
+  async remove(@Param("id", SafeIdPipe) id: string, @GetUser() user: User) {
     const isDeleterAdmin = user?.isAdmin === true;
     await this.shareService.remove(id, isDeleterAdmin);
   }
@@ -128,7 +161,7 @@ export class ShareController {
     },
   })
   @Get("isShareIdAvailable/:id")
-  async isShareIdAvailable(@Param("id") id: string) {
+  async isShareIdAvailable(@Param("id", SafeIdPipe) id: string) {
     return this.shareService.isShareIdAvailable(id);
   }
 
@@ -142,7 +175,7 @@ export class ShareController {
   @UseGuards(HCaptchaGuard, ShareTokenSecurity)
   @Post(":id/token")
   async getShareToken(
-    @Param("id") id: string,
+    @Param("id", SafeIdPipe) id: string,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
     @Body() body: SharePasswordDto,

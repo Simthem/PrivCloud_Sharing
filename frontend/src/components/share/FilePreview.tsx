@@ -63,6 +63,33 @@ export const isTextBasedMimeType = (mimeType: string): boolean => {
   return false;
 };
 
+// ── Security helpers for text previews ──────────────────────────────
+
+/** Maximum characters of text content to render in preview (1 MiB). */
+const MAX_TEXT_PREVIEW_CHARS = 1024 * 1024;
+
+/**
+ * Defence-in-depth: guarantee a value is a renderable string.
+ * Prevents React error #31 ("Objects are not valid as a React child")
+ * when Axios silently auto-parses a JSON response body into an object.
+ */
+const ensureString = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+};
+
+/** Truncate a string if it exceeds the safe preview limit. */
+const truncateForPreview = (s: string): string =>
+  s.length > MAX_TEXT_PREVIEW_CHARS
+    ? s.slice(0, MAX_TEXT_PREVIEW_CHARS) +
+      "\n\n[… truncated — file too large for preview]"
+    : s;
+
 const FilePreviewContext = React.createContext<{
   shareId: string;
   fileId: string;
@@ -258,13 +285,22 @@ const TextPreview = () => {
       fetchDecryptedFile(shareId, fileId, e2eKey)
         .then((buf) => {
           const decoded = new TextDecoder().decode(buf);
-          setText(decoded);
+          setText(truncateForPreview(decoded));
         })
         .catch(() => setText("Preview couldn't be fetched."));
     } else {
+      // responseType: "text" prevents Axios from auto-parsing JSON files
+      // into objects (which would crash React — error #31).
       api
-        .get(`/shares/${shareId}/files/${fileId}?download=false`)
-        .then((res) => setText(res.data ?? "Preview couldn't be fetched."));
+        .get(`/shares/${shareId}/files/${fileId}?download=false`, {
+          responseType: "text",
+        })
+        .then((res) =>
+          setText(
+            truncateForPreview(ensureString(res.data)) ||
+              "Preview couldn't be fetched.",
+          ),
+        );
     }
   }, [shareId, fileId, e2eKey]);
 
@@ -303,13 +339,24 @@ const CodePreview = () => {
   useEffect(() => {
     if (e2eKey) {
       fetchDecryptedFile(shareId, fileId, e2eKey)
-        .then((buf) => setText(new TextDecoder().decode(buf)))
+        .then((buf) =>
+          setText(truncateForPreview(new TextDecoder().decode(buf))),
+        )
         .catch(() => setText("Preview couldn't be fetched."))
         .finally(() => setLoading(false));
     } else {
+      // responseType: "text" prevents Axios from auto-parsing JSON files
+      // into objects (which would crash React — error #31).
       api
-        .get(`/shares/${shareId}/files/${fileId}?download=false`)
-        .then((res) => setText(res.data ?? "Preview couldn't be fetched."))
+        .get(`/shares/${shareId}/files/${fileId}?download=false`, {
+          responseType: "text",
+        })
+        .then((res) =>
+          setText(
+            truncateForPreview(ensureString(res.data)) ||
+              "Preview couldn't be fetched.",
+          ),
+        )
         .finally(() => setLoading(false));
     }
   }, [shareId, fileId, e2eKey]);

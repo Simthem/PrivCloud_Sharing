@@ -180,6 +180,21 @@ const removeReverseShare = async (id: string) => {
   await api.delete(`/reverseShares/${id}`);
 };
 
+/**
+ * Fetch the encrypted reverse share key (K_rs wrapped by K_master)
+ * for E2E reverse share decryption. Requires authenticated user = RS creator.
+ *
+ * NOTE: The share page now reads encryptedReverseShareKey directly from the
+ * share data (GET /shares/:id). This function is kept for external API clients.
+ * Errors are propagated — callers must handle them.
+ */
+const getEncryptedE2eKey = async (
+  shareId: string,
+): Promise<string | null> => {
+  const { data } = await api.get(`/shares/${shareId}/e2e-key`);
+  return data?.encryptedReverseShareKey ?? null;
+};
+
 export default {
   list,
   create,
@@ -202,6 +217,7 @@ export default {
   createReverseShare,
   getMyReverseShares,
   removeReverseShare,
+  getEncryptedE2eKey,
   getStoredRecipients,
 };
 

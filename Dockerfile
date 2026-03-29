@@ -263,6 +263,10 @@ ENV NO_PROXY=${NO_PROXY}
 #   findutils, dash (sh), login (nologin), sed, grep
 # passwd (groupadd, useradd) : installé si absent de minbase.
 # ======================================================================
+# APT_CACHE_BUST : changer cette valeur (ex: date du jour) pour forcer
+# Docker à invalider le cache apt et récupérer les derniers security fixes.
+# Usage : docker build --build-arg APT_CACHE_BUST=$(date +%Y%m%d) ...
+ARG APT_CACHE_BUST=1
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \

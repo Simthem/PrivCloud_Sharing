@@ -17,7 +17,7 @@ import shareService from "../../../services/share.service";
 import { Share as ShareType } from "../../../types/share.type";
 import toast from "../../../utils/toast.util";
 import { byteToHumanSizeString } from "../../../utils/fileSize.util";
-import { extractKeyFromHash, getUserKey } from "../../../utils/crypto.util";
+import { extractKeyFromHash, getUserKey, unwrapReverseShareKey, importKeyFromBase64, exportKeyToBase64 } from "../../../utils/crypto.util";
 import { AxiosError } from "axios";
 
 export function getServerSideProps(context: GetServerSidePropsContext) {
@@ -45,13 +45,53 @@ const Share = ({ shareId }: { shareId: string }) => {
   const captchaEnabled = config.get("hcaptcha.enabled");
   const captchaSiteKey = config.get("hcaptcha.siteKey");
 
-  // ── E2E : récupérer la clé depuis le fragment d'URL ou localStorage utilisateur ──
+  // ── E2E : résolution de la clé de déchiffrement ──
+  // Priorité : #key= dans l'URL > K_rs unwrappée (reverse share) > K_master (share normal)
   const [e2eKey, setE2eKey] = useState<string | null>(null);
+
+  // Phase 1 : clé depuis le fragment d'URL (disponible immédiatement)
   useEffect(() => {
     const hashKey = extractKeyFromHash();
-    const userKey = getUserKey();
-    setE2eKey(hashKey || userKey || null);
+    if (hashKey) {
+      setE2eKey(hashKey);
+    }
   }, [shareId]);
+
+  // Phase 2 : une fois le share chargé, résoudre la clé si manquante
+  // - Reverse share E2E → unwrap K_rs depuis share.encryptedReverseShareKey
+  // - Share E2E normal  → K_master depuis localStorage
+  useEffect(() => {
+    if (e2eKey || !share?.isE2EEncrypted) return;
+
+    const userKeyB64 = getUserKey();
+    if (!userKeyB64) return;
+
+    let cancelled = false;
+
+    if (share.encryptedReverseShareKey) {
+      // Reverse share — unwrap K_rs avec K_master (aucun appel API nécessaire)
+      (async () => {
+        try {
+          const masterKey = await importKeyFromBase64(userKeyB64);
+          const rsKey = await unwrapReverseShareKey(
+            share.encryptedReverseShareKey!,
+            masterKey,
+          );
+          const rsKeyB64 = await exportKeyToBase64(rsKey);
+          if (!cancelled) setE2eKey(rsKeyB64);
+        } catch (err) {
+          // Échec unwrap : mauvais K_master ou données corrompues.
+          // NE PAS fallback sur K_master (ce serait la mauvaise clé).
+          console.error("[E2E] Failed to unwrap reverse share key:", err);
+        }
+      })();
+    } else {
+      // Pas un reverse share → fallback K_master
+      setE2eKey(userKeyB64);
+    }
+
+    return () => { cancelled = true; };
+  }, [share?.isE2EEncrypted, share?.encryptedReverseShareKey, e2eKey]);
 
   const isE2EMissingKey = share?.isE2EEncrypted && !e2eKey;
 

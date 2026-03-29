@@ -11,6 +11,7 @@ import { Prisma, Share, User } from "@prisma/client";
 import * as archiver from "archiver";
 import * as argon from "argon2";
 import * as fs from "fs";
+import * as path from "path";
 import * as moment from "moment";
 import { ClamScanService } from "src/clamscan/clamscan.service";
 import { ConfigService } from "src/config/config.service";
@@ -169,16 +170,26 @@ export class ShareService {
   async createZip(shareId: string) {
     if (this.config.get("s3.enabled")) return;
 
-    const path = `${SHARE_DIRECTORY}/${shareId}`;
+    // CWE-23: resolve + prefix check to prevent path traversal
+    const baseDir = path.resolve(SHARE_DIRECTORY);
+    const sharePath = path.resolve(SHARE_DIRECTORY, shareId);
+    if (!sharePath.startsWith(baseDir + path.sep)) {
+      throw new BadRequestException("Invalid share identifier");
+    }
 
     const files = await this.prisma.file.findMany({ where: { shareId } });
     const archive = archiver("zip", {
       zlib: { level: this.config.get("share.zipCompressionLevel") },
     });
-    const writeStream = fs.createWriteStream(`${path}/archive.zip`);
+    const writeStream = fs.createWriteStream(path.join(sharePath, "archive.zip"));
 
     for (const file of files) {
-      archive.append(fs.createReadStream(`${path}/${file.id}`), {
+      const filePath = path.resolve(sharePath, file.id);
+      if (!filePath.startsWith(sharePath + path.sep)) {
+        this.logger.warn(`Skipping suspicious file id: ${file.id}`);
+        continue;
+      }
+      archive.append(fs.createReadStream(filePath), {
         name: file.name,
       });
     }
@@ -426,6 +437,7 @@ export class ShareService {
         },
         creator: true,
         security: true,
+        reverseShare: true,
       },
     });
 
@@ -437,6 +449,10 @@ export class ShareService {
     return {
       ...share,
       hasPassword: !!share.security?.password,
+      // Expose the encrypted reverse share key (K_rs wrapped by K_master).
+      // It is AES-GCM ciphertext — useless without K_master, safe to expose.
+      encryptedReverseShareKey:
+        share.reverseShare?.encryptedReverseShareKey ?? null,
     };
   }
 
@@ -449,6 +465,34 @@ export class ShareService {
       throw new NotFoundException("Share not found");
 
     return share;
+  }
+
+  /**
+   * Retrieve the encrypted reverse share key (K_rs wrapped by K_master)
+   * and the creator ID for ownership verification.
+   * Returns null if the share has no parent reverse share or no E2E key.
+   */
+  async getEncryptedReverseShareKey(
+    shareId: string,
+  ): Promise<{ encryptedReverseShareKey: string; creatorId: string } | null> {
+    const share = await this.prisma.share.findUnique({
+      where: { id: shareId },
+      include: { reverseShare: true },
+    });
+
+    if (!share) throw new NotFoundException("Share not found");
+
+    if (
+      !share.reverseShare ||
+      !share.reverseShare.encryptedReverseShareKey
+    ) {
+      return null;
+    }
+
+    return {
+      encryptedReverseShareKey: share.reverseShare.encryptedReverseShareKey,
+      creatorId: share.reverseShare.creatorId,
+    };
   }
 
   async remove(shareId: string, isDeleterAdmin = false) {

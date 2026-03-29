@@ -20,6 +20,7 @@ configVariablesWithDefaultValues["initUser"] = {
   enabled: false,
   username: "admin",
   email: "admin@example.com",
+  // snyk:ignore HardcodedNonCryptoSecret - This is an example/placeholder value for config generation, not a real credential
   password: "my-secure-password",
   isAdmin: true,
   ldapDN: "",
