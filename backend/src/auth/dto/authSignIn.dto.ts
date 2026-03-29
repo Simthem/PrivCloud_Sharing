@@ -11,4 +11,8 @@ export class AuthSignInDTO {
 
   @IsString()
   password: string;
+
+  @IsString()
+  @IsOptional()
+  captchaToken?: string;
 }

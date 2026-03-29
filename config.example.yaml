@@ -246,3 +246,11 @@ initUser:
   password: my-secure-password
   isAdmin: true
   ldapDN: ""
+hcaptcha:
+  # Whether hCaptcha is enabled for sign in, sign up, and password reset forms.
+  # hCaptcha is a privacy-friendly CAPTCHA alternative (https://www.hcaptcha.com).
+  enabled: "false"
+  # Site key (public) - displayed in the frontend widget.
+  siteKey: ""
+  # Secret key (private) - used server-side to verify tokens with hCaptcha API.
+  secretKey: ""

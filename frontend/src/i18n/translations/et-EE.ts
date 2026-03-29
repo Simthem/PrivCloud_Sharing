@@ -286,6 +286,11 @@ export default {
   "share.modal.password.description": "Palun sisesta parool, et sellele jagamisele juurde pääseda.",
   "share.modal.password": "Parool",
   "share.modal.error.invalid-password": "Vigane parool",
+
+  "share.modal.captcha.title": "Verification required",
+  "share.modal.captcha.description":
+    "Please complete the verification below to access this share.",
+  "share.modal.captcha.submit": "Access share",
   "share.button.download-all": "Laadi kõik alla",
   "share.notify.download-all-preparing": "Jagamist valmistatakse ette. Palun proovi mõne minuti pärast uuesti.",
   "share.modal.file-link": "Faili link",
@@ -492,6 +497,16 @@ export default {
   "admin.config.legal.privacy-policy-text.description": "Tekst mis kuvatakse privaatsuspoliitikas. Toetab Markdowni. Jäta tühjaks, et lingida välisele privaatsuspoliitika lehele.",
   "admin.config.legal.privacy-policy-url": "Privaatsuspoliitika URL",
   "admin.config.legal.privacy-policy-url.description": "Kui sul on juba privaatsuspoliitika leht saad selle siia linkida selle asemel, et kasutada tekstivälja.",
+  "admin.config.category.hcaptcha": "hCaptcha",
+  "admin.config.hcaptcha.enabled": "Enable hCaptcha",
+  "admin.config.hcaptcha.enabled.description":
+    "Protect sign in, sign up, and password reset forms with hCaptcha to prevent bot abuse.",
+  "admin.config.hcaptcha.site-key": "Site key",
+  "admin.config.hcaptcha.site-key.description":
+    "The public site key from your hCaptcha dashboard.",
+  "admin.config.hcaptcha.secret-key": "Secret key",
+  "admin.config.hcaptcha.secret-key.description":
+    "The secret key from your hCaptcha dashboard used for server-side verification.",
   // 404
   "404.description": "Ups, seda lehte ei eksisteeri.",
   "404.button.home": "Viia mind tagasi avalehele",

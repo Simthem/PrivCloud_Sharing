@@ -4,4 +4,8 @@ export class SharePasswordDto {
   @IsString()
   @IsOptional()
   password: string;
+
+  @IsString()
+  @IsOptional()
+  captchaToken?: string;
 }

@@ -296,6 +296,11 @@ export default {
   "share.modal.password.description": "Please enter the password to access this share.",
   "share.modal.password": "Wachtwoord",
   "share.modal.error.invalid-password": "Ongeldig wachtwoord",
+
+  "share.modal.captcha.title": "Verification required",
+  "share.modal.captcha.description":
+    "Please complete the verification below to access this share.",
+  "share.modal.captcha.submit": "Access share",
   "share.button.download-all": "Alles downloaden",
   "share.notify.download-all-preparing": "The share is being prepared. Please try again in a few minutes.",
   "share.modal.file-link": "Link naar bestand",
@@ -515,6 +520,16 @@ export default {
   "admin.config.legal.privacy-policy-text.description": "The text which should be shown in the privacy policy. Supports Markdown. Leave blank to link to an external privacy policy page.",
   "admin.config.legal.privacy-policy-url": "Privacy policy URL",
   "admin.config.legal.privacy-policy-url.description": "If you already have a privacy policy page you can link it here instead of using the text field.",
+  "admin.config.category.hcaptcha": "hCaptcha",
+  "admin.config.hcaptcha.enabled": "Enable hCaptcha",
+  "admin.config.hcaptcha.enabled.description":
+    "Protect sign in, sign up, and password reset forms with hCaptcha to prevent bot abuse.",
+  "admin.config.hcaptcha.site-key": "Site key",
+  "admin.config.hcaptcha.site-key.description":
+    "The public site key from your hCaptcha dashboard.",
+  "admin.config.hcaptcha.secret-key": "Secret key",
+  "admin.config.hcaptcha.secret-key.description":
+    "The secret key from your hCaptcha dashboard used for server-side verification.",
   // 404
   "404.description": "Oeps, deze pagina bestaat niet.",
   "404.button.home": "Breng me terug naar huis",

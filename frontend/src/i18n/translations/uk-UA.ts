@@ -286,6 +286,11 @@ export default {
   "share.modal.password.description": "Будь ласка, введіть пароль для доступу до цього завантаження.",
   "share.modal.password": "Пароль",
   "share.modal.error.invalid-password": "Невірний пароль",
+
+  "share.modal.captcha.title": "Verification required",
+  "share.modal.captcha.description":
+    "Please complete the verification below to access this share.",
+  "share.modal.captcha.submit": "Access share",
   "share.button.download-all": "Завантажити все",
   "share.notify.download-all-preparing": "Завантаження готується. Будь ласка, спробуйте знову через кілька хвилин.",
   "share.modal.file-link": "Посилання на файл",
@@ -492,6 +497,16 @@ export default {
   "admin.config.legal.privacy-policy-text.description": "Текст, що має бути показано в політиці конфіденційності. Підтримує Markdown. Залиште порожнім, щоб надати посилання на сторінку зовнішньої політики конфіденційності.",
   "admin.config.legal.privacy-policy-url": "Політика конфіденційності URL",
   "admin.config.legal.privacy-policy-url.description": "Якщо у вас вже є сторінка політики конфіденційності, то ви можете зв'язати її тут замість використання текстового поля.",
+  "admin.config.category.hcaptcha": "hCaptcha",
+  "admin.config.hcaptcha.enabled": "Enable hCaptcha",
+  "admin.config.hcaptcha.enabled.description":
+    "Protect sign in, sign up, and password reset forms with hCaptcha to prevent bot abuse.",
+  "admin.config.hcaptcha.site-key": "Site key",
+  "admin.config.hcaptcha.site-key.description":
+    "The public site key from your hCaptcha dashboard.",
+  "admin.config.hcaptcha.secret-key": "Secret key",
+  "admin.config.hcaptcha.secret-key.description":
+    "The secret key from your hCaptcha dashboard used for server-side verification.",
   // 404
   "404.description": "Бляха, цієї строрінки не існує.",
   "404.button.home": "Поверни мене додому",

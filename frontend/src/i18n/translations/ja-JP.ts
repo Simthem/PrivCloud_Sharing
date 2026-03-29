@@ -286,6 +286,11 @@ export default {
   "share.modal.password.description": "この共有にアクセスするにはパスワードを入力してください。",
   "share.modal.password": "パスワード",
   "share.modal.error.invalid-password": "パスワードが間違っています",
+
+  "share.modal.captcha.title": "Verification required",
+  "share.modal.captcha.description":
+    "Please complete the verification below to access this share.",
+  "share.modal.captcha.submit": "Access share",
   "share.button.download-all": "全てダウンロード",
   "share.notify.download-all-preparing": "共有の準備中です。数分後にもう一度お試しください。",
   "share.modal.file-link": "ファイルリンク",
@@ -492,6 +497,16 @@ export default {
   "admin.config.legal.privacy-policy-text.description": "プライバシーポリシーに表示されるテキスト。Markdownをサポートします。外部のプライバシーポリシーにリンクするには空白のままにします。",
   "admin.config.legal.privacy-policy-url": "プライバシーポリシーのURL",
   "admin.config.legal.privacy-policy-url.description": "すでにプライバシーポリシーがある場合は、テキストフィールドを使用する代わりにここにリンクすることができます。",
+  "admin.config.category.hcaptcha": "hCaptcha",
+  "admin.config.hcaptcha.enabled": "Enable hCaptcha",
+  "admin.config.hcaptcha.enabled.description":
+    "Protect sign in, sign up, and password reset forms with hCaptcha to prevent bot abuse.",
+  "admin.config.hcaptcha.site-key": "Site key",
+  "admin.config.hcaptcha.site-key.description":
+    "The public site key from your hCaptcha dashboard.",
+  "admin.config.hcaptcha.secret-key": "Secret key",
+  "admin.config.hcaptcha.secret-key.description":
+    "The secret key from your hCaptcha dashboard used for server-side verification.",
   // 404
   "404.description": "ページが見つかりません。",
   "404.button.home": "ホームに戻る",

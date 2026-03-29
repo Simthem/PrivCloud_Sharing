@@ -40,6 +40,7 @@ export type CreateShare = {
   security: ShareSecurity;
   isE2EEncrypted?: boolean;
   shareE2EKeyViaEmail?: boolean;
+  captchaToken?: string;
 };
 
 export type CreateReverseShare = {

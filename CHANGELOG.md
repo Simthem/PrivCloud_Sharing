@@ -1,3 +1,29 @@
+## [1.17.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.17.1...v1.17.2) (2026-03-29)
+
+
+### Features
+
+* **security:** add hCaptcha integration for bot and abuse protection
+  - new `hcaptcha` configuration category (enabled, siteKey, secretKey)
+  - `HCaptchaGuard` with server-side token verification via hCaptcha siteverify API
+  - guard automatically skips captcha check for authenticated users
+* **auth:** protect sign-in, sign-up, and password reset forms with hCaptcha
+  - frontend HCaptcha widget on `SignInForm`, `SignUpForm`, and `resetPassword` page
+  - `captchaToken` field added to `AuthSignInDTO` and `AuthRegisterDTO`
+* **share:** protect anonymous share creation (upload) with hCaptcha
+  - captcha widget shown only for unauthenticated users in both standard
+    and simplified upload modals
+  - `captchaToken` field added to `CreateShareDTO`, stripped before Prisma persistence
+* **share:** protect share access with hCaptcha
+  - captcha-only modal for shares without password (`showCaptchaModal`)
+  - captcha widget integrated into password entry modal for password-protected shares
+  - `captchaToken` field added to `SharePasswordDTO`
+* **admin:** add hCaptcha section in admin configuration panel with TbShieldCheck icon
+* **config:** add hCaptcha section in `config.example.yaml` with documentation
+* **i18n:** add hCaptcha and share captcha translation keys across all 29 locales
+* **deps:** add `@hcaptcha/react-hcaptcha` ^1.11.0 frontend dependency
+
+
 ## [1.17.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.16.9...v1.17.1) (2026-03-28)
 
 

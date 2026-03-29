@@ -300,6 +300,11 @@ export default {
   "share.modal.password.description": "Veuillez entrer le mot de passe pour accéder à ce partage.",
   "share.modal.password": "Mot de passe",
   "share.modal.error.invalid-password": "Mot de passe incorrect",
+
+  "share.modal.captcha.title": "Vérification requise",
+  "share.modal.captcha.description":
+    "Veuillez compléter la vérification ci-dessous pour accéder à ce partage.",
+  "share.modal.captcha.submit": "Accéder au partage",
   "share.button.download-all": "Télécharger tout",
   "share.notify.download-all-preparing": "Le partage est en préparation. Réessayez dans quelques minutes.",
   "share.modal.file-link": "Lien du fichier",
@@ -527,6 +532,18 @@ export default {
   "admin.config.legal.privacy-policy-text.description": "Le texte qui doit être affiché dans la politique de confidentialité. Supporte le Markdown. Laissez vide pour mettre un lien vers une page de politique de confidentialité externe.",
   "admin.config.legal.privacy-policy-url": "URL de la politique de confidentialité",
   "admin.config.legal.privacy-policy-url.description": "Si vous avez déjà une page de politique de confidentialité, vous pouvez indiquer son URL ici au lieu d'utiliser le champ de texte.",
+
+  "admin.config.category.hcaptcha": "hCaptcha",
+  "admin.config.hcaptcha.enabled": "Activer hCaptcha",
+  "admin.config.hcaptcha.enabled.description":
+    "Protège les formulaires de connexion, d'inscription et de réinitialisation de mot de passe avec hCaptcha pour empêcher les abus de bots.",
+  "admin.config.hcaptcha.site-key": "Clé de site",
+  "admin.config.hcaptcha.site-key.description":
+    "La clé de site publique depuis votre tableau de bord hCaptcha.",
+  "admin.config.hcaptcha.secret-key": "Clé secrète",
+  "admin.config.hcaptcha.secret-key.description":
+    "La clé secrète depuis votre tableau de bord hCaptcha, utilisée pour la vérification côté serveur.",
+
   // 404
   "404.description": "Désolé, mais cette page n’existe pas.",
   "404.button.home": "Retour à l’accueil",

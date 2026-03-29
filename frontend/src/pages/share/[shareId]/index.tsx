@@ -9,8 +9,10 @@ import Meta from "../../../components/Meta";
 import DownloadAllButton from "../../../components/share/DownloadAllButton";
 import FileList from "../../../components/share/FileList";
 import showEnterPasswordModal from "../../../components/share/showEnterPasswordModal";
+import showCaptchaModal from "../../../components/share/showCaptchaModal";
 import showErrorModal from "../../../components/share/showErrorModal";
 import useTranslate from "../../../hooks/useTranslate.hook";
+import useConfig from "../../../hooks/config.hook";
 import shareService from "../../../services/share.service";
 import { Share as ShareType } from "../../../types/share.type";
 import toast from "../../../utils/toast.util";
@@ -26,6 +28,7 @@ export function getServerSideProps(context: GetServerSidePropsContext) {
 
 const Share = ({ shareId }: { shareId: string }) => {
   const modals = useModals();
+  const config = useConfig();
   const {
     data: share,
     error,
@@ -39,6 +42,9 @@ const Share = ({ shareId }: { shareId: string }) => {
 
   const t = useTranslate();
 
+  const captchaEnabled = config.get("hcaptcha.enabled");
+  const captchaSiteKey = config.get("hcaptcha.siteKey");
+
   // ── E2E : récupérer la clé depuis le fragment d'URL ou localStorage utilisateur ──
   const [e2eKey, setE2eKey] = useState<string | null>(null);
   useEffect(() => {
@@ -49,9 +55,9 @@ const Share = ({ shareId }: { shareId: string }) => {
 
   const isE2EMissingKey = share?.isE2EEncrypted && !e2eKey;
 
-  const getShareToken = async (password?: string) => {
+  const getShareToken = async (password?: string, captchaToken?: string) => {
     await shareService
-      .getShareToken(shareId, password)
+      .getShareToken(shareId, password, captchaToken)
       .then(() => {
         modals.closeAll();
         refetch();
@@ -66,7 +72,11 @@ const Share = ({ shareId }: { shareId: string }) => {
             "go-home",
           );
         } else if (error == "share_password_required") {
-          showEnterPasswordModal(modals, getShareToken);
+          showEnterPasswordModal(
+            modals,
+            getShareToken,
+            captchaEnabled && captchaSiteKey ? captchaSiteKey : undefined,
+          );
         } else {
           toast.axiosError(e);
         }
@@ -96,7 +106,11 @@ const Share = ({ shareId }: { shareId: string }) => {
         );
       }
     } else if (errorData.error == "share_password_required") {
-      showEnterPasswordModal(modals, getShareToken);
+      showEnterPasswordModal(
+        modals,
+        getShareToken,
+        captchaEnabled && captchaSiteKey ? captchaSiteKey : undefined,
+      );
     } else if (errorData.error == "private_share") {
       showErrorModal(
         modals,
@@ -105,7 +119,11 @@ const Share = ({ shareId }: { shareId: string }) => {
         "go-home",
       );
     } else if (errorData.error == "share_token_required") {
-      getShareToken();
+      if (captchaEnabled && captchaSiteKey) {
+        showCaptchaModal(modals, captchaSiteKey, getShareToken);
+      } else {
+        getShareToken();
+      }
     } else {
       showErrorModal(
         modals,

@@ -296,6 +296,11 @@ export default {
   "share.modal.password.description": "Bitte gib das Passwort ein, um auf diese Freigabe zuzugreifen.",
   "share.modal.password": "Passwort",
   "share.modal.error.invalid-password": "Ungültiges Passwort",
+
+  "share.modal.captcha.title": "Verification required",
+  "share.modal.captcha.description":
+    "Please complete the verification below to access this share.",
+  "share.modal.captcha.submit": "Access share",
   "share.button.download-all": "Alles herunterladen",
   "share.notify.download-all-preparing": "Die Freigabe wird vorbereitet. Bitte versuche es in ein paar Minuten erneut.",
   "share.modal.file-link": "Dateilink",
@@ -514,6 +519,16 @@ export default {
   "admin.config.legal.privacy-policy-text.description": "Der Text, der in der Datenschutzerklärung angezeigt wird. Unterstützt Markdown. Leer lassen, um auf eine externe Datenschutzerklärungsseite zu verlinken.",
   "admin.config.legal.privacy-policy-url": "Datenschutzerklärungs-URL",
   "admin.config.legal.privacy-policy-url.description": "Wenn bereits eine Datenschutzerklärungsseite vorhanden ist, kann sie hier verlinkt werden, anstatt den Text einzugeben.",
+  "admin.config.category.hcaptcha": "hCaptcha",
+  "admin.config.hcaptcha.enabled": "Enable hCaptcha",
+  "admin.config.hcaptcha.enabled.description":
+    "Protect sign in, sign up, and password reset forms with hCaptcha to prevent bot abuse.",
+  "admin.config.hcaptcha.site-key": "Site key",
+  "admin.config.hcaptcha.site-key.description":
+    "The public site key from your hCaptcha dashboard.",
+  "admin.config.hcaptcha.secret-key": "Secret key",
+  "admin.config.hcaptcha.secret-key.description":
+    "The secret key from your hCaptcha dashboard used for server-side verification.",
   // 404
   "404.description": "Ups, diese Seite existiert nicht.",
   "404.button.home": "Zurück zur Startseite",

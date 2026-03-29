@@ -2,6 +2,7 @@ import {
   Anchor,
   Button,
   Container,
+  Group,
   Paper,
   PasswordInput,
   Text,
@@ -9,8 +10,10 @@ import {
   Title,
 } from "@mantine/core";
 import { useForm, yupResolver } from "@mantine/form";
+import HCaptcha from "@hcaptcha/react-hcaptcha";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import { useRef, useState } from "react";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
 import useConfig from "../../hooks/config.hook";
@@ -24,6 +27,12 @@ const SignUpForm = () => {
   const router = useRouter();
   const t = useTranslate();
   const { refreshUser } = useUser();
+
+  const captchaEnabled = config.get("hcaptcha.enabled");
+  const captchaSiteKey = config.get("hcaptcha.siteKey");
+  const captchaRef = useRef<HCaptcha>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | undefined>();
+  const handleCaptchaExpire = () => setCaptchaToken(undefined);
 
   const validationSchema = yup.object().shape({
     email: yup.string().email(t("common.error.invalid-email")).required(),
@@ -48,7 +57,7 @@ const SignUpForm = () => {
 
   const signUp = async (email: string, username: string, password: string) => {
     await authService
-      .signUp(email.trim(), username.trim(), password.trim())
+      .signUp(email.trim(), username.trim(), password.trim(), captchaToken)
       .then(async () => {
         const user = await refreshUser();
         if (user?.isAdmin) {
@@ -96,9 +105,19 @@ const SignUpForm = () => {
             mt="md"
             {...form.getInputProps("password")}
           />
-          <Button fullWidth mt="xl" type="submit">
+          <Button fullWidth mt="xl" type="submit" disabled={captchaEnabled && !captchaToken}>
             <FormattedMessage id="signup.button.submit" />
           </Button>
+          {captchaEnabled && captchaSiteKey && (
+            <Group position="center" mt="md">
+              <HCaptcha
+                sitekey={captchaSiteKey}
+                onVerify={setCaptchaToken}
+                onExpire={handleCaptchaExpire}
+                ref={captchaRef}
+              />
+            </Group>
+          )}
         </form>
       </Paper>
     </Container>

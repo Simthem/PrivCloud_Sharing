@@ -286,6 +286,11 @@ export default {
   "share.modal.password.description": "Zadejte prosím heslo pro přístup k tomuto sdíleni.",
   "share.modal.password": "Heslo",
   "share.modal.error.invalid-password": "Neplatné heslo",
+
+  "share.modal.captcha.title": "Verification required",
+  "share.modal.captcha.description":
+    "Please complete the verification below to access this share.",
+  "share.modal.captcha.submit": "Access share",
   "share.button.download-all": "Stáhnout vše",
   "share.notify.download-all-preparing": "Sdílení se připravuje. Zkuste to prosím znovu za několik minut.",
   "share.modal.file-link": "Odkaz na soubor",
@@ -492,6 +497,16 @@ export default {
   "admin.config.legal.privacy-policy-text.description": "Text, který by měl být zobrazen v zásadách ochrany osobních údajů. Podporuje Markdown. Ponechte prázdné pro odkaz na stránku s externími zásadami ochrany osobních údajů.",
   "admin.config.legal.privacy-policy-url": "Adresa zásad ochrany soukromí",
   "admin.config.legal.privacy-policy-url.description": "Pokud již máte stránku o zásadách ochrany osobních údajů, můžete ji propojit zde místo použití textového pole.",
+  "admin.config.category.hcaptcha": "hCaptcha",
+  "admin.config.hcaptcha.enabled": "Enable hCaptcha",
+  "admin.config.hcaptcha.enabled.description":
+    "Protect sign in, sign up, and password reset forms with hCaptcha to prevent bot abuse.",
+  "admin.config.hcaptcha.site-key": "Site key",
+  "admin.config.hcaptcha.site-key.description":
+    "The public site key from your hCaptcha dashboard.",
+  "admin.config.hcaptcha.secret-key": "Secret key",
+  "admin.config.hcaptcha.secret-key.description":
+    "The secret key from your hCaptcha dashboard used for server-side verification.",
   // 404
   "404.description": "Jejda, tato stránka neexistuje.",
   "404.button.home": "Návrat na hlavní stránku",

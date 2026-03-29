@@ -286,6 +286,11 @@ export default {
   "share.modal.password.description": "Bu paylaşıma erişmek için lütfen şifreyi girin.",
   "share.modal.password": "Şifre",
   "share.modal.error.invalid-password": "Geçersiz şifre",
+
+  "share.modal.captcha.title": "Verification required",
+  "share.modal.captcha.description":
+    "Please complete the verification below to access this share.",
+  "share.modal.captcha.submit": "Access share",
   "share.button.download-all": "Tümünü indir",
   "share.notify.download-all-preparing": "Paylaşım hazırlanıyor. Lütfen birkaç dakika içinde tekrar deneyin.",
   "share.modal.file-link": "Dosya bağlantısı",
@@ -492,6 +497,16 @@ export default {
   "admin.config.legal.privacy-policy-text.description": "Gizlilik politikasında gösterilmesi gereken metin. Markdown destekler. Harici bir gizlilik politikası sayfasına bağlantı vermek için boş bırakın.",
   "admin.config.legal.privacy-policy-url": "Gizlilik politikası URL'si",
   "admin.config.legal.privacy-policy-url.description": "Zaten bir gizlilik politikası sayfanız varsa, metin alanı yerine buraya bağlantı verebilirsiniz.",
+  "admin.config.category.hcaptcha": "hCaptcha",
+  "admin.config.hcaptcha.enabled": "Enable hCaptcha",
+  "admin.config.hcaptcha.enabled.description":
+    "Protect sign in, sign up, and password reset forms with hCaptcha to prevent bot abuse.",
+  "admin.config.hcaptcha.site-key": "Site key",
+  "admin.config.hcaptcha.site-key.description":
+    "The public site key from your hCaptcha dashboard.",
+  "admin.config.hcaptcha.secret-key": "Secret key",
+  "admin.config.hcaptcha.secret-key.description":
+    "The secret key from your hCaptcha dashboard used for server-side verification.",
   // 404
   "404.description": "Hay aksi, bu sayfa mevcut değil.",
   "404.button.home": "Beni anasayfaya götür",

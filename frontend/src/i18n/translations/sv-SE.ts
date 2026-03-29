@@ -286,6 +286,11 @@ export default {
   "share.modal.password.description": "Ange lösenordet för att komma åt denna delning.",
   "share.modal.password": "Lösenord",
   "share.modal.error.invalid-password": "Ogiltigt lösenord",
+
+  "share.modal.captcha.title": "Verification required",
+  "share.modal.captcha.description":
+    "Please complete the verification below to access this share.",
+  "share.modal.captcha.submit": "Access share",
   "share.button.download-all": "Ladda ner allt",
   "share.notify.download-all-preparing": "Delningen förbereds. Försök igen om några minuter.",
   "share.modal.file-link": "Fillänk",
@@ -492,6 +497,16 @@ export default {
   "admin.config.legal.privacy-policy-text.description": "Texten som ska visas i integritetspolicy. Stödjer Markdown. Lämna tomt för att länka till en extern sida för integritetspolicy.",
   "admin.config.legal.privacy-policy-url": "Länk till integritetspolicy",
   "admin.config.legal.privacy-policy-url.description": "Om du redan har en sida för integritetspolicy kan du länka till den här istället för att använda textfältet.",
+  "admin.config.category.hcaptcha": "hCaptcha",
+  "admin.config.hcaptcha.enabled": "Enable hCaptcha",
+  "admin.config.hcaptcha.enabled.description":
+    "Protect sign in, sign up, and password reset forms with hCaptcha to prevent bot abuse.",
+  "admin.config.hcaptcha.site-key": "Site key",
+  "admin.config.hcaptcha.site-key.description":
+    "The public site key from your hCaptcha dashboard.",
+  "admin.config.hcaptcha.secret-key": "Secret key",
+  "admin.config.hcaptcha.secret-key.description":
+    "The secret key from your hCaptcha dashboard used for server-side verification.",
   // 404
   "404.description": "Hoppsan den här sidan finns inte.",
   "404.button.home": "Ta mig tillbaka hem",

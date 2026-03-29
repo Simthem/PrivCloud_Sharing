@@ -233,6 +233,10 @@ const Upload = ({
         anonymousMaxExpiration: config.get("share.anonymousMaxExpiration"),
         shareIdLength: config.get("share.shareIdLength"),
         simplified,
+        captchaSiteKey:
+          !user && config.get("hcaptcha.enabled")
+            ? config.get("hcaptcha.siteKey")
+            : undefined,
       },
       files,
       uploadFiles,

@@ -20,6 +20,7 @@ import {
   TbServerBolt,
   TbSettings,
   TbShare,
+  TbShieldCheck,
   TbSocial,
 } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
@@ -34,6 +35,7 @@ const categories = [
   { name: "S3", icon: <TbBucket /> },
   { name: "Legal", icon: <TbScale /> },
   { name: "Cache", icon: <TbServerBolt /> },
+  { name: "Hcaptcha", icon: <TbShieldCheck /> },
 ];
 
 const useStyles = createStyles((theme) => ({

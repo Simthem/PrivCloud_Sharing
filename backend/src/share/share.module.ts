@@ -6,6 +6,7 @@ import { FileModule } from "src/file/file.module";
 import { ReverseShareModule } from "src/reverseShare/reverseShare.module";
 import { ShareController } from "./share.controller";
 import { ShareService } from "./share.service";
+import { HCaptchaGuard } from "src/auth/guard/hcaptcha.guard";
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { ShareService } from "./share.service";
     forwardRef(() => FileModule),
   ],
   controllers: [ShareController],
-  providers: [ShareService],
+  providers: [ShareService, HCaptchaGuard],
   exports: [ShareService],
 })
 export class ShareModule {}

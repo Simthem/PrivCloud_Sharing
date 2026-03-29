@@ -4,6 +4,7 @@ import { EmailModule } from "src/email/email.module";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { AuthTotpService } from "./authTotp.service";
+import { HCaptchaGuard } from "./guard/hcaptcha.guard";
 import { JwtStrategy } from "./strategy/jwt.strategy";
 import { LdapService } from "./ldap.service";
 import { UserModule } from "../user/user.module";
@@ -19,7 +20,7 @@ import { OAuthModule } from "../oauth/oauth.module";
     UserModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthTotpService, JwtStrategy, LdapService],
+  providers: [AuthService, AuthTotpService, JwtStrategy, LdapService, HCaptchaGuard],
   exports: [AuthService],
 })
 export class AuthModule {}

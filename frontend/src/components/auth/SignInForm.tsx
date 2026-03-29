@@ -14,9 +14,10 @@ import {
 } from "@mantine/core";
 import { useForm, yupResolver } from "@mantine/form";
 import { showNotification } from "@mantine/notifications";
+import HCaptcha from "@hcaptcha/react-hcaptcha";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TbInfoCircle } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
@@ -79,6 +80,11 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
   const [isRedirectingToOauthProvider, setIsRedirectingToOauthProvider] =
     useState(false);
 
+  const captchaEnabled = config.get("hcaptcha.enabled");
+  const captchaSiteKey = config.get("hcaptcha.siteKey");
+  const captchaRef = useRef<HCaptcha>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | undefined>();
+
   const validationSchema = yup.object().shape({
     emailOrUsername: yup.string().required(t("common.error.field-required")),
     password: yup.string().required(t("common.error.field-required")),
@@ -94,7 +100,7 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
 
   const signIn = async (email: string, password: string) => {
     await authService
-      .signIn(email.trim(), password.trim())
+      .signIn(email.trim(), password.trim(), captchaToken)
       .then(async (response) => {
         if (response.data["loginToken"]) {
           // Prompt the user to enter their totp code
@@ -117,6 +123,8 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
       })
       .catch(toast.axiosError);
   };
+
+  const handleCaptchaExpire = () => setCaptchaToken(undefined);
 
   useEffect(() => {
     authService
@@ -184,9 +192,19 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
                 </Anchor>
               </Group>
             )}
-            <Button fullWidth mt="xl" type="submit">
+            <Button fullWidth mt="xl" type="submit" disabled={captchaEnabled && !captchaToken}>
               <FormattedMessage id="signin.button.submit" />
             </Button>
+            {captchaEnabled && captchaSiteKey && (
+              <Group position="center" mt="md">
+                <HCaptcha
+                  sitekey={captchaSiteKey}
+                  onVerify={setCaptchaToken}
+                  onExpire={handleCaptchaExpire}
+                  ref={captchaRef}
+                />
+              </Group>
+            )}
           </form>
         )}
         {oauthProviders.length > 0 && (

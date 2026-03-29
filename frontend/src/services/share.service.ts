@@ -66,8 +66,11 @@ const getStoredRecipients = async (): Promise<Array<string>> => {
   return (await api.get("shares/recipients")).data;
 };
 
-const getShareToken = async (id: string, password?: string) => {
-  await api.post(`/shares/${id}/token`, { password });
+const getShareToken = async (id: string, password?: string, captchaToken?: string) => {
+  await api.post(`/shares/${id}/token`, {
+    password,
+    ...(captchaToken && { captchaToken }),
+  });
 };
 
 const isShareIdAvailable = async (id: string): Promise<boolean> => {

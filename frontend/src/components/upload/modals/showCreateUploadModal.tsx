@@ -2,6 +2,7 @@ import {
   Accordion,
   Alert,
   Button,
+  Center,
   Checkbox,
   Col,
   Grid,
@@ -19,8 +20,9 @@ import { useForm, yupResolver } from "@mantine/form";
 import { useModals } from "@mantine/modals";
 import { ModalsContextProps } from "@mantine/modals/lib/context";
 import moment from "moment";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { TbAlertCircle } from "react-icons/tb";
+import HCaptcha from "@hcaptcha/react-hcaptcha";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
 import useTranslate, {
@@ -46,6 +48,7 @@ const showCreateUploadModal = (
     anonymousMaxExpiration: Timespan;
     shareIdLength: number;
     simplified: boolean;
+    captchaSiteKey?: string;
   },
   files: FileUpload[],
   uploadCallback: (_createShare: CreateShare, _files: FileUpload[]) => void,
@@ -123,12 +126,17 @@ const CreateUploadModalBody = ({
     maxExpiration: Timespan;
     anonymousMaxExpiration: Timespan;
     shareIdLength: number;
+    captchaSiteKey?: string;
   };
   pastRecipients?: string[];
 }) => {
   const modals = useModals();
   const config = useConfig();
   const t = useTranslate();
+
+  const captchaRef = useRef<HCaptcha>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const showCaptcha = !options.isUserSignedIn && !!options.captchaSiteKey;
 
   const generatedLink = generateShareId(options.shareIdLength);
 
@@ -232,6 +240,7 @@ const CreateUploadModalBody = ({
             maxViews: values.maxViews || undefined,
           },
           shareE2EKeyViaEmail: values.shareE2EKeyViaEmail,
+          ...(captchaToken && { captchaToken }),
         },
         files,
       );
@@ -497,7 +506,21 @@ const CreateUploadModalBody = ({
               </Accordion.Panel>
             </Accordion.Item>
           </Accordion>
-          <Button type="submit" data-autofocus>
+          {showCaptcha && (
+            <Center>
+              <HCaptcha
+                ref={captchaRef}
+                sitekey={options.captchaSiteKey!}
+                onVerify={setCaptchaToken}
+                onExpire={() => setCaptchaToken(null)}
+              />
+            </Center>
+          )}
+          <Button
+            type="submit"
+            data-autofocus
+            disabled={showCaptcha && !captchaToken}
+          >
             <FormattedMessage id="common.button.share" />
           </Button>
         </Stack>
@@ -522,10 +545,15 @@ const SimplifiedCreateUploadModalModal = ({
     maxExpiration: Timespan;
     anonymousMaxExpiration: Timespan;
     shareIdLength: number;
+    captchaSiteKey?: string;
   };
 }) => {
   const modals = useModals();
   const t = useTranslate();
+
+  const captchaRef = useRef<HCaptcha>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const showCaptcha = !options.isUserSignedIn && !!options.captchaSiteKey;
 
   const [showNotSignedInAlert, setShowNotSignedInAlert] = useState(true);
 
@@ -573,6 +601,7 @@ const SimplifiedCreateUploadModalModal = ({
           password: undefined,
           maxViews: undefined,
         },
+        ...(captchaToken && { captchaToken }),
       },
       files,
     );
@@ -610,7 +639,21 @@ const SimplifiedCreateUploadModalModal = ({
               {...form.getInputProps("description")}
             />
           </Stack>
-          <Button type="submit" data-autofocus>
+          {showCaptcha && (
+            <Center>
+              <HCaptcha
+                ref={captchaRef}
+                sitekey={options.captchaSiteKey!}
+                onVerify={setCaptchaToken}
+                onExpire={() => setCaptchaToken(null)}
+              />
+            </Center>
+          )}
+          <Button
+            type="submit"
+            data-autofocus
+            disabled={showCaptcha && !captchaToken}
+          >
             <FormattedMessage id="common.button.share" />
           </Button>
         </Stack>

@@ -28,6 +28,7 @@ import { CreateShareGuard } from "./guard/createShare.guard";
 import { ShareOwnerGuard } from "./guard/shareOwner.guard";
 import { ShareSecurityGuard } from "./guard/shareSecurity.guard";
 import { ShareTokenSecurity } from "./guard/shareTokenSecurity.guard";
+import { HCaptchaGuard } from "src/auth/guard/hcaptcha.guard";
 import { ShareService } from "./share.service";
 import { CompletedShareDTO } from "./dto/shareComplete.dto";
 import { ConfigService } from "../config/config.service";
@@ -79,15 +80,17 @@ export class ShareController {
   }
 
   @Post()
-  @UseGuards(CreateShareGuard)
+  @UseGuards(CreateShareGuard, HCaptchaGuard)
   async create(
     @Body() body: CreateShareDTO,
     @Req() request: Request,
     @GetUser() user: User,
   ) {
     const { reverse_share_token } = request.cookies;
+    // Strip captchaToken — it was consumed by HCaptchaGuard and must not reach Prisma
+    const { captchaToken: _, ...shareData } = body;
     return new ShareDTO().from(
-      await this.shareService.create(body, user, reverse_share_token),
+      await this.shareService.create(shareData as CreateShareDTO, user, reverse_share_token),
     );
   }
 
@@ -136,7 +139,7 @@ export class ShareController {
       ttl: 5 * 60,
     },
   })
-  @UseGuards(ShareTokenSecurity)
+  @UseGuards(HCaptchaGuard, ShareTokenSecurity)
   @Post(":id/token")
   async getShareToken(
     @Param("id") id: string,

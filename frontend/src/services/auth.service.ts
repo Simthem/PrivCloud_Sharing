@@ -2,7 +2,7 @@ import { getCookie } from "cookies-next";
 import * as jose from "jose";
 import api from "./api.service";
 
-const signIn = async (emailOrUsername: string, password: string) => {
+const signIn = async (emailOrUsername: string, password: string, captchaToken?: string) => {
   const emailOrUsernameBody = emailOrUsername.includes("@")
     ? { email: emailOrUsername }
     : { username: emailOrUsername };
@@ -10,6 +10,7 @@ const signIn = async (emailOrUsername: string, password: string) => {
   const response = await api.post("auth/signIn", {
     ...emailOrUsernameBody,
     password,
+    ...(captchaToken && { captchaToken }),
   });
 
   return response;
@@ -22,8 +23,8 @@ const signInTotp = (totp: string, loginToken: string) => {
   });
 };
 
-const signUp = async (email: string, username: string, password: string) => {
-  const response = await api.post("auth/signUp", { email, username, password });
+const signUp = async (email: string, username: string, password: string, captchaToken?: string) => {
+  const response = await api.post("auth/signUp", { email, username, password, ...(captchaToken && { captchaToken }) });
 
   return response;
 };
@@ -52,8 +53,8 @@ const refreshAccessToken = async () => {
   }
 };
 
-const requestResetPassword = async (email: string) => {
-  await api.post(`/auth/resetPassword/${email}`);
+const requestResetPassword = async (email: string, captchaToken?: string) => {
+  await api.post(`/auth/resetPassword/${email}`, { ...(captchaToken && { captchaToken }) });
 };
 
 const resetPassword = async (token: string, password: string) => {

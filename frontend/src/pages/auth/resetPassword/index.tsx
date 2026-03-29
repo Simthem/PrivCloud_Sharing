@@ -12,11 +12,14 @@ import {
   Title,
 } from "@mantine/core";
 import { useForm, yupResolver } from "@mantine/form";
+import HCaptcha from "@hcaptcha/react-hcaptcha";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import { useRef, useState } from "react";
 import { TbArrowLeft } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
+import useConfig from "../../../hooks/config.hook";
 import useTranslate from "../../../hooks/useTranslate.hook";
 import authService from "../../../services/auth.service";
 import toast from "../../../utils/toast.util";
@@ -44,8 +47,15 @@ const useStyles = createStyles((theme) => ({
 
 const ResetPassword = () => {
   const { classes } = useStyles();
+  const config = useConfig();
   const router = useRouter();
   const t = useTranslate();
+
+  const captchaEnabled = config.get("hcaptcha.enabled");
+  const captchaSiteKey = config.get("hcaptcha.siteKey");
+  const captchaRef = useRef<HCaptcha>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | undefined>();
+  const handleCaptchaExpire = () => setCaptchaToken(undefined);
 
   const form = useForm({
     initialValues: {
@@ -74,7 +84,7 @@ const ResetPassword = () => {
         <form
           onSubmit={form.onSubmit((values) =>
             authService
-              .requestResetPassword(values.email)
+              .requestResetPassword(values.email, captchaToken)
               .then(() => {
                 toast.success(t("resetPassword.notify.success"));
                 router.push("/auth/signIn");
@@ -102,10 +112,20 @@ const ResetPassword = () => {
                 </Box>
               </Center>
             </Anchor>
-            <Button type="submit" className={classes.control}>
+            <Button type="submit" className={classes.control} disabled={captchaEnabled && !captchaToken}>
               <FormattedMessage id="resetPassword.text.resetPassword" />
             </Button>
           </Group>
+          {captchaEnabled && captchaSiteKey && (
+            <Group position="center" mt="md">
+              <HCaptcha
+                sitekey={captchaSiteKey}
+                onVerify={setCaptchaToken}
+                onExpire={handleCaptchaExpire}
+                ref={captchaRef}
+              />
+            </Group>
+          )}
         </form>
       </Paper>
     </Container>

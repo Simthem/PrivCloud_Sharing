@@ -1,14 +1,19 @@
-import { Button, PasswordInput, Stack, Text } from "@mantine/core";
+import { Button, Center, PasswordInput, Stack, Text } from "@mantine/core";
 import { ModalsContextProps } from "@mantine/modals/lib/context";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { FormattedMessage } from "react-intl";
+import HCaptcha from "@hcaptcha/react-hcaptcha";
 import useTranslate, {
   translateOutsideContext,
 } from "../../hooks/useTranslate.hook";
 
 const showEnterPasswordModal = (
   modals: ModalsContextProps,
-  submitCallback: (_password: string) => Promise<void>,
+  submitCallback: (
+    _password: string,
+    _captchaToken?: string,
+  ) => Promise<void>,
+  captchaSiteKey?: string,
 ) => {
   const t = translateOutsideContext();
   return modals.openModal({
@@ -16,18 +21,30 @@ const showEnterPasswordModal = (
     withCloseButton: false,
     closeOnEscape: false,
     title: t("share.modal.password.title"),
-    children: <Body submitCallback={submitCallback} />,
+    children: (
+      <Body submitCallback={submitCallback} captchaSiteKey={captchaSiteKey} />
+    ),
   });
 };
 
 const Body = ({
   submitCallback,
+  captchaSiteKey,
 }: {
-  submitCallback: (_password: string) => Promise<void>;
+  submitCallback: (
+    _password: string,
+    _captchaToken?: string,
+  ) => Promise<void>;
+  captchaSiteKey?: string;
 }) => {
   const [password, setPassword] = useState("");
   const [passwordWrong, setPasswordWrong] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaRef = useRef<HCaptcha>(null);
   const t = useTranslate();
+
+  const captchaEnabled = !!captchaSiteKey;
+
   return (
     <Stack align="stretch">
       <Text size="sm">
@@ -37,7 +54,7 @@ const Body = ({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          submitCallback(password);
+          submitCallback(password, captchaToken || undefined);
         }}
       >
         <Stack>
@@ -49,7 +66,20 @@ const Body = ({
             onChange={(e) => setPassword(e.target.value)}
             value={password}
           />
-          <Button type="submit">
+          {captchaEnabled && (
+            <Center>
+              <HCaptcha
+                ref={captchaRef}
+                sitekey={captchaSiteKey!}
+                onVerify={setCaptchaToken}
+                onExpire={() => setCaptchaToken(null)}
+              />
+            </Center>
+          )}
+          <Button
+            type="submit"
+            disabled={captchaEnabled && !captchaToken}
+          >
             <FormattedMessage id="common.button.submit" />
           </Button>
         </Stack>

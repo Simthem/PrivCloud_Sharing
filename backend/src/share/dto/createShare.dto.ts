@@ -40,4 +40,8 @@ export class CreateShareDTO {
   @IsOptional()
   @IsBoolean()
   isE2EEncrypted: boolean;
+
+  @IsOptional()
+  @IsString()
+  captchaToken?: string;
 }

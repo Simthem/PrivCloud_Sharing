@@ -286,6 +286,11 @@ export default {
   "share.modal.password.description": "Molimo unesite lozinku za pristup ovom deljenju.",
   "share.modal.password": "Lozinka",
   "share.modal.error.invalid-password": "Neispravna lozinka",
+
+  "share.modal.captcha.title": "Verification required",
+  "share.modal.captcha.description":
+    "Please complete the verification below to access this share.",
+  "share.modal.captcha.submit": "Access share",
   "share.button.download-all": "Preuzmi sve",
   "share.notify.download-all-preparing": "Deljenje se priprema. Molimo pokušajte ponovo za nekoliko minuta.",
   "share.modal.file-link": "Veza datoteke",
@@ -492,6 +497,16 @@ export default {
   "admin.config.legal.privacy-policy-text.description": "Tekst koji treba da bude prikazan u politici privatnosti. Podržava Markdown. Ostavite prazno ako želite da povežete eksternu stranicu sa politikom privatnosti.",
   "admin.config.legal.privacy-policy-url": "URL politike privatnosti",
   "admin.config.legal.privacy-policy-url.description": "Ako već imate stranicu sa politikom privatnosti, možete je povezati ovde umesto da koristite tekstualno polje.",
+  "admin.config.category.hcaptcha": "hCaptcha",
+  "admin.config.hcaptcha.enabled": "Enable hCaptcha",
+  "admin.config.hcaptcha.enabled.description":
+    "Protect sign in, sign up, and password reset forms with hCaptcha to prevent bot abuse.",
+  "admin.config.hcaptcha.site-key": "Site key",
+  "admin.config.hcaptcha.site-key.description":
+    "The public site key from your hCaptcha dashboard.",
+  "admin.config.hcaptcha.secret-key": "Secret key",
+  "admin.config.hcaptcha.secret-key.description":
+    "The secret key from your hCaptcha dashboard used for server-side verification.",
   // 404
   "404.description": "Ups - Ova strana ne postoji.",
   "404.button.home": "Vrati me na početak",

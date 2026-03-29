@@ -286,6 +286,11 @@ export default {
   "share.modal.password.description": "請輸入密碼取得此分享。",
   "share.modal.password": "密碼",
   "share.modal.error.invalid-password": "密碼錯誤",
+
+  "share.modal.captcha.title": "Verification required",
+  "share.modal.captcha.description":
+    "Please complete the verification below to access this share.",
+  "share.modal.captcha.submit": "Access share",
   "share.button.download-all": "全部下載",
   "share.notify.download-all-preparing": "正在處理中，請稍等片刻",
   "share.modal.file-link": "檔案連結",
@@ -492,6 +497,16 @@ export default {
   "admin.config.legal.privacy-policy-text.description": "文字將顯示在隱私權政策中。支持Markdown。空白以使用外部連結。",
   "admin.config.legal.privacy-policy-url": "隱私權政策 URL",
   "admin.config.legal.privacy-policy-url.description": "在此輸入 URL 以使用外部隱私權政策頁。",
+  "admin.config.category.hcaptcha": "hCaptcha",
+  "admin.config.hcaptcha.enabled": "Enable hCaptcha",
+  "admin.config.hcaptcha.enabled.description":
+    "Protect sign in, sign up, and password reset forms with hCaptcha to prevent bot abuse.",
+  "admin.config.hcaptcha.site-key": "Site key",
+  "admin.config.hcaptcha.site-key.description":
+    "The public site key from your hCaptcha dashboard.",
+  "admin.config.hcaptcha.secret-key": "Secret key",
+  "admin.config.hcaptcha.secret-key.description":
+    "The secret key from your hCaptcha dashboard used for server-side verification.",
   // 404
   "404.description": "查無此頁",
   "404.button.home": "返回主頁",

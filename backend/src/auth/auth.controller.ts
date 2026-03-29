@@ -26,6 +26,7 @@ import { ResetPasswordDTO } from "./dto/resetPassword.dto";
 import { TokenDTO } from "./dto/token.dto";
 import { UpdatePasswordDTO } from "./dto/updatePassword.dto";
 import { VerifyTotpDTO } from "./dto/verifyTotp.dto";
+import { HCaptchaGuard } from "./guard/hcaptcha.guard";
 import { JwtGuard } from "./guard/jwt.guard";
 
 @Controller("auth")
@@ -43,6 +44,7 @@ export class AuthController {
       ttl: 5 * 60,
     },
   })
+  @UseGuards(HCaptchaGuard)
   async signUp(
     @Body() dto: AuthRegisterDTO,
     @Req() { ip }: Request,
@@ -69,6 +71,7 @@ export class AuthController {
       ttl: 5 * 60,
     },
   })
+  @UseGuards(HCaptchaGuard)
   @HttpCode(200)
   async signIn(
     @Body() dto: AuthSignInDTO,
@@ -118,6 +121,7 @@ export class AuthController {
       ttl: 5 * 60,
     },
   })
+  @UseGuards(HCaptchaGuard)
   @HttpCode(202)
   async requestResetPassword(@Param("email") email: string) {
     await this.authService.requestResetPassword(email);

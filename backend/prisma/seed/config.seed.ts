@@ -512,6 +512,24 @@ export const configVariables = {
       secret: false,
     },
   },
+  hcaptcha: {
+    enabled: {
+      type: "boolean",
+      defaultValue: "false",
+      secret: false,
+    },
+    siteKey: {
+      type: "string",
+      defaultValue: "",
+      secret: false,
+    },
+    secretKey: {
+      type: "string",
+      defaultValue: "",
+      secret: true,
+      obscured: true,
+    },
+  },
 } satisfies ConfigVariables;
 
 export type YamlConfig = {

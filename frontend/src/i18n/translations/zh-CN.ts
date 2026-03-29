@@ -286,6 +286,11 @@ export default {
   "share.modal.password.description": "请输入密码以访问此共享。",
   "share.modal.password": "密码",
   "share.modal.error.invalid-password": "密码错误",
+
+  "share.modal.captcha.title": "Verification required",
+  "share.modal.captcha.description":
+    "Please complete the verification below to access this share.",
+  "share.modal.captcha.submit": "Access share",
   "share.button.download-all": "全部下载",
   "share.notify.download-all-preparing": "该共享正在处理中，请稍等片刻。",
   "share.modal.file-link": "文件链接",
@@ -492,6 +497,16 @@ export default {
   "admin.config.legal.privacy-policy-text.description": "文本将会显示在隐私政策页面中。支持Markdown。留空以链接到隐私政策页面。",
   "admin.config.legal.privacy-policy-url": "隐私政策网址",
   "admin.config.legal.privacy-policy-url.description": "如果您已经有一个隐私政策页面，您可以在此链接它，而不是使用文本字段。",
+  "admin.config.category.hcaptcha": "hCaptcha",
+  "admin.config.hcaptcha.enabled": "Enable hCaptcha",
+  "admin.config.hcaptcha.enabled.description":
+    "Protect sign in, sign up, and password reset forms with hCaptcha to prevent bot abuse.",
+  "admin.config.hcaptcha.site-key": "Site key",
+  "admin.config.hcaptcha.site-key.description":
+    "The public site key from your hCaptcha dashboard.",
+  "admin.config.hcaptcha.secret-key": "Secret key",
+  "admin.config.hcaptcha.secret-key.description":
+    "The secret key from your hCaptcha dashboard used for server-side verification.",
   // 404
   "404.description": "当前的页面走丢啦",
   "404.button.home": "返回主页",
