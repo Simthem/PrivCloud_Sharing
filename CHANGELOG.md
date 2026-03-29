@@ -35,6 +35,21 @@
   - add non-recursive chown on WORKDIR-created directories (`/opt/app`,
     `/opt/app/frontend`, `/opt/app/backend`, `/opt/app/backend/data`)
   - reduce final RUN to only chown the small Caddy home directory
+* **prisma:** fix `prisma.config.ts` path resolution — `defineConfig()` datasource URL
+  resolved `file:../data/` relative to the config file location (backend root) instead
+  of the `prisma/` directory, causing `prisma migrate deploy` to create a new empty
+  database at `/opt/app/data/` while the application data lived in
+  `/opt/app/backend/data/`; add `resolveFileUrl()` helper that resolves relative paths
+  from the `prisma/` directory, matching Prisma 6 behavior
+
+
+### Known Issues
+
+* **data-loss:** the `prisma.config.ts` path resolution bug caused `prisma migrate
+  deploy` to operate on an empty database at `/opt/app/data/` in production. The
+  application seed then reset the configuration, and the cleanup job purged all shares
+  (both database metadata and S3 objects). Shares created before v1.17.3 deployment
+  are unrecoverable.
 
 
 ## [1.17.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.17.1...v1.17.2) (2026-03-29)
