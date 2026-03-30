@@ -86,8 +86,15 @@ export class EmailService {
     );
   }
 
-  async sendMailToReverseShareCreator(recipientEmail: string, shareId: string) {
-    const shareUrl = `${this.config.get("general.appUrl")}/s/${shareId}`;
+  async sendMailToReverseShareCreator(
+    recipientEmail: string,
+    shareId: string,
+    e2eKeyFragment?: string,
+  ) {
+    const baseUrl = `${this.config.get("general.appUrl")}/s/${shareId}`;
+    const shareUrl = e2eKeyFragment
+      ? `${baseUrl}#key=${e2eKeyFragment}`
+      : baseUrl;
 
     await this.sendMail(
       recipientEmail,

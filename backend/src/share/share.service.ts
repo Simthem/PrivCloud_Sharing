@@ -297,9 +297,14 @@ export class ShareService {
 
     if (notifyReverseShareCreator) {
       try {
+        // The reverse share creator owns K_rs — always include it in the email
+        // so they can decrypt their files. This is NOT gated by
+        // enableE2EKeyEmailSharing (that setting controls sharing K with
+        // third-party recipients, not with the key owner).
         await this.emailService.sendMailToReverseShareCreator(
           share.reverseShare.creator.email,
           share.id,
+          e2eKey,
         );
         this.logger.debug(`Reverse share creator notified: shareId=${id}`);
       } catch (err) {

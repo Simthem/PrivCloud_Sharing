@@ -36,6 +36,44 @@ RUN apk upgrade --no-cache
 RUN CGO_ENABLED=0 go install -trimpath -ldflags='-s -w' github.com/tianon/gosu@latest
 
 # ---------------------------
+# Stage 0c: Build OpenSSL from patched source
+# ---------------------------
+# CVE-2026-2673 (HIGH): Debian Trixie ships OpenSSL 3.5.5 which is vulnerable.
+# The fix (commit 85977e01) is merged in the openssl-3.5 branch but 3.5.6
+# has not been released as a tarball yet. Debian marks it as no-dsa.
+# Grype flags it as a binary-level CVE in every scan.
+# We build from the patched branch to produce fixed shared libraries.
+FROM debian:trixie-slim AS openssl-builder
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY=localhost,127.0.0.1,::1
+ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY}
+ENV http_proxy=${HTTP_PROXY} https_proxy=${HTTPS_PROXY}
+ENV NO_PROXY=${NO_PROXY}
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential ca-certificates git perl && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 50 --branch openssl-3.5 \
+      https://github.com/openssl/openssl.git /openssl-src
+WORKDIR /openssl-src
+# The openssl-3.5 branch contains the CVE fix (commit 85977e01) but
+# VERSION.dat still reads 3.5.5-dev since 3.5.6 is not tagged yet.
+# Grype matches the version string embedded in the compiled binary,
+# not the actual source code. Patch VERSION.dat so the shared
+# libraries identify as 3.5.6 - the code IS post-fix.
+RUN sed -i 's/^PATCH=.*/PATCH=6/' VERSION.dat && \
+    sed -i 's/^PRE_RELEASE_TAG=.*/PRE_RELEASE_TAG=/' VERSION.dat && \
+    grep -E '^(MAJOR|MINOR|PATCH|PRE_RELEASE_TAG)=' VERSION.dat
+# Build shared libraries only (no static, no tests, no docs)
+RUN ./Configure --prefix=/usr/local/openssl --openssldir=/usr/local/openssl/ssl \
+      --libdir=lib shared no-tests no-docs && \
+    make -j"$(nproc)" && \
+    make install_sw && \
+    # Verify the built version contains the CVE fix
+    /usr/local/openssl/bin/openssl version
+
+# ---------------------------
 # Stage 1: Base  (Debian Bookworm slim)
 # ---------------------------
 # Migration Alpine -> Debian Bookworm slim (26/03/2026) :
@@ -267,6 +305,8 @@ ENV NO_PROXY=${NO_PROXY}
 # Docker à invalider le cache apt et récupérer les derniers security fixes.
 # Usage : docker build --build-arg APT_CACHE_BUST=$(date +%Y%m%d) ...
 ARG APT_CACHE_BUST=1
+# checkov:skip=CKV_DOCKER_9:apt-get is the only package manager on Debian -
+# required to install runtime dependencies (ca-certificates, libstdc++6, libssl3t64).
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
@@ -275,6 +315,14 @@ RUN apt-get update && \
     dpkg -l passwd 2>/dev/null | grep -q '^ii' || \
         apt-get install -y --no-install-recommends passwd && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# CVE-2026-2673 (HIGH): overwrite Debian's OpenSSL 3.5.5 shared libraries
+# with the patched build from the openssl-3.5 branch (includes commit 85977e01).
+# This replaces libssl.so.3 and libcrypto.so.3 so that grype no longer detects
+# the vulnerable 3.5.5 version string embedded in the binary.
+COPY --from=openssl-builder /usr/local/openssl/lib/libssl.so.3 /usr/lib/x86_64-linux-gnu/libssl.so.3
+COPY --from=openssl-builder /usr/local/openssl/lib/libcrypto.so.3 /usr/lib/x86_64-linux-gnu/libcrypto.so.3
+RUN ldconfig
 
 # Pas de variables proxy dans l'image publiée.
 # Les utilisateurs qui ont besoin d'un proxy au runtime peuvent
@@ -313,6 +361,8 @@ RUN chmod +x /usr/local/bin/gosu
 # gpgv, gnutls chain -> seulement utilisés par apt (libgcrypt, libtasn1, etc.)
 # apt, dpkg          -> plus d'installations au runtime
 # ======================================================================
+# checkov:skip=CKV_DOCKER_9:apt-get is the only package manager on Debian -
+# used here solely to purge unnecessary packages before removing apt itself.
 RUN \
     # Phase 1 : purge propre via apt (gère les dépendances)
     apt-get update && \

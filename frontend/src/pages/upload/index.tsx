@@ -281,8 +281,14 @@ const Upload = ({
       files.every((file) => file.uploadingProgress >= 100) &&
       fileErrorCount == 0
     ) {
+      // For reverse shares the backend always needs K_rs so the reverse share
+      // creator can receive a working link.  For classic shares, the key is
+      // only included when the uploader opted in via the checkbox.
+      const isReverseShareUpload = router.pathname !== "/upload";
       const e2eKeyForComplete =
-        shouldShareE2EKeyViaEmail && e2eKeyEncoded ? e2eKeyEncoded : undefined;
+        (shouldShareE2EKeyViaEmail || isReverseShareUpload) && e2eKeyEncoded
+          ? e2eKeyEncoded
+          : undefined;
       shareService
         .completeShare(createdShare.id, e2eKeyForComplete)
         .then((share) => {

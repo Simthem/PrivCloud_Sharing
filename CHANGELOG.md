@@ -1,3 +1,46 @@
+## [1.17.5](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.17.4...v1.17.5) (2026-03-30)
+
+
+### Security
+
+* **share-guard:** enforce password and share-token checks for all users including
+  admins -- `ShareSecurityGuard` previously short-circuited on admin + ownership
+  before reaching the password verification; the admin bypass is now applied only
+  after password/token validation
+* **share-guard:** restrict public access to E2E-encrypted reverse share results --
+  when `encryptedReverseShareKey` is set, only the reverse share creator and the
+  share uploader can access the share, regardless of the `publicAccess` flag;
+  exposes ciphertext and file metadata to unauthenticated visitors otherwise
+
+
+### Bug Fixes
+
+* **e2e/reverse-share:** include E2E decryption key in reverse share creator
+  notification email -- `sendMailToReverseShareCreator()` now accepts an optional
+  `e2eKeyFragment` parameter and appends `#key=` to the share URL when present
+  - backend `email.service.ts`: add `e2eKeyFragment` param, build URL with
+    fragment when provided
+  - backend `share.service.ts` `complete()`: pass `e2eKey` to
+    `sendMailToReverseShareCreator()` unconditionally (the RS creator owns K_rs,
+    this is not gated by `enableE2EKeyEmailSharing`)
+  - frontend `upload/index.tsx`: always include K_rs in `completeShare()` call
+    for reverse share uploads, regardless of the `shareE2EKeyViaEmail` checkbox
+    (that checkbox controls third-party recipient key sharing, not owner delivery)
+
+
+### Known Issues
+
+* reverse share from unauthenticated user (no account): the reverse share creator
+  does not receive an email notification after the upload completes -- the
+  `complete()` flow only sends the email when `sendEmailNotification` is true and
+  the uploader has no account, but the creator email lookup requires the reverse
+  share relation which may not resolve the creator email correctly in this path
+* sharing without any account is currently possible ONLY by sharing link by user 
+  himself
+* reverse share without simplified mode enabled allows the uploader to re-share
+  files to other recipients
+
+
 ## [1.17.4](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.17.3...v1.17.4) (2026-03-29)
 
 
@@ -49,13 +92,13 @@
   - backend `share.dto.ts`: add `@Expose() encryptedReverseShareKey`
   - frontend `share.type.ts`: add `encryptedReverseShareKey` to `Share` type
   - frontend `/share/[shareId]/index.tsx`: rewrite phase 2 key resolution to read
-    `share.encryptedReverseShareKey` directly - if present, unwrap K_rs client-side
+    `share.encryptedReverseShareKey` directly -- if present, unwrap K_rs client-side
     with K_master; if absent, fall back to K_master for regular shares
   - frontend `share.service.ts`: remove silent error swallowing in
-    `getEncryptedE2eKey()` - errors now propagate to callers
+    `getEncryptedE2eKey()` -- errors now propagate to callers
   - backend `@Get(":id/e2e-key")` endpoint kept for external API compatibility
 * **preview/react-31:** fix `Objects are not valid as a React child` crash (React
-  error #31) when previewing JSON-based files - Axios
+  error #31) when previewing JSON-based files (e.g. Grafana dashboards) - Axios
   silently auto-parsed `application/json` responses into JavaScript objects instead
   of strings
   - add `responseType: "text"` to non-E2E preview fetches in `CodePreview` and
@@ -68,12 +111,7 @@
 
 ### Known Issues
 
-* reverse share with password: password prompt is bypassed when the owner is
-  already authenticated - the `ShareSecurityGuard` grants access based on
-  ownership without requiring the share password
-* sharing without any account is currently not possible (requires authentication to 
-  have a reverse share link or having by someone that has an account and is the owner
-  of the share)
+* sharing without any account is currently not possible (requires authentication)
 * reverse share without simplified mode enabled allows the uploader to re-share
   files to other recipients
 

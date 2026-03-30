@@ -44,14 +44,6 @@ export class ShareSecurityGuard extends JwtGuard {
     await super.canActivate(context);
     const user = request.user as User;
 
-    // If admin access is enabled and user is admin, allow access
-    if (
-      user?.isAdmin &&
-      this.configService.get("share.allowAdminAccessAllShares")
-    ) {
-      return true;
-    }
-
     if (
       moment().isAfter(share.expiration) &&
       !moment(share.expiration).isSame(0)
@@ -59,6 +51,8 @@ export class ShareSecurityGuard extends JwtGuard {
       throw new NotFoundException("Share not found");
     }
 
+    // Password & token checks — always enforced, even for admins.
+    // The password protects the share content, not just access control.
     if (share.security?.password && !shareToken)
       throw new ForbiddenException(
         "This share is password protected",
@@ -71,17 +65,34 @@ export class ShareSecurityGuard extends JwtGuard {
         "share_token_required",
       );
 
-    // Only the creator and reverse share creator can access the reverse share if it's not public
+    // Admin bypass: allows access to all shares but does NOT skip
+    // password/token protection (handled above).
     if (
-      share.reverseShare &&
-      !share.reverseShare.publicAccess &&
-      share.creatorId !== user?.id &&
-      share.reverseShare.creatorId !== user?.id
-    )
-      throw new ForbiddenException(
-        "Only reverse share creator can access this share",
-        "private_share",
-      );
+      user?.isAdmin &&
+      this.configService.get("share.allowAdminAccessAllShares")
+    ) {
+      return true;
+    }
+
+    // Restrict access to reverse share results.
+    // - publicAccess=false → only the share creator and RS creator can access.
+    // - E2E encrypted reverse share → always restrict to owner/creator
+    //   regardless of publicAccess.  E2E files are useless without K_rs and
+    //   exposing ciphertext + metadata publicly is a security risk.
+    if (share.reverseShare) {
+      const isE2E = !!share.reverseShare.encryptedReverseShareKey;
+      const isPrivate = !share.reverseShare.publicAccess;
+      const isOwnerOrCreator =
+        share.creatorId === user?.id ||
+        share.reverseShare.creatorId === user?.id;
+
+      if ((isPrivate || isE2E) && !isOwnerOrCreator) {
+        throw new ForbiddenException(
+          "Only reverse share creator can access this share",
+          "private_share",
+        );
+      }
+    }
 
     return true;
   }
