@@ -257,7 +257,13 @@ const Body = ({
             description={t("account.reverseShares.modal.max-use.description")}
             {...form.getInputProps("maxUseCount")}
           />
-          <Switch
+          {/* [UX/Security] Public access toggle commented out: when E2E
+             encryption is active (default for any logged-in user with a
+             master key), the backend enforces private access for reverse
+             shares regardless of this flag (see shareSecurity.guard.ts).
+             Showing the toggle misleads the creator into thinking public
+             access is possible for E2E-encrypted reverse share data. */}
+          {/* <Switch
             mt="xs"
             labelPosition="left"
             label={t("account.reverseShares.modal.public-access")}
@@ -267,7 +273,7 @@ const Body = ({
             {...form.getInputProps("publicAccess", {
               type: "checkbox",
             })}
-          />
+          /> */}
           <Accordion>
             <Accordion.Item value="description" sx={{ borderBottom: "none" }}>
               <Accordion.Control>

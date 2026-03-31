@@ -118,6 +118,31 @@ export class ShareService {
       );
     }
 
+    // [UX/Security] Defense-in-depth: when the share is created via a
+    // reverse share token, the uploader must NOT be allowed to:
+    //  - set recipients (would forward files to unintended third parties)
+    //  - set maxViews (the uploader could exhaust views before the creator)
+    // Password is intentionally KEPT: it adds a layer of security that
+    // can reassure the external user receiving the reverse share link.
+    // The frontend hides recipients and maxViews for reverse share uploads,
+    // but a crafted API request could still include them.
+    if (reverseShare) {
+      if (share.recipients?.length) {
+        this.logger.warn(
+          `Stripped recipients from reverse share upload: shareId=${share.id} count=${share.recipients.length}`,
+        );
+      }
+      if (share.security?.maxViews) {
+        this.logger.warn(
+          `Stripped maxViews from reverse share upload: shareId=${share.id}`,
+        );
+      }
+      share.recipients = [];
+      if (share.security) {
+        share.security = { password: share.security.password } as any;
+      }
+    }
+
     fs.mkdirSync(`${SHARE_DIRECTORY}/${share.id}`, {
       recursive: true,
     });

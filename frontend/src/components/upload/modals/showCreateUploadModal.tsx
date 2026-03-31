@@ -407,7 +407,11 @@ const CreateUploadModalBody = ({
                 </Stack>
               </Accordion.Panel>
             </Accordion.Item>
-            {options.enableEmailRecepients && (
+            {/* [UX/Security] Disabled for reverse share uploads: the uploader
+               must not be able to forward encrypted files to unintended
+               third-party recipients. Only the reverse share creator
+               should receive the completed share link. */}
+            {options.enableEmailRecepients && !options.isReverseShare && (
               <Accordion.Item value="recipients" sx={{ borderBottom: "none" }}>
                 <Accordion.Control>
                   <FormattedMessage id="upload.modal.accordion.email.title" />
@@ -477,17 +481,26 @@ const CreateUploadModalBody = ({
                     autoComplete="new-password"
                     {...form.getInputProps("password")}
                   />
-                  <NumberInput
-                    min={1}
-                    type="number"
-                    variant="filled"
-                    placeholder={t(
-                      "upload.modal.accordion.security.max-views.placeholder",
-                    )}
-                    label={t("upload.modal.accordion.security.max-views.label")}
-                    {...form.getInputProps("maxViews")}
-                  />
-                  {options.isUserSignedIn &&
+                  {/* [UX/Security] Max views hidden for reverse share uploads:
+                     the uploader could exhaust the view quota before the
+                     reverse share creator ever accesses the share. */}
+                  {!options.isReverseShare && (
+                    <NumberInput
+                      min={1}
+                      type="number"
+                      variant="filled"
+                      placeholder={t(
+                        "upload.modal.accordion.security.max-views.placeholder",
+                      )}
+                      label={t("upload.modal.accordion.security.max-views.label")}
+                      {...form.getInputProps("maxViews")}
+                    />
+                  )}
+                  {/* [UX/Security] E2E key email checkbox hidden for reverse
+                     shares: K_rs is delivered via the URL fragment (#key=...),
+                     not email. The checkbox would be misleading. */}
+                  {!options.isReverseShare &&
+                    options.isUserSignedIn &&
                     options.enableEmailRecepients &&
                     options.enableE2EKeyEmailSharing && (
                       <Checkbox
