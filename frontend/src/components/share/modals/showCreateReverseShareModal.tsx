@@ -1,6 +1,7 @@
 import {
   Accordion,
   Button,
+  Checkbox,
   Col,
   Grid,
   Group,
@@ -74,6 +75,7 @@ const Body = ({
       sendEmailNotification: false,
       expiration_num: 1,
       expiration_unit: "-days",
+      never_expires: false,
       simplified: !!(getCookie("reverse-share.simplified") ?? false),
       publicAccess: !!(getCookie("reverse-share.public-access") ?? true),
     },
@@ -107,6 +109,7 @@ const Body = ({
       ) as moment.unitOfTime.DurationConstructor,
     );
     if (
+      !form.values.never_expires &&
       maxExpiration.value != 0 &&
       expirationDate.isAfter(
         moment().add(maxExpiration.value, maxExpiration.unit),
@@ -147,7 +150,9 @@ const Body = ({
     shareService
       .createReverseShare({
         ...values,
-        shareExpiration: values.expiration_num + values.expiration_unit,
+        shareExpiration: form.values.never_expires
+          ? "never"
+          : values.expiration_num + values.expiration_unit,
         maxShareSize: values.maxShareSize.toString(),
         encryptedReverseShareKey: wrappedKey,
       })
@@ -172,12 +177,14 @@ const Body = ({
                   precision={0}
                   variant="filled"
                   label={t("account.reverseShares.modal.expiration.label")}
+                  disabled={form.values.never_expires}
                   {...form.getInputProps("expiration_num")}
                 />
               </Col>
               <Col xs={6}>
                 <Select
                   {...form.getInputProps("expiration_unit")}
+                  disabled={form.values.never_expires}
                   data={[
                     // Set the label to singular if the number is 1, else plural
                     {
@@ -226,6 +233,11 @@ const Body = ({
                 />
               </Col>
             </Grid>
+            <Checkbox
+              mt="xs"
+              label={t("upload.modal.expires.never-long")}
+              {...form.getInputProps("never_expires", { type: "checkbox" })}
+            />
             <Text
               mt="sm"
               italic
@@ -257,13 +269,12 @@ const Body = ({
             description={t("account.reverseShares.modal.max-use.description")}
             {...form.getInputProps("maxUseCount")}
           />
-          {/* [UX/Security] Public access toggle commented out: when E2E
-             encryption is active (default for any logged-in user with a
-             master key), the backend enforces private access for reverse
-             shares regardless of this flag (see shareSecurity.guard.ts).
-             Showing the toggle misleads the creator into thinking public
-             access is possible for E2E-encrypted reverse share data. */}
-          {/* <Switch
+          {/* Note: when E2E encryption is active, the backend enforces
+             private access regardless of this flag (shareSecurity.guard.ts).
+             The toggle remains available so the creator can mark a reverse
+             share as public or private -- useful for web-server-level
+             (e.g. nginx) IP-based access restrictions on specific URIs. */}
+          <Switch
             mt="xs"
             labelPosition="left"
             label={t("account.reverseShares.modal.public-access")}
@@ -273,7 +284,7 @@ const Body = ({
             {...form.getInputProps("publicAccess", {
               type: "checkbox",
             })}
-          /> */}
+          />
           <Accordion>
             <Accordion.Item value="description" sx={{ borderBottom: "none" }}>
               <Accordion.Control>

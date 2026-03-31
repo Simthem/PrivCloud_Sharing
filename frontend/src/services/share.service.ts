@@ -180,6 +180,13 @@ const removeReverseShare = async (id: string) => {
   await api.delete(`/reverseShares/${id}`);
 };
 
+const updateReverseShare = async (
+  id: string,
+  data: { shareExpiration: string },
+) => {
+  await api.patch(`/reverseShares/${id}`, data);
+};
+
 /**
  * Fetch the encrypted reverse share key (K_rs wrapped by K_master)
  * for E2E reverse share decryption. Requires authenticated user = RS creator.
@@ -217,6 +224,7 @@ export default {
   createReverseShare,
   getMyReverseShares,
   removeReverseShare,
+  updateReverseShare,
   getEncryptedE2eKey,
   getStoredRecipients,
 };

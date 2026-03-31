@@ -1,3 +1,34 @@
+## [1.17.6](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.17.5...v1.17.6) (2026-03-31)
+
+
+### Security
+
+* **share-guard:** reverse share public-access flag is now always respected --
+  previously E2E reverse shares were forced private regardless of `publicAccess`;
+  since files are encrypted (ciphertext is useless without K_rs from the URL
+  fragment), the `publicAccess` flag is the sole access control lever
+
+
+### Features
+
+* **reverse-share:** display reverse share encryption key (K_rs) in browser --
+  new key icon button per E2E reverse share in the reverse shares list; opens a
+  modal with reveal/copy controls, exactly like the master key in E2E user settings
+* **reverse-share:** "never expires" option for reverse share links --
+  new checkbox in the creation modal (shown when no max-expiration is configured);
+  backend stores epoch 0 as "never", `isValid()` and `getAllByUser()` handle it
+* **reverse-share:** edit reverse share expiration after creation --
+  new pencil icon in the reverse shares list opens a modal to extend, shorten, or
+  set "never expires"; backend `PATCH /reverseShares/:id` endpoint validates
+  against `maxExpiration` config
+
+### Known Issues
+
+* **reverse-share:** editing a reverse share expiration does not pre-fill the
+  previously chosen date -- the edit modal always starts with default values
+  instead of reflecting the current expiration
+
+
 ## [1.17.5](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.17.4...v1.17.5) (2026-03-30)
 
 
@@ -7,10 +38,6 @@
   admins -- `ShareSecurityGuard` previously short-circuited on admin + ownership
   before reaching the password verification; the admin bypass is now applied only
   after password/token validation
-* **share-guard:** restrict public access to E2E-encrypted reverse share results --
-  when `encryptedReverseShareKey` is set, only the reverse share creator and the
-  share uploader can access the share, regardless of the `publicAccess` flag;
-  exposes ciphertext and file metadata to unauthenticated visitors otherwise
 
 
 ### Bug Fixes

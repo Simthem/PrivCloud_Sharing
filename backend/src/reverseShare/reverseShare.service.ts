@@ -5,6 +5,7 @@ import { FileService } from "src/file/file.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { parseRelativeDateToAbsolute } from "src/utils/date.util";
 import { CreateReverseShareDTO } from "./dto/createReverseShare.dto";
+import { UpdateReverseShareDTO } from "./dto/updateReverseShare.dto";
 
 @Injectable()
 export class ReverseShareService {
@@ -15,21 +16,18 @@ export class ReverseShareService {
   ) {}
 
   async create(data: CreateReverseShareDTO, creatorId: string) {
-    // Parse date string to date
-    const expirationDate = moment()
-      .add(
-        data.shareExpiration.split("-")[0],
-        data.shareExpiration.split(
-          "-",
-        )[1] as moment.unitOfTime.DurationConstructor,
-      )
-      .toDate();
+    const expirationDate = parseRelativeDateToAbsolute(data.shareExpiration);
 
-    const parsedExpiration = parseRelativeDateToAbsolute(data.shareExpiration);
     const maxExpiration = this.config.get("share.maxExpiration");
-    if (
+    if (data.shareExpiration === "never") {
+      if (maxExpiration.value !== 0) {
+        throw new BadRequestException(
+          "Never-expires is not allowed when a max expiration is configured",
+        );
+      }
+    } else if (
       maxExpiration.value !== 0 &&
-      parsedExpiration >
+      expirationDate >
         moment().add(maxExpiration.value, maxExpiration.unit).toDate()
     ) {
       throw new BadRequestException(
@@ -75,7 +73,10 @@ export class ReverseShareService {
     const reverseShares = await this.prisma.reverseShare.findMany({
       where: {
         creatorId: userId,
-        shareExpiration: { gt: new Date() },
+        OR: [
+          { shareExpiration: { gt: new Date() } },
+          { shareExpiration: new Date(0) },
+        ],
       },
       orderBy: {
         shareExpiration: "desc",
@@ -102,10 +103,37 @@ export class ReverseShareService {
 
     if (!reverseShare) return false;
 
-    const isExpired = new Date() > reverseShare.shareExpiration;
+    const neverExpires = reverseShare.shareExpiration.getTime() === 0;
+    const isExpired = !neverExpires && new Date() > reverseShare.shareExpiration;
     const remainingUsesExceeded = reverseShare.remainingUses <= 0;
 
     return !(isExpired || remainingUsesExceeded);
+  }
+
+  async update(id: string, data: UpdateReverseShareDTO) {
+    const expirationDate = parseRelativeDateToAbsolute(data.shareExpiration);
+
+    const maxExpiration = this.config.get("share.maxExpiration");
+    if (data.shareExpiration === "never") {
+      if (maxExpiration.value !== 0) {
+        throw new BadRequestException(
+          "Never-expires is not allowed when a max expiration is configured",
+        );
+      }
+    } else if (
+      maxExpiration.value !== 0 &&
+      expirationDate >
+        moment().add(maxExpiration.value, maxExpiration.unit).toDate()
+    ) {
+      throw new BadRequestException(
+        "Expiration date exceeds maximum expiration date",
+      );
+    }
+
+    return this.prisma.reverseShare.update({
+      where: { id },
+      data: { shareExpiration: expirationDate },
+    });
   }
 
   async remove(id: string) {

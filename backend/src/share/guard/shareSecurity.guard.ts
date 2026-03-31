@@ -51,7 +51,7 @@ export class ShareSecurityGuard extends JwtGuard {
       throw new NotFoundException("Share not found");
     }
 
-    // Password & token checks — always enforced, even for admins.
+    // Password & token checks - always enforced, even for admins.
     // The password protects the share content, not just access control.
     if (share.security?.password && !shareToken)
       throw new ForbiddenException(
@@ -75,18 +75,18 @@ export class ShareSecurityGuard extends JwtGuard {
     }
 
     // Restrict access to reverse share results.
-    // - publicAccess=false → only the share creator and RS creator can access.
-    // - E2E encrypted reverse share → always restrict to owner/creator
-    //   regardless of publicAccess.  E2E files are useless without K_rs and
-    //   exposing ciphertext + metadata publicly is a security risk.
+    // When publicAccess=false only the share creator and the RS creator
+    // can view the share.  When publicAccess=true anyone with the link
+    // may access it -- even if E2E is enabled, because the files are
+    // encrypted and useless without K_rs (which lives in the URL
+    // fragment and is never sent to the server).
     if (share.reverseShare) {
-      const isE2E = !!share.reverseShare.encryptedReverseShareKey;
       const isPrivate = !share.reverseShare.publicAccess;
       const isOwnerOrCreator =
         share.creatorId === user?.id ||
         share.reverseShare.creatorId === user?.id;
 
-      if ((isPrivate || isE2E) && !isOwnerOrCreator) {
+      if (isPrivate && !isOwnerOrCreator) {
         throw new ForbiddenException(
           "Only reverse share creator can access this share",
           "private_share",
