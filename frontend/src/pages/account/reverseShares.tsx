@@ -5,7 +5,14 @@ import {
   Box,
   Button,
   Center,
+  Checkbox,
+  Code,
+  Col,
+  CopyButton,
+  Grid,
   Group,
+  NumberInput,
+  Select,
   Stack,
   Table,
   Text,
@@ -14,14 +21,21 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { useClipboard } from "@mantine/hooks";
+import { useForm } from "@mantine/form";
 import { useModals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import moment from "moment";
+import dayjs from "../../utils/dayjs";
 import React, { useCallback, useEffect, useState } from "react";
 import {
+  TbCheck,
+  TbCopy,
+  TbEye,
+  TbEyeOff,
   TbInfoCircle,
+  TbKey,
   TbLink,
   TbLock,
+  TbPencil,
   TbPlus,
   TbTrash,
   TbWorldCheck,
@@ -39,12 +53,193 @@ import shareService from "../../services/share.service";
 import { MyReverseShare } from "../../types/share.type";
 import { byteToHumanSizeString } from "../../utils/fileSize.util";
 import toast from "../../utils/toast.util";
+import { getExpirationPreview } from "../../utils/date.util";
+import { Timespan } from "../../types/timespan.type";
 import {
   getUserKey,
   importKeyFromBase64,
   exportKeyToBase64,
   unwrapReverseShareKey,
 } from "../../utils/crypto.util";
+
+// -- K_rs display component (similar to master key in E2E settings) --
+const RsKeyDisplay = ({ rsKey }: { rsKey: string }) => {
+  const [revealed, setRevealed] = useState(false);
+  const masked = rsKey.slice(0, 8) + "••••••••••••" + rsKey.slice(-8);
+
+  return (
+    <Stack spacing="xs">
+      <Text size="sm" color="dimmed">
+        AES-256 encryption key for this reverse share. Store it safely --
+        without it, uploaded files cannot be decrypted.
+      </Text>
+      <Group spacing="xs" noWrap>
+        <Code
+          block
+          style={{
+            flex: 1,
+            wordBreak: "break-all",
+            fontSize: "0.75rem",
+            userSelect: revealed ? "all" : "none",
+          }}
+        >
+          {revealed ? rsKey : masked}
+        </Code>
+        <Tooltip label={revealed ? "Hide" : "Reveal"}>
+          <ActionIcon
+            variant="light"
+            size="sm"
+            onClick={() => setRevealed((v) => !v)}
+          >
+            {revealed ? <TbEyeOff size={14} /> : <TbEye size={14} />}
+          </ActionIcon>
+        </Tooltip>
+        <CopyButton value={rsKey}>
+          {({ copied, copy }) => (
+            <Tooltip label={copied ? "Copied!" : "Copy"}>
+              <ActionIcon variant="light" size="sm" onClick={copy}>
+                {copied ? (
+                  <TbCheck size={14} color="teal" />
+                ) : (
+                  <TbCopy size={14} />
+                )}
+              </ActionIcon>
+            </Tooltip>
+          )}
+        </CopyButton>
+      </Group>
+    </Stack>
+  );
+};
+
+// -- Edit expiration modal body --
+const EditExpirationBody = ({
+  reverseShareId,
+  maxExpiration,
+  onSaved,
+}: {
+  reverseShareId: string;
+  maxExpiration: Timespan;
+  onSaved: () => void;
+}) => {
+  const t = useTranslate();
+
+  const form = useForm({
+    initialValues: {
+      never_expires: false,
+      expiration_num: 1,
+      expiration_unit: "-days",
+    },
+  });
+
+  const handleSubmit = form.onSubmit(async (values) => {
+    const shareExpiration = values.never_expires
+      ? "never"
+      : values.expiration_num + values.expiration_unit;
+
+    // RS link expiration is independent from share.maxExpiration.
+
+    try {
+      await shareService.updateReverseShare(reverseShareId, {
+        shareExpiration,
+      });
+      toast.success("Expiration updated");
+      onSaved();
+    } catch {
+      toast.error("Failed to update expiration");
+    }
+  });
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <Stack spacing="sm">
+        <Grid align={form.errors.expiration_num ? "center" : "flex-end"}>
+          <Col xs={6}>
+            <NumberInput
+              min={1}
+              max={99999}
+              precision={0}
+              variant="filled"
+              label={t("account.reverseShares.modal.expiration.label")}
+              disabled={form.values.never_expires}
+              {...form.getInputProps("expiration_num")}
+            />
+          </Col>
+          <Col xs={6}>
+            <Select
+              disabled={form.values.never_expires}
+              {...form.getInputProps("expiration_unit")}
+              data={[
+                {
+                  value: "-minutes",
+                  label:
+                    form.values.expiration_num == 1
+                      ? t("upload.modal.expires.minute-singular")
+                      : t("upload.modal.expires.minute-plural"),
+                },
+                {
+                  value: "-hours",
+                  label:
+                    form.values.expiration_num == 1
+                      ? t("upload.modal.expires.hour-singular")
+                      : t("upload.modal.expires.hour-plural"),
+                },
+                {
+                  value: "-days",
+                  label:
+                    form.values.expiration_num == 1
+                      ? t("upload.modal.expires.day-singular")
+                      : t("upload.modal.expires.day-plural"),
+                },
+                {
+                  value: "-weeks",
+                  label:
+                    form.values.expiration_num == 1
+                      ? t("upload.modal.expires.week-singular")
+                      : t("upload.modal.expires.week-plural"),
+                },
+                {
+                  value: "-months",
+                  label:
+                    form.values.expiration_num == 1
+                      ? t("upload.modal.expires.month-singular")
+                      : t("upload.modal.expires.month-plural"),
+                },
+                {
+                  value: "-years",
+                  label:
+                    form.values.expiration_num == 1
+                      ? t("upload.modal.expires.year-singular")
+                      : t("upload.modal.expires.year-plural"),
+                },
+              ]}
+            />
+          </Col>
+        </Grid>
+        <Checkbox
+          label={t("upload.modal.expires.never-long")}
+          {...form.getInputProps("never_expires", { type: "checkbox" })}
+        />
+        <Text
+          italic
+          size="xs"
+          sx={(theme) => ({ color: theme.colors.gray[6] })}
+        >
+          {getExpirationPreview(
+            {
+              neverExpires: t("account.reverseShare.never-expires"),
+              expiresOn: t("account.reverseShare.expires-on"),
+            },
+            form,
+          )}
+        </Text>
+        <Button type="submit" mt="xs">
+          <FormattedMessage id="common.button.save" />
+        </Button>
+      </Stack>
+    </form>
+  );
+};
 
 const MyShares = () => {
   const modals = useModals();
@@ -76,7 +271,7 @@ const MyShares = () => {
     },
   });
 
-  // ── Copier le lien reverse share avec fragment E2E si applicable ──
+  // -- Copier le lien reverse share avec fragment E2E si applicable --
   // Cache des clés K_rs déchiffrées : reverseShareId → base64url de K_rs
   const [rsKeyCache, setRsKeyCache] = useState<Record<string, string>>({});
 
@@ -153,6 +348,36 @@ const MyShares = () => {
     } else {
       showShareLinkModal(modals, shareId);
     }
+  };
+
+  // -- Show K_rs in a modal --
+  const handleShowRsKey = async (reverseShare: MyReverseShare) => {
+    const rsKeyEncoded = await unwrapRsKey(reverseShare);
+    if (!rsKeyEncoded) {
+      toast.error("Unable to decrypt the reverse share key");
+      return;
+    }
+    modals.openModal({
+      title: "Reverse share encryption key",
+      children: <RsKeyDisplay rsKey={rsKeyEncoded} />,
+    });
+  };
+
+  // -- Edit expiration modal --
+  const handleEditExpiration = (reverseShare: MyReverseShare) => {
+    modals.openModal({
+      title: t("account.reverseShares.table.expires"),
+      children: (
+        <EditExpirationBody
+          reverseShareId={reverseShare.id}
+          maxExpiration={config.get("share.maxExpiration")}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ["myReverseShares"] });
+            modals.closeAll();
+          }}
+        />
+      ),
+    });
   };
 
   if (isError) {
@@ -273,33 +498,49 @@ const MyShares = () => {
                           </Accordion.Control>
                           <Accordion.Panel>
                             {reverseShare.shares.map((share) => (
-                              <Group key={share.id} mb={4} spacing="xs">
-                                <Anchor
-                                  href={
-                                    rsKeyCache[reverseShare.id]
-                                      ? `${config.get("general.appUrl")}/share/${share.id}#key=${rsKeyCache[reverseShare.id]}`
-                                      : `${config.get("general.appUrl")}/share/${share.id}`
-                                  }
-                                  target="_blank"
-                                >
-                                  <Text maw={120} truncate>
-                                    {share.id}
-                                  </Text>
-                                </Anchor>
-                                {share.security.passwordProtected && (
-                                  <Tooltip
-                                    label={t(
-                                      "account.reverseShares.table.password-protected",
-                                    )}
-                                    withArrow
+                              <Stack key={share.id} mb={6} spacing={2}>
+                                <Group spacing="xs">
+                                  <Anchor
+                                    href={
+                                      rsKeyCache[reverseShare.id]
+                                        ? `${config.get("general.appUrl")}/share/${share.id}#key=${rsKeyCache[reverseShare.id]}`
+                                        : `${config.get("general.appUrl")}/share/${share.id}`
+                                    }
+                                    target="_blank"
                                   >
-                                    <ThemeIcon color="orange" variant="light">
-                                      <TbLock size="1rem" />
-                                    </ThemeIcon>
-                                  </Tooltip>
-                                )}
+                                    <Text maw={120} truncate>
+                                      {share.name || share.id}
+                                    </Text>
+                                  </Anchor>
+                                  {share.security.passwordProtected && (
+                                    <Tooltip
+                                      label={t(
+                                        "account.reverseShares.table.password-protected",
+                                      )}
+                                      withArrow
+                                    >
+                                      <ThemeIcon color="orange" variant="light">
+                                        <TbLock size="1rem" />
+                                      </ThemeIcon>
+                                    </Tooltip>
+                                  )}
+                                <Tooltip label={t("account.reverseShares.table.view-files")}>
+                                  <ActionIcon
+                                    color="teal"
+                                    variant="light"
+                                    size={25}
+                                    component="a"
+                                    href={
+                                      rsKeyCache[reverseShare.id]
+                                        ? `/share/${share.id}#key=${rsKeyCache[reverseShare.id]}`
+                                        : `/share/${share.id}`
+                                    }
+                                    target="_blank"
+                                  >
+                                    <TbEye />
+                                  </ActionIcon>
+                                </Tooltip>
                                 <ActionIcon
-                                  color="victoria"
                                   variant="light"
                                   size={25}
                                   onClick={() =>
@@ -308,7 +549,13 @@ const MyShares = () => {
                                 >
                                   <TbLink />
                                 </ActionIcon>
-                              </Group>
+                                </Group>
+                                {share.description && (
+                                  <Text size="xs" color="dimmed" maw={200} truncate>
+                                    {share.description}
+                                  </Text>
+                                )}
+                              </Stack>
                             ))}
                           </Accordion.Panel>
                         </Accordion.Item>
@@ -327,19 +574,46 @@ const MyShares = () => {
                       </ThemeIcon>
                     )}
                   </td>
-                  <td>{reverseShare.remainingUses}</td>
+                  <td>
+                    {dayjs(reverseShare.shareExpiration).unix() === 0
+                      ? "∞"
+                      : reverseShare.remainingUses}
+                  </td>
                   <td>
                     {byteToHumanSizeString(parseInt(reverseShare.maxShareSize))}
                   </td>
                   <td>
-                    {moment(reverseShare.shareExpiration).unix() === 0
+                    {dayjs(reverseShare.shareExpiration).unix() === 0
                       ? "Never"
-                      : moment(reverseShare.shareExpiration).format("LLL")}
+                      : dayjs(reverseShare.shareExpiration).format("LLL")}
                   </td>
                   <td>
-                    <Group position="right">
+                    <Group position="right" spacing={4}>
+                      {reverseShare.encryptedReverseShareKey && (
+                        <Tooltip label="Show encryption key">
+                          <ActionIcon
+                            color="yellow"
+                            variant="light"
+                            size={25}
+                            onClick={() => handleShowRsKey(reverseShare)}
+                          >
+                            <TbKey />
+                          </ActionIcon>
+                        </Tooltip>
+                      )}
+                      {dayjs(reverseShare.shareExpiration).unix() !== 0 && (
+                      <Tooltip label={t("account.reverseShares.table.expires")}>
+                        <ActionIcon
+                          color="blue"
+                          variant="light"
+                          size={25}
+                          onClick={() => handleEditExpiration(reverseShare)}
+                        >
+                          <TbPencil />
+                        </ActionIcon>
+                      </Tooltip>
+                      )}
                       <ActionIcon
-                        color="victoria"
                         variant="light"
                         size={25}
                         onClick={() => handleCopyReverseShareLink(reverseShare)}

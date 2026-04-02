@@ -6,6 +6,7 @@ import {
 } from "../types/user.type";
 import api from "./api.service";
 import authService from "./auth.service";
+import { getCookie } from "cookies-next";
 
 const list = async () => {
   return (await api.get("/users")).data;
@@ -34,6 +35,9 @@ const removeCurrentUser = async () => {
 const getCurrentUser = async (): Promise<CurrentUser | null> => {
   try {
     await authService.refreshAccessToken();
+    // If there is still no access_token after refresh, the user is not
+    // authenticated - skip the network call to avoid a pointless 401.
+    if (!getCookie("access_token")) return null;
     return (await api.get("users/me")).data;
   } catch {
     return null;

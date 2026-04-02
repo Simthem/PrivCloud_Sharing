@@ -100,6 +100,16 @@ export default {
   "account.modal.totp.verify": "Vérifier",
   "account.notify.totp.disable": "Double authentification (TOTP) désactivé avec succès",
   "account.notify.totp.enable": "TOTP activé avec succès",
+  "account.card.push.title": "Notifications push",
+  "account.card.push.description":
+    "Recevez des notifications dans votre navigateur lorsqu'un partage est terminé ou qu'un fichier est déposé via votre lien de reverse share.",
+  "account.card.push.enable": "Activer les notifications",
+  "account.card.push.disable": "Désactiver les notifications",
+  "account.card.push.permission-denied":
+    "La permission de notification a été refusée. Veuillez autoriser les notifications dans les paramètres de votre navigateur.",
+  "account.notify.push.enabled": "Notifications push activées",
+  "account.notify.push.disabled": "Notifications push désactivées",
+  "account.notify.push.error": "Erreur lors de la configuration des notifications push",
   "account.card.language.title": "Langue",
   "account.card.language.description": "Le projet est traduit par la communauté. Certaines traductions peuvent être incomplètes.",
   "account.card.color.title": "Thème de couleurs",
@@ -141,6 +151,11 @@ export default {
   "account.reverseShares.description.empty": "Vous n’avez aucun partage inversé.",
   // showCreateReverseShareModal.tsx
   "account.reverseShares.modal.title": "Créer un partage inversé",
+  "account.reverseShares.modal.link-type.label": "Type de lien",
+  "account.reverseShares.modal.link-type.description":
+    "Les liens personnels n'expirent jamais mais peuvent etre revoques. Les liens limites ont une expiration configurable.",
+  "account.reverseShares.modal.link-type.personal": "Personnel (sans expiration)",
+  "account.reverseShares.modal.link-type.limited": "Limite (expiration configurable)",
   "account.reverseShares.modal.expiration.label": "Expiration",
   "account.reverseShares.modal.expiration.minute-singular": "Minute",
   "account.reverseShares.modal.expiration.minute-plural": "Minutes",
@@ -181,6 +196,7 @@ export default {
   "account.reverseShares.table.max-size": "Taille maximale du partage",
   "account.reverseShares.table.expires": "Expire le",
   "account.reverseShares.table.password-protected": "Protégé par mot de passe",
+  "account.reverseShares.table.view-files": "Voir les fichiers",
   "account.reverseShares.modal.reverse-share-link": "Lien du partage inversé",
   "account.reverseShares.modal.delete.title": "Supprimer le partage inversé",
   "account.reverseShares.modal.delete.description": "Voulez-vous vraiment supprimer ce partage inversé ? Si vous le faites, les partages qu’il contient seront également supprimés.",
@@ -325,6 +341,15 @@ export default {
   // /privacy
   "privacy.title": "Politique de confidentialité",
   // END /privacy
+
+  // Cookie consent
+  "cookie.banner.message":
+    "Ce site utilise uniquement des cookies strictement necessaires pour l'authentification et la gestion de session. Aucun cookie de suivi ou de publicite n'est utilise.",
+  "cookie.banner.learn-more": "En savoir plus",
+  "cookie.banner.accept": "Accepter",
+  "cookie.banner.reject": "Refuser",
+  // END Cookie consent
+
   // /admin/config
   "admin.config.config-file-warning.title": "Fichier de configuration présent",
   "admin.config.config-file-warning.description": "Puisque vous avez configuré PrivCloud_Sharing avec un fichier de configuration, vous ne pouvez pas modifier la configuration via l'interface utilisateur.",
@@ -344,8 +369,12 @@ export default {
   "admin.config.general.show-home-page": "Afficher la page d’accueil",
   "admin.config.general.show-home-page.description": "Afficher ou non la page d’accueil",
   "admin.config.general.session-duration": "Durée de la session",
-  "admin.config.general.session-duration.description": "Temps après lequel un utilisateur doit se reconnecter (par défaut : 3 mois).",
-  "admin.config.general.logo": "Logo",
+  "admin.config.general.session-duration.description": "Temps après lequel un utilisateur doit se reconnecter (par défaut : 3 mois).",  "admin.config.general.meta-description": "Méta-description",
+  "admin.config.general.meta-description.description":
+    "Description SEO affichée dans les résultats des moteurs de recherche.",
+  "admin.config.general.color-palette": "Palette de couleurs",
+  "admin.config.general.color-palette.description":
+    "Thème de couleur utilisé dans toute l'application.",  "admin.config.general.logo": "Logo",
   "admin.config.general.logo.description": "Changez de logo en envoyant une nouvelle image. L’image doit être au format PNG et doit avoir un ratio 1:1.",
   "admin.config.general.logo.placeholder": "Sélectionner une image",
   "admin.config.cache.ttl": "DDV",
@@ -532,6 +561,20 @@ export default {
   "admin.config.legal.privacy-policy-text.description": "Le texte qui doit être affiché dans la politique de confidentialité. Supporte le Markdown. Laissez vide pour mettre un lien vers une page de politique de confidentialité externe.",
   "admin.config.legal.privacy-policy-url": "URL de la politique de confidentialité",
   "admin.config.legal.privacy-policy-url.description": "Si vous avez déjà une page de politique de confidentialité, vous pouvez indiquer son URL ici au lieu d'utiliser le champ de texte.",
+
+  "admin.config.category.pushnotifications": "Notifications push",
+  "admin.config.push-notifications.enabled": "Activer les notifications push",
+  "admin.config.push-notifications.enabled.description":
+    "Active l'envoi de notifications push aux utilisateurs abonnés lorsqu'un partage est complété.",
+  "admin.config.push-notifications.vapid-subject": "Sujet VAPID",
+  "admin.config.push-notifications.vapid-subject.description":
+    "Une URL mailto: ou une URL de contact, ex : mailto:admin@example.com",
+  "admin.config.push-notifications.vapid-public-key": "Clé publique VAPID",
+  "admin.config.push-notifications.vapid-public-key.description":
+    "La clé publique VAPID générée pour l'envoi de notifications push.",
+  "admin.config.push-notifications.vapid-private-key": "Clé privée VAPID",
+  "admin.config.push-notifications.vapid-private-key.description":
+    "La clé privée VAPID associée. Ne la partagez jamais.",
 
   "admin.config.category.hcaptcha": "hCaptcha",
   "admin.config.hcaptcha.enabled": "Activer hCaptcha",

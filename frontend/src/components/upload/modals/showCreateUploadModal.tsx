@@ -19,7 +19,8 @@ import {
 import { useForm, yupResolver } from "@mantine/form";
 import { useModals } from "@mantine/modals";
 import { ModalsContextProps } from "@mantine/modals/lib/context";
-import moment from "moment";
+import dayjs from "../../../utils/dayjs";
+import { ManipulateType } from "dayjs";
 import React, { useRef, useState } from "react";
 import { TbAlertCircle } from "react-icons/tb";
 import HCaptcha from "@hcaptcha/react-hcaptcha";
@@ -155,16 +156,29 @@ const CreateUploadModalBody = ({
       .string()
       .transform((value) => value || undefined)
       .min(3, t("common.error.too-short", { length: 3 }))
-      .max(30, t("common.error.too-long", { length: 30 })),
+      .max(90, t("common.error.too-long", { length: 90 })),
     password: yup
       .string()
       .transform((value) => value || undefined)
       .min(3, t("common.error.too-short", { length: 3 }))
-      .max(30, t("common.error.too-long", { length: 30 })),
+      .max(90, t("common.error.too-long", { length: 90 })),
     maxViews: yup
       .number()
       .transform((value) => value || undefined)
       .min(1),
+    senderName: !options.isUserSignedIn && !options.isReverseShare
+      ? yup
+          .string()
+          .required(t("common.error.field-required"))
+          .min(2, t("common.error.too-short", { length: 2 }))
+          .max(100, t("common.error.too-long", { length: 100 }))
+      : yup.string().optional(),
+    senderEmail: !options.isUserSignedIn && !options.isReverseShare
+      ? yup
+          .string()
+          .required(t("common.error.field-required"))
+          .email(t("upload.modal.accordion.email.invalid-email"))
+      : yup.string().optional(),
   });
 
   const [storedRecipients, setStoredRecipients] =
@@ -182,6 +196,8 @@ const CreateUploadModalBody = ({
       expiration_unit: "-days",
       never_expires: false,
       shareE2EKeyViaEmail: false,
+      senderName: "",
+      senderEmail: "",
     },
     validate: yupResolver(validationSchema),
   });
@@ -194,12 +210,12 @@ const CreateUploadModalBody = ({
         ? "never"
         : form.values.expiration_num + form.values.expiration_unit;
 
-      const expirationDate = moment().add(
+      const expirationDate = dayjs().add(
         form.values.expiration_num,
         form.values.expiration_unit.replace(
           "-",
           "",
-        ) as moment.unitOfTime.DurationConstructor,
+        ) as ManipulateType,
       );
 
       // Use anonymous limit when user is not signed in, otherwise use global max
@@ -211,17 +227,17 @@ const CreateUploadModalBody = ({
         effectiveMax.value != 0 &&
         (form.values.never_expires ||
           expirationDate.isAfter(
-            moment().add(
+            dayjs().add(
               effectiveMax.value,
-              effectiveMax.unit,
+              effectiveMax.unit as ManipulateType,
             ),
           ))
       ) {
         form.setFieldError(
           "expiration_num",
           t("upload.modal.expires.error.too-long", {
-            max: moment
-              .duration(effectiveMax.value, effectiveMax.unit)
+            max: dayjs
+              .duration(effectiveMax.value, effectiveMax.unit as ManipulateType)
               .humanize(),
           }),
         );
@@ -241,6 +257,8 @@ const CreateUploadModalBody = ({
           },
           shareE2EKeyViaEmail: values.shareE2EKeyViaEmail,
           ...(captchaToken && { captchaToken }),
+          ...(values.senderName && { senderName: values.senderName }),
+          ...(values.senderEmail && { senderEmail: values.senderEmail }),
         },
         files,
       );
@@ -263,6 +281,23 @@ const CreateUploadModalBody = ({
       )}
       <form onSubmit={onSubmit}>
         <Stack align="stretch">
+          {!options.isUserSignedIn && !options.isReverseShare && (
+            <Group grow>
+              <TextInput
+                variant="filled"
+                label={t("upload.modal.sender.name.label")}
+                placeholder={t("upload.modal.sender.name.placeholder")}
+                {...form.getInputProps("senderName")}
+              />
+              <TextInput
+                variant="filled"
+                label={t("upload.modal.sender.email.label")}
+                placeholder={t("upload.modal.sender.email.placeholder")}
+                inputMode="email"
+                {...form.getInputProps("senderEmail")}
+              />
+            </Group>
+          )}
           <Group align={form.errors.link ? "center" : "flex-end"}>
             <TextInput
               style={{ flex: "1" }}
@@ -407,7 +442,11 @@ const CreateUploadModalBody = ({
                 </Stack>
               </Accordion.Panel>
             </Accordion.Item>
-            {options.enableEmailRecepients && (
+            {/* [UX/Security] Disabled for reverse share uploads: the uploader
+               must not be able to forward encrypted files to unintended
+               third-party recipients. Only the reverse share creator
+               should receive the completed share link. */}
+            {options.enableEmailRecepients && !options.isReverseShare && (
               <Accordion.Item value="recipients" sx={{ borderBottom: "none" }}>
                 <Accordion.Control>
                   <FormattedMessage id="upload.modal.accordion.email.title" />
@@ -477,17 +516,26 @@ const CreateUploadModalBody = ({
                     autoComplete="new-password"
                     {...form.getInputProps("password")}
                   />
-                  <NumberInput
-                    min={1}
-                    type="number"
-                    variant="filled"
-                    placeholder={t(
-                      "upload.modal.accordion.security.max-views.placeholder",
-                    )}
-                    label={t("upload.modal.accordion.security.max-views.label")}
-                    {...form.getInputProps("maxViews")}
-                  />
-                  {options.isUserSignedIn &&
+                  {/* [UX/Security] Max views hidden for reverse share uploads:
+                     the uploader could exhaust the view quota before the
+                     reverse share creator ever accesses the share. */}
+                  {!options.isReverseShare && (
+                    <NumberInput
+                      min={1}
+                      type="number"
+                      variant="filled"
+                      placeholder={t(
+                        "upload.modal.accordion.security.max-views.placeholder",
+                      )}
+                      label={t("upload.modal.accordion.security.max-views.label")}
+                      {...form.getInputProps("maxViews")}
+                    />
+                  )}
+                  {/* [UX/Security] E2E key email checkbox hidden for reverse
+                     shares: K_rs is delivered via the URL fragment (#key=...),
+                     not email. The checkbox would be misleading. */}
+                  {!options.isReverseShare &&
+                    options.isUserSignedIn &&
                     options.enableEmailRecepients &&
                     options.enableE2EKeyEmailSharing && (
                       <Checkbox

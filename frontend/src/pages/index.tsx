@@ -10,13 +10,13 @@ import {
 } from "@mantine/core";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
 import { TbCheck } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import Logo from "../components/Logo";
 import Meta from "../components/Meta";
 import useUser from "../hooks/user.hook";
 import useConfig from "../hooks/config.hook";
+import { useEffect, useState } from "react";
 
 const useStyles = createStyles((theme) => ({
   inner: {
@@ -66,25 +66,28 @@ const useStyles = createStyles((theme) => ({
         ? theme.fn.rgba(theme.colors[theme.primaryColor][6], 0.55)
         : theme.colors[theme.primaryColor][0],
     borderRadius: theme.radius.sm,
-    padding: "4px 12px",
+    padding: "1.2px 12px 4px 12px",
   },
 }));
 
 export default function Home() {
   const { classes } = useStyles();
-  const { refreshUser } = useUser();
+  const { user } = useUser();
   const router = useRouter();
   const config = useConfig();
   const [signupEnabled, setSignupEnabled] = useState(true);
 
-  // If user is already authenticated, redirect to the upload page
+  // If user is already authenticated, redirect to the upload page.
+  // The SSR in _app.tsx already resolves the user via server-side cookies,
+  // so we rely on that instead of calling refreshUser() which would trigger
+  // a 401 POST /auth/token for unauthenticated visitors.
   useEffect(() => {
-    refreshUser().then((user) => {
-      if (user) {
-        router.replace("/upload");
-      }
-    });
+    if (user) {
+      router.replace("/upload");
+    }
+  }, [user]);
 
+  useEffect(() => {
     // If registration is disabled, get started button should redirect to the sign in page
     try {
       const allowRegistration = config.get("share.allowRegistration");
@@ -114,7 +117,7 @@ export default function Home() {
                 }}
               />
             </Title>
-            <Text color="dimmed" mt="md">
+            <Text color="dimmed" mt="md" weight={500}>
               <FormattedMessage id="home.description" />
             </Text>
 
@@ -178,7 +181,7 @@ export default function Home() {
             </Group>
           </div>
           <Group className={classes.image} align="center">
-            <Logo width={200} height={200} />
+            <Logo width={200} height={200} src="/img/logo-200x200.webp" />
           </Group>
         </div>
       </Container>

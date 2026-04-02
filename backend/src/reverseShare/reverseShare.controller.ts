@@ -5,6 +5,7 @@ import {
   Get,
   NotFoundException,
   Param,
+  Patch,
   Post,
   UseGuards,
 } from "@nestjs/common";
@@ -14,6 +15,7 @@ import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
 import { ConfigService } from "src/config/config.service";
 import { CreateReverseShareDTO } from "./dto/createReverseShare.dto";
+import { UpdateReverseShareDTO } from "./dto/updateReverseShare.dto";
 import { ReverseShareDTO } from "./dto/reverseShare.dto";
 import { ReverseShareTokenWithShares } from "./dto/reverseShareTokenWithShares";
 import { ReverseShareOwnerGuard } from "./guards/reverseShareOwner.guard";
@@ -65,5 +67,14 @@ export class ReverseShareController {
   @UseGuards(JwtGuard, ReverseShareOwnerGuard)
   async remove(@Param("reverseShareId") id: string) {
     await this.reverseShareService.remove(id);
+  }
+
+  @Patch(":reverseShareId")
+  @UseGuards(JwtGuard, ReverseShareOwnerGuard)
+  async update(
+    @Param("reverseShareId") id: string,
+    @Body() body: UpdateReverseShareDTO,
+  ) {
+    await this.reverseShareService.update(id, body);
   }
 }

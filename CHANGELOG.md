@@ -1,3 +1,162 @@
+## [1.18.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.17.5...v1.18.0) (2026-04-02)
+
+
+### Security
+
+* **share-guard:** reverse share public-access flag is now always respected --
+  previously E2E reverse shares were forced private regardless of `publicAccess`;
+  since files are encrypted (ciphertext is useless without K_rs from the URL
+  fragment), the `publicAccess` flag is the sole access control lever
+* **file-guard:** fix `FileSecurityGuard` bypass that allowed unauthorized file
+  downloads under certain conditions
+* **hcaptcha:** fix proxy bypass for hCaptcha verification -- Node.js 24 native
+  `fetch()` uses its own internal undici copy and ignores npm undici's
+  `setGlobalDispatcher()`; replaced `globalThis.fetch` with explicit
+  `undici.fetch()` + `ProxyAgent` in `main.ts` (global scope) and
+  `hcaptcha.guard.ts` (belt-and-suspenders); network errors now throw
+  `ServiceUnavailableException(503)` instead of misleading `BadRequestException`
+* **deps:** patch lodash prototype pollution CVE by adding npm override
+  `lodash@^4.18.1` in backend `package.json`
+
+
+### Features
+
+* **push-notifications:** full Web Push notification system
+  - backend: new `push` module (controller, service, DTO) with VAPID-based
+    delivery via `web-push` library
+  - backend: Prisma migration `add_push_subscription` for `PushSubscription`
+    model (endpoint, p256dh, auth keys per user)
+  - backend: VAPID public/private key pair and toggle stored as admin
+    configuration entries (`pushNotifications.*`)
+  - frontend: `PushNotificationSection` in account settings page with
+    subscribe/unsubscribe controls and permission status display
+  - frontend: `NotificationBell` component in the header navbar -- bell icon
+    that toggles push subscription directly; green indicator dot when active,
+    processing animation while subscribing
+  - admin: push notification category in configuration sidebar with i18n
+    translations (FR/EN)
+* **push-notifications/header:** notification bell is placed before the upload
+  link on desktop, and next to the burger menu on mobile (always visible outside
+  the dropdown)
+* **cookie-consent:** add GDPR-compliant cookie consent banner component
+  (`CookieConsent.tsx`) with accept/reject controls and persistent preference
+* **wake-lock:** keep screen active during file uploads using the Wake Lock API
+  (`useWakeLock.hook.ts`); automatically released when upload completes or fails
+* **pwa:** improved Progressive Web App support
+  - fix `manifest.json` configuration (icons, theme_color, start_url, display,
+    screenshots for install prompt)
+  - add custom service worker (`sw.js`) with cache versioning (v3) and
+    network-first strategy for API calls
+  - add offline fallback page (`offline.tsx`)
+* **theme:** add six color palettes (victoria, stprive, ocean, crimson, amber,
+  slate) with WCAG AA compliant contrast enforcement
+  - `luminance()` helper for WCAG relative luminance calculation
+  - `filledTextColor()` auto-switches text to dark on bright backgrounds
+    (luminance threshold 0.183)
+  - `lightVariantColor()` picks high-contrast text shade for light variants
+  - component style overrides for `Button`, `ActionIcon`, `ThemeIcon`, `Badge`,
+    and `Switch` to enforce readability across all palettes
+* **reverse-share:** display reverse share encryption key (K_rs) in browser --
+  new key icon button per E2E reverse share in the reverse shares list; opens a
+  modal with reveal/copy controls, exactly like the master key in E2E user settings
+* **reverse-share:** "never expires" option for reverse share links --
+  new checkbox in the creation modal (shown when no max-expiration is configured);
+  backend stores epoch 0 as "never", `isValid()` and `getAllByUser()` handle it
+* **reverse-share:** edit reverse share expiration after creation --
+  new pencil icon in the reverse shares list opens a modal to extend, shorten, or
+  set "never expires"; backend `PATCH /reverseShares/:id` endpoint validates
+  against `maxExpiration` config
+* **reverse-share:** increase name maximum length from 30 to 90 characters
+* **reverse-share:** allow unlimited uses for personal reverse shares
+* **share:** show share name and description in the account shares list --
+  merged ID/Name columns with description subtitle for better readability
+* **share:** file preview card grid for reverse share creator links
+  (`FileCardGrid.tsx`) -- the reverse share creator can preview uploaded files
+  directly from the share page
+* **share:** sender name and email fields for anonymous uploads -- new Prisma
+  migration `add_sender_fields`, backend DTO validation, frontend input fields
+  in the upload modal; stored alongside the share metadata
+* **share:** E2E encryption support for anonymous/reverse-share uploads --
+  ephemeral key generation client-side, automatic key sharing via email to the
+  reverse share creator
+* **logo:** accept PNG, JPEG, and WebP formats for admin logo upload (previously
+  restricted to specific formats)
+* **logo:** auto-generate optimized 200x200 homepage variant
+  (`logo-200x200.webp`) on admin logo upload; homepage now uses the dedicated
+  smaller asset instead of the full 512px logo
+* **i18n:** add French and English translations for all new features (push
+  notifications, cookie consent, reverse share editing, sender fields, wake lock,
+  offline page)
+* **share:** "never expires" option for regular shares -- new checkbox in the
+  upload creation modal; the completed-upload modal displays "Never expires"
+  when epoch 0 is detected
+* **share:** separate anonymous max-expiration configuration -- anonymous users
+  are validated against `anonymousMaxExpiration` instead of the authenticated
+  max-expiration, allowing stricter limits for unauthenticated uploads
+* **share:** increase share name and password max length from 30 to 90 characters
+  (backend DTO `@Length(3, 90)` and frontend Yup validation)
+* **account:** dark mode / light mode / system theme switcher (`ThemeSwitcher`
+  component) in account settings with localStorage persistence; `_app.tsx` reads
+  the cookie-stored scheme to avoid SSR hydration mismatches
+* **meta:** configurable per-page meta description via `config.get("general.metaDescription")`
+  with fallback; Open Graph and Twitter Card tags generated dynamically
+* **seo:** add `robots: noindex` meta tag, `lang="fr"` on `<html>`, logo preload
+  hint, and `theme-color` meta in `_document.tsx`
+* **config:** add `NoCacheInterceptor` to configuration API endpoints --
+  `Cache-Control: no-cache, must-revalidate, private` prevents reverse-proxy
+  stale reads after admin config updates
+* **auth:** skip `/users/me` network call when no `access_token` cookie is
+  present -- avoids a pointless 401 round-trip on page load for unauthenticated
+  visitors
+
+
+### Bug Fixes
+
+* **e2e/chunks:** fix per-chunk encryption/decryption for large files -- upload
+  side (`EditableUpload.tsx`, `upload/index.tsx`) now encrypts each chunk
+  independently with its own IV; download side (`crypto.util.ts`
+  `decryptFileAuto()`, `share.service.ts`) correctly slices per-chunk
+  `[IV || ciphertext || tag]` frames; backend `local.service.ts` computes
+  `effectiveChunkSize` accounting for the 28-byte encryption overhead
+  (`ENCRYPTION_OVERHEAD = 12 IV + 16 tag`) per chunk
+* **body-parser:** fix `PayloadTooLargeError` on E2E encrypted uploads --
+  `body-parser` raw limit was exactly `chunkSize` (15 MB) but encrypted chunks
+  are `chunkSize + 28` bytes; limit now includes a 128-byte margin
+* **jobs:** fix cron job incorrectly deleting reverse shares set to "never
+  expires" -- `isExpired()` now returns `false` when expiration date is epoch 0
+* **auth:** fix 401 authentication errors caused by cookie/JWT expiration timing
+  mismatch
+* **hydration:** fix React error #418 (SSR/client hydration mismatch) in
+  `NotificationBell` -- browser-only API checks (`PushManager`, `serviceWorker`,
+  `Notification`) are deferred until after hydration using a `mounted` state flag
+  to ensure the first client render matches the server output
+* **header:** fix burger menu visible on desktop after notification bell
+  refactor -- wrap the mobile-only group (bell + burger) in a single `MediaQuery`
+  with `display: none` above the `sm` breakpoint
+* **zip:** server-side ZIP creation is skipped for E2E encrypted shares; files
+  are downloaded individually to preserve per-file decryption
+* **contrast:** fix white text on amber (`rgb(255, 193, 7)`) backgrounds being
+  unreadable; fix `Switch` toggle tracks appearing white-on-white in admin
+  configuration forms
+
+
+### Performance
+
+* **bundle:** replace `moment.js` with `dayjs` -- saves approximately 325 KiB
+  from the client JavaScript bundle; all date formatting and relative-time
+  operations migrated (`dayjs.ts` utility wrapper)
+* **lighthouse:** address 9 Lighthouse / PageSpeed audit findings including image
+  optimization, resource hints, accessibility annotations, and meta tags
+
+
+### Dependencies
+
+* **deps:** add `web-push` ^3.6.7 (backend, VAPID-based push delivery)
+* **deps:** add `dayjs` (frontend, lightweight date library replacing moment.js)
+* **deps:** remove `moment` from frontend dependencies
+* **deps-override:** add `lodash@^4.18.1` override in backend `package.json`
+
+
 ## [1.17.5](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.17.4...v1.17.5) (2026-03-30)
 
 
@@ -7,10 +166,6 @@
   admins -- `ShareSecurityGuard` previously short-circuited on admin + ownership
   before reaching the password verification; the admin bypass is now applied only
   after password/token validation
-* **share-guard:** restrict public access to E2E-encrypted reverse share results --
-  when `encryptedReverseShareKey` is set, only the reverse share creator and the
-  share uploader can access the share, regardless of the `publicAccess` flag;
-  exposes ciphertext and file metadata to unauthenticated visitors otherwise
 
 
 ### Bug Fixes
@@ -37,6 +192,9 @@
   share relation which may not resolve the creator email correctly in this path
 * sharing without any account is currently possible ONLY by sharing link by user 
   himself
+* **reverse-share:** editing a reverse share expiration does not pre-fill the
+  previously chosen date -- the edit modal always starts with default values
+  instead of reflecting the current expiration
 * reverse share without simplified mode enabled allows the uploader to re-share
   files to other recipients
 

@@ -14,6 +14,7 @@ import useConfig from "../../hooks/config.hook";
 import useConfirmLeave from "../../hooks/confirm-leave.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import useUser from "../../hooks/user.hook";
+import useWakeLock from "../../hooks/useWakeLock.hook";
 import shareService from "../../services/share.service";
 import { FileUpload } from "../../types/File.type";
 import { CreateShare, Share } from "../../types/share.type";
@@ -61,6 +62,7 @@ const Upload = ({
 
   const { user } = useUser();
   const config = useConfig();
+  const wakeLock = useWakeLock();
   const [files, setFiles] = useState<FileUpload[]>([]);
   const [isUploading, setisUploading] = useState(false);
 
@@ -86,6 +88,7 @@ const Upload = ({
   });
 
   const chunkSize = useRef(parseInt(config.get("share.chunkSize")));
+  const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   maxShareSize ??= parseInt(config.get("share.maxSize"));
   const autoOpenCreateUploadModal = config.get("share.autoOpenShareModal");
@@ -93,6 +96,20 @@ const Upload = ({
   const uploadFiles = async (share: CreateShare, files: FileUpload[]) => {
     setisUploading(true);
     shouldShareE2EKeyViaEmail = !!share.shareE2EKeyViaEmail;
+
+    // Keep screen awake during upload (mobile)
+    await wakeLock.acquire();
+
+    // Start SW keepalive to prevent browser from killing background uploads
+    let keepaliveInterval: ReturnType<typeof setInterval> | null = null;
+    if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
+      keepaliveInterval = setInterval(() => {
+        navigator.serviceWorker.controller?.postMessage({
+          type: "UPLOAD_KEEPALIVE",
+        });
+      }, 20000);
+      keepaliveRef.current = keepaliveInterval;
+    }
 
     // ── E2E : récupérer ou créer la clé de chiffrement ──
     let cryptoKey: CryptoKey | null = null;
@@ -124,8 +141,12 @@ const Upload = ({
       }
       share.isE2EEncrypted = true;
     } else {
-      // Upload anonyme : pas de chiffrement E2E
-      e2eKeyEncoded = null;
+      // Anonymous upload: generate a one-time E2E key so files are
+      // never stored in plaintext on the server. The key is only
+      // transmitted via the URL fragment (#key=...) in the share link.
+      cryptoKey = await generateEncryptionKey();
+      e2eKeyEncoded = await exportKeyToBase64(cryptoKey);
+      share.isE2EEncrypted = true;
     }
 
     try {
@@ -134,6 +155,7 @@ const Upload = ({
     } catch (e) {
       toast.axiosError(e);
       setisUploading(false);
+      wakeLock.release();
       e2eKeyEncoded = null;
       return;
     }
@@ -158,17 +180,10 @@ const Upload = ({
 
         setFileProgress(1);
 
-        // Chiffrer le fichier avant upload si E2E activé
-        let uploadBlob: Blob;
-        if (share.isE2EEncrypted) {
-          const plainBuf = await file.arrayBuffer();
-          const encryptedBuf = await encryptFile(plainBuf, cryptoKey!);
-          uploadBlob = new Blob([encryptedBuf]);
-        } else {
-          uploadBlob = file;
-        }
-
-        let chunks = Math.ceil(uploadBlob.size / chunkSize.current);
+        // Chunking is done on the original file; each chunk is encrypted
+        // individually just before upload to avoid loading the whole file
+        // into memory (critical for large files on mobile).
+        let chunks = Math.ceil(file.size / chunkSize.current);
 
         // If the file is 0 bytes, we still need to upload 1 chunk
         if (chunks == 0) chunks++;
@@ -176,7 +191,14 @@ const Upload = ({
         for (let chunkIndex = 0; chunkIndex < chunks; chunkIndex++) {
           const from = chunkIndex * chunkSize.current;
           const to = from + chunkSize.current;
-          const blob = uploadBlob.slice(from, to);
+          let blob: Blob = file.slice(from, to);
+
+          // Encrypt each chunk individually (IV per chunk)
+          if (share.isE2EEncrypted && cryptoKey) {
+            const plainBuf = await blob.arrayBuffer();
+            const encryptedBuf = await encryptFile(plainBuf, cryptoKey);
+            blob = new Blob([encryptedBuf]);
+          }
           try {
             await shareService
               .uploadFile(
@@ -284,14 +306,22 @@ const Upload = ({
       // For reverse shares the backend always needs K_rs so the reverse share
       // creator can receive a working link.  For classic shares, the key is
       // only included when the uploader opted in via the checkbox.
+      // For anonymous shares the key is ephemeral (no localStorage), so
+      // we always include it when recipients are configured.
       const isReverseShareUpload = router.pathname !== "/upload";
+      const isAnonymousUpload = !user;
       const e2eKeyForComplete =
-        (shouldShareE2EKeyViaEmail || isReverseShareUpload) && e2eKeyEncoded
+        ((shouldShareE2EKeyViaEmail || isReverseShareUpload || isAnonymousUpload) && e2eKeyEncoded)
           ? e2eKeyEncoded
           : undefined;
       shareService
         .completeShare(createdShare.id, e2eKeyForComplete)
         .then((share) => {
+          if (keepaliveRef.current) {
+            clearInterval(keepaliveRef.current);
+            keepaliveRef.current = null;
+          }
+          wakeLock.release();
           setisUploading(false);
           showCompletedUploadModal(modals, share, e2eKeyEncoded);
           queryClient.invalidateQueries({

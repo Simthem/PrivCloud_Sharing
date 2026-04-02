@@ -3,6 +3,7 @@ import { JwtModule } from "@nestjs/jwt";
 import { ClamScanModule } from "src/clamscan/clamscan.module";
 import { EmailModule } from "src/email/email.module";
 import { FileModule } from "src/file/file.module";
+import { PushModule } from "src/push/push.module";
 import { ReverseShareModule } from "src/reverseShare/reverseShare.module";
 import { ShareController } from "./share.controller";
 import { ShareService } from "./share.service";
@@ -15,6 +16,7 @@ import { HCaptchaGuard } from "src/auth/guard/hcaptcha.guard";
     forwardRef(() => ClamScanModule),
     ReverseShareModule,
     forwardRef(() => FileModule),
+    PushModule,
   ],
   controllers: [ShareController],
   providers: [ShareService, HCaptchaGuard],

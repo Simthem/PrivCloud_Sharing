@@ -46,7 +46,7 @@ export class JobsService {
   async deleteExpiredReverseShares() {
     const expiredReverseShares = await this.prisma.reverseShare.findMany({
       where: {
-        shareExpiration: { lt: new Date() },
+        shareExpiration: { lt: new Date(), not: moment(0).toDate() },
       },
     });
 

@@ -84,7 +84,7 @@ export class ShareController {
   /**
    * Returns the encrypted reverse share key for E2E decryption.
    * Only the reverse share creator (owner) can access this.
-   * The key is encrypted with K_master — the server never sees K_rs in clear.
+   * The key is encrypted with K_master - the server never sees K_rs in clear.
    *
    * Returns:
    *  - 200 { encryptedReverseShareKey: null }   → not a reverse share (use K_master)
@@ -187,7 +187,9 @@ export class ShareController {
     response.cookie(`share_${id}_token`, token, {
       path: "/",
       httpOnly: true,
+      sameSite: "strict",
       secure: isSecure,
+      maxAge: 1000 * 60 * 60 * 24, // 24 hours
     });
 
     return { token };

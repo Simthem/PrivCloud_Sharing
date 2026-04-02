@@ -18,6 +18,7 @@ import { ConfigService } from "src/config/config.service";
 import { EmailService } from "src/email/email.service";
 import { FileService } from "src/file/file.service";
 import { PrismaService } from "src/prisma/prisma.service";
+import { PushService } from "src/push/push.service";
 import { ReverseShareService } from "src/reverseShare/reverseShare.service";
 import { parseRelativeDateToAbsolute } from "src/utils/date.util";
 import { SHARE_DIRECTORY } from "../constants";
@@ -36,6 +37,7 @@ export class ShareService {
     private jwtService: JwtService,
     private reverseShareService: ReverseShareService,
     private clamScanService: ClamScanService,
+    private pushService: PushService,
   ) {}
 
   async create(share: CreateShareDTO, user?: User, reverseShareToken?: string) {
@@ -116,6 +118,31 @@ export class ShareService {
       this.logger.debug(
         `Computed expiration: shareId=${share.id} expiration=${expirationDate.toISOString()}`,
       );
+    }
+
+    // [UX/Security] Defense-in-depth: when the share is created via a
+    // reverse share token, the uploader must NOT be allowed to:
+    //  - set recipients (would forward files to unintended third parties)
+    //  - set maxViews (the uploader could exhaust views before the creator)
+    // Password is intentionally KEPT: it adds a layer of security that
+    // can reassure the external user receiving the reverse share link.
+    // The frontend hides recipients and maxViews for reverse share uploads,
+    // but a crafted API request could still include them.
+    if (reverseShare) {
+      if (share.recipients?.length) {
+        this.logger.warn(
+          `Stripped recipients from reverse share upload: shareId=${share.id} count=${share.recipients.length}`,
+        );
+      }
+      if (share.security?.maxViews) {
+        this.logger.warn(
+          `Stripped maxViews from reverse share upload: shareId=${share.id}`,
+        );
+      }
+      share.recipients = [];
+      if (share.security) {
+        share.security = { password: share.security.password } as any;
+      }
     }
 
     fs.mkdirSync(`${SHARE_DIRECTORY}/${share.id}`, {
@@ -269,6 +296,7 @@ export class ShareService {
             recipient.email,
             share.id,
             share.creator,
+            share.name,
             share.description,
             share.expiration,
             e2eKeyForEmail,
@@ -297,7 +325,7 @@ export class ShareService {
 
     if (notifyReverseShareCreator) {
       try {
-        // The reverse share creator owns K_rs — always include it in the email
+        // The reverse share creator owns K_rs - always include it in the email
         // so they can decrypt their files. This is NOT gated by
         // enableE2EKeyEmailSharing (that setting controls sharing K with
         // third-party recipients, not with the key owner).
@@ -314,6 +342,26 @@ export class ShareService {
       }
     }
 
+    // Send push notification to reverse share creator
+    if (share.reverseShare) {
+      const appName = this.config.get("general.appName");
+      void this.pushService.sendToUser(share.reverseShare.creatorId, {
+        title: appName,
+        body: `A new share "${share.name || id}" was uploaded via your reverse share link.`,
+        url: `/share/${id}`,
+      });
+    }
+
+    // Send push notification to share creator (for regular shares)
+    if (share.creatorId && !share.reverseShare) {
+      const appName = this.config.get("general.appName");
+      void this.pushService.sendToUser(share.creatorId, {
+        title: appName,
+        body: `Your share "${share.name || id}" is ready.`,
+        url: `/share/${id}`,
+      });
+    }
+
     // Check if any file is malicious with ClamAV
     // Skip ClamAV for E2E encrypted shares (can't scan encrypted content)
     if (!share.isE2EEncrypted) {
@@ -324,19 +372,23 @@ export class ShareService {
     }
 
     // Decrement reverse share remaining uses if applicable
+    // Personal links (epoch 0 = never expires) have unlimited uses
     if (share.reverseShare) {
-      try {
-        await this.prisma.reverseShare.update({
-          where: { token: reverseShareToken },
-          data: { remainingUses: { decrement: 1 } },
-        });
-        this.logger.debug(
-          `Reverse share remainingUses decremented: shareId=${id}`,
-        );
-      } catch (err) {
-        this.logger.error(
-          `Failed to decrement reverse share uses: shareId=${id} error=${(err as Error).message}`,
-        );
+      const isPersonal = share.reverseShare.shareExpiration.getTime() === 0;
+      if (!isPersonal) {
+        try {
+          await this.prisma.reverseShare.update({
+            where: { token: reverseShareToken },
+            data: { remainingUses: { decrement: 1 } },
+          });
+          this.logger.debug(
+            `Reverse share remainingUses decremented: shareId=${id}`,
+          );
+        } catch (err) {
+          this.logger.error(
+            `Failed to decrement reverse share uses: shareId=${id} error=${(err as Error).message}`,
+          );
+        }
       }
     }
 
@@ -455,7 +507,7 @@ export class ShareService {
       ...share,
       hasPassword: !!share.security?.password,
       // Expose the encrypted reverse share key (K_rs wrapped by K_master).
-      // It is AES-GCM ciphertext — useless without K_master, safe to expose.
+      // It is AES-GCM ciphertext - useless without K_master, safe to expose.
       encryptedReverseShareKey:
         share.reverseShare?.encryptedReverseShareKey ?? null,
     };

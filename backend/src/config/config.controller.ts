@@ -67,7 +67,9 @@ export class ConfigController {
   async uploadLogo(
     @UploadedFile(
       new ParseFilePipe({
-        validators: [new FileTypeValidator({ fileType: "image/png" })],
+        validators: [
+          new FileTypeValidator({ fileType: /^image\/(png|jpe?g|webp)$/ }),
+        ],
       }),
     )
     file: Express.Multer.File,

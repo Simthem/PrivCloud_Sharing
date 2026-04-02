@@ -129,6 +129,17 @@ export default {
   "account.notify.totp.disable": "TOTP disabled successfully",
   "account.notify.totp.enable": "TOTP enabled successfully",
 
+  "account.card.push.title": "Push Notifications",
+  "account.card.push.description":
+    "Receive browser notifications when a share is completed or someone uploads files via your reverse share link.",
+  "account.card.push.enable": "Enable notifications",
+  "account.card.push.disable": "Disable notifications",
+  "account.card.push.permission-denied":
+    "Notification permission was denied. Please allow notifications in your browser settings.",
+  "account.notify.push.enabled": "Push notifications enabled",
+  "account.notify.push.disabled": "Push notifications disabled",
+  "account.notify.push.error": "Failed to configure push notifications",
+
   "account.card.language.title": "Language",
   "account.card.language.description":
     "The project is translated by the community. Some languages might be incomplete.",
@@ -185,6 +196,11 @@ export default {
 
   // showCreateReverseShareModal.tsx
   "account.reverseShares.modal.title": "Create reverse share",
+  "account.reverseShares.modal.link-type.label": "Link type",
+  "account.reverseShares.modal.link-type.description":
+    "Personal links never expire but can be revoked. Limited links have configurable expiration.",
+  "account.reverseShares.modal.link-type.personal": "Personal (no expiration)",
+  "account.reverseShares.modal.link-type.limited": "Limited (custom expiration)",
   "account.reverseShares.modal.expiration.label": "Expiration",
   "account.reverseShares.modal.expiration.minute-singular": "Minute",
   "account.reverseShares.modal.expiration.minute-plural": "Minutes",
@@ -235,6 +251,7 @@ export default {
   "account.reverseShares.table.max-size": "Max share size",
   "account.reverseShares.table.expires": "Expires at",
   "account.reverseShares.table.password-protected": "Password protected",
+  "account.reverseShares.table.view-files": "View files",
 
 
   "account.reverseShares.modal.reverse-share-link": "Reverse share link",
@@ -330,6 +347,11 @@ export default {
   "upload.modal.not-signed-in-description":
     "You will be unable to delete your share manually and view the visitor count. Anonymous shares are automatically deleted after a limited time (files and access link included).",
 
+  "upload.modal.sender.name.label": "Your name",
+  "upload.modal.sender.name.placeholder": "John Doe",
+  "upload.modal.sender.email.label": "Your email",
+  "upload.modal.sender.email.placeholder": "john@example.com",
+
   "upload.modal.expires.never": "never",
   "upload.modal.expires.never-long": "Permanent share",
   "upload.modal.expires.error.too-long":
@@ -416,6 +438,7 @@ export default {
   "share.modal.file-link": "File link",
   "share.table.name": "Name",
   "share.table.size": "Size",
+  "share.creator-preview": "File overview",
 
   "share.modal.file-preview.error.not-supported.title": "Preview not supported",
   "share.modal.file-preview.error.not-supported.description":
@@ -438,6 +461,14 @@ export default {
   // /privacy
   "privacy.title": "Privacy Policy",
   // END /privacy
+
+  // Cookie consent
+  "cookie.banner.message":
+    "This site uses strictly necessary cookies for authentication and session management. No tracking or advertising cookies are used.",
+  "cookie.banner.learn-more": "Learn more",
+  "cookie.banner.accept": "Accept",
+  "cookie.banner.reject": "Reject",
+  // END Cookie consent
 
   // /admin/config
   "admin.config.config-file-warning.title": "Configuration file present",
@@ -466,6 +497,12 @@ export default {
   "admin.config.general.session-duration": "Session Duration",
   "admin.config.general.session-duration.description":
     "Time after which a user must log in again (default: 3 months).",
+  "admin.config.general.meta-description": "Meta Description",
+  "admin.config.general.meta-description.description":
+    "SEO meta description displayed in search engine results.",
+  "admin.config.general.color-palette": "Color Palette",
+  "admin.config.general.color-palette.description":
+    "Color theme used throughout the application.",
   "admin.config.general.logo": "Logo",
   "admin.config.general.logo.description":
     "Change your logo by uploading a new image. The image must be a PNG and should have the format 1:1.",
@@ -741,6 +778,20 @@ export default {
   "admin.config.legal.privacy-policy-url": "Privacy policy URL",
   "admin.config.legal.privacy-policy-url.description":
     "If you already have a privacy policy page you can link it here instead of using the text field.",
+
+  "admin.config.category.pushnotifications": "Push Notifications",
+  "admin.config.push-notifications.enabled": "Enable push notifications",
+  "admin.config.push-notifications.enabled.description":
+    "Send push notifications to subscribed users when a share is completed.",
+  "admin.config.push-notifications.vapid-subject": "VAPID subject",
+  "admin.config.push-notifications.vapid-subject.description":
+    "A mailto: URL or contact URL, e.g. mailto:admin@example.com",
+  "admin.config.push-notifications.vapid-public-key": "VAPID public key",
+  "admin.config.push-notifications.vapid-public-key.description":
+    "The generated VAPID public key for sending push notifications.",
+  "admin.config.push-notifications.vapid-private-key": "VAPID private key",
+  "admin.config.push-notifications.vapid-private-key.description":
+    "The associated VAPID private key. Never share this.",
 
   "admin.config.category.hcaptcha": "hCaptcha",
   "admin.config.hcaptcha.enabled": "Enable hCaptcha",

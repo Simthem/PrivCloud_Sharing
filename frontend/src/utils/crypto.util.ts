@@ -10,7 +10,7 @@
 
 const IV_LENGTH = 12; // 96 bits, recommandé pour AES-GCM
 
-// ─── Génération de clé ────────────────────────────────────────────
+// ----- Génération de clé ----------------------------------------------------------------------──
 
 export async function generateEncryptionKey(): Promise<CryptoKey> {
   return crypto.subtle.generateKey(
@@ -20,7 +20,7 @@ export async function generateEncryptionKey(): Promise<CryptoKey> {
   );
 }
 
-// ─── Export / Import de clé (base64url) ───────────────────────────
+// ----- Export / Import de clé (base64url) ---------------------------------------------
 
 export async function exportKeyToBase64(key: CryptoKey): Promise<string> {
   const raw = await crypto.subtle.exportKey("raw", key);
@@ -35,7 +35,7 @@ export async function importKeyFromBase64(encoded: string): Promise<CryptoKey> {
   ]);
 }
 
-// ─── Chiffrement d'un fichier ─────────────────────────────────────
+// ----- Chiffrement d'un fichier ------------------------------------------------------------─
 
 /**
  * Chiffre un ArrayBuffer avec AES-256-GCM.
@@ -61,7 +61,7 @@ export async function encryptFile(
   return result.buffer;
 }
 
-// ─── Déchiffrement d'un fichier ───────────────────────────────────
+// ----- Déchiffrement d'un fichier -------------------------------------------------------──
 
 /**
  * Déchiffre un ArrayBuffer au format [IV][ciphertext+tag].
@@ -78,7 +78,61 @@ export async function decryptFile(
   return crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
 }
 
-// ─── Stockage de la clé utilisateur (localStorage) ───────────────
+const GCM_TAG_LENGTH = 16;
+const ENCRYPTION_OVERHEAD = IV_LENGTH + GCM_TAG_LENGTH; // 28 octets par chunk
+
+/**
+ * Déchiffre un fichier composé de N chunks chiffrés indépendamment.
+ * Chaque chunk stocké = [IV 12][ciphertext + tag 16].
+ * Taille d'un chunk chiffré = plaintextChunkSize + 28.
+ *
+ * Essaie d'abord le format per-chunk (nouveau). En cas d'échec,
+ * tente le format single-block (rétrocompat anciens uploads).
+ */
+export async function decryptFileAuto(
+  encrypted: ArrayBuffer,
+  key: CryptoKey,
+  plaintextChunkSize: number,
+): Promise<ArrayBuffer> {
+  const encChunkSize = plaintextChunkSize + ENCRYPTION_OVERHEAD;
+
+  // Si le fichier est plus petit ou égal à un seul chunk chiffré,
+  // c'est forcément un single-block (ancien ou petit fichier).
+  if (encrypted.byteLength <= encChunkSize) {
+    return decryptFile(encrypted, key);
+  }
+
+  // Essayer le per-chunk d'abord (nouveau format)
+  try {
+    const totalLen = encrypted.byteLength;
+    // Pré-calculer la taille plaintext totale pour allouer en une fois
+    const numFullChunks = Math.floor(totalLen / encChunkSize);
+    const lastEncChunkSize = totalLen - numFullChunks * encChunkSize;
+    const totalPlainLen =
+      numFullChunks * plaintextChunkSize +
+      (lastEncChunkSize > 0 ? lastEncChunkSize - ENCRYPTION_OVERHEAD : 0);
+
+    const result = new Uint8Array(totalPlainLen);
+    let offset = 0;
+    let pos = 0;
+
+    while (offset < totalLen) {
+      const end = Math.min(offset + encChunkSize, totalLen);
+      const chunkBuf = encrypted.slice(offset, end);
+      const decrypted = await decryptFile(chunkBuf, key);
+      result.set(new Uint8Array(decrypted), pos);
+      pos += decrypted.byteLength;
+      offset = end;
+    }
+
+    return result.buffer;
+  } catch {
+    // Fallback : ancien format single-block
+    return decryptFile(encrypted, key);
+  }
+}
+
+// ----- Stockage de la clé utilisateur (localStorage) -------------------------
 
 const USER_KEY_STORAGE = "privcloud_e2e_user_key";
 
@@ -114,7 +168,7 @@ export function removeUserKey(): void {
   }
 }
 
-// ─── Hash de clé (SHA-256 hex) pour vérification serveur ─────────
+// ----- Hash de clé (SHA-256 hex) pour vérification serveur ---------------
 
 /**
  * Calcule le SHA-256 hex d'une CryptoKey.
@@ -140,7 +194,7 @@ export async function computeKeyHashFromEncoded(
   return computeKeyHash(key);
 }
 
-// ─── Stockage local des clés par share (legacy / migration) ──────
+// ----- Stockage local des clés par share (legacy / migration) ----------
 
 const STORAGE_PREFIX = "privcloud_e2e_key_";
 
@@ -173,7 +227,7 @@ export function removeStoredShareKey(shareId: string): void {
   }
 }
 
-// ─── Extraction de la clé depuis le fragment d'URL ───────────────
+// ----- Extraction de la clé depuis le fragment d'URL -------------------------
 
 /**
  * Extrait la clé base64url depuis window.location.hash.
@@ -195,7 +249,7 @@ export function buildKeyFragment(encodedKey: string): string {
   return `#key=${encodedKey}`;
 }
 
-// ─── Wrapping / Unwrapping de clé (pour reverse shares E2E) ─────
+// ----- Wrapping / Unwrapping de clé (pour reverse shares E2E) -----──
 
 /**
  * Chiffre K_rs avec K_master (AES-GCM key-wrapping).
@@ -231,7 +285,7 @@ export async function unwrapReverseShareKey(
   ]);
 }
 
-// ─── Téléchargement déchiffré ─────────────────────────────────────
+// ----- Téléchargement déchiffré ------------------------------------------------------------─
 
 /**
  * Crée un lien de téléchargement pour un Blob déchiffré.
@@ -248,7 +302,7 @@ export function downloadDecryptedBlob(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// ─── Utilitaires base64url ────────────────────────────────────────
+// ----- Utilitaires base64url -----------------------------------------------------------------─
 
 function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);

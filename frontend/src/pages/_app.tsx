@@ -10,8 +10,7 @@ import { ModalsProvider } from "@mantine/modals";
 import { Notifications } from "@mantine/notifications";
 import axios from "axios";
 import { getCookie, setCookie } from "cookies-next";
-import moment from "moment";
-import "moment/min/locales";
+import { setDayjsLocale } from "../utils/dayjs";
 import { GetServerSidePropsContext } from "next";
 import type { AppProps } from "next/app";
 import Head from "next/head";
@@ -32,12 +31,13 @@ import authService from "../services/auth.service";
 import configService from "../services/config.service";
 import userService from "../services/user.service";
 import GlobalStyle from "../styles/global.style";
-import globalStyle from "../styles/mantine.style";
+import { buildTheme } from "../styles/mantine.style";
 import Config from "../types/config.type";
 import { CurrentUser } from "../types/user.type";
 import i18nUtil from "../utils/i18n.util";
 import userPreferences from "../utils/userPreferences.util";
 import Footer from "../components/footer/Footer";
+import CookieConsent from "../components/cookie/CookieConsent";
 
 const excludeDefaultLayoutRoutes = ["/admin/config/[category]"];
 
@@ -50,7 +50,7 @@ function App({ Component, pageProps }: AppProps) {
 
   const [queryClient] = useState(() => new QueryClient());
   const [colorScheme, setColorScheme] = useState<ColorScheme>(
-    pageProps.colorScheme ?? "light",
+    pageProps.colorScheme ?? "dark",
   );
 
   const [user, setUser] = useState<CurrentUser | null>(pageProps.user);
@@ -65,12 +65,32 @@ function App({ Component, pageProps }: AppProps) {
   }, [router.pathname]);
 
   useEffect(() => {
+    if (!user) return;
     const interval = setInterval(
       async () => await authService.refreshAccessToken(),
       2 * 60 * 1000, // 2 minutes
     );
 
     return () => clearInterval(interval);
+  }, [user]);
+
+  // Register service worker for PWA
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/sw.js")
+        .catch(() => {
+          // Service worker registration failed -- non-critical
+        });
+    }
+
+    // Inject manifest link after first paint to keep it off the critical path
+    if (!document.querySelector('link[rel="manifest"]')) {
+      const link = document.createElement("link");
+      link.rel = "manifest";
+      link.href = "/manifest.json";
+      document.head.appendChild(link);
+    }
   }, []);
 
   useEffect(() => {
@@ -92,14 +112,14 @@ function App({ Component, pageProps }: AppProps) {
   }, [systemTheme]);
 
   const toggleColorScheme = (value: ColorScheme) => {
-    setColorScheme(value ?? "light");
-    setCookie("mantine-color-scheme", value ?? "light", {
+    setColorScheme(value ?? "dark");
+    setCookie("mantine-color-scheme", value ?? "dark", {
       sameSite: "lax",
     });
   };
 
   const language = useRef(pageProps.language);
-  moment.locale(language.current);
+  setDayjsLocale(language.current);
 
   // fall back to english if key does not exist
   const i18nMessages = useMemo(
@@ -115,7 +135,7 @@ function App({ Component, pageProps }: AppProps) {
       <Head>
         <meta
           name="viewport"
-          content="minimum-scale=1, initial-scale=1, width=device-width, user-scalable=no"
+          content="minimum-scale=1, initial-scale=1, width=device-width"
         />
       </Head>
       <QueryClientProvider client={queryClient}>
@@ -128,7 +148,14 @@ function App({ Component, pageProps }: AppProps) {
             <MantineProvider
               withGlobalStyles
               withNormalizeCSS
-              theme={{ colorScheme, ...globalStyle }}
+              theme={{
+                colorScheme,
+                ...buildTheme(
+                  configVariables?.find(
+                    (c) => c.key === "general.colorPalette",
+                  )?.value ?? "victoria",
+                ),
+              }}
             >
               <ColorSchemeProvider
                 colorScheme={colorScheme}
@@ -165,12 +192,15 @@ function App({ Component, pageProps }: AppProps) {
                           >
                             <div>
                               <Header />
-                              <Container>
-                                <Component {...pageProps} />
-                              </Container>
+                              <main>
+                                <Container>
+                                  <Component {...pageProps} />
+                                </Container>
+                              </main>
                             </div>
                             <Footer />
                           </Stack>
+                          <CookieConsent />
                         </>
                       )}
                     </UserContext.Provider>
@@ -198,7 +228,7 @@ App.getInitialProps = async ({ ctx }: { ctx: GetServerSidePropsContext }) => {
   } = {
     route: ctx.resolvedUrl,
     colorScheme:
-      (getCookie("mantine-color-scheme", ctx) as ColorScheme) ?? "light",
+      (getCookie("mantine-color-scheme", ctx) as ColorScheme) ?? "dark",
   };
 
   if (ctx.req) {

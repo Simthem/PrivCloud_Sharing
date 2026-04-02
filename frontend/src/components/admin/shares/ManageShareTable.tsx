@@ -9,7 +9,7 @@ import {
 } from "@mantine/core";
 import { useClipboard } from "@mantine/hooks";
 import { useModals } from "@mantine/modals";
-import moment from "moment";
+import dayjs from "../../../utils/dayjs";
 import { TbLink, TbTrash } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import useConfig from "../../../hooks/config.hook";
@@ -76,14 +76,13 @@ const ManageShareTable = ({
                   <td>{share.views}</td>
                   <td>{byteToHumanSizeString(share.size)}</td>
                   <td>
-                    {moment(share.expiration).unix() === 0
+                    {dayjs(share.expiration).unix() === 0
                       ? "Never"
-                      : moment(share.expiration).format("LLL")}
+                      : dayjs(share.expiration).format("LLL")}
                   </td>
                   <td>
                     <Group position="right">
                       <ActionIcon
-                        color="victoria"
                         variant="light"
                         size={25}
                         onClick={() => {

@@ -24,13 +24,13 @@ const Footer = () => {
   const isMobile = useMediaQuery("(max-width: 700px)");
 
   return (
-    <MFooter height="auto" py={6} px="xl" zIndex={100}>
+    <MFooter height="auto" py={10} px="xl" zIndex={100}>
       <SimpleGrid cols={isMobile ? 2 : 3} m={0}>
         {!isMobile && <div></div>}
-        <Text size="xs" color="dimmed" align={isMobile ? "left" : "center"}>
+        <Text size="sm" color="dimmed" weight={500} align={isMobile ? "left" : "center"}>
           Powered by{" "}
           <Anchor
-            size="xs"
+            size="sm"
             href="https://github.com/Simthem/PrivCloud_Sharing"
             target="_blank"
           >
@@ -39,15 +39,15 @@ const Footer = () => {
         </Text>
         <div>
           {config.get("legal.enabled") && (
-            <Text size="xs" color="dimmed" align="right">
+            <Text size="sm" color="dimmed" weight={500} align="right">
               {hasImprint && (
-                <Anchor size="xs" href={imprintUrl}>
+                <Anchor size="sm" href={imprintUrl}>
                   {t("imprint.title")}
                 </Anchor>
               )}
               {hasImprint && hasPrivacy && " • "}
               {hasPrivacy && (
-                <Anchor size="xs" href={privacyUrl}>
+                <Anchor size="sm" href={privacyUrl}>
                   {t("privacy.title")}
                 </Anchor>
               )}

@@ -31,6 +31,7 @@ import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
 import Meta from "../../components/Meta";
 import LanguagePicker from "../../components/account/LanguagePicker";
+import PushNotificationSection from "../../components/account/PushNotificationSection";
 import ThemeSwitcher from "../../components/account/ThemeSwitcher";
 import showEnableTotpModal from "../../components/account/showEnableTotpModal";
 import useTranslate from "../../hooks/useTranslate.hook";
@@ -658,6 +659,7 @@ const Account = () => {
           </Tabs>
         </Paper>
         <E2EEncryptionSection refreshUser={refreshUser} />
+        <PushNotificationSection />
         <Paper withBorder p="xl" mt="lg">
           <Title order={5} mb="xs">
             <FormattedMessage id="account.card.language.title" />

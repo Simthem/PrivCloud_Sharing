@@ -1,6 +1,6 @@
 import {
-  Box,
   Menu,
+  UnstyledButton,
 } from "@mantine/core";
 import Link from "next/link";
 import { TbDoorExit, TbSettings, TbUser } from "react-icons/tb";
@@ -16,10 +16,10 @@ const ActionAvatar = () => {
   return (
     <Menu position="bottom-start" withinPortal>
       <Menu.Target>
-        <Box className={cx(classes.link, classes.withIcon)}>
+        <UnstyledButton className={cx(classes.link, classes.withIcon)}>
           <TbUser size={14} />
           {user?.username}
-        </Box>
+        </UnstyledButton>
       </Menu.Target>
       <Menu.Dropdown>
         <Menu.Item component={Link} href="/account" icon={<TbUser size={14} />}>

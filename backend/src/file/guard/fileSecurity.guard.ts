@@ -11,6 +11,7 @@ import { PrismaService } from "src/prisma/prisma.service";
 import { ShareSecurityGuard } from "src/share/guard/shareSecurity.guard";
 import { ShareService } from "src/share/share.service";
 import { ConfigService } from "src/config/config.service";
+import { JwtGuard } from "src/auth/guard/jwt.guard";
 
 @Injectable()
 export class FileSecurityGuard extends ShareSecurityGuard {
@@ -20,6 +21,18 @@ export class FileSecurityGuard extends ShareSecurityGuard {
     private _config: ConfigService,
   ) {
     super(_shareService, _prisma, _config);
+  }
+
+  /**
+   * Soft-authenticate: run only JwtGuard (not ShareSecurityGuard) to
+   * populate request.user without triggering token/password checks.
+   */
+  private async softAuthenticate(context: ExecutionContext): Promise<void> {
+    try {
+      await JwtGuard.prototype.canActivate.call(this, context);
+    } catch {
+      // User is not authenticated - request.user stays undefined
+    }
   }
 
   async canActivate(context: ExecutionContext) {
@@ -35,7 +48,7 @@ export class FileSecurityGuard extends ShareSecurityGuard {
 
     const share = await this._prisma.share.findUnique({
       where: { id: shareId },
-      include: { security: true },
+      include: { security: true, reverseShare: true },
     });
 
     // If there is no share token the user requests a file directly
@@ -50,9 +63,10 @@ export class FileSecurityGuard extends ShareSecurityGuard {
 
       // If admin access is enabled and user is admin, allow access
       if (this._config.get("share.allowAdminAccessAllShares")) {
-        await super.canActivate(context);
+        await this.softAuthenticate(context);
         const user = request.user as User | undefined;
         if (user?.isAdmin) {
+          await this._shareService.increaseViewCount(share);
           return true;
         }
       }
@@ -65,6 +79,24 @@ export class FileSecurityGuard extends ShareSecurityGuard {
           "Maximum views exceeded",
           "share_max_views_exceeded",
         );
+      }
+
+      // Reverse share access control: when publicAccess is false, only the
+      // reverse-share creator and the share creator may download files.
+      // When publicAccess is true the files are E2E-encrypted and useless
+      // without K_rs (which lives in the URL fragment, never sent to server).
+      if (share.reverseShare && !share.reverseShare.publicAccess) {
+        await this.softAuthenticate(context);
+        const user = request.user as User | undefined;
+        const isOwner =
+          (user && share.reverseShare.creatorId === user.id) ||
+          (user && share.creatorId === user.id);
+        if (!isOwner) {
+          throw new ForbiddenException(
+            "Only reverse share creator can access this share",
+            "private_share",
+          );
+        }
       }
 
       await this._shareService.increaseViewCount(share);

@@ -63,6 +63,8 @@ export class OAuthController {
     response.cookie(`oauth_${provider}_state`, state, {
       sameSite: "lax",
       secure: isSecure,
+      httpOnly: true,
+      maxAge: 1000 * 60 * 10, // 10 minutes for OAuth flow
     });
     response.redirect(url);
   }
