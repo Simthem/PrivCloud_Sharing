@@ -11,6 +11,7 @@ export type Share = {
   hasPassword: boolean;
   isE2EEncrypted: boolean;
   encryptedReverseShareKey?: string | null;
+  reverseShare?: { id: string; creatorId: string } | null;
 };
 
 export type ReverseShare = {
@@ -42,6 +43,8 @@ export type CreateShare = {
   isE2EEncrypted?: boolean;
   shareE2EKeyViaEmail?: boolean;
   captchaToken?: string;
+  senderName?: string;
+  senderEmail?: string;
 };
 
 export type CreateReverseShare = {

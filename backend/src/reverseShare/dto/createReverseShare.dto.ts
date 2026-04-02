@@ -8,7 +8,7 @@ import {
 } from "class-validator";
 
 export class CreateReverseShareDTO {
-  @Length(3, 30)
+  @Length(3, 90)
   @IsOptional()
   name: string;
 

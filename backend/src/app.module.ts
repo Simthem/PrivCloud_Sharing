@@ -14,6 +14,7 @@ import { FileModule } from "./file/file.module";
 import { JobsModule } from "./jobs/jobs.module";
 import { OAuthModule } from "./oauth/oauth.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { PushModule } from "./push/push.module";
 import { ReverseShareModule } from "./reverseShare/reverseShare.module";
 import { ShareModule } from "./share/share.module";
 import { UserModule } from "./user/user.module";
@@ -39,6 +40,7 @@ import { UserModule } from "./user/user.module";
     ReverseShareModule,
     OAuthModule,
     AppCacheModule,
+    PushModule,
   ],
   controllers: [AppController],
   providers: [

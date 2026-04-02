@@ -11,19 +11,19 @@ const Meta = ({
   const config = useConfig();
 
   const metaTitle = `${title} - ${config.get("general.appName")}`;
+  const metaDescription =
+    description ??
+    config.get("general.metaDescription") ??
+    "A self-hosted and privacy-focused file sharing platform.";
 
   return (
     <Head>
       <title>{metaTitle}</title>
       <meta name="og:title" content={metaTitle} />
-      <meta
-        name="og:description"
-        content={
-          description ?? "An open-source and self-hosted sharing platform."
-        }
-      />
+      <meta name="og:description" content={metaDescription} />
+      <meta name="description" content={metaDescription} />
       <meta name="twitter:title" content={metaTitle} />
-      <meta name="twitter:description" content={description} />
+      <meta name="twitter:description" content={metaDescription} />
     </Head>
   );
 };

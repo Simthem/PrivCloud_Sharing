@@ -28,7 +28,7 @@ export class ShareOwnerGuard extends JwtGuard {
 
     const share = await this.prisma.share.findUnique({
       where: { id: shareId },
-      include: { security: true },
+      include: { security: true, reverseShare: true },
     });
 
     if (!share) throw new NotFoundException("Share not found");
@@ -47,6 +47,12 @@ export class ShareOwnerGuard extends JwtGuard {
     if (!user) return false;
 
     // If the user is the creator of the share, allow access
-    return share.creatorId == user.id;
+    if (share.creatorId == user.id) return true;
+
+    // If the user is the creator of the parent reverse share, allow access
+    if (share.reverseShare && share.reverseShare.creatorId === user.id)
+      return true;
+
+    return false;
   }
 }

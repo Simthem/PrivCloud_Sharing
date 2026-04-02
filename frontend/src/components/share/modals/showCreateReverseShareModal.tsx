@@ -16,7 +16,6 @@ import { useForm, yupResolver } from "@mantine/form";
 import { useModals } from "@mantine/modals";
 import { ModalsContextProps } from "@mantine/modals/lib/context";
 import { getCookie, setCookie } from "cookies-next";
-import moment from "moment";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
 import useTranslate, {
@@ -69,6 +68,7 @@ const Body = ({
 
   const form = useForm({
     initialValues: {
+      linkType: "limited" as "personal" | "limited",
       name: undefined,
       maxShareSize: 104857600,
       maxUseCount: 1,
@@ -85,7 +85,7 @@ const Body = ({
           .string()
           .transform((value) => value || undefined)
           .min(3, t("common.error.too-short", { length: 3 }))
-          .max(30, t("common.error.too-long", { length: 30 })),
+          .max(90, t("common.error.too-long", { length: 90 })),
         maxUseCount: yup
           .number()
           .typeError(t("common.error.invalid-number"))
@@ -101,32 +101,12 @@ const Body = ({
     setCookie("reverse-share.simplified", values.simplified);
     setCookie("reverse-share.public-access", values.publicAccess);
 
-    const expirationDate = moment().add(
-      form.values.expiration_num,
-      form.values.expiration_unit.replace(
-        "-",
-        "",
-      ) as moment.unitOfTime.DurationConstructor,
-    );
-    if (
-      !form.values.never_expires &&
-      maxExpiration.value != 0 &&
-      expirationDate.isAfter(
-        moment().add(maxExpiration.value, maxExpiration.unit),
-      )
-    ) {
-      form.setFieldError(
-        "expiration_num",
-        t("upload.modal.expires.error.too-long", {
-          max: moment
-            .duration(maxExpiration.value, maxExpiration.unit)
-            .humanize(),
-        }),
-      );
-      return;
-    }
+    const isPersonal = values.linkType === "personal";
 
-    // ── E2E : générer K_rs et chiffrer avec K_master ──
+    // RS link expiration is independent from share.maxExpiration.
+    // No client-side validation against maxExpiration for RS links.
+
+    // ---- E2E : générer K_rs et chiffrer avec K_master ----
     let rsKeyEncoded: string | null = null;
     let wrappedKey: string | undefined;
     const masterKeyEncoded = getUserKey();
@@ -150,9 +130,11 @@ const Body = ({
     shareService
       .createReverseShare({
         ...values,
-        shareExpiration: form.values.never_expires
-          ? "never"
-          : values.expiration_num + values.expiration_unit,
+        maxUseCount: isPersonal ? 1000 : values.maxUseCount,
+        shareExpiration:
+          isPersonal || form.values.never_expires
+            ? "never"
+            : values.expiration_num + values.expiration_unit,
         maxShareSize: values.maxShareSize.toString(),
         encryptedReverseShareKey: wrappedKey,
       })
@@ -168,6 +150,24 @@ const Body = ({
     <Group>
       <form onSubmit={onSubmit}>
         <Stack align="stretch">
+          <Select
+            label={t("account.reverseShares.modal.link-type.label")}
+            description={t(
+              "account.reverseShares.modal.link-type.description",
+            )}
+            data={[
+              {
+                value: "personal",
+                label: t("account.reverseShares.modal.link-type.personal"),
+              },
+              {
+                value: "limited",
+                label: t("account.reverseShares.modal.link-type.limited"),
+              },
+            ]}
+            {...form.getInputProps("linkType")}
+          />
+          {form.values.linkType === "limited" && (
           <div>
             <Grid align={form.errors.expiration_num ? "center" : "flex-end"}>
               <Col xs={6}>
@@ -255,20 +255,23 @@ const Body = ({
               )}
             </Text>
           </div>
+          )}
           <FileSizeInput
             label={t("account.reverseShares.modal.max-size.label")}
             value={form.values.maxShareSize}
             onChange={(number) => form.setFieldValue("maxShareSize", number)}
           />
-          <NumberInput
-            min={1}
-            max={1000}
-            precision={0}
-            variant="filled"
-            label={t("account.reverseShares.modal.max-use.label")}
-            description={t("account.reverseShares.modal.max-use.description")}
-            {...form.getInputProps("maxUseCount")}
-          />
+          {form.values.linkType !== "personal" && (
+            <NumberInput
+              min={1}
+              max={1000}
+              precision={0}
+              variant="filled"
+              label={t("account.reverseShares.modal.max-use.label")}
+              description={t("account.reverseShares.modal.max-use.description")}
+              {...form.getInputProps("maxUseCount")}
+            />
+          )}
           {/* Note: when E2E encryption is active, the backend enforces
              private access regardless of this flag (shareSecurity.guard.ts).
              The toggle remains available so the creator can mark a reverse

@@ -1,10 +1,11 @@
-import { Loader, RingProgress } from "@mantine/core";
+import { Loader, RingProgress, useMantineTheme } from "@mantine/core";
 import { TbCircleCheck } from "react-icons/tb";
 const UploadProgressIndicator = ({ progress }: { progress: number }) => {
+  const theme = useMantineTheme();
   if (progress > 0 && progress < 100) {
     return (
       <RingProgress
-        sections={[{ value: progress, color: "victoria" }]}
+        sections={[{ value: progress, color: theme.primaryColor }]}
         thickness={3}
         size={25}
       />

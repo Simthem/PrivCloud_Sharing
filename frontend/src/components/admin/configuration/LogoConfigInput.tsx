@@ -32,7 +32,7 @@ const LogoConfigInput = ({
           icon={<TbUpload size={14} />}
           value={logo}
           onChange={(v) => setLogo(v)}
-          accept=".png"
+          accept=".png,.jpg,.jpeg,.webp"
           // @ts-ignore (https://github.com/mantinedev/mantine/issues/5401)
           placeholder={t("admin.config.general.logo.placeholder")}
         />

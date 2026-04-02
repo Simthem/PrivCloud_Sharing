@@ -1,4 +1,5 @@
-import moment from "moment";
+import dayjs from "./dayjs";
+import { ManipulateType } from "dayjs";
 import { Timespan } from "../types/timespan.type";
 
 export const getExpirationPreview = (
@@ -19,16 +20,16 @@ export const getExpirationPreview = (
     : form.values.expiration_num + form.values.expiration_unit;
   if (value === "never") return messages.neverExpires;
 
-  const expirationDate = moment()
+  const expirationDate = dayjs()
     .add(
-      value.split("-")[0],
-      value.split("-")[1] as moment.unitOfTime.DurationConstructor,
+      parseInt(value.split("-")[0]),
+      value.split("-")[1] as ManipulateType,
     )
     .toDate();
 
   return messages.expiresOn.replace(
     "{expiration}",
-    moment(expirationDate).format("LLL"),
+    dayjs(expirationDate).format("LLL"),
   );
 };
 

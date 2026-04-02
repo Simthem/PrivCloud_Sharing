@@ -9,6 +9,7 @@ import Dropzone from "../../components/upload/Dropzone";
 import FileList from "../../components/upload/FileList";
 import useConfig from "../../hooks/config.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
+import useWakeLock from "../../hooks/useWakeLock.hook";
 import shareService from "../../services/share.service";
 import { FileListItem, FileMetaData, FileUpload } from "../../types/File.type";
 import toast from "../../utils/toast.util";
@@ -38,6 +39,7 @@ const EditableUpload = ({
   const router = useRouter();
   const config = useConfig();
   const queryClient = useQueryClient();
+  const wakeLock = useWakeLock();
 
   const chunkSize = useRef(parseInt(config.get("share.chunkSize")));
 
@@ -98,15 +100,8 @@ const EditableUpload = ({
 
         setFileProgress(1);
 
-        // Chiffrer le fichier si E2E
-        let uploadBlob: Blob = file;
-        if (e2eCryptoKey) {
-          const plainBuf = await file.arrayBuffer();
-          const encryptedBuf = await encryptFile(plainBuf, e2eCryptoKey);
-          uploadBlob = new Blob([encryptedBuf]);
-        }
-
-        let chunks = Math.ceil(uploadBlob.size / chunkSize.current);
+        // Chiffrement par chunk pour éviter de charger tout le fichier en mémoire
+        let chunks = Math.ceil(file.size / chunkSize.current);
 
         // If the file is 0 bytes, we still need to upload 1 chunk
         if (chunks == 0) chunks++;
@@ -114,7 +109,13 @@ const EditableUpload = ({
         for (let chunkIndex = 0; chunkIndex < chunks; chunkIndex++) {
           const from = chunkIndex * chunkSize.current;
           const to = from + chunkSize.current;
-          const blob = uploadBlob.slice(from, to);
+          let blob: Blob = file.slice(from, to);
+
+          if (e2eCryptoKey) {
+            const plainBuf = await blob.arrayBuffer();
+            const encryptedBuf = await encryptFile(plainBuf, e2eCryptoKey);
+            blob = new Blob([encryptedBuf]);
+          }
           try {
             await shareService
               .uploadFile(
@@ -180,6 +181,7 @@ const EditableUpload = ({
 
   const save = async () => {
     setIsUploading(true);
+    await wakeLock.acquire();
 
     try {
       await revertComplete();
@@ -205,6 +207,7 @@ const EditableUpload = ({
       toast.error(t("share.edit.notify.generic-error"));
     } finally {
       setIsUploading(false);
+      wakeLock.release();
     }
   };
 

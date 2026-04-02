@@ -57,6 +57,7 @@ export class EmailService {
     recipientEmail: string,
     shareId: string,
     creator?: User,
+    shareName?: string,
     description?: string,
     expiration?: Date,
     e2eKeyFragment?: string,
@@ -76,6 +77,7 @@ export class EmailService {
         .replaceAll("{creator}", creator?.username ?? "Someone")
         .replaceAll("{creatorEmail}", creator?.email ?? "")
         .replaceAll("{shareUrl}", shareUrl)
+        .replaceAll("{name}", shareName ?? "")
         .replaceAll("{desc}", description ?? "No description")
         .replaceAll(
           "{expires}",

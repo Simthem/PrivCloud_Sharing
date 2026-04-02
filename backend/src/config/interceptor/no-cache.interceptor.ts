@@ -17,7 +17,7 @@ export class NoCacheInterceptor implements NestInterceptor {
         // Set headers to prevent caching by reverse proxies
         response.setHeader(
           "Cache-Control",
-          "no-store, no-cache, must-revalidate, private",
+          "no-cache, must-revalidate, private",
         );
         response.setHeader("Pragma", "no-cache");
         response.setHeader("Expires", "0");

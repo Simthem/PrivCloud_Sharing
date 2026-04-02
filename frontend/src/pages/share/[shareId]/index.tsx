@@ -7,8 +7,10 @@ import { useQuery } from "@tanstack/react-query";
 import { TbLock } from "react-icons/tb";
 import Meta from "../../../components/Meta";
 import DownloadAllButton from "../../../components/share/DownloadAllButton";
+import FileCardGrid from "../../../components/share/FileCardGrid";
 import FileList from "../../../components/share/FileList";
 import showEnterPasswordModal from "../../../components/share/showEnterPasswordModal";
+import useUser from "../../../hooks/user.hook";
 import showCaptchaModal from "../../../components/share/showCaptchaModal";
 import showErrorModal from "../../../components/share/showErrorModal";
 import useTranslate from "../../../hooks/useTranslate.hook";
@@ -19,6 +21,7 @@ import toast from "../../../utils/toast.util";
 import { byteToHumanSizeString } from "../../../utils/fileSize.util";
 import { extractKeyFromHash, getUserKey, unwrapReverseShareKey, importKeyFromBase64, exportKeyToBase64 } from "../../../utils/crypto.util";
 import { AxiosError } from "axios";
+import { deleteCookie } from "cookies-next";
 
 export function getServerSideProps(context: GetServerSidePropsContext) {
   return {
@@ -29,6 +32,16 @@ export function getServerSideProps(context: GetServerSidePropsContext) {
 const Share = ({ shareId }: { shareId: string }) => {
   const modals = useModals();
   const config = useConfig();
+  const { user } = useUser();
+
+  // Always clear the share token cookie on each visit so password
+  // protected shares always require re-authentication.
+  const [tokenCleared, setTokenCleared] = useState(false);
+  useEffect(() => {
+    deleteCookie(`share_${shareId}_token`, { path: "/" });
+    setTokenCleared(true);
+  }, [shareId]);
+
   const {
     data: share,
     error,
@@ -38,6 +51,7 @@ const Share = ({ shareId }: { shareId: string }) => {
     queryKey: ["share", shareId],
     retry: false,
     queryFn: () => shareService.get(shareId),
+    enabled: tokenCleared,
   });
 
   const t = useTranslate();
@@ -58,8 +72,9 @@ const Share = ({ shareId }: { shareId: string }) => {
   }, [shareId]);
 
   // Phase 2 : une fois le share chargé, résoudre la clé si manquante
-  // - Reverse share E2E → unwrap K_rs depuis share.encryptedReverseShareKey
+  // - Reverse share E2E → unwrap K_rs via backend endpoint
   // - Share E2E normal  → K_master depuis localStorage
+  // - Erreur (non-owner, non-auth) → laisser e2eKey null → alerte "clé manquante"
   useEffect(() => {
     if (e2eKey || !share?.isE2EEncrypted) return;
 
@@ -68,30 +83,34 @@ const Share = ({ shareId }: { shareId: string }) => {
 
     let cancelled = false;
 
-    if (share.encryptedReverseShareKey) {
-      // Reverse share — unwrap K_rs avec K_master (aucun appel API nécessaire)
-      (async () => {
-        try {
+    (async () => {
+      try {
+        // Endpoint retourne 200 dans tous les cas sauf 403 :
+        //   { encryptedReverseShareKey: null }   → pas un reverse share → K_master
+        //   { encryptedReverseShareKey: "..." }  → reverse share → unwrap K_rs
+        const encrypted = await shareService.getEncryptedE2eKey(shareId);
+        if (cancelled) return;
+
+        if (encrypted) {
+          // C'est un reverse share - unwrap K_rs avec K_master
           const masterKey = await importKeyFromBase64(userKeyB64);
-          const rsKey = await unwrapReverseShareKey(
-            share.encryptedReverseShareKey!,
-            masterKey,
-          );
+          const rsKey = await unwrapReverseShareKey(encrypted, masterKey);
           const rsKeyB64 = await exportKeyToBase64(rsKey);
           if (!cancelled) setE2eKey(rsKeyB64);
-        } catch (err) {
-          // Échec unwrap : mauvais K_master ou données corrompues.
-          // NE PAS fallback sur K_master (ce serait la mauvaise clé).
-          console.error("[E2E] Failed to unwrap reverse share key:", err);
+        } else {
+          // Pas un reverse share (backend a retourné null) → fallback K_master
+          if (!cancelled) setE2eKey(userKeyB64);
         }
-      })();
-    } else {
-      // Pas un reverse share → fallback K_master
-      setE2eKey(userKeyB64);
-    }
+      } catch (err) {
+        // 403 = reverse share mais pas le propriétaire, ou erreur réseau/déchiffrement.
+        // NE PAS fallback sur K_master (ce serait la mauvaise clé).
+        // Laisser e2eKey null → l'alerte "clé manquante" s'affichera.
+        console.error("[E2E] Failed to resolve reverse share key:", err);
+      }
+    })();
 
     return () => { cancelled = true; };
-  }, [share?.isE2EEncrypted, share?.encryptedReverseShareKey, e2eKey]);
+  }, [share?.isE2EEncrypted, e2eKey, shareId]);
 
   const isE2EMissingKey = share?.isE2EEncrypted && !e2eKey;
 
@@ -233,6 +252,24 @@ const Share = ({ shareId }: { shareId: string }) => {
         isLoading={isLoading}
         e2eKey={e2eKey}
       />
+
+      {/* Creator card grid: when the RS owner or share creator visits,
+          show a visual preview grid alongside the standard file table. */}
+      {user &&
+        (share?.creator?.id === user.id ||
+          share?.reverseShare?.creatorId === user.id) && (
+        <>
+          <Title order={5} mt="xl" mb="sm">
+            <FormattedMessage id="share.creator-preview" defaultMessage="File overview" />
+          </Title>
+          <FileCardGrid
+            files={share.files || []}
+            share={share}
+            isLoading={isLoading}
+            e2eKey={e2eKey}
+          />
+        </>
+      )}
     </>
   );
 };

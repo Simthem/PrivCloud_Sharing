@@ -13,6 +13,7 @@ import Link from "next/link";
 import { Dispatch, SetStateAction } from "react";
 import {
   TbAt,
+  TbBell,
   TbBinaryTree,
   TbBucket,
   TbMail,
@@ -36,6 +37,7 @@ const categories = [
   { name: "Legal", icon: <TbScale /> },
   { name: "Cache", icon: <TbServerBolt /> },
   { name: "Hcaptcha", icon: <TbShieldCheck /> },
+  { name: "PushNotifications", id: "pushNotifications", icon: <TbBell /> },
 ];
 
 const useStyles = createStyles((theme) => ({
@@ -80,17 +82,17 @@ const ConfigurationNavBar = ({
               component={Link}
               onClick={() => setIsMobileNavBarOpened(false)}
               className={
-                categoryId == category.name.toLowerCase()
+                categoryId == (category.id ?? category.name.toLowerCase())
                   ? classes.activeLink
                   : undefined
               }
               key={category.name}
-              href={`/admin/config/${category.name.toLowerCase()}`}
+              href={`/admin/config/${category.id ?? category.name.toLowerCase()}`}
             >
               <Group>
                 <ThemeIcon
                   variant={
-                    categoryId == category.name.toLowerCase()
+                    categoryId == (category.id ?? category.name.toLowerCase())
                       ? "filled"
                       : "light"
                   }
@@ -99,7 +101,7 @@ const ConfigurationNavBar = ({
                 </ThemeIcon>
                 <Text size="sm">
                   <FormattedMessage
-                    id={`admin.config.category.${category.name.toLowerCase()}`}
+                    id={`admin.config.category.${(category.id ?? category.name).toLowerCase()}`}
                   />
                 </Text>
               </Group>

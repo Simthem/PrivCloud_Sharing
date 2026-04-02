@@ -1,4 +1,4 @@
-import { Box, Menu } from "@mantine/core";
+import { Menu, UnstyledButton } from "@mantine/core";
 import Link from "next/link";
 import { TbArrowLoopLeft, TbLink } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
@@ -10,10 +10,10 @@ const NavbarShareMneu = () => {
   return (
     <Menu position="bottom-start" withinPortal>
       <Menu.Target>
-        <Box className={cx(classes.link, classes.withIcon)}>
+        <UnstyledButton className={cx(classes.link, classes.withIcon)}>
           <TbLink size={14} />
           <FormattedMessage id="navbar.shares" />
-        </Box>
+        </UnstyledButton>
       </Menu.Target>
       <Menu.Dropdown>
         <Menu.Item component={Link} href="/account/shares" icon={<TbLink />}>

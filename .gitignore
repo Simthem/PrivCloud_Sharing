@@ -44,4 +44,5 @@ yarn-error.log*
 /docs/build/
 /docs/.docusaurus
 /docs/.cache-loader
-/config.yaml
+/config.yaml*_orig
+frontend/public/img/*_orig

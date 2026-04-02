@@ -13,7 +13,7 @@ import {
 import { useClipboard } from "@mantine/hooks";
 import { useModals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import moment from "moment";
+import dayjs from "../../utils/dayjs";
 import Link from "next/link";
 import { TbEdit, TbInfoCircle, TbLink, TbLock, TbTrash } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
@@ -103,9 +103,6 @@ const MyShares = () => {
             <thead>
               <tr>
                 <th>
-                  <FormattedMessage id="account.shares.table.id" />
-                </th>
-                <th>
                   <FormattedMessage id="account.shares.table.name" />
                 </th>
                 <th>
@@ -121,8 +118,22 @@ const MyShares = () => {
               {shares.map((share) => (
                 <tr key={share.id}>
                   <td>
-                    <Group spacing="xs">
-                      {share.id}{" "}
+                    <Group spacing="xs" noWrap>
+                      <Box>
+                        <Text size="sm" weight={500} lineClamp={1}>
+                          {share.name || share.id}
+                        </Text>
+                        {share.description && (
+                          <Text size="xs" color="dimmed" lineClamp={1}>
+                            {share.description}
+                          </Text>
+                        )}
+                        {share.name && (
+                          <Text size="xs" color="dimmed">
+                            {share.id}
+                          </Text>
+                        )}
+                      </Box>
                       {share.security.passwordProtected && (
                         <TbLock
                           color="orange"
@@ -131,7 +142,6 @@ const MyShares = () => {
                       )}
                     </Group>
                   </td>
-                  <td>{share.name}</td>
                   <td>
                     {share.security.maxViews ? (
                       <FormattedMessage
@@ -146,10 +156,10 @@ const MyShares = () => {
                     )}
                   </td>
                   <td>
-                    {moment(share.expiration).unix() === 0 ? (
+                    {dayjs(share.expiration).unix() === 0 ? (
                       <FormattedMessage id="account.shares.table.expiry-never" />
                     ) : (
-                      moment(share.expiration).format("LLL")
+                      dayjs(share.expiration).format("LLL")
                     )}
                   </td>
                   <td>
@@ -174,7 +184,6 @@ const MyShares = () => {
                         <TbInfoCircle />
                       </ActionIcon>
                       <ActionIcon
-                        color="victoria"
                         variant="light"
                         size={25}
                         onClick={() => {

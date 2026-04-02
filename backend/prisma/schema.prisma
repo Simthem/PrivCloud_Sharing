@@ -31,6 +31,7 @@ model User {
   encryptionKeyHash  String?
 
   oAuthUsers OAuthUser[]
+  pushSubscriptions PushSubscription[]
 }
 
 model RefreshToken {
@@ -87,6 +88,9 @@ model Share {
   expiration    DateTime
   description   String?
   removedReason String?
+
+  senderName  String?
+  senderEmail String?
 
   creatorId String?
   creator   User?   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
@@ -169,4 +173,16 @@ model Config {
   order        Int
 
   @@id([name, category])
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  endpoint String @unique
+  p256dh   String
+  auth     String
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

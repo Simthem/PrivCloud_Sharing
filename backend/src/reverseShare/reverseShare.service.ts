@@ -1,5 +1,4 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
-import * as moment from "moment";
 import { ConfigService } from "src/config/config.service";
 import { FileService } from "src/file/file.service";
 import { PrismaService } from "src/prisma/prisma.service";
@@ -18,22 +17,11 @@ export class ReverseShareService {
   async create(data: CreateReverseShareDTO, creatorId: string) {
     const expirationDate = parseRelativeDateToAbsolute(data.shareExpiration);
 
-    const maxExpiration = this.config.get("share.maxExpiration");
-    if (data.shareExpiration === "never") {
-      if (maxExpiration.value !== 0) {
-        throw new BadRequestException(
-          "Never-expires is not allowed when a max expiration is configured",
-        );
-      }
-    } else if (
-      maxExpiration.value !== 0 &&
-      expirationDate >
-        moment().add(maxExpiration.value, maxExpiration.unit).toDate()
-    ) {
-      throw new BadRequestException(
-        "Expiration date exceeds maximum expiration date",
-      );
-    }
+    // Reverse share link expiration is independent from individual share
+    // expiration (share.maxExpiration).  The link expiration controls how
+    // long the upload URL stays valid; the share expiration controls how
+    // long uploaded files remain accessible.  A "personal" RS link can
+    // be set to never expire regardless of the share max-expiration config.
 
     const globalMaxShareSize = this.config.get("share.maxSize");
 
@@ -105,30 +93,30 @@ export class ReverseShareService {
 
     const neverExpires = reverseShare.shareExpiration.getTime() === 0;
     const isExpired = !neverExpires && new Date() > reverseShare.shareExpiration;
-    const remainingUsesExceeded = reverseShare.remainingUses <= 0;
+    // Personal links (never-expiring) have unlimited uses
+    const remainingUsesExceeded =
+      !neverExpires && reverseShare.remainingUses <= 0;
 
     return !(isExpired || remainingUsesExceeded);
   }
 
   async update(id: string, data: UpdateReverseShareDTO) {
-    const expirationDate = parseRelativeDateToAbsolute(data.shareExpiration);
+    const existing = await this.prisma.reverseShare.findUnique({
+      where: { id },
+    });
 
-    const maxExpiration = this.config.get("share.maxExpiration");
-    if (data.shareExpiration === "never") {
-      if (maxExpiration.value !== 0) {
-        throw new BadRequestException(
-          "Never-expires is not allowed when a max expiration is configured",
-        );
-      }
-    } else if (
-      maxExpiration.value !== 0 &&
-      expirationDate >
-        moment().add(maxExpiration.value, maxExpiration.unit).toDate()
-    ) {
+    if (!existing) throw new BadRequestException("Reverse share not found");
+
+    // Personal links (never-expiring) must not have their expiration changed.
+    if (existing.shareExpiration.getTime() === 0) {
       throw new BadRequestException(
-        "Expiration date exceeds maximum expiration date",
+        "Cannot modify expiration of a permanent personal link",
       );
     }
+
+    const expirationDate = parseRelativeDateToAbsolute(data.shareExpiration);
+
+    // RS link expiration is independent from share.maxExpiration (see create()).
 
     return this.prisma.reverseShare.update({
       where: { id },

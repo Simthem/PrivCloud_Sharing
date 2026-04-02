@@ -51,8 +51,21 @@ export class ShareSecurityGuard extends JwtGuard {
       throw new NotFoundException("Share not found");
     }
 
-    // Password & token checks - always enforced, even for admins.
-    // The password protects the share content, not just access control.
+    // The reverse share creator (the account that generated the RS link)
+    // can always access any share uploaded via their RS link - they own
+    // the data and should not be blocked by passwords or tokens set by
+    // the uploader.
+    const isRsCreator =
+      share.reverseShare && user && share.reverseShare.creatorId === user.id;
+
+    // The share creator also bypasses password/token checks (they set them).
+    const isShareCreator = user && share.creatorId === user.id;
+
+    if (isRsCreator || isShareCreator) {
+      return true;
+    }
+
+    // Password & token checks - enforced for all other visitors.
     if (share.security?.password && !shareToken)
       throw new ForbiddenException(
         "This share is password protected",

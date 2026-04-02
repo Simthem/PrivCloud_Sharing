@@ -19,6 +19,7 @@ import useTranslate from "../../hooks/useTranslate.hook";
 import Logo from "../Logo";
 import ActionAvatar from "./ActionAvatar";
 import NavbarShareMenu from "./NavbarShareMenu";
+import NotificationBell from "./NotificationBell";
 import { useStyles, HEADER_HEIGHT } from "./Header.styles";
 import { TbUpload } from "react-icons/tb";
 
@@ -119,14 +120,18 @@ const Header = () => {
           </Group>
         </Link>
         <Group spacing={5} className={classes.links}>
+          {user && <NotificationBell />}
           <Group>{items} </Group>
         </Group>
         <MediaQuery largerThan="sm" styles={{ display: "none" }}>
-          <Burger
-            opened={opened}
-            onClick={() => toggleOpened.toggle()}
-            size="sm"
-          />
+          <Group spacing={8} noWrap>
+            {user && <NotificationBell />}
+            <Burger
+              opened={opened}
+              onClick={() => toggleOpened.toggle()}
+              size="sm"
+            />
+          </Group>
         </MediaQuery>
         <Transition transition="pop-top-right" duration={200} mounted={opened}>
           {(styles) => (

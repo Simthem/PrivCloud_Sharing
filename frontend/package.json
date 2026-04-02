@@ -23,11 +23,11 @@
     "@tanstack/react-query-devtools": "^5.83.0",
     "axios": "^1.7.7",
     "cookies-next": "^4.2.1",
+    "dayjs": "^1.11.20",
     "file-saver": "^2.0.5",
     "jwt-decode": "^4.0.0",
     "markdown-to-jsx": "^7.5.0",
     "mime-types": "^2.1.35",
-    "moment": "^2.30.1",
     "next": "16.2.1",
     "next-http-proxy-middleware": "^1.2.6",
     "p-limit": "^6.1.0",
@@ -64,5 +64,11 @@
         "glob": "^10.5.0"
       }
     }
-  }
+  },
+  "browserslist": [
+    "last 2 Chrome versions",
+    "last 2 Firefox versions",
+    "last 2 Safari versions",
+    "last 2 Edge versions"
+  ]
 }

@@ -1,7 +1,7 @@
 import { Button, Stack, Text } from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import { ModalsContextProps } from "@mantine/modals/lib/context";
-import moment from "moment";
+import dayjs from "../../../utils/dayjs";
 import { useRouter } from "next/router";
 import { FormattedMessage } from "react-intl";
 import useTranslate, {
@@ -67,10 +67,10 @@ const Body = ({
         })}
       >
         {/* If our share.expiration is timestamp 0, show a different message */}
-        {moment(share.expiration).unix() === 0
+        {dayjs(share.expiration).unix() === 0
           ? t("upload.modal.completed.never-expires")
           : t("upload.modal.completed.expires-on", {
-              expiration: moment(share.expiration).format("LLL"),
+              expiration: dayjs(share.expiration).format("LLL"),
             })}
       </Text>
 

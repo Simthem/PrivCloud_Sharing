@@ -22,9 +22,16 @@ import {
 
 // global-agent (loaded via NODE_OPTIONS --require) patches http/https.globalAgent
 // but does NOT patch the native fetch() built-in de Node.js 24.
-// Le paquet npm "undici" est installé via --no-save dans le Dockerfile
-// (même pattern que global-agent). Son setGlobalDispatcher() affecte
-// le built-in fetch() via le symbole partagé undici.globalDispatcher.
+//
+// IMPORTANT: In Node.js 24, the built-in fetch() uses an INTERNAL copy of
+// undici.  The npm "undici" package is a SEPARATE copy.  Calling
+// setGlobalDispatcher() from the npm package only affects the npm copy's
+// fetch - NOT globalThis.fetch().  This broke after a Dockerfile rebuild
+// because undici@latest resolved to a version with diverging internals.
+//
+// Fix: replace globalThis.fetch() with the npm undici's fetch() bound to
+// a ProxyAgent.  This ensures ALL outgoing fetch() calls (hCaptcha, OAuth,
+// etc.) go through the forward proxy.
 const proxyUrl =
   process.env.GLOBAL_AGENT_HTTP_PROXY ||
   process.env.HTTPS_PROXY ||
@@ -35,12 +42,28 @@ const proxyUrl =
 if (proxyUrl) {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { ProxyAgent, setGlobalDispatcher } = require("undici");
-    setGlobalDispatcher(new ProxyAgent(proxyUrl));
-    console.log(`[Proxy] undici setGlobalDispatcher -> ${proxyUrl}`);
+    const undici = require("undici");
+    const dispatcher = new undici.ProxyAgent(proxyUrl);
+
+    // Keep the old setGlobalDispatcher for any code that explicitly uses
+    // undici.fetch() or undici.request() without its own dispatcher.
+    undici.setGlobalDispatcher(dispatcher);
+
+    // Replace the built-in fetch() so ALL call sites automatically proxy.
+    const nativeFetch = globalThis.fetch;
+    globalThis.fetch = ((
+      input: string | URL | globalThis.Request,
+      init?: RequestInit,
+    ) =>
+      undici.fetch(input, {
+        ...(init as Record<string, unknown>),
+        dispatcher,
+      })) as typeof globalThis.fetch;
+
+    console.log(`[Proxy] globalThis.fetch replaced with undici.fetch -> ${proxyUrl}`);
   } catch (err: any) {
     console.error(`[Proxy] Failed to load undici: ${err.message}`);
-    console.error(`[Proxy] OAuth calls to external providers may fail/timeout.`);
+    console.error(`[Proxy] OAuth / hCaptcha calls to external providers may fail/timeout.`);
   }
 }
 
@@ -73,9 +96,12 @@ async function bootstrap() {
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     const chunkSize = config.get("share.chunkSize");
+    // E2E encrypted chunks are chunkSize + 28 bytes (12 IV + 16 GCM tag).
+    // Add a small margin so encrypted uploads don't hit the limit.
+    const limit = chunkSize + 128;
     bodyParser.raw({
       type: "application/octet-stream",
-      limit: `${chunkSize}B`,
+      limit: `${limit}B`,
     })(req, res, next);
   });
 

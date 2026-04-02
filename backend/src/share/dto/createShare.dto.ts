@@ -19,7 +19,7 @@ export class CreateShareDTO {
   @Length(3, 50)
   id: string;
 
-  @Length(3, 30)
+  @Length(3, 90)
   @IsOptional()
   name: string;
 
@@ -44,4 +44,13 @@ export class CreateShareDTO {
   @IsOptional()
   @IsString()
   captchaToken?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(2, 100)
+  senderName?: string;
+
+  @IsOptional()
+  @IsEmail()
+  senderEmail?: string;
 }

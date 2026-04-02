@@ -1,6 +1,7 @@
 import {
   NumberInput,
   PasswordInput,
+  Select,
   Stack,
   Switch,
   Textarea,
@@ -8,9 +9,15 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { AdminConfig, UpdateConfig } from "../../../types/config.type";
+import { COLOR_PALETTES } from "../../../styles/mantine.style";
 import { stringToTimespan, timespanToString } from "../../../utils/date.util";
 import FileSizeInput from "../../core/FileSizeInput";
 import TimespanInput from "../../core/TimespanInput";
+
+const PALETTE_OPTIONS = Object.keys(COLOR_PALETTES).map((name) => ({
+  value: name,
+  label: name.charAt(0).toUpperCase() + name.slice(1),
+}));
 
 const AdminConfigInput = ({
   configVariable,
@@ -39,6 +46,17 @@ const AdminConfigInput = ({
   return (
     <Stack align="end">
       {configVariable.type == "string" &&
+        configVariable.key === "general.colorPalette" ? (
+          <Select
+            style={{ width: "100%" }}
+            disabled={!configVariable.allowEdit}
+            data={PALETTE_OPTIONS}
+            value={form.values.stringValue}
+            onChange={(value) => {
+              if (value) onValueChange(configVariable, value);
+            }}
+          />
+        ) : configVariable.type == "string" &&
         (configVariable.obscured ? (
           <PasswordInput
             autoComplete="new-password"

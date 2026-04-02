@@ -29,6 +29,16 @@ export const configVariables = {
       defaultValue: "false",
       secret: false,
     },
+    metaDescription: {
+      type: "string",
+      defaultValue: "A self-hosted and privacy-focused file sharing platform.",
+      secret: false,
+    },
+    colorPalette: {
+      type: "string",
+      defaultValue: "victoria",
+      secret: false,
+    },
     sessionDuration: {
       type: "timespan",
       defaultValue: "3 months",
@@ -137,7 +147,7 @@ export const configVariables = {
     shareRecipientsMessage: {
       type: "text",
       defaultValue:
-        "Hey!\n\n{creator} ({creatorEmail}) shared some files with you. You can view or download the files with this link: {shareUrl}\n\nThe share will expire {expires}.\n\nNote: {desc}\n\nShared securely with PrivCloud_Sharing 🔒",
+        "Hey!\n\n{creator} ({creatorEmail}) shared some files with you.\n\nTitle: {name}\nDescription: {desc}\n\nYou can view or download the files with this link: {shareUrl}\n\nThe share will expire {expires}.\n\nShared securely with PrivCloud_Sharing 🔒",
     },
     reverseShareSubject: {
       type: "string",
@@ -510,6 +520,29 @@ export const configVariables = {
       type: "string",
       defaultValue: "",
       secret: false,
+    },
+  },
+  pushNotifications: {
+    enabled: {
+      type: "boolean",
+      defaultValue: "false",
+      secret: false,
+    },
+    vapidSubject: {
+      type: "string",
+      defaultValue: "",
+      secret: false,
+    },
+    vapidPublicKey: {
+      type: "string",
+      defaultValue: "",
+      secret: false,
+    },
+    vapidPrivateKey: {
+      type: "string",
+      defaultValue: "",
+      secret: true,
+      obscured: true,
     },
   },
   hcaptcha: {

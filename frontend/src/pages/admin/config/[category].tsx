@@ -151,7 +151,7 @@ export default function AppShellDemo() {
                   </Alert>
                 )}
                 <Title mb="md" order={3}>
-                  {t("admin.config.category." + categoryId)}
+                  {t("admin.config.category." + categoryId.toLowerCase())}
                 </Title>
                 {configVariables.map((configVariable) => (
                   <Group key={configVariable.key} position="apart">

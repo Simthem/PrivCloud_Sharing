@@ -2,7 +2,7 @@ import { deleteCookie, setCookie } from "cookies-next";
 import mime from "mime-types";
 import { FileUploadResponse } from "../types/File.type";
 import {
-  decryptFile,
+  decryptFileAuto,
   downloadDecryptedBlob,
   importKeyFromBase64,
 } from "../utils/crypto.util";
@@ -95,6 +95,21 @@ const downloadFile = async (shareId: string, fileId: string) => {
   window.location.href = `/api/shares/${shareId}/files/${fileId}`;
 };
 
+// Cache du chunkSize pour éviter des appels API répétés
+let _cachedChunkSize: number | null = null;
+const getChunkSize = async (): Promise<number> => {
+  if (_cachedChunkSize !== null) return _cachedChunkSize;
+  const configs = (await api.get("/configs")).data;
+  const cfg = configs.find(
+    (c: { key: string; value?: string; defaultValue?: string }) =>
+      c.key === "share.chunkSize",
+  );
+  _cachedChunkSize = cfg
+    ? parseInt(cfg.value ?? cfg.defaultValue ?? "10000000")
+    : 10000000;
+  return _cachedChunkSize;
+};
+
 /**
  * Télécharge un fichier chiffré E2E, le déchiffre côté client,
  * puis déclenche le téléchargement du fichier en clair.
@@ -109,7 +124,8 @@ const downloadFileE2E = async (
   const response = await api.get(`shares/${shareId}/files/${fileId}`, {
     responseType: "arraybuffer",
   });
-  const decrypted = await decryptFile(response.data, key);
+  const chunkSize = await getChunkSize();
+  const decrypted = await decryptFileAuto(response.data, key, chunkSize);
   const mimeType = (
     mime.contentType(fileName) || "application/octet-stream"
   ).split(";")[0];
@@ -130,7 +146,8 @@ const fetchDecryptedFile = async (
   const response = await api.get(`shares/${shareId}/files/${fileId}`, {
     responseType: "arraybuffer",
   });
-  return decryptFile(response.data, key);
+  const chunkSize = await getChunkSize();
+  return decryptFileAuto(response.data, key, chunkSize);
 };
 
 const removeFile = async (shareId: string, fileId: string) => {

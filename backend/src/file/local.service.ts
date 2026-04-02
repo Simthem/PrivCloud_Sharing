@@ -72,7 +72,11 @@ export class LocalFileService {
 
     // If the sent chunk index and the expected chunk index doesn't match throw an error
     const chunkSize = this.config.get("share.chunkSize");
-    const expectedChunkIndex = Math.ceil(diskFileSize / chunkSize);
+    // Chaque chunk E2E chiffré a 28 octets de surcharge (12 IV + 16 GCM tag)
+    const effectiveChunkSize = share.isE2EEncrypted
+      ? chunkSize + 28
+      : chunkSize;
+    const expectedChunkIndex = Math.ceil(diskFileSize / effectiveChunkSize);
 
     if (expectedChunkIndex != chunk.index) {
       this.logger.warn(
