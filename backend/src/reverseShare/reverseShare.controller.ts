@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
@@ -31,6 +32,7 @@ export class ReverseShareController {
   @Post()
   @UseGuards(JwtGuard)
   async create(@Body() body: CreateReverseShareDTO, @GetUser() user: User) {
+    if (!user) throw new UnauthorizedException();
     const token = await this.reverseShareService.create(body, user.id);
 
     const link = `${this.config.get("general.appUrl")}/upload/${token}`;
@@ -58,6 +60,7 @@ export class ReverseShareController {
   @Get()
   @UseGuards(JwtGuard)
   async getAllByUser(@GetUser() user: User) {
+    if (!user) throw new UnauthorizedException();
     return new ReverseShareTokenWithShares().fromList(
       await this.reverseShareService.getAllByUser(user.id),
     );

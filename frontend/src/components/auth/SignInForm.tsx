@@ -11,6 +11,7 @@ import {
   Text,
   TextInput,
   Title,
+  useMantineTheme,
 } from "@mantine/core";
 import { useForm, yupResolver } from "@mantine/form";
 import { showNotification } from "@mantine/notifications";
@@ -75,6 +76,7 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
   const t = useTranslate();
   const { refreshUser } = useUser();
   const { classes } = useStyles();
+  const theme = useMantineTheme();
 
   const [oauthProviders, setOauthProviders] = useState<string[] | null>(null);
   const [isRedirectingToOauthProvider, setIsRedirectingToOauthProvider] =
@@ -202,6 +204,7 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
                   onVerify={setCaptchaToken}
                   onExpire={handleCaptchaExpire}
                   ref={captchaRef}
+                  theme={theme.colorScheme}
                 />
               </Group>
             )}

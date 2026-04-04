@@ -9,6 +9,7 @@ import {
   Post,
   Req,
   Res,
+  UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
@@ -51,6 +52,7 @@ export class ShareController {
   @Get()
   @UseGuards(JwtGuard)
   async getMyShares(@GetUser() user: User) {
+    if (!user) throw new UnauthorizedException();
     return new MyShareDTO().fromList(
       await this.shareService.getSharesByUser(user.id),
     );

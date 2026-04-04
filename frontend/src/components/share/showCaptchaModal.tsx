@@ -1,4 +1,4 @@
-import { Button, Center, Stack, Text } from "@mantine/core";
+import { Button, Center, Stack, Text, useMantineTheme } from "@mantine/core";
 import { ModalsContextProps } from "@mantine/modals/lib/context";
 import { useRef, useState } from "react";
 import HCaptcha from "@hcaptcha/react-hcaptcha";
@@ -36,6 +36,7 @@ const Body = ({
   const captchaRef = useRef<HCaptcha>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const theme = useMantineTheme();
 
   const handleCaptchaExpire = () => {
     setCaptchaToken(null);
@@ -53,6 +54,7 @@ const Body = ({
           sitekey={siteKey}
           onVerify={setCaptchaToken}
           onExpire={handleCaptchaExpire}
+          theme={theme.colorScheme}
         />
       </Center>
 

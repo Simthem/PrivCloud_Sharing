@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-frontend",
-  "version": "1.18.2",
+  "version": "1.18.3",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

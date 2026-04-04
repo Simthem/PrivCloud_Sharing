@@ -41,6 +41,7 @@ export async function middleware(request: NextRequest) {
   const route = request.nextUrl.pathname;
   let user: { isAdmin: boolean } | null = null;
   const accessToken = request.cookies.get("access_token")?.value;
+  const hasActiveSession = !!request.cookies.get("logged_in")?.value;
 
   try {
     const claims = jwtDecode<{ exp: number; isAdmin: boolean }>(
@@ -97,12 +98,12 @@ export async function middleware(request: NextRequest) {
       path: "/auth/signIn",
     },
     {
-      condition: !user && routes.account.contains(route),
+      condition: !user && !hasActiveSession && routes.account.contains(route),
       path: "/upload",
     },
     // Admin privileges
     {
-      condition: routes.admin.contains(route) && !user?.isAdmin,
+      condition: routes.admin.contains(route) && !user?.isAdmin && !hasActiveSession,
       path: "/upload",
     },
     // Home page

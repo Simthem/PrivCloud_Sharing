@@ -94,7 +94,7 @@ function App({ Component, pageProps }: AppProps) {
     if (!user) return;
     const interval = setInterval(() => {
       authService.refreshAccessToken().catch(() => {});
-    }, 2 * 60 * 1000); // 2 minutes
+    }, 10 * 1000); // 10 seconds -- cookie check is free (no network call)
 
     return () => clearInterval(interval);
   }, [user]);
@@ -123,13 +123,7 @@ function App({ Component, pageProps }: AppProps) {
         });
     }
 
-    // Inject manifest link after first paint to keep it off the critical path
-    if (!document.querySelector('link[rel="manifest"]')) {
-      const link = document.createElement("link");
-      link.rel = "manifest";
-      link.href = "/manifest.json";
-      document.head.appendChild(link);
-    }
+    // Manifest link is in _document.tsx <Head> for DevTools compatibility
   }, []);
 
   useEffect(() => {

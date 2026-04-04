@@ -12,6 +12,7 @@ export default class _Document extends Document {
         <Head>
           <link rel="icon" type="image/x-icon" href="/img/favicon.ico" />
           <link rel="apple-touch-icon" href="/img/icons/icon-128x128.png" />
+          <link rel="manifest" href="/manifest.json" />
 
           <link
             rel="preload"

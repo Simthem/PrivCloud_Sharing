@@ -1,3 +1,34 @@
+## [1.18.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.18.2...v1.18.3) (2026-04-04)
+
+
+### Bug Fixes
+
+* **auth:** return 401 instead of 500 when JWT-guarded endpoints receive an
+  unauthenticated request while `allowUnauthenticatedShares` is enabled --
+  affected `/oauth/status`, `/shares`, `/reverseShares`
+* **auth:** add an Axios response interceptor that transparently refreshes the
+  access token and retries the original request on a 401 -- eliminates the
+  dead window between cookie expiry and the periodic refresh tick
+* **auth:** reduce the client-side token refresh interval from 2 min to 10 s --
+  the cookie-existence check is free (no network call); only the actual
+  `POST /auth/token` fires when the cookie has expired
+* **middleware:** skip redirect when the `logged_in` cookie is still present
+  but the JWT has expired -- lets the page load so the client-side interceptor
+  can refresh the token instead of silently bouncing to `/upload`
+* **pwa:** move the `<link rel="manifest">` from a client-side JS injection to
+  the static `<Head>` in `_document.tsx` -- Chrome DevTools now shows the icon
+  previews in the Application > Manifest panel
+* **ui:** hCaptcha widget now follows the app color scheme (dark / light) on
+  every form that uses it -- sign-in, sign-up, password reset, captcha modal,
+  password modal, and upload modal
+* **waf:** handle SafeLine WAF HTTP 468 (anti-bot challenge) in the Axios
+  interceptor -- triggers a full page reload so the browser can complete the
+  challenge natively instead of silently failing on every API call.  The 468
+  status code is non-standard and specific to SafeLine; other WAFs
+  (Cloudflare, BunkerWeb) use generic codes (403 / 503) that cannot be
+  safely intercepted the same way
+
+
 ## [1.18.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.18.1...v1.18.2) (2026-04-04)
 
 
