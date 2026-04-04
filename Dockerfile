@@ -15,9 +15,12 @@ WORKDIR /caddy
 # Forcer la mise à jour des dépendances vulnérables
 # CVE-2026-33186 (CVSS 9.1, CRITICAL) : google.golang.org/grpc < 1.79.3
 # GHSA-q4r8-xm5f-56gw (CRITICAL) : github.com/smallstep/certificates v0.30.0-rc3 -> 0.30.0
+# CVE-2026-34986 (CVSS 8.7, HIGH) : github.com/go-jose/go-jose v3 < 3.0.5, v4 < 4.1.4
 RUN go get golang.org/x/net@latest \
     && go get google.golang.org/grpc@v1.79.3 \
     && go get github.com/smallstep/certificates@v0.30.0 \
+    && go get github.com/go-jose/go-jose/v3@v3.0.5 \
+    && go get github.com/go-jose/go-jose/v4@v4.1.4 \
     && go mod tidy
 # Compiler Caddy (binaire statique, stripped, sans symboles de debug)
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/caddy \

@@ -1,3 +1,15 @@
+## [1.18.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.18.1...v1.18.2) (2026-04-04)
+
+
+### Security
+
+* **deps:** force `go-jose/v3@3.0.5` and `go-jose/v4@4.1.4` in the Caddy
+  builder stage -- fixes CVE-2026-34986 (CVSS 8.7, uncaught exception in JOSE
+  cipher)
+* **deps:** override `defu >=6.1.5` in the backend -- fixes CVE-2026-35209
+  (CWE-1321, prototype pollution via GHSA-737v-mqg7-c878)
+
+
 ## [1.18.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.18.0...v1.18.1) (2026-04-04)
 
 

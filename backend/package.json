@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-backend",
-  "version": "1.18.1",
+  "version": "1.18.2",
   "scripts": {
     "build": "nest build",
     "dev": "cross-env NODE_ENV=development nest start --watch",
@@ -131,6 +131,7 @@
     "word-wrap": "^1.2.4",
     "picomatch": ">=4.0.4",
     "brace-expansion": ">=5.0.5",
-    "path-to-regexp": ">=8.4.0"
+    "path-to-regexp": ">=8.4.0",
+    "defu": ">=6.1.5"
   }
 }
