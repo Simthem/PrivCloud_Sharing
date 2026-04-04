@@ -39,6 +39,11 @@
   becomes visible, and the periodic timer now also runs when user is null
   (guarded by the `logged_in` cookie) so the UI catches up automatically
   without requiring a manual click on "Se connecter"
+* **cve-2026-2673:** replace the openssl-3.5 branch + VERSION.dat sed hack
+  with the openssl-3.6 branch (contains fix commit 2157c9d8) -- the binary
+  now identifies as OpenSSL 3.6.2 which is the first 3.6.x version that
+  fixes CVE-2026-2673 (3.6.0 and 3.6.1 are also affected).  Only the
+  `-dev` pre-release tag is stripped; PATCH=2 is already set on the branch
 
 
 ## [1.18.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.18.1...v1.18.2) (2026-04-04)
