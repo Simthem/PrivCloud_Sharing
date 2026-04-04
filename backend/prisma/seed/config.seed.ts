@@ -605,8 +605,10 @@ function resolveDbUrl(url: string): string {
 }
 
 const dbUrl = process.env.DATABASE_URL || "file:../data/pingvin-share.db?connection_limit=1";
+const resolvedDbPath = resolveDbUrl(dbUrl);
+console.log(`[seed] DB path: ${resolvedDbPath}  (cwd: ${process.cwd()})`);
 const adapter = new PrismaBetterSqlite3({
-  url: resolveDbUrl(dbUrl),
+  url: resolvedDbPath,
 });
 const prisma = new PrismaClient({ adapter });
 

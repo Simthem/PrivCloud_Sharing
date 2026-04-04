@@ -191,6 +191,21 @@ export class AuthController {
       maxAge: -1,
       secure: isSecure,
     });
+    response.cookie("logged_in", "", {
+      maxAge: -1,
+      secure: isSecure,
+    });
+
+    // Clean up any leftover OAuth state cookies
+    for (const name of Object.keys(request.cookies)) {
+      if (name.startsWith("oauth_") && name.endsWith("_state")) {
+        response.clearCookie(name, {
+          sameSite: "lax",
+          secure: isSecure,
+          httpOnly: true,
+        });
+      }
+    }
 
     if (typeof redirectURI === "string") {
       return { redirectURI: redirectURI.toString() };

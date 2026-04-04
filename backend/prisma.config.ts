@@ -23,6 +23,7 @@ function resolveFileUrl(url: string): string {
 }
 
 const DATABASE_URL = resolveFileUrl(rawUrl);
+console.log(`[prisma.config] datasource.url: ${DATABASE_URL}  (__dirname: ${__dirname})`);
 
 export default defineConfig({
   schema: path.join(__dirname, "prisma", "schema.prisma"),

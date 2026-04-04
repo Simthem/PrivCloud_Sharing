@@ -5,8 +5,13 @@ import { OAuthSignInDto } from "../dto/oauthSignIn.dto";
  * @typeParam T - type of token
  * @typeParam C - type of callback query
  */
+export interface AuthEndpointResult {
+  url: string;
+  nonce?: string;
+}
+
 export interface OAuthProvider<T, C = OAuthCallbackDto> {
-  getAuthEndpoint(state: string): Promise<string>;
+  getAuthEndpoint(state: string): Promise<AuthEndpointResult>;
 
   getToken(query: C): Promise<OAuthToken<T>>;
 

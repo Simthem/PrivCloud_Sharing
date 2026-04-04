@@ -356,6 +356,13 @@ export class AuthService {
         secure: isSecure,
         maxAge,
       });
+      // Non-httpOnly marker so the client can detect an active session
+      // even after the short-lived access_token cookie has expired.
+      response.cookie("logged_in", "1", {
+        sameSite: "lax",
+        secure: isSecure,
+        maxAge,
+      });
     }
   }
 

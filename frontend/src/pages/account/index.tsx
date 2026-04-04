@@ -51,7 +51,7 @@ import {
   removeUserKey,
 } from "../../utils/crypto.util";
 
-// ─── E2E Encryption Section ───────────────────────────────────────────
+// ---─ E2E Encryption Section ---------------------------------------------------------------─
 const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
   const modals = useModals();
   const { user } = useUser();
@@ -71,7 +71,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
   const hasServerKey = !!user?.hasEncryptionKey;
   const hasLocalKey = !!localKey;
 
-  // ── Generate a new key ──────────────────────────────────────────
+  // --- Generate a new key ---------------------------------------------------------------
   const handleGenerate = async () => {
     setGenerating(true);
     try {
@@ -90,7 +90,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
     }
   };
 
-  // ── Confirm-then-generate (warns about losing access to old shares)
+  // --- Confirm-then-generate (warns about losing access to old shares)
   const confirmRegenerate = () => {
     modals.openConfirmModal({
       title: "Régénérer la clé de chiffrement",
@@ -107,28 +107,38 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
     });
   };
 
-  // ── Import an existing key (for new browser / device) ───────────
+  // --- Import an existing key (for new browser / device) ---------------─
   const handleImport = async () => {
     setImportError("");
-    if (!importValue.trim()) {
+    // Strip everything that is not a valid base64url character.
+    // Prevents invisible chars (ZWSP, NBSP, newlines …) from corrupting
+    // the decoded bytes and producing a different SHA-256 hash.
+    const sanitized = importValue.replace(/[^A-Za-z0-9_-]/g, "");
+    if (!sanitized) {
       setImportError("Veuillez entrer votre clé E2E");
       return;
     }
     setImporting(true);
     try {
       // Validate the key format by trying to import it
-      await importKeyFromBase64(importValue.trim());
+      await importKeyFromBase64(sanitized);
       // Compute hash and verify against server
-      const hash = await computeKeyHashFromEncoded(importValue.trim());
+      const hash = await computeKeyHashFromEncoded(sanitized);
       const valid = await userService.verifyEncryptionKey(hash);
       if (!valid) {
+        console.debug(
+          "[E2E import] verification failed -- submitted hash:",
+          hash.slice(0, 8) + "…",
+          "key length:",
+          sanitized.length,
+        );
         setImportError(
-          "Cette clé ne correspond pas à celle enregistrée sur le serveur",
+          "Cette clé ne correspond pas à celle associée à votre compte",
         );
         return;
       }
-      storeUserKey(importValue.trim());
-      setLocalKey(importValue.trim());
+      storeUserKey(sanitized);
+      setLocalKey(sanitized);
       setImportValue("");
       toast.success("Clé E2E importée avec succès");
     } catch (e: any) {
@@ -138,7 +148,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
     }
   };
 
-  // ── Revoke key ──────────────────────────────────────────────────
+  // --- Revoke key --------------------------------------------------------
   const handleRevoke = () => {
     modals.openConfirmModal({
       title: "Supprimer la clé de chiffrement",
@@ -183,7 +193,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
         précieusement pour pouvoir déchiffrer vos partages.
       </Text>
 
-      {/* ── Key exists locally ─────────────────────────────────── */}
+      {/* --- Key exists locally ---------------------------------------------------─ */}
       {hasLocalKey && localKey && (
         <Stack spacing="xs">
           <Group spacing="xs">
@@ -251,7 +261,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
         </Stack>
       )}
 
-      {/* ── Server has key hash but nothing locally (new device) ── */}
+      {/* --- Server has key hash but nothing locally (new device) --- */}
       {hasServerKey && !hasLocalKey && (
         <Stack spacing="xs">
           <Text size="sm" color="yellow">
@@ -287,7 +297,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
         </Stack>
       )}
 
-      {/* ── No key at all ─────────────────────────────────────── */}
+      {/* --- No key at all ---------------------------------- */}
       {!hasServerKey && !hasLocalKey && (
         <Stack spacing="xs">
           <Text size="sm">
@@ -309,7 +319,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
   );
 };
 
-// ─── Main Account page ────────────────────────────────────────────────
+// ---─ Main Account page ------------------------------------------------------------------------
 const Account = () => {
   const [oauth, setOAuth] = useState<string[]>([]);
   const [oauthStatus, setOAuthStatus] = useState<Record<

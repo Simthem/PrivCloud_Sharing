@@ -1,13 +1,12 @@
 import { InternalServerErrorException, Logger } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { Cache } from "cache-manager";
 import * as jmespath from "jmespath";
 import { nanoid } from "nanoid";
 import { ConfigService } from "../../config/config.service";
 import { OAuthCallbackDto } from "../dto/oauthCallback.dto";
 import { OAuthSignInDto } from "../dto/oauthSignIn.dto";
 import { ErrorPageException } from "../exceptions/errorPage.exception";
-import { OAuthProvider, OAuthToken } from "./oauthProvider.interface";
+import { OAuthProvider, OAuthToken, AuthEndpointResult } from "./oauthProvider.interface";
 
 export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
   protected discoveryUri: string;
@@ -22,7 +21,6 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
     protected keyOfConfigUpdateEvents: string[],
     protected config: ConfigService,
     protected jwtService: JwtService,
-    protected cache: Cache,
   ) {
     this.discoveryUri = this.getDiscoveryUri();
     this.config.addListener("update", (key: string) => {
@@ -53,32 +51,29 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
     return this.jwk.data;
   }
 
-  async getAuthEndpoint(state: string) {
+  async getAuthEndpoint(state: string): Promise<AuthEndpointResult> {
     const configuration = await this.getConfiguration();
     const endpoint = configuration.authorization_endpoint;
 
     const nonce = nanoid();
-    await this.cache.set(
-      `oauth-${this.name}-nonce-${state}`,
-      nonce,
-      1000 * 60 * 5,
-    );
 
-    return (
-      endpoint +
-      "?" +
-      new URLSearchParams({
-        client_id: this.config.get(`oauth.${this.name}-clientId`),
-        response_type: "code",
-        scope:
-          this.name == "oidc"
-            ? this.config.get(`oauth.oidc-scope`)
-            : "openid email profile",
-        redirect_uri: this.getRedirectUri(),
-        state,
-        nonce,
-      }).toString()
-    );
+    return {
+      url:
+        endpoint +
+        "?" +
+        new URLSearchParams({
+          client_id: this.config.get(`oauth.${this.name}-clientId`),
+          response_type: "code",
+          scope:
+            this.name == "oidc"
+              ? this.config.get(`oauth.oidc-scope`)
+              : "openid email profile",
+          redirect_uri: this.getRedirectUri(),
+          state,
+          nonce,
+        }).toString(),
+      nonce,
+    };
   }
 
   async getToken(query: OAuthCallbackDto): Promise<OAuthToken<OidcToken>> {
@@ -100,6 +95,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body,
+      signal: AbortSignal.timeout(15_000),
     });
 
     const token = (await res.json()) as OidcToken;
@@ -139,12 +135,11 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
       throw new InternalServerErrorException();
     }
 
-    const key = `oauth-${this.name}-nonce-${query.state}`;
-    const nonce = await this.cache.get(key);
-    // Fire-and-forget: do NOT await cache.del — it can hang if Redis is unreachable
-    this.cache.del(key).catch((err) =>
-      this.logger.warn(`cache.del(${key}) failed: ${err?.message}`),
-    );
+    // Nonce is now passed via the DTO (extracted from the state cookie by
+    // the controller) instead of being stored in the cache.  This removes
+    // the dependency on the multi-store cache for the OAuth flow ensuring
+    // no timeout warnings when Redis is slow or unreachable.
+    const nonce = query.nonce;
 
     if (nonce !== idTokenData.nonce) {
       this.logger.error(
@@ -220,7 +215,9 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
   protected abstract getDiscoveryUri(): string;
 
   private async fetchConfiguration(): Promise<void> {
-    const res = await fetch(this.discoveryUri);
+    const res = await fetch(this.discoveryUri, {
+      signal: AbortSignal.timeout(15_000),
+    });
     const expires = res.headers.has("expires")
       ? new Date(res.headers.get("expires")).getTime()
       : Date.now() + 1000 * 60 * 60 * 24;
@@ -232,7 +229,9 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
 
   private async fetchJwk(): Promise<void> {
     const configuration = await this.getConfiguration();
-    const res = await fetch(configuration.jwks_uri);
+    const res = await fetch(configuration.jwks_uri, {
+      signal: AbortSignal.timeout(15_000),
+    });
     const expires = res.headers.has("expires")
       ? new Date(res.headers.get("expires")).getTime()
       : Date.now() + 1000 * 60 * 60 * 24;

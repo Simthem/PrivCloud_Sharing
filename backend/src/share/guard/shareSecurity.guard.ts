@@ -52,31 +52,38 @@ export class ShareSecurityGuard extends JwtGuard {
     }
 
     // The reverse share creator (the account that generated the RS link)
-    // can always access any share uploaded via their RS link - they own
-    // the data and should not be blocked by passwords or tokens set by
-    // the uploader.
+    // owns the data. The share creator set the password.
     const isRsCreator =
       share.reverseShare && user && share.reverseShare.creatorId === user.id;
-
-    // The share creator also bypasses password/token checks (they set them).
     const isShareCreator = user && share.creatorId === user.id;
 
-    if (isRsCreator || isShareCreator) {
-      return true;
+    // Password check is ALWAYS enforced - even for RS creator and share
+    // creator. The password protects the content; ownership alone does
+    // not grant a bypass.
+    if (share.security?.password) {
+      if (!shareToken)
+        throw new ForbiddenException(
+          "This share is password protected",
+          "share_password_required",
+        );
+      if (!(await this.shareService.verifyShareToken(shareId, shareToken)))
+        throw new ForbiddenException(
+          "Share token required",
+          "share_token_required",
+        );
+      // Token valid -> allow RS creator / share creator / admin through
+      if (isRsCreator || isShareCreator) return true;
+    } else {
+      // No password -> RS creator and share creator bypass token check
+      if (isRsCreator || isShareCreator) return true;
+
+      // Non-password shares still need a valid token for other visitors
+      if (!(await this.shareService.verifyShareToken(shareId, shareToken)))
+        throw new ForbiddenException(
+          "Share token required",
+          "share_token_required",
+        );
     }
-
-    // Password & token checks - enforced for all other visitors.
-    if (share.security?.password && !shareToken)
-      throw new ForbiddenException(
-        "This share is password protected",
-        "share_password_required",
-      );
-
-    if (!(await this.shareService.verifyShareToken(shareId, shareToken)))
-      throw new ForbiddenException(
-        "Share token required",
-        "share_token_required",
-      );
 
     // Admin bypass: allows access to all shares but does NOT skip
     // password/token protection (handled above).

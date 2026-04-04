@@ -142,6 +142,22 @@ export function buildTheme(paletteName?: string): MantineThemeOverride {
     return luminance(bgHex) > 0.183 ? { color: theme.black } : {};
   };
 
+  // Helper: build a "defaultProps.styles" function that injects the filled
+  // text-color fix at the component-styles level (highest CSS priority in
+  // Mantine's merge chain). This is more robust than relying solely on
+  // theme-level styles which may lose CSS specificity races in portals
+  // (used by modals).
+  const filledDefaultStyles = () => ({
+    defaultProps: (theme: any) => ({
+      styles: (t: any, params: any, ctx: any) => {
+        if (ctx?.variant !== "filled") return {};
+        const fix = filledTextColor(t, params?.color);
+        if (!fix.color) return {};
+        return { root: fix, label: fix };
+      },
+    }),
+  });
+
   return {
     colors: palette.colors as any,
     primaryColor: palette.primaryColor,
@@ -156,11 +172,13 @@ export function buildTheme(paletteName?: string): MantineThemeOverride {
         }),
       },
       Button: {
+        ...filledDefaultStyles(),
         styles: (theme: any, params: any, { variant }: any) => {
           const isDark = theme.colorScheme === "dark";
+          const filled = variant === "filled" ? filledTextColor(theme, params.color) : {};
           return {
             root: {
-              ...(variant === "filled" ? filledTextColor(theme, params.color) : {}),
+              ...filled,
               ...(variant === "light" ? lightVariantColor(theme, params.color, isDark) : {}),
               ...(variant === "outline" && isDark
                 ? {
@@ -171,6 +189,7 @@ export function buildTheme(paletteName?: string): MantineThemeOverride {
             },
             label: {
               fontWeight: 600,
+              ...filled,
               ...(variant === "subtle"
                 ? { color: theme.colors[params.color ?? theme.primaryColor]?.[isDark ? 3 : 8] }
                 : {}),
@@ -179,6 +198,7 @@ export function buildTheme(paletteName?: string): MantineThemeOverride {
         },
       },
       ActionIcon: {
+        ...filledDefaultStyles(),
         styles: (theme: any, params: any, { variant }: any) => {
           const isDark = theme.colorScheme === "dark";
           return {
@@ -209,6 +229,7 @@ export function buildTheme(paletteName?: string): MantineThemeOverride {
         }),
       },
       Badge: {
+        ...filledDefaultStyles(),
         styles: (theme: any, params: any, { variant }: any) => {
           const isDark = theme.colorScheme === "dark";
           return {
@@ -217,6 +238,12 @@ export function buildTheme(paletteName?: string): MantineThemeOverride {
               ...(variant === "light" ? lightVariantColor(theme, params.color, isDark) : {}),
             },
           };
+        },
+      },
+      Progress: {
+        styles: (theme: any) => {
+          const fix = filledTextColor(theme, undefined);
+          return { label: fix.color ? fix : {} };
         },
       },
       Switch: {

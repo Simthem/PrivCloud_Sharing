@@ -34,10 +34,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 
-# PWA
-/frontend/public/workbox-*
-/frontend/public/sw.*
-
 # project specific
 /backend/data/
 /data/

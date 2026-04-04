@@ -130,6 +130,7 @@ const Header = () => {
               opened={opened}
               onClick={() => toggleOpened.toggle()}
               size="sm"
+              aria-label="Toggle navigation menu"
             />
           </Group>
         </MediaQuery>

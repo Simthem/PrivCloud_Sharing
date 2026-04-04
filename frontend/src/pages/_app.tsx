@@ -38,6 +38,7 @@ import i18nUtil from "../utils/i18n.util";
 import userPreferences from "../utils/userPreferences.util";
 import Footer from "../components/footer/Footer";
 import CookieConsent from "../components/cookie/CookieConsent";
+import { getUserKey, computeKeyHashFromEncoded } from "../utils/crypto.util";
 
 const excludeDefaultLayoutRoutes = ["/admin/config/[category]"];
 
@@ -64,14 +65,52 @@ function App({ Component, pageProps }: AppProps) {
     setRoute(router.pathname);
   }, [router.pathname]);
 
+  // Client-side session recovery: when SSR could not resolve the user
+  // (e.g. reverse-proxy / WAF strips cookies), attempt a client-side
+  // fetch so the browser sends its own cookie jar directly.
+  // Only runs when a 'logged_in' marker cookie exists (proves a session
+  // is active) but SSR failed to hydrate the user.
+  useEffect(() => {
+    if (user) return;
+    if (!getCookie("logged_in")) return;
+    authService
+      .refreshAccessToken()
+      .then(() => userService.getCurrentUser())
+      .then((u) => {
+        if (u) {
+          setUser(u);
+          // If the recovery happened on an auth page (e.g. PWA reopened
+          // with an expired access_token), redirect to the account page
+          // so the user does not stay stuck on the sign-in form.
+          if (router.pathname === "/" || router.pathname.startsWith("/auth/")) {
+            router.replace("/account");
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (!user) return;
-    const interval = setInterval(
-      async () => await authService.refreshAccessToken(),
-      2 * 60 * 1000, // 2 minutes
-    );
+    const interval = setInterval(() => {
+      authService.refreshAccessToken().catch(() => {});
+    }, 2 * 60 * 1000); // 2 minutes
 
     return () => clearInterval(interval);
+  }, [user]);
+
+  // Auto-refresh the E2E key hash on every authenticated page load.
+  // This keeps the server-side hash in sync with the local key and
+  // prevents verification mismatches on other browsers / devices.
+  useEffect(() => {
+    if (!user) return;
+    const localKey = getUserKey();
+    if (!localKey) return;
+    computeKeyHashFromEncoded(localKey)
+      .then((hash) => userService.setEncryptionKeyHash(hash))
+      .catch(() => {
+        // Non-critical -- key may be malformed in storage
+      });
   }, [user]);
 
   // Register service worker for PWA

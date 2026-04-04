@@ -3,18 +3,19 @@ import { ConfigService } from "../../config/config.service";
 import { OAuthCallbackDto } from "../dto/oauthCallback.dto";
 import { OAuthSignInDto } from "../dto/oauthSignIn.dto";
 import { ErrorPageException } from "../exceptions/errorPage.exception";
-import { OAuthProvider, OAuthToken } from "./oauthProvider.interface";
+import { AuthEndpointResult, OAuthProvider, OAuthToken } from "./oauthProvider.interface";
 @Injectable()
 export class DiscordProvider implements OAuthProvider<DiscordToken> {
   constructor(private config: ConfigService) {}
 
-  getAuthEndpoint(state: string): Promise<string> {
+  getAuthEndpoint(state: string): Promise<AuthEndpointResult> {
     let scope = "identify email";
     if (this.config.get("oauth.discord-limitedGuild")) {
       scope += " guilds";
     }
-    return Promise.resolve(
-      "https://discord.com/api/oauth2/authorize?" +
+    return Promise.resolve({
+      url:
+        "https://discord.com/api/oauth2/authorize?" +
         new URLSearchParams({
           client_id: this.config.get("oauth.discord-clientId"),
           redirect_uri:
@@ -23,7 +24,7 @@ export class DiscordProvider implements OAuthProvider<DiscordToken> {
           state,
           scope,
         }).toString(),
-    );
+    });
   }
 
   private getAuthorizationHeader() {

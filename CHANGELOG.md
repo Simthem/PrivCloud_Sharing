@@ -1,3 +1,112 @@
+## [1.18.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.18.0...v1.18.1) (2026-04-04)
+
+
+### Security
+
+* **deps:** override `lodash >=4.18.1` in the `docs/` workspace -- the backend
+  override already existed but `docs/` still pulled `4.17.23` with a prototype
+  pollution CVE
+* **share-guard:** enforce password check for reverse-share and share creators --
+  ownership previously bypassed password protection entirely
+* **oauth:** clear one-time OAuth state cookies on callback success and on
+  sign-out -- prevents cookie jar bloat and mitigates state replay risk
+* **oauth:** add 15 s `AbortSignal.timeout` to all OIDC fetch calls (token,
+  discovery, JWKS) -- prevents indefinite hangs when the identity provider is
+  unresponsive
+* **oauth:** move OIDC nonce from cache to the OAuth state cookie -- eliminates
+  the dependency on the multi-store cache for the OAuth flow; no more timeout
+  warnings when Redis is slow or unreachable
+
+
+### Bug Fixes
+
+* **cache:** memory store was never created when Redis is disabled -- `stores`
+  array stayed empty, so every `cache.set()` call hung forever; the OIDC nonce
+  write always hit the 5 s timeout as a result
+* **cache:** add `nonBlocking: true` to the cacheable config so secondary store
+  (Redis) writes are fire-and-forget; the primary memory store is still awaited
+  but a slow or unreachable Redis no longer blocks `cache.set()` / `cache.get()`
+* **cache:** support Unix socket paths for Redis -- when `redis-url` starts with
+  `/`, pass `{ socket: { path } }` to `@redis/client` instead of a URL string
+  (the built-in URL parser rejects `redis+unix://` schemes)
+* **cache:** convert TTL from seconds to milliseconds -- config value was
+  interpreted as ms by cache-manager v6 / keyv, so a 300 s TTL expired after
+  0.3 s, effectively disabling the cache
+* **cache:** attach error handler on the underlying `RedisClient` instance
+  (`keyvRedis.client.on("error")`) to prevent `SocketClosedUnexpectedly` from
+  crashing the process as an unhandled event
+* **auth:** add a non-httpOnly `logged_in` marker cookie (same lifetime as
+  `refresh_token`) so the client can detect an active session even after the
+  short-lived `access_token` cookie has expired; cleared on sign-out
+* **auth:** session recovery `useEffect` now checks for `logged_in` instead of
+  `access_token` -- previously the recovery never triggered when a user came
+  back after 13 min because the access token cookie was already gone
+* **auth:** `refreshAccessToken()` now re-throws on failure so the chained
+  `getCurrentUser()` call does not fire when there is no valid refresh token
+* **auth:** skip session recovery entirely for unauthenticated visitors (no
+  `logged_in` cookie) -- removes spurious 401 errors in the browser console on
+  every first page load
+* **e2e:** sanitize imported encryption key by stripping non-base64url
+  characters -- invisible chars (ZWSP, NBSP, newlines from copy-paste) corrupted
+  hash verification
+* **e2e:** auto-refresh encryption key hash on every authenticated page load --
+  keeps the server-side hash in sync across browsers and devices
+* **e2e:** add debug logging on key hash mismatch -- logs first 8 chars of
+  stored vs submitted hash for diagnosis
+* **jobs:** delete share files before removing the DB record -- prevents orphaned
+  files on disk; file deletion errors no longer block cleanup of the share row
+* **s3:** skip deletion gracefully when no files are found for a share -- avoids
+  a crash when cleaning up empty or already-purged shares
+* **sw:** skip caching cross-origin requests in the service worker -- Safeline
+  WAF challenge scripts were being intercepted and cached, breaking the WAF flow
+* **pwa:** change `start_url` from `/` to `/account` in manifest -- on mobile
+  PWA reopen the session is now restored automatically instead of landing on the
+  home page where the user had to navigate to sign-in manually
+* **pwa:** add `/account` to the service worker app shell cache; bump cache
+  version to `privcloud-v5`
+* **auth:** redirect to `/account` after client-side session recovery when the
+  current page is `/` or an auth page -- prevents the user from being stuck on
+  the sign-in form after automatic token refresh
+* **gitignore:** remove PWA ignore rules (`sw.*`, `workbox-*`) -- the service
+  worker is now maintained by hand and must be tracked in the repository
+
+
+### Performance
+
+* **frontend:** strip built-in Next.js legacy polyfills via `postinstall` hook
+  -- saves ~15 KiB; `browserslist` already targets modern browsers only
+* **a11y:** add `aria-label` to hamburger menu buttons in Header and
+  ConfigurationHeader for screen reader accessibility
+* **admin:** move hamburger menu icon to the right side in ConfigurationHeader
+  on mobile -- consistent with the main app Header layout
+* **theme:** fix white text on bright primary color in modals and portals (e.g.
+  amber palette) -- inject `filledTextColor` fix via `defaultProps.styles` at
+  component-styles priority so it wins CSS specificity races in emotion portals;
+  also apply the contrast fix to Button labels, ActionIcon, Badge, and Progress
+
+
+### Ops
+
+* **docker:** add DB diagnostics to the entrypoint -- logs file size, inode,
+  WAL state and user/reverse-share counts before and after each Prisma operation;
+  replaced opaque `npm run prod` with explicit `prisma migrate deploy && prisma
+  db seed && node dist/src/main`
+* **prisma:** log resolved database path at startup in `prisma.config.ts` and
+  seed script -- helps diagnose path resolution issues in containerized setups
+* **prisma:** log DB integrity stats (E2E key count, reverse share count) after
+  connect
+
+
+### Chore
+
+* **tsconfig:** bump frontend target from `es5` to `es2017` and switch
+  `moduleResolution` from `node` to `bundler` -- fixes TS 7.0 deprecation
+  warnings; consistent with Next.js 16 and the modern browserslist
+* **tsconfig:** replace deprecated `baseUrl` with explicit `paths` mapping in
+  the backend config -- fixes TS 7.0 deprecation warning while preserving all
+  103 `from "src/..."` imports
+
+
 ## [1.18.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.17.5...v1.18.0) (2026-04-02)
 
 

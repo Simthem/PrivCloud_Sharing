@@ -3,15 +3,16 @@ import { ConfigService } from "../../config/config.service";
 import { OAuthCallbackDto } from "../dto/oauthCallback.dto";
 import { OAuthSignInDto } from "../dto/oauthSignIn.dto";
 import { ErrorPageException } from "../exceptions/errorPage.exception";
-import { OAuthProvider, OAuthToken } from "./oauthProvider.interface";
+import { AuthEndpointResult, OAuthProvider, OAuthToken } from "./oauthProvider.interface";
 
 @Injectable()
 export class GitHubProvider implements OAuthProvider<GitHubToken> {
   constructor(private config: ConfigService) {}
 
-  getAuthEndpoint(state: string): Promise<string> {
-    return Promise.resolve(
-      "https://github.com/login/oauth/authorize?" +
+  getAuthEndpoint(state: string): Promise<AuthEndpointResult> {
+    return Promise.resolve({
+      url:
+        "https://github.com/login/oauth/authorize?" +
         new URLSearchParams({
           client_id: this.config.get("oauth.github-clientId"),
           redirect_uri:
@@ -19,7 +20,7 @@ export class GitHubProvider implements OAuthProvider<GitHubToken> {
           state: state,
           scope: "user:email",
         }).toString(),
-    );
+    });
   }
 
   async getToken(query: OAuthCallbackDto): Promise<OAuthToken<GitHubToken>> {

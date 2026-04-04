@@ -253,7 +253,8 @@ export class S3FileService {
       );
 
       if (!listResponse.Contents || listResponse.Contents.length === 0) {
-        throw new Error(`No files found for share ${shareId}`);
+        this.logger.warn(`No files found in S3 for share ${shareId} - skipping deletion`);
+        return;
       }
 
       // Extract the keys of the files to be deleted

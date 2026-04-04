@@ -30,11 +30,16 @@ export class JobsService {
     });
 
     for (const expiredShare of expiredShares) {
+      try {
+        await this.fileService.deleteAllFiles(expiredShare.id);
+      } catch (e) {
+        this.logger.warn(
+          `Failed to delete files for share ${expiredShare.id}: ${e.message}`,
+        );
+      }
       await this.prisma.share.delete({
         where: { id: expiredShare.id },
       });
-
-      await this.fileService.deleteAllFiles(expiredShare.id);
     }
 
     if (expiredShares.length > 0) {

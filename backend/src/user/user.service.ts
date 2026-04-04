@@ -130,7 +130,15 @@ export class UserSevice {
       where: { id: userId },
     });
     if (!user?.encryptionKeyHash) return false;
-    return user.encryptionKeyHash === keyHash;
+    const match = user.encryptionKeyHash === keyHash;
+    if (!match) {
+      this.logger.debug(
+        `[E2E verify] hash mismatch for user ${userId} -- ` +
+          `stored: ${user.encryptionKeyHash.slice(0, 8)}… ` +
+          `submitted: ${keyHash.slice(0, 8)}…`,
+      );
+    }
+    return match;
   }
 
   async findOrCreateFromLDAP(

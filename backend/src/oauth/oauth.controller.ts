@@ -59,8 +59,11 @@ export class OAuthController {
   ) {
     const state = nanoid(16);
     const isSecure = this.config.get("general.secureCookies");
-    const url = await this.providers[provider].getAuthEndpoint(state);
-    response.cookie(`oauth_${provider}_state`, state, {
+    const { url, nonce } = await this.providers[provider].getAuthEndpoint(state);
+    // Store state (and optional nonce for OIDC providers) in a single
+    // httpOnly cookie so validation does not depend on the cache layer.
+    const cookieValue = nonce ? `${state}|${nonce}` : state;
+    response.cookie(`oauth_${provider}_state`, cookieValue, {
       sameSite: "lax",
       secure: isSecure,
       httpOnly: true,
@@ -78,6 +81,22 @@ export class OAuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
+    // Extract the optional nonce from the compound cookie value (state|nonce).
+    const cookieValue: string =
+      request.cookies[`oauth_${provider}_state`] ?? "";
+    const pipeIdx = cookieValue.indexOf("|");
+    if (pipeIdx !== -1) {
+      query.nonce = cookieValue.substring(pipeIdx + 1);
+    }
+
+    // State has been validated by OAuthGuard -- clear the one-time cookie
+    const isSecure = this.config.get("general.secureCookies");
+    response.clearCookie(`oauth_${provider}_state`, {
+      sameSite: "lax",
+      secure: isSecure,
+      httpOnly: true,
+    });
+
     try {
       const oauthToken = await this.providers[provider].getToken(query);
       const user = await this.providers[provider].getUserInfo(oauthToken, query);
