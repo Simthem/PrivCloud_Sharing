@@ -65,39 +65,92 @@ function App({ Component, pageProps }: AppProps) {
     setRoute(router.pathname);
   }, [router.pathname]);
 
-  // Client-side session recovery: when SSR could not resolve the user
-  // (e.g. reverse-proxy / WAF strips cookies), attempt a client-side
-  // fetch so the browser sends its own cookie jar directly.
-  // Only runs when a 'logged_in' marker cookie exists (proves a session
-  // is active) but SSR failed to hydrate the user.
-  useEffect(() => {
-    if (user) return;
+  // Attempt to recover/ maintain the session client-side.  This single
+  // function covers both the "cold start" scenario (SSR didn't hydrate
+  // the user) and the "warm" scenario (access_token just expired while
+  // the page was open or the iframe was in the background).
+  const recoverSession = async () => {
     if (!getCookie("logged_in")) return;
-    authService
-      .refreshAccessToken()
-      .then(() => userService.getCurrentUser())
-      .then((u) => {
-        if (u) {
-          setUser(u);
-          // If the recovery happened on an auth page (e.g. PWA reopened
-          // with an expired access_token), redirect to the account page
-          // so the user does not stay stuck on the sign-in form.
-          if (router.pathname === "/" || router.pathname.startsWith("/auth/")) {
-            router.replace("/account");
-          }
+    try {
+      await authService.refreshAccessToken();
+      const u = await userService.getCurrentUser();
+      if (u) {
+        setUser(u);
+        if (router.pathname === "/" || router.pathname.startsWith("/auth/")) {
+          router.replace("/account");
         }
-      })
-      .catch(() => {});
-  }, []);
+      }
+    } catch {
+      // Refresh token is dead -- clear the stale React state so the
+      // UI reflects reality.  The 401 interceptor will redirect to
+      // sign-in on the next API call.
+      setUser(null);
+    }
+  };
 
+  // Cold-start recovery: SSR could not resolve the user (e.g. the
+  // access_token cookie expired between SSR and hydration, or a
+  // reverse-proxy / WAF stripped the cookies).
   useEffect(() => {
-    if (!user) return;
-    const interval = setInterval(() => {
-      authService.refreshAccessToken().catch(() => {});
+    if (!user) recoverSession();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Visibility recovery: when the user switches back to this tab /
+  // iframe, check the session immediately instead of waiting for the
+  // next timer tick.  Browsers throttle setInterval in background
+  // tabs / hidden iframes, so the periodic refresh might not have
+  // fired for a long time.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && !user) {
+        recoverSession();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Periodic session maintenance.  Covers two scenarios:
+  //
+  // 1. user IS set (normal case): refresh the access_token cookie
+  //    before it expires.  If the refresh fails twice in a row the
+  //    session is dead -- clear the user and let the next navigation
+  //    or visibility-change trigger a recovery attempt.
+  //
+  // 2. user is NULL but logged_in cookie exists: the React state lost
+  //    the user (e.g. SSR didn't hydrate it, or a transient error
+  //    cleared it) while the backend session is still valid.  Try to
+  //    recover every tick so the UI catches up automatically without
+  //    the user having to click anything.
+  useEffect(() => {
+    const hasSession = !!getCookie("logged_in");
+
+    // Nothing to maintain or recover.
+    if (!user && !hasSession) return;
+
+    let consecutiveFailures = 0;
+
+    const interval = setInterval(async () => {
+      if (!user && getCookie("logged_in")) {
+        // Recovery path -- try to restore React user state.
+        await recoverSession();
+        return;
+      }
+
+      // Normal maintenance path.
+      try {
+        await authService.refreshAccessToken();
+        consecutiveFailures = 0;
+      } catch {
+        consecutiveFailures++;
+        if (consecutiveFailures >= 2) {
+          setUser(null);
+        }
+      }
     }, 10 * 1000); // 10 seconds -- cookie check is free (no network call)
 
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-refresh the E2E key hash on every authenticated page load.
   // This keeps the server-side hash in sync with the local key and
@@ -273,6 +326,43 @@ App.getInitialProps = async ({ ctx }: { ctx: GetServerSidePropsContext }) => {
     })
       .then((res) => res.data)
       .catch(() => null);
+
+    // SSR token refresh: when the access_token cookie has expired but
+    // the refresh_token is still valid, ask the backend to issue a new
+    // access_token and retry the user fetch.  This avoids the flash of
+    // "logged-out" UI that otherwise happens on every full page load
+    // after 13 min of inactivity.
+    if (!pageProps.user && cookieHeader?.includes("refresh_token=")) {
+      try {
+        const refreshRes = await axios.post(
+          `${apiURL}/api/auth/token`,
+          {},
+          { headers: { cookie: cookieHeader } },
+        );
+        // Forward the Set-Cookie from the refresh response to the
+        // browser so the new access_token cookie is stored.
+        const setCookieHeaders = refreshRes.headers["set-cookie"];
+        if (setCookieHeaders && ctx.res) {
+          ctx.res.setHeader("Set-Cookie", setCookieHeaders);
+        }
+        // Extract the fresh access_token from the Set-Cookie to use
+        // it in the retry call (the cookie jar on the server is not
+        // automatically updated).
+        const freshCookie = setCookieHeaders
+          ?.find((c: string) => c.startsWith("access_token="));
+        if (freshCookie) {
+          const token = freshCookie.split(";")[0]; // "access_token=xxx"
+          pageProps.user = await axios(`${apiURL}/api/users/me`, {
+            headers: { cookie: `${cookieHeader}; ${token}` },
+          })
+            .then((res) => res.data)
+            .catch(() => null);
+        }
+      } catch {
+        // Refresh token also expired -- nothing to do, client-side
+        // recovery will handle it.
+      }
+    }
 
     pageProps.configVariables = (await axios(`${apiURL}/api/configs`)).data;
 

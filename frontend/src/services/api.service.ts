@@ -45,12 +45,20 @@ api.interceptors.response.use(
         refreshPromise = axios
           .post("/api/auth/token")
           .then(() => {})
-          .catch(() => {})
           .finally(() => {
             refreshPromise = null;
           });
       }
-      await refreshPromise;
+
+      try {
+        await refreshPromise;
+      } catch {
+        // Refresh token is invalid or expired -- the session is dead.
+        // Hard-redirect to sign-in so the user can re-authenticate
+        // instead of silently swallowing every subsequent 401.
+        window.location.href = "/auth/signIn";
+        return new Promise(() => {});
+      }
 
       return api(original);
     }

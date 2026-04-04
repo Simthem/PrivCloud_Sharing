@@ -27,6 +27,18 @@
   status code is non-standard and specific to SafeLine; other WAFs
   (Cloudflare, BunkerWeb) use generic codes (403 / 503) that cannot be
   safely intercepted the same way
+* **auth:** the 401 interceptor no longer swallows refresh failures -- when the
+  refresh token is dead it redirects to sign-in instead of silently retrying
+  every API call in a loop
+* **auth:** SSR now refreshes the access token server-side when the cookie has
+  expired but the refresh token is still valid -- eliminates the flash of
+  logged-out UI on every full page load after 13 min of inactivity.  The new
+  Set-Cookie is forwarded to the browser so the session resumes seamlessly
+* **auth:** session recovery is no longer a one-shot fire-and-forget at mount.
+  A `visibilitychange` listener re-attempts recovery when the tab / iframe
+  becomes visible, and the periodic timer now also runs when user is null
+  (guarded by the `logged_in` cookie) so the UI catches up automatically
+  without requiring a manual click on "Se connecter"
 
 
 ## [1.18.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.18.1...v1.18.2) (2026-04-04)
