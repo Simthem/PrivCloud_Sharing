@@ -15,6 +15,12 @@
   rejects callable namespace imports.  Changed to `import archiver from 
   "archiver"` in share.service and s3.service
 
+* **backend:** add `esModuleInterop: true` to backend `tsconfig.json`
+  -- `allowSyntheticDefaultImports` only affects type-checking,
+  without `esModuleInterop` the compiled JS emits `moment_1.default`
+  which crashes at runtime because CommonJS modules have no `.default`
+  export.  Fixes `TypeError: (0, moment_1.default) is not a function`
+
 * **security:** sanitize `buildKeyFragment()` against DOM-based XSS
   (CWE-79) -- validate the encoded key matches strict base64url format
   (`/^[A-Za-z0-9_-]+$/`) before interpolating it into the URL fragment.
