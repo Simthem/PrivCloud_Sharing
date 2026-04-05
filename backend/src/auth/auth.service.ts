@@ -352,7 +352,7 @@ export class AuthService {
       response.cookie("refresh_token", refreshToken, {
         path: "/api/auth/token",
         httpOnly: true,
-        sameSite: "strict",
+        sameSite: "lax",
         secure: isSecure,
         maxAge,
       });

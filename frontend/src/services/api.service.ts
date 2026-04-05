@@ -5,11 +5,56 @@ const api = axios.create({
 });
 
 // SafeLine WAF returns 468 when an anti-bot challenge is required.
-// XHR/fetch cannot render that challenge page, so the only option is
-// a full page reload so the browser navigates to the challenge and
-// returns to the app once verified.  A small flag prevents infinite
-// reload loops if SafeLine keeps returning 468.
+// XHR/fetch cannot render that challenge page.  Instead of immediately
+// reloading (which kills any in-progress upload), we first attempt to
+// complete the challenge inside a hidden iframe -- its JS will execute,
+// set the SafeLine cookie, and then we can retry the original request.
+// A full page reload is used only as a last resort.
 let safeline468Reloading = false;
+let safelineChallengeInFlight: Promise<void> | null = null;
+
+const completeSafeLineChallenge = (): Promise<void> => {
+  if (safelineChallengeInFlight) return safelineChallengeInFlight;
+
+  safelineChallengeInFlight = new Promise<void>((resolve, reject) => {
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.left = "-9999px";
+    iframe.style.top = "-9999px";
+    iframe.style.width = "1px";
+    iframe.style.height = "1px";
+    iframe.style.opacity = "0";
+    iframe.src = window.location.origin + "/";
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      if (iframe.parentNode) document.body.removeChild(iframe);
+      safelineChallengeInFlight = null;
+    };
+
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("SafeLine challenge timeout"));
+    }, 15000);
+
+    iframe.onload = () => {
+      // Give the challenge JS time to execute and set the cookie
+      setTimeout(() => {
+        cleanup();
+        resolve();
+      }, 2500);
+    };
+
+    iframe.onerror = () => {
+      cleanup();
+      reject(new Error("SafeLine challenge iframe failed"));
+    };
+
+    document.body.appendChild(iframe);
+  });
+
+  return safelineChallengeInFlight;
+};
 
 // Transparent token refresh: when any request gets a 401, try to
 // refresh the access token via the refresh cookie and retry once.
@@ -22,14 +67,24 @@ api.interceptors.response.use(
   async (error) => {
     const original = error.config;
 
-    // SafeLine anti-bot challenge -- reload the page so the browser
-    // can complete the challenge natively.
-    if (error.response?.status === 468 && !safeline468Reloading) {
-      safeline468Reloading = true;
-      window.location.reload();
-      // Return a never-resolving promise so no further code runs
-      // while the browser is navigating.
-      return new Promise(() => {});
+    // SafeLine anti-bot challenge -- try hidden iframe first, then
+    // fall back to a full page reload only if the iframe approach fails.
+    if (error.response?.status === 468) {
+      if (!original._safelineRetried) {
+        original._safelineRetried = true;
+        try {
+          await completeSafeLineChallenge();
+          return api(original);
+        } catch {
+          // Hidden iframe did not solve the challenge
+        }
+      }
+      // Last resort: full page reload (only once)
+      if (!safeline468Reloading) {
+        safeline468Reloading = true;
+        window.location.reload();
+        return new Promise(() => {});
+      }
     }
 
     if (

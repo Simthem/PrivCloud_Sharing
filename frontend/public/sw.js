@@ -2,12 +2,14 @@
 // Provides offline shell caching, network-first API strategy,
 // and background upload continuation.
 
-var CACHE_NAME = "privcloud-v5";
+var CACHE_NAME = "privcloud-v6";
 
 // App shell resources cached on install for offline access.
+// Only public/unauthenticated routes belong here -- auth-required
+// pages (e.g. /account) must NOT be pre-cached because the fetch
+// during install has no session cookies and would cache a redirect.
 var APP_SHELL = [
   "/",
-  "/account",
   "/upload",
   "/auth/signIn",
   "/offline",

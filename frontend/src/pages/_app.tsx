@@ -77,7 +77,7 @@ function App({ Component, pageProps }: AppProps) {
       if (u) {
         setUser(u);
         if (router.pathname === "/" || router.pathname.startsWith("/auth/")) {
-          router.replace("/account");
+          router.replace("/upload");
         }
       }
     } catch {

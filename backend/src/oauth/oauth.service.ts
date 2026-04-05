@@ -89,7 +89,7 @@ export class OAuthService {
       },
     });
     if (oauthUser) {
-      throw new ErrorPageException("already_linked", "/account", [
+      throw new ErrorPageException("already_linked", "/", [
         `provider_${provider}`,
       ]);
     }
@@ -118,7 +118,7 @@ export class OAuthService {
         },
       });
     } else {
-      throw new ErrorPageException("not_linked", "/account", [provider]);
+      throw new ErrorPageException("not_linked", "/", [provider]);
     }
   }
 

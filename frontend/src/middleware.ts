@@ -92,14 +92,14 @@ export async function middleware(request: NextRequest) {
       condition: user && routes.unauthenticated.contains(route) && !getConfig("share.allowUnauthenticatedShares"),
       path: "/upload",
     },
-    // Unauthenticated state
+    // Unauthenticated state -- only redirect when the session is fully
+    // dead (!hasActiveSession).  When the logged_in cookie is still
+    // present the refresh token may still be valid: let the page load
+    // so the client-side interceptor can refresh the access token
+    // without bouncing through /auth/signIn.
     {
-      condition: !user && !routes.public.contains(route) && !routes.unauthenticated.contains(route),
+      condition: !user && !hasActiveSession && !routes.public.contains(route) && !routes.unauthenticated.contains(route),
       path: "/auth/signIn",
-    },
-    {
-      condition: !user && !hasActiveSession && routes.account.contains(route),
-      path: "/upload",
     },
     // Admin privileges
     {

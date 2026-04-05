@@ -8,7 +8,6 @@ import {
   Checkbox,
   Code,
   Col,
-  CopyButton,
   Grid,
   Group,
   NumberInput,
@@ -20,7 +19,6 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import { useClipboard } from "@mantine/hooks";
 import { useForm } from "@mantine/form";
 import { useModals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -37,6 +35,7 @@ import {
   TbLock,
   TbPencil,
   TbPlus,
+  TbQrcode,
   TbTrash,
   TbWorldCheck,
   TbWorldOff,
@@ -45,6 +44,7 @@ import { FormattedMessage } from "react-intl";
 import Meta from "../../components/Meta";
 import showReverseShareLinkModal from "../../components/account/showReverseShareLinkModal";
 import showShareLinkModal from "../../components/account/showShareLinkModal";
+import showQrCodeModal from "../../components/core/showQrCodeModal";
 import CenterLoader from "../../components/core/CenterLoader";
 import showCreateReverseShareModal from "../../components/share/modals/showCreateReverseShareModal";
 import useConfig from "../../hooks/config.hook";
@@ -52,6 +52,7 @@ import useTranslate from "../../hooks/useTranslate.hook";
 import shareService from "../../services/share.service";
 import { MyReverseShare } from "../../types/share.type";
 import { byteToHumanSizeString } from "../../utils/fileSize.util";
+import { copyToClipboard } from "../../utils/clipboard.util";
 import toast from "../../utils/toast.util";
 import { getExpirationPreview } from "../../utils/date.util";
 import { Timespan } from "../../types/timespan.type";
@@ -65,6 +66,7 @@ import {
 // -- K_rs display component (similar to master key in E2E settings) --
 const RsKeyDisplay = ({ rsKey }: { rsKey: string }) => {
   const [revealed, setRevealed] = useState(false);
+  const [copied, setCopied] = useState(false);
   const masked = rsKey.slice(0, 8) + "••••••••••••" + rsKey.slice(-8);
 
   return (
@@ -94,19 +96,25 @@ const RsKeyDisplay = ({ rsKey }: { rsKey: string }) => {
             {revealed ? <TbEyeOff size={14} /> : <TbEye size={14} />}
           </ActionIcon>
         </Tooltip>
-        <CopyButton value={rsKey}>
-          {({ copied, copy }) => (
-            <Tooltip label={copied ? "Copied!" : "Copy"}>
-              <ActionIcon variant="light" size="sm" onClick={copy}>
-                {copied ? (
-                  <TbCheck size={14} color="teal" />
-                ) : (
-                  <TbCopy size={14} />
-                )}
-              </ActionIcon>
-            </Tooltip>
-          )}
-        </CopyButton>
+        <Tooltip label={copied ? "Copied!" : "Copy"}>
+          <ActionIcon
+            variant="light"
+            size="sm"
+            onClick={async () => {
+              const ok = await copyToClipboard(rsKey);
+              if (ok) {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              }
+            }}
+          >
+            {copied ? (
+              <TbCheck size={14} color="teal" />
+            ) : (
+              <TbCopy size={14} />
+            )}
+          </ActionIcon>
+        </Tooltip>
       </Group>
     </Stack>
   );
@@ -243,7 +251,6 @@ const EditExpirationBody = ({
 
 const MyShares = () => {
   const modals = useModals();
-  const clipboard = useClipboard();
   const t = useTranslate();
   const queryClient = useQueryClient();
 
@@ -322,8 +329,8 @@ const MyShares = () => {
       link += `#key=${rsKeyEncoded}`;
     }
 
-    if (window.isSecureContext) {
-      clipboard.copy(link);
+    const ok = await copyToClipboard(link);
+    if (ok) {
       toast.success(t("common.notify.copied-link"));
     } else {
       showReverseShareLinkModal(modals, link);
@@ -342,8 +349,8 @@ const MyShares = () => {
       link += `#key=${rsKeyEncoded}`;
     }
 
-    if (window.isSecureContext) {
-      clipboard.copy(link);
+    const ok = await copyToClipboard(link);
+    if (ok) {
       toast.success(t("common.notify.copied-link"));
     } else {
       showShareLinkModal(modals, shareId);
@@ -619,6 +626,20 @@ const MyShares = () => {
                         onClick={() => handleCopyReverseShareLink(reverseShare)}
                       >
                         <TbLink />
+                      </ActionIcon>
+                      <ActionIcon
+                        variant="light"
+                        size={25}
+                        onClick={async () => {
+                          let link = `${config.get("general.appUrl")}/upload/${reverseShare.token}`;
+                          const rsKeyEncoded = await unwrapRsKey(reverseShare);
+                          if (rsKeyEncoded) {
+                            link += `#key=${rsKeyEncoded}`;
+                          }
+                          showQrCodeModal(modals, link);
+                        }}
+                      >
+                        <TbQrcode />
                       </ActionIcon>
                       <ActionIcon
                         color="red"

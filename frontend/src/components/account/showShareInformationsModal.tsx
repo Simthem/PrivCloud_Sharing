@@ -7,6 +7,7 @@ import { MyShare } from "../../types/share.type";
 import { byteToHumanSizeString } from "../../utils/fileSize.util";
 import CopyTextField from "../upload/CopyTextField";
 import useConfig from "../../hooks/config.hook";
+import { getUserKey, buildKeyFragment } from "../../utils/crypto.util";
 
 const showShareInformationsModal = (
   modals: ModalsContextProps,
@@ -31,7 +32,9 @@ const ShareInformationsContent = ({
   maxShareSize: number;
 }) => {
   const config = useConfig();
-  const link = `${config.get("general.appUrl")}/s/${share.id}`;
+  const storedKey = share.isE2EEncrypted ? getUserKey() : null;
+  const keyFragment = storedKey ? buildKeyFragment(storedKey) : "";
+  const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
 
   const formattedShareSize = byteToHumanSizeString(share.size);
   const formattedMaxShareSize = byteToHumanSizeString(maxShareSize);
