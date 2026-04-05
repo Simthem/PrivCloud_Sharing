@@ -19,6 +19,7 @@ const PushNotificationSection = () => {
   const config = useConfig();
   const t = useTranslate();
 
+  const [mounted, setMounted] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -26,8 +27,19 @@ const PushNotificationSection = () => {
   const pushEnabled = config.get("pushNotifications.enabled");
   const vapidPublicKey = config.get("pushNotifications.vapidPublicKey");
 
+  // Delay client-only checks until after hydration to avoid SSR mismatch (#418)
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const supported =
+    mounted &&
+    typeof window !== "undefined" &&
+    "serviceWorker" in navigator &&
+    "PushManager" in window;
+
   const checkSubscription = useCallback(async () => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (!supported) return;
     try {
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.getSubscription();
@@ -35,18 +47,17 @@ const PushNotificationSection = () => {
     } catch {
       // Non-critical
     }
-  }, []);
+  }, [supported]);
 
   useEffect(() => {
-    if (pushEnabled && vapidPublicKey) checkSubscription();
-    if ("Notification" in window && Notification.permission === "denied") {
+    if (supported && pushEnabled && vapidPublicKey) checkSubscription();
+    if (mounted && "Notification" in window && Notification.permission === "denied") {
       setPermissionDenied(true);
     }
-  }, [pushEnabled, vapidPublicKey, checkSubscription]);
+  }, [mounted, supported, pushEnabled, vapidPublicKey, checkSubscription]);
 
-  if (!pushEnabled || !vapidPublicKey) return null;
-  if (!("serviceWorker" in navigator) || !("PushManager" in window))
-    return null;
+  if (!mounted || !pushEnabled || !vapidPublicKey) return null;
+  if (!supported) return null;
 
   const handleSubscribe = async () => {
     setLoading(true);

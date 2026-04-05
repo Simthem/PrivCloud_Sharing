@@ -26,7 +26,7 @@ export class ErrorPageExceptionFilter implements ExceptionFilter {
       url.searchParams.set("redirect", exception.redirect);
     } else {
       const redirect = ctx.getRequest().cookies.access_token
-        ? "/account"
+        ? "/"
         : "/auth/signIn";
       url.searchParams.set("redirect", redirect);
     }

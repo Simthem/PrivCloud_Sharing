@@ -621,6 +621,8 @@ export default {
   "common.button.share": "Partager",
   "common.button.generate": "Générer",
   "common.button.done": "Terminer",
+  "common.button.showQrCode": "Afficher le QR code",
+  "common.modal.qr-code.title": "QR Code",
   "common.text.link": "Lien",
   "common.text.navigate-to-link": "Visiter le lien",
   "common.text.or": "ou",

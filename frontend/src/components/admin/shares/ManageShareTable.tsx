@@ -7,7 +7,6 @@ import {
   Table,
   Text,
 } from "@mantine/core";
-import { useClipboard } from "@mantine/hooks";
 import { useModals } from "@mantine/modals";
 import dayjs from "../../../utils/dayjs";
 import { TbLink, TbTrash } from "react-icons/tb";
@@ -16,6 +15,7 @@ import useConfig from "../../../hooks/config.hook";
 import useTranslate from "../../../hooks/useTranslate.hook";
 import { MyShare } from "../../../types/share.type";
 import { byteToHumanSizeString } from "../../../utils/fileSize.util";
+import { copyToClipboard } from "../../../utils/clipboard.util";
 import toast from "../../../utils/toast.util";
 import showShareLinkModal from "../../account/showShareLinkModal";
 
@@ -29,7 +29,6 @@ const ManageShareTable = ({
   isLoading: boolean;
 }) => {
   const modals = useModals();
-  const clipboard = useClipboard();
   const config = useConfig();
   const t = useTranslate();
 
@@ -85,11 +84,10 @@ const ManageShareTable = ({
                       <ActionIcon
                         variant="light"
                         size={25}
-                        onClick={() => {
-                          if (window.isSecureContext) {
-                            clipboard.copy(
-                              `${config.get("general.appUrl")}/s/${share.id}`,
-                            );
+                        onClick={async () => {
+                          const link = `${config.get("general.appUrl")}/s/${share.id}`;
+                          const ok = await copyToClipboard(link);
+                          if (ok) {
                             toast.success(t("common.notify.copied-link"));
                           } else {
                             showShareLinkModal(modals, share.id);

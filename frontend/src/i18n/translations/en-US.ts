@@ -847,6 +847,8 @@ export default {
   "common.button.generate": "Generate",
   "common.button.done": "Done",
   "common.button.retry": "Retry",
+  "common.button.showQrCode": "Show QR code",
+  "common.modal.qr-code.title": "QR Code",
   "common.text.link": "Link",
   "common.text.navigate-to-link": "Visit link",
   "common.text.or": "or",

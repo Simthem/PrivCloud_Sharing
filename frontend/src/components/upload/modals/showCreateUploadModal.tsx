@@ -15,6 +15,7 @@ import {
   Text,
   Textarea,
   TextInput,
+  useMantineTheme,
 } from "@mantine/core";
 import { useForm, yupResolver } from "@mantine/form";
 import { useModals } from "@mantine/modals";
@@ -134,6 +135,7 @@ const CreateUploadModalBody = ({
   const modals = useModals();
   const config = useConfig();
   const t = useTranslate();
+  const theme = useMantineTheme();
 
   const captchaRef = useRef<HCaptcha>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -561,6 +563,7 @@ const CreateUploadModalBody = ({
                 sitekey={options.captchaSiteKey!}
                 onVerify={setCaptchaToken}
                 onExpire={() => setCaptchaToken(null)}
+                theme={theme.colorScheme}
               />
             </Center>
           )}
@@ -598,6 +601,7 @@ const SimplifiedCreateUploadModalModal = ({
 }) => {
   const modals = useModals();
   const t = useTranslate();
+  const theme = useMantineTheme();
 
   const captchaRef = useRef<HCaptcha>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -694,6 +698,7 @@ const SimplifiedCreateUploadModalModal = ({
                 sitekey={options.captchaSiteKey!}
                 onVerify={setCaptchaToken}
                 onExpire={() => setCaptchaToken(null)}
+                theme={theme.colorScheme}
               />
             </Center>
           )}

@@ -41,6 +41,7 @@ export async function middleware(request: NextRequest) {
   const route = request.nextUrl.pathname;
   let user: { isAdmin: boolean } | null = null;
   const accessToken = request.cookies.get("access_token")?.value;
+  const hasActiveSession = !!request.cookies.get("logged_in")?.value;
 
   try {
     const claims = jwtDecode<{ exp: number; isAdmin: boolean }>(
@@ -91,18 +92,18 @@ export async function middleware(request: NextRequest) {
       condition: user && routes.unauthenticated.contains(route) && !getConfig("share.allowUnauthenticatedShares"),
       path: "/upload",
     },
-    // Unauthenticated state
+    // Unauthenticated state -- only redirect when the session is fully
+    // dead (!hasActiveSession).  When the logged_in cookie is still
+    // present the refresh token may still be valid: let the page load
+    // so the client-side interceptor can refresh the access token
+    // without bouncing through /auth/signIn.
     {
-      condition: !user && !routes.public.contains(route) && !routes.unauthenticated.contains(route),
+      condition: !user && !hasActiveSession && !routes.public.contains(route) && !routes.unauthenticated.contains(route),
       path: "/auth/signIn",
-    },
-    {
-      condition: !user && routes.account.contains(route),
-      path: "/upload",
     },
     // Admin privileges
     {
-      condition: routes.admin.contains(route) && !user?.isAdmin,
+      condition: routes.admin.contains(route) && !user?.isAdmin && !hasActiveSession,
       path: "/upload",
     },
     // Home page

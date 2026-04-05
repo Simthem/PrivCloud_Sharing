@@ -8,6 +8,7 @@ import {
   Query,
   Req,
   Res,
+  UnauthorizedException,
   UseFilters,
   UseGuards,
 } from "@nestjs/common";
@@ -47,6 +48,7 @@ export class OAuthController {
   @Get("status")
   @UseGuards(JwtGuard)
   async status(@GetUser() user: User) {
+    if (!user) throw new UnauthorizedException();
     return this.oauthService.status(user);
   }
 

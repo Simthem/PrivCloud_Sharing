@@ -10,27 +10,27 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { useClipboard } from "@mantine/hooks";
 import { useModals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "../../utils/dayjs";
 import Link from "next/link";
-import { TbEdit, TbInfoCircle, TbLink, TbLock, TbTrash } from "react-icons/tb";
+import { TbEdit, TbInfoCircle, TbLink, TbLock, TbQrcode, TbTrash } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import Meta from "../../components/Meta";
 import showShareInformationsModal from "../../components/account/showShareInformationsModal";
 import showShareLinkModal from "../../components/account/showShareLinkModal";
+import showQrCodeModal from "../../components/core/showQrCodeModal";
 import CenterLoader from "../../components/core/CenterLoader";
 import useConfig from "../../hooks/config.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import shareService from "../../services/share.service";
 import { MyShare } from "../../types/share.type";
+import { copyToClipboard } from "../../utils/clipboard.util";
 import toast from "../../utils/toast.util";
 import { getUserKey, buildKeyFragment } from "../../utils/crypto.util";
 
 const MyShares = () => {
   const modals = useModals();
-  const clipboard = useClipboard();
   const config = useConfig();
   const t = useTranslate();
   const queryClient = useQueryClient();
@@ -186,6 +186,27 @@ const MyShares = () => {
                       <ActionIcon
                         variant="light"
                         size={25}
+                        onClick={async () => {
+                          const storedKey = share.isE2EEncrypted
+                            ? getUserKey()
+                            : null;
+                          const keyFragment = storedKey
+                            ? buildKeyFragment(storedKey)
+                            : "";
+                          const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
+                          const ok = await copyToClipboard(link);
+                          if (ok) {
+                            toast.success(t("common.notify.copied-link"));
+                          } else {
+                            showShareLinkModal(modals, share.id, keyFragment);
+                          }
+                        }}
+                      >
+                        <TbLink />
+                      </ActionIcon>
+                      <ActionIcon
+                        variant="light"
+                        size={25}
                         onClick={() => {
                           const storedKey = share.isE2EEncrypted
                             ? getUserKey()
@@ -194,15 +215,10 @@ const MyShares = () => {
                             ? buildKeyFragment(storedKey)
                             : "";
                           const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
-                          if (window.isSecureContext) {
-                            clipboard.copy(link);
-                            toast.success(t("common.notify.copied-link"));
-                          } else {
-                            showShareLinkModal(modals, share.id, keyFragment);
-                          }
+                          showQrCodeModal(modals, link);
                         }}
                       >
-                        <TbLink />
+                        <TbQrcode />
                       </ActionIcon>
                       <ActionIcon
                         color="red"

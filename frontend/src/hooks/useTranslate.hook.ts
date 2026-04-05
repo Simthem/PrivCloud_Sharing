@@ -17,7 +17,10 @@ const cache = createIntlCache();
 
 export const translateOutsideContext = () => {
   const locale =
-    getCookie("language")?.toString() ?? navigator.language.split("-")[0];
+    getCookie("language")?.toString() ??
+    (typeof navigator !== "undefined"
+      ? navigator.language.split("-")[0]
+      : "en");
 
   // fall back to english if key does not exist
   const englishMessages = i18nUtil.getLocaleByCode("en-US")?.messages;

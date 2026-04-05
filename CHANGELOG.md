@@ -1,3 +1,107 @@
+## [1.19.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.18.3...v1.19.0) (2026-04-05)
+
+
+### Features
+
+* **ui:** add QR code button to share links and reverse share links --
+  a new QR code icon appears next to every link field (completed upload
+  modal, reverse share created modal, share info modal) and in the
+  action columns of the shares and reverse shares tables.  Clicking it
+  opens a modal with a scannable QR code that points directly to the
+  share or reverse share upload page.  Works with E2E-encrypted shares
+  (the key fragment is embedded in the URL).  Uses `qrcode.react` for
+  client-side SVG generation -- no external service involved
+
+
+### Bug Fixes
+
+* **ui:** fix QR code not scannable in dark mode -- the SVG had a
+  transparent background, making black modules invisible on dark
+  backgrounds.  Force explicit white background and black foreground,
+  add quiet-zone margin via `marginSize`, raise error correction to
+  "H" for better scan reliability.  Also display the encoded URL below
+  the QR code with a copy button
+
+* **ui:** fix share info modal link missing E2E key fragment -- the
+  link displayed in the share informations modal did not include the
+  encryption key hash, making it useless for E2E-encrypted shares.
+  Now builds the link with `buildKeyFragment()` when the share is
+  E2E-encrypted, consistent with all other link generation points
+
+* **ui:** fix clipboard copy buttons not working inside iframes --
+  `navigator.clipboard.writeText()` silently fails in iframe contexts
+  that lack the `clipboard-write` Permissions-Policy.  Replaced all
+  `useClipboard` (Mantine) and `CopyButton` usages with a custom
+  `copyToClipboard` utility that tries the modern Clipboard API first,
+  then falls back to legacy `document.execCommand("copy")` via a hidden
+  textarea.  Copy buttons are now always visible (no longer gated behind
+  `window.isSecureContext`).  Affected files: CopyTextField, shares,
+  reverseShares, FileList, ManageShareTable, account/index
+
+* **auth:** change `refresh_token` cookie from `sameSite: "strict"` to
+  `sameSite: "lax"` -- fixes session loss when the app runs inside an
+  iframe (e.g. Nextcloud External Sites).  `strict` cookies are not
+  always transmitted on initial iframe loads depending on the browser.
+  `lax` is still safe: the cookie remains `httpOnly`, path-restricted
+  to `/api/auth/token`, and the endpoint only accepts POST requests
+
+* **api:** rework SafeLine 468 anti-bot handler to avoid destructive
+  page reloads during uploads -- when a 468 is received, the app now
+  opens a hidden iframe to complete the SafeLine JS challenge and set
+  the cookie, then transparently retries the original request.  A full
+  page reload only happens as a last resort if the hidden iframe fails.
+  This prevents long-running uploads from being killed when the
+  SafeLine cookie expires mid-transfer
+
+
+## [1.18.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.18.2...v1.18.3) (2026-04-04)
+
+
+### Bug Fixes
+
+* **auth:** return 401 instead of 500 when JWT-guarded endpoints receive an
+  unauthenticated request while `allowUnauthenticatedShares` is enabled --
+  affected `/oauth/status`, `/shares`, `/reverseShares`
+* **auth:** add an Axios response interceptor that transparently refreshes the
+  access token and retries the original request on a 401 -- eliminates the
+  dead window between cookie expiry and the periodic refresh tick
+* **auth:** reduce the client-side token refresh interval from 2 min to 10 s --
+  the cookie-existence check is free (no network call); only the actual
+  `POST /auth/token` fires when the cookie has expired
+* **middleware:** skip redirect when the `logged_in` cookie is still present
+  but the JWT has expired -- lets the page load so the client-side interceptor
+  can refresh the token instead of silently bouncing to `/upload`
+* **pwa:** move the `<link rel="manifest">` from a client-side JS injection to
+  the static `<Head>` in `_document.tsx` -- Chrome DevTools now shows the icon
+  previews in the Application > Manifest panel
+* **ui:** hCaptcha widget now follows the app color scheme (dark / light) on
+  every form that uses it -- sign-in, sign-up, password reset, captcha modal,
+  password modal, and upload modal
+* **waf:** handle SafeLine WAF HTTP 468 (anti-bot challenge) in the Axios
+  interceptor -- triggers a full page reload so the browser can complete the
+  challenge natively instead of silently failing on every API call.  The 468
+  status code is non-standard and specific to SafeLine; other WAFs
+  (Cloudflare, BunkerWeb) use generic codes (403 / 503) that cannot be
+  safely intercepted the same way
+* **auth:** the 401 interceptor no longer swallows refresh failures -- when the
+  refresh token is dead it redirects to sign-in instead of silently retrying
+  every API call in a loop
+* **auth:** SSR now refreshes the access token server-side when the cookie has
+  expired but the refresh token is still valid -- eliminates the flash of
+  logged-out UI on every full page load after 13 min of inactivity.  The new
+  Set-Cookie is forwarded to the browser so the session resumes seamlessly
+* **auth:** session recovery is no longer a one-shot fire-and-forget at mount.
+  A `visibilitychange` listener re-attempts recovery when the tab / iframe
+  becomes visible, and the periodic timer now also runs when user is null
+  (guarded by the `logged_in` cookie) so the UI catches up automatically
+  without requiring a manual click on "Se connecter"
+* **cve-2026-2673:** replace the openssl-3.5 branch + VERSION.dat sed hack
+  with the openssl-3.6 branch (contains fix commit 2157c9d8) -- the binary
+  now identifies as OpenSSL 3.6.2 which is the first 3.6.x version that
+  fixes CVE-2026-2673 (3.6.0 and 3.6.1 are also affected).  Only the
+  `-dev` pre-release tag is stripped; PATCH=2 is already set on the branch
+
+
 ## [1.18.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.18.1...v1.18.2) (2026-04-04)
 
 
@@ -71,12 +175,14 @@
   a crash when cleaning up empty or already-purged shares
 * **sw:** skip caching cross-origin requests in the service worker -- Safeline
   WAF challenge scripts were being intercepted and cached, breaking the WAF flow
-* **pwa:** change `start_url` from `/` to `/account` in manifest -- on mobile
-  PWA reopen the session is now restored automatically instead of landing on the
-  home page where the user had to navigate to sign-in manually
-* **pwa:** add `/account` to the service worker app shell cache; bump cache
-  version to `privcloud-v5`
-* **auth:** redirect to `/account` after client-side session recovery when the
+* **pwa:** change `start_url` from `/` to `/upload` in manifest -- on mobile
+  PWA reopen the user lands directly on the upload page instead of the home page
+  where they had to navigate to sign-in manually; `/upload` is a public route
+  that works for both authenticated and unauthenticated users
+* **pwa:** remove `/account` from the service worker app shell cache -- auth-
+  required pages must not be pre-cached (the install fetch has no session
+  cookies and caches a redirect); bump cache version to `privcloud-v6`
+* **auth:** redirect to `/upload` after client-side session recovery when the
   current page is `/` or an auth page -- prevents the user from being stuck on
   the sign-in form after automatic token refresh
 * **gitignore:** remove PWA ignore rules (`sw.*`, `workbox-*`) -- the service

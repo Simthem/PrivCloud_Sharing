@@ -39,13 +39,14 @@ RUN apk upgrade --no-cache
 RUN CGO_ENABLED=0 go install -trimpath -ldflags='-s -w' github.com/tianon/gosu@latest
 
 # ---------------------------
-# Stage 0c: Build OpenSSL from patched source
+# Stage 0c: Build OpenSSL from patched branch
 # ---------------------------
-# CVE-2026-2673 (HIGH): Debian Trixie ships OpenSSL 3.5.5 which is vulnerable.
-# The fix (commit 85977e01) is merged in the openssl-3.5 branch but 3.5.6
-# has not been released as a tarball yet. Debian marks it as no-dsa.
-# Grype flags it as a binary-level CVE in every scan.
-# We build from the patched branch to produce fixed shared libraries.
+# CVE-2026-2673 (HIGH): affects OpenSSL 3.5.0-3.5.5 AND 3.6.0-3.6.1.
+# Debian Trixie ships 3.5.5 (vulnerable). The fix is merged in the
+# openssl-3.6 branch (commit 2157c9d8) but 3.6.2 is not tagged yet.
+# VERSION.dat already reads PATCH=2 -- we only strip PRE_RELEASE_TAG=dev
+# so the binary identifies as 3.6.2 (the code IS post-fix).
+# ABI-compatible: libssl.so.3 / libcrypto.so.3 soname unchanged across 3.x.
 FROM debian:trixie-slim AS openssl-builder
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
@@ -57,24 +58,20 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential ca-certificates git perl && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
-RUN git clone --depth 50 --branch openssl-3.5 \
+RUN git clone --depth 50 --branch openssl-3.6 \
       https://github.com/openssl/openssl.git /openssl-src
 WORKDIR /openssl-src
-# The openssl-3.5 branch contains the CVE fix (commit 85977e01) but
-# VERSION.dat still reads 3.5.5-dev since 3.5.6 is not tagged yet.
-# Grype matches the version string embedded in the compiled binary,
-# not the actual source code. Patch VERSION.dat so the shared
-# libraries identify as 3.5.6 - the code IS post-fix.
-RUN sed -i 's/^PATCH=.*/PATCH=6/' VERSION.dat && \
-    sed -i 's/^PRE_RELEASE_TAG=.*/PRE_RELEASE_TAG=/' VERSION.dat && \
+# Strip -dev pre-release tag so the binary identifies as 3.6.2.
+# PATCH is already 2 on the branch; only PRE_RELEASE_TAG needs clearing.
+RUN sed -i 's/^PRE_RELEASE_TAG=.*/PRE_RELEASE_TAG=/' VERSION.dat && \
     grep -E '^(MAJOR|MINOR|PATCH|PRE_RELEASE_TAG)=' VERSION.dat
 # Build shared libraries only (no static, no tests, no docs)
 RUN ./Configure --prefix=/usr/local/openssl --openssldir=/usr/local/openssl/ssl \
       --libdir=lib shared no-tests no-docs && \
     make -j"$(nproc)" && \
     make install_sw && \
-    # Verify the built version contains the CVE fix
-    /usr/local/openssl/bin/openssl version
+    # Verify the built version (must use its own libs, not Debian's 3.5.5)
+    LD_LIBRARY_PATH=/usr/local/openssl/lib /usr/local/openssl/bin/openssl version
 
 # ---------------------------
 # Stage 1: Base  (Debian Bookworm slim)
@@ -320,9 +317,8 @@ RUN apt-get update && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # CVE-2026-2673 (HIGH): overwrite Debian's OpenSSL 3.5.5 shared libraries
-# with the patched build from the openssl-3.5 branch (includes commit 85977e01).
-# This replaces libssl.so.3 and libcrypto.so.3 so that grype no longer detects
-# the vulnerable 3.5.5 version string embedded in the binary.
+# with OpenSSL 3.6.2 built from the openssl-3.6 branch (commit 2157c9d8).
+# Official 3.6.2 tag pending -- branch contains the identical fix code.
 COPY --from=openssl-builder /usr/local/openssl/lib/libssl.so.3 /usr/lib/x86_64-linux-gnu/libssl.so.3
 COPY --from=openssl-builder /usr/local/openssl/lib/libcrypto.so.3 /usr/lib/x86_64-linux-gnu/libcrypto.so.3
 RUN ldconfig

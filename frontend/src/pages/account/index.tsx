@@ -4,7 +4,6 @@ import {
   Center,
   Code,
   Container,
-  CopyButton,
   Group,
   Paper,
   PasswordInput,
@@ -40,6 +39,7 @@ import authService from "../../services/auth.service";
 import userService from "../../services/user.service";
 import { getOAuthIcon, getOAuthUrl, unlinkOAuth } from "../../utils/oauth.util";
 import toast from "../../utils/toast.util";
+import { copyToClipboard } from "../../utils/clipboard.util";
 import {
   generateEncryptionKey,
   exportKeyToBase64,
@@ -58,6 +58,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
 
   const [localKey, setLocalKey] = useState<string | null>(null);
   const [revealKey, setRevealKey] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
   const [importValue, setImportValue] = useState("");
   const [importError, setImportError] = useState("");
   const [importing, setImporting] = useState(false);
@@ -224,19 +225,26 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
                 {revealKey ? <TbEyeOff size={16} /> : <TbEye size={16} />}
               </Button>
             </Tooltip>
-            <CopyButton value={localKey}>
-              {({ copied, copy }) => (
-                <Tooltip label={copied ? "Copié !" : "Copier la clé"}>
-                  <Button variant="subtle" size="xs" px={6} onClick={copy}>
-                    {copied ? (
-                      <TbCheck size={16} color="teal" />
-                    ) : (
-                      <TbCopy size={16} />
-                    )}
-                  </Button>
-                </Tooltip>
-              )}
-            </CopyButton>
+            <Tooltip label={copiedKey ? "Copié !" : "Copier la clé"}>
+              <Button
+                variant="subtle"
+                size="xs"
+                px={6}
+                onClick={async () => {
+                  const ok = await copyToClipboard(localKey);
+                  if (ok) {
+                    setCopiedKey(true);
+                    setTimeout(() => setCopiedKey(false), 1500);
+                  }
+                }}
+              >
+                {copiedKey ? (
+                  <TbCheck size={16} color="teal" />
+                ) : (
+                  <TbCopy size={16} />
+                )}
+              </Button>
+            </Tooltip>
           </Group>
 
           <Group position="right" mt="sm">

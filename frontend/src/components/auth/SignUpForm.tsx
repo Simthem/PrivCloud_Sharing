@@ -8,6 +8,7 @@ import {
   Text,
   TextInput,
   Title,
+  useMantineTheme,
 } from "@mantine/core";
 import { useForm, yupResolver } from "@mantine/form";
 import HCaptcha from "@hcaptcha/react-hcaptcha";
@@ -27,6 +28,7 @@ const SignUpForm = () => {
   const router = useRouter();
   const t = useTranslate();
   const { refreshUser } = useUser();
+  const theme = useMantineTheme();
 
   const captchaEnabled = config.get("hcaptcha.enabled");
   const captchaSiteKey = config.get("hcaptcha.siteKey");
@@ -115,6 +117,7 @@ const SignUpForm = () => {
                 onVerify={setCaptchaToken}
                 onExpire={handleCaptchaExpire}
                 ref={captchaRef}
+                theme={theme.colorScheme}
               />
             </Group>
           )}
