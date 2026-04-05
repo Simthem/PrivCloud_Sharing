@@ -3,23 +3,13 @@
 
 ### Bug Fixes
 
-* **backend:** fix `import * as moment` namespace import across all
-  backend files -- TypeScript strict mode rejects callable namespace
-  imports.  Changed to `import moment from "moment"` in auth.service,
-  email.service, jobs.service, share.service, share.controller,
-  shareSecurity.guard, shareTokenSecurity.guard, fileSecurity.guard,
-  and date.util
-
-* **backend:** fix `import * as archiver` namespace import in 
-  `share.service.ts` and `s3.service.ts` -- TypeScript strict mode 
-  rejects callable namespace imports.  Changed to `import archiver from 
-  "archiver"` in share.service and s3.service
-
 * **backend:** add `esModuleInterop: true` to backend `tsconfig.json`
-  -- `allowSyntheticDefaultImports` only affects type-checking,
-  without `esModuleInterop` the compiled JS emits `moment_1.default`
-  which crashes at runtime because CommonJS modules have no `.default`
-  export.  Fixes `TypeError: (0, moment_1.default) is not a function`
+  and convert all callable/constructable namespace imports (`import *
+  as X`) to default imports (`import X`) -- without `esModuleInterop`
+  the compiled JS emits `X.default` which crashes at runtime on
+  CommonJS modules.  Affected packages: `moment` (9 files),
+  `archiver` (2 files), `qrcode-svg`, `clamscan`, `sharp`,
+  `cookie-parser`
 
 * **security:** sanitize `buildKeyFragment()` against DOM-based XSS
   (CWE-79) -- validate the encoded key matches strict base64url format
