@@ -11,7 +11,7 @@ import { JwtService } from "@nestjs/jwt";
 import { User, Prisma } from "@prisma/client";
 import * as argon from "argon2";
 import { Request, Response } from "express";
-import * as moment from "moment";
+import moment from "moment";
 import { ConfigService } from "src/config/config.service";
 import { EmailService } from "src/email/email.service";
 import { PrismaService } from "src/prisma/prisma.service";

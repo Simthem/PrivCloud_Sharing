@@ -244,8 +244,11 @@ export function extractKeyFromHash(): string | null {
 
 /**
  * Construit le fragment #key=... à ajouter à une URL de partage.
+ * Valide le format base64url pour éviter toute injection depuis un
+ * localStorage corrompu (DOM-based XSS -- CWE-79).
  */
 export function buildKeyFragment(encodedKey: string): string {
+  if (!/^[A-Za-z0-9_-]+$/.test(encodedKey)) return "";
   return `#key=${encodedKey}`;
 }
 

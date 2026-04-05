@@ -1,3 +1,27 @@
+## [1.19.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.19.0...v1.19.1) (2026-04-05)
+
+
+### Bug Fixes
+
+* **backend:** fix `import * as moment` namespace import across all
+  backend files -- TypeScript strict mode rejects callable namespace
+  imports.  Changed to `import moment from "moment"` in auth.service,
+  email.service, jobs.service, share.service, share.controller,
+  shareSecurity.guard, shareTokenSecurity.guard, fileSecurity.guard,
+  and date.util
+
+* **backend:** fix `import * as archiver` namespace import in 
+  `share.service.ts` and `s3.service.ts` -- TypeScript strict mode 
+  rejects callable namespace imports.  Changed to `import archiver from 
+  "archiver"` in share.service and s3.service
+
+* **security:** sanitize `buildKeyFragment()` against DOM-based XSS
+  (CWE-79) -- validate the encoded key matches strict base64url format
+  (`/^[A-Za-z0-9_-]+$/`) before interpolating it into the URL fragment.
+  A corrupted localStorage value is now silently ignored instead of
+  being injected into the DOM via `copyToClipboard` or QR code modal
+
+
 ## [1.19.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.18.3...v1.19.0) (2026-04-05)
 
 

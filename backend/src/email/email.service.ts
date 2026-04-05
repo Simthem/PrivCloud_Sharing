@@ -4,7 +4,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { User } from "@prisma/client";
-import * as moment from "moment";
+import moment from "moment";
 import * as nodemailer from "nodemailer";
 import { ConfigService } from "src/config/config.service";
 

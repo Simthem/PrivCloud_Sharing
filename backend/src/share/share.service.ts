@@ -8,11 +8,11 @@ import {
 } from "@nestjs/common";
 import { JwtService, JwtSignOptions } from "@nestjs/jwt";
 import { Prisma, Share, User } from "@prisma/client";
-import * as archiver from "archiver";
+import archiver from "archiver";
 import * as argon from "argon2";
 import * as fs from "fs";
 import * as path from "path";
-import * as moment from "moment";
+import moment from "moment";
 import { ClamScanService } from "src/clamscan/clamscan.service";
 import { ConfigService } from "src/config/config.service";
 import { EmailService } from "src/email/email.service";

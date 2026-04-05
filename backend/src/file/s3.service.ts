@@ -25,7 +25,7 @@ import * as mime from "mime-types";
 import { File } from "./file.service";
 import { Readable } from "stream";
 import { validate as isValidUUID } from "uuid";
-import * as archiver from "archiver";
+import archiver from "archiver";
 
 @Injectable()
 export class S3FileService {
