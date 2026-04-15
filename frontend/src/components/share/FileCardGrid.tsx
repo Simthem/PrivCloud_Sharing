@@ -67,7 +67,9 @@ const FileCardGrid = ({
       {files.map((file) => {
         const mimeType = (mime.contentType(file.name) || "").split(";")[0];
         const isImage = mimeType.startsWith("image/");
-        const supportsPreview = shareService.doesFileSupportPreview(file.name);
+        const supportsPreview =
+          share.previewEnabled !== false &&
+          shareService.doesFileSupportPreview(file.name);
 
         return (
           <Card key={file.id} withBorder shadow="sm" radius="md" p="sm">

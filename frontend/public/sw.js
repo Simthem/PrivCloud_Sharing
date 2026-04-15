@@ -122,6 +122,8 @@ self.addEventListener("fetch", function (event) {
 
 // -- Message handler for background upload continuation --
 self.addEventListener("message", function (event) {
+  // Reject messages from any origin other than this app
+  if (event.origin && event.origin !== self.location.origin) return;
   if (event.data && event.data.type === "UPLOAD_KEEPALIVE") {
     // Acknowledge the keepalive -- the SW staying active keeps
     // the browser from killing the upload tab/process.

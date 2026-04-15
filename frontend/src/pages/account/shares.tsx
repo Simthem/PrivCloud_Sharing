@@ -2,6 +2,7 @@ import {
   ActionIcon,
   Box,
   Button,
+  Card,
   Center,
   Group,
   Space,
@@ -10,6 +11,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 import { useModals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "../../utils/dayjs";
@@ -34,6 +36,7 @@ const MyShares = () => {
   const config = useConfig();
   const t = useTranslate();
   const queryClient = useQueryClient();
+  const isMobile = useMediaQuery("(max-width: 680px)");
 
   const {
     data: shares,
@@ -97,7 +100,96 @@ const MyShares = () => {
             </Button>
           </Stack>
         </Center>
+      ) : isMobile ? (
+        /* Mobile: card layout */
+        <Stack spacing="sm">
+          {shares.map((share) => {
+            const storedKey = share.isE2EEncrypted ? getUserKey() : null;
+            const keyFragment = storedKey ? buildKeyFragment(storedKey) : "";
+            const shareHref = `/share/${share.id}${keyFragment}`;
+            return (
+              <Card key={share.id} withBorder padding="sm" radius="md">
+                <Group position="apart" noWrap mb={4}>
+                  <Box style={{ minWidth: 0, flex: 1 }}>
+                    <Link href={shareHref} style={{ textDecoration: "none", color: "inherit" }}>
+                      <Text size="sm" weight={600} lineClamp={1} sx={{ "&:hover": { textDecoration: "underline" } }}>
+                        {share.name || share.id}
+                      </Text>
+                    </Link>
+                    {share.description && (
+                      <Text size="xs" color="dimmed" lineClamp={1}>
+                        {share.description}
+                      </Text>
+                    )}
+                  </Box>
+                  {share.security.passwordProtected && (
+                    <TbLock color="orange" size={16} />
+                  )}
+                </Group>
+
+                <Group spacing="xs" mb={8}>
+                  <Text size="xs" color="dimmed">
+                    <FormattedMessage id="account.shares.table.visitors" />: {share.security.maxViews ? `${share.views}/${share.security.maxViews}` : share.views}
+                  </Text>
+                  <Text size="xs" color="dimmed">
+                    {dayjs(share.expiration).unix() === 0
+                      ? t("account.shares.table.expiry-never")
+                      : `${t("account.shares.table.expiresAt")} ${dayjs(share.expiration).format("L")}`}
+                  </Text>
+                </Group>
+
+                <Group spacing={6}>
+                  <Link href={`/share/${share.id}/edit`}>
+                    <ActionIcon color="orange" variant="light" size={28}>
+                      <TbEdit />
+                    </ActionIcon>
+                  </Link>
+                  <ActionIcon color="blue" variant="light" size={28}
+                    onClick={() => showShareInformationsModal(modals, share, parseInt(config.get("share.maxSize")))}
+                  >
+                    <TbInfoCircle />
+                  </ActionIcon>
+                  <ActionIcon variant="light" size={28}
+                    onClick={async () => {
+                      const sk = share.isE2EEncrypted ? getUserKey() : null;
+                      const kf = sk ? buildKeyFragment(sk) : "";
+                      const link = `${config.get("general.appUrl")}/s/${share.id}${kf}`;
+                      const ok = await copyToClipboard(link);
+                      if (ok) toast.success(t("common.notify.copied-link"));
+                      else showShareLinkModal(modals, share.id, kf);
+                    }}
+                  >
+                    <TbLink />
+                  </ActionIcon>
+                  <ActionIcon variant="light" size={28}
+                    onClick={() => {
+                      const sk = share.isE2EEncrypted ? getUserKey() : null;
+                      const kf = sk ? buildKeyFragment(sk) : "";
+                      showQrCodeModal(modals, `${config.get("general.appUrl")}/s/${share.id}${kf}`);
+                    }}
+                  >
+                    <TbQrcode />
+                  </ActionIcon>
+                  <ActionIcon color="red" variant="light" size={28}
+                    onClick={() => {
+                      modals.openConfirmModal({
+                        title: t("account.shares.modal.delete.title", { share: share.id }),
+                        children: <Text size="sm"><FormattedMessage id="account.shares.modal.delete.description" /></Text>,
+                        confirmProps: { color: "red" },
+                        labels: { confirm: t("common.button.delete"), cancel: t("common.button.cancel") },
+                        onConfirm: () => deleteShareMutation.mutate(share.id),
+                      });
+                    }}
+                  >
+                    <TbTrash />
+                  </ActionIcon>
+                </Group>
+              </Card>
+            );
+          })}
+        </Stack>
       ) : (
+        /* Desktop: table layout */
         <Box sx={{ display: "block", overflowX: "auto" }}>
           <Table>
             <thead>
@@ -115,14 +207,24 @@ const MyShares = () => {
               </tr>
             </thead>
             <tbody>
-              {shares.map((share) => (
+              {shares.map((share) => {
+                const storedKey = share.isE2EEncrypted
+                  ? getUserKey()
+                  : null;
+                const keyFragment = storedKey
+                  ? buildKeyFragment(storedKey)
+                  : "";
+                const shareHref = `/share/${share.id}${keyFragment}`;
+                return (
                 <tr key={share.id}>
                   <td>
                     <Group spacing="xs" noWrap>
                       <Box>
-                        <Text size="sm" weight={500} lineClamp={1}>
-                          {share.name || share.id}
-                        </Text>
+                        <Link href={shareHref} style={{ textDecoration: "none", color: "inherit" }}>
+                          <Text size="sm" weight={500} lineClamp={1} sx={{ "&:hover": { textDecoration: "underline" } }}>
+                            {share.name || share.id}
+                          </Text>
+                        </Link>
                         {share.description && (
                           <Text size="xs" color="dimmed" lineClamp={1}>
                             {share.description}
@@ -251,7 +353,8 @@ const MyShares = () => {
                     </Group>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </Table>
         </Box>

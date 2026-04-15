@@ -155,7 +155,7 @@ export default {
   "account.reverseShares.modal.link-type.description":
     "Les liens personnels n'expirent jamais mais peuvent etre revoques. Les liens limites ont une expiration configurable.",
   "account.reverseShares.modal.link-type.personal": "Personnel (sans expiration)",
-  "account.reverseShares.modal.link-type.limited": "Limite (expiration configurable)",
+  "account.reverseShares.modal.link-type.limited": "Limité (expiration configurable)",
   "account.reverseShares.modal.expiration.label": "Expiration",
   "account.reverseShares.modal.expiration.minute-singular": "Minute",
   "account.reverseShares.modal.expiration.minute-plural": "Minutes",
@@ -200,6 +200,19 @@ export default {
   "account.reverseShares.modal.reverse-share-link": "Lien du partage inversé",
   "account.reverseShares.modal.delete.title": "Supprimer le partage inversé",
   "account.reverseShares.modal.delete.description": "Voulez-vous vraiment supprimer ce partage inversé ? Si vous le faites, les partages qu’il contient seront également supprimés.",
+  "account.reverseShares.rsKey.title": "Clé de chiffrement du partage inversé",
+  "account.reverseShares.rsKey.description": "Clé de chiffrement AES-256 de ce partage inversé. Conservez-la en lieu sûr -- sans elle, les fichiers envoyés ne pourront pas être déchiffrés.",
+  "account.reverseShares.rsKey.reveal": "Révéler",
+  "account.reverseShares.rsKey.hide": "Masquer",
+  "account.reverseShares.rsKey.copy": "Copier",
+  "account.reverseShares.rsKey.copied": "Copié !",
+  "account.reverseShares.table.show-key": "Afficher la clé de chiffrement",
+  "account.reverseShares.notify.decrypt-key-failed": "Impossible de déchiffrer la clé du partage inversé",
+  "account.reverseShares.notify.expiration-updated": "Expiration mise à jour",
+  "account.reverseShares.notify.expiration-update-failed": "Échec de la mise à jour de l'expiration",
+  "account.reverseShares.modal.delete-share.title": "Supprimer le partage",
+  "account.reverseShares.modal.delete-share.description":
+    "Voulez-vous vraiment supprimer ce partage ? Les fichiers envoyés seront définitivement supprimés.",
   // END /account/reverseShares
   // /admin
   "admin.title": "Administration",
@@ -250,7 +263,11 @@ export default {
   // Dropzone.tsx
   "upload.dropzone.title": "Téléverser des fichiers",
   "upload.dropzone.description": "Glisser-déposer les fichiers ici pour commencer votre partage. Nous n'acceptons que les fichiers jusqu'à {maxSize} au total.",
+  "upload.dropzone.description.unlimited": "Glisser-déposer les fichiers ici pour commencer votre partage. Aucune limite de taille.",
   "upload.dropzone.notify.file-too-big": "Vos fichiers dépassent la taille maximale de {maxSize}.",
+
+  // Global upload progress
+  "upload.progress.global": "Upload : {done}/{total} fichiers",
   // FileList.tsx
   "upload.filelist.name": "Nom",
   "upload.filelist.size": "Taille",
@@ -279,7 +296,7 @@ export default {
   "upload.modal.expires.year-plural": "Ans",
   "upload.modal.accordion.name-and-description.title": "Nom et description",
   "upload.modal.accordion.name-and-description.name.placeholder": "Nom",
-  "upload.modal.accordion.name-and-description.description.placeholder": "Note pour les destinataires de ce partage",
+  "upload.modal.accordion.name-and-description.description.placeholder": "Description pour les destinataires",
   "upload.modal.accordion.email.title": "Adresse courriel des destinataires",
   "upload.modal.accordion.email.placeholder": "Saisir les destinataires de ce partage",
   "upload.modal.accordion.email.invalid-email": "Courriel invalide",
@@ -322,6 +339,8 @@ export default {
     "Veuillez compléter la vérification ci-dessous pour accéder à ce partage.",
   "share.modal.captcha.submit": "Accéder au partage",
   "share.button.download-all": "Télécharger tout",
+  "share.button.download-selected": "Télécharger {count, plural, one {# fichier} other {# fichiers}}",
+  "share.button.clear-selection": "Désélectionner",
   "share.notify.download-all-preparing": "Le partage est en préparation. Réessayez dans quelques minutes.",
   "share.modal.file-link": "Lien du fichier",
   "share.table.name": "Nom",
@@ -334,6 +353,7 @@ export default {
   "share.edit.append-upload": "Ajouter un fichier",
   "share.edit.notify.generic-error": "Une erreur est survenue durant le traitement de votre partage.",
   "share.edit.notify.save-success": "Partage mis à jour avec succès",
+  "share.edit.notify.e2e-key-missing": "Clé E2E absente du navigateur. Importez votre clé depuis votre compte avant de modifier un partage chiffré.",
   // END /share/[id]/edit
   // /imprint
   "imprint.title": "Mentions légales",
@@ -344,10 +364,9 @@ export default {
 
   // Cookie consent
   "cookie.banner.message":
-    "Ce site utilise uniquement des cookies strictement necessaires pour l'authentification et la gestion de session. Aucun cookie de suivi ou de publicite n'est utilise.",
+    "Ce site utilise uniquement des cookies strictement nécessaires pour l'authentification et la gestion de session. Aucun cookie de suivi ou de publicité n'est utilisé.",
   "cookie.banner.learn-more": "En savoir plus",
-  "cookie.banner.accept": "Accepter",
-  "cookie.banner.reject": "Refuser",
+  "cookie.banner.dismiss": "Compris",
   // END Cookie consent
 
   // /admin/config
@@ -369,9 +388,16 @@ export default {
   "admin.config.general.show-home-page": "Afficher la page d’accueil",
   "admin.config.general.show-home-page.description": "Afficher ou non la page d’accueil",
   "admin.config.general.session-duration": "Durée de la session",
-  "admin.config.general.session-duration.description": "Temps après lequel un utilisateur doit se reconnecter (par défaut : 3 mois).",  "admin.config.general.meta-description": "Méta-description",
+  "admin.config.general.session-duration.description": "Temps après lequel un utilisateur doit se reconnecter (par défaut : 3 mois).",
+  "admin.config.general.meta-description": "Méta-description",
   "admin.config.general.meta-description.description":
     "Description SEO affichée dans les résultats des moteurs de recherche.",
+  "admin.config.general.meta-description-en": "Méta-description (Anglais)",
+  "admin.config.general.meta-description-en.description":
+    "Description SEO affichée dans les résultats des moteurs de recherche pour les visiteurs anglophones.",
+  "admin.config.general.meta-description-fr": "Méta-description (Français)",
+  "admin.config.general.meta-description-fr.description":
+    "Description SEO affichée dans les résultats des moteurs de recherche pour les visiteurs francophones.",
   "admin.config.general.color-palette": "Palette de couleurs",
   "admin.config.general.color-palette.description":
     "Thème de couleur utilisé dans toute l'application.",  "admin.config.general.logo": "Logo",
@@ -427,7 +453,7 @@ export default {
   "admin.config.share.anonymous-max-expiration.description":
     "Expiration maximale des partages anonymes (non authentifiés). Les fichiers, objets S3 et liens d'accès sont automatiquement supprimés après ce délai. Réglez sur 0 pour utiliser l'échéance globale.",
   "admin.config.share.share-id-length": "Taille de l'identifiant généré",
-  "admin.config.share.share-id-length.description": "Taille par défaut de l'identifiant généré pour un partage. Cette valeur est aussi utilisée pour générer les liens des partages inverses. Une valeur inférieure à 8 n'est pas considérée sûre.",
+  "admin.config.share.share-id-length.description": "Taille par défaut de l'identifiant généré pour un partage. Cette valeur est aussi utilisée pour générer les liens des partages inversés. Une valeur inférieure à 8 n'est pas considérée sûre.",
   "admin.config.share.max-size": "Taille max",
   "admin.config.share.max-size.description": "Taille maximale du partage",
   "admin.config.share.zip-compression-level": "Niveau de compression",
@@ -641,5 +667,97 @@ export default {
   "common.error.number-too-large": "Doit être au plus {max}",
   "common.error.exact-length": "Doit comporter exactement {length} caractères",
   "common.error.invalid-number": "Doit être un nombre",
-  "common.error.field-required": "Ce champ est obligatoire"
+  "common.error.field-required": "Ce champ est obligatoire",
+
+  "common.button.close": "Fermer",
+
+  // --- ReencryptModal ---
+  "reencrypt.modal.title": "Re-chiffrement des fichiers",
+  "reencrypt.error.title": "Erreur de re-chiffrement",
+  "reencrypt.error.generic": "Une erreur est survenue durant le re-chiffrement.",
+  "reencrypt.error.partial": "{failed, plural, one {# fichier} other {# fichiers}} n'ont pas pu être re-chiffrés :",
+  "reencrypt.done.title": "Re-chiffrement terminé",
+  "reencrypt.done.message": "{count, plural, one {# fichier re-chiffré} other {# fichiers re-chiffrés}} avec succès.",
+  "reencrypt.partial.title": "Re-chiffrement partiel",
+  "reencrypt.partial.message": "{ok} re-chiffré(s), {failed} échoué(s), {skipped} ignoré(s).",
+  "reencrypt.inprogress.message": "Re-chiffrement en cours, ne fermez pas cet onglet...",
+  "reencrypt.inprogress.warning": "La fermeture de l'onglet interrompra le processus.",
+  "reencrypt.progress.label": "Progression du re-chiffrement",
+  "reencrypt.progress.files": "{current}/{total} fichiers -- {name}",
+  "reencrypt.progress.reverseShares": "{current}/{total} partages inversés",
+  "reencrypt.button.cancel": "Annuler",
+  "reencrypt.button.close": "Fermer",
+  "reencrypt.button.retry": "Réessayer",
+
+  // --- E2EKeyPrompt ---
+  "e2ePrompt.title": "Clé de chiffrement E2E",
+  "e2ePrompt.import.description": "Votre compte possède une clé de chiffrement de bout en bout. Elle n'est jamais stockée sur le serveur -- vous devez la saisir une fois par session (elle sera conservée tant que l'onglet reste ouvert).",
+  "e2ePrompt.import.label": "Clé de chiffrement",
+  "e2ePrompt.import.placeholder": "Collez votre clé secrète ici",
+  "e2ePrompt.import.skip": "Ignorer",
+  "e2ePrompt.import.submit": "Charger la clé",
+  "e2ePrompt.import.sskrLink": "Récupérer via mes fragments SSKR",
+  "e2ePrompt.import.skipWarning": "Si vous ignorez cette étape, vous ne pourrez pas déchiffrer ni créer de partages chiffrés pendant cette session.",
+  "e2ePrompt.divider.or": "OU",
+  "e2ePrompt.recover.description": "Collez vos fragments de récupération SSKR. Vous devez en fournir au moins le nombre qui était requis lors de la génération (le seuil T).",
+  "e2ePrompt.recover.shardCount": "Nombre de fragments à saisir",
+  "e2ePrompt.recover.shard": "Fragment {n}",
+  "e2ePrompt.recover.back": "Retour",
+  "e2ePrompt.recover.submit": "Reconstituer la clé",
+  "e2ePrompt.recovered.success": "Clé reconstituée avec succès !",
+  "e2ePrompt.recovered.instructions": "Voici votre clé de chiffrement. Conservez-la précieusement dans un gestionnaire de mots de passe -- elle ne sera plus affichée.",
+  "e2ePrompt.recovered.key.aria": "Clé de chiffrement reconstituée",
+  "e2ePrompt.recovered.copy.aria": "Copier la clé dans le presse-papiers",
+  "e2ePrompt.recovered.copy": "Copier la clé",
+  "e2ePrompt.recovered.copied": "Copiée !",
+
+  // --- Account E2E Section ---
+  "account.e2e.title": "Chiffrement de bout en bout (E2E)",
+  "account.e2e.description": "Votre clé de chiffrement AES-256 n'est jamais envoyée au serveur. Elle est conservée dans votre onglet pour la durée de votre session. À la fermeture de l'onglet, elle est automatiquement purgée. À chaque nouvelle session, vous devrez la ressaisir. Conservez-la précieusement dans un gestionnaire de mots de passe.",
+  "account.e2e.yourKey": "Votre clé :",
+  "account.e2e.key.reveal": "Révéler",
+  "account.e2e.key.hide": "Masquer",
+  "account.e2e.key.copy": "Copier la clé",
+  "account.e2e.key.copied": "Copiée !",
+  "account.e2e.button.regenerate": "Régénérer la clé",
+  "account.e2e.button.revoke": "Supprimer la clé",
+  "account.e2e.button.sskr": "Créer des fragments de récupération",
+  "account.e2e.button.generate": "Générer une clé E2E",
+  "account.e2e.button.revokeAndCreate": "Supprimer l'ancienne clé et en créer une nouvelle",
+  "account.e2e.noKey": "Aucune clé E2E configurée. Générez une clé pour activer le chiffrement de bout en bout sur vos futurs partages.",
+  "account.e2e.import.warning": "Une clé E2E est enregistrée sur votre compte mais absente de ce navigateur. Importez-la pour accéder à vos partages chiffrés.",
+  "account.e2e.import.label": "Importer votre clé",
+  "account.e2e.import.placeholder": "Collez votre clé secrète ici...",
+  "account.e2e.import.submit": "Vérifier & importer",
+  "account.e2e.import.emptyError": "Veuillez entrer votre clé E2E",
+  "account.e2e.import.mismatchError": "Cette clé ne correspond pas à celle associée à votre compte",
+  "account.e2e.import.invalidError": "Clé invalide",
+  "account.e2e.recover.backDirect": "Retour à la saisie directe",
+  "account.e2e.recover.sskrLink": "Récupérer via fragments SSKR",
+  "account.e2e.recover.minShards": "Entrez au moins 2 fragments.",
+  "account.e2e.recover.mismatch": "La clé reconstituée ne correspond pas à celle de votre compte.",
+  "account.e2e.recover.error": "Impossible de reconstituer la clé.",
+  "account.e2e.confirm.regenerate.title": "Régénérer la clé de chiffrement",
+  "account.e2e.confirm.regenerate.body": "Une nouvelle clé sera générée et <strong>tous vos fichiers E2E seront re-chiffrés</strong> automatiquement. Cette opération peut prendre du temps selon le volume de données. Ne fermez pas l'onglet pendant le processus.",
+  "account.e2e.confirm.regenerate.confirm": "Régénérer",
+  "account.e2e.confirm.revoke.title": "Supprimer la clé de chiffrement",
+  "account.e2e.confirm.revoke.body": "Tous les partages E2E existants deviendront <strong>définitivement inaccessibles</strong>. Cette action est irréversible.",
+  "account.e2e.confirm.revoke.confirm": "Supprimer",
+  "account.e2e.toast.generated": "Clé E2E générée avec succès",
+  "account.e2e.toast.generateError": "Erreur lors de la génération de la clé",
+  "account.e2e.toast.reencrypted": "Clé régénérée et fichiers re-chiffrés avec succès",
+  "account.e2e.toast.reencryptError": "Re-chiffrement échoué : {error}. La nouvelle clé est active mais certains fichiers n'ont pas pu être re-chiffrés.",
+  "account.e2e.toast.imported": "Clé E2E importée avec succès",
+  "account.e2e.toast.recovered": "Clé reconstituée et importée avec succès.",
+  "account.e2e.toast.revoked": "Clé E2E supprimée",
+  "account.e2e.toast.revokeError": "Erreur lors de la suppression",
+
+  // SafeLine WAF 468 challenge notifications
+  "safeline.notify.title": "Vérification de sécurité requise",
+  "safeline.notify.message": "Le cookie WAF a expiré. Ouvrez {link} dans un nouvel onglet pour résoudre le challenge. L'upload reprendra automatiquement.",
+  "safeline.notify.link": "ce lien",
+  "safeline.os-notify.title": "PrivCloud -- Vérification requise",
+  "safeline.os-notify.body": "Le WAF nécessite une vérification. Revenez sur l'onglet PrivCloud et cliquez le lien.",
+  "safeline.title-flash": "⚠️ Vérification WAF requise !",
+  "safeline.download.failed": "Challenge SafeLine non résolu après {retries} tentatives"
 };

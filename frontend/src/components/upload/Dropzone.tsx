@@ -36,11 +36,13 @@ const Dropzone = ({
   title,
   isUploading,
   maxShareSize,
+  existingFilesSize = 0,
   onFilesChanged,
 }: {
   title?: string;
   isUploading: boolean;
   maxShareSize: number;
+  existingFilesSize?: number;
   onFilesChanged: (_files: FileUpload[]) => void;
 }) => {
   const t = useTranslate();
@@ -57,8 +59,9 @@ const Dropzone = ({
         openRef={openRef as ForwardedRef<() => void>}
         onDrop={(files: FileUpload[]) => {
           const fileSizeSum = files.reduce((n, { size }) => n + size, 0);
+          const isUnlimited = maxShareSize >= Number.MAX_SAFE_INTEGER;
 
-          if (fileSizeSum > maxShareSize) {
+          if (!isUnlimited && existingFilesSize + fileSizeSum > maxShareSize) {
             toast.error(
               t("upload.dropzone.notify.file-too-big", {
                 maxSize: byteToHumanSizeString(maxShareSize),
@@ -83,10 +86,14 @@ const Dropzone = ({
             {title || <FormattedMessage id="upload.dropzone.title" />}
           </Text>
           <Text align="center" size="sm" mt="xs" color="dimmed">
-            <FormattedMessage
-              id="upload.dropzone.description"
-              values={{ maxSize: byteToHumanSizeString(maxShareSize) }}
-            />
+            {maxShareSize >= Number.MAX_SAFE_INTEGER ? (
+              <FormattedMessage id="upload.dropzone.description.unlimited" />
+            ) : (
+              <FormattedMessage
+                id="upload.dropzone.description"
+                values={{ maxSize: byteToHumanSizeString(maxShareSize) }}
+              />
+            )}
           </Text>
         </div>
       </MantineDropzone>

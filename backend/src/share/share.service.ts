@@ -506,8 +506,43 @@ export class ShareService {
     return {
       ...share,
       hasPassword: !!share.security?.password,
+      previewEnabled: true,
       // Expose the encrypted reverse share key (K_rs wrapped by K_master).
       // It is AES-GCM ciphertext - useless without K_master, safe to expose.
+      encryptedReverseShareKey:
+        share.reverseShare?.encryptedReverseShareKey ?? null,
+    };
+  }
+
+  /**
+   * Same as get() but allows access to shares that are temporarily unlocked
+   * (uploadLocked=false) during editing.  Only used by the owner endpoint.
+   */
+  async getForOwner(id: string): Promise<unknown> {
+    const share = await this.prisma.share.findUnique({
+      where: { id },
+      include: {
+        files: {
+          orderBy: {
+            name: "asc",
+          },
+        },
+        creator: true,
+        security: true,
+        reverseShare: true,
+      },
+    });
+
+    if (!share)
+      throw new NotFoundException("Share not found");
+
+    if (share.removedReason)
+      throw new NotFoundException(share.removedReason, "share_removed");
+
+    return {
+      ...share,
+      hasPassword: !!share.security?.password,
+      previewEnabled: true,
       encryptedReverseShareKey:
         share.reverseShare?.encryptedReverseShareKey ?? null,
     };

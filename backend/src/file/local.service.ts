@@ -31,6 +31,7 @@ export class LocalFileService {
     chunk: { index: number; total: number },
     file: { id?: string; name: string },
     shareId: string,
+    clientChunkSize?: number,
   ) {
     const originalFileId = file.id;
     if (!file.id) {
@@ -71,8 +72,16 @@ export class LocalFileService {
     }
 
     // If the sent chunk index and the expected chunk index doesn't match throw an error
-    const chunkSize = this.config.get("share.chunkSize");
-    // Chaque chunk E2E chiffré a 28 octets de surcharge (12 IV + 16 GCM tag)
+    const configChunkSize = this.config.get("share.chunkSize");
+    // Accept client-provided chunkSize for adaptive uploads, clamped
+    // between 1 MB and 200 MB to prevent abuse.
+    const MIN_CHUNK = 1_000_000;
+    const MAX_CHUNK = 200_000_000;
+    const chunkSize =
+      clientChunkSize && clientChunkSize >= MIN_CHUNK && clientChunkSize <= MAX_CHUNK
+        ? clientChunkSize
+        : configChunkSize;
+     // Each E2E encrypted chunk has 28 bytes of overhead (12 IV + 16 GCM tag)
     const effectiveChunkSize = share.isE2EEncrypted
       ? chunkSize + 28
       : chunkSize;
@@ -150,6 +159,51 @@ export class LocalFileService {
       );
     }
     return file;
+  }
+
+  /**
+   * Replace the content of an existing file (re-encryption).
+   * Skips uploadLocked / quota checks and does NOT create a DB record.
+   */
+  async replace(
+    data: string,
+    chunk: { index: number; total: number },
+    fileId: string,
+    shareId: string,
+  ) {
+    if (!isValidUUID(fileId)) {
+      throw new BadRequestException("Invalid file ID format");
+    }
+
+    const tmpPath = `${SHARE_DIRECTORY}/${shareId}/${fileId}.tmp-reencrypt`;
+    const finalPath = `${SHARE_DIRECTORY}/${shareId}/${fileId}`;
+
+    // On first chunk, remove any stale temp file
+    if (chunk.index === 0) {
+      try { await fs.unlink(tmpPath); } catch { /* no stale file */ }
+    }
+
+    const buffer = Buffer.from(data, "base64");
+
+    await fs.appendFile(tmpPath, buffer);
+
+    const isLastChunk = chunk.index === chunk.total - 1;
+    this.logger.debug(
+      `Reencrypt chunk: shareId=${shareId} fileId=${fileId} chunkIndex=${chunk.index} chunkTotal=${chunk.total} last=${isLastChunk}`,
+    );
+
+    if (isLastChunk) {
+      await fs.rename(tmpPath, finalPath);
+      const fileSize = (await fs.stat(finalPath)).size;
+      // Update file size in DB (may differ slightly due to chunk alignment)
+      await this.prisma.file.update({
+        where: { id: fileId },
+        data: { size: fileSize.toString() },
+      });
+      this.logger.debug(
+        `File re-encrypted: shareId=${shareId} fileId=${fileId} size=${fileSize}`,
+      );
+    }
   }
 
   async get(shareId: string, fileId: string) {

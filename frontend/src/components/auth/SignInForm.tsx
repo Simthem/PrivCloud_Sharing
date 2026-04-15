@@ -86,6 +86,7 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
   const captchaSiteKey = config.get("hcaptcha.siteKey");
   const captchaRef = useRef<HCaptcha>(null);
   const [captchaToken, setCaptchaToken] = useState<string | undefined>();
+  const [isLoading, setIsLoading] = useState(false);
 
   const validationSchema = yup.object().shape({
     emailOrUsername: yup.string().required(t("common.error.field-required")),
@@ -101,6 +102,7 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
   });
 
   const signIn = async (email: string, password: string) => {
+    setIsLoading(true);
     await authService
       .signIn(email.trim(), password.trim(), captchaToken)
       .then(async (response) => {
@@ -123,7 +125,8 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
           router.replace(safeRedirectPath(redirectPath));
         }
       })
-      .catch(toast.axiosError);
+      .catch(toast.axiosError)
+      .finally(() => setIsLoading(false));
   };
 
   const handleCaptchaExpire = () => setCaptchaToken(undefined);
@@ -194,7 +197,7 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
                 </Anchor>
               </Group>
             )}
-            <Button fullWidth mt="xl" type="submit" disabled={captchaEnabled && !captchaToken}>
+            <Button fullWidth mt="xl" type="submit" loading={isLoading} disabled={captchaEnabled && !captchaToken}>
               <FormattedMessage id="signin.button.submit" />
             </Button>
             {captchaEnabled && captchaSiteKey && (

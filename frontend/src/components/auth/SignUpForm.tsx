@@ -34,6 +34,7 @@ const SignUpForm = () => {
   const captchaSiteKey = config.get("hcaptcha.siteKey");
   const captchaRef = useRef<HCaptcha>(null);
   const [captchaToken, setCaptchaToken] = useState<string | undefined>();
+  const [isLoading, setIsLoading] = useState(false);
   const handleCaptchaExpire = () => setCaptchaToken(undefined);
 
   const validationSchema = yup.object().shape({
@@ -58,6 +59,7 @@ const SignUpForm = () => {
   });
 
   const signUp = async (email: string, username: string, password: string) => {
+    setIsLoading(true);
     await authService
       .signUp(email.trim(), username.trim(), password.trim(), captchaToken)
       .then(async () => {
@@ -65,10 +67,11 @@ const SignUpForm = () => {
         if (user?.isAdmin) {
           router.replace("/admin/intro");
         } else {
-          router.replace("/upload");
+          router.replace("/account");
         }
       })
-      .catch(toast.axiosError);
+      .catch(toast.axiosError)
+      .finally(() => setIsLoading(false));
   };
 
   return (
@@ -107,7 +110,7 @@ const SignUpForm = () => {
             mt="md"
             {...form.getInputProps("password")}
           />
-          <Button fullWidth mt="xl" type="submit" disabled={captchaEnabled && !captchaToken}>
+          <Button fullWidth mt="xl" type="submit" loading={isLoading} disabled={captchaEnabled && !captchaToken}>
             <FormattedMessage id="signup.button.submit" />
           </Button>
           {captchaEnabled && captchaSiteKey && (

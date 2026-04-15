@@ -106,7 +106,7 @@ export class UserSevice {
     return await this.prisma.user.delete({ where: { id } });
   }
 
-  // ─── E2E Encryption Key Management ──────────────────────────────
+  // --- E2E Encryption Key Management ---
 
   async setEncryptionKeyHash(userId: string, keyHash: string) {
     return this.prisma.user.update({
@@ -134,8 +134,8 @@ export class UserSevice {
     if (!match) {
       this.logger.debug(
         `[E2E verify] hash mismatch for user ${userId} -- ` +
-          `stored: ${user.encryptionKeyHash.slice(0, 8)}… ` +
-          `submitted: ${keyHash.slice(0, 8)}…`,
+          `stored: ${user.encryptionKeyHash.slice(0, 8)}... ` +
+          `submitted: ${keyHash.slice(0, 8)}...`,
       );
     }
     return match;

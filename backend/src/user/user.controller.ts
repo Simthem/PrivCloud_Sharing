@@ -61,7 +61,8 @@ export class UserController {
 
     const isSecure = this.config.get("general.secureCookies");
 
-    response.cookie("access_token", "accessToken", {
+    response.cookie("access_token", "", {
+      httpOnly: true,
       maxAge: -1,
       secure: isSecure,
     });
@@ -73,7 +74,7 @@ export class UserController {
     });
   }
 
-  // ─── E2E Encryption Key Management ──────────────────────────────
+   // --- E2E Encryption Key Management ---
 
   @Put("me/encryption-key")
   @UseGuards(JwtGuard)

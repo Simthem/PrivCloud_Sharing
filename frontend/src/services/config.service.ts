@@ -22,7 +22,7 @@ const get = (key: string, configVariables: Config[]): any => {
     (variable) => variable.key == key,
   )[0];
 
-  if (!configVariable) throw new Error(`Config variable ${key} not found`);
+  if (!configVariable) return null;
 
   const value = configVariable.value ?? configVariable.defaultValue;
 

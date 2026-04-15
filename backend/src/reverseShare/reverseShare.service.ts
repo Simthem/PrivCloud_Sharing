@@ -107,20 +107,33 @@ export class ReverseShareService {
 
     if (!existing) throw new BadRequestException("Reverse share not found");
 
-    // Personal links (never-expiring) must not have their expiration changed.
-    if (existing.shareExpiration.getTime() === 0) {
-      throw new BadRequestException(
-        "Cannot modify expiration of a permanent personal link",
+    const updateData: Record<string, any> = {};
+
+    if (data.shareExpiration !== undefined) {
+      // Personal links (never-expiring) must not have their expiration changed.
+      if (existing.shareExpiration.getTime() === 0) {
+        throw new BadRequestException(
+          "Cannot modify expiration of a permanent personal link",
+        );
+      }
+      updateData.shareExpiration = parseRelativeDateToAbsolute(
+        data.shareExpiration,
       );
     }
 
-    const expirationDate = parseRelativeDateToAbsolute(data.shareExpiration);
+    if (data.encryptedReverseShareKey !== undefined) {
+      updateData.encryptedReverseShareKey = data.encryptedReverseShareKey;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      throw new BadRequestException("No fields to update");
+    }
 
     // RS link expiration is independent from share.maxExpiration (see create()).
 
     return this.prisma.reverseShare.update({
       where: { id },
-      data: { shareExpiration: expirationDate },
+      data: updateData,
     });
   }
 

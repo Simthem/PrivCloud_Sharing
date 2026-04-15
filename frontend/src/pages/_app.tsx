@@ -22,12 +22,18 @@ import {
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import dynamic from "next/dynamic";
 import Header from "../components/header/Header";
 import { ConfigContext } from "../hooks/config.hook";
 import { UserContext } from "../hooks/user.hook";
-import { LOCALES } from "../i18n/locales";
+import {
+  LOCALES,
+  englishMessages,
+  loadLocaleMessages,
+  setActiveMessages,
+} from "../i18n/locales";
 import authService from "../services/auth.service";
+import { isUploadActive } from "../services/api.service";
 import configService from "../services/config.service";
 import userService from "../services/user.service";
 import GlobalStyle from "../styles/global.style";
@@ -36,9 +42,20 @@ import Config from "../types/config.type";
 import { CurrentUser } from "../types/user.type";
 import i18nUtil from "../utils/i18n.util";
 import userPreferences from "../utils/userPreferences.util";
-import Footer from "../components/footer/Footer";
 import CookieConsent from "../components/cookie/CookieConsent";
+import E2EKeyPrompt from "../components/auth/E2EKeyPrompt";
 import { getUserKey, computeKeyHashFromEncoded } from "../utils/crypto.util";
+
+const ReactQueryDevtools = dynamic(
+  () =>
+    import("@tanstack/react-query-devtools").then((mod) => ({
+      default: mod.ReactQueryDevtools,
+    })),
+  { ssr: false },
+);
+const Footer = dynamic(() => import("../components/footer/Footer"), {
+  ssr: false,
+});
 
 const excludeDefaultLayoutRoutes = ["/admin/config/[category]"];
 
@@ -60,6 +77,9 @@ function App({ Component, pageProps }: AppProps) {
   const [configVariables, setConfigVariables] = useState<Config[]>(
     pageProps.configVariables,
   );
+
+  const [showE2EPrompt, setShowE2EPrompt] = useState(false);
+  const e2ePromptShownRef = useRef(false);
 
   useEffect(() => {
     setRoute(router.pathname);
@@ -131,6 +151,11 @@ function App({ Component, pageProps }: AppProps) {
     let consecutiveFailures = 0;
 
     const interval = setInterval(async () => {
+      // Skip token refresh entirely during uploads -- the upload loop
+      // handles its own auth retries and a refresh here can trigger a
+      // SafeLine 468 challenge that crashes the page.
+      if (isUploadActive()) return;
+
       if (!user && getCookie("logged_in")) {
         // Recovery path -- try to restore React user state.
         await recoverSession();
@@ -143,27 +168,28 @@ function App({ Component, pageProps }: AppProps) {
         consecutiveFailures = 0;
       } catch {
         consecutiveFailures++;
-        if (consecutiveFailures >= 2) {
+        if (consecutiveFailures >= 2 && !isUploadActive()) {
           setUser(null);
         }
       }
-    }, 10 * 1000); // 10 seconds -- cookie check is free (no network call)
+    }, 60 * 1000); // 60 seconds
 
     return () => clearInterval(interval);
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-refresh the E2E key hash on every authenticated page load.
-  // This keeps the server-side hash in sync with the local key and
-  // prevents verification mismatches on other browsers / devices.
   useEffect(() => {
     if (!user) return;
     const localKey = getUserKey();
-    if (!localKey) return;
-    computeKeyHashFromEncoded(localKey)
+    if (!localKey) {
+      if (user.hasEncryptionKey && !e2ePromptShownRef.current) {
+        e2ePromptShownRef.current = true;
+        setShowE2EPrompt(true);
+      }
+      return;
+    }
+    computeKeyHashFromEncoded(localKey, user.id)
       .then((hash) => userService.setEncryptionKeyHash(hash))
-      .catch(() => {
-        // Non-critical -- key may be malformed in storage
-      });
+      .catch(() => {});
   }, [user]);
 
   // Register service worker for PWA
@@ -207,13 +233,27 @@ function App({ Component, pageProps }: AppProps) {
   const language = useRef(pageProps.language);
   setDayjsLocale(language.current);
 
-  // fall back to english if key does not exist
+  const i18nMessagesRef = useRef<Record<string, string>>(
+    pageProps.i18nMessages ?? englishMessages,
+  );
+  if (pageProps.i18nMessages) {
+    i18nMessagesRef.current = pageProps.i18nMessages;
+  }
   const i18nMessages = useMemo(
-    () => ({
-      ...i18nUtil.getLocaleByCode(LOCALES.ENGLISH.code)?.messages,
-      ...i18nUtil.getLocaleByCode(language.current)?.messages,
-    }),
+    () => ({ ...englishMessages, ...i18nMessagesRef.current }),
     [language.current],
+  );
+  setActiveMessages(i18nMessages);
+
+  const mantineTheme = useMemo(
+    () => ({
+      colorScheme,
+      ...buildTheme(
+        configVariables?.find((c) => c.key === "general.colorPalette")
+          ?.value ?? "victoria",
+      ),
+    }),
+    [colorScheme, configVariables],
   );
 
   return (
@@ -234,14 +274,7 @@ function App({ Component, pageProps }: AppProps) {
             <MantineProvider
               withGlobalStyles
               withNormalizeCSS
-              theme={{
-                colorScheme,
-                ...buildTheme(
-                  configVariables?.find(
-                    (c) => c.key === "general.colorPalette",
-                  )?.value ?? "victoria",
-                ),
-              }}
+              theme={mantineTheme}
             >
               <ColorSchemeProvider
                 colorScheme={colorScheme}
@@ -279,7 +312,15 @@ function App({ Component, pageProps }: AppProps) {
                             <div>
                               <Header />
                               <main>
-                                <Container>
+                <Container
+                                  fluid={route === "/"}
+                                  px={route === "/" ? 0 : undefined}
+                                  sx={
+                                    route === "/"
+                                      ? { overflowX: "hidden" }
+                                      : undefined
+                                  }
+                                >
                                   <Component {...pageProps} />
                                 </Container>
                               </main>
@@ -287,6 +328,11 @@ function App({ Component, pageProps }: AppProps) {
                             <Footer />
                           </Stack>
                           <CookieConsent />
+                          <E2EKeyPrompt
+                            opened={showE2EPrompt}
+                            onClose={() => setShowE2EPrompt(false)}
+                            userId={user?.id ?? ""}
+                          />
                         </>
                       )}
                     </UserContext.Provider>
@@ -296,7 +342,9 @@ function App({ Component, pageProps }: AppProps) {
             </MantineProvider>
           </IntlProvider>
         </HydrationBoundary>
-        <ReactQueryDevtools initialIsOpen={false} />
+        {process.env.NODE_ENV === "development" && (
+          <ReactQueryDevtools initialIsOpen={false} />
+        )}
       </QueryClientProvider>
     </>
   );
@@ -311,6 +359,7 @@ App.getInitialProps = async ({ ctx }: { ctx: GetServerSidePropsContext }) => {
     route?: string;
     colorScheme: ColorScheme;
     language?: string;
+    i18nMessages?: Record<string, string>;
   } = {
     route: ctx.resolvedUrl,
     colorScheme:
@@ -320,47 +369,50 @@ App.getInitialProps = async ({ ctx }: { ctx: GetServerSidePropsContext }) => {
   if (ctx.req) {
     const apiURL = process.env.API_URL || "http://127.0.0.1:8080";
     const cookieHeader = ctx.req.headers.cookie;
+    const hasSession = cookieHeader?.includes("logged_in=");
 
-    pageProps.user = await axios(`${apiURL}/api/users/me`, {
-      headers: { cookie: cookieHeader },
-    })
-      .then((res) => res.data)
-      .catch(() => null);
+    if (hasSession) {
+      pageProps.user = await axios(`${apiURL}/api/users/me`, {
+        headers: { cookie: cookieHeader },
+      })
+        .then((res) => res.data)
+        .catch(() => null);
 
-    // SSR token refresh: when the access_token cookie has expired but
-    // the refresh_token is still valid, ask the backend to issue a new
-    // access_token and retry the user fetch.  This avoids the flash of
-    // "logged-out" UI that otherwise happens on every full page load
-    // after 13 min of inactivity.
-    if (!pageProps.user && cookieHeader?.includes("refresh_token=")) {
-      try {
-        const refreshRes = await axios.post(
-          `${apiURL}/api/auth/token`,
-          {},
-          { headers: { cookie: cookieHeader } },
-        );
-        // Forward the Set-Cookie from the refresh response to the
-        // browser so the new access_token cookie is stored.
-        const setCookieHeaders = refreshRes.headers["set-cookie"];
-        if (setCookieHeaders && ctx.res) {
-          ctx.res.setHeader("Set-Cookie", setCookieHeaders);
+      // SSR token refresh: when the access_token cookie has expired but
+      // the refresh_token is still valid, ask the backend to issue a new
+      // access_token and retry the user fetch.  This avoids the flash of
+      // "logged-out" UI that otherwise happens on every full page load
+      // after 13 min of inactivity.
+      if (!pageProps.user && cookieHeader?.includes("refresh_token=")) {
+        try {
+          const refreshRes = await axios.post(
+            `${apiURL}/api/auth/token`,
+            {},
+            { headers: { cookie: cookieHeader } },
+          );
+          // Forward the Set-Cookie from the refresh response to the
+          // browser so the new access_token cookie is stored.
+          const setCookieHeaders = refreshRes.headers["set-cookie"];
+          if (setCookieHeaders && ctx.res) {
+            ctx.res.setHeader("Set-Cookie", setCookieHeaders);
+          }
+          // Extract the fresh access_token from the Set-Cookie to use
+          // it in the retry call (the cookie jar on the server is not
+          // automatically updated).
+          const freshCookie = setCookieHeaders
+            ?.find((c: string) => c.startsWith("access_token="));
+          if (freshCookie) {
+            const token = freshCookie.split(";")[0]; // "access_token=xxx"
+            pageProps.user = await axios(`${apiURL}/api/users/me`, {
+              headers: { cookie: `${cookieHeader}; ${token}` },
+            })
+              .then((res) => res.data)
+              .catch(() => null);
+          }
+        } catch {
+          // Refresh token also expired -- nothing to do, client-side
+          // recovery will handle it.
         }
-        // Extract the fresh access_token from the Set-Cookie to use
-        // it in the retry call (the cookie jar on the server is not
-        // automatically updated).
-        const freshCookie = setCookieHeaders
-          ?.find((c: string) => c.startsWith("access_token="));
-        if (freshCookie) {
-          const token = freshCookie.split(";")[0]; // "access_token=xxx"
-          pageProps.user = await axios(`${apiURL}/api/users/me`, {
-            headers: { cookie: `${cookieHeader}; ${token}` },
-          })
-            .then((res) => res.data)
-            .catch(() => null);
-        }
-      } catch {
-        // Refresh token also expired -- nothing to do, client-side
-        // recovery will handle it.
       }
     }
 
@@ -373,6 +425,12 @@ App.getInitialProps = async ({ ctx }: { ctx: GetServerSidePropsContext }) => {
     );
 
     pageProps.language = ctx.req.cookies["language"] ?? requestLanguage;
+
+    if (pageProps.language) {
+      pageProps.i18nMessages = await loadLocaleMessages(pageProps.language).catch(
+        () => undefined,
+      );
+    }
   }
   return { pageProps };
 };

@@ -3,10 +3,12 @@
 # ---------------------------
 # CVE-2026-27141: caddy:2-alpine embarque golang.org/x/net v0.50.0 (vuln).
 # On clone les sources Caddy, on force golang.org/x/net >= v0.51.0, puis on compile.
-# Go 1.26.1 : corrige CVE-2026-27142, CVE-2026-25679, CVE-2026-27139
-# + correctifs stdlib supplémentaires (dernière version stable).
+# Go 1.26.2 : corrige CVE-2026-27142, CVE-2026-25679, CVE-2026-27139
+# + CVE-2026-32280 (HIGH), CVE-2026-32282 (HIGH), CVE-2026-32281 (MEDIUM),
+# + CVE-2026-32288 (MEDIUM), CVE-2026-32289 (MEDIUM), CVE-2026-32283 (UNKNOWN),
+# + CVE-2026-33810 (UNKNOWN) -- tous fixés en 1.26.2.
 # Caddy 2.11.2 requis pour fixer CVE-2026-30851 (HIGH), CVE-2026-30852 (MEDIUM).
-FROM golang:1.26.1-alpine AS caddy-builder
+FROM golang:1.26.2-alpine AS caddy-builder
 # CVE-2026-27171 : zlib 1.3.1-r2 -> 1.3.2-r0 disponible dans Alpine
 RUN apk upgrade --no-cache && apk add --no-cache git
 RUN git clone --depth 1 --branch v2.11.2 \
@@ -14,26 +16,47 @@ RUN git clone --depth 1 --branch v2.11.2 \
 WORKDIR /caddy
 # Forcer la mise à jour des dépendances vulnérables
 # CVE-2026-33186 (CVSS 9.1, CRITICAL) : google.golang.org/grpc < 1.79.3
-# GHSA-q4r8-xm5f-56gw (CRITICAL) : github.com/smallstep/certificates v0.30.0-rc3 -> 0.30.0
+# GHSA-q4r8-xm5f-56gw (CRITICAL) + CVE-2026-30836 (CVSS 7.8, HIGH) : github.com/smallstep/certificates < 0.30.2
 # CVE-2026-34986 (CVSS 8.7, HIGH) : github.com/go-jose/go-jose v3 < 3.0.5, v4 < 4.1.4
+# CVE-2026-33816 (CVSS 8.7, HIGH) + CVE-2026-33815 (CVSS 8.2, HIGH) : github.com/jackc/pgx/v5 < 5.9.0
+# CVE-2026-33817 (CVSS 6.9, MEDIUM) : go.etcd.io/bbolt (no release yet, pin to fix commit)
+# SNYK-GOLANG-GOOPENTELEMETRYIO* (HIGH x4) : go.opentelemetry.io/otel < 1.43.0
+# SNYK-GOLANG-GITHUBCOMYUINGOLDMARKRENDERERHTML-15838406 (MEDIUM) : goldmark XSS < 1.7.17
+# go mod tidy runs FIRST, then we re-pin smallstep + bbolt AFTER to prevent transitive downgrade
 RUN go get golang.org/x/net@latest \
+    && go get github.com/yuin/goldmark@v1.7.17 \
     && go get google.golang.org/grpc@v1.79.3 \
-    && go get github.com/smallstep/certificates@v0.30.0 \
     && go get github.com/go-jose/go-jose/v3@v3.0.5 \
     && go get github.com/go-jose/go-jose/v4@v4.1.4 \
-    && go mod tidy
+    && go get github.com/jackc/pgx/v5@v5.9.0 \
+    && go get go.opentelemetry.io/otel@v1.43.0 \
+    && go get go.opentelemetry.io/otel/sdk@v1.43.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.43.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp@v1.43.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.19.0 \
+    && go get github.com/smallstep/certificates@v0.30.2 \
+    && go get go.etcd.io/bbolt@cae11e991754 \
+    && go mod tidy \
+    && go mod edit -require=github.com/smallstep/certificates@v0.30.2 \
+    && go get github.com/smallstep/certificates@v0.30.2 \
+    && go mod edit \
+        -require=go.etcd.io/bbolt@v1.4.0-beta.0.0.20260331144421-cae11e991754 \
+        -replace=go.etcd.io/bbolt=go.etcd.io/bbolt@v1.4.0-beta.0.0.20260331144421-cae11e991754 \
+    && go mod download go.etcd.io/bbolt \
+    && go mod tidy \
+    && echo "=== go.mod: smallstep + bbolt ===" && grep -E 'smallstep|bbolt' go.mod
 # Compiler Caddy (binaire statique, stripped, sans symboles de debug)
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/caddy \
     && go clean -cache -modcache
 
 # ---------------------------
-# Stage 0b: Build gosu from source (Go 1.26.1)
+# Stage 0b: Build gosu from source (Go 1.26.2)
 # ---------------------------
 # Le gosu packagé par Debian (apt) est compilé avec Go 1.19.8, ce qui injecte
 # 54 CVEs Go stdlib dans l'image finale (4 CRITICAL, 20 HIGH, 28 MEDIUM, 2 LOW).
-# On compile gosu depuis les sources avec Go 1.26.1 : binaire statique,
+# On compile gosu depuis les sources avec Go 1.26.2 : binaire statique,
 # zéro dépendance système, zéro CVE Go stdlib.
-FROM golang:1.26.1-alpine AS gosu-builder
+FROM golang:1.26.2-alpine AS gosu-builder
 # CVE-2026-27171 : zlib 1.3.1-r2 -> 1.3.2-r0 disponible dans Alpine
 RUN apk upgrade --no-cache
 RUN CGO_ENABLED=0 go install -trimpath -ldflags='-s -w' github.com/tianon/gosu@latest
@@ -47,6 +70,12 @@ RUN CGO_ENABLED=0 go install -trimpath -ldflags='-s -w' github.com/tianon/gosu@l
 # VERSION.dat already reads PATCH=2 -- we only strip PRE_RELEASE_TAG=dev
 # so the binary identifies as 3.6.2 (the code IS post-fix).
 # ABI-compatible: libssl.so.3 / libcrypto.so.3 soname unchanged across 3.x.
+#
+# NOTE: this stage takes ~5-10 min to compile. If you want to speed up
+# subsequent builds, build this stage once and tag it:
+#   docker build --target openssl-builder -t my-registry/openssl-cache .
+# Then replace the FROM line below with:
+#   FROM my-registry/openssl-cache AS openssl-builder
 FROM debian:trixie-slim AS openssl-builder
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
@@ -72,6 +101,56 @@ RUN ./Configure --prefix=/usr/local/openssl --openssldir=/usr/local/openssl/ssl 
     make install_sw && \
     # Verify the built version (must use its own libs, not Debian's 3.5.5)
     LD_LIBRARY_PATH=/usr/local/openssl/lib /usr/local/openssl/bin/openssl version
+
+# ---------------------------
+# Stage 0d: Build Node.js from source with OpenSSL 3.6.2
+# ---------------------------
+# CVE-2026-2673 (HIGH): Node 24 embeds OpenSSL 3.5.5 statically.
+# Replacing .so files on the host does NOT fix the binary scan detection.
+# We compile Node.js from source with --shared-openssl pointing to our
+# OpenSSL 3.6.2 libs, so the node binary links dynamically against the
+# patched OpenSSL instead of embedding the vulnerable version.
+#
+# NOTE: this stage takes ~15-25 min to compile. If you want to speed up
+# subsequent builds, build this stage once and tag it:
+#   docker build --target node-builder -t my-registry/node-cache .
+# Then replace the FROM line below with:
+#   FROM my-registry/node-cache AS node-builder
+FROM debian:trixie-slim AS node-builder
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY=localhost,127.0.0.1,::1
+ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY}
+ENV http_proxy=${HTTP_PROXY} https_proxy=${HTTPS_PROXY}
+ENV NO_PROXY=${NO_PROXY}
+
+COPY --from=openssl-builder /usr/local/openssl /usr/local/openssl
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential ca-certificates curl python3 xz-utils && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Download the Node.js source matching the base image (node:24-slim).
+# Update NODE_VERSION when upgrading the base image.
+ARG NODE_VERSION=24.14.1
+RUN curl -sL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}.tar.xz" \
+      | tar xJ -C / && \
+    mv "/node-v${NODE_VERSION}" /node-src
+
+WORKDIR /node-src
+# Compile Node.js with --shared-openssl pointing to our OpenSSL 3.6.2 build.
+# --without-npm: npm is copied from the base image (already patched).
+RUN ./configure \
+      --shared-openssl \
+      --shared-openssl-includes=/usr/local/openssl/include \
+      --shared-openssl-libpath=/usr/local/openssl/lib \
+      --without-npm && \
+    make -j"$(nproc)" && \
+    strip out/Release/node && \
+    # Verify the binary links against our OpenSSL
+    LD_LIBRARY_PATH=/usr/local/openssl/lib ldd out/Release/node | grep -q libssl && \
+    echo "Node.js linked against shared OpenSSL -- OK"
 
 # ---------------------------
 # Stage 1: Base  (Debian Bookworm slim)
@@ -226,20 +305,6 @@ RUN npx prisma generate
 RUN npm run build && npm prune --omit=dev
 
 # ---------------------------
-# Stage 5b: Caddyfile patching (build-only)
-# ---------------------------
-# Ce stage intermédiaire patch les Caddyfiles avec sed (disponible dans base).
-# On évite ainsi toute dépendance à sed dans le runner après durcissement.
-FROM base AS caddyfile-patcher
-WORKDIR /opt/app
-COPY ./reverse-proxy /opt/app/reverse-proxy
-# Certains systèmes résolvent « localhost » en ::1 (IPv6) avant 127.0.0.1 (IPv4).
-# NestJS n'écoute qu'en IPv4 -> Caddy obtient "connection refused" sur [::1]:8080.
-RUN sed -i 's|http://localhost:|http://127.0.0.1:|g' \
-    /opt/app/reverse-proxy/Caddyfile \
-    /opt/app/reverse-proxy/Caddyfile.trust-proxy
-
-# ---------------------------
 # Stage 6: Final runner image - Debian Trixie (13) slim
 # ---------------------------
 # Debian Bookworm (12) via node:24-slim souffrait de ~86 CVEs (Trivy) /
@@ -332,9 +397,10 @@ ENV http_proxy=
 ENV https_proxy=
 ENV NO_PROXY=
 
-# --- Node.js runtime (copié depuis le stage build Bookworm) ---
-# Le binaire est compatible glibc 2.36 -> 2.40 (rétro-compatible).
-COPY --from=base /usr/local/bin/node /usr/local/bin/node
+# --- Node.js runtime (compiled from source with shared OpenSSL 3.6.2) ---
+# Links dynamically against libssl.so.3 / libcrypto.so.3 (our 3.6.2 build)
+# instead of embedding vulnerable OpenSSL 3.5.5 statically.
+COPY --from=node-builder /node-src/out/Release/node /usr/local/bin/node
 # npm est nécessaire pour 'npm run prod' dans entrypoint.sh
 # (prisma migrate deploy && prisma db seed && node dist/src/main).
 # On copie le npm patché (minimatch + tar + picomatch corrigés dans le stage base).
@@ -461,9 +527,9 @@ COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/type-fe
 # --- Caddy : recompilé depuis les sources (golang.org/x/net patché) ---
 COPY --from=caddy-builder /usr/bin/caddy /usr/bin/caddy
 
-# --- Reverse proxy : Caddyfiles pré-patchés (sed dans le stage caddyfile-patcher) ---
+# --- Reverse proxy : Caddyfiles (already use 127.0.0.1 in source) ---
 WORKDIR /opt/app
-COPY --chown=1000:1000 --from=caddyfile-patcher /opt/app/reverse-proxy /opt/app/reverse-proxy
+COPY --chown=1000:1000 ./reverse-proxy /opt/app/reverse-proxy
 COPY --chown=1000:1000 ./scripts/docker ./scripts/docker
 
 # Ownership applicatif défini via COPY --chown=1000:1000 (build-time, zero-cost).

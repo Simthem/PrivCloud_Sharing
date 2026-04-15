@@ -61,14 +61,17 @@ email:
     Hey!
 
 
-    {creator} ({creatorEmail}) shared some files with you. You can view or download the
+    {creator} ({creatorEmail}) shared some files with you.
+
+
+    Title: {name}
+    Description: {desc}
+
+    You can view or download the
     files with this link: {shareUrl}
 
 
     The share will expire {expires}.
-
-
-    Note: {desc}
 
 
     Shared securely with PrivCloud_Sharing 🦦

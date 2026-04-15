@@ -1,6 +1,6 @@
 import { getCookie } from "cookies-next";
 import { createIntl, createIntlCache, useIntl } from "react-intl";
-import i18nUtil from "../utils/i18n.util";
+import { getActiveMessages } from "../i18n/locales";
 
 const useTranslate = () => {
   const intl = useIntl();
@@ -22,15 +22,10 @@ export const translateOutsideContext = () => {
       ? navigator.language.split("-")[0]
       : "en");
 
-  // fall back to english if key does not exist
-  const englishMessages = i18nUtil.getLocaleByCode("en-US")?.messages;
   const intl = createIntl(
     {
       locale,
-      messages: {
-        ...englishMessages,
-        ...i18nUtil.getLocaleByCode(locale)?.messages,
-      },
+      messages: getActiveMessages(),
       defaultLocale: "en",
     },
     cache,

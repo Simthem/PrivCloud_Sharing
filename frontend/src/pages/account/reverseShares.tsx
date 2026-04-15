@@ -1,13 +1,14 @@
 import {
   Accordion,
   ActionIcon,
-  Anchor,
   Box,
   Button,
+  Card,
   Center,
   Checkbox,
   Code,
   Col,
+  Collapse,
   Grid,
   Group,
   NumberInput,
@@ -20,9 +21,11 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
+import { useMediaQuery } from "@mantine/hooks";
 import { useModals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "../../utils/dayjs";
+import Link from "next/link";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   TbCheck,
@@ -39,6 +42,7 @@ import {
   TbTrash,
   TbWorldCheck,
   TbWorldOff,
+  TbChevronDown,
 } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import Meta from "../../components/Meta";
@@ -65,6 +69,7 @@ import {
 
 // -- K_rs display component (similar to master key in E2E settings) --
 const RsKeyDisplay = ({ rsKey }: { rsKey: string }) => {
+  const t = useTranslate();
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
   const masked = rsKey.slice(0, 8) + "••••••••••••" + rsKey.slice(-8);
@@ -72,8 +77,7 @@ const RsKeyDisplay = ({ rsKey }: { rsKey: string }) => {
   return (
     <Stack spacing="xs">
       <Text size="sm" color="dimmed">
-        AES-256 encryption key for this reverse share. Store it safely --
-        without it, uploaded files cannot be decrypted.
+        {t("account.reverseShares.rsKey.description")}
       </Text>
       <Group spacing="xs" noWrap>
         <Code
@@ -87,7 +91,7 @@ const RsKeyDisplay = ({ rsKey }: { rsKey: string }) => {
         >
           {revealed ? rsKey : masked}
         </Code>
-        <Tooltip label={revealed ? "Hide" : "Reveal"}>
+        <Tooltip label={revealed ? t("account.reverseShares.rsKey.hide") : t("account.reverseShares.rsKey.reveal")}>
           <ActionIcon
             variant="light"
             size="sm"
@@ -96,7 +100,7 @@ const RsKeyDisplay = ({ rsKey }: { rsKey: string }) => {
             {revealed ? <TbEyeOff size={14} /> : <TbEye size={14} />}
           </ActionIcon>
         </Tooltip>
-        <Tooltip label={copied ? "Copied!" : "Copy"}>
+        <Tooltip label={copied ? t("account.reverseShares.rsKey.copied") : t("account.reverseShares.rsKey.copy")}>
           <ActionIcon
             variant="light"
             size="sm"
@@ -151,10 +155,10 @@ const EditExpirationBody = ({
       await shareService.updateReverseShare(reverseShareId, {
         shareExpiration,
       });
-      toast.success("Expiration updated");
+      toast.success(t("account.reverseShares.notify.expiration-updated"));
       onSaved();
     } catch {
-      toast.error("Failed to update expiration");
+      toast.error(t("account.reverseShares.notify.expiration-update-failed"));
     }
   });
 
@@ -253,6 +257,8 @@ const MyShares = () => {
   const modals = useModals();
   const t = useTranslate();
   const queryClient = useQueryClient();
+  const isMobile = useMediaQuery("(max-width: 680px)");
+  const [expandedRs, setExpandedRs] = useState<string | null>(null);
 
   const config = useConfig();
 
@@ -278,15 +284,26 @@ const MyShares = () => {
     },
   });
 
-  // -- Copier le lien reverse share avec fragment E2E si applicable --
-  // Cache des clés K_rs déchiffrées : reverseShareId → base64url de K_rs
+  const deleteShareMutation = useMutation({
+    mutationFn: (shareId: string) => shareService.remove(shareId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["myReverseShares"] });
+      toast.success(t("account.shares.notify.deleted-success"));
+    },
+    onError: () => {
+      toast.error(t("account.shares.notify.delete-fail"));
+    },
+  });
+
+  // -- Copy reverse share link with E2E fragment if applicable --
+  // Cache of decrypted K_rs keys: reverseShareId -> base64url of K_rs
   const [rsKeyCache, setRsKeyCache] = useState<Record<string, string>>({});
 
   const unwrapRsKey = useCallback(
     async (reverseShare: MyReverseShare): Promise<string | null> => {
       if (!reverseShare.encryptedReverseShareKey) return null;
 
-      // Retourner depuis le cache si disponible
+      // Return from cache if available
       if (rsKeyCache[reverseShare.id]) return rsKeyCache[reverseShare.id];
 
       try {
@@ -302,7 +319,7 @@ const MyShares = () => {
         return rsKeyEncoded;
       } catch (e) {
         console.error(
-          "Erreur lors du déchiffrement de la clé reverse share",
+          "Failed to decrypt reverse share key",
           e,
         );
         return null;
@@ -311,7 +328,7 @@ const MyShares = () => {
     [rsKeyCache],
   );
 
-  // Pré-déchiffrer les clés au chargement
+  // Pre-decrypt keys on load
   useEffect(() => {
     if (!reverseShares) return;
     reverseShares.forEach((rs) => {
@@ -337,7 +354,7 @@ const MyShares = () => {
     }
   };
 
-  // Copier le lien d'un share reçu via reverse share (avec K_rs)
+  // Copy the link for a share received via reverse share (with K_rs)
   const handleCopyShareLink = async (
     shareId: string,
     reverseShare: MyReverseShare,
@@ -361,11 +378,11 @@ const MyShares = () => {
   const handleShowRsKey = async (reverseShare: MyReverseShare) => {
     const rsKeyEncoded = await unwrapRsKey(reverseShare);
     if (!rsKeyEncoded) {
-      toast.error("Unable to decrypt the reverse share key");
+      toast.error(t("account.reverseShares.notify.decrypt-key-failed"));
       return;
     }
     modals.openModal({
-      title: "Reverse share encryption key",
+      title: t("account.reverseShares.rsKey.title"),
       children: <RsKeyDisplay rsKey={rsKeyEncoded} />,
     });
   };
@@ -452,7 +469,156 @@ const MyShares = () => {
             </Text>
           </Stack>
         </Center>
+      ) : isMobile ? (
+        /* Mobile: card layout with expandable sub-shares */
+        <Stack spacing="sm">
+          {reverseShares.map((reverseShare) => {
+            const isOpen = expandedRs === reverseShare.id;
+            const hasShares = reverseShare.shares.length > 0;
+            return (
+              <Card key={reverseShare.id} withBorder padding="sm" radius="md">
+                {/* RS header card */}
+                <Group position="apart" noWrap mb={4}
+                  onClick={hasShares ? () => setExpandedRs(isOpen ? null : reverseShare.id) : undefined}
+                  sx={hasShares ? { cursor: "pointer" } : undefined}
+                >
+                  <Box style={{ minWidth: 0, flex: 1 }}>
+                    <Group spacing={6} noWrap>
+                      <Text size="sm" weight={600} lineClamp={1}>
+                        {reverseShare.name || reverseShare.id}
+                      </Text>
+                      {reverseShare.publicAccess ? (
+                        <TbWorldCheck size={16} color="teal" />
+                      ) : (
+                        <TbWorldOff size={16} color="gray" />
+                      )}
+                    </Group>
+                  </Box>
+                  {hasShares && (
+                    <ActionIcon
+                      variant="subtle"
+                      size={28}
+                      sx={{ transition: "transform 200ms", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}
+                    >
+                      <TbChevronDown size={18} />
+                    </ActionIcon>
+                  )}
+                </Group>
+
+                {/* RS metadata */}
+                <Group spacing="xs" mb={8}>
+                  <Text size="xs" color="dimmed">
+                    {hasShares
+                      ? reverseShare.shares.length === 1
+                        ? `1 ${t("account.reverseShares.table.count.singular")}`
+                        : `${reverseShare.shares.length} ${t("account.reverseShares.table.count.plural")}`
+                      : t("account.reverseShares.table.no-shares")}
+                  </Text>
+                  <Text size="xs" color="dimmed">
+                    {t("account.reverseShares.table.max-size")}: {byteToHumanSizeString(parseInt(reverseShare.maxShareSize))}
+                  </Text>
+                  <Text size="xs" color="dimmed">
+                    {dayjs(reverseShare.shareExpiration).unix() === 0
+                      ? t("account.shares.table.expiry-never")
+                      : `${t("account.reverseShares.table.expires")} ${dayjs(reverseShare.shareExpiration).format("L")}`}
+                  </Text>
+                  {dayjs(reverseShare.shareExpiration).unix() !== 0 && (
+                    <Text size="xs" color="dimmed">
+                      <FormattedMessage id="account.reverseShares.table.remaining" />: {reverseShare.remainingUses}
+                    </Text>
+                  )}
+                </Group>
+
+                {/* RS action buttons */}
+                <Group spacing={6} mb={hasShares ? 0 : undefined}>
+                  {reverseShare.encryptedReverseShareKey && (
+                    <ActionIcon color="yellow" variant="light" size={28} onClick={() => handleShowRsKey(reverseShare)}>
+                      <TbKey />
+                    </ActionIcon>
+                  )}
+                  {dayjs(reverseShare.shareExpiration).unix() !== 0 && (
+                    <ActionIcon color="blue" variant="light" size={28} onClick={() => handleEditExpiration(reverseShare)}>
+                      <TbPencil />
+                    </ActionIcon>
+                  )}
+                  <ActionIcon variant="light" size={28} onClick={() => handleCopyReverseShareLink(reverseShare)}>
+                    <TbLink />
+                  </ActionIcon>
+                  <ActionIcon variant="light" size={28} onClick={async () => {
+                    let link = `${config.get("general.appUrl")}/upload/${reverseShare.token}`;
+                    const rsKeyEncoded = await unwrapRsKey(reverseShare);
+                    if (rsKeyEncoded) link += `#key=${rsKeyEncoded}`;
+                    showQrCodeModal(modals, link);
+                  }}>
+                    <TbQrcode />
+                  </ActionIcon>
+                  <ActionIcon color="red" variant="light" size={28} onClick={() => {
+                    modals.openConfirmModal({
+                      title: t("account.reverseShares.modal.delete.title"),
+                      children: <Text size="sm"><FormattedMessage id="account.reverseShares.modal.delete.description" /></Text>,
+                      confirmProps: { color: "red" },
+                      labels: { confirm: t("common.button.delete"), cancel: t("common.button.cancel") },
+                      onConfirm: () => deleteReverseShareMutation.mutate(reverseShare.id),
+                    });
+                  }}>
+                    <TbTrash />
+                  </ActionIcon>
+                </Group>
+
+                {/* Expandable sub-shares */}
+                {hasShares && (
+                  <Collapse in={isOpen}>
+                    <Stack spacing={6} mt="sm" pt="sm" sx={(theme) => ({ borderTop: `1px solid ${theme.colorScheme === "dark" ? theme.colors.dark[4] : theme.colors.gray[2]}` })}>
+                      {reverseShare.shares.map((share) => {
+                        const shareHref = rsKeyCache[reverseShare.id]
+                          ? `/share/${share.id}#key=${rsKeyCache[reverseShare.id]}`
+                          : `/share/${share.id}`;
+                        return (
+                          <Card key={share.id} withBorder padding="xs" radius="sm" sx={(theme) => ({ backgroundColor: theme.colorScheme === "dark" ? theme.colors.dark[6] : theme.colors.gray[0] })}>
+                            <Group position="apart" noWrap>
+                              <Box style={{ minWidth: 0, flex: 1 }}>
+                                <Link href={shareHref} style={{ textDecoration: "none", color: "inherit" }}>
+                                  <Text size="xs" weight={500} lineClamp={1} sx={{ "&:hover": { textDecoration: "underline" } }}>
+                                    {share.name || share.id}
+                                  </Text>
+                                </Link>
+                                {share.description && (
+                                  <Text size="xs" color="dimmed" lineClamp={1}>{share.description}</Text>
+                                )}
+                              </Box>
+                              <Group spacing={4} noWrap>
+                                {share.security.passwordProtected && <TbLock size={14} color="orange" />}
+                                <ActionIcon color="teal" variant="light" size={24} component={Link} href={shareHref}>
+                                  <TbEye size={14} />
+                                </ActionIcon>
+                                <ActionIcon variant="light" size={24} onClick={() => handleCopyShareLink(share.id, reverseShare)}>
+                                  <TbLink size={14} />
+                                </ActionIcon>
+                                <ActionIcon color="red" variant="light" size={24} onClick={() => {
+                                  modals.openConfirmModal({
+                                    title: t("account.reverseShares.modal.delete-share.title"),
+                                    children: <Text size="sm"><FormattedMessage id="account.reverseShares.modal.delete-share.description" /></Text>,
+                                    confirmProps: { color: "red" },
+                                    labels: { confirm: t("common.button.delete"), cancel: t("common.button.cancel") },
+                                    onConfirm: () => deleteShareMutation.mutate(share.id),
+                                  });
+                                }}>
+                                  <TbTrash size={14} />
+                                </ActionIcon>
+                              </Group>
+                            </Group>
+                          </Card>
+                        );
+                      })}
+                    </Stack>
+                  </Collapse>
+                )}
+              </Card>
+            );
+          })}
+        </Stack>
       ) : (
+        /* Desktop: table layout */
         <Box sx={{ display: "block", overflowX: "auto" }}>
           <Table>
             <thead>
@@ -507,18 +673,18 @@ const MyShares = () => {
                             {reverseShare.shares.map((share) => (
                               <Stack key={share.id} mb={6} spacing={2}>
                                 <Group spacing="xs">
-                                  <Anchor
+                                  <Link
                                     href={
                                       rsKeyCache[reverseShare.id]
-                                        ? `${config.get("general.appUrl")}/share/${share.id}#key=${rsKeyCache[reverseShare.id]}`
-                                        : `${config.get("general.appUrl")}/share/${share.id}`
+                                        ? `/share/${share.id}#key=${rsKeyCache[reverseShare.id]}`
+                                        : `/share/${share.id}`
                                     }
-                                    target="_blank"
+                                    style={{ textDecoration: "none", color: "inherit" }}
                                   >
-                                    <Text maw={120} truncate>
+                                    <Text maw={120} truncate size="sm" sx={{ "&:hover": { textDecoration: "underline" } }}>
                                       {share.name || share.id}
                                     </Text>
-                                  </Anchor>
+                                  </Link>
                                   {share.security.passwordProtected && (
                                     <Tooltip
                                       label={t(
@@ -536,13 +702,12 @@ const MyShares = () => {
                                     color="teal"
                                     variant="light"
                                     size={25}
-                                    component="a"
+                                    component={Link}
                                     href={
                                       rsKeyCache[reverseShare.id]
                                         ? `/share/${share.id}#key=${rsKeyCache[reverseShare.id]}`
                                         : `/share/${share.id}`
                                     }
-                                    target="_blank"
                                   >
                                     <TbEye />
                                   </ActionIcon>
@@ -555,6 +720,30 @@ const MyShares = () => {
                                   }
                                 >
                                   <TbLink />
+                                </ActionIcon>
+                                <ActionIcon
+                                  color="red"
+                                  variant="light"
+                                  size={25}
+                                  onClick={() => {
+                                    modals.openConfirmModal({
+                                      title: t("account.reverseShares.modal.delete-share.title"),
+                                      children: (
+                                        <Text size="sm">
+                                          <FormattedMessage id="account.reverseShares.modal.delete-share.description" />
+                                        </Text>
+                                      ),
+                                      confirmProps: { color: "red" },
+                                      labels: {
+                                        confirm: t("common.button.delete"),
+                                        cancel: t("common.button.cancel"),
+                                      },
+                                      onConfirm: () =>
+                                        deleteShareMutation.mutate(share.id),
+                                    });
+                                  }}
+                                >
+                                  <TbTrash />
                                 </ActionIcon>
                                 </Group>
                                 {share.description && (
@@ -597,7 +786,7 @@ const MyShares = () => {
                   <td>
                     <Group position="right" spacing={4}>
                       {reverseShare.encryptedReverseShareKey && (
-                        <Tooltip label="Show encryption key">
+                        <Tooltip label={t("account.reverseShares.table.show-key")}>
                           <ActionIcon
                             color="yellow"
                             variant="light"

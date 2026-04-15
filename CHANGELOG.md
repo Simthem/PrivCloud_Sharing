@@ -1,3 +1,221 @@
+## [1.20.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.19.1...v1.20.0) (2026-04-15)
+
+
+### Build
+
+* **docker:** compile Node.js 24 from source with `--shared-openssl` so the
+  runtime links dynamically against OpenSSL 3.6.2 instead of the statically
+  bundled OpenSSL 3.5.x -- this is the primary fix for CVE-2026-2673
+* **docker:** compile OpenSSL 3.6.2 from the `openssl-3.6` branch (commit
+  2157c9d8) in a dedicated multi-stage `openssl-builder` -- the resulting
+  library is shared by Node and any native addon that needs TLS
+* **docker:** compile gosu from source with Go 1.26.2-alpine -- eliminates 54
+  Go stdlib CVEs inherited from the Debian gosu binary (built with Go 1.19.8)
+* **docker:** compile Caddy 2.11.2 from source with Go 1.26.2-alpine, force
+  patched Go dependencies (golang.org/x/net@latest, grpc@v1.79.3,
+  certificates@v0.30.2, pgx/v5@v5.9.0, go-jose/v3@v3.0.5, go-jose/v4@v4.1.4,
+  goldmark@v1.7.17, bbolt pinned to cae11e991754, otel@v1.43.0)
+* **docker:** switch runner base image from `debian:bookworm-slim` to
+  `debian:trixie-slim` (Debian 13) -- fixes ~86 system-level CVEs in glibc,
+  zlib, ncurses, systemd, util-linux, libpam, gpgv
+* **docker:** harden runner by stripping bash, ncurses, tar, e2fsprogs, mount,
+  util-linux, perl-base, gpgv, apt, dpkg after installation
+* **docker:** add `APT_CACHE_BUST` build arg to force-invalidate the apt cache
+* **docker:** replace vulnerable npm packages in the npm bundle via direct
+  tarball overwrite -- minimatch@latest (CVE-2026-27903/04), tar@latest
+  (GHSA-qffp-2rhf-9h96), picomatch@4.0.4 (CVE-2026-33671/CVE-2026-33672),
+  brace-expansion@5.0.5 (CVE-2026-33750)
+* **docker:** overwrite `next/dist/compiled/picomatch/` in the Next.js
+  standalone output with picomatch 4.0.4 + post-build verification check
+* **docker:** add npm override for `path-to-regexp >= 8.4.0`
+  (CVE-2026-4926/CVE-2026-4923)
+* **docker:** move healthcheck into the Dockerfile (node fetch-based) --
+  the runner image no longer ships curl
+* **docker:** remove docker-compose healthcheck (now in Dockerfile)
+* **caddy:** add `response_header_timeout 600s`, `read_buffer 1mb`,
+  `write_buffer 512kb` for large upload/download support
+* **caddy:** strip `Server` and `Via` response headers (information leak)
+* **caddy:** fix `localhost` -> `127.0.0.1` in Caddyfile patcher -- resolves
+  IPv6 issue where `localhost` resolves to `::1` but NestJS listens on IPv4
+* **caddy:** add `trust-proxy` extension to the Caddyfile
+* **frontend:** disable gzip compression in Next.js (`compress: false`) --
+  delegate to the reverse proxy for better performance
+* **frontend:** enable `optimizePackageImports` for react-icons, dayjs,
+  @tanstack/react-query
+* **frontend:** lazy-load all 28 i18n locale files via dynamic `import()`
+  instead of static bundling -- reduces initial page weight
+* **frontend:** lazy-load ReactQueryDevtools and Footer via `next/dynamic`
+* **frontend:** add `Cache-Control: max-age=31536000, immutable` for `/img/*`
+  and `/_next/static/*`
+* **backend:** activate `rawBody: true` in NestJS for the re-encryption
+  endpoint
+* **backend:** set adaptive body-parser limit to
+  `Math.max(chunkSize, 200_000_000) + 128` to support variable chunk sizes
+* **backend:** add global `AbortedRequestFilter` to handle client-aborted
+  requests cleanly without spamming error logs
+
+
+### Features
+
+* **e2e:** add file re-encryption endpoint `PUT /shares/:shareId/files/:fileId/reencrypt`
+  -- when a user rotates their E2E key, each file can be re-encrypted
+  server-side without downloading/re-uploading the full content.  Includes
+  backend controller, service, and local/S3 storage implementations
+* **e2e:** add `ReencryptModal` -- a frontend modal that orchestrates bulk
+  re-encryption of all files in a share after key rotation
+* **e2e:** add `E2EKeyPrompt` -- auto-prompt the user when the server holds
+  an E2E key but local sessionStorage is empty (e.g. new browser/tab)
+* **e2e:** add streaming decryption via `decryptStream()` async generator --
+  processes large E2E files in constant memory instead of loading the entire
+  file into RAM
+* **e2e:** add `decryptFileAuto()` -- tries single-block mode first for files
+  under 200 MB, then auto-detects the correct chunk size by probing 5 to
+  200 MB candidates.  Fixes decryption failures when the chunk size changed
+  between upload versions
+* **e2e:** add `computeKeyHashFromEncoded()` with userId parameter to avoid
+  cross-user hash collisions
+* **sskr:** add SSKR key recovery (Shamir Secret Sharing) -- `SSKRGenerateModal`
+  lets the user split their E2E key into N shards with a configurable
+  threshold.  `combineShards()` reconstitutes the key from the minimum number
+  of shards
+* **download:** add client-side ZIP generation with `fflate` for E2E shares --
+  `downloadAllAsZipE2E()` decrypts each file in-memory and packs them into a
+  ZIP on the client side.  Replaces the removed `file-saver` dependency
+* **download:** add `downloadSelectedAsZipE2E()` and `downloadSelectedAsZip()`
+  for multi-file selection scenarios in `FileList`
+* **upload:** add adaptive chunk sizing -- the upload client measures real-time
+  bandwidth and dynamically adjusts chunk size between 5 and 200 MB.  The
+  backend accepts a `clientChunkSize` field clamped to 1-200 MB
+* **upload:** add SafeLine WAF 468 challenge handling in the Axios interceptor
+  -- detects the anti-bot challenge, pauses uploads, shows a notification,
+  and retries transparently after challenge completion
+* **ui:** add multi-file selection in `FileList` -- checkboxes, select-all,
+  grouped actions (download as zip, delete selected).  ~396 new lines
+* **share:** add `previewEnabled` flag on shares (backend DTO + frontend type)
+* **share:** add `getForOwner()` endpoint in share service -- owner-specific
+  read that ignores `uploadLocked` during editing
+* **share:** add `encryptedReverseShareKey` field to `updateReverseShare` DTO
+  -- allows updating the E2E key of a reverse share via PATCH
+* **user:** expose `createdAt` in `UserDTO`
+* **email:** add `{name}` (title) and `{desc}` (description) template
+  variables in `config.example.yaml`
+* **i18n:** add ~90 new keys for E2E recovery, SSKR, SafeLine WAF challenge,
+  re-encryption, key import/export (en-US + fr-FR)
+* **i18n:** add lazy locale loading via `loadLocaleMessages()` with
+  `setActiveMessages()` / `getActiveMessages()` global cache for
+  `translateOutsideContext`
+* **seo:** switch robots meta from `noindex` to `index, follow`
+* **seo:** add `robots.txt` and `sitemap.xml`
+* **html:** detect language dynamically from cookie or Accept-Language header
+  in `_document.tsx` instead of hardcoding `fr`
+* **ui:** use fluid container (no padding) on the home page
+* **ui:** fix Mantine Select / NativeSelect / MultiSelect text contrast in
+  dark mode
+
+
+### Bug Fixes
+
+* **auth:** the logout handler in `user.controller.ts` sent the literal string
+  `"accessToken"` instead of an empty string when clearing the cookie -- the
+  browser kept a non-empty cookie that confused the `logged_in` check
+* **auth:** `getCurrentUser` now reads the `logged_in` cookie instead of
+  `access_token` -- since `access_token` is now httpOnly, the frontend cannot
+  read it directly
+* **auth:** `createShare.guard.ts` returns 401 instead of 403 when the JWT is
+  present but expired, allowing the client to refresh transparently
+* **auth:** `JwtStrategy.validate()` now throws `UnauthorizedException` if the
+  user has been deleted -- prevents access with a valid JWT for a removed
+  account
+* **auth:** SSR `getInitialProps` skips the refresh API call if no `logged_in`
+  cookie is present -- avoids unnecessary 401s on anonymous page loads
+* **auth:** disable automatic token refresh while an upload is active to
+  prevent SafeLine WAF from killing the connection mid-transfer
+* **auth:** raise consecutive-failure threshold -- the app no longer force-logs
+  out the user after 2 refresh failures if an upload is active
+* **auth:** reduce the client-side refresh interval from 10 s to 60 s -- the
+  cookie-existence check is free
+* **security:** `shareSecurity.guard.ts` error message changed from
+  `"share_token_required"` to `"share_password_required"` to avoid confusion
+
+
+### Security
+
+* **cve-2026-2673** (HIGH): OpenSSL 3.5.0-3.5.5 / 3.6.0-3.6.1 --
+  compile OpenSSL 3.6.2 from source
+* **cve-2026-30851** (HIGH): Caddy < 2.11.2 -- upgrade to 2.11.2
+* **cve-2026-30852** (MEDIUM): Caddy < 2.11.2 -- upgrade to 2.11.2
+* **cve-2026-27141**: golang.org/x/net -- force @latest in Caddy build
+* **cve-2026-27142, cve-2026-25679, cve-2026-27139**: Go stdlib -- Go 1.26.2
+* **cve-2026-32280** (HIGH): Go stdlib -- Go 1.26.2
+* **cve-2026-32282** (HIGH): Go stdlib -- Go 1.26.2
+* **cve-2026-32281** (MEDIUM): Go stdlib -- Go 1.26.2
+* **cve-2026-32288, cve-2026-32289** (MEDIUM): Go stdlib -- Go 1.26.2
+* **cve-2026-32283, cve-2026-33810**: Go stdlib -- Go 1.26.2
+* **cve-2026-27171** (MEDIUM): zlib 1.3.1-r2 (Alpine) -- apk upgrade
+* **cve-2026-33186** (CRITICAL 9.1): google.golang.org/grpc < 1.79.3 --
+  force grpc@v1.79.3
+* **ghsa-q4r8-xm5f-56gw** (CRITICAL): smallstep/certificates < 0.30.2 --
+  force certificates@v0.30.2
+* **cve-2026-30836** (HIGH 7.8): smallstep/certificates -- same fix
+* **cve-2026-34986** (HIGH 8.7): go-jose v3/v4 -- force v3@v3.0.5, v4@v4.1.4
+* **cve-2026-33816** (HIGH 8.7): pgx/v5 < 5.9.0 -- force pgx/v5@v5.9.0
+* **cve-2026-33815** (HIGH 8.2): pgx/v5 -- same fix
+* **cve-2026-33817** (MEDIUM 6.9): bbolt -- pin to commit cae11e991754
+* **snyk** (HIGH x4): go.opentelemetry.io/otel < 1.43.0 -- force @v1.43.0
+* **snyk** (MEDIUM): goldmark XSS < 1.7.17 -- force @v1.7.17
+* **cve-2026-27903, cve-2026-27904**: npm minimatch -- tarball replacement
+* **ghsa-qffp-2rhf-9h96**: npm tar path traversal -- tarball replacement
+* **cve-2026-33671** (HIGH): picomatch < 4.0.4 -- tarball + Next.js patch
+* **cve-2026-33672** (MEDIUM): picomatch -- same fix
+* **cve-2026-33750** (MEDIUM): brace-expansion 5.0.4 ReDoS -- tarball 5.0.5
+* **cve-2026-4926, cve-2026-4923**: path-to-regexp 8.3.0 -- npm override
+* **cookies:** add `httpOnly: true` to the `access_token` cookie -- prevents
+  client-side JS from reading the JWT (XSS mitigation)
+* **cookies:** add `sameSite: "lax"` to all auth cookies on logout
+* **sw.js:** add origin validation on `message` events -- reject messages
+  from foreign origins
+* **files:** force `Content-Disposition: attachment` for dangerous MIME types
+  (SVG, HTML, XML) to prevent inline rendering (XSS via uploaded files)
+* **rate-limit:** reduce auth endpoint throttle from 20 to 10 requests
+* **rate-limit:** file upload is no longer exempt from rate limiting --
+  capped at 5000 requests per hour
+* **upload:** add server-side quota enforcement (`maxShareSize`) in
+  `FileService.create()` -- previously missing for S3 storage
+* **files:** add CWE-23/CWE-73 filename sanitization in `file.service.create()`
+  -- reject `..`, `/`, `\`, `\x00`, enforce max length 255
+* **username:** switch regex to `^[\p{L}\p{N}_.]*$` (Unicode-aware) for
+  proper international character support while keeping validation strict
+* **next.config.js:** add security headers -- `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`,
+  `Permissions-Policy` (camera, microphone, geolocation denied)
+* **next.config.js:** disable `X-Powered-By` header
+
+
+### Dependencies
+
+* **frontend:** upgrade `next` 16.2.1 -> 16.2.3
+* **frontend:** upgrade `axios` ^1.7.7 -> ^1.15.0
+* **frontend:** add `fflate` ^0.8.2 (client-side ZIP, replaces file-saver)
+* **frontend:** remove `file-saver` ^2.0.5
+* **frontend:** move `@tanstack/react-query-devtools` from dependencies to
+  devDependencies
+* **frontend:** upgrade `follow-redirects` 1.15.11 -> 1.16.0 (transitive)
+* **backend:** upgrade `@nestjs/core` ^11.1.17 -> ^11.1.18
+* **backend:** upgrade `@prisma/adapter-better-sqlite3` ^7.6.0 -> ^7.7.0
+* **backend:** upgrade `@prisma/client` ^7.6.0 -> ^7.7.0
+* **backend:** upgrade `prisma` ^7.6.0 -> ^7.7.0
+* **backend:** remove `@nestjs/config` ^4.0.2
+* **backend:** remove `passport-local` ^1.0.0
+* **backend:** remove `rimraf` ^6.0.1
+* **backend:** remove devDependencies: `@nestjs/testing`, `@types/better-sqlite3`,
+  `@types/cron`, `@types/supertest`
+
+
+### Code Quality
+
+* **i18n:** translate all remaining French code comments to English
+
+
 ## [1.19.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.19.0...v1.19.1) (2026-04-05)
 
 

@@ -339,6 +339,7 @@ export class AuthService {
     const isSecure = this.config.get("general.secureCookies");
     if (accessToken)
       response.cookie("access_token", accessToken, {
+        httpOnly: true,
         sameSite: "lax",
         secure: isSecure,
         maxAge: 1000 * 60 * 13, // 13 min (JWT lives 15 min - 2 min safety margin)
@@ -358,6 +359,8 @@ export class AuthService {
       });
       // Non-httpOnly marker so the client can detect an active session
       // even after the short-lived access_token cookie has expired.
+      // httpOnly is deliberately omitted here -- this cookie carries no secret,
+      // it is only a boolean indicator read by frontend JS.
       response.cookie("logged_in", "1", {
         sameSite: "lax",
         secure: isSecure,

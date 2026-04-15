@@ -26,7 +26,7 @@ cd backend
 # so prisma cli is found when we call it directly.
 export PATH="$PWD/node_modules/.bin:$PATH"
 
-# --- DB Diagnostics ---------------------------------------------
+# -- DB Diagnostics ----------------------------------------------
 # Log database file state before and after each Prisma operation
 # to detect path mismatches or silent data loss across redeploys.
 DB_DIR="./data"

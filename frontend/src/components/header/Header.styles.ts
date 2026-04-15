@@ -5,7 +5,7 @@ export const HEADER_HEIGHT = 60;
 export const useStyles = createStyles((theme) => ({
   root: {
     position: "relative",
-    zIndex: 1,
+    zIndex: 100,
   },
 
   dropdown: {
@@ -13,7 +13,7 @@ export const useStyles = createStyles((theme) => ({
     top: HEADER_HEIGHT,
     left: 0,
     right: 0,
-    zIndex: 0,
+    zIndex: 100,
     borderTopRightRadius: 0,
     borderTopLeftRadius: 0,
     borderTop: "none !important",
@@ -87,5 +87,13 @@ export const useStyles = createStyles((theme) => ({
       color:
         theme.colors[theme.primaryColor][theme.colorScheme === "dark" ? 3 : 7],
     },
+  },
+
+  subLink: {
+    paddingLeft: theme.spacing.xl,
+    backgroundColor:
+      theme.colorScheme === "dark"
+        ? theme.fn.rgba(theme.black, 0.15)
+        : theme.fn.rgba(theme.black, 0.03),
   },
 }));

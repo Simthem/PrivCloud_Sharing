@@ -35,16 +35,17 @@ const removeCurrentUser = async () => {
 const getCurrentUser = async (): Promise<CurrentUser | null> => {
   try {
     await authService.refreshAccessToken();
-    // If there is still no access_token after refresh, the user is not
+    // If there is still no session after refresh, the user is not
     // authenticated - skip the network call to avoid a pointless 401.
-    if (!getCookie("access_token")) return null;
+    // access_token is httpOnly -- use logged_in as the non-httpOnly sentinel.
+    if (!getCookie("logged_in")) return null;
     return (await api.get("users/me")).data;
   } catch {
     return null;
   }
 };
 
-// ─── E2E Encryption Key Management ─────────────────────────────
+// --- E2E Encryption Key Management ---
 
 const setEncryptionKeyHash = async (keyHash: string) => {
   return (await api.put("/users/me/encryption-key", { keyHash })).data;

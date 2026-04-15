@@ -9,6 +9,18 @@ const useWakeLock = () => {
 
   const acquire = useCallback(async () => {
     if (!("wakeLock" in navigator)) return;
+    // In an iframe, the Permissions-Policy may forbid screen-wake-lock.
+    // Detect this early to avoid repeated failing requests on every
+    // visibilitychange event (each creates a rejected Promise that
+    // pressures the GC over very long uploads).
+    try {
+      const status = await navigator.permissions.query(
+        { name: "screen-wake-lock" as PermissionName },
+      );
+      if (status.state === "denied") return;
+    } catch {
+      // permissions.query() may not support this name -- try anyway
+    }
     try {
       wakeLockRef.current = await navigator.wakeLock.request("screen");
       // Re-acquire when tab becomes visible again (OS may release it)
@@ -17,7 +29,9 @@ const useWakeLock = () => {
       });
       document.addEventListener("visibilitychange", handleVisibilityChange);
     } catch {
-      // Wake Lock request can fail (e.g. low battery mode) - non-critical
+      // Wake Lock request failed (low battery, iframe restriction, etc.)
+      // Do NOT register the visibilitychange listener -- it would
+      // retry forever, leaking Promises on every tab focus/blur.
     }
   }, []);
 
@@ -36,7 +50,8 @@ const useWakeLock = () => {
       try {
         wakeLockRef.current = await navigator.wakeLock.request("screen");
       } catch {
-        // Non-critical
+        // Failed again -- unregister to stop retrying forever.
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
       }
     }
   };

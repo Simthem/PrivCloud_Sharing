@@ -1,4 +1,4 @@
-import { Button } from "@mantine/core";
+import { Button, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 import { FormattedMessage } from "react-intl";
 import useTranslate from "../../hooks/useTranslate.hook";
@@ -19,17 +19,25 @@ const DownloadAllButton = ({
 }) => {
   const [isZipReady, setIsZipReady] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [progress, setProgress] = useState("");
   const t = useTranslate();
 
   const downloadAllE2E = async () => {
     if (!e2eKey || !files) return;
     setIsLoading(true);
+    setProgress("");
     try {
-      for (const file of files) {
-        await shareService.downloadFileE2E(shareId, file.id, file.name, e2eKey);
-      }
+      await shareService.downloadAllAsZipE2E(
+        shareId,
+        files,
+        e2eKey,
+        (done, total) => setProgress(`${done}/${total}`),
+      );
+    } catch {
+      toast.error(t("common.error"));
     } finally {
       setIsLoading(false);
+      setProgress("");
     }
   };
 
@@ -41,7 +49,7 @@ const DownloadAllButton = ({
   };
 
   useEffect(() => {
-    // Pour les partages E2E, pas de ZIP côté serveur
+    // For E2E shares, no server-side ZIP
     if (isE2EEncrypted) {
       setIsZipReady(true);
       return;
@@ -80,7 +88,11 @@ const DownloadAllButton = ({
         }
       }}
     >
-      <FormattedMessage id="share.button.download-all" />
+      {progress ? (
+        <Text size="sm">{progress}</Text>
+      ) : (
+        <FormattedMessage id="share.button.download-all" />
+      )}
     </Button>
   );
 };

@@ -9,8 +9,11 @@ import {
   useMantineTheme,
 } from "@mantine/core";
 import { modals } from "@mantine/modals";
-import Markdown, { MarkdownToJSX } from "markdown-to-jsx";
+import type { MarkdownToJSX } from "markdown-to-jsx";
+import dynamic from "next/dynamic";
 import Link from "next/link";
+
+const Markdown = dynamic(() => import("markdown-to-jsx"), { ssr: false });
 import React, { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { FormattedMessage } from "react-intl";
 import api from "../../services/api.service";
@@ -63,7 +66,7 @@ export const isTextBasedMimeType = (mimeType: string): boolean => {
   return false;
 };
 
-// ── Security helpers for text previews ──────────────────────────────
+// Security helpers for text previews
 
 /** Maximum characters of text content to render in preview (1 MiB). */
 const MAX_TEXT_PREVIEW_CHARS = 1024 * 1024;
@@ -87,7 +90,7 @@ const ensureString = (value: unknown): string => {
 const truncateForPreview = (s: string): string =>
   s.length > MAX_TEXT_PREVIEW_CHARS
     ? s.slice(0, MAX_TEXT_PREVIEW_CHARS) +
-      "\n\n[… truncated — file too large for preview]"
+      "\n\n[... truncated - file too large for preview]"
     : s;
 
 const FilePreviewContext = React.createContext<{
@@ -270,6 +273,7 @@ const ImagePreview = () => {
       src={src}
       alt={`${fileId}_preview`}
       width="100%"
+      loading="lazy"
       onError={() => setIsNotSupported(true)}
     />
   );
@@ -290,7 +294,7 @@ const TextPreview = () => {
         .catch(() => setText("Preview couldn't be fetched."));
     } else {
       // responseType: "text" prevents Axios from auto-parsing JSON files
-      // into objects (which would crash React — error #31).
+      // into objects (which would crash React - error #31).
       api
         .get(`/shares/${shareId}/files/${fileId}?download=false`, {
           responseType: "text",
@@ -346,7 +350,7 @@ const CodePreview = () => {
         .finally(() => setLoading(false));
     } else {
       // responseType: "text" prevents Axios from auto-parsing JSON files
-      // into objects (which would crash React — error #31).
+      // into objects (which would crash React - error #31).
       api
         .get(`/shares/${shareId}/files/${fileId}?download=false`, {
           responseType: "text",

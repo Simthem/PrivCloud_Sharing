@@ -6,7 +6,7 @@ export class UserDTO {
   id: string;
 
   @Expose()
-  @Matches("^[a-zA-Z0-9_.]*$", undefined, {
+  @Matches(/^[\p{L}\p{N}_.]*$/u, {
     message: "Username can only contain letters, numbers, dots and underscores",
   })
   @Length(3, 32)
@@ -37,6 +37,9 @@ export class UserDTO {
   hasEncryptionKey: boolean;
 
   encryptionKeyHash?: string;
+
+  @Expose()
+  createdAt: Date;
 
   from(partial: Partial<UserDTO>) {
     const result = plainToClass(UserDTO, partial, {

@@ -40,7 +40,7 @@ export class AuthController {
   @Post("signUp")
   @Throttle({
     default: {
-      limit: 20,
+      limit: 10,
       ttl: 5 * 60,
     },
   })
@@ -67,12 +67,10 @@ export class AuthController {
   @Post("signIn")
   @Throttle({
     default: {
-      limit: 20,
+      limit: 10,
       ttl: 5 * 60,
     },
   })
-  @UseGuards(HCaptchaGuard)
-  @HttpCode(200)
   async signIn(
     @Body() dto: AuthSignInDTO,
     @Req() { ip }: Request,
@@ -94,7 +92,7 @@ export class AuthController {
   @Post("signIn/totp")
   @Throttle({
     default: {
-      limit: 20,
+      limit: 10,
       ttl: 5 * 60,
     },
   })
@@ -117,7 +115,7 @@ export class AuthController {
   @Post("resetPassword/:email")
   @Throttle({
     default: {
-      limit: 20,
+      limit: 10,
       ttl: 5 * 60,
     },
   })
@@ -130,7 +128,7 @@ export class AuthController {
   @Post("resetPassword")
   @Throttle({
     default: {
-      limit: 20,
+      limit: 10,
       ttl: 5 * 60,
     },
   })
@@ -182,16 +180,21 @@ export class AuthController {
 
     const isSecure = this.config.get("general.secureCookies");
     response.cookie("access_token", "", {
+      httpOnly: true,
+      sameSite: "lax",
       maxAge: -1,
       secure: isSecure,
     });
     response.cookie("refresh_token", "", {
       path: "/api/auth/token",
       httpOnly: true,
+      sameSite: "lax",
       maxAge: -1,
       secure: isSecure,
     });
+    // logged_in is intentionally non-httpOnly: read by client JS to detect session state
     response.cookie("logged_in", "", {
+      sameSite: "lax",
       maxAge: -1,
       secure: isSecure,
     });

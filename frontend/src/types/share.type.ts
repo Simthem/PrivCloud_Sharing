@@ -10,6 +10,7 @@ export type Share = {
   size: number;
   hasPassword: boolean;
   isE2EEncrypted: boolean;
+  previewEnabled?: boolean;
   encryptedReverseShareKey?: string | null;
   reverseShare?: { id: string; creatorId: string } | null;
 };

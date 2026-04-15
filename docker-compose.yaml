@@ -1,6 +1,6 @@
 services:
   privcloud-sharing:
-    image: simthem/privcloud-sharing:latest
+    image: simthem/privcloud-sharing:dev
     container_name: privcloud-sharing
     # build:
         # context: .
@@ -13,19 +13,15 @@ services:
     cap_drop:
       - ALL
     cap_add:
-      - CHOWN 
+      - CHOWN
       - SETUID
       - SETGID
     security_opt:
       - no-new-privileges:true
     ports:
       - "127.0.0.1:3000:3000"
-    healthcheck:
-      test: ["CMD", "curl", "-fs", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+    # Healthcheck is defined in the Dockerfile (node fetch-based, no curl needed).
+    # Do NOT override it here -- the runner image has no curl binary.
     # environment:
       # - TRUST_PROXY=true  (Set to true if a reverse proxy is in front of the container)
 

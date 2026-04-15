@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import useConfig from "../../hooks/config.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 
-const CONSENT_COOKIE = "cookie_consent";
-const CONSENT_MAX_AGE = 365 * 24 * 60 * 60; // 1 year in seconds
+const NOTICE_COOKIE = "cookie_notice";
+const NOTICE_MAX_AGE = 365 * 24 * 60 * 60; // 1 year in seconds
 
 const CookieConsent = () => {
   const [visible, setVisible] = useState(false);
@@ -23,24 +23,15 @@ const CookieConsent = () => {
     "/privacy";
 
   useEffect(() => {
-    const consent = getCookie(CONSENT_COOKIE);
-    if (!consent) {
+    const noticed = getCookie(NOTICE_COOKIE);
+    if (!noticed) {
       setVisible(true);
     }
   }, []);
 
-  const acceptCookies = () => {
-    setCookie(CONSENT_COOKIE, "accepted", {
-      maxAge: CONSENT_MAX_AGE,
-      sameSite: "lax",
-      path: "/",
-    });
-    setVisible(false);
-  };
-
-  const rejectCookies = () => {
-    setCookie(CONSENT_COOKIE, "rejected", {
-      maxAge: CONSENT_MAX_AGE,
+  const dismiss = () => {
+    setCookie(NOTICE_COOKIE, "seen", {
+      maxAge: NOTICE_MAX_AGE,
       sameSite: "lax",
       path: "/",
     });
@@ -73,12 +64,9 @@ const CookieConsent = () => {
           </Anchor>
         )}
       </Text>
-      <Group position="right" spacing="xs">
-        <Button variant="outline" size="xs" onClick={rejectCookies}>
-          {t("cookie.banner.reject")}
-        </Button>
-        <Button size="xs" onClick={acceptCookies}>
-          {t("cookie.banner.accept")}
+      <Group position="right">
+        <Button size="xs" onClick={dismiss}>
+          {t("cookie.banner.dismiss")}
         </Button>
       </Group>
     </Paper>

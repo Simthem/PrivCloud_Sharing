@@ -441,7 +441,7 @@ export const configVariables = {
         "[holycloud.fr](https://holycloud.fr)\n\n" +
         "## Applicable Law\n\n" +
         "This service is governed by the laws of France and the European Union. " +
-        "Any disputes shall be submitted to the competent courts of Nevers, France.\n\n" +
+        "Any disputes shall be submitted to the competent courts of Lyon, France.\n\n" +
         "## Regulatory Compliance\n\n" +
         "This infrastructure is operated in accordance with:\n\n" +
         "- **GDPR** (EU 2016/679) - General Data Protection Regulation\n" +

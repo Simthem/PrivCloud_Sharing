@@ -23,7 +23,7 @@ import { ConfigService } from "src/config/config.service";
 import * as crypto from "crypto";
 import * as mime from "mime-types";
 import { File } from "./file.service";
-import { Readable } from "stream";
+import { Readable, PassThrough } from "stream";
 import { validate as isValidUUID } from "uuid";
 import archiver from "archiver";
 
@@ -36,19 +36,42 @@ export class S3FileService {
     {
       uploadId: string;
       parts: Array<{ ETag: string | undefined; PartNumber: number }>;
+      lastActivity: number;
     }
   > = {};
+
+  // TTL for abandoned multipart uploads: no chunk received for 30 min.
+  // This is an *inactivity* timeout, not a total duration limit, so
+  // multi-hour uploads of very large files (40 GB+) are safe as long
+  // as chunks keep arriving.
+  private static readonly MULTIPART_TTL_MS = 30 * 60 * 1000;
 
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
-  ) {}
+  ) {
+    // Periodically clean up abandoned multipart upload sessions
+    setInterval(() => this.cleanupAbandonedUploads(), 5 * 60 * 1000);
+  }
+
+  private cleanupAbandonedUploads() {
+    const now = Date.now();
+    for (const [key, upload] of Object.entries(this.multipartUploads)) {
+      if (now - upload.lastActivity > S3FileService.MULTIPART_TTL_MS) {
+        this.logger.warn(
+          `Cleaning up abandoned multipart upload: key=${key} uploadId=${upload.uploadId}`,
+        );
+        delete this.multipartUploads[key];
+      }
+    }
+  }
 
   async create(
     data: string,
     chunk: { index: number; total: number },
     file: { id?: string; name: string },
     shareId: string,
+    _clientChunkSize?: number,
   ) {
     const originalFileId = file.id;
     if (!file.id) {
@@ -64,7 +87,10 @@ export class S3FileService {
     }
 
     const buffer = Buffer.from(data, "base64");
-    const key = `${this.getS3Path()}${shareId}/${file.name}`;
+    // Use fileId as the S3 object key -- never the user-supplied filename.
+    // This prevents overwrites when two files share the same name and
+    // eliminates path-traversal risks from crafted filenames.
+    const key = `${this.getS3Path()}${shareId}/${file.id}`;
     const bucketName = this.config.get("s3.bucketName");
     const s3Instance = this.getS3Instance();
 
@@ -87,6 +113,7 @@ export class S3FileService {
         this.multipartUploads[file.id] = {
           uploadId,
           parts: [],
+          lastActivity: Date.now(),
         };
       }
 
@@ -97,6 +124,10 @@ export class S3FileService {
           "Multipart upload session not found.",
         );
       }
+
+      // Refresh activity timestamp so the cleanup job never kills
+      // a long-running but actively-uploading session.
+      multipartUpload.lastActivity = Date.now();
 
       const uploadId = multipartUpload.uploadId;
 
@@ -158,7 +189,7 @@ export class S3FileService {
 
     const isLastChunk = chunk.index == chunk.total - 1;
     if (isLastChunk) {
-      const fileSize: number = await this.getFileSize(shareId, file.name);
+      const fileSize: number = await this.getFileSize(shareId, file.id);
 
       await this.prisma.file.create({
         data: {
@@ -176,13 +207,108 @@ export class S3FileService {
     return file;
   }
 
+  /**
+   * Replace the content of an existing file (re-encryption).
+   * Same multipart upload flow as create() but overwrites the existing
+   * S3 object and does NOT create a DB record.
+   */
+  async replace(
+    data: string,
+    chunk: { index: number; total: number },
+    fileId: string,
+    shareId: string,
+  ) {
+    if (!isValidUUID(fileId)) {
+      throw new BadRequestException("Invalid file ID format");
+    }
+
+    const buffer = Buffer.from(data, "base64");
+    const key = `${this.getS3Path()}${shareId}/${fileId}`;
+    const bucketName = this.config.get("s3.bucketName");
+    const s3Instance = this.getS3Instance();
+    const reencryptKey = `reencrypt:${fileId}`;
+
+    try {
+      if (chunk.index === 0) {
+        const multipartInitResponse = await s3Instance.send(
+          new CreateMultipartUploadCommand({ Bucket: bucketName, Key: key }),
+        );
+        const uploadId = multipartInitResponse.UploadId;
+        if (!uploadId) throw new Error("Failed to initialize multipart upload.");
+        this.multipartUploads[reencryptKey] = { uploadId, parts: [], lastActivity: Date.now() };
+      }
+
+      const multipartUpload = this.multipartUploads[reencryptKey];
+      if (!multipartUpload) {
+        throw new InternalServerErrorException("Multipart upload session not found.");
+      }
+
+      multipartUpload.lastActivity = Date.now();
+
+      const partNumber = chunk.index + 1;
+      const uploadPartResponse = await s3Instance.send(
+        new UploadPartCommand({
+          Bucket: bucketName,
+          Key: key,
+          PartNumber: partNumber,
+          UploadId: multipartUpload.uploadId,
+          Body: buffer,
+        }),
+      );
+
+      multipartUpload.parts.push({
+        ETag: uploadPartResponse.ETag,
+        PartNumber: partNumber,
+      });
+
+      if (chunk.index === chunk.total - 1) {
+        await s3Instance.send(
+          new CompleteMultipartUploadCommand({
+            Bucket: bucketName,
+            Key: key,
+            UploadId: multipartUpload.uploadId,
+            MultipartUpload: { Parts: multipartUpload.parts },
+          }),
+        );
+        delete this.multipartUploads[reencryptKey];
+
+        const fileSize = await this.getFileSize(shareId, fileId);
+        await this.prisma.file.update({
+          where: { id: fileId },
+          data: { size: fileSize.toString() },
+        });
+        this.logger.debug(
+          `File re-encrypted: shareId=${shareId} fileId=${fileId} size=${fileSize}`,
+        );
+      }
+    } catch (error) {
+      const multipartUpload = this.multipartUploads[reencryptKey];
+      if (multipartUpload) {
+        try {
+          await s3Instance.send(
+            new AbortMultipartUploadCommand({
+              Bucket: bucketName,
+              Key: key,
+              UploadId: multipartUpload.uploadId,
+            }),
+          );
+        } catch (abortError) {
+          console.error("Error aborting multipart upload:", abortError);
+        }
+        delete this.multipartUploads[reencryptKey];
+      }
+      this.logger.error(error);
+      throw new Error("Multipart re-encryption upload failed.");
+    }
+  }
+
   async get(shareId: string, fileId: string): Promise<File> {
-    const fileName = (
-      await this.prisma.file.findUnique({ where: { id: fileId } })
-    ).name;
+    const fileRecord = await this.prisma.file.findUnique({ where: { id: fileId } });
+    if (!fileRecord) throw new NotFoundException("File not found");
+    const fileName = fileRecord.name;
 
     const s3Instance = this.getS3Instance();
-    const key = `${this.getS3Path()}${shareId}/${fileName}`;
+    const key = `${this.getS3Path()}${shareId}/${fileId}`;
     const response = await s3Instance.send(
       new GetObjectCommand({
         Bucket: this.config.get("s3.bucketName"),
@@ -197,6 +323,15 @@ export class S3FileService {
       `File downloaded: shareId=${shareId} fileId=${fileId} fileName="${fileName}" size=${size} mimeType=${mimeType}`,
     );
 
+    // Pipe S3 body through a PassThrough with a large highWaterMark
+    // (1 MB) so Node.js pre-fetches data from MinIO aggressively
+    // instead of using the default 16 KB watermark.  This reduces the
+    // number of read() calls by ~64x and keeps the downstream proxy
+    // chain (Caddy / Nginx) fed with data continuously.
+    const bodyStream = response.Body as Readable;
+    const fast = new PassThrough({ highWaterMark: 1024 * 1024 });
+    bodyStream.pipe(fast);
+
     return {
       metaData: {
         id: fileId,
@@ -206,7 +341,7 @@ export class S3FileService {
         createdAt: response.LastModified || new Date(),
         mimeType,
       },
-      file: response.Body as Readable,
+      file: fast,
     } as File;
   }
 
@@ -217,7 +352,7 @@ export class S3FileService {
 
     if (!fileMetaData) throw new NotFoundException("File not found");
 
-    const key = `${this.getS3Path()}${shareId}/${fileMetaData.name}`;
+    const key = `${this.getS3Path()}${shareId}/${fileId}`;
     const s3Instance = this.getS3Instance();
 
     try {

@@ -4,9 +4,12 @@ import {
   Center,
   Code,
   Container,
+  Divider,
   Group,
+  NumberInput,
   Paper,
   PasswordInput,
+  Progress,
   Stack,
   Tabs,
   Text,
@@ -26,7 +29,7 @@ import {
   TbKey,
   TbShieldLock,
 } from "react-icons/tb";
-import { FormattedMessage } from "react-intl";
+import { FormattedMessage, useIntl } from "react-intl";
 import * as yup from "yup";
 import Meta from "../../components/Meta";
 import LanguagePicker from "../../components/account/LanguagePicker";
@@ -46,14 +49,19 @@ import {
   importKeyFromBase64,
   computeKeyHash,
   computeKeyHashFromEncoded,
+  computeKeyHashFromEncodedLegacy,
   getUserKey,
   storeUserKey,
   removeUserKey,
 } from "../../utils/crypto.util";
+import SSKRGenerateModal from "../../components/auth/SSKRGenerateModal";
+import ReencryptModal from "../../components/account/ReencryptModal";
+import { combineShards } from "../../utils/sskr.util";
 
-// ---─ E2E Encryption Section ---------------------------------------------------------------─
+// --- E2E Encryption Section ---
 const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
   const modals = useModals();
+  const intl = useIntl();
   const { user } = useUser();
 
   const [localKey, setLocalKey] = useState<string | null>(null);
@@ -63,6 +71,20 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
   const [importError, setImportError] = useState("");
   const [importing, setImporting] = useState(false);
   const [generating, setGenerating] = useState(false);
+
+  // SSKR
+  const [showSSKR, setShowSSKR] = useState(false);
+  const [sskrKey, setSskrKey] = useState<string | null>(null);
+  const [showRecover, setShowRecover] = useState(false);
+  const [shardCount, setShardCount] = useState(3);
+  const [shardValues, setShardValues] = useState<string[]>(["", "", ""]);
+  const [recoverError, setRecoverError] = useState("");
+  const [recoveringShards, setRecoveringShards] = useState(false);
+
+  // Re-encryption on key rotation
+  const [showReencrypt, setShowReencrypt] = useState(false);
+  const [oldKeyForReencrypt, setOldKeyForReencrypt] = useState("");
+  const [newKeyForReencrypt, setNewKeyForReencrypt] = useState("");
 
   // Sync localStorage key into component state
   useEffect(() => {
@@ -76,47 +98,125 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
   const handleGenerate = async () => {
     setGenerating(true);
     try {
+      const previousKey = getUserKey();
       const key = await generateEncryptionKey();
       const encoded = await exportKeyToBase64(key);
-      const hash = await computeKeyHash(key);
-      await userService.setEncryptionKeyHash(hash);
-      storeUserKey(encoded);
-      setLocalKey(encoded);
-      refreshUser();
-      toast.success("Clé E2E générée avec succès");
+      const hash = await computeKeyHash(key, user!.id);
+
+      if (previousKey) {
+        // Key rotation: save both keys and start re-encryption
+        setOldKeyForReencrypt(previousKey);
+        setNewKeyForReencrypt(encoded);
+        // Store new key + hash immediately (so the server-side hash matches)
+        await userService.setEncryptionKeyHash(hash);
+        storeUserKey(encoded);
+        setLocalKey(encoded);
+        setShowReencrypt(true);
+      } else {
+        // First-time generation: no re-encryption needed
+        await userService.setEncryptionKeyHash(hash);
+        storeUserKey(encoded);
+        setLocalKey(encoded);
+        setSskrKey(encoded);
+        setShowSSKR(true);
+        refreshUser();
+        toast.success(intl.formatMessage({ id: "account.e2e.toast.generated" }));
+      }
     } catch (e: any) {
-      toast.error(e?.message ?? "Erreur lors de la génération de la clé");
+      toast.error(e?.message ?? intl.formatMessage({ id: "account.e2e.toast.generateError" }));
     } finally {
       setGenerating(false);
     }
   };
 
-  // --- Confirm-then-generate (warns about losing access to old shares)
+  // Re-encryption callbacks
+  const handleReencryptSuccess = () => {
+    setShowReencrypt(false);
+    setSskrKey(newKeyForReencrypt || localKey);
+    setShowSSKR(true);
+    refreshUser();
+    toast.success(intl.formatMessage({ id: "account.e2e.toast.reencrypted" }));
+  };
+
+  const handleReencryptError = (err: string) => {
+    setShowReencrypt(false);
+    toast.error(intl.formatMessage({ id: "account.e2e.toast.reencryptError" }, { error: err }));
+    refreshUser();
+  };
+
+  // --- SSKR recovery from shards ---
+  const updateShardCount = (v: number | "") => {
+    const n = typeof v === "number" ? Math.max(2, Math.min(10, v)) : 3;
+    setShardCount(n);
+    setShardValues((prev) => {
+      const next = [...prev];
+      while (next.length < n) next.push("");
+      return next.slice(0, n);
+    });
+  };
+
+  const handleRecoverFromShards = async () => {
+    setRecoverError("");
+    const filled = shardValues.filter((s) => s.trim().length > 0);
+    if (filled.length < 2) {
+      setRecoverError(intl.formatMessage({ id: "account.e2e.recover.minShards" }));
+      return;
+    }
+    setRecoveringShards(true);
+    try {
+      const encodedKey = combineShards(filled);
+      await importKeyFromBase64(encodedKey);
+      const hash = await computeKeyHashFromEncoded(encodedKey, user!.id);
+      let valid = await userService.verifyEncryptionKey(hash);
+      if (!valid) {
+        const legacyHash = await computeKeyHashFromEncodedLegacy(encodedKey);
+        valid = await userService.verifyEncryptionKey(legacyHash);
+        if (!valid) {
+          setRecoverError(
+            intl.formatMessage({ id: "account.e2e.recover.mismatch" }),
+          );
+          return;
+        }
+        await userService.setEncryptionKeyHash(hash);
+      }
+      storeUserKey(encodedKey);
+      setLocalKey(encodedKey);
+      setShowRecover(false);
+      toast.success(intl.formatMessage({ id: "account.e2e.toast.recovered" }));
+    } catch (e: any) {
+      setRecoverError(e?.message ?? intl.formatMessage({ id: "account.e2e.recover.error" }));
+    } finally {
+      setRecoveringShards(false);
+    }
+  };
+
+  // --- Confirm-then-generate (warns about re-encryption time)
   const confirmRegenerate = () => {
     modals.openConfirmModal({
-      title: "Régénérer la clé de chiffrement",
+      title: intl.formatMessage({ id: "account.e2e.confirm.regenerate.title" }),
       children: (
         <Text size="sm">
-          Tous les partages E2E existants chiffrés avec l'ancienne clé
-          deviendront <strong>inaccessibles</strong>. Cette action est
-          irréversible. Êtes-vous sûr ?
+          <FormattedMessage id="account.e2e.confirm.regenerate.body" />
         </Text>
       ),
-      labels: { confirm: "Régénérer", cancel: "Annuler" },
+      labels: {
+        confirm: intl.formatMessage({ id: "account.e2e.confirm.regenerate.confirm" }),
+        cancel: intl.formatMessage({ id: "common.button.cancel" }),
+      },
       confirmProps: { color: "red" },
       onConfirm: handleGenerate,
     });
   };
 
-  // --- Import an existing key (for new browser / device) ---------------─
+  // --- Import an existing key (for new browser / device) ---
   const handleImport = async () => {
     setImportError("");
     // Strip everything that is not a valid base64url character.
-    // Prevents invisible chars (ZWSP, NBSP, newlines …) from corrupting
+    // Prevents invisible chars (ZWSP, NBSP, newlines ...) from corrupting
     // the decoded bytes and producing a different SHA-256 hash.
     const sanitized = importValue.replace(/[^A-Za-z0-9_-]/g, "");
     if (!sanitized) {
-      setImportError("Veuillez entrer votre clé E2E");
+      setImportError(intl.formatMessage({ id: "account.e2e.import.emptyError" }));
       return;
     }
     setImporting(true);
@@ -124,26 +224,33 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
       // Validate the key format by trying to import it
       await importKeyFromBase64(sanitized);
       // Compute hash and verify against server
-      const hash = await computeKeyHashFromEncoded(sanitized);
-      const valid = await userService.verifyEncryptionKey(hash);
+      const hash = await computeKeyHashFromEncoded(sanitized, user!.id);
+      let valid = await userService.verifyEncryptionKey(hash);
       if (!valid) {
-        console.debug(
-          "[E2E import] verification failed -- submitted hash:",
-          hash.slice(0, 8) + "…",
-          "key length:",
-          sanitized.length,
-        );
-        setImportError(
-          "Cette clé ne correspond pas à celle associée à votre compte",
-        );
-        return;
+        // Fallback: stored hash may still be legacy SHA-256
+        const legacyHash = await computeKeyHashFromEncodedLegacy(sanitized);
+        valid = await userService.verifyEncryptionKey(legacyHash);
+        if (!valid) {
+          console.debug(
+            "[E2E import] verification failed -- submitted hash:",
+            hash.slice(0, 8) + "...",
+            "key length:",
+            sanitized.length,
+          );
+          setImportError(
+            intl.formatMessage({ id: "account.e2e.import.mismatchError" }),
+          );
+          return;
+        }
+        // Migration: replace legacy hash with HMAC-SHA256
+        await userService.setEncryptionKeyHash(hash);
       }
       storeUserKey(sanitized);
       setLocalKey(sanitized);
       setImportValue("");
-      toast.success("Clé E2E importée avec succès");
+      toast.success(intl.formatMessage({ id: "account.e2e.toast.imported" }));
     } catch (e: any) {
-      setImportError(e?.message ?? "Clé invalide");
+      setImportError(e?.message ?? intl.formatMessage({ id: "account.e2e.import.invalidError" }));
     } finally {
       setImporting(false);
     }
@@ -152,15 +259,16 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
   // --- Revoke key --------------------------------------------------------
   const handleRevoke = () => {
     modals.openConfirmModal({
-      title: "Supprimer la clé de chiffrement",
+      title: intl.formatMessage({ id: "account.e2e.confirm.revoke.title" }),
       children: (
         <Text size="sm">
-          Tous les partages E2E existants deviendront{" "}
-          <strong>définitivement inaccessibles</strong>. Cette action est
-          irréversible.
+          <FormattedMessage id="account.e2e.confirm.revoke.body" />
         </Text>
       ),
-      labels: { confirm: "Supprimer", cancel: "Annuler" },
+      labels: {
+        confirm: intl.formatMessage({ id: "account.e2e.confirm.revoke.confirm" }),
+        cancel: intl.formatMessage({ id: "common.button.cancel" }),
+      },
       confirmProps: { color: "red" },
       onConfirm: async () => {
         try {
@@ -168,9 +276,9 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
           removeUserKey();
           setLocalKey(null);
           refreshUser();
-          toast.success("Clé E2E supprimée");
+          toast.success(intl.formatMessage({ id: "account.e2e.toast.revoked" }));
         } catch (e: any) {
-          toast.error(e?.message ?? "Erreur lors de la suppression");
+          toast.error(e?.message ?? intl.formatMessage({ id: "account.e2e.toast.revokeError" }));
         }
       },
     });
@@ -185,22 +293,22 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
     <Paper withBorder p="xl" mt="lg">
       <Group mb="xs" spacing="xs">
         <TbShieldLock size={20} />
-        <Title order={5}>Chiffrement de bout en bout (E2E)</Title>
+        <Title order={5}>
+          <FormattedMessage id="account.e2e.title" />
+        </Title>
       </Group>
 
       <Text size="sm" color="dimmed" mb="md">
-        Votre clé de chiffrement AES-256 est stockée uniquement dans votre
-        navigateur. Elle n'est jamais envoyée au serveur. Conservez-la
-        précieusement pour pouvoir déchiffrer vos partages.
+        <FormattedMessage id="account.e2e.description" />
       </Text>
 
-      {/* --- Key exists locally ---------------------------------------------------─ */}
+      {/* --- Key exists locally --- */}
       {hasLocalKey && localKey && (
         <Stack spacing="xs">
           <Group spacing="xs">
             <TbKey size={16} />
             <Text size="sm" weight={500}>
-              Votre clé :
+              <FormattedMessage id="account.e2e.yourKey" />
             </Text>
           </Group>
           <Group spacing="xs">
@@ -215,7 +323,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
             >
               {revealKey ? localKey : maskedKey}
             </Code>
-            <Tooltip label={revealKey ? "Masquer" : "Révéler"}>
+            <Tooltip label={intl.formatMessage({ id: revealKey ? "account.e2e.key.hide" : "account.e2e.key.reveal" })}>
               <Button
                 variant="subtle"
                 size="xs"
@@ -225,7 +333,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
                 {revealKey ? <TbEyeOff size={16} /> : <TbEye size={16} />}
               </Button>
             </Tooltip>
-            <Tooltip label={copiedKey ? "Copié !" : "Copier la clé"}>
+            <Tooltip label={intl.formatMessage({ id: copiedKey ? "account.e2e.key.copied" : "account.e2e.key.copy" })}>
               <Button
                 variant="subtle"
                 size="xs"
@@ -255,7 +363,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
               onClick={confirmRegenerate}
               loading={generating}
             >
-              Régénérer la clé
+              <FormattedMessage id="account.e2e.button.regenerate" />
             </Button>
             <Button
               variant="light"
@@ -263,7 +371,17 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
               size="xs"
               onClick={handleRevoke}
             >
-              Supprimer la clé
+              <FormattedMessage id="account.e2e.button.revoke" />
+            </Button>
+            <Button
+              variant="light"
+              size="xs"
+              onClick={() => {
+                setSskrKey(localKey);
+                setShowSSKR(true);
+              }}
+            >
+              <FormattedMessage id="account.e2e.button.sskr" />
             </Button>
           </Group>
         </Stack>
@@ -273,14 +391,14 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
       {hasServerKey && !hasLocalKey && (
         <Stack spacing="xs">
           <Text size="sm" color="yellow">
-            ⚠ Une clé E2E est enregistrée sur votre compte mais absente de ce
-            navigateur. Importez-la pour accéder à vos partages chiffrés.
+            <FormattedMessage id="account.e2e.import.warning" />
           </Text>
+          <form onSubmit={(e) => { e.preventDefault(); handleImport(); }}>
           <Group align="flex-end" spacing="xs">
-            <TextInput
+            <PasswordInput
               style={{ flex: 1 }}
-              label="Importer votre clé"
-              placeholder="Collez votre clé E2E ici…"
+              label={intl.formatMessage({ id: "account.e2e.import.label" })}
+              placeholder={intl.formatMessage({ id: "account.e2e.import.placeholder" })}
               value={importValue}
               onChange={(e) => {
                 setImportValue(e.currentTarget.value);
@@ -288,10 +406,66 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
               }}
               error={importError}
             />
-            <Button onClick={handleImport} loading={importing} size="sm">
-              Vérifier & importer
+            <Button type="submit" loading={importing} size="sm">
+              <FormattedMessage id="account.e2e.import.submit" />
             </Button>
           </Group>
+          </form>
+          <Divider label={intl.formatMessage({ id: "e2ePrompt.divider.or" })} labelPosition="center" my="xs" />
+
+          <Button
+            variant="subtle"
+            compact
+            onClick={() => setShowRecover(!showRecover)}
+          >
+            {showRecover
+              ? intl.formatMessage({ id: "account.e2e.recover.backDirect" })
+              : intl.formatMessage({ id: "account.e2e.recover.sskrLink" })}
+          </Button>
+
+          {showRecover && (
+            <Stack spacing="xs">
+              <NumberInput
+                label={intl.formatMessage({ id: "e2ePrompt.recover.shardCount" })}
+                value={shardCount}
+                onChange={updateShardCount}
+                min={2}
+                max={10}
+                size="sm"
+              />
+              {Array.from({ length: shardCount }, (_, i) => (
+                <PasswordInput
+                  key={i}
+                  label={intl.formatMessage({ id: "e2ePrompt.recover.shard" }, { n: i + 1 })}
+                  placeholder="sskr:..."
+                  value={shardValues[i] ?? ""}
+                  onChange={(e) => {
+                    const next = [...shardValues];
+                    next[i] = e.currentTarget.value;
+                    setShardValues(next);
+                    setRecoverError("");
+                  }}
+                  size="sm"
+                />
+              ))}
+              <div role="alert" aria-live="assertive">
+                {recoverError && (
+                  <Text size="xs" color="red">
+                    {recoverError}
+                  </Text>
+                )}
+              </div>
+              <Group position="right">
+                <Button
+                  onClick={handleRecoverFromShards}
+                  loading={recoveringShards}
+                >
+                  <FormattedMessage id="e2ePrompt.recover.submit" />
+                </Button>
+              </Group>
+            </Stack>
+          )}
+
           <Group position="right" mt="xs">
             <Button
               variant="light"
@@ -299,7 +473,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
               size="xs"
               onClick={handleRevoke}
             >
-              Supprimer l'ancienne clé et en créer une nouvelle
+              <FormattedMessage id="account.e2e.button.revokeAndCreate" />
             </Button>
           </Group>
         </Stack>
@@ -309,8 +483,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
       {!hasServerKey && !hasLocalKey && (
         <Stack spacing="xs">
           <Text size="sm">
-            Aucune clé E2E configurée. Générez une clé pour activer le
-            chiffrement de bout en bout sur vos futurs partages.
+            <FormattedMessage id="account.e2e.noKey" />
           </Text>
           <Group position="right">
             <Button
@@ -318,16 +491,30 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
               onClick={handleGenerate}
               loading={generating}
             >
-              Générer une clé E2E
+              <FormattedMessage id="account.e2e.button.generate" />
             </Button>
           </Group>
         </Stack>
       )}
+
+      <SSKRGenerateModal
+        opened={showSSKR}
+        onClose={() => setShowSSKR(false)}
+        encodedKey={sskrKey ?? ""}
+      />
+
+      <ReencryptModal
+        opened={showReencrypt}
+        oldKey={oldKeyForReencrypt}
+        newKey={newKeyForReencrypt}
+        onSuccess={handleReencryptSuccess}
+        onError={handleReencryptError}
+      />
     </Paper>
   );
 };
 
-// ---─ Main Account page ------------------------------------------------------------------------
+// --- Main Account page ---
 const Account = () => {
   const [oauth, setOAuth] = useState<string[]>([]);
   const [oauthStatus, setOAuthStatus] = useState<Record<
@@ -337,6 +524,8 @@ const Account = () => {
       providerUsername: string;
     }
   > | null>(null);
+
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const { user, refreshUser } = useUser();
   const modals = useModals();
@@ -695,6 +884,7 @@ const Account = () => {
             <Button
               variant="light"
               color="red"
+              loading={isDeleting}
               onClick={() =>
                 modals.openConfirmModal({
                   title: t("account.modal.delete.title"),
@@ -710,10 +900,17 @@ const Account = () => {
                   },
                   confirmProps: { color: "red" },
                   onConfirm: async () => {
+                    setIsDeleting(true);
                     await userService
                       .removeCurrentUser()
-                      .then(() => window.location.reload())
-                      .catch(toast.axiosError);
+                      .then(() => {
+                        removeUserKey();
+                        window.location.reload();
+                      })
+                      .catch((e) => {
+                        toast.axiosError(e);
+                        setIsDeleting(false);
+                      });
                   },
                 })
               }

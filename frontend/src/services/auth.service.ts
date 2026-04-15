@@ -37,11 +37,10 @@ const signOut = async () => {
 };
 
 const refreshAccessToken = async () => {
-  // The access_token cookie maxAge (13 min) is shorter than the JWT
-  // lifetime (15 min). When the cookie disappears the token is about
-  // to expire, so we proactively request a new one via the refresh
-  // token. No client-side JWT decode is needed.
-  if (!getCookie("access_token")) {
+  // The access_token cookie is httpOnly (not readable by JS).
+  // The logged_in cookie has the same 13-min maxAge and acts as the
+  // non-httpOnly sentinel to detect when a refresh is needed.
+  if (!getCookie("logged_in")) {
     try {
       await api.post("/auth/token");
     } catch (e) {

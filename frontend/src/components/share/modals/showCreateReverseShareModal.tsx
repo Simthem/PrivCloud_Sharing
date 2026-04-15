@@ -106,7 +106,7 @@ const Body = ({
     // RS link expiration is independent from share.maxExpiration.
     // No client-side validation against maxExpiration for RS links.
 
-    // ---- E2E : générer K_rs et chiffrer avec K_master ----
+    // ---- E2E: generate K_rs and encrypt with K_master ----
     let rsKeyEncoded: string | null = null;
     let wrappedKey: string | undefined;
     const masterKeyEncoded = getUserKey();
@@ -119,7 +119,7 @@ const Body = ({
         wrappedKey = await wrapReverseShareKey(rsKey, masterKey);
       } catch (e) {
         console.error(
-          "Erreur lors de la génération de la clé E2E reverse share",
+          "Failed to generate E2E reverse share key",
           e,
         );
         rsKeyEncoded = null;

@@ -142,6 +142,23 @@ export function buildTheme(paletteName?: string): MantineThemeOverride {
     return luminance(bgHex) > 0.183 ? { color: theme.black } : {};
   };
 
+  // Explicit text color for elements sitting on a primary-color background
+  // (e.g. selected dropdown items).  Unlike filledTextColor which returns {}
+  // when white text is fine, this ALWAYS returns an explicit color.
+  const onPrimaryBg = (theme: any): { color: string } => {
+    const c = theme.primaryColor;
+    const shade =
+      typeof theme.primaryShade === "object"
+        ? theme.primaryShade[theme.colorScheme] ?? 7
+        : theme.primaryShade ?? 7;
+    const bgHex = theme.colors[c]?.[shade];
+    if (!bgHex || typeof bgHex !== "string" || !bgHex.startsWith("#"))
+      return { color: theme.white };
+    return luminance(bgHex) > 0.183
+      ? { color: theme.black }
+      : { color: theme.white };
+  };
+
   // Helper: build a "defaultProps.styles" function that injects the filled
   // text-color fix at the component-styles level (highest CSS priority in
   // Mantine's merge chain). This is more robust than relying solely on
@@ -244,6 +261,35 @@ export function buildTheme(paletteName?: string): MantineThemeOverride {
         styles: (theme: any) => {
           const fix = filledTextColor(theme, undefined);
           return { label: fix.color ? fix : {} };
+        },
+      },
+      Select: {
+        styles: (theme: any) => {
+          const isDark = theme.colorScheme === "dark";
+          return {
+            input: isDark ? { color: theme.white } : {},
+            item: {
+              "&[data-selected], &[data-selected][data-hovered]": onPrimaryBg(theme),
+            },
+          };
+        },
+      },
+      NativeSelect: {
+        styles: (theme: any) => {
+          const isDark = theme.colorScheme === "dark";
+          return { input: isDark ? { color: theme.white } : {} };
+        },
+      },
+      MultiSelect: {
+        styles: (theme: any) => {
+          const isDark = theme.colorScheme === "dark";
+          return {
+            input: isDark ? { color: theme.white } : {},
+            value: isDark ? { color: theme.white } : {},
+            item: {
+              "&[data-selected], &[data-selected][data-hovered]": onPrimaryBg(theme),
+            },
+          };
         },
       },
       Switch: {

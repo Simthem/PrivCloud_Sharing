@@ -30,6 +30,9 @@ export class ShareDTO {
   isE2EEncrypted: boolean;
 
   @Expose()
+  previewEnabled?: boolean;
+
+  @Expose()
   encryptedReverseShareKey?: string;
 
   @Expose()

@@ -1,6 +1,6 @@
 import { deleteCookie, setCookie } from "cookies-next";
 import mime from "mime-types";
-import { FileUploadResponse } from "../types/File.type";
+import { FileMetaData, FileUploadResponse } from "../types/File.type";
 import {
   decryptFileAuto,
   downloadDecryptedBlob,
@@ -95,7 +95,7 @@ const downloadFile = async (shareId: string, fileId: string) => {
   window.location.href = `/api/shares/${shareId}/files/${fileId}`;
 };
 
-// Cache du chunkSize pour éviter des appels API répétés
+// Cache of chunkSize to avoid repeated API calls
 let _cachedChunkSize: number | null = null;
 const getChunkSize = async (): Promise<number> => {
   if (_cachedChunkSize !== null) return _cachedChunkSize;
@@ -111,8 +111,8 @@ const getChunkSize = async (): Promise<number> => {
 };
 
 /**
- * Télécharge un fichier chiffré E2E, le déchiffre côté client,
- * puis déclenche le téléchargement du fichier en clair.
+ * Downloads an E2E-encrypted file, decrypts it client-side,
+ * then triggers the download of the plaintext file.
  */
 const downloadFileE2E = async (
   shareId: string,
@@ -134,8 +134,8 @@ const downloadFileE2E = async (
 };
 
 /**
- * Récupère un fichier chiffré E2E sous forme d'ArrayBuffer déchiffré.
- * Utilisé pour les previews.
+ * Fetches an E2E-encrypted file as a decrypted ArrayBuffer.
+ * Used for previews.
  */
 const fetchDecryptedFile = async (
   shareId: string,
@@ -199,9 +199,81 @@ const removeReverseShare = async (id: string) => {
 
 const updateReverseShare = async (
   id: string,
-  data: { shareExpiration: string },
+  data: Record<string, unknown>,
 ) => {
   await api.patch(`/reverseShares/${id}`, data);
+};
+
+const downloadAllAsZipE2E = async (
+  shareId: string,
+  files: FileMetaData[],
+  encodedKey: string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> => {
+  const { default: fflate } = await import("fflate");
+  const key = await importKeyFromBase64(encodedKey);
+  const chunkSize = await getChunkSize();
+  const total = files.length;
+  const zipFiles: Record<string, Uint8Array> = {};
+
+  for (let i = 0; i < total; i++) {
+    const file = files[i];
+    const response = await api.get(`shares/${shareId}/files/${file.id}`, {
+      responseType: "arraybuffer",
+    });
+    const decrypted = await decryptFileAuto(response.data, key, chunkSize);
+    zipFiles[file.name] = new Uint8Array(decrypted);
+    onProgress?.(i + 1, total);
+  }
+
+  const zipped = fflate.zipSync(zipFiles);
+  const blob = new Blob([zipped.buffer as ArrayBuffer], { type: "application/zip" });
+  downloadDecryptedBlob(blob, `${shareId}.zip`);
+};
+
+const downloadSelectedAsZipE2E = async (
+  shareId: string,
+  files: FileMetaData[],
+  encodedKey: string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> => {
+  return downloadAllAsZipE2E(shareId, files, encodedKey, onProgress);
+};
+
+const downloadSelectedAsZip = async (
+  shareId: string,
+  files: FileMetaData[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> => {
+  const { default: fflate } = await import("fflate");
+  const total = files.length;
+  const zipFiles: Record<string, Uint8Array> = {};
+
+  for (let i = 0; i < total; i++) {
+    const file = files[i];
+    const response = await api.get(`shares/${shareId}/files/${file.id}`, {
+      responseType: "arraybuffer",
+    });
+    zipFiles[file.name] = new Uint8Array(response.data);
+    onProgress?.(i + 1, total);
+  }
+
+  const zipped = fflate.zipSync(zipFiles);
+  const blob = new Blob([zipped.buffer as ArrayBuffer], { type: "application/zip" });
+  downloadDecryptedBlob(blob, `${shareId}.zip`);
+};
+
+const uploadReencryptChunk = async (
+  shareId: string,
+  fileId: string,
+  chunk: ArrayBuffer,
+  chunkIndex: number,
+  totalChunks: number,
+): Promise<void> => {
+  await api.put(`shares/${shareId}/files/${fileId}/reencrypt`, chunk, {
+    headers: { "Content-Type": "application/octet-stream" },
+    params: { chunkIndex, totalChunks },
+  });
 };
 
 /**
@@ -210,7 +282,7 @@ const updateReverseShare = async (
  *
  * NOTE: The share page now reads encryptedReverseShareKey directly from the
  * share data (GET /shares/:id). This function is kept for external API clients.
- * Errors are propagated — callers must handle them.
+ * Errors are propagated -- callers must handle them.
  */
 const getEncryptedE2eKey = async (
   shareId: string,
@@ -234,6 +306,9 @@ export default {
   isShareIdAvailable,
   downloadFile,
   downloadFileE2E,
+  downloadAllAsZipE2E,
+  downloadSelectedAsZipE2E,
+  downloadSelectedAsZip,
   fetchDecryptedFile,
   removeFile,
   uploadFile,
@@ -242,6 +317,7 @@ export default {
   getMyReverseShares,
   removeReverseShare,
   updateReverseShare,
+  uploadReencryptChunk,
   getEncryptedE2eKey,
   getStoredRecipients,
 };

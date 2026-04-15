@@ -68,8 +68,8 @@ export class ShareSecurityGuard extends JwtGuard {
         );
       if (!(await this.shareService.verifyShareToken(shareId, shareToken)))
         throw new ForbiddenException(
-          "Share token required",
-          "share_token_required",
+          "This share is password protected",
+          "share_password_required",
         );
       // Token valid -> allow RS creator / share creator / admin through
       if (isRsCreator || isShareCreator) return true;

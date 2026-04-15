@@ -47,6 +47,32 @@ PrivCloud_Sharing encrypts all uploaded files client-side using **AES-256-GCM** 
 
 The website is now listening on `http://localhost:3000`, have fun with PrivCloud_Sharing!
 
+### Building from source
+
+The Dockerfile compiles **OpenSSL 3.6.2** and **Node.js 24** from source to patch CVE-2026-2673 (HIGH). The first build takes ~20-30 min due to these compilation stages. Subsequent builds use Docker layer cache and are much faster.
+
+```bash
+docker compose build
+# or, with explicit build args:
+docker build -t privcloud-sharing .
+```
+
+**Speed up rebuilds:** you can cache the heavy compilation stages as local images so they are never recompiled unless you explicitly want to:
+
+```bash
+# Build and tag the OpenSSL stage (~5-10 min)
+docker build --target openssl-builder -t my-registry/openssl-cache .
+
+# Build and tag the Node.js stage (~15-25 min)
+docker build --target node-builder -t my-registry/node-cache .
+```
+
+Then edit the `Dockerfile` and replace:
+- `FROM debian:trixie-slim AS openssl-builder` with `FROM my-registry/openssl-cache AS openssl-builder`
+- `FROM debian:trixie-slim AS node-builder` with `FROM my-registry/node-cache AS node-builder`
+
+**Node.js version:** the `NODE_VERSION` build arg (default: `24.14.1`) must match the `node:24-slim` base image. When upgrading the base image, update this arg accordingly.
+
 ### Proxy Configuration
 
 If your server accesses the internet through an HTTP proxy, uncomment and edit the proxy lines in `docker-compose.yaml`:

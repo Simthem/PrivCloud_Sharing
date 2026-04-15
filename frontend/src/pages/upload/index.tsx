@@ -1,7 +1,6 @@
-import { Button, Group, Title } from "@mantine/core";
+import { Button, Group, Progress, Stack, Text, Title } from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import { cleanNotifications } from "@mantine/notifications";
-import { AxiosError } from "axios";
 import pLimit from "p-limit";
 import { useEffect, useRef, useState } from "react";
 import { FormattedMessage } from "react-intl";
@@ -23,17 +22,25 @@ import {
   generateEncryptionKey,
   exportKeyToBase64,
   importKeyFromBase64,
-  encryptFile,
   computeKeyHash,
   getUserKey,
   storeUserKey,
   extractKeyFromHash,
 } from "../../utils/crypto.util";
 import userService from "../../services/user.service";
+import { setUploadActive } from "../../services/api.service";
 import { useRouter } from "next/router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  getAdaptiveChunkSize,
+  uploadFileViaWorker,
+} from "../../utils/upload.util";
+import { requestNotificationPermission } from "../../utils/safeline-notify.util";
 
-const promiseLimit = pLimit(3);
+// pLimit is created per-upload to avoid stale slot accumulation across
+// uploads in the same SPA session (module-level pLimit never resets).
+const DEFAULT_CONCURRENCY = 3;
+
 let errorToastShown = false;
 let createdShare: Share;
 let e2eKeyEncoded: string | null = null;
@@ -65,11 +72,41 @@ const Upload = ({
   const wakeLock = useWakeLock();
   const [files, setFiles] = useState<FileUpload[]>([]);
   const [isUploading, setisUploading] = useState(false);
+  const uploadAbortRef = useRef<AbortController | null>(null);
 
   useConfirmLeave({
     message: t("upload.notify.confirm-leave"),
     enabled: isUploading,
   });
+
+  // Detect tab discard: Chromium browsers (Chrome/Opera/Edge) can kill
+  // background tabs via Memory Saver / RAM Limiter.  When the user
+  // returns, the page reloads from scratch and any in-progress upload
+  // is lost.  Show a warning so the user understands what happened.
+  useEffect(() => {
+    if ((document as any).wasDiscarded) {
+      toast.error(
+        t("upload.notify.tab-discarded", {
+          defaultMessage:
+            "Le navigateur a decharge cet onglet pour economiser de la memoire. " +
+            "L'envoi en cours a ete interrompu. Veuillez relancer l'envoi. " +
+            "Astuce : gardez cet onglet au premier plan pendant les gros envois, " +
+            "ou desactivez l'economiseur de memoire pour ce site.",
+        }),
+        { withCloseButton: true, autoClose: false },
+      );
+    }
+  }, []);
+
+  // Reset the API-layer upload guard if this component unmounts (e.g.
+  // when the user forces navigation past the confirm-leave dialog).
+  useEffect(() => {
+    return () => {
+      setUploadActive(false);
+      webLockReleaseRef.current?.();
+      webLockReleaseRef.current = null;
+    };
+  }, []);
 
   const enableRecipientRetrieval =
     !isReverseShare &&
@@ -90,15 +127,45 @@ const Upload = ({
   const chunkSize = useRef(parseInt(config.get("share.chunkSize")));
   const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  maxShareSize ??= parseInt(config.get("share.maxSize"));
+  // Reverse-share pages pass maxShareSize as prop; otherwise use config limit
+  const effectiveMaxShareSize =
+    maxShareSize ?? parseInt(config.get("share.maxSize"));
+
   const autoOpenCreateUploadModal = config.get("share.autoOpenShareModal");
+
+  // Web Lock: signals the browser that this tab is doing critical work,
+  // preventing Chromium (Chrome/Opera/Edge) from discarding it in the
+  // background via Memory Saver / RAM Limiter.
+  const webLockReleaseRef = useRef<(() => void) | null>(null);
 
   const uploadFiles = async (share: CreateShare, files: FileUpload[]) => {
     setisUploading(true);
+    setUploadActive(true);
     shouldShareE2EKeyViaEmail = !!share.shareE2EKeyViaEmail;
+
+    // Request browser notification permission (requires user gesture).
+    // If granted, SafeLine 468 challenges will fire an OS-level popup
+    // and audio beep even when this tab is in the background.
+    requestNotificationPermission();
+
+    const abortCtrl = new AbortController();
+    uploadAbortRef.current = abortCtrl;
 
     // Keep screen awake during upload (mobile)
     await wakeLock.acquire();
+
+    // Acquire a Web Lock to prevent tab discarding (Chromium browsers).
+    // The lock is held until the returned release function is called.
+    if (typeof navigator.locks !== "undefined") {
+      navigator.locks.request(
+        "privcloud-upload-active",
+        { mode: "exclusive" },
+        () =>
+          new Promise<void>((resolve) => {
+            webLockReleaseRef.current = resolve;
+          }),
+      );
+    }
 
     // Start SW keepalive to prevent browser from killing background uploads
     let keepaliveInterval: ReturnType<typeof setInterval> | null = null;
@@ -111,42 +178,42 @@ const Upload = ({
       keepaliveRef.current = keepaliveInterval;
     }
 
-    // ── E2E : récupérer ou créer la clé de chiffrement ──
+    // --- E2E: retrieve or create the encryption key ---
     let cryptoKey: CryptoKey | null = null;
     let storedKey = user ? getUserKey() : null;
 
     if (isReverseShare && isE2EEncrypted) {
-      // Reverse share E2E : lire K_rs depuis le fragment d'URL
+      // Reverse share E2E: read K_rs from the URL fragment
       const rsKeyEncoded = extractKeyFromHash();
       if (rsKeyEncoded) {
         cryptoKey = await importKeyFromBase64(rsKeyEncoded);
         e2eKeyEncoded = rsKeyEncoded;
         share.isE2EEncrypted = true;
       } else {
-        // Clé absente du fragment → pas de chiffrement
+        // Key absent from fragment -> no encryption
         e2eKeyEncoded = null;
       }
     } else if (user) {
       if (storedKey) {
-        // Clé existante → réutiliser
+        // Existing key -> reuse
         cryptoKey = await importKeyFromBase64(storedKey);
         e2eKeyEncoded = storedKey;
       } else {
-        // Première utilisation → générer, stocker et enregistrer le hash
+        // First use -> generate, store and register the hash
         cryptoKey = await generateEncryptionKey();
         e2eKeyEncoded = await exportKeyToBase64(cryptoKey);
         storeUserKey(e2eKeyEncoded);
-        const hash = await computeKeyHash(cryptoKey);
+        const hash = await computeKeyHash(cryptoKey, user!.id);
         await userService.setEncryptionKeyHash(hash);
       }
       share.isE2EEncrypted = true;
     } else {
-      // Anonymous upload: generate a one-time E2E key so files are
-      // never stored in plaintext on the server. The key is only
-      // transmitted via the URL fragment (#key=...) in the share link.
-      cryptoKey = await generateEncryptionKey();
-      e2eKeyEncoded = await exportKeyToBase64(cryptoKey);
-      share.isE2EEncrypted = true;
+      // Anonymous upload (no reverse share): no E2E encryption --
+      // there is no account to store the key and no URL fragment
+      // mechanism for anonymous classic shares.
+      cryptoKey = null;
+      e2eKeyEncoded = null;
+      share.isE2EEncrypted = false;
     }
 
     try {
@@ -155,21 +222,52 @@ const Upload = ({
     } catch (e) {
       toast.axiosError(e);
       setisUploading(false);
+      setUploadActive(false);
+      webLockReleaseRef.current?.();
+      webLockReleaseRef.current = null;
       wakeLock.release();
       e2eKeyEncoded = null;
       return;
     }
 
-    // Stocker la clé localement pour le propriétaire (déjà fait dans storeUserKey ci-dessus)
+    // Store the key locally for the owner (already done via storeUserKey above)
 
-    const fileUploadPromises = files.map(async (file, fileIndex) =>
-      // Limit the number of concurrent uploads to 3
-      promiseLimit(async () => {
-        let fileId;
+    // --- Adaptive chunk sizing ---
+    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+    const effectiveChunkSize = await getAdaptiveChunkSize(chunkSize.current);
+
+    const isLargeUpload = totalSize > 2_000_000_000;
+    const uploadLimit = pLimit(isLargeUpload ? 1 : DEFAULT_CONCURRENCY);
+
+    // Proactive SafeLine keepalive: periodically GET the main page
+    // to keep the WAF session cookie alive during long uploads.
+    // If the cookie is still valid, SafeLine passes the request
+    // through and may extend the session.  90s interval keeps the
+    // session fresh even for multi-hour uploads.
+    const safelineKeepalive = setInterval(() => {
+      fetch("/?_sl=" + Date.now(), { credentials: "include" })
+        .then((r) => {
+          r.body?.cancel();
+        })
+        .catch(() => {});
+    }, 90_000); // every 90s
+
+    // --- Upload via dedicated Web Worker ---
+    // The entire slice + encrypt + fetch loop runs inside a Worker
+    // with its own V8 heap.  All per-chunk allocations (AbortController,
+    // fetch Promise chain, Response, encrypted ArrayBuffers) live in
+    // the Worker and never accumulate on the main renderer process.
+    // This is the primary fix for OOM/SIGTRAP during >10 GB uploads.
+
+    const fileUploadPromises = files.map((file, fileIndex) =>
+      uploadLimit(async () => {
+        let chunks = Math.ceil(file.size / effectiveChunkSize);
+        if (chunks == 0) chunks++;
+        const progressInterval = Math.max(1, Math.floor(chunks / 200));
 
         const setFileProgress = (progress: number) => {
-          setFiles((files) =>
-            files.map((file, callbackIndex) => {
+          setFiles((prev) =>
+            prev.map((file, callbackIndex) => {
               if (fileIndex == callbackIndex) {
                 file.uploadingProgress = progress;
               }
@@ -180,64 +278,96 @@ const Upload = ({
 
         setFileProgress(1);
 
-        // Chunking is done on the original file; each chunk is encrypted
-        // individually just before upload to avoid loading the whole file
-        // into memory (critical for large files on mobile).
-        let chunks = Math.ceil(file.size / chunkSize.current);
-
-        // If the file is 0 bytes, we still need to upload 1 chunk
-        if (chunks == 0) chunks++;
-
-        for (let chunkIndex = 0; chunkIndex < chunks; chunkIndex++) {
-          const from = chunkIndex * chunkSize.current;
-          const to = from + chunkSize.current;
-          let blob: Blob = file.slice(from, to);
-
-          // Encrypt each chunk individually (IV per chunk)
-          if (share.isE2EEncrypted && cryptoKey) {
-            const plainBuf = await blob.arrayBuffer();
-            const encryptedBuf = await encryptFile(plainBuf, cryptoKey);
-            blob = new Blob([encryptedBuf]);
+        try {
+          await uploadFileViaWorker(
+            file,
+            createdShare.id,
+            effectiveChunkSize,
+            chunks,
+            share.isE2EEncrypted ?? false,
+            cryptoKey,
+            (chunkIndex, totalChunks, _fileId) => {
+              // Throttled progress update -- only re-render React
+              // every progressInterval chunks, plus always on last.
+              if (
+                chunkIndex % progressInterval === 0 ||
+                chunkIndex === totalChunks - 1
+              ) {
+                setFileProgress(((chunkIndex + 1) / totalChunks) * 100);
+              }
+            },
+            abortCtrl.signal,
+          );
+        } catch (e: any) {
+          if (e?.cancelled) return; // user cancelled -- skip error toast
+          if (e?.quota) {
+            toast.error(e.message || "Upload failed (quota limit)");
+          } else if (e?.status === 413) {
+            toast.error(e?.data?.message || "Upload failed (size limit)");
+          } else if (e?.status === 403) {
+            toast.error(e?.data?.message || "Upload failed (access denied)");
           }
-          try {
-            await shareService
-              .uploadFile(
-                createdShare.id,
-                blob,
-                {
-                  id: fileId,
-                  name: file.name,
-                },
-                chunkIndex,
-                chunks,
-              )
-              .then((response) => {
-                fileId = response.id;
-              });
-
-            setFileProgress(((chunkIndex + 1) / chunks) * 100);
-          } catch (e) {
-            if (
-              e instanceof AxiosError &&
-              e.response?.data.error == "unexpected_chunk_index"
-            ) {
-              // Retry with the expected chunk index
-              chunkIndex = e.response!.data!.expectedChunkIndex - 1;
-              continue;
-            } else {
-              setFileProgress(-1);
-              // Retry after 5 seconds
-              await new Promise((resolve) => setTimeout(resolve, 5000));
-              chunkIndex = -1;
-
-              continue;
-            }
-          }
+          setFileProgress(-1);
         }
       }),
     );
 
-    Promise.all(fileUploadPromises);
+    Promise.all(fileUploadPromises)
+      .catch(() => {})
+      .finally(() => {
+        clearInterval(safelineKeepalive);
+      });
+  };
+
+  const cancelUpload = () => {
+    modals.openConfirmModal({
+      title: t("upload.cancel.title", { defaultMessage: "Annuler l'envoi" }),
+      children: (
+        <Text size="sm">
+          <FormattedMessage
+            id="upload.cancel.confirm"
+            defaultMessage="L'envoi en cours sera interrompu et le partage incomplet supprimé. Continuer ?"
+          />
+        </Text>
+      ),
+      labels: {
+        confirm: t("common.button.confirm", { defaultMessage: "Confirmer" }),
+        cancel: t("common.button.cancel", { defaultMessage: "Non" }),
+      },
+      confirmProps: { color: "red" },
+      onConfirm: () => {
+        // 1. Abort all in-flight uploads
+        uploadAbortRef.current?.abort();
+        uploadAbortRef.current = null;
+
+        // 2. Delete the incomplete share (best-effort)
+        if (createdShare?.id) {
+          shareService.remove(createdShare.id).catch(() => {});
+        }
+
+        // 3. Reset state
+        if (keepaliveRef.current) {
+          clearInterval(keepaliveRef.current);
+          keepaliveRef.current = null;
+        }
+        wakeLock.release();
+        setisUploading(false);
+        setUploadActive(false);
+        webLockReleaseRef.current?.();
+        webLockReleaseRef.current = null;
+        setFiles((prev) =>
+          prev.map((f) => {
+            if (f.uploadingProgress !== undefined && f.uploadingProgress < 100) {
+              f.uploadingProgress = -1;
+            }
+            return f;
+          }),
+        );
+        e2eKeyEncoded = null;
+        shouldShareE2EKeyViaEmail = false;
+        toast.error(t("upload.cancel.done", { defaultMessage: "Envoi annulé" }));
+      },
+    });
   };
 
   const showCreateUploadModalCallback = (files: FileUpload[]) => {
@@ -323,6 +453,9 @@ const Upload = ({
           }
           wakeLock.release();
           setisUploading(false);
+          setUploadActive(false);
+          webLockReleaseRef.current?.();
+          webLockReleaseRef.current = null;
           showCompletedUploadModal(modals, share, e2eKeyEncoded);
           queryClient.invalidateQueries({
             queryKey: ["share.pastRecipients"],
@@ -332,6 +465,26 @@ const Upload = ({
           shouldShareE2EKeyViaEmail = false;
         })
         .catch(() => toast.error(t("upload.notify.generic-error")));
+    }
+
+    // All files finished but some (or all) failed -- reset upload state
+    // so the UI is no longer stuck in "uploading" mode.
+    const allFilesDone =
+      files.length > 0 &&
+      isUploading &&
+      files.every(
+        (f) => f.uploadingProgress >= 100 || f.uploadingProgress === -1,
+      );
+    if (allFilesDone && fileErrorCount > 0) {
+      if (keepaliveRef.current) {
+        clearInterval(keepaliveRef.current);
+        keepaliveRef.current = null;
+      }
+      wakeLock.release();
+      setisUploading(false);
+      setUploadActive(false);
+      webLockReleaseRef.current?.();
+      webLockReleaseRef.current = null;
     }
   }, [files]);
 
@@ -357,10 +510,55 @@ const Upload = ({
             ? t("share.edit.append-upload")
             : undefined
         }
-        maxShareSize={maxShareSize}
+        maxShareSize={effectiveMaxShareSize}
+        existingFilesSize={files.reduce((sum, f) => sum + f.size, 0)}
         onFilesChanged={handleDropzoneFilesChanged}
         isUploading={isUploading}
       />
+      {isUploading && files.length > 0 && (() => {
+        const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+        const uploadedSize = files.reduce((sum, f) => {
+          const pct = Math.max(0, f.uploadingProgress ?? 0);
+          return sum + (f.size * Math.min(pct, 100)) / 100;
+        }, 0);
+        const globalPct = totalSize > 0 ? Math.round((uploadedSize / totalSize) * 100) : 0;
+        const done = files.filter((f) => f.uploadingProgress >= 100).length;
+        const failed = files.filter((f) => f.uploadingProgress === -1).length;
+        return (
+          <Stack spacing={4} mt="sm" mb="xs">
+            <Group position="apart">
+              <Text size="sm" weight={500}>
+                <FormattedMessage
+                  id="upload.progress.global"
+                  defaultMessage="Upload: {done}/{total} files"
+                  values={{ done: done + failed, total: files.length }}
+                />
+              </Text>
+              <Group spacing="xs">
+                <Text size="sm" color="dimmed">{globalPct}%</Text>
+                <Button
+                  size="xs"
+                  compact
+                  color="red"
+                  variant="subtle"
+                  onClick={cancelUpload}
+                >
+                  <FormattedMessage
+                    id="upload.cancel.button"
+                    defaultMessage="Annuler"
+                  />
+                </Button>
+              </Group>
+            </Group>
+            <Progress
+              value={globalPct}
+              size="lg"
+              radius="xl"
+              animate={globalPct < 100}
+            />
+          </Stack>
+        );
+      })()}
       {files.length > 0 && (
         <FileList<FileUpload> files={files} setFiles={setFiles} />
       )}

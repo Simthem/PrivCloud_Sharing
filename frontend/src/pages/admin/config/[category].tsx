@@ -98,6 +98,12 @@ export default function AppShellDemo() {
   };
 
   const sanitizeUrl = (url: string): string => {
+    try {
+      const parsed = new URL(url);
+      if (!["http:", "https:"].includes(parsed.protocol)) return "";
+    } catch {
+      return "";
+    }
     return url.endsWith("/") ? url.slice(0, -1) : url;
   };
 

@@ -1,0 +1,20 @@
+# PrivCloud Sharing -- robots.txt
+# Allow indexing of public-facing pages only.
+# Block all API, admin, auth, and internal paths.
+
+User-agent: *
+Allow: /
+Allow: /auth/signIn
+Allow: /auth/signUp
+
+Disallow: /api/
+Disallow: /admin/
+Disallow: /auth/resetPassword
+Disallow: /auth/totp
+Disallow: /upload
+Disallow: /account
+Disallow: /RequestDenied
+Disallow: /_next/
+Disallow: /s/
+
+Sitemap: https://share.privcloud.fr/sitemap.xml

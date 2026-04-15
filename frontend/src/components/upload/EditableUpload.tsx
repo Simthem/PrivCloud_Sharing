@@ -1,6 +1,6 @@
-import { Button, Group } from "@mantine/core";
+import { Button, Group, Text } from "@mantine/core";
+import { useModals } from "@mantine/modals";
 import { cleanNotifications } from "@mantine/notifications";
-import { AxiosError } from "axios";
 import { useRouter } from "next/router";
 import pLimit from "p-limit";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -16,11 +16,13 @@ import toast from "../../utils/toast.util";
 import {
   getUserKey,
   importKeyFromBase64,
-  encryptFile,
 } from "../../utils/crypto.util";
 import { useQueryClient } from "@tanstack/react-query";
+import {
+  getAdaptiveChunkSize,
+  uploadFileViaWorker,
+} from "../../utils/upload.util";
 
-const promiseLimit = pLimit(3);
 let errorToastShown = false;
 
 const EditableUpload = ({
@@ -38,8 +40,10 @@ const EditableUpload = ({
   const t = useTranslate();
   const router = useRouter();
   const config = useConfig();
+  const modals = useModals();
   const queryClient = useQueryClient();
   const wakeLock = useWakeLock();
+  const uploadAbortRef = useRef<AbortController | null>(null);
 
   const chunkSize = useRef(parseInt(config.get("share.chunkSize")));
 
@@ -70,86 +74,71 @@ const EditableUpload = ({
     setExistingFiles(_existingFiles);
   };
 
-  maxShareSize ??= parseInt(config.get("share.maxSize"));
+  const effectiveMaxShareSize = maxShareSize ?? parseInt(config.get("share.maxSize"));
 
   const uploadFiles = async (files: FileUpload[]) => {
-    // Pour les partages E2E, récupérer la clé utilisateur depuis localStorage
+    // E2E: enforce encryption consistency -- if the share is encrypted,
+    // uploading without a key would store plaintext files alongside
+    // encrypted ones, corrupting the share integrity.
     let e2eCryptoKey: CryptoKey | null = null;
     if (isE2EEncrypted) {
       const userKey = getUserKey();
-      if (userKey) {
-        e2eCryptoKey = await importKeyFromBase64(userKey);
+      if (!userKey) {
+        toast.error(t("share.edit.notify.e2e-key-missing"));
+        throw new Error("E2E_KEY_MISSING");
       }
+      e2eCryptoKey = await importKeyFromBase64(userKey);
     }
 
-    const fileUploadPromises = files.map(async (file, fileIndex) =>
-      // Limit the number of concurrent uploads to 3
-      promiseLimit(async () => {
-        let fileId: string | undefined;
+    const effectiveChunkSize = await getAdaptiveChunkSize(chunkSize.current);
+    const uploadLimit = pLimit(3);
 
+    const abortCtrl = new AbortController();
+    uploadAbortRef.current = abortCtrl;
+
+    const fileUploadPromises = files.map((file, fileIndex) =>
+      uploadLimit(async () => {
         const setFileProgress = (progress: number) => {
           setUploadingFiles((files) =>
-            files.map((file, callbackIndex) => {
-              if (fileIndex == callbackIndex) {
-                file.uploadingProgress = progress;
-              }
-              return file;
+            files.map((f, i) => {
+              if (i === fileIndex) f.uploadingProgress = progress;
+              return f;
             }),
           );
         };
 
         setFileProgress(1);
 
-        // Chiffrement par chunk pour éviter de charger tout le fichier en mémoire
-        let chunks = Math.ceil(file.size / chunkSize.current);
+        const totalChunks = Math.max(
+          1,
+          Math.ceil(file.size / effectiveChunkSize),
+        );
 
-        // If the file is 0 bytes, we still need to upload 1 chunk
-        if (chunks == 0) chunks++;
-
-        for (let chunkIndex = 0; chunkIndex < chunks; chunkIndex++) {
-          const from = chunkIndex * chunkSize.current;
-          const to = from + chunkSize.current;
-          let blob: Blob = file.slice(from, to);
-
-          if (e2eCryptoKey) {
-            const plainBuf = await blob.arrayBuffer();
-            const encryptedBuf = await encryptFile(plainBuf, e2eCryptoKey);
-            blob = new Blob([encryptedBuf]);
-          }
-          try {
-            await shareService
-              .uploadFile(
-                shareId,
-                blob,
-                {
-                  id: fileId,
-                  name: file.name,
-                },
-                chunkIndex,
-                chunks,
-              )
-              .then((response) => {
-                fileId = response.id;
-              });
-
-            setFileProgress(((chunkIndex + 1) / chunks) * 100);
-          } catch (e) {
-            if (
-              e instanceof AxiosError &&
-              e.response?.data.error == "unexpected_chunk_index"
-            ) {
-              // Retry with the expected chunk index
-              chunkIndex = e.response!.data!.expectedChunkIndex - 1;
-              continue;
-            } else {
-              setFileProgress(-1);
-              // Retry after 5 seconds
-              await new Promise((resolve) => setTimeout(resolve, 5000));
-              chunkIndex = -1;
-
-              continue;
+        try {
+          await uploadFileViaWorker(
+            file,
+            shareId,
+            effectiveChunkSize,
+            totalChunks,
+            !!isE2EEncrypted,
+            e2eCryptoKey,
+            (chunkIndex, totalChunks) => {
+              setFileProgress(((chunkIndex + 1) / totalChunks) * 100);
+            },
+            abortCtrl.signal,
+          );
+        } catch (e: any) {
+          if (e?.cancelled) return; // user cancelled
+          if (
+            e?.status === 413 ||
+            (e?.status === 403 && e?.quota)
+          ) {
+            if (!errorToastShown) {
+              toast.error(e?.message || "Quota exceeded");
+              errorToastShown = true;
             }
           }
+          setFileProgress(-1);
         }
       }),
     );
@@ -180,11 +169,44 @@ const EditableUpload = ({
   };
 
   const save = async () => {
+    // E2E validation: block save if share is encrypted but key is missing
+    if (isE2EEncrypted && uploadingFiles.length > 0) {
+      const userKey = getUserKey();
+      if (!userKey) {
+        toast.error(t("share.edit.notify.e2e-key-missing"));
+        return;
+      }
+    }
+
+    // Pre-check: estimate if new files would exceed max share size
+    const existingSize = existingFiles
+      .filter((f) => !f.deleted)
+      .reduce((sum, f) => sum + parseInt(f.size || "0"), 0);
+    const newFilesSize = uploadingFiles.reduce((sum, f) => sum + f.size, 0);
+    if (
+      effectiveMaxShareSize &&
+      existingSize + newFilesSize > effectiveMaxShareSize
+    ) {
+      toast.error(
+        t("upload.dropzone.notify.file-too-big", {
+          maxSize:
+            effectiveMaxShareSize >= 1000000000
+              ? `${(effectiveMaxShareSize / 1000000000).toFixed(1)} GB`
+              : `${Math.round(effectiveMaxShareSize / 1000000)} MB`,
+        }),
+      );
+      return;
+    }
+
+    errorToastShown = false;
     setIsUploading(true);
     await wakeLock.acquire();
+    let reverted = false;
 
     try {
       await revertComplete();
+      reverted = true;
+
       await uploadFiles(uploadingFiles);
 
       const hasFailed = uploadingFiles.some(
@@ -196,16 +218,31 @@ const EditableUpload = ({
       }
 
       await completeShare();
+      reverted = false;
 
       if (!hasFailed) {
-        // respect isReverseShare in queryKey if this component is used for reverse shares
         queryClient.invalidateQueries({ queryKey: ["share", shareId] });
         toast.success(t("share.edit.notify.save-success"));
         router.back();
       }
-    } catch {
-      toast.error(t("share.edit.notify.generic-error"));
+    } catch (e: any) {
+      if (e?.message !== "E2E_KEY_MISSING") {
+        toast.error(t("share.edit.notify.generic-error"));
+      }
     } finally {
+      // CRITICAL: Always re-lock the share to prevent cron deletion.
+      // If revertComplete was called but completeShare did not succeed,
+      // the share is in uploadLocked=false state and the cron job
+      // deleteUnfinishedShares would permanently delete it after 24h.
+      if (reverted) {
+        try {
+          await completeShare();
+        } catch {
+          // completeShare may fail (e.g. share has 0 files after all
+          // uploads failed). The cron grace period was reset by
+          // revertComplete (createdAt = now), giving 24h to retry.
+        }
+      }
       setIsUploading(false);
       wakeLock.release();
     }
@@ -213,6 +250,39 @@ const EditableUpload = ({
 
   const appendFiles = (appendingFiles: FileUpload[]) => {
     setUploadingFiles([...appendingFiles, ...uploadingFiles]);
+  };
+
+  const cancelUpload = () => {
+    modals.openConfirmModal({
+      title: t("upload.cancel.title", { defaultMessage: "Annuler l'envoi" }),
+      children: (
+        <Text size="sm">
+          <FormattedMessage
+            id="upload.cancel.confirm"
+            defaultMessage="L'envoi en cours sera interrompu. Continuer ?"
+          />
+        </Text>
+      ),
+      labels: {
+        confirm: t("common.button.confirm", { defaultMessage: "Confirmer" }),
+        cancel: t("common.button.cancel", { defaultMessage: "Non" }),
+      },
+      confirmProps: { color: "red" },
+      onConfirm: () => {
+        uploadAbortRef.current?.abort();
+        uploadAbortRef.current = null;
+
+        setUploadingFiles((prev) =>
+          prev.map((f) => {
+            if (f.uploadingProgress !== undefined && f.uploadingProgress < 100) {
+              f.uploadingProgress = -1;
+            }
+            return f;
+          }),
+        );
+        toast.error(t("upload.cancel.done", { defaultMessage: "Envoi annulé" }));
+      },
+    });
   };
 
   useEffect(() => {
@@ -240,14 +310,22 @@ const EditableUpload = ({
 
   return (
     <>
-      <Group position="right" mb={20}>
+      <Group position="right" mb={20} spacing="xs">
+        {isUploading && (
+          <Button size="sm" color="red" variant="subtle" onClick={cancelUpload}>
+            <FormattedMessage
+              id="upload.cancel.button"
+              defaultMessage="Annuler"
+            />
+          </Button>
+        )}
         <Button loading={isUploading} disabled={!dirty} onClick={() => save()}>
           <FormattedMessage id="common.button.save" />
         </Button>
       </Group>
       <Dropzone
         title={t("share.edit.append-upload")}
-        maxShareSize={maxShareSize}
+        maxShareSize={effectiveMaxShareSize}
         onFilesChanged={appendFiles}
         isUploading={isUploading}
       />

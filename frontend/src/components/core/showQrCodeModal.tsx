@@ -2,8 +2,13 @@ import { ActionIcon, Center, Stack, Text, Tooltip } from "@mantine/core";
 import { ModalsContextProps } from "@mantine/modals/lib/context";
 import { useState } from "react";
 import { TbCheck, TbCopy } from "react-icons/tb";
-import { QRCodeSVG } from "qrcode.react";
+import dynamic from "next/dynamic";
 import { translateOutsideContext } from "../../hooks/useTranslate.hook";
+
+const QRCodeSVG = dynamic(
+  () => import("qrcode.react").then((mod) => ({ default: mod.QRCodeSVG })),
+  { ssr: false },
+);
 import { copyToClipboard } from "../../utils/clipboard.util";
 
 const showQrCodeModal = (modals: ModalsContextProps, link: string) => {

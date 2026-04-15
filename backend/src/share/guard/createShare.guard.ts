@@ -1,4 +1,9 @@
-import { ExecutionContext, Injectable } from "@nestjs/common";
+import {
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
+import { Request } from "express";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
 import { ConfigService } from "src/config/config.service";
 import { ReverseShareService } from "src/reverseShare/reverseShare.service";
@@ -15,10 +20,19 @@ export class CreateShareGuard extends JwtGuard {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (await super.canActivate(context)) return true;
 
-    const reverseShareTokenId = context.switchToHttp().getRequest()
-      .cookies.reverse_share_token;
+    const request: Request = context.switchToHttp().getRequest();
+    const reverseShareTokenId = request.cookies.reverse_share_token;
 
-    if (!reverseShareTokenId) return false;
+    if (!reverseShareTokenId) {
+      // JwtGuard returned false (token absent or expired) and there
+      // is no reverse share fallback.  If an access_token cookie was
+      // present the token likely just expired -- throw 401 so the
+      // client can refresh it instead of receiving a generic 403.
+      if (request.cookies?.access_token) {
+        throw new UnauthorizedException();
+      }
+      return false;
+    }
 
     const isReverseShareTokenValid =
       await this.reverseShareService.isValid(reverseShareTokenId);

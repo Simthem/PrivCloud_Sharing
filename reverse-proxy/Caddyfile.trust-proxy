@@ -2,6 +2,8 @@
 	# Defense-in-depth security headers (primary enforcement is at the
 	# upstream reverse proxy / WAF level; these act as a fallback).
 	header {
+		-Server
+		-Via
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "SAMEORIGIN"
 		Referrer-Policy "strict-origin-when-cross-origin"
@@ -12,12 +14,16 @@
 	}
 
 	# Reverse proxy for /api
-	reverse_proxy /api/* http://localhost:{$BACKEND_PORT:8080} {
+	reverse_proxy /api/* http://127.0.0.1:{$BACKEND_PORT:8080} {
 		trusted_proxies 0.0.0.0/0
+		header_up -Via
+		header_down -Via
 	}
 
 	# Reverse proxy for all other requests
-	reverse_proxy /* http://localhost:{$PORT:3333} {
+	reverse_proxy /* http://127.0.0.1:{$PORT:3333} {
 		trusted_proxies 0.0.0.0/0
+		header_up -Via
+		header_down -Via
 	}
 }

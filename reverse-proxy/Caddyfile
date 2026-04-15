@@ -2,6 +2,8 @@
 	# Defense-in-depth security headers (primary enforcement is at the
 	# upstream reverse proxy / WAF level; these act as a fallback).
 	header {
+		-Server
+		-Via
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "SAMEORIGIN"
 		Referrer-Policy "strict-origin-when-cross-origin"
@@ -11,9 +13,22 @@
 		Permissions-Policy "geolocation=(), microphone=(), camera=(), fullscreen=(), payment=()"
 	}
 
-	# Reverse proxy for /api
-	reverse_proxy /api/* http://localhost:{$BACKEND_PORT:8080}
+	# Reverse proxy for /api -- explicit timeouts for large file
+	# downloads and uploads that can run for several minutes.
+	reverse_proxy /api/* http://127.0.0.1:{$BACKEND_PORT:8080} {
+		transport http {
+			response_header_timeout 600s
+			read_buffer 1mb
+			write_buffer 512kb
+		}
+		flush_interval -1
+		header_up -Via
+    	header_down -Via
+	}
 
 	# Reverse proxy for all other requests
-	reverse_proxy http://localhost:{$PORT:3333}
+	reverse_proxy http://127.0.0.1:{$PORT:3333} {
+		header_up -Via
+    	header_down -Via
+	}
 }

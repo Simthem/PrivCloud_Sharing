@@ -12,6 +12,7 @@ import cookieParser from "cookie-parser";
 import { NextFunction, Request, Response } from "express";
 import * as fs from "fs";
 import { AppModule } from "./app.module";
+import { AbortedRequestFilter } from "./aborted-request.filter";
 import { ConfigService } from "./config/config.service";
 import {
   DATA_DIRECTORY,
@@ -87,18 +88,22 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: logLevels,
+    rawBody: true,
   });
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
+  app.useGlobalFilters(new AbortedRequestFilter());
 
   const config = app.get<ConfigService>(ConfigService);
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     const chunkSize = config.get("share.chunkSize");
-    // E2E encrypted chunks are chunkSize + 28 bytes (12 IV + 16 GCM tag).
-    // Add a small margin so encrypted uploads don't hit the limit.
-    const limit = chunkSize + 128;
+    // Adaptive chunk sizing: the frontend may send chunks up to 200 MB
+    // based on measured bandwidth. Use 200 MB as the safety floor so
+    // the backend never rejects a chunk the frontend can send.
+    // E2E encrypted chunks add 28 bytes (12 IV + 16 GCM tag).
+    const limit = Math.max(chunkSize, 200_000_000) + 128;
     bodyParser.raw({
       type: "application/octet-stream",
       limit: `${limit}B`,

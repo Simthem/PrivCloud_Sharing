@@ -74,7 +74,7 @@ export class ShareController {
   @Get(":id/from-owner")
   @UseGuards(ShareOwnerGuard)
   async getFromOwner(@Param("id", SafeIdPipe) id: string) {
-    return new ShareDTO().from(await this.shareService.get(id));
+    return new ShareDTO().from(await this.shareService.getForOwner(id));
   }
 
   @Get(":id/metaData")
@@ -89,9 +89,9 @@ export class ShareController {
    * The key is encrypted with K_master - the server never sees K_rs in clear.
    *
    * Returns:
-   *  - 200 { encryptedReverseShareKey: null }   → not a reverse share (use K_master)
-   *  - 200 { encryptedReverseShareKey: "..." }  → reverse share key (unwrap with K_master)
-   *  - 403                                       → reverse share but user is not owner
+   *  - 200 { encryptedReverseShareKey: null }   -> not a reverse share (use K_master)
+   *  - 200 { encryptedReverseShareKey: "..." }  -> reverse share key (unwrap with K_master)
+   *  - 403                                       -> reverse share but user is not owner
    */
   @Get(":id/e2e-key")
   @UseGuards(JwtGuard)
@@ -101,12 +101,12 @@ export class ShareController {
   ) {
     const result = await this.shareService.getEncryptedReverseShareKey(id);
 
-    // Not a reverse share or no encrypted key stored → client should use K_master
+    // Not a reverse share or no encrypted key stored -> client should use K_master
     if (!result) {
       return { encryptedReverseShareKey: null };
     }
 
-    // Reverse share exists but user is not authenticated or not the owner → 403
+    // Reverse share exists but user is not authenticated or not the owner -> 403
     if (!user || result.creatorId !== user.id) {
       throw new ForbiddenException("Not the reverse share owner");
     }

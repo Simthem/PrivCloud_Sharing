@@ -260,6 +260,20 @@ export default {
   "account.reverseShares.modal.delete.description":
     "Do you really want to delete this reverse share? If you do, the associated shares will be deleted as well.",
 
+  "account.reverseShares.rsKey.title": "Reverse share encryption key",
+  "account.reverseShares.rsKey.description": "AES-256 encryption key for this reverse share. Store it safely -- without it, uploaded files cannot be decrypted.",
+  "account.reverseShares.rsKey.reveal": "Reveal",
+  "account.reverseShares.rsKey.hide": "Hide",
+  "account.reverseShares.rsKey.copy": "Copy",
+  "account.reverseShares.rsKey.copied": "Copied!",
+  "account.reverseShares.table.show-key": "Show encryption key",
+  "account.reverseShares.notify.decrypt-key-failed": "Unable to decrypt the reverse share key",
+  "account.reverseShares.notify.expiration-updated": "Expiration updated",
+  "account.reverseShares.notify.expiration-update-failed": "Failed to update expiration",
+  "account.reverseShares.modal.delete-share.title": "Delete share",
+  "account.reverseShares.modal.delete-share.description":
+    "Do you really want to delete this share? The uploaded files will be permanently removed.",
+
   // END /account/reverseShares
 
   // /admin
@@ -331,8 +345,13 @@ export default {
   "upload.dropzone.title": "Upload files",
   "upload.dropzone.description":
     "Drag'n'drop files here to start your share. We only accept files up to {maxSize} in total.",
+  "upload.dropzone.description.unlimited":
+    "Drag'n'drop files here to start your share. No size limit.",
   "upload.dropzone.notify.file-too-big":
     "Your files exceed the maximum share size of {maxSize}.",
+
+  // Global upload progress
+  "upload.progress.global": "Upload: {done}/{total} files",
 
   // FileList.tsx
   "upload.filelist.name": "Name",
@@ -432,6 +451,8 @@ export default {
   "share.modal.captcha.submit": "Access share",
 
   "share.button.download-all": "Download all",
+  "share.button.download-selected": "Download {count, plural, one {# file} other {# files}}",
+  "share.button.clear-selection": "Clear selection",
   "share.notify.download-all-preparing":
     "The share is being prepared. Please try again in a few minutes.",
 
@@ -452,6 +473,8 @@ export default {
   "share.edit.notify.generic-error":
     "An error occurred while finishing your share.",
   "share.edit.notify.save-success": "Share updated successfully",
+  "share.edit.notify.e2e-key-missing":
+    "E2E key missing from browser. Import your key from your account before editing an encrypted share.",
   // END /share/[id]/edit
 
   // /imprint
@@ -466,8 +489,7 @@ export default {
   "cookie.banner.message":
     "This site uses strictly necessary cookies for authentication and session management. No tracking or advertising cookies are used.",
   "cookie.banner.learn-more": "Learn more",
-  "cookie.banner.accept": "Accept",
-  "cookie.banner.reject": "Reject",
+  "cookie.banner.dismiss": "Got it",
   // END Cookie consent
 
   // /admin/config
@@ -500,6 +522,12 @@ export default {
   "admin.config.general.meta-description": "Meta Description",
   "admin.config.general.meta-description.description":
     "SEO meta description displayed in search engine results.",
+  "admin.config.general.meta-description-en": "Meta Description (English)",
+  "admin.config.general.meta-description-en.description":
+    "SEO meta description displayed in search engine results for English-speaking visitors.",
+  "admin.config.general.meta-description-fr": "Meta Description (French)",
+  "admin.config.general.meta-description-fr.description":
+    "SEO meta description displayed in search engine results for French-speaking visitors.",
   "admin.config.general.color-palette": "Color Palette",
   "admin.config.general.color-palette.description":
     "Color theme used throughout the application.",
@@ -869,4 +897,60 @@ export default {
   "common.error.exact-length": "Must be exactly {length} characters",
   "common.error.invalid-number": "Must be a number",
   "common.error.field-required": "This field is required",
+  "common.button.close": "Close",
+
+  // --- ReencryptModal ---
+  "reencrypt.modal.title": "Re-encrypting files",
+  "reencrypt.error.title": "Re-encryption error",
+  "reencrypt.error.generic": "An error occurred during re-encryption.",
+  "reencrypt.error.partial": "{failed, plural, one {# file} other {# files}} could not be re-encrypted:",
+  "reencrypt.done.title": "Re-encryption complete",
+  "reencrypt.done.message": "{count, plural, one {# file re-encrypted} other {# files re-encrypted}} successfully.",
+  "reencrypt.partial.title": "Partial re-encryption",
+  "reencrypt.partial.message": "{ok} re-encrypted, {failed} failed, {skipped} skipped.",
+  "reencrypt.inprogress.message": "Re-encryption in progress, do not close this tab...",
+  "reencrypt.inprogress.warning": "Closing the tab will interrupt the process.",
+  "reencrypt.progress.label": "Re-encryption progress",
+  "reencrypt.progress.files": "{current}/{total} files -- {name}",
+  "reencrypt.progress.reverseShares": "{current}/{total} reverse shares",
+  "reencrypt.button.cancel": "Cancel",
+  "reencrypt.button.close": "Close",
+  "reencrypt.button.retry": "Retry",
+
+  // --- E2EKeyPrompt ---
+  "e2ePrompt.title": "E2E Encryption Key",
+  "e2ePrompt.import.description": "Your account has an end-to-end encryption key. It is never stored on the server -- you must enter it once per session (it will be kept as long as the tab remains open).",
+  "e2ePrompt.import.label": "Encryption key",
+  "e2ePrompt.import.placeholder": "Paste your secret key here",
+  "e2ePrompt.import.skip": "Skip",
+  "e2ePrompt.import.submit": "Load key",
+  "e2ePrompt.import.sskrLink": "Recover via my SSKR shards",
+  "e2ePrompt.import.skipWarning": "If you skip this step, you will not be able to decrypt or create encrypted shares during this session.",
+  "e2ePrompt.divider.or": "OR",
+  "e2ePrompt.recover.description": "Paste your SSKR recovery shards. You must provide at least the number that was required during generation (the threshold T).",
+  "e2ePrompt.recover.shardCount": "Number of shards to enter",
+  "e2ePrompt.recover.shard": "Shard {n}",
+  "e2ePrompt.recover.back": "Back",
+  "e2ePrompt.recover.submit": "Reconstruct key",
+  "e2ePrompt.recovered.success": "Key reconstructed successfully!",
+  "e2ePrompt.recovered.instructions": "Here is your encryption key. Store it carefully in a password manager -- it will not be shown again.",
+  "e2ePrompt.recovered.key.aria": "Reconstructed encryption key",
+  "e2ePrompt.recovered.copy.aria": "Copy key to clipboard",
+  "e2ePrompt.recovered.copy": "Copy key",
+  "e2ePrompt.recovered.copied": "Copied!",
+
+  // --- Account E2E Section ---
+  "account.e2e.title": "End-to-End Encryption (E2E)",
+  "account.e2e.description": "Your AES-256 encryption key is never sent to the server. It is kept in your tab for the duration of your session. When the tab is closed, it is automatically purged. Each new session requires you to re-enter it. Store it carefully in a password manager.",
+  "account.e2e.yourKey": "Your key:",
+  "account.e2e.key.reveal": "Reveal",
+  "account.e2e.key.hide": "Hide",
+  "account.e2e.key.copy": "Copy key",
+  "account.e2e.key.copied": "Copied!",
+  "account.e2e.button.regenerate": "Regenerate key",
+  "account.e2e.button.revoke": "Delete key",
+  "account.e2e.button.sskr": "Create recovery shards",
+  "account.e2e.button.generate": "Generate an E2E key",
+  "account.e2e.button.revokeAndCreate": "Delete old key and create a new one",
+  "account.e2e.noKey": "No E2E key configured. Generate a key to enable end-to-end encryption on your future shares.",
 };

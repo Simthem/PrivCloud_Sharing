@@ -547,6 +547,7 @@ const CreateUploadModalBody = ({
                         description={t(
                           "upload.modal.accordion.security.e2e-key-email.description",
                         )}
+                        styles={{ description: { whiteSpace: "pre-line" } }}
                         {...form.getInputProps("shareE2EKeyViaEmail", {
                           type: "checkbox",
                         })}

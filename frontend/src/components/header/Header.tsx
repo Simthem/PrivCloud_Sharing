@@ -52,10 +52,10 @@ const Header = () => {
       label: t("navbar.upload"),
     },
     {
-      component: <NavbarShareMenu />,
+      component: <NavbarShareMenu onNavigate={toggleOpened.close} />,
     },
     {
-      component: <ActionAvatar />,
+      component: <ActionAvatar onNavigate={toggleOpened.close} />,
     },
   ];
 
@@ -110,8 +110,45 @@ const Header = () => {
       })}
     </>
   );
+
+  const mobileItems = (
+    <>
+      {user ? (
+        <>
+          <Link
+            href="/upload"
+            onClick={toggleOpened.close}
+            className={cx(classes.link, classes.withIcon, {
+              [classes.linkActive]: currentRoute == "/upload",
+            })}
+          >
+            <TbUpload size={14} />
+            {t("navbar.upload")}
+          </Link>
+          <NavbarShareMenu mobile onNavigate={toggleOpened.close} />
+          <ActionAvatar mobile onNavigate={toggleOpened.close} />
+        </>
+      ) : (
+        unauthenticatedLinks.map((link, i) => (
+          <Link
+            key={i}
+            href={link.link ?? ""}
+            onClick={toggleOpened.close}
+            className={cx(classes.link, {
+              [classes.linkActive]: currentRoute == link.link,
+              [classes.withIcon]: !!link.icon,
+            })}
+          >
+            {link.icon}
+            {link.label}
+          </Link>
+        ))
+      )}
+    </>
+  );
+
   return (
-    <MantineHeader height={HEADER_HEIGHT} mb={40} className={classes.root}>
+    <MantineHeader height={HEADER_HEIGHT} mb={router.pathname === "/" ? 0 : 40} className={classes.root}>
       <Container className={classes.header}>
         <Link href="/" passHref>
           <Group>
@@ -137,7 +174,7 @@ const Header = () => {
         <Transition transition="pop-top-right" duration={200} mounted={opened}>
           {(styles) => (
             <Paper className={classes.dropdown} withBorder style={styles}>
-              <Stack spacing={0}> {items}</Stack>
+              <Stack spacing={0}>{mobileItems}</Stack>
             </Paper>
           )}
         </Transition>
