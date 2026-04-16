@@ -1,5 +1,5 @@
 # <div align="center"> </br>PrivCloud_Sharing</div>
-[![](https://img.shields.io/badge/sponsor-30363D?style=for-the-badge&logo=GitHub-Sponsors&logoColor=#white)](https://github.com/sponsors/Simthem)
+[![](https://img.shields.io/badge/sponsor-30363D?style=for-the-badge&logo=GitHub-Sponsors&logoColor=#white)](https://github.com/sponsors/Simthem) </br> [THEMIOT Informatique](https://www.stprive.net) | [PrivCloud_Sharing](https://share.privcloud.fr)
 
 ---
 

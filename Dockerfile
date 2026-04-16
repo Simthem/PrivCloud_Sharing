@@ -18,7 +18,10 @@ WORKDIR /caddy
 # CVE-2026-33186 (CVSS 9.1, CRITICAL) : google.golang.org/grpc < 1.79.3
 # GHSA-q4r8-xm5f-56gw (CRITICAL) + CVE-2026-30836 (CVSS 7.8, HIGH) : github.com/smallstep/certificates < 0.30.2
 # CVE-2026-34986 (CVSS 8.7, HIGH) : github.com/go-jose/go-jose v3 < 3.0.5, v4 < 4.1.4
-# CVE-2026-33816 (CVSS 8.7, HIGH) + CVE-2026-33815 (CVSS 8.2, HIGH) : github.com/jackc/pgx/v5 < 5.9.0
+# CVE-2026-33816 (CVSS 8.7, HIGH) : github.com/jackc/pgx/v5 < 5.9.0
+# CVE-2026-33815 (CVSS 9.8, CRITICAL) : pgx/v5 pgproto3 OOB write -- NO upstream fix (all versions).
+#   VEX not_affected: pgx is a transitive dep of Caddy via smallstep/certificates;
+#   Caddy never connects to PostgreSQL, vulnerable code is dead. See .docker/vex.json.
 # CVE-2026-33817 (CVSS 6.9, MEDIUM) : go.etcd.io/bbolt (no release yet, pin to fix commit)
 # SNYK-GOLANG-GOOPENTELEMETRYIO* (HIGH x4) : go.opentelemetry.io/otel < 1.43.0
 # SNYK-GOLANG-GITHUBCOMYUINGOLDMARKRENDERERHTML-15838406 (MEDIUM) : goldmark XSS < 1.7.17
