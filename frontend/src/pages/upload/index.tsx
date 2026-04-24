@@ -88,10 +88,10 @@ const Upload = ({
       toast.error(
         t("upload.notify.tab-discarded", {
           defaultMessage:
-            "Le navigateur a decharge cet onglet pour economiser de la memoire. " +
-            "L'envoi en cours a ete interrompu. Veuillez relancer l'envoi. " +
-            "Astuce : gardez cet onglet au premier plan pendant les gros envois, " +
-            "ou desactivez l'economiseur de memoire pour ce site.",
+            "The browser discarded this tab to save memory. " +
+            "The upload in progress was interrupted. Please restart the upload. " +
+            "Tip: keep this tab in the foreground during large uploads, " +
+            "or disable the memory saver for this site.",
         }),
         { withCloseButton: true, autoClose: false },
       );
@@ -321,18 +321,18 @@ const Upload = ({
 
   const cancelUpload = () => {
     modals.openConfirmModal({
-      title: t("upload.cancel.title", { defaultMessage: "Annuler l'envoi" }),
+      title: t("upload.cancel.title", { defaultMessage: "Cancel upload" }),
       children: (
         <Text size="sm">
           <FormattedMessage
             id="upload.cancel.confirm"
-            defaultMessage="L'envoi en cours sera interrompu et le partage incomplet supprimé. Continuer ?"
+            defaultMessage="The upload in progress will be interrupted and the incomplete share deleted. Continue?"
           />
         </Text>
       ),
       labels: {
-        confirm: t("common.button.confirm", { defaultMessage: "Confirmer" }),
-        cancel: t("common.button.cancel", { defaultMessage: "Non" }),
+        confirm: t("common.button.confirm", { defaultMessage: "Confirm" }),
+        cancel: t("common.button.cancel", { defaultMessage: "No" }),
       },
       confirmProps: { color: "red" },
       onConfirm: () => {
@@ -365,7 +365,7 @@ const Upload = ({
         );
         e2eKeyEncoded = null;
         shouldShareE2EKeyViaEmail = false;
-        toast.error(t("upload.cancel.done", { defaultMessage: "Envoi annulé" }));
+        toast.error(t("upload.cancel.done", { defaultMessage: "Upload cancelled" }));
       },
     });
   };
@@ -545,7 +545,7 @@ const Upload = ({
                 >
                   <FormattedMessage
                     id="upload.cancel.button"
-                    defaultMessage="Annuler"
+                    defaultMessage="Cancel"
                   />
                 </Button>
               </Group>

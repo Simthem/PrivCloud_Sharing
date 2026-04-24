@@ -8,35 +8,44 @@ dayjs.extend(localizedFormat);
 dayjs.extend(duration);
 dayjs.extend(relativeTime);
 
-// Import all locales used by the application
-import "dayjs/locale/de";
-import "dayjs/locale/fr";
-import "dayjs/locale/pt-br";
-import "dayjs/locale/da";
-import "dayjs/locale/es";
-import "dayjs/locale/zh-cn";
-import "dayjs/locale/zh-tw";
-import "dayjs/locale/fi";
-import "dayjs/locale/ru";
-import "dayjs/locale/uk";
-import "dayjs/locale/th";
-import "dayjs/locale/sr-cyrl";
-import "dayjs/locale/sr";
-import "dayjs/locale/nl";
-import "dayjs/locale/ja";
-import "dayjs/locale/pl";
-import "dayjs/locale/sv";
-import "dayjs/locale/it";
-import "dayjs/locale/el";
-import "dayjs/locale/sl";
-import "dayjs/locale/ar";
-import "dayjs/locale/hu";
-import "dayjs/locale/ko";
-import "dayjs/locale/tr";
-import "dayjs/locale/cs";
-import "dayjs/locale/vi";
-import "dayjs/locale/hr";
-import "dayjs/locale/et";
+// Import all locales as named defaults so webpack cannot tree-shake them.
+// Side-effect-only imports (`import "dayjs/locale/fr"`) are unreliable with
+// bundlers that mark dayjs as side-effect-free.
+import de from "dayjs/locale/de";
+import fr from "dayjs/locale/fr";
+import ptBr from "dayjs/locale/pt-br";
+import da from "dayjs/locale/da";
+import es from "dayjs/locale/es";
+import zhCn from "dayjs/locale/zh-cn";
+import zhTw from "dayjs/locale/zh-tw";
+import fi from "dayjs/locale/fi";
+import ru from "dayjs/locale/ru";
+import uk from "dayjs/locale/uk";
+import th from "dayjs/locale/th";
+import srCyrl from "dayjs/locale/sr-cyrl";
+import sr from "dayjs/locale/sr";
+import nl from "dayjs/locale/nl";
+import ja from "dayjs/locale/ja";
+import pl from "dayjs/locale/pl";
+import sv from "dayjs/locale/sv";
+import it from "dayjs/locale/it";
+import el from "dayjs/locale/el";
+import sl from "dayjs/locale/sl";
+import ar from "dayjs/locale/ar";
+import hu from "dayjs/locale/hu";
+import ko from "dayjs/locale/ko";
+import tr from "dayjs/locale/tr";
+import cs from "dayjs/locale/cs";
+import vi from "dayjs/locale/vi";
+import hr from "dayjs/locale/hr";
+import et from "dayjs/locale/et";
+
+// Locale object map - referenced values prevent tree-shaking
+const localeData: Record<string, ILocale> = {
+  de, fr, "pt-br": ptBr, da, es, "zh-cn": zhCn, "zh-tw": zhTw,
+  fi, ru, uk, th, "sr-cyrl": srCyrl, sr, nl, ja, pl, sv, it, el,
+  sl, ar, hu, ko, tr, cs, vi, hr, et,
+};
 
 // Map application locale codes (e.g. "fr-FR") to dayjs locale names (e.g. "fr")
 const localeMap: Record<string, string> = {
@@ -72,8 +81,14 @@ const localeMap: Record<string, string> = {
 };
 
 export const setDayjsLocale = (appLocaleCode: string) => {
-  const dayjsLocale = localeMap[appLocaleCode] ?? "en";
-  dayjs.locale(dayjsLocale);
+  const dayjsLocaleName = localeMap[appLocaleCode] ?? "en";
+  const data = localeData[dayjsLocaleName];
+  if (data) {
+    // Pass the locale object directly - guarantees registration + activation
+    dayjs.locale(data);
+  } else {
+    dayjs.locale(dayjsLocaleName);
+  }
 };
 
 export default dayjs;

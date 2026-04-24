@@ -206,17 +206,24 @@ export class LocalFileService {
     }
   }
 
-  async get(shareId: string, fileId: string) {
+  async get(
+    shareId: string,
+    fileId: string,
+    range?: { start: number; end: number },
+  ) {
     const fileMetaData = await this.prisma.file.findUnique({
       where: { id: fileId },
     });
 
     if (!fileMetaData) throw new NotFoundException("File not found");
 
-    const file = createReadStream(`${SHARE_DIRECTORY}/${shareId}/${fileId}`);
+    const filePath = `${SHARE_DIRECTORY}/${shareId}/${fileId}`;
+    const file = range
+      ? createReadStream(filePath, { start: range.start, end: range.end })
+      : createReadStream(filePath);
 
     this.logger.debug(
-      `File downloaded: shareId=${shareId} fileId=${fileMetaData.id} fileName="${fileMetaData.name}" size=${fileMetaData.size} mimeType=${mime.contentType(fileMetaData.name.split(".").pop() ?? "") || false}`,
+      `File downloaded: shareId=${shareId} fileId=${fileMetaData.id} fileName="${fileMetaData.name}" size=${fileMetaData.size} range=${range ? `${range.start}-${range.end}` : "full"} mimeType=${mime.contentType(fileMetaData.name.split(".").pop() ?? "") || false}`,
     );
 
     return {

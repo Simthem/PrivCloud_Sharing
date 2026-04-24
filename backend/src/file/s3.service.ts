@@ -13,6 +13,7 @@ import {
   DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListMultipartUploadsCommand,
   ListObjectsV2Command,
   S3Client,
   UploadPartCommand,
@@ -54,13 +55,49 @@ export class S3FileService {
     setInterval(() => this.cleanupAbandonedUploads(), 5 * 60 * 1000);
   }
 
-  private cleanupAbandonedUploads() {
+  /**
+   * Abort in-memory multipart upload sessions that have been inactive
+   * for longer than MULTIPART_TTL_MS.  Sends AbortMultipartUploadCommand
+   * to S3/MinIO so the uploaded parts are actually freed on the bucket.
+   */
+  private async cleanupAbandonedUploads() {
     const now = Date.now();
     for (const [key, upload] of Object.entries(this.multipartUploads)) {
       if (now - upload.lastActivity > S3FileService.MULTIPART_TTL_MS) {
         this.logger.warn(
           `Cleaning up abandoned multipart upload: key=${key} uploadId=${upload.uploadId}`,
         );
+        // Actually abort the multipart upload on S3 so parts are freed
+        try {
+          const s3Instance = this.getS3Instance();
+          const bucket = this.config.get("s3.bucketName");
+          const prefix = this.getS3Path();
+          const listResp = await s3Instance.send(
+            new ListMultipartUploadsCommand({
+              Bucket: bucket,
+              Prefix: prefix,
+            }),
+          );
+          const match = listResp.Uploads?.find(
+            (u) => u.UploadId === upload.uploadId,
+          );
+          if (match && match.Key) {
+            await s3Instance.send(
+              new AbortMultipartUploadCommand({
+                Bucket: bucket,
+                Key: match.Key,
+                UploadId: upload.uploadId,
+              }),
+            );
+            this.logger.log(
+              `Aborted S3 multipart upload: key=${match.Key} uploadId=${upload.uploadId}`,
+            );
+          }
+        } catch (abortErr) {
+          this.logger.error(
+            `Failed to abort S3 multipart upload: uploadId=${upload.uploadId} error=${abortErr}`,
+          );
+        }
         delete this.multipartUploads[key];
       }
     }
@@ -302,18 +339,26 @@ export class S3FileService {
     }
   }
 
-  async get(shareId: string, fileId: string): Promise<File> {
+  async get(
+    shareId: string,
+    fileId: string,
+    range?: { start: number; end: number },
+  ): Promise<File> {
     const fileRecord = await this.prisma.file.findUnique({ where: { id: fileId } });
     if (!fileRecord) throw new NotFoundException("File not found");
     const fileName = fileRecord.name;
 
     const s3Instance = this.getS3Instance();
     const key = `${this.getS3Path()}${shareId}/${fileId}`;
+    const commandInput: any = {
+      Bucket: this.config.get("s3.bucketName"),
+      Key: key,
+    };
+    if (range) {
+      commandInput.Range = `bytes=${range.start}-${range.end}`;
+    }
     const response = await s3Instance.send(
-      new GetObjectCommand({
-        Bucket: this.config.get("s3.bucketName"),
-        Key: key,
-      }),
+      new GetObjectCommand(commandInput),
     );
 
     const mimeType =
@@ -377,35 +422,65 @@ export class S3FileService {
     this.logger.debug(`Delete all files requested: shareId=${shareId}`);
     const prefix = `${this.getS3Path()}${shareId}/`;
     const s3Instance = this.getS3Instance();
+    const bucketName = this.config.get("s3.bucketName");
+
+    // Abort any in-progress multipart uploads for this share
+    try {
+      const listUploads = await s3Instance.send(
+        new ListMultipartUploadsCommand({ Bucket: bucketName, Prefix: prefix }),
+      );
+      for (const upload of listUploads.Uploads || []) {
+        if (upload.UploadId && upload.Key) {
+          await s3Instance.send(
+            new AbortMultipartUploadCommand({
+              Bucket: bucketName,
+              Key: upload.Key,
+              UploadId: upload.UploadId,
+            }),
+          );
+          this.logger.debug(
+            `Aborted multipart upload: key=${upload.Key} uploadId=${upload.UploadId}`,
+          );
+        }
+      }
+    } catch (e) {
+      this.logger.warn(`Failed to list/abort multipart uploads for share ${shareId}: ${(e as Error).message}`);
+    }
 
     try {
-      // List all objects under the given prefix
-      const listResponse = await s3Instance.send(
-        new ListObjectsV2Command({
-          Bucket: this.config.get("s3.bucketName"),
-          Prefix: prefix,
-        }),
-      );
+      // Paginate: ListObjectsV2 returns max 1000 objects per call
+      let continuationToken: string | undefined;
+      do {
+        const listResponse = await s3Instance.send(
+          new ListObjectsV2Command({
+            Bucket: bucketName,
+            Prefix: prefix,
+            ContinuationToken: continuationToken,
+          }),
+        );
 
-      if (!listResponse.Contents || listResponse.Contents.length === 0) {
-        this.logger.warn(`No files found in S3 for share ${shareId} - skipping deletion`);
-        return;
-      }
+        if (!listResponse.Contents || listResponse.Contents.length === 0) {
+          if (!continuationToken) {
+            this.logger.warn(`No files found in S3 for share ${shareId} - skipping deletion`);
+          }
+          break;
+        }
 
-      // Extract the keys of the files to be deleted
-      const objectsToDelete = listResponse.Contents.map((file) => ({
-        Key: file.Key!,
-      }));
+        const objectsToDelete = listResponse.Contents.map((file) => ({
+          Key: file.Key!,
+        }));
 
-      // Delete all files in a single request (up to 1000 objects at once)
-      await s3Instance.send(
-        new DeleteObjectsCommand({
-          Bucket: this.config.get("s3.bucketName"),
-          Delete: {
-            Objects: objectsToDelete,
-          },
-        }),
-      );
+        await s3Instance.send(
+          new DeleteObjectsCommand({
+            Bucket: bucketName,
+            Delete: { Objects: objectsToDelete },
+          }),
+        );
+
+        continuationToken = listResponse.IsTruncated
+          ? listResponse.NextContinuationToken
+          : undefined;
+      } while (continuationToken);
     } catch (error) {
       this.logger.error(error);
       throw new Error("Could not delete all files from S3");
@@ -531,5 +606,42 @@ export class S3FileService {
   getS3Path(): string {
     const configS3Path = this.config.get("s3.bucketPath");
     return configS3Path ? `${configS3Path}/` : "";
+  }
+
+  /**
+   * Abort multipart uploads that S3/MinIO still tracks but that the
+   * application no longer references (e.g. after a crash or timeout).
+   */
+  async cleanupStaleS3Multiparts() {
+    const s3Instance = this.getS3Instance();
+    const bucketName = this.config.get("s3.bucketName");
+    try {
+      const listUploads = await s3Instance.send(
+        new ListMultipartUploadsCommand({ Bucket: bucketName }),
+      );
+      for (const upload of listUploads.Uploads || []) {
+        if (upload.UploadId && upload.Key) {
+          const ageMs =
+            Date.now() - (upload.Initiated?.getTime() ?? Date.now());
+          // Only abort uploads older than 1 hour
+          if (ageMs > 60 * 60 * 1000) {
+            await s3Instance.send(
+              new AbortMultipartUploadCommand({
+                Bucket: bucketName,
+                Key: upload.Key,
+                UploadId: upload.UploadId,
+              }),
+            );
+            this.logger.log(
+              `Aborted stale S3 multipart upload: key=${upload.Key} uploadId=${upload.UploadId} age=${Math.round(ageMs / 60000)}min`,
+            );
+          }
+        }
+      }
+    } catch (e) {
+      this.logger.error(
+        `Failed to cleanup stale S3 multipart uploads: ${(e as Error).message}`,
+      );
+    }
   }
 }

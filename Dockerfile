@@ -19,6 +19,7 @@ WORKDIR /caddy
 # GHSA-q4r8-xm5f-56gw (CRITICAL) + CVE-2026-30836 (CVSS 7.8, HIGH) : github.com/smallstep/certificates < 0.30.2
 # CVE-2026-34986 (CVSS 8.7, HIGH) : github.com/go-jose/go-jose v3 < 3.0.5, v4 < 4.1.4
 # CVE-2026-33816 (CVSS 8.7, HIGH) : github.com/jackc/pgx/v5 < 5.9.0
+# GHSA-j88v-2chj-qfwx (CVSS 2.3, LOW) : github.com/jackc/pgx/v5 < 5.9.2 [SQL Injection]
 # CVE-2026-33815 (CVSS 9.8, CRITICAL) : pgx/v5 pgproto3 OOB write -- NO upstream fix (all versions).
 #   VEX not_affected: pgx is a transitive dep of Caddy via smallstep/certificates;
 #   Caddy never connects to PostgreSQL, vulnerable code is dead. See .docker/vex.json.
@@ -31,7 +32,7 @@ RUN go get golang.org/x/net@latest \
     && go get google.golang.org/grpc@v1.79.3 \
     && go get github.com/go-jose/go-jose/v3@v3.0.5 \
     && go get github.com/go-jose/go-jose/v4@v4.1.4 \
-    && go get github.com/jackc/pgx/v5@v5.9.0 \
+    && go get github.com/jackc/pgx/v5@v5.9.2 \
     && go get go.opentelemetry.io/otel@v1.43.0 \
     && go get go.opentelemetry.io/otel/sdk@v1.43.0 \
     && go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.43.0 \

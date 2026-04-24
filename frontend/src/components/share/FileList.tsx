@@ -316,7 +316,7 @@ const FileList = ({
             <thead>
               <tr>
                 {files.length > 1 && (
-                  <th style={{ width: 40 }}>
+                  <th style={{ width: 40, textAlign: "left" }}>
                     <Checkbox
                       size="xs"
                       checked={allSelected}
@@ -325,19 +325,19 @@ const FileList = ({
                     />
                   </th>
                 )}
-                <th>
+                <th style={{ textAlign: "left" }}>
                   <Group spacing="xs">
                     <FormattedMessage id="share.table.name" />
                     <TableSortIcon sort={sort} setSort={setSort} property="name" />
                   </Group>
                 </th>
-                <th>
+                <th style={{ textAlign: "left" }}>
                   <Group spacing="xs">
                     <FormattedMessage id="share.table.size" />
                     <TableSortIcon sort={sort} setSort={setSort} property="size" />
                   </Group>
                 </th>
-                <th></th>
+                <th style={{ textAlign: "left" }}></th>
               </tr>
             </thead>
             <tbody>
@@ -359,7 +359,12 @@ const FileList = ({
                           />
                         </td>
                       )}
-                      <td>{file.name}</td>
+                      <td
+                        style={{ cursor: files.length > 1 ? "pointer" : undefined }}
+                        onClick={files.length > 1 ? () => toggleSelection(file.id) : undefined}
+                      >
+                        {file.name}
+                      </td>
                       <td>
                         {file.size
                           ? byteToHumanSizeString(parseInt(file.size))
@@ -370,6 +375,8 @@ const FileList = ({
                           {share.previewEnabled !== false &&
                             shareService.doesFileSupportPreview(file.name) && (
                             <ActionIcon
+                              variant="light"
+                              color="teal"
                               onClick={() =>
                                 showFilePreviewModal(share.id, file, modals, e2eKey)
                               }
@@ -380,6 +387,8 @@ const FileList = ({
                           )}
                           {!share.hasPassword && !share.isE2EEncrypted && (
                             <ActionIcon
+                              variant="light"
+                              color="teal"
                               size={25}
                               onClick={() => copyFileLink(file)}
                             >
@@ -387,6 +396,8 @@ const FileList = ({
                             </ActionIcon>
                           )}
                           <ActionIcon
+                            variant="light"
+                            color="blue"
                             size={25}
                             onClick={async () => {
                               if (share.isE2EEncrypted && e2eKey) {

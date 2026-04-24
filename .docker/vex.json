@@ -3,29 +3,29 @@
   "@id": "https://github.com/stonith404/pingvin-share/vex/2026-04-15-pgx-cve-2026-33815",
   "author": "simthem <privcloud-sharing maintainer>",
   "role": "maintainer",
-  "timestamp": "2026-04-15T00:00:00Z",
-  "version": 1,
+  "timestamp": "2026-04-24T00:00:00Z",
+  "version": 2,
   "tooling": "manual review",
   "statements": [
     {
       "vulnerability": {
         "@id": "https://nvd.nist.gov/vuln/detail/CVE-2026-33815",
         "name": "CVE-2026-33815",
-        "description": "Memory-safety vulnerability (CWE-787, out-of-bounds write) in github.com/jackc/pgx/v5/pgproto3. Affected symbols: pgproto3.Backend.Receive, pgproto3.Bind.Decode. CVSS 9.8 CRITICAL. No upstream fix available as of 2026-04-15 (latest: v5.9.1)."
+        "description": "Memory-safety vulnerability (CWE-787, out-of-bounds write) in github.com/jackc/pgx/v5/pgproto3. Affected symbols: pgproto3.Backend.Receive, pgproto3.Bind.Decode. CVSS 9.8 CRITICAL. No upstream fix available as of 2026-04-24 (latest: v5.9.2)."
       },
       "products": [
         {
           "@id": "pkg:docker/simthem/privcloud-sharing",
           "subcomponents": [
             {
-              "@id": "pkg:golang/github.com/jackc/pgx@5.9.0#v5"
+              "@id": "pkg:golang/github.com/jackc/pgx@5.9.2#v5"
             }
           ]
         }
       ],
       "status": "not_affected",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "pgx/v5 is a transitive dependency pulled into the Caddy build via the smallstep/certificates module (Caddy -> smallstep/certificates -> pgx). The vulnerable code paths are pgproto3.Backend.Receive and pgproto3.Bind.Decode, which implement the PostgreSQL wire protocol (frontend/backend message parsing). These functions are only invoked when a Go application acts as a PostgreSQL server or client using the pgx driver. In this image, Caddy is used exclusively as an HTTP/HTTPS reverse proxy -- it never opens any PostgreSQL connection, does not import pgproto3, and does not call any pgx function at runtime. The application backend (NestJS/Prisma) connects to PostgreSQL via its own Node.js driver (@prisma/client), completely independent from Go/pgx. Furthermore, exploiting CVE-2026-33815 requires a malicious PostgreSQL server sending crafted wire-protocol messages to trigger the out-of-bounds write, which is impossible since Caddy has no PostgreSQL interaction whatsoever. The Caddy binary is statically compiled (CGO_ENABLED=0) with -trimpath and stripped symbols; pgx object code may be linked but is dead code never reached at runtime. We pin pgx/v5@v5.9.0 solely to satisfy CVE-2026-33816 (a separate, fixed vulnerability). CVE-2026-33815 has no upstream fix as of v5.9.1 (GO-2026-4771: 'all versions, no known fixed'). This VEX statement will be reviewed when a fixed pgx version is released."
+      "impact_statement": "pgx/v5 is a transitive dependency pulled into the Caddy build via the smallstep/certificates module (Caddy -> smallstep/certificates -> pgx). The vulnerable code paths are pgproto3.Backend.Receive and pgproto3.Bind.Decode, which implement the PostgreSQL wire protocol (frontend/backend message parsing). These functions are only invoked when a Go application acts as a PostgreSQL server or client using the pgx driver. In this image, Caddy is used exclusively as an HTTP/HTTPS reverse proxy -- it never opens any PostgreSQL connection, does not import pgproto3, and does not call any pgx function at runtime. The application backend (NestJS/Prisma) connects to PostgreSQL via its own Node.js driver (@prisma/client), completely independent from Go/pgx. Furthermore, exploiting CVE-2026-33815 requires a malicious PostgreSQL server sending crafted wire-protocol messages to trigger the out-of-bounds write, which is impossible since Caddy has no PostgreSQL interaction whatsoever. The Caddy binary is statically compiled (CGO_ENABLED=0) with -trimpath and stripped symbols; pgx object code may be linked but is dead code never reached at runtime. We pin pgx/v5@v5.9.2 to satisfy CVE-2026-33816 and GHSA-j88v-2chj-qfwx (separate, fixed vulnerabilities). CVE-2026-33815 has no upstream fix as of v5.9.2 (GO-2026-4771: 'all versions, no known fixed'). This VEX statement will be reviewed when a fixed pgx version is released."
     }
   ]
 }

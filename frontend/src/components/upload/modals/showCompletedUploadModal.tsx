@@ -1,8 +1,9 @@
-import { Button, Stack, Text } from "@mantine/core";
+import { Button, Stack, Text, ThemeIcon } from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import { ModalsContextProps } from "@mantine/modals/lib/context";
 import dayjs from "../../../utils/dayjs";
 import { useRouter } from "next/router";
+import { TbCircleCheck } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import useTranslate, {
   translateOutsideContext,
@@ -46,6 +47,9 @@ const Body = ({
 
   return (
     <Stack align="stretch">
+      <ThemeIcon color="green" variant="light" size="xl" radius="xl" sx={{ alignSelf: "center" }}>
+        <TbCircleCheck size={24} />
+      </ThemeIcon>
       <CopyTextField link={link} />
       {share.notifyReverseShareCreator === true && (
         <Text

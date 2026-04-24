@@ -8,13 +8,14 @@ import {
   Post,
   Put,
   Query,
+  Req,
   Res,
   StreamableFile,
   UseGuards,
 } from "@nestjs/common";
 import { SkipThrottle, Throttle } from "@nestjs/throttler";
 import contentDisposition from "content-disposition";
-import { Response } from "express";
+import { Request, Response } from "express";
 import { CreateShareGuard } from "src/share/guard/createShare.guard";
 import { ShareOwnerGuard } from "src/share/guard/shareOwner.guard";
 import { FileService } from "./file.service";
@@ -73,6 +74,7 @@ export class FileController {
   @Get(":fileId")
   @UseGuards(FileSecurityGuard)
   async getFile(
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
     @Param("shareId", SafeIdPipe) shareId: string,
     @Param("fileId", SafeIdPipe) fileId: string,
@@ -80,7 +82,7 @@ export class FileController {
   ) {
     const file = await this.fileService.get(shareId, fileId);
 
-    const contentType =
+    const detectedMime =
       mime?.lookup?.(file.metaData.name) || "application/octet-stream";
 
     // MIME types that can execute scripts when rendered inline by a
@@ -94,14 +96,83 @@ export class FileController {
       "text/xml",
     ]);
     const forceDownload =
-      download === "true" || DANGEROUS_MIME_TYPES.has(contentType);
+      download === "true" || DANGEROUS_MIME_TYPES.has(detectedMime);
 
-    const headers = {
+    // For attachment downloads use application/octet-stream so that
+    // intermediary proxies / WAFs do not try to inspect, buffer, or
+    // compress the response body.  The browser uses the filename from
+    // Content-Disposition, not Content-Type.
+    const contentType = forceDownload ? "application/octet-stream" : detectedMime;
+
+    // --- Range request support (HTTP 206 Partial Content) ---
+    const fileSize = parseInt(file.metaData.size);
+    const rangeHeader = req.headers.range;
+    let range: { start: number; end: number } | undefined;
+
+    if (rangeHeader) {
+      const match = /^bytes=(\d+)-(\d*)$/.exec(rangeHeader);
+      if (match) {
+        const start = parseInt(match[1], 10);
+        const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+        if (start < fileSize && start <= end) {
+          range = { start, end: Math.min(end, fileSize - 1) };
+        }
+      }
+      if (!range) {
+        // Invalid range -- 416 Range Not Satisfiable
+        if (typeof (file.file as any).destroy === "function") {
+          (file.file as any).destroy();
+        }
+        res.status(416).set({ "Content-Range": `bytes */${fileSize}` });
+        res.end();
+        return;
+      }
+    }
+
+    // If a valid range was requested, replace the full stream with a ranged one
+    if (range) {
+      if (typeof (file.file as any).destroy === "function") {
+        (file.file as any).destroy();
+      }
+      const rangedFile = await this.fileService.get(shareId, fileId, range);
+
+      const disposition = forceDownload
+        ? contentDisposition(file.metaData.name)
+        : contentDisposition(file.metaData.name, { type: "inline" });
+
+      const rangeHeaders: Record<string, any> = {
+        "Content-Type": forceDownload ? "application/octet-stream" : contentType,
+        "Content-Range": `bytes ${range.start}-${range.end}/${fileSize}`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": range.end - range.start + 1,
+        "Content-Disposition": disposition,
+        "Cache-Control": "no-transform",
+        "X-Accel-Buffering": "no",
+      };
+      // CSP sandbox only for inline preview (document context).
+      // Setting it on fetch() responses causes WebKit to abort the stream.
+      if (!forceDownload) {
+        rangeHeaders["Content-Security-Policy"] = "sandbox";
+      }
+      res.status(206).set(rangeHeaders);
+
+      return new StreamableFile(rangedFile.file);
+    }
+
+    // --- Full response ---
+    const headers: Record<string, any> = {
       "Content-Type": contentType,
-      "Content-Length": file.metaData.size,
-      "Content-Security-Policy": "sandbox",
+      "Content-Length": fileSize,
+      "Accept-Ranges": "bytes",
+      "Cache-Control": "no-transform",
       "X-Accel-Buffering": "no",
     };
+
+    // CSP sandbox only for inline preview (document context).
+    // Setting it on fetch() responses causes WebKit to abort the stream.
+    if (!forceDownload) {
+      headers["Content-Security-Policy"] = "sandbox";
+    }
 
     if (forceDownload) {
       headers["Content-Disposition"] = contentDisposition(file.metaData.name);

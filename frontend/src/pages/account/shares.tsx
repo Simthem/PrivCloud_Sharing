@@ -4,20 +4,24 @@ import {
   Button,
   Card,
   Center,
+  Checkbox,
   Group,
   Space,
   Stack,
   Table,
   Text,
+  ThemeIcon,
   Title,
+  Tooltip,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { useModals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "../../utils/dayjs";
 import Link from "next/link";
-import { TbEdit, TbInfoCircle, TbLink, TbLock, TbQrcode, TbTrash } from "react-icons/tb";
+import { TbCopy, TbEdit, TbInfoCircle, TbLock, TbQrcode, TbTrash } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
+import { useState } from "react";
 import Meta from "../../components/Meta";
 import showShareInformationsModal from "../../components/account/showShareInformationsModal";
 import showShareLinkModal from "../../components/account/showShareLinkModal";
@@ -58,6 +62,40 @@ const MyShares = () => {
       toast.error(t("account.shares.notify.delete-fail"));
     },
   });
+
+  // Bulk selection
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleAll = () => {
+    if (!shares) return;
+    if (selected.size === shares.length) setSelected(new Set());
+    else setSelected(new Set(shares.map((s) => s.id)));
+  };
+  const bulkDelete = () => {
+    if (selected.size === 0) return;
+    const count = selected.size;
+    modals.openConfirmModal({
+      title: t("account.shares.bulk-delete.title", { count }),
+      children: (
+        <Text size="sm">
+          <FormattedMessage id="account.shares.bulk-delete.description" values={{ count }} />
+        </Text>
+      ),
+      labels: { confirm: t("common.button.delete"), cancel: t("common.button.cancel") },
+      confirmProps: { color: "red" },
+      onConfirm: () => {
+        selected.forEach((id) => deleteShareMutation.mutate(id));
+        setSelected(new Set());
+      },
+    });
+  };
 
   if (isError) {
     return (
@@ -103,6 +141,21 @@ const MyShares = () => {
       ) : isMobile ? (
         /* Mobile: card layout */
         <Stack spacing="sm">
+          {shares.length > 0 && (
+            <Group position="apart">
+              <Checkbox
+                label={t("account.shares.select-all")}
+                checked={selected.size === shares.length}
+                indeterminate={selected.size > 0 && selected.size < shares.length}
+                onChange={toggleAll}
+              />
+              {selected.size > 0 && (
+                <Button size="xs" compact color="red" variant="light" leftIcon={<TbTrash size={16} />} onClick={bulkDelete}>
+                  <FormattedMessage id="account.shares.bulk-delete.button" values={{ count: selected.size }} />
+                </Button>
+              )}
+            </Group>
+          )}
           {shares.map((share) => {
             const storedKey = share.isE2EEncrypted ? getUserKey() : null;
             const keyFragment = storedKey ? buildKeyFragment(storedKey) : "";
@@ -110,18 +163,25 @@ const MyShares = () => {
             return (
               <Card key={share.id} withBorder padding="sm" radius="md">
                 <Group position="apart" noWrap mb={4}>
-                  <Box style={{ minWidth: 0, flex: 1 }}>
-                    <Link href={shareHref} style={{ textDecoration: "none", color: "inherit" }}>
-                      <Text size="sm" weight={600} lineClamp={1} sx={{ "&:hover": { textDecoration: "underline" } }}>
-                        {share.name || share.id}
-                      </Text>
-                    </Link>
-                    {share.description && (
-                      <Text size="xs" color="dimmed" lineClamp={1}>
-                        {share.description}
-                      </Text>
-                    )}
-                  </Box>
+                  <Group spacing="xs" noWrap style={{ minWidth: 0, flex: 1 }}>
+                    <Checkbox
+                      size="xs"
+                      checked={selected.has(share.id)}
+                      onChange={() => toggleSelect(share.id)}
+                    />
+                    <Box style={{ minWidth: 0, flex: 1 }}>
+                      <Link href={shareHref} style={{ textDecoration: "none", color: "inherit" }}>
+                        <Text size="sm" weight={600} lineClamp={1} sx={{ "&:hover": { textDecoration: "underline" } }}>
+                          {share.name || share.id}
+                        </Text>
+                      </Link>
+                      {share.description && (
+                        <Text size="xs" color="dimmed" lineClamp={1}>
+                          {share.description}
+                        </Text>
+                      )}
+                    </Box>
+                  </Group>
                   {share.security.passwordProtected && (
                     <TbLock color="orange" size={16} />
                   )}
@@ -149,7 +209,7 @@ const MyShares = () => {
                   >
                     <TbInfoCircle />
                   </ActionIcon>
-                  <ActionIcon variant="light" size={28}
+                  <ActionIcon color="teal" variant="light" size={28}
                     onClick={async () => {
                       const sk = share.isE2EEncrypted ? getUserKey() : null;
                       const kf = sk ? buildKeyFragment(sk) : "";
@@ -159,9 +219,9 @@ const MyShares = () => {
                       else showShareLinkModal(modals, share.id, kf);
                     }}
                   >
-                    <TbLink />
+                    <TbCopy />
                   </ActionIcon>
-                  <ActionIcon variant="light" size={28}
+                  <ActionIcon color="grape" variant="light" size={28}
                     onClick={() => {
                       const sk = share.isE2EEncrypted ? getUserKey() : null;
                       const kf = sk ? buildKeyFragment(sk) : "";
@@ -190,10 +250,26 @@ const MyShares = () => {
         </Stack>
       ) : (
         /* Desktop: table layout */
-        <Box sx={{ display: "block", overflowX: "auto" }}>
-          <Table>
+        <>
+          {selected.size > 0 && (
+            <Group mb="sm">
+              <Button size="xs" compact color="red" variant="light" leftIcon={<TbTrash size={16} />} onClick={bulkDelete}>
+                <FormattedMessage id="account.shares.bulk-delete.button" values={{ count: selected.size }} />
+              </Button>
+            </Group>
+          )}
+          <Box sx={{ display: "block", overflowX: "auto" }}>
+          <Table striped highlightOnHover verticalSpacing="lg">
             <thead>
               <tr>
+                <th style={{ width: "3%" }}>
+                  <Checkbox
+                    size="xs"
+                    checked={selected.size === shares.length && shares.length > 0}
+                    indeterminate={selected.size > 0 && selected.size < shares.length}
+                    onChange={toggleAll}
+                  />
+                </th>
                 <th>
                   <FormattedMessage id="account.shares.table.name" />
                 </th>
@@ -218,8 +294,14 @@ const MyShares = () => {
                 return (
                 <tr key={share.id}>
                   <td>
-                    <Group spacing="xs" noWrap>
-                      <Box>
+                    <Checkbox
+                      size="xs"
+                      checked={selected.has(share.id)}
+                      onChange={() => toggleSelect(share.id)}
+                    />
+                  </td>
+                  <td>
+                    <Box style={{ minWidth: 0 }}>
                         <Link href={shareHref} style={{ textDecoration: "none", color: "inherit" }}>
                           <Text size="sm" weight={500} lineClamp={1} sx={{ "&:hover": { textDecoration: "underline" } }}>
                             {share.name || share.id}
@@ -235,14 +317,7 @@ const MyShares = () => {
                             {share.id}
                           </Text>
                         )}
-                      </Box>
-                      {share.security.passwordProtected && (
-                        <TbLock
-                          color="orange"
-                          title={t("account.shares.table.password-protected")}
-                        />
-                      )}
-                    </Group>
+                    </Box>
                   </td>
                   <td>
                     {share.security.maxViews ? (
@@ -265,9 +340,16 @@ const MyShares = () => {
                     )}
                   </td>
                   <td>
-                    <Group position="right">
+                    <Group position="right" spacing={6} noWrap>
+                      {share.security.passwordProtected && (
+                        <Tooltip label={t("account.shares.table.password-protected")}>
+                          <ThemeIcon color="orange" variant="light" size={25}>
+                            <TbLock size={14} />
+                          </ThemeIcon>
+                        </Tooltip>
+                      )}
                       <Link href={`/share/${share.id}/edit`}>
-                        <ActionIcon color="orange" variant="light" size={25}>
+                        <ActionIcon color="blue" variant="light" size={25}>
                           <TbEdit />
                         </ActionIcon>
                       </Link>
@@ -286,6 +368,7 @@ const MyShares = () => {
                         <TbInfoCircle />
                       </ActionIcon>
                       <ActionIcon
+                        color="teal"
                         variant="light"
                         size={25}
                         onClick={async () => {
@@ -304,9 +387,10 @@ const MyShares = () => {
                           }
                         }}
                       >
-                        <TbLink />
+                        <TbCopy />
                       </ActionIcon>
                       <ActionIcon
+                        color="grape"
                         variant="light"
                         size={25}
                         onClick={() => {
@@ -358,6 +442,7 @@ const MyShares = () => {
             </tbody>
           </Table>
         </Box>
+        </>
       )}
     </>
   );

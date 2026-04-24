@@ -83,7 +83,6 @@ const doesFileSupportPreview = (fileName: string) => {
   if (!mimeType) return false;
 
   return (
-    mimeType.startsWith("video/") ||
     mimeType.startsWith("image/") ||
     mimeType.startsWith("audio/") ||
     mimeType === "application/pdf" ||

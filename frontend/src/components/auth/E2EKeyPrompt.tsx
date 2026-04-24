@@ -78,7 +78,7 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
     setError("");
     const sanitized = value.replace(/[^A-Za-z0-9_-]/g, "");
     if (!sanitized) {
-      setError("Veuillez entrer votre clé de chiffrement.");
+      setError("Please enter your encryption key.");
       return;
     }
     setLoading(true);
@@ -86,15 +86,15 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
       const ok = await verifyAndStore(sanitized);
       if (!ok) {
         setError(
-          "Cette clé ne correspond pas à celle enregistrée sur votre compte.",
+          "This key does not match the one registered on your account.",
         );
         return;
       }
-      toast.success("Clé chargée pour cette session.");
+      toast.success("Key loaded for this session.");
       resetAll();
       onClose();
     } catch {
-      setError("Clé invalide.");
+      setError("Invalid key.");
     } finally {
       setLoading(false);
     }
@@ -104,7 +104,7 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
     setRecoverError("");
     const filled = shardValues.filter((s) => s.trim().length > 0);
     if (filled.length < 2) {
-      setRecoverError("Entrez au moins 2 fragments.");
+      setRecoverError("Enter at least 2 fragments.");
       return;
     }
     setRecovering(true);
@@ -113,16 +113,16 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
       const ok = await verifyAndStore(encodedKey);
       if (!ok) {
         setRecoverError(
-          "La clé reconstituée ne correspond pas à celle de votre compte. " +
-            "Vérifiez que les fragments sont corrects.",
+          "The reconstructed key does not match the one on your account. " +
+            "Please verify that the fragments are correct.",
         );
         return;
       }
       setRecoveredKey(encodedKey);
       setMode("recovered");
-      toast.success("Clé reconstituée et chargée pour cette session.");
+      toast.success("Key reconstructed and loaded for this session.");
     } catch (e: any) {
-      setRecoverError(e?.message ?? "Impossible de reconstituer la clé.");
+      setRecoverError(e?.message ?? "Unable to reconstruct the key.");
     } finally {
       setRecovering(false);
     }

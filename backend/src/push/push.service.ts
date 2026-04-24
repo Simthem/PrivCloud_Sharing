@@ -87,9 +87,11 @@ export class PushService implements OnModuleInit {
             keys: { p256dh: sub.p256dh, auth: sub.auth },
           },
           data,
+          { TTL: 86400, urgency: "normal" },
         );
       } catch (err: unknown) {
         const statusCode = (err as { statusCode?: number }).statusCode;
+        const errCode = (err as { code?: string }).code;
         if (statusCode === 410 || statusCode === 404) {
           // Subscription expired or unsubscribed - clean up
           await this.prisma.pushSubscription.delete({
@@ -97,6 +99,20 @@ export class PushService implements OnModuleInit {
           });
           this.logger.debug(
             `Removed stale push subscription: ${sub.endpoint}`,
+          );
+        } else if (
+          errCode === "EPROTO" ||
+          errCode === "ECONNREFUSED" ||
+          errCode === "ECONNRESET" ||
+          errCode === "ETIMEDOUT" ||
+          errCode === "ERR_SSL_WRONG_VERSION_NUMBER"
+        ) {
+          // Push endpoint unreachable (TLS error, connection refused, etc.)
+          await this.prisma.pushSubscription.delete({
+            where: { id: sub.id },
+          });
+          this.logger.debug(
+            `Removed unreachable push subscription (${errCode}): ${sub.endpoint}`,
           );
         } else {
           this.logger.error(

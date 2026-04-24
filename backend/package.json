@@ -1,8 +1,9 @@
 {
   "name": "privcloud-sharing-backend",
-  "version": "1.20.0",
+  "version": "1.21.0",
   "scripts": {
     "build": "nest build",
+    "postinstall": "[ -f prisma/schema.prisma ] && prisma generate || true",
     "dev": "cross-env NODE_ENV=development nest start --watch",
     "prod": "prisma migrate deploy && prisma db seed && node dist/src/main",
     "lint": "eslint 'src/**/*.ts'",
@@ -21,8 +22,8 @@
     "@nestjs/schedule": "^6.1.1",
     "@nestjs/swagger": "^11.2.6",
     "@nestjs/throttler": "^6.4.0",
-    "@prisma/adapter-better-sqlite3": "^7.7.0",
-    "@prisma/client": "^7.7.0",
+    "@prisma/adapter-better-sqlite3": "^7.8.0",
+    "@prisma/client": "^7.8.0",
     "@types/jmespath": "^0.15.2",
     "archiver": "^7.0.1",
     "argon2": "^0.41.1",
@@ -41,10 +42,10 @@
     "moment": "^2.30.1",
     "nanoid": "^3.3.7",
     "nodemailer": "^8.0.4",
-    "otplib": "^12.0.1",
+    "otplib": "^13.0.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
-    "prisma": "^7.7.0",
+    "prisma": "^7.8.0",
     "qrcode-svg": "^1.1.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
@@ -52,7 +53,7 @@
     "stripe": "^17.7.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3",
-    "uuid": "^11.1.0",
+    "uuid": "^14.0.0",
     "web-push": "^3.6.7",
     "yaml": "^2.7.1"
   },
@@ -70,7 +71,6 @@
     "@types/nodemailer": "^6.4.17",
     "@types/passport-jwt": "^4.0.1",
     "@types/qrcode-svg": "^1.1.5",
-    "@types/sharp": "^0.32.0",
     "@types/uuid": "^10.0.0",
     "@types/web-push": "^3.6.4",
     "cross-env": "^7.0.3",
@@ -82,8 +82,9 @@
     "wait-on": "^8.0.3"
   },
   "overrides": {
+    "hono": ">=4.12.14",
     "@hono/node-server": ">=1.19.13",
-    "fast-xml-parser": "^5.5.7",
+    "fast-xml-parser": "5.6.0",
     "effect": "^3.20.0",
     "glob": "^10.5.0",
     "jws": "^3.2.3",
@@ -118,6 +119,7 @@
     "picomatch": ">=4.0.4",
     "brace-expansion": ">=5.0.5",
     "path-to-regexp": ">=8.4.0",
-    "defu": ">=6.1.5"
+    "defu": ">=6.1.5",
+    "uuid": "$uuid"
   }
 }

@@ -100,19 +100,19 @@ export async function decryptFileAuto(
 ): Promise<ArrayBuffer> {
   const totalLen = encrypted.byteLength;
 
-  // Tenter single-block d'abord (ancien format ou petit fichier).
-  // Limite a 200 MB pour eviter un decrypt inutile sur les gros fichiers.
+  // Try single-block first (legacy format or small file).
+  // Cap at 200 MB to avoid wasting a decrypt attempt on large files.
   if (totalLen <= 200_000_000 + ENCRYPTION_OVERHEAD) {
     try {
       return await decryptFile(encrypted, key);
     } catch {
-      // Pas un single-block -- continuer avec la detection multi-chunk
+      // Not a single-block -- continue with multi-chunk detection
     }
   }
 
-  // Tailles candidates : config d'abord, puis TOUS les multiples de 1 MB
-  // entre 5 MB et 200 MB (couvre les tailles adaptatives arbitraires des
-  // uploads existants et les futurs uploads quantifies a 5 MB).
+  // Candidate sizes: config value first, then ALL 1 MB multiples from
+  // 5 MB to 200 MB (covers arbitrary adaptive sizes from existing
+  // uploads and future uploads quantized at 5 MB).
   const candidates: number[] = [plaintextChunkSize];
   for (let mb = 5; mb <= 200; mb++) {
     candidates.push(mb * 1_000_000);
@@ -177,7 +177,7 @@ async function decryptPerChunk(
   return result.buffer;
 }
 
-// ----- Streaming decrypt (pour les gros fichiers) ----------------------------
+// ----- Streaming decrypt (for large files) ----------------------------
 
 /**
  * Async generator that reads an encrypted ReadableStream, auto-detects the

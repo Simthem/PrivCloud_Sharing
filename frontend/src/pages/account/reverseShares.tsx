@@ -34,7 +34,6 @@ import {
   TbEyeOff,
   TbInfoCircle,
   TbKey,
-  TbLink,
   TbLock,
   TbPencil,
   TbPlus,
@@ -295,6 +294,40 @@ const MyShares = () => {
     },
   });
 
+  // Bulk selection (reverse shares)
+  const [selectedRs, setSelectedRs] = useState<Set<string>>(new Set());
+  const toggleSelectRs = (id: string) => {
+    setSelectedRs((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleAllRs = () => {
+    if (!reverseShares) return;
+    if (selectedRs.size === reverseShares.length) setSelectedRs(new Set());
+    else setSelectedRs(new Set(reverseShares.map((rs) => rs.id)));
+  };
+  const bulkDeleteRs = () => {
+    if (selectedRs.size === 0) return;
+    const count = selectedRs.size;
+    modals.openConfirmModal({
+      title: t("account.reverseShares.bulk-delete.title", { count }),
+      children: (
+        <Text size="sm">
+          <FormattedMessage id="account.reverseShares.bulk-delete.description" values={{ count }} />
+        </Text>
+      ),
+      labels: { confirm: t("common.button.delete"), cancel: t("common.button.cancel") },
+      confirmProps: { color: "red" },
+      onConfirm: () => {
+        selectedRs.forEach((id) => deleteReverseShareMutation.mutate(id));
+        setSelectedRs(new Set());
+      },
+    });
+  };
+
   // -- Copy reverse share link with E2E fragment if applicable --
   // Cache of decrypted K_rs keys: reverseShareId -> base64url of K_rs
   const [rsKeyCache, setRsKeyCache] = useState<Record<string, string>>({});
@@ -472,17 +505,40 @@ const MyShares = () => {
       ) : isMobile ? (
         /* Mobile: card layout with expandable sub-shares */
         <Stack spacing="sm">
+          {reverseShares.length > 0 && (
+            <Group position="apart">
+              <Checkbox
+                label={t("account.reverseShares.select-all")}
+                checked={selectedRs.size === reverseShares.length}
+                indeterminate={selectedRs.size > 0 && selectedRs.size < reverseShares.length}
+                onChange={toggleAllRs}
+              />
+              {selectedRs.size > 0 && (
+                <Button size="xs" compact color="red" variant="light" leftIcon={<TbTrash size={16} />} onClick={bulkDeleteRs}>
+                  <FormattedMessage id="account.reverseShares.bulk-delete.button" values={{ count: selectedRs.size }} />
+                </Button>
+              )}
+            </Group>
+          )}
           {reverseShares.map((reverseShare) => {
             const isOpen = expandedRs === reverseShare.id;
             const hasShares = reverseShare.shares.length > 0;
             return (
               <Card key={reverseShare.id} withBorder padding="sm" radius="md">
                 {/* RS header card */}
-                <Group position="apart" noWrap mb={4}
-                  onClick={hasShares ? () => setExpandedRs(isOpen ? null : reverseShare.id) : undefined}
-                  sx={hasShares ? { cursor: "pointer" } : undefined}
-                >
-                  <Box style={{ minWidth: 0, flex: 1 }}>
+                <Group position="apart" noWrap mb={4}>
+                  <Group spacing="xs" noWrap style={{ minWidth: 0, flex: 1 }}>
+                    <Checkbox
+                      size="xs"
+                      checked={selectedRs.has(reverseShare.id)}
+                      onChange={() => toggleSelectRs(reverseShare.id)}
+                      onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                    />
+                    <Box
+                      style={{ minWidth: 0, flex: 1 }}
+                      onClick={hasShares ? () => setExpandedRs(isOpen ? null : reverseShare.id) : undefined}
+                      sx={hasShares ? { cursor: "pointer" } : undefined}
+                    >
                     <Group spacing={6} noWrap>
                       <Text size="sm" weight={600} lineClamp={1}>
                         {reverseShare.name || reverseShare.id}
@@ -493,7 +549,8 @@ const MyShares = () => {
                         <TbWorldOff size={16} color="gray" />
                       )}
                     </Group>
-                  </Box>
+                    </Box>
+                  </Group>
                   {hasShares && (
                     <ActionIcon
                       variant="subtle"
@@ -541,8 +598,8 @@ const MyShares = () => {
                       <TbPencil />
                     </ActionIcon>
                   )}
-                  <ActionIcon variant="light" size={28} onClick={() => handleCopyReverseShareLink(reverseShare)}>
-                    <TbLink />
+                  <ActionIcon color="teal" variant="light" size={28} onClick={() => handleCopyReverseShareLink(reverseShare)}>
+                    <TbCopy />
                   </ActionIcon>
                   <ActionIcon variant="light" size={28} onClick={async () => {
                     let link = `${config.get("general.appUrl")}/upload/${reverseShare.token}`;
@@ -591,8 +648,8 @@ const MyShares = () => {
                                 <ActionIcon color="teal" variant="light" size={24} component={Link} href={shareHref}>
                                   <TbEye size={14} />
                                 </ActionIcon>
-                                <ActionIcon variant="light" size={24} onClick={() => handleCopyShareLink(share.id, reverseShare)}>
-                                  <TbLink size={14} />
+                                <ActionIcon color="teal" variant="light" size={24} onClick={() => handleCopyShareLink(share.id, reverseShare)}>
+                                  <TbCopy size={14} />
                                 </ActionIcon>
                                 <ActionIcon color="red" variant="light" size={24} onClick={() => {
                                   modals.openConfirmModal({
@@ -619,10 +676,26 @@ const MyShares = () => {
         </Stack>
       ) : (
         /* Desktop: table layout */
-        <Box sx={{ display: "block", overflowX: "auto" }}>
-          <Table>
+        <>
+          {selectedRs.size > 0 && (
+            <Group mb="sm">
+              <Button size="xs" compact color="red" variant="light" leftIcon={<TbTrash size={16} />} onClick={bulkDeleteRs}>
+                <FormattedMessage id="account.reverseShares.bulk-delete.button" values={{ count: selectedRs.size }} />
+              </Button>
+            </Group>
+          )}
+          <Box sx={{ display: "block", overflowX: "auto" }}>
+          <Table striped highlightOnHover verticalSpacing="sm">
             <thead>
               <tr>
+                <th style={{ width: "3%" }}>
+                  <Checkbox
+                    size="xs"
+                    checked={selectedRs.size === reverseShares.length && reverseShares.length > 0}
+                    indeterminate={selectedRs.size > 0 && selectedRs.size < reverseShares.length}
+                    onChange={toggleAllRs}
+                  />
+                </th>
                 <th>
                   <FormattedMessage id="account.reverseShares.table.shares" />
                 </th>
@@ -647,6 +720,13 @@ const MyShares = () => {
             <tbody>
               {reverseShares.map((reverseShare) => (
                 <tr key={reverseShare.id}>
+                  <td>
+                    <Checkbox
+                      size="xs"
+                      checked={selectedRs.has(reverseShare.id)}
+                      onChange={() => toggleSelectRs(reverseShare.id)}
+                    />
+                  </td>
                   <td style={{ width: 220 }}>
                     {reverseShare.shares.length == 0 ? (
                       <Text color="dimmed" size="sm">
@@ -713,13 +793,14 @@ const MyShares = () => {
                                   </ActionIcon>
                                 </Tooltip>
                                 <ActionIcon
+                                  color="teal"
                                   variant="light"
                                   size={25}
                                   onClick={() =>
                                     handleCopyShareLink(share.id, reverseShare)
                                   }
                                 >
-                                  <TbLink />
+                                  <TbCopy />
                                 </ActionIcon>
                                 <ActionIcon
                                   color="red"
@@ -810,11 +891,12 @@ const MyShares = () => {
                       </Tooltip>
                       )}
                       <ActionIcon
+                        color="teal"
                         variant="light"
                         size={25}
                         onClick={() => handleCopyReverseShareLink(reverseShare)}
                       >
-                        <TbLink />
+                        <TbCopy />
                       </ActionIcon>
                       <ActionIcon
                         variant="light"
@@ -867,6 +949,7 @@ const MyShares = () => {
             </tbody>
           </Table>
         </Box>
+        </>
       )}
     </>
   );

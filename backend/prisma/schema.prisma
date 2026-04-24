@@ -118,8 +118,8 @@ model ReverseShare {
   simplified            Boolean  @default(false)
   publicAccess          Boolean  @default(true)
 
-  // E2E encryption: K_rs chiffré par la clé maître (K_master) de l'owner.
-  // Stocké en base64url. Le serveur ne connaît jamais K_rs en clair.
+  // E2E encryption: K_rs encrypted with the owner's master key (K_master).
+  // Stored as base64url. The server never sees K_rs in plaintext.
   encryptedReverseShareKey String?
 
   creatorId String

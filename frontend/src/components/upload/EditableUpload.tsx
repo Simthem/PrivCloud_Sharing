@@ -254,18 +254,18 @@ const EditableUpload = ({
 
   const cancelUpload = () => {
     modals.openConfirmModal({
-      title: t("upload.cancel.title", { defaultMessage: "Annuler l'envoi" }),
+      title: t("upload.cancel.title", { defaultMessage: "Cancel upload" }),
       children: (
         <Text size="sm">
           <FormattedMessage
             id="upload.cancel.confirm"
-            defaultMessage="L'envoi en cours sera interrompu. Continuer ?"
+            defaultMessage="The upload in progress will be interrupted. Continue?"
           />
         </Text>
       ),
       labels: {
-        confirm: t("common.button.confirm", { defaultMessage: "Confirmer" }),
-        cancel: t("common.button.cancel", { defaultMessage: "Non" }),
+        confirm: t("common.button.confirm", { defaultMessage: "Confirm" }),
+        cancel: t("common.button.cancel", { defaultMessage: "No" }),
       },
       confirmProps: { color: "red" },
       onConfirm: () => {
@@ -280,7 +280,7 @@ const EditableUpload = ({
             return f;
           }),
         );
-        toast.error(t("upload.cancel.done", { defaultMessage: "Envoi annulé" }));
+        toast.error(t("upload.cancel.done", { defaultMessage: "Upload cancelled" }));
       },
     });
   };
@@ -315,7 +315,7 @@ const EditableUpload = ({
           <Button size="sm" color="red" variant="subtle" onClick={cancelUpload}>
             <FormattedMessage
               id="upload.cancel.button"
-              defaultMessage="Annuler"
+              defaultMessage="Cancel"
             />
           </Button>
         )}

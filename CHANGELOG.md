@@ -1,4 +1,82 @@
-## [1.20.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.19.1...v1.20.0) (2026-04-15)
+## [1.21.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.20.0...v1.21.0) (2026-04-24)
+
+
+### Features
+
+* **download:** add HTTP 206 Partial Content (Range request) support for file
+  downloads -- enables resume on interrupted downloads and improves
+  compatibility with download managers and mobile browsers
+* **s3:** paginate `ListObjectsV2` in `deleteAllFiles()` to correctly handle
+  shares with more than 1000 objects
+* **s3:** abort in-progress S3 multipart uploads when deleting all files for a
+  share
+* **s3:** add `cleanupStaleS3Multiparts()` cron job (every 6 hours) to purge
+  abandoned multipart uploads older than 1 hour
+* **s3:** `cleanupAbandonedUploads()` now sends `AbortMultipartUploadCommand`
+  to S3/MinIO so uploaded parts are actually freed on the bucket
+* **push:** add `TTL: 86400` and `urgency: "normal"` to web push notifications
+  for better delivery reliability
+* **upload:** add `POST /probe` bandwidth probe endpoint for adaptive upload
+  chunk sizing
+* **shares:** add bulk selection with select-all checkbox and bulk delete for
+  My Shares and Reverse Shares (mobile + desktop)
+* **middleware:** cache backend config for 60 seconds to avoid per-request
+  fetch overhead, with try/catch fallback on previous cache
+
+
+### Bug Fixes
+
+* **download:** set `Content-Type: application/octet-stream` for attachment
+  downloads -- prevents intermediary proxies / WAFs from inspecting, buffering,
+  or compressing large response bodies (fixes 0-byte downloads on files with
+  `application/json` or other inspectable MIME types)
+* **download:** apply CSP `sandbox` header only on inline preview responses --
+  setting it on fetch()-initiated download responses caused WebKit (Safari/iOS)
+  to abort the stream mid-transfer
+* **download:** add `Accept-Ranges: bytes` and `Cache-Control: no-transform`
+  headers to all file responses
+* **download:** use numeric `Content-Length` instead of string
+* **jobs:** fix delete order in `deleteUnfinishedShares()` -- delete files from
+  storage first, then remove the database record (previously inverted, leaving
+  orphaned files on disk/S3)
+* **jobs:** add type-safe `(e as Error).message` casts in catch blocks
+* **jobs:** wrap `deleteAllFiles` in try/catch inside `deleteUnfinishedShares`
+  so a single failing share does not abort cleanup of remaining shares
+* **push:** clean up stale push subscriptions on `EPROTO`, `ECONNREFUSED`,
+  `ECONNRESET`, `ETIMEDOUT`, and `ERR_SSL_WRONG_VERSION_NUMBER` errors --
+  prevents log spam from permanently unreachable push endpoints
+* **preview:** disable video file preview -- video files are no longer offered
+  for inline preview as browser video players cause excessive memory usage and
+  streaming issues with encrypted files
+* **caddy:** add `transport http { flush_interval -1 }` to the trust-proxy
+  Caddyfile for `/api/*` -- forces Caddy to flush every write immediately,
+  preventing internal buffering that could stall large file downloads
+* **share:** reset `createdAt` to `new Date()` in `revertComplete()` so shares
+  being edited are not incorrectly deleted by the unfinished-shares cron job
+* **auth:** filter 401 on `/auth/token` (access token refresh) and 403
+  Forbidden resource responses in the aborted-request exception filter to
+  prevent noisy Sentry/log entries for expected auth flows
+
+
+### Improvements
+
+* **auth:** migrate TOTP implementation from otplib v12 to v13 API --
+  `generateSecret`, `verify`, `generateURI` named imports
+* **dayjs:** use named locale imports instead of side-effect imports to prevent
+  bundler tree-shaking; pass locale objects directly to `dayjs.locale()`
+* **ui:** update copy-link icon from `TbLink` to `TbCopy` with teal/grape
+  color scheme for improved visual consistency
+
+
+### Dependencies
+
+* bump `@prisma/client` and `prisma` to ^7.8.0
+* bump `uuid` to ^14.0.0
+* bump `otplib` to ^13.0.0
+* bump `fast-xml-parser` to 5.6.0
+* add `postinstall` script for `prisma generate`
+
+(https://github.com/Simthem/PrivCloud_Sharing/compare/v1.19.1...v1.20.0) (2026-04-15)
 
 
 ### Build

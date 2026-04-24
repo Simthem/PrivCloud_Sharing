@@ -5,7 +5,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { User } from "@prisma/client";
-import { authenticator, totp } from "otplib";
+import { generateSecret, generate, verify, generateURI } from "otplib";
 import qrcode from "qrcode-svg";
 import { ConfigService } from "src/config/config.service";
 import { PrismaService } from "src/prisma/prisma.service";
@@ -43,7 +43,7 @@ export class AuthTotpService {
       throw new BadRequestException("TOTP is not enabled");
     }
 
-    if (!authenticator.check(dto.totp, totpSecret)) {
+    if (!(await verify({ secret: totpSecret, token: dto.totp })).valid) {
       throw new BadRequestException("Invalid code");
     }
 
@@ -78,9 +78,13 @@ export class AuthTotpService {
     }
 
     const issuer = this.configService.get("general.appName");
-    const secret = authenticator.generateSecret();
+    const secret = generateSecret();
 
-    const otpURL = totp.keyuri(user.username || user.email, issuer, secret);
+    const otpURL = generateURI({
+      issuer,
+      label: user.username || user.email,
+      secret,
+    });
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -118,9 +122,7 @@ export class AuthTotpService {
       throw new BadRequestException("TOTP is not in progress");
     }
 
-    const expected = authenticator.generate(totpSecret);
-
-    if (code !== expected) {
+    if (!(await verify({ secret: totpSecret, token: code })).valid) {
       throw new BadRequestException("Invalid code");
     }
 
@@ -147,9 +149,7 @@ export class AuthTotpService {
       throw new BadRequestException("TOTP is not enabled");
     }
 
-    const expected = authenticator.generate(totpSecret);
-
-    if (code !== expected) {
+    if (!(await verify({ secret: totpSecret, token: code })).valid) {
       throw new BadRequestException("Invalid code");
     }
 

@@ -411,7 +411,13 @@ export class ShareService {
     this.logger.debug(`Revert completion of share: shareId=${id}`);
     return this.prisma.share.update({
       where: { id },
-      data: { uploadLocked: false, isZipReady: false },
+      data: {
+        uploadLocked: false,
+        isZipReady: false,
+        // Reset createdAt so the "delete unfinished shares after 1 day" cron
+        // does not remove the share while the user is still editing it.
+        createdAt: new Date(),
+      },
     });
   }
 

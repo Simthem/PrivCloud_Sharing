@@ -69,7 +69,12 @@ export class ReverseShareService {
       orderBy: {
         shareExpiration: "desc",
       },
-      include: { shares: { include: { creator: true, security: true } } },
+      include: {
+        shares: {
+          where: { uploadLocked: true },
+          include: { creator: true, security: true },
+        },
+      },
     });
 
     return reverseShares.map((reverseShare) => ({

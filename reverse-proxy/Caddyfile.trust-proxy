@@ -18,6 +18,12 @@
 		trusted_proxies 0.0.0.0/0
 		header_up -Via
 		header_down -Via
+		transport http {
+			# Stream large file downloads without buffering
+			# flush_interval -1 forces Caddy to flush every write
+			# immediately → no internal buffering → constant flow.
+			flush_interval -1
+		}
 	}
 
 	# Reverse proxy for all other requests

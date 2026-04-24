@@ -172,12 +172,16 @@ export class FileService {
     }
   }
 
-  async get(shareId: string, fileId: string): Promise<File> {
+  async get(
+    shareId: string,
+    fileId: string,
+    range?: { start: number; end: number },
+  ): Promise<File> {
     const share = await this.prisma.share.findFirst({
       where: { id: shareId },
     });
     const storageService = this.getStorageService(share.storageProvider);
-    return storageService.get(shareId, fileId);
+    return storageService.get(shareId, fileId, range);
   }
 
   async remove(shareId: string, fileId: string) {
@@ -193,6 +197,16 @@ export class FileService {
   async getZip(shareId: string): Promise<Readable> {
     const storageService = this.getStorageService();
     return await storageService.getZip(shareId);
+  }
+
+  /**
+   * Purge stale S3 multipart uploads. Only relevant when S3 is enabled.
+   * Called from jobs.service.ts on a schedule.
+   */
+  async cleanupStaleS3Multiparts() {
+    if (this.configService.get("s3.enabled")) {
+      await this.s3FileService.cleanupStaleS3Multiparts();
+    }
   }
 
   private async streamToUint8Array(stream: Readable): Promise<Uint8Array> {

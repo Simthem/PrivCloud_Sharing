@@ -96,7 +96,7 @@ function shamirCombine(xs: number[], shares: Uint8Array[]): Uint8Array {
 //   [1]     threshold T
 //   [2]     total     N
 //   [3]     index     (1-based)
-//   [4..35] share data (32 bytes pour AES-256)
+//   [4..35] share data (32 bytes for AES-256)
 //   [36]    fletcher-16 sum1
 //   [37]    fletcher-16 sum2
 //
@@ -225,7 +225,7 @@ export function combineShards(shardStrings: string[]): string {
 
   if (shards.length < t)
     throw new Error(
-      `${t} fragments requis, seulement ${shards.length} fourni(s)`,
+      `${t} fragments required, only ${shards.length} provided`,
     );
 
   const indices = shards.map((s) => s.index);

@@ -21,10 +21,18 @@ export class JobsService {
   async deleteExpiredShares() {
     const expiredShares = await this.prisma.share.findMany({
       where: {
-        // We want to remove only shares that have an expiration date less than the current date, but not 0
-        AND: [
-          { expiration: { lt: new Date() } },
-          { expiration: { not: moment(0).toDate() } },
+        OR: [
+          // Shares with an explicit expiration date in the past
+          {
+            AND: [
+              { expiration: { lt: new Date() } },
+              { expiration: { not: moment(0).toDate() } },
+            ],
+          },
+          // Plan policy: hard 15-day maximum retention regardless of expiration
+          {
+            createdAt: { lt: moment().subtract(15, "days").toDate() },
+          },
         ],
       },
     });
@@ -34,7 +42,7 @@ export class JobsService {
         await this.fileService.deleteAllFiles(expiredShare.id);
       } catch (e) {
         this.logger.warn(
-          `Failed to delete files for share ${expiredShare.id}: ${e.message}`,
+          `Failed to delete files for share ${expiredShare.id}: ${(e as Error).message}`,
         );
       }
       await this.prisma.share.delete({
@@ -76,11 +84,17 @@ export class JobsService {
     });
 
     for (const unfinishedShare of unfinishedShares) {
+      try {
+        await this.fileService.deleteAllFiles(unfinishedShare.id);
+      } catch (e) {
+        this.logger.warn(
+          `Failed to delete files for unfinished share ${unfinishedShare.id}: ${(e as Error).message}`,
+        );
+      }
+
       await this.prisma.share.delete({
         where: { id: unfinishedShare.id },
       });
-
-      await this.fileService.deleteAllFiles(unfinishedShare.id);
     }
 
     if (unfinishedShares.length > 0) {
@@ -141,6 +155,17 @@ export class JobsService {
 
     if (deletedTokensCount > 0) {
       this.logger.log(`Deleted ${deletedTokensCount} expired refresh tokens`);
+    }
+  }
+
+  @Cron("30 */6 * * *")
+  async cleanupStaleS3Multiparts() {
+    try {
+      await this.fileService.cleanupStaleS3Multiparts();
+    } catch (e) {
+      this.logger.error(
+        `Failed to cleanup stale S3 multipart uploads: ${(e as Error).message}`,
+      );
     }
   }
 }

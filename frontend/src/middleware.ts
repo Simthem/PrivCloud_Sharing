@@ -11,6 +11,10 @@ export const config = {
   matcher: "/((?!api|static|.*\\..*|_next).*)",
 };
 
+const CONFIG_CACHE_TTL = 60_000; // 1 minute
+let cachedConfig: any = null;
+let cachedAt = 0;
+
 export async function middleware(request: NextRequest) {
   const routes = {
     unauthenticated: new Routes(["/auth/*", "/"]),
@@ -27,15 +31,26 @@ export async function middleware(request: NextRequest) {
     disabled: new Routes([]),
   };
 
-  // Get config from backend
+  // Get config from backend (cached for 1 minute to avoid per-request overhead)
   // Use 127.0.0.1 instead of localhost: Alpine resolves localhost to ::1 (IPv6)
   // but NestJS only listens on IPv4. Next.js 15 uses native fetch() which follows
   // the OS DNS resolution order, causing requests to hang on IPv6.
   const apiUrl = process.env.API_URL || "http://127.0.0.1:8080";
-  const config = await (await fetch(`${apiUrl}/api/configs`)).json();
+  let configData;
+  if (cachedConfig && Date.now() - cachedAt < CONFIG_CACHE_TTL) {
+    configData = cachedConfig;
+  } else {
+    try {
+      configData = await (await fetch(`${apiUrl}/api/configs`)).json();
+      cachedConfig = configData;
+      cachedAt = Date.now();
+    } catch {
+      configData = cachedConfig || [];
+    }
+  }
 
   const getConfig = (key: string) => {
-    return configService.get(key, config);
+    return configService.get(key, configData);
   };
 
   const route = request.nextUrl.pathname;

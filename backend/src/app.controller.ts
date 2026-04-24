@@ -1,4 +1,4 @@
-import { Controller, Get, Res } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Res } from "@nestjs/common";
 import { Response } from "express";
 import { PrismaService } from "./prisma/prisma.service";
 
@@ -15,5 +15,16 @@ export class AppController {
       res.statusCode = 500;
       return "ERROR";
     }
+  }
+
+  /**
+   * Bandwidth probe -- the upload client sends a small body and measures the
+   * round-trip time to estimate network throughput.  Returns 204 (no body)
+   * so the measurement is not distorted by response latency.
+   */
+  @Post("probe")
+  @HttpCode(204)
+  probe() {
+    return;
   }
 }

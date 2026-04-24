@@ -1,6 +1,6 @@
 services:
   privcloud-sharing:
-    image: simthem/privcloud-sharing:dev
+    image: simthem/privcloud-sharing:latest
     container_name: privcloud-sharing
     # build:
         # context: .

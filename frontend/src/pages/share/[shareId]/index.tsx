@@ -244,13 +244,13 @@ const Share = ({ shareId }: { shareId: string }) => {
       {isE2EMissingKey && (
         <Alert
           icon={<TbLock size={16} />}
-          title="Chiffrement de bout en bout"
+          title="End-to-end encryption"
           color="red"
           mb="lg"
         >
-          Ce partage est chiffré de bout en bout. La clé de déchiffrement est
-          manquante dans l'URL. Veuillez utiliser le lien complet fourni par
-          l'expéditeur (avec le fragment #key=...).
+          This share is end-to-end encrypted. The decryption key is
+          missing from the URL. Please use the full link provided by
+          the sender (with the #key=... fragment).
         </Alert>
       )}
 
