@@ -1,3 +1,24 @@
+## [1.21.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.21.0...v1.21.1) (2026-04-25)
+
+
+### Bug Fixes
+
+* **docker:** copy `frontend/package.json` and `frontend/package-lock.json` into
+  the runtime image so Snyk container scans resolve the correct dependency tree
+
+
+### Dependencies
+
+* **cve:** bump `fast-xml-parser` override 5.6.0 -> 5.7.2 in backend to fix
+  CVE-2023-26920: Prototype pollution (parser)
+  CVE-2023-34104: ReDoS (parser)
+  CVE-2026-27942: Stack overflow in XMLBuilder with preserveOrder
+  CVE-2026-25896: Entity encoding bypass via regex in DOCTYPE entities
+* **cve:** add `postcss` >= 8.5.10 override in frontend to fix
+  CVE-2026-41305 / SNYK-JS-POSTCSS-16189065 (XSS, Medium)
+* bump `otplib` to ^13.0.0 (v13 API migration completed in 1.21.0)
+
+
 ## [1.21.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.20.0...v1.21.0) (2026-04-24)
 
 

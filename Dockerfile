@@ -482,6 +482,7 @@ RUN \
 WORKDIR /opt/app/frontend
 # Next.js standalone : le contenu de .next/standalone va à la racine de frontend/
 # pour que server.js soit à /opt/app/frontend/server.js
+COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/package.json /opt/app/frontend/package-lock.json ./
 COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/.next/standalone ./
 COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/.next/static ./.next/static
 COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/public ./public
