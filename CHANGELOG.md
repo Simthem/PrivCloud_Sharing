@@ -1,3 +1,39 @@
+## [1.21.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.21.2...v1.21.3) (2026-05-12)
+
+
+### Dependencies
+
+* **cve:** add `axios` >=1.16.0 override in all frontend packages to force
+  transitive dependencies to resolve the patched version and fix
+  CVE-2026-42035 (HTTP Response Splitting, CVSS 9.1, CRITICAL),
+  CVE-2026-42264 (Prototype Pollution, CVSS 9.1, CRITICAL),
+  CVE-2026-42033 (Prototype Pollution, CVSS 9.1, CRITICAL),
+  CVE-2026-42044 (Improperly Controlled Object Modification, CVSS 8.3, HIGH),
+  CVE-2026-42039 (Uncontrolled Recursion, CVSS 8.7, HIGH),
+  CVE-2026-42038 (SSRF, CVSS 6.9, MEDIUM),
+  CVE-2026-42043 (Incomplete Input Validation, CVSS 6.3, MEDIUM),
+  CVE-2026-42041 (Prototype Pollution, CVSS 6.3, MEDIUM),
+  CVE-2026-42042 (Sensitive Information Leak, CVSS 5.3, MEDIUM),
+  CVE-2026-42037 (CRLF Injection, CVSS 6.9, MEDIUM),
+  CVE-2026-42034 (DoS, CVSS 6.9, MEDIUM),
+  CVE-2026-42040 (Improper Output Escaping, CVSS 6.3, MEDIUM),
+  CVE-2026-42036 (DoS, CVSS 6.9, MEDIUM)
+* **cve:** pin `next` to 16.2.6 in all frontend packages to fix
+  CVE-2026-45109 (Authentication Bypass, CVSS 8.7, HIGH -- requires 16.2.6),
+  CVE-2026-23870 (DoS, CVSS 8.7, HIGH),
+  CVE-2026-44574 (Authentication Bypass, CVSS 8.6, HIGH),
+  CVE-2026-44578 (SSRF, CVSS 7.7, HIGH),
+  CVE-2026-44579 (DoS, CVSS 8.7, HIGH),
+  CVE-2026-44575 (Authentication Bypass, CVSS 8.7, HIGH),
+  CVE-2026-44577 (DoS, CVSS 8.2, HIGH),
+  CVE-2026-44573 (Incorrect Authorization, CVSS 8.2, HIGH),
+  CVE-2026-44576 (Interpretation Conflict, CVSS 6.3, MEDIUM),
+  CVE-2026-44580 (XSS, CVSS 5.1, MEDIUM),
+  CVE-2026-44572 (Extraneous Data Acceptance, CVSS 6.3, MEDIUM),
+  CVE-2026-44582 (Weak Hash, CVSS 6.3, MEDIUM),
+  CVE-2026-44581 (XSS, CVSS 2.3, LOW)
+
+
 ## [1.21.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.21.1...v1.21.2) (2026-05-12)
 
 
