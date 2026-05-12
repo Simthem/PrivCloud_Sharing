@@ -168,8 +168,8 @@ api.interceptors.response.use(
     if (
       needsRefresh &&
       !original._retry &&
-      original.url !== "/auth/token" &&
-      original.url !== "/auth/signIn"
+      !original.url?.includes("auth/token") &&
+      !original.url?.includes("auth/signIn")
     ) {
       original._retry = true;
 

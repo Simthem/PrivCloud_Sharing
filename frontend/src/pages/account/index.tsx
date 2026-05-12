@@ -196,7 +196,10 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
       title: intl.formatMessage({ id: "account.e2e.confirm.regenerate.title" }),
       children: (
         <Text size="sm">
-          <FormattedMessage id="account.e2e.confirm.regenerate.body" />
+          <FormattedMessage
+            id="account.e2e.confirm.regenerate.body"
+            values={{ strong: (chunks) => <strong>{chunks}</strong> }}
+          />
         </Text>
       ),
       labels: {
@@ -262,7 +265,10 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
       title: intl.formatMessage({ id: "account.e2e.confirm.revoke.title" }),
       children: (
         <Text size="sm">
-          <FormattedMessage id="account.e2e.confirm.revoke.body" />
+          <FormattedMessage
+            id="account.e2e.confirm.revoke.body"
+            values={{ strong: (chunks) => <strong>{chunks}</strong> }}
+          />
         </Text>
       ),
       labels: {

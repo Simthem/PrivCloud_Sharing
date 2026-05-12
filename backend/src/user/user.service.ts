@@ -53,7 +53,10 @@ export class UserSevice {
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code == "P2002") {
-          const duplicatedField: string = e.meta.target[0];
+          const duplicatedField: string =
+            (e.meta?.constraint as any)?.fields?.[0] ??
+            (e.meta?.target as any)?.[0] ??
+            "field";
           throw new BadRequestException(
             `A user with this ${duplicatedField} already exists`,
           );
@@ -73,7 +76,10 @@ export class UserSevice {
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code == "P2002") {
-          const duplicatedField: string = e.meta.target[0];
+          const duplicatedField: string =
+            (e.meta?.constraint as any)?.fields?.[0] ??
+            (e.meta?.target as any)?.[0] ??
+            "field";
           throw new BadRequestException(
             `A user with this ${duplicatedField} already exists`,
           );
@@ -252,7 +258,10 @@ export class UserSevice {
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code == "P2002") {
-          const duplicatedField: string = e.meta.target[0];
+          const duplicatedField: string =
+            (e.meta?.constraint as any)?.fields?.[0] ??
+            (e.meta?.target as any)?.[0] ??
+            "field";
           throw new BadRequestException(
             `A user with this ${duplicatedField} already exists`,
           );

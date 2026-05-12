@@ -125,7 +125,7 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
           router.replace(safeRedirectPath(redirectPath));
         }
       })
-      .catch(toast.axiosError)
+      .catch(() => toast.error(t("signIn.notify.error")))
       .finally(() => setIsLoading(false));
   };
 

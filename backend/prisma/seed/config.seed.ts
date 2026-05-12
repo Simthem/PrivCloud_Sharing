@@ -44,6 +44,22 @@ export const configVariables = {
       defaultValue: "3 months",
       secret: false,
     },
+    maintenanceMode: {
+      type: "boolean",
+      defaultValue: "false",
+      secret: false,
+    },
+    maintenanceMessage: {
+      type: "text",
+      defaultValue:
+        "We are currently performing scheduled maintenance. File uploads are temporarily unavailable. Please try again later.",
+      secret: false,
+    },
+    maintenanceAllowedEmails: {
+      type: "text",
+      defaultValue: "",
+      secret: false,
+    },
   },
   share: {
     allowRegistration: {

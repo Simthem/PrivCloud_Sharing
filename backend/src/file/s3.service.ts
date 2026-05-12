@@ -511,6 +511,10 @@ export class S3FileService {
     const checksumCalculation =
       this.config.get("s3.useChecksum") === true ? null : "WHEN_REQUIRED";
 
+    // Proxy support: global-agent (loaded via NODE_OPTIONS) patches
+    // http.request() / https.request() at the module level.
+    // AWS SDK v3 NodeHttpHandler calls these patched functions internally,
+    // so HTTP_PROXY / HTTPS_PROXY env vars are honored automatically.
     return new S3Client({
       endpoint: this.config.get("s3.endpoint"),
       region: this.config.get("s3.region"),

@@ -1,3 +1,89 @@
+## [1.21.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.21.1...v1.21.2) (2026-05-12)
+
+
+### Bug Fixes
+
+* **frontend:** maintenance.tsx compile error -- `theme.spacing.xl * 2` is not
+  valid with Mantine v6 CSSObject typing; replaced with
+  `calc(${theme.spacing.xl} * 2)`
+* **backend:** Prisma 7 changed the P2002 unique constraint error shape --
+  `e.meta.target[0]` (Prisma 6) replaced with
+  `(e.meta?.constraint as any)?.fields?.[0]` with fallback to
+  `(e.meta?.target as any)?.[0]` and `"field"` in auth.service.ts and
+  user.service.ts (4 occurrences total)
+* **frontend:** axios interceptor in api.service.ts compared
+  `original.url !== "/auth/signIn"` but axios stores the path without a
+  leading slash; changed to `.includes("auth/signIn")` and
+  `.includes("auth/token")` to prevent spurious token-refresh attempts on
+  login 401 responses
+* **frontend:** logo link in Header.tsx caused a navigation flash for
+  authenticated users -- `href="/"` redirects to `/upload` for logged-in
+  users; changed to `href={user ? "/upload" : "/"}`
+* **frontend:** `<Notifications>` in _app.tsx was missing
+  `position="bottom-right"` -- toasts appeared at the default top position
+* **frontend:** `<strong>` tags inside `<FormattedMessage>` in the E2E confirm
+  modals (account/index.tsx) rendered as literal text -- added
+  `values={{ strong: (chunks) => <strong>{chunks}</strong> }}`
+* **frontend:** sign-in error toast displayed the raw English backend message
+  instead of a translated string -- replaced `toast.axiosError` with
+  `toast.error(t("signIn.notify.error"))` and added `signIn.notify.error`
+  to all locale files
+
+
+### Dependencies
+
+* **go:** bump Go 1.26.2 -> 1.26.3 in all Docker build stages to fix
+  CVE-2026-33811 (HIGH), CVE-2026-33814 (HIGH), CVE-2026-39820 (HIGH),
+  CVE-2026-39836 (HIGH), CVE-2026-42499 (HIGH),
+  CVE-2026-39823 (MEDIUM), CVE-2026-39825 (MEDIUM), CVE-2026-39826 (MEDIUM)
+* **cve:** bump `next` to 16.2.6 in frontend (security and compatibility)
+* **cve:** bump `axios` to ^1.16.0 in frontend; add `axios` >=1.16.0 override
+  in backend to fix CVE-2025-27152 (SSRF via absolute URL bypass, HIGH)
+* **cve:** add `hono` >=4.12.18 and `@hono/node-server` >=1.19.13 overrides
+  in backend (path-handling security fixes)
+* **cve:** add `multer` ^2.1.0 override in backend
+  (DoS / prototype pollution fix)
+* **cve:** add `path-to-regexp` >=8.4.0 override in backend to fix
+  CVE-2024-45296 (ReDoS via backtracking, CVSS 7.5, HIGH)
+* **cve:** add `semver` ^7.5.4 override in backend to fix
+  CVE-2022-25883 (ReDoS via untrusted version string, CVSS 7.5, HIGH)
+* **cve:** add `word-wrap` ^1.2.4 override in backend to fix
+  CVE-2023-26115 (ReDoS, CVSS 7.5, HIGH)
+* **cve:** add `minimatch` ^10.2.3 override in backend to fix
+  CVE-2022-3517 (ReDoS, CVSS 7.5, HIGH)
+* **cve:** add `qs` ^6.14.1 override in backend to fix
+  CVE-2022-24999 (Prototype Pollution, CVSS 7.5, HIGH)
+* **cve:** add `tough-cookie` ^4.1.3 override in backend to fix
+  CVE-2023-26136 (Prototype Pollution, CVSS 9.8, CRITICAL)
+* **cve:** add `serialize-javascript` ^7.0.3 override in backend/frontend to
+  fix CVE-2020-7660 (XSS via code injection, CRITICAL)
+* **cve:** add `lodash` ^4.18.1 override in backend to fix
+  CVE-2021-23337 (Command Injection, CVSS 7.2, HIGH) and
+  CVE-2020-8203 (Prototype Pollution, CVSS 7.4, HIGH)
+* **cve:** add `handlebars` ^4.7.8 override in backend to fix
+  CVE-2021-23369 (RCE via template injection, CVSS 9.8, CRITICAL) and
+  CVE-2021-23383 (Prototype Pollution, CVSS 9.8, CRITICAL)
+* **cve:** add `minimist` ^1.2.8 override in backend to fix
+  CVE-2021-44906 (Prototype Pollution, CVSS 9.8, CRITICAL)
+* **cve:** add `async` ^3.2.6 override in backend to fix
+  CVE-2021-43138 (Prototype Pollution, CVSS 7.8, HIGH)
+* **cve:** add `underscore` ^1.13.8 override in backend to fix
+  CVE-2021-23358 (Arbitrary Code Execution via template, CVSS 8.8, HIGH)
+* **cve:** add `marked` ^4.3.0 override in backend (XSS in markdown parsing)
+* **cve:** add `validator` ^13.15.22 override in backend
+* **cve:** add `node-forge` ^1.3.2 override in backend
+  (multiple: weak PRNG, LDAP injection)
+* **cve:** add `jose` ^4.15.5 override in backend
+  (JWT algorithm confusion hardening)
+* **cve:** add `tar` ^7.5.11 override in backend; ^7.5.10 in frontend
+* **cve:** add `diff` ^8.0.3, `picomatch` >=4.0.4, `brace-expansion` >=5.0.5
+  overrides in backend and frontend
+* **cve:** add `glob` ^10.5.0, `jws` ^3.2.3, `ip-address` >=10.1.1,
+  `fast-uri` >=3.1.2, `fast-xml-builder` >=1.1.7, `effect` ^3.20.0,
+  `defu` >=6.1.5, `crypto-js` ^4.2.0, `flatted` ^3.4.0,
+  `file-type` ^21.3.2 overrides in backend
+
+
 ## [1.21.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.21.0...v1.21.1) (2026-04-25)
 
 

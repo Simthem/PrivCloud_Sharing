@@ -22,6 +22,7 @@ export async function middleware(request: NextRequest) {
       "/share/*",
       "/s/*",
       "/upload/*",
+      "/maintenance",
       "/error",
       "/imprint",
       "/privacy",
@@ -54,12 +55,12 @@ export async function middleware(request: NextRequest) {
   };
 
   const route = request.nextUrl.pathname;
-  let user: { isAdmin: boolean } | null = null;
+  let user: { isAdmin: boolean; email: string } | null = null;
   const accessToken = request.cookies.get("access_token")?.value;
   const hasActiveSession = !!request.cookies.get("logged_in")?.value;
 
   try {
-    const claims = jwtDecode<{ exp: number; isAdmin: boolean }>(
+    const claims = jwtDecode<{ exp: number; isAdmin: boolean; email: string }>(
       accessToken as string,
     );
     if (claims.exp * 1000 > Date.now()) {
@@ -67,6 +68,29 @@ export async function middleware(request: NextRequest) {
     }
   } catch {
     user = null;
+  }
+
+  // Maintenance mode: redirect upload pages to /maintenance
+  // unless the user is admin or their email is in the allowed list.
+  const maintenanceMode = getConfig("general.maintenanceMode");
+  if (maintenanceMode) {
+    const uploadRoutes = new Routes(["/upload", "/upload/*"]);
+    const isUploadRoute = uploadRoutes.contains(route);
+
+    if (isUploadRoute && !user?.isAdmin) {
+      const allowedEmailsRaw: string =
+        getConfig("general.maintenanceAllowedEmails") || "";
+
+      if (!isEmailAllowed(user?.email || "", allowedEmailsRaw)) {
+        return NextResponse.redirect(
+          new URL("/maintenance", request.url),
+        );
+      }
+    }
+
+    // If not in maintenance mode but user navigates to /maintenance, redirect away
+  } else if (route === "/maintenance") {
+    return NextResponse.redirect(new URL("/upload", request.url));
   }
 
   if (!getConfig("share.allowRegistration")) {
@@ -121,9 +145,11 @@ export async function middleware(request: NextRequest) {
       condition: routes.admin.contains(route) && !user?.isAdmin && !hasActiveSession,
       path: "/upload",
     },
-    // Home page
+    // Home page – also redirect when the session is still alive
+    // (logged_in cookie present) to avoid a flash of the public homepage
+    // while the client-side refreshes an expired access token.
     {
-      condition: (!getConfig("general.showHomePage") || user) && route == "/",
+      condition: (!getConfig("general.showHomePage") || user || hasActiveSession) && route == "/",
       path: "/upload",
     },
     // Imprint redirect
@@ -161,4 +187,17 @@ class Routes {
     }
     return false;
   }
+}
+
+// Check if a user email is in the allowed list.
+// Each entry is separated by newlines or commas.
+function isEmailAllowed(userEmail: string, allowedEmailsRaw: string): boolean {
+  if (!userEmail || !allowedEmailsRaw.trim()) return false;
+
+  const entries = allowedEmailsRaw
+    .split(/[\n,]+/)
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  return entries.includes(userEmail.toLowerCase());
 }

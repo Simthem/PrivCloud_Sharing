@@ -31,6 +31,7 @@ export default {
   "signin.input.password": "Mot de passe",
   "signin.input.password.placeholder": "Votre mot de passe",
   "signin.button.submit": "Se connecter",
+  "signIn.notify.error": "Identifiant ou mot de passe incorrect",
   "signIn.notify.totp-required.title": "Une authentification à deux facteurs est requise",
   "signIn.notify.totp-required.description": "Veuillez entrer votre code d'authentification à deux facteurs",
   "signIn.oauth.or": "OU",
@@ -403,6 +404,19 @@ export default {
     "Thème de couleur utilisé dans toute l'application.",  "admin.config.general.logo": "Logo",
   "admin.config.general.logo.description": "Changez de logo en envoyant une nouvelle image. L’image doit être au format PNG et doit avoir un ratio 1:1.",
   "admin.config.general.logo.placeholder": "Sélectionner une image",
+  "admin.config.general.maintenance-mode": "Mode maintenance",
+  "admin.config.general.maintenance-mode.description":
+    "Lorsqu'il est activé, la page de téléversement est remplacée par une page de maintenance pour tous les utilisateurs non-administrateurs.",
+  "admin.config.general.maintenance-message": "Message de maintenance",
+  "admin.config.general.maintenance-message.description":
+    "Message personnalisé affiché sur la page de maintenance.",
+  "admin.config.general.maintenance-allowed-emails": "Comptes autorisés",
+  "admin.config.general.maintenance-allowed-emails.description":
+    "Adresses email des comptes autorisés à contourner le mode maintenance et accéder à la page de téléversement. Une adresse par ligne.",
+
+  "maintenance.title": "Maintenance en cours",
+  "maintenance.default-message":
+    "Nous effectuons actuellement une maintenance planifiée. Le téléversement de fichiers est temporairement indisponible. Veuillez réessayer ultérieurement.",
   "admin.config.cache.ttl": "DDV",
   "admin.config.cache.ttl.description": "Durée de vie des informations conservées en cache.",
   "admin.config.cache.max-items": "Maximum d'éléments",

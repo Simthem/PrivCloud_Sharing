@@ -41,6 +41,7 @@ export default {
   "signin.input.password": "Password",
   "signin.input.password.placeholder": "Your password",
   "signin.button.submit": "Sign in",
+  "signIn.notify.error": "Wrong email or password",
   "signIn.notify.totp-required.title": "Two-factor authentication required",
   "signIn.notify.totp-required.description":
     "Please enter your two-factor authentication code",
@@ -535,6 +536,20 @@ export default {
   "admin.config.general.logo.description":
     "Change your logo by uploading a new image. The image must be a PNG and should have the format 1:1.",
   "admin.config.general.logo.placeholder": "Pick image",
+
+  "admin.config.general.maintenance-mode": "Maintenance Mode",
+  "admin.config.general.maintenance-mode.description":
+    "When enabled, the upload page is replaced by a maintenance page for all non-admin users.",
+  "admin.config.general.maintenance-message": "Maintenance Message",
+  "admin.config.general.maintenance-message.description":
+    "Custom message displayed on the maintenance page.",
+  "admin.config.general.maintenance-allowed-emails": "Allowed Accounts",
+  "admin.config.general.maintenance-allowed-emails.description":
+    "Email addresses of accounts allowed to bypass maintenance mode and access the upload page. One email per line.",
+
+  "maintenance.title": "Maintenance in Progress",
+  "maintenance.default-message":
+    "We are currently performing scheduled maintenance. File uploads are temporarily unavailable. Please try again later.",
 
   "admin.config.cache.ttl": "TTL",
   "admin.config.cache.ttl.description":

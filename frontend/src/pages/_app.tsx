@@ -281,7 +281,7 @@ function App({ Component, pageProps }: AppProps) {
                 toggleColorScheme={toggleColorScheme}
               >
                 <GlobalStyle />
-                <Notifications />
+                <Notifications position="bottom-right" />
                 <ConfigContext.Provider
                   value={{
                     configVariables,

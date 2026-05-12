@@ -3,12 +3,15 @@
 # ---------------------------
 # CVE-2026-27141: caddy:2-alpine embarque golang.org/x/net v0.50.0 (vuln).
 # On clone les sources Caddy, on force golang.org/x/net >= v0.51.0, puis on compile.
-# Go 1.26.2 : corrige CVE-2026-27142, CVE-2026-25679, CVE-2026-27139
+# Go 1.26.3 : corrige CVE-2026-27142, CVE-2026-25679, CVE-2026-27139
 # + CVE-2026-32280 (HIGH), CVE-2026-32282 (HIGH), CVE-2026-32281 (MEDIUM),
 # + CVE-2026-32288 (MEDIUM), CVE-2026-32289 (MEDIUM), CVE-2026-32283 (UNKNOWN),
 # + CVE-2026-33810 (UNKNOWN) -- tous fixés en 1.26.2.
+# + CVE-2026-33811 (HIGH), CVE-2026-33814 (HIGH), CVE-2026-39820 (HIGH),
+# + CVE-2026-39836 (HIGH), CVE-2026-42499 (HIGH), CVE-2026-39823 (MEDIUM),
+# + CVE-2026-39825 (MEDIUM), CVE-2026-39826 (MEDIUM) -- tous fixés en 1.26.3.
 # Caddy 2.11.2 requis pour fixer CVE-2026-30851 (HIGH), CVE-2026-30852 (MEDIUM).
-FROM golang:1.26.2-alpine AS caddy-builder
+FROM golang:1.26.3-alpine AS caddy-builder
 # CVE-2026-27171 : zlib 1.3.1-r2 -> 1.3.2-r0 disponible dans Alpine
 RUN apk upgrade --no-cache && apk add --no-cache git
 RUN git clone --depth 1 --branch v2.11.2 \
@@ -58,9 +61,9 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/ca
 # ---------------------------
 # Le gosu packagé par Debian (apt) est compilé avec Go 1.19.8, ce qui injecte
 # 54 CVEs Go stdlib dans l'image finale (4 CRITICAL, 20 HIGH, 28 MEDIUM, 2 LOW).
-# On compile gosu depuis les sources avec Go 1.26.2 : binaire statique,
+# On compile gosu depuis les sources avec Go 1.26.3 : binaire statique,
 # zéro dépendance système, zéro CVE Go stdlib.
-FROM golang:1.26.2-alpine AS gosu-builder
+FROM golang:1.26.3-alpine AS gosu-builder
 # CVE-2026-27171 : zlib 1.3.1-r2 -> 1.3.2-r0 disponible dans Alpine
 RUN apk upgrade --no-cache
 RUN CGO_ENABLED=0 go install -trimpath -ldflags='-s -w' github.com/tianon/gosu@latest
