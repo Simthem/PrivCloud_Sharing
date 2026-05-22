@@ -1,6 +1,7 @@
 import {
   Button,
   Center,
+  Code,
   Group,
   Image,
   Stack,
@@ -8,9 +9,10 @@ import {
   TextInput,
   Tooltip,
 } from "@mantine/core";
-import { useForm, yupResolver } from "@mantine/form";
+import { useForm } from "@mantine/form";
+import { yupResolver } from "mantine-form-yup-resolver";
 import { useModals } from "@mantine/modals";
-import { ModalsContextProps } from "@mantine/modals/lib/context";
+import { useState } from "react";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
 import useTranslate, {
@@ -20,7 +22,7 @@ import authService from "../../services/auth.service";
 import toast from "../../utils/toast.util";
 
 const showEnableTotpModal = (
-  modals: ModalsContextProps,
+  modals: ReturnType<typeof useModals>,
   refreshUser: () => {},
   options: {
     qrCode: string;
@@ -50,6 +52,7 @@ const CreateEnableTotpModal = ({
 }) => {
   const modals = useModals();
   const t = useTranslate();
+  const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
 
   const validationSchema = yup.object().shape({
     code: yup
@@ -67,6 +70,74 @@ const CreateEnableTotpModal = ({
     validate: yupResolver(validationSchema),
   });
 
+  const downloadBackupCodes = (codes: string[]) => {
+    const content =
+      t("account.modal.totp.backup.fileHeader") +
+      "\n" +
+      "-".repeat(40) +
+      "\n\n" +
+      codes.map((c, i) => `${String(i + 1).padStart(2, " ")}. ${c}`).join("\n") +
+      "\n\n" +
+      t("account.modal.totp.backup.fileFooter");
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "backup-codes.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // -- Backup codes view (after TOTP verified) -----------------
+  if (backupCodes) {
+    return (
+      <div>
+        <Center>
+          <Stack>
+            <Text fw={700}>
+              <FormattedMessage id="account.modal.totp.backup.title" />
+            </Text>
+            <Text size="sm" c="dimmed">
+              <FormattedMessage id="account.modal.totp.backup.description" />
+            </Text>
+            <Code block>
+              {backupCodes
+                .map((c, i) => `${String(i + 1).padStart(2, " ")}. ${c}`)
+                .join("\n")}
+            </Code>
+            <Group justify="center" mt="md">
+              <Button
+                variant="outline"
+                onClick={() => downloadBackupCodes(backupCodes)}
+              >
+                <FormattedMessage id="account.modal.totp.backup.download" />
+              </Button>
+              <Button
+                onClick={() => {
+                  navigator.clipboard.writeText(backupCodes.join("\n"));
+                  toast.success(t("common.notify.copied"));
+                }}
+                variant="outline"
+              >
+                <FormattedMessage id="common.button.clickToCopy" />
+              </Button>
+            </Group>
+            <Button
+              mt="md"
+              onClick={() => {
+                modals.closeAll();
+                refreshUser();
+              }}
+            >
+              <FormattedMessage id="account.modal.totp.backup.done" />
+            </Button>
+          </Stack>
+        </Center>
+      </div>
+    );
+  }
+
+  // -- QR code + verification view -----------------------------
   return (
     <div>
       <Center>
@@ -105,10 +176,9 @@ const CreateEnableTotpModal = ({
             onSubmit={form.onSubmit((values) => {
               authService
                 .verifyTOTP(values.code, options.password)
-                .then(() => {
+                .then(({ backupCodes: codes }) => {
                   toast.success(t("account.notify.totp.enable"));
-                  modals.closeAll();
-                  refreshUser();
+                  setBackupCodes(codes);
                 })
                 .catch(toast.axiosError);
             })}

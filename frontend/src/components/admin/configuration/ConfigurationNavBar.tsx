@@ -1,14 +1,12 @@
 import {
   Box,
   Button,
-  createStyles,
   Group,
-  MediaQuery,
-  Navbar,
   Stack,
   Text,
   ThemeIcon,
 } from "@mantine/core";
+import { createStyles } from "@mantine/emotion";
 import Link from "next/link";
 import { Dispatch, SetStateAction } from "react";
 import {
@@ -42,12 +40,8 @@ const categories = [
 
 const useStyles = createStyles((theme) => ({
   activeLink: {
-    backgroundColor: theme.fn.variant({
-      variant: "light",
-      color: theme.primaryColor,
-    }).background,
-    color: theme.fn.variant({ variant: "light", color: theme.primaryColor })
-      .color,
+    backgroundColor: `var(--mantine-primary-color-light)`,
+    color: `var(--mantine-primary-color-light-color)`,
 
     borderRadius: theme.radius.sm,
     fontWeight: 600,
@@ -56,7 +50,7 @@ const useStyles = createStyles((theme) => ({
 
 const ConfigurationNavBar = ({
   categoryId,
-  isMobileNavBarOpened,
+  isMobileNavBarOpened: _isMobileNavBarOpened,
   setIsMobileNavBarOpened,
 }: {
   categoryId: string;
@@ -65,17 +59,15 @@ const ConfigurationNavBar = ({
 }) => {
   const { classes } = useStyles();
   return (
-    <Navbar
+    <Box
+      component="nav"
       p="md"
-      hiddenBreakpoint="sm"
-      hidden={!isMobileNavBarOpened}
-      width={{ sm: 200, lg: 300 }}
     >
-      <Navbar.Section>
-        <Text size="xs" color="dimmed" mb="sm">
+      <Box>
+        <Text size="xs" c="dimmed" mb="sm">
           <FormattedMessage id="admin.config.title" />
         </Text>
-        <Stack spacing="xs">
+        <Stack gap="xs">
           {categories.map((category) => (
             <Box
               p="xs"
@@ -108,13 +100,11 @@ const ConfigurationNavBar = ({
             </Box>
           ))}
         </Stack>
-      </Navbar.Section>
-      <MediaQuery largerThan="sm" styles={{ display: "none" }}>
-        <Button mt="xl" variant="light" component={Link} href="/admin">
-          <FormattedMessage id="common.button.go-back" />
-        </Button>
-      </MediaQuery>
-    </Navbar>
+      </Box>
+      <Button mt="xl" variant="light" component={Link} href="/admin" hiddenFrom="sm">
+        <FormattedMessage id="common.button.go-back" />
+      </Button>
+    </Box>
   );
 };
 

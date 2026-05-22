@@ -1,11 +1,26 @@
 services:
   privcloud-sharing:
-    build: .
+    image: simthem/privcloud-sharing:latest
+    container_name: privcloud-sharing
     restart: unless-stopped
     ports:
-      - 3001:3000
+      - 3000:3000
     environment:
-      - TRUST_PROXY=false
+      # Local-only: force the container to use the Caddyfile that routes
+      # / to the frontend and /api to the backend, without changing prod.
+      - TRUST_PROXY=true
+      # -- Plan Limits (Team plan for all users) --
+      - TEAM_MAX_MEMBERS_INCLUDED=3                        # Members included in base Team plan
+      - TEAM_MAX_FOLDERS=10                                # Max shared folders per team
+      # Storage limits - comment out (or remove) for NO limit (default behaviour).
+      # Set to a byte value to enforce a cap (e.g. 250 GB = 250000000000).
+      # - TEAM_MAX_SHARE_SIZE=250000000000                 # Max size per share (bytes)
+      # - TEAM_TOTAL_STORAGE_BYTES=500000000000            # Total storage per team (bytes)
+      # - TEAM_TRANSFER_BYTES=250000000000                 # Transfer quota per team (bytes)
+      # -- PDF PAdES Signing Certificate --
+      - SIGNING_CERTIFICATE_PATH=/opt/app/backend/data/signing/certificate.p12
+      - SIGNING_CERTIFICATE_PASSWORD=XXXXXXXXXX
+      # - SIGNING_TSA_URL=https://freetsa.org/tsr  # RFC 3161 TSA (default)
     volumes:
       - "./data:/opt/app/backend/data"
       - "./data/images:/opt/app/frontend/public/img"

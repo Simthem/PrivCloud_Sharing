@@ -64,13 +64,13 @@ const NavbarShareMneu = ({
         </UnstyledButton>
       </Menu.Target>
       <Menu.Dropdown>
-        <Menu.Item component={Link} href="/account/shares" icon={<TbLink />} onClick={onNavigate}>
+        <Menu.Item component={Link} href="/account/shares" leftSection={<TbLink />} onClick={onNavigate}>
           <FormattedMessage id="navbar.links.shares" />
         </Menu.Item>
         <Menu.Item
           component={Link}
           href="/account/reverseShares"
-          icon={<TbArrowLoopLeft />}
+          leftSection={<TbArrowLoopLeft />}
           onClick={onNavigate}
         >
           <FormattedMessage id="navbar.links.reverse" />

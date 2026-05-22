@@ -1,17 +1,31 @@
-import { Anchor, Title, useMantineTheme } from "@mantine/core";
+import { Anchor, Divider, Title, useMantineColorScheme } from "@mantine/core";
+import DOMPurify from "isomorphic-dompurify";
+import { useIntl } from "react-intl";
+import { FormattedMessage } from "react-intl";
 import Meta from "../../components/Meta";
 import useTranslate from "../../hooks/useTranslate.hook";
-import { FormattedMessage } from "react-intl";
 import useConfig from "../../hooks/config.hook";
-import Markdown from "markdown-to-jsx";
+import dynamic from "next/dynamic";
+const Markdown = dynamic(() => import("markdown-to-jsx"), { ssr: false });
 
 const PrivacyPolicy = () => {
   const t = useTranslate();
-  const { colorScheme } = useMantineTheme();
+  const intl = useIntl();
+  const isFr = intl.locale?.startsWith("fr") ?? true;
+  const { colorScheme } = useMantineColorScheme();
   const config = useConfig();
+  const metaDesc =
+    config.get("legal.metaDescriptionPrivacy") || t("privacy.meta.description");
+
+  // Sanitize Markdown content to prevent stored XSS via admin-controlled text
+  const rawMarkdown = config.get("legal.privacyPolicyText") || "";
+  const sanitizedMarkdown = DOMPurify.sanitize(rawMarkdown, {
+    ALLOWED_TAGS: [], // Strip ALL HTML tags - only pure Markdown syntax is kept
+    KEEP_CONTENT: true, // Keep text content, just strip the tags
+  });
   return (
     <>
-      <Meta title={t("privacy.title")} />
+      <Meta title={t("privacy.title")} description={metaDesc} />
       <Title mb={30} order={1}>
         <FormattedMessage id="privacy.title" />
       </Title>
@@ -19,6 +33,11 @@ const PrivacyPolicy = () => {
         options={{
           forceBlock: true,
           overrides: {
+            h1: {
+              component: ({ children, ...props }: any) => (
+                <Title order={2} mt="lg" mb="sm" {...props}>{children}</Title>
+              ),
+            },
             pre: {
               props: {
                 style: {
@@ -46,8 +65,10 @@ const PrivacyPolicy = () => {
           },
         }}
       >
-        {config.get("legal.privacyPolicyText")}
+        {sanitizedMarkdown}
       </Markdown>
+
+      <Divider my="xl" />
     </>
   );
 };

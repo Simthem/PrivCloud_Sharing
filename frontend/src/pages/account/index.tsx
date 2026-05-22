@@ -1,4 +1,5 @@
 import {
+  Alert,
   Badge,
   Button,
   Center,
@@ -9,7 +10,8 @@ import {
   NumberInput,
   Paper,
   PasswordInput,
-  Progress,
+  Radio,
+  SimpleGrid,
   Stack,
   Tabs,
   Text,
@@ -17,17 +19,21 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import { useForm, yupResolver } from "@mantine/form";
+import { useForm } from "@mantine/form";
+import { yupResolver } from "mantine-form-yup-resolver";
 import { useModals } from "@mantine/modals";
 import { useEffect, useState } from "react";
 import {
   TbAuth2Fa,
   TbCopy,
   TbCheck,
+  TbExternalLink,
   TbEye,
   TbEyeOff,
+  TbFingerprint,
   TbKey,
   TbShieldLock,
+  TbUsersGroup,
 } from "react-icons/tb";
 import { FormattedMessage, useIntl } from "react-intl";
 import * as yup from "yup";
@@ -43,6 +49,7 @@ import userService from "../../services/user.service";
 import { getOAuthIcon, getOAuthUrl, unlinkOAuth } from "../../utils/oauth.util";
 import toast from "../../utils/toast.util";
 import { copyToClipboard } from "../../utils/clipboard.util";
+import { useQuery } from "@tanstack/react-query";
 import {
   generateEncryptionKey,
   exportKeyToBase64,
@@ -53,12 +60,19 @@ import {
   getUserKey,
   storeUserKey,
   removeUserKey,
+  isPasskeyPrfAvailable,
+  saveKeyWithPasskey,
+  loadKeyWithPasskey,
+  hasPasskeyWrappedKey,
+  removePasskeyWrappedKey,
 } from "../../utils/crypto.util";
 import SSKRGenerateModal from "../../components/auth/SSKRGenerateModal";
 import ReencryptModal from "../../components/account/ReencryptModal";
+import CreateTeamModal from "../../components/team/CreateTeamModal";
+import teamService from "../../services/team.service";
 import { combineShards } from "../../utils/sskr.util";
 
-// --- E2E Encryption Section ---
+// ---- E2E Encryption Section ----------------------------------------------------------------
 const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
   const modals = useModals();
   const intl = useIntl();
@@ -85,6 +99,19 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
   const [showReencrypt, setShowReencrypt] = useState(false);
   const [oldKeyForReencrypt, setOldKeyForReencrypt] = useState("");
   const [newKeyForReencrypt, setNewKeyForReencrypt] = useState("");
+
+  // Passkey / WebAuthn PRF keychain
+  const [showPasskeyOffer, setShowPasskeyOffer] = useState(false);
+  const [savingPasskey, setSavingPasskey] = useState(false);
+  const [loadingPasskey, setLoadingPasskey] = useState(false);
+  const [passkeyWrappedExists, setPasskeyWrappedExists] = useState(false);
+  const [passkeyPrfSupported, setPasskeyPrfSupported] = useState(false);
+
+  // Initialiser l'état de la clé wrappée et la disponibilité PRF au montage
+  useEffect(() => {
+    setPasskeyWrappedExists(hasPasskeyWrappedKey());
+    isPasskeyPrfAvailable().then(setPasskeyPrfSupported);
+  }, []);
 
   // Sync localStorage key into component state
   useEffect(() => {
@@ -121,6 +148,11 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
         setShowSSKR(true);
         refreshUser();
         toast.success(intl.formatMessage({ id: "account.e2e.toast.generated" }));
+        // Proposer le coffre-fort système si WebAuthn PRF disponible
+        const prfAvailable = await isPasskeyPrfAvailable();
+        if (prfAvailable) {
+          setShowPasskeyOffer(true);
+        }
       }
     } catch (e: any) {
       toast.error(e?.message ?? intl.formatMessage({ id: "account.e2e.toast.generateError" }));
@@ -145,7 +177,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
   };
 
   // --- SSKR recovery from shards ---
-  const updateShardCount = (v: number | "") => {
+  const updateShardCount = (v: string | number) => {
     const n = typeof v === "number" ? Math.max(2, Math.min(10, v)) : 3;
     setShardCount(n);
     setShardValues((prev) => {
@@ -196,10 +228,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
       title: intl.formatMessage({ id: "account.e2e.confirm.regenerate.title" }),
       children: (
         <Text size="sm">
-          <FormattedMessage
-            id="account.e2e.confirm.regenerate.body"
-            values={{ strong: (chunks) => <strong>{chunks}</strong> }}
-          />
+          <FormattedMessage id="account.e2e.confirm.regenerate.body" />
         </Text>
       ),
       labels: {
@@ -211,11 +240,11 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
     });
   };
 
-  // --- Import an existing key (for new browser / device) ---
+  // --- Import an existing key (for new browser / device) ----------------
   const handleImport = async () => {
     setImportError("");
     // Strip everything that is not a valid base64url character.
-    // Prevents invisible chars (ZWSP, NBSP, newlines ...) from corrupting
+    // Prevents invisible chars (ZWSP, NBSP, newlines …) from corrupting
     // the decoded bytes and producing a different SHA-256 hash.
     const sanitized = importValue.replace(/[^A-Za-z0-9_-]/g, "");
     if (!sanitized) {
@@ -230,13 +259,13 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
       const hash = await computeKeyHashFromEncoded(sanitized, user!.id);
       let valid = await userService.verifyEncryptionKey(hash);
       if (!valid) {
-        // Fallback: stored hash may still be legacy SHA-256
+        // Fallback: le hash stocké est peut-être encore en legacy SHA-256
         const legacyHash = await computeKeyHashFromEncodedLegacy(sanitized);
         valid = await userService.verifyEncryptionKey(legacyHash);
         if (!valid) {
           console.debug(
             "[E2E import] verification failed -- submitted hash:",
-            hash.slice(0, 8) + "...",
+            hash.slice(0, 8) + "…",
             "key length:",
             sanitized.length,
           );
@@ -245,7 +274,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
           );
           return;
         }
-        // Migration: replace legacy hash with HMAC-SHA256
+        // Migration: remplacer le hash legacy par HMAC-SHA256
         await userService.setEncryptionKeyHash(hash);
       }
       storeUserKey(sanitized);
@@ -267,7 +296,9 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
         <Text size="sm">
           <FormattedMessage
             id="account.e2e.confirm.revoke.body"
-            values={{ strong: (chunks) => <strong>{chunks}</strong> }}
+            values={{
+              strong: (chunks) => <strong>{chunks}</strong>,
+            }}
           />
         </Text>
       ),
@@ -280,6 +311,9 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
         try {
           await userService.removeEncryptionKey();
           removeUserKey();
+          removePasskeyWrappedKey();
+          setPasskeyWrappedExists(false);
+          setShowPasskeyOffer(false);
           setLocalKey(null);
           refreshUser();
           toast.success(intl.formatMessage({ id: "account.e2e.toast.revoked" }));
@@ -290,6 +324,57 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
     });
   };
 
+  // --- Passkey keychain handlers -------------------------------------------------
+  const handleSavePasskey = async () => {
+    if (!localKey || !user) return;
+    setSavingPasskey(true);
+    try {
+      const wrappedData = await saveKeyWithPasskey(localKey, user.id, user.email);
+      if (wrappedData) {
+        // Sync wrapped key to server for multi-device access
+        await userService.setWrappedKey(wrappedData).catch(() => {
+          // Non-critical: localStorage has it, server sync can retry later
+        });
+        setShowPasskeyOffer(false);
+        setPasskeyWrappedExists(true);
+        toast.success(intl.formatMessage({ id: "account.e2e.passkey.save.success" }));
+      } else {
+        toast.error(intl.formatMessage({ id: "account.e2e.passkey.unsupported" }));
+      }
+    } catch {
+      toast.error(intl.formatMessage({ id: "account.e2e.passkey.save.error" }));
+    } finally {
+      setSavingPasskey(false);
+    }
+  };
+
+  const handleLoadPasskey = async () => {
+    setLoadingPasskey(true);
+    try {
+      // Fetch server-side wrapped keys for multi-device recovery
+      const serverKeys = await userService.listWrappedKeys().catch(() => []);
+      const encodedKey = await loadKeyWithPasskey(serverKeys);
+      if (!encodedKey) {
+        toast.error(intl.formatMessage({ id: "account.e2e.passkey.load.error" }));
+        return;
+      }
+      // Vérifier que la clé restaurée correspond bien au hash serveur
+      const hash = await computeKeyHashFromEncoded(encodedKey, user!.id);
+      const valid = await userService.verifyEncryptionKey(hash);
+      if (!valid) {
+        toast.error(intl.formatMessage({ id: "account.e2e.import.mismatchError" }));
+        return;
+      }
+      storeUserKey(encodedKey);
+      setLocalKey(encodedKey);
+      toast.success(intl.formatMessage({ id: "account.e2e.passkey.load.success" }));
+    } catch {
+      toast.error(intl.formatMessage({ id: "account.e2e.passkey.load.error" }));
+    } finally {
+      setLoadingPasskey(false);
+    }
+  };
+
   // Masked display of the key
   const maskedKey = localKey
     ? localKey.slice(0, 8) + "••••••••••••" + localKey.slice(-8)
@@ -297,27 +382,27 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
 
   return (
     <Paper withBorder p="xl" mt="lg">
-      <Group mb="xs" spacing="xs">
+      <Group mb="xs" gap="xs">
         <TbShieldLock size={20} />
         <Title order={5}>
           <FormattedMessage id="account.e2e.title" />
         </Title>
       </Group>
 
-      <Text size="sm" color="dimmed" mb="md">
+      <Text size="sm" c="dimmed" mb="md">
         <FormattedMessage id="account.e2e.description" />
       </Text>
 
-      {/* --- Key exists locally --- */}
+      {/* --- Key exists locally ---------------------------------------------------- */}
       {hasLocalKey && localKey && (
-        <Stack spacing="xs">
-          <Group spacing="xs">
+        <Stack gap="xs">
+          <Group gap="xs">
             <TbKey size={16} />
-            <Text size="sm" weight={500}>
+            <Text size="sm" fw={500}>
               <FormattedMessage id="account.e2e.yourKey" />
             </Text>
           </Group>
-          <Group spacing="xs">
+          <Group gap="xs">
             <Code
               block
               style={{
@@ -361,7 +446,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
             </Tooltip>
           </Group>
 
-          <Group position="right" mt="sm">
+          <Group justify="right" mt="sm">
             <Button
               variant="light"
               color="orange"
@@ -390,17 +475,83 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
               <FormattedMessage id="account.e2e.button.sskr" />
             </Button>
           </Group>
+
+          {/* --- Coffre-fort système via WebAuthn PRF --- */}
+          {/* Affiché uniquement si le navigateur supporte WebAuthn PRF */}
+          {passkeyPrfSupported && (showPasskeyOffer ? (
+            <Alert
+              mt="sm"
+              icon={<TbFingerprint size={18} />}
+              title={intl.formatMessage({ id: "account.e2e.passkey.offer" })}
+              color="blue"
+              withCloseButton
+              onClose={() => setShowPasskeyOffer(false)}
+            >
+              <Text size="xs" mb="sm">
+                <FormattedMessage id="account.e2e.passkey.offer.description" />
+              </Text>
+              <Group gap="xs">
+                <Button
+                  size="xs"
+                  leftSection={<TbFingerprint size={14} />}
+                  loading={savingPasskey}
+                  onClick={handleSavePasskey}
+                >
+                  <FormattedMessage id="account.e2e.passkey.save" />
+                </Button>
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  color="gray"
+                  onClick={() => setShowPasskeyOffer(false)}
+                >
+                  <FormattedMessage id="account.e2e.passkey.skip" />
+                </Button>
+              </Group>
+            </Alert>
+          ) : (
+            <Group justify="right" mt="xs">
+              <Button
+                variant="subtle"
+                size="xs"
+                color={passkeyWrappedExists ? "teal" : "blue"}
+                leftSection={<TbFingerprint size={14} />}
+                loading={savingPasskey}
+                onClick={passkeyWrappedExists ? undefined : handleSavePasskey}
+                disabled={passkeyWrappedExists}
+              >
+                {passkeyWrappedExists
+                  ? intl.formatMessage({ id: "account.e2e.passkey.saved" })
+                  : intl.formatMessage({ id: "account.e2e.passkey.save" })}
+              </Button>
+            </Group>
+          ))}
         </Stack>
       )}
 
       {/* --- Server has key hash but nothing locally (new device) --- */}
       {hasServerKey && !hasLocalKey && (
-        <Stack spacing="xs">
+        <Stack gap="xs">
           <Text size="sm" color="yellow">
             <FormattedMessage id="account.e2e.import.warning" />
           </Text>
+
+          {/* Restauration depuis le trousseau système si disponible */}
+          {passkeyWrappedExists && (
+            <Button
+              variant="light"
+              color="blue"
+              size="sm"
+              leftSection={<TbFingerprint size={16} />}
+              loading={loadingPasskey}
+              onClick={handleLoadPasskey}
+            >
+              <FormattedMessage id="account.e2e.passkey.load" />
+            </Button>
+          )}
+
           <form onSubmit={(e) => { e.preventDefault(); handleImport(); }}>
-          <Group align="flex-end" spacing="xs">
+          <Group align="flex-end" gap="xs">
             <PasswordInput
               style={{ flex: 1 }}
               label={intl.formatMessage({ id: "account.e2e.import.label" })}
@@ -421,7 +572,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
 
           <Button
             variant="subtle"
-            compact
+            size="compact-sm"
             onClick={() => setShowRecover(!showRecover)}
           >
             {showRecover
@@ -430,7 +581,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
           </Button>
 
           {showRecover && (
-            <Stack spacing="xs">
+            <Stack gap="xs">
               <NumberInput
                 label={intl.formatMessage({ id: "e2ePrompt.recover.shardCount" })}
                 value={shardCount}
@@ -461,7 +612,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
                   </Text>
                 )}
               </div>
-              <Group position="right">
+              <Group justify="right">
                 <Button
                   onClick={handleRecoverFromShards}
                   loading={recoveringShards}
@@ -472,7 +623,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
             </Stack>
           )}
 
-          <Group position="right" mt="xs">
+          <Group justify="right" mt="xs">
             <Button
               variant="light"
               color="red"
@@ -487,13 +638,13 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
 
       {/* --- No key at all ---------------------------------- */}
       {!hasServerKey && !hasLocalKey && (
-        <Stack spacing="xs">
+        <Stack gap="xs">
           <Text size="sm">
             <FormattedMessage id="account.e2e.noKey" />
           </Text>
-          <Group position="right">
+          <Group justify="right">
             <Button
-              leftIcon={<TbKey size={16} />}
+              leftSection={<TbKey size={16} />}
               onClick={handleGenerate}
               loading={generating}
             >
@@ -520,7 +671,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
   );
 };
 
-// --- Main Account page ---
+// ---- Main Account page ------------------------------------------------------------------------
 const Account = () => {
   const [oauth, setOAuth] = useState<string[]>([]);
   const [oauthStatus, setOAuthStatus] = useState<Record<
@@ -532,6 +683,14 @@ const Account = () => {
   > | null>(null);
 
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showCreateTeam, setShowCreateTeam] = useState(false);
+
+  const { data: teamStatus } = useQuery({
+    queryKey: ["teams.status"],
+    queryFn: () => teamService.getTeamStatus(),
+    enabled: true,
+    staleTime: 120_000,
+  });
 
   const { user, refreshUser } = useUser();
   const modals = useModals();
@@ -599,9 +758,9 @@ const Account = () => {
         password: yup.string().min(8),
         code: yup
           .string()
-          .min(6, t("common.error.exact-length", { length: 6 }))
-          .max(6, t("common.error.exact-length", { length: 6 }))
-          .matches(/^[0-9]+$/, { message: t("common.error.invalid-number") }),
+          .min(6, t("common.error.too-short", { length: 6 }))
+          .max(8)
+          .required(t("common.error.field-required")),
       }),
     ),
   });
@@ -628,10 +787,30 @@ const Account = () => {
   return (
     <>
       <Meta title={t("account.title")} />
-      <Container size="sm">
+      <Container size="lg" className="account-settings">
         <Title order={3} mb="xs">
           <FormattedMessage id="account.title" />
         </Title>
+        {/* Team members: show Team badge */}
+        {teamStatus?.isTeamMember && !user?.isAdmin && (
+          <Paper withBorder p="lg" mb="md">
+            <Text fw={700} size="md" mb="sm">
+              <FormattedMessage id="account.title" /> - Teams
+            </Text>
+            {(teamStatus.teams || []).map((t) => (
+              <Paper key={t.teamId} withBorder p="sm" mb="xs">
+                <Group justify="space-between">
+                  <Badge size="md" color="violet" variant="filled">
+                    Team - {t.teamName}
+                  </Badge>
+                  <Badge size="sm" variant="light" color={t.role === "OWNER" ? "violet" : t.role === "ADMIN" ? "blue" : "gray"}>
+                    {t.role === "OWNER" ? "Propriétaire" : t.role === "ADMIN" ? "Admin" : "Membre"}
+                  </Badge>
+                </Group>
+              </Paper>
+            ))}
+          </Paper>
+        )}
         <Paper withBorder p="xl">
           <Title order={5} mb="xs">
             <FormattedMessage id="account.card.info.title" />
@@ -662,7 +841,7 @@ const Account = () => {
                 {...accountForm.getInputProps("email")}
               />
               {!user?.isLdap && (
-                <Group position="right">
+                <Group justify="right">
                   <Button type="submit">
                     <FormattedMessage id="common.button.save" />
                   </Button>
@@ -695,7 +874,7 @@ const Account = () => {
                     {...passwordForm.getInputProps("oldPassword")}
                   />
                 ) : (
-                  <Text size="sm" color="dimmed">
+                  <Text size="sm" c="dimmed">
                     <FormattedMessage id="account.card.password.noPasswordSet" />
                   </Text>
                 )}
@@ -703,7 +882,7 @@ const Account = () => {
                   label={t("account.card.password.new")}
                   {...passwordForm.getInputProps("password")}
                 />
-                <Group position="right">
+                <Group justify="right">
                   <Button type="submit">
                     <FormattedMessage id="common.button.save" />
                   </Button>
@@ -723,7 +902,7 @@ const Account = () => {
                 {oauth.map((provider) => (
                   <Tabs.Tab
                     value={provider}
-                    icon={getOAuthIcon(provider)}
+                    leftSection={getOAuthIcon(provider)}
                     key={provider}
                   >
                     {t(`account.card.oauth.${provider}`)}
@@ -732,7 +911,7 @@ const Account = () => {
               </Tabs.List>
               {oauth.map((provider) => (
                 <Tabs.Panel value={provider} pt="xs" key={provider}>
-                  <Group position="apart">
+                  <Group justify="space-between">
                     <Text>
                       {oauthStatus?.[provider]
                         ? oauthStatus[provider].providerUsername
@@ -740,6 +919,8 @@ const Account = () => {
                     </Text>
                     {oauthStatus?.[provider] ? (
                       <Button
+                        color="red"
+                        variant="light"
                         onClick={() => {
                           modals.openConfirmModal({
                             title: t("account.modal.unlink.title"),
@@ -772,6 +953,8 @@ const Account = () => {
                       <Button
                         component="a"
                         href={getOAuthUrl(window.location.origin, provider)}
+                        color="orange"
+                        variant="light"
                       >
                         {t("account.card.oauth.link")}
                       </Button>
@@ -789,7 +972,7 @@ const Account = () => {
 
           <Tabs defaultValue="totp">
             <Tabs.List>
-              <Tabs.Tab value="totp" icon={<TbAuth2Fa size={14} />}>
+              <Tabs.Tab value="totp" leftSection={<TbAuth2Fa size={14} />}>
                 TOTP
               </Tabs.Tab>
             </Tabs.List>
@@ -821,12 +1004,12 @@ const Account = () => {
 
                       <TextInput
                         variant="filled"
-                        label={t("account.modal.totp.code")}
-                        placeholder="******"
+                        label={t("account.modal.totp.codeOrBackup")}
+                        placeholder="123456 / A1B2C3D4"
                         {...disableTotpForm.getInputProps("code")}
                       />
 
-                      <Group position="right">
+                      <Group justify="right">
                         <Button color="red" type="submit">
                           <FormattedMessage id="common.button.disable" />
                         </Button>
@@ -859,7 +1042,7 @@ const Account = () => {
                         )}
                         {...enableTotpForm.getInputProps("password")}
                       />
-                      <Group position="right">
+                      <Group justify="right">
                         <Button type="submit">
                           <FormattedMessage id="account.card.security.totp.button.start" />
                         </Button>
@@ -875,6 +1058,44 @@ const Account = () => {
         <PushNotificationSection />
         <Paper withBorder p="xl" mt="lg">
           <Title order={5} mb="xs">
+            <FormattedMessage id="account.notify.title" />
+          </Title>
+          <Text size="sm" c="dimmed" mb="sm">
+            <FormattedMessage id="account.notify.description" />
+          </Text>
+          <Radio.Group
+            value={user?.notificationMode ?? "DIGEST"}
+            onChange={async (value) => {
+              try {
+                await userService.updateCurrentUser({ notificationMode: value });
+                await refreshUser();
+                toast.success(t("common.success"));
+              } catch {
+                toast.error(t("common.error"));
+              }
+            }}
+          >
+            <Stack gap="xs">
+              <Radio
+                value="INSTANT"
+                label={t("account.notify.instant.label")}
+                description={t("account.notify.instant.description")}
+              />
+              <Radio
+                value="DIGEST"
+                label={t("account.notify.digest.label")}
+                description={t("account.notify.digest.description")}
+              />
+              <Radio
+                value="WEEKLY"
+                label={t("account.notify.weekly.label")}
+                description={t("account.notify.weekly.description")}
+              />
+            </Stack>
+          </Radio.Group>
+        </Paper>
+        <Paper withBorder p="xl" mt="lg">
+          <Title order={5} mb="xs">
             <FormattedMessage id="account.card.language.title" />
           </Title>
           <LanguagePicker />
@@ -885,6 +1106,29 @@ const Account = () => {
           </Title>
           <ThemeSwitcher />
         </Paper>
+        {teamStatus?.needsTeamCreation && (
+          <Paper withBorder p="xl" mt="lg">
+            <Title order={5} mb="xs">
+              <Group gap="xs">
+                <TbUsersGroup size={18} />
+                <FormattedMessage id="account.team.title" />
+              </Group>
+            </Title>
+            <Text size="sm" c="dimmed" mb="md">
+              <FormattedMessage id="account.team.description" />
+            </Text>
+            <Button
+              leftSection={<TbUsersGroup size={16} />}
+              onClick={() => setShowCreateTeam(true)}
+            >
+              <FormattedMessage id="account.team.create-button" />
+            </Button>
+          </Paper>
+        )}
+        <CreateTeamModal
+          opened={showCreateTeam}
+          onClose={() => setShowCreateTeam(false)}
+        />
         <Center mt={80} mb="lg">
           <Stack>
             <Button

@@ -19,6 +19,9 @@ const TableSortIcon = ({
   if (sort.property === property) {
     return (
       <ActionIcon
+        variant="subtle"
+        color="gray"
+        size="sm"
         onClick={() =>
           setSort({
             property,
@@ -26,13 +29,18 @@ const TableSortIcon = ({
           })
         }
       >
-        {sort.direction === "asc" ? <TbChevronDown /> : <TbChevronUp />}
+        {sort.direction === "asc" ? <TbChevronDown size={14} /> : <TbChevronUp size={14} />}
       </ActionIcon>
     );
   } else {
     return (
-      <ActionIcon onClick={() => setSort({ property, direction: "asc" })}>
-        <TbSelector />
+      <ActionIcon
+        variant="subtle"
+        color="gray"
+        size="sm"
+        onClick={() => setSort({ property, direction: "asc" })}
+      >
+        <TbSelector size={14} />
       </ActionIcon>
     );
   }

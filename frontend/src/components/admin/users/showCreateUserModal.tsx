@@ -1,13 +1,15 @@
 import {
   Button,
   Group,
+  NativeSelect,
   PasswordInput,
   Stack,
   Switch,
   TextInput,
 } from "@mantine/core";
-import { useForm, yupResolver } from "@mantine/form";
-import { ModalsContextProps } from "@mantine/modals/lib/context";
+import { useForm } from "@mantine/form";
+import { yupResolver } from "mantine-form-yup-resolver";
+import { useModals } from "@mantine/modals";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
 import useTranslate from "../../../hooks/useTranslate.hook";
@@ -15,7 +17,7 @@ import userService from "../../../services/user.service";
 import toast from "../../../utils/toast.util";
 
 const showCreateUserModal = (
-  modals: ModalsContextProps,
+  modals: ReturnType<typeof useModals>,
   smtpEnabled: boolean,
   getUsers: () => void,
 ) => {
@@ -32,7 +34,7 @@ const Body = ({
   smtpEnabled,
   getUsers,
 }: {
-  modals: ModalsContextProps;
+  modals: ReturnType<typeof useModals>;
   smtpEnabled: boolean;
   getUsers: () => void;
 }) => {
@@ -44,6 +46,7 @@ const Body = ({
       password: undefined,
       isAdmin: false,
       setPasswordManually: false,
+      plan: "TEAM",
     },
     validate: yupResolver(
       yup.object().shape({
@@ -63,8 +66,9 @@ const Body = ({
     <Stack>
       <form
         onSubmit={form.onSubmit(async (values) => {
+          const { setPasswordManually: _setPasswordManually, ...payload } = values;
           userService
-            .create(values)
+            .create(payload)
             .then(() => {
               getUsers();
               modals.closeAll();
@@ -100,6 +104,13 @@ const Body = ({
               {...form.getInputProps("password")}
             />
           )}
+          <NativeSelect
+            label={t("admin.users.modal.create.plan")}
+            data={[
+              { value: "TEAM", label: "Team" },
+            ]}
+            {...form.getInputProps("plan")}
+          />
           <Switch
             styles={{
               body: {
@@ -113,7 +124,7 @@ const Body = ({
             description={t("admin.users.modal.create.admin.description")}
             {...form.getInputProps("isAdmin", { type: "checkbox" })}
           />
-          <Group position="right">
+          <Group justify="right">
             <Button type="submit">
               <FormattedMessage id="common.button.create" />
             </Button>

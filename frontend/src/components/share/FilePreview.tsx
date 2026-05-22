@@ -6,8 +6,9 @@ import {
   Stack,
   Text,
   Title,
-  useMantineTheme,
+  useMantineColorScheme,
 } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 import { modals } from "@mantine/modals";
 import type { MarkdownToJSX } from "markdown-to-jsx";
 import dynamic from "next/dynamic";
@@ -66,7 +67,7 @@ export const isTextBasedMimeType = (mimeType: string): boolean => {
   return false;
 };
 
-// Security helpers for text previews
+// ── Security helpers for text previews ──────────────────────────────
 
 /** Maximum characters of text content to render in preview (1 MiB). */
 const MAX_TEXT_PREVIEW_CHARS = 1024 * 1024;
@@ -90,8 +91,19 @@ const ensureString = (value: unknown): string => {
 const truncateForPreview = (s: string): string =>
   s.length > MAX_TEXT_PREVIEW_CHARS
     ? s.slice(0, MAX_TEXT_PREVIEW_CHARS) +
-      "\n\n[... truncated - file too large for preview]"
+      "\n\n[… truncated — file too large for preview]"
     : s;
+
+/**
+ * Normalise vendor video MIME types to standard ones so the browser
+ * recognises them in Blob and &lt;source type&gt;.
+ * e.g. video/x-m4v → video/mp4  (M4V is just an MP4 container)
+ */
+const normalizeVideoMime = (m: string): string => {
+  if (m === "video/x-m4v" || m === "video/x-mp4") return "video/mp4";
+  if (m === "video/x-matroska") return "video/webm";
+  return m;
+};
 
 const FilePreviewContext = React.createContext<{
   shareId: string;
@@ -217,7 +229,7 @@ const AudioPreview = () => {
 
   return (
     <Center style={{ minHeight: 200 }}>
-      <Stack align="center" spacing={10} style={{ width: "100%" }}>
+      <Stack align="center" gap={10} style={{ width: "100%" }}>
         <audio controls style={{ width: "100%" }}>
           <source src={src} onError={() => setIsNotSupported(true)} />
         </audio>
@@ -227,9 +239,10 @@ const AudioPreview = () => {
 };
 
 const VideoPreview = () => {
-  const { shareId, fileId, e2eKey, setIsNotSupported } =
+  const { shareId, fileId, mimeType, e2eKey, setIsNotSupported } =
     React.useContext(FilePreviewContext);
-  const { blobUrl, loading } = useDecryptedBlobUrl("video/mp4");
+  const videoMime = normalizeVideoMime(mimeType);
+  const { blobUrl, loading } = useDecryptedBlobUrl(videoMime);
 
   if (e2eKey && loading)
     return (
@@ -245,7 +258,7 @@ const VideoPreview = () => {
 
   return (
     <video width="100%" controls>
-      <source src={src} onError={() => setIsNotSupported(true)} />
+      <source src={src} type={videoMime} onError={() => setIsNotSupported(true)} />
     </video>
   );
 };
@@ -280,9 +293,12 @@ const ImagePreview = () => {
 };
 
 const TextPreview = () => {
-  const { shareId, fileId, e2eKey } = React.useContext(FilePreviewContext);
+  const { shareId, fileId, e2eKey, mimeType } =
+    React.useContext(FilePreviewContext);
   const [text, setText] = useState<string>("");
-  const { colorScheme } = useMantineTheme();
+  const [loading, setLoading] = useState(true);
+  const { colorScheme } = useMantineColorScheme();
+  const isPlainText = mimeType === "text/plain";
 
   useEffect(() => {
     if (e2eKey) {
@@ -291,7 +307,8 @@ const TextPreview = () => {
           const decoded = new TextDecoder().decode(buf);
           setText(truncateForPreview(decoded));
         })
-        .catch(() => setText("Preview couldn't be fetched."));
+        .catch(() => setText("Impossible de charger l'aperçu."))
+        .finally(() => setLoading(false));
     } else {
       // responseType: "text" prevents Axios from auto-parsing JSON files
       // into objects (which would crash React - error #31).
@@ -302,11 +319,20 @@ const TextPreview = () => {
         .then((res) =>
           setText(
             truncateForPreview(ensureString(res.data)) ||
-              "Preview couldn't be fetched.",
+              "Impossible de charger l'aperçu.",
           ),
-        );
+        )
+        .catch(() => setText("Impossible de charger l'aperçu."))
+        .finally(() => setLoading(false));
     }
   }, [shareId, fileId, e2eKey]);
+
+  if (loading)
+    return (
+      <Center style={{ minHeight: 200 }}>
+        <Loader />
+      </Center>
+    );
 
   const options: MarkdownToJSX.Options = {
     disableParsingRawHTML: true,
@@ -331,6 +357,32 @@ const TextPreview = () => {
     },
   };
 
+  if (isPlainText) {
+    return (
+      <ScrollArea style={{ maxHeight: "70vh" }}>
+        <pre
+          style={{
+            backgroundColor:
+              colorScheme == "dark"
+                ? "rgba(30, 30, 30, 0.9)"
+                : "rgba(245, 245, 245, 0.9)",
+            color: colorScheme == "dark" ? "#d4d4d4" : "#1e1e1e",
+            padding: "1em",
+            borderRadius: "8px",
+            fontSize: "0.85em",
+            lineHeight: 1.6,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            fontFamily: "inherit",
+            margin: 0,
+          }}
+        >
+          {text}
+        </pre>
+      </ScrollArea>
+    );
+  }
+
   return <Markdown options={options}>{text}</Markdown>;
 };
 
@@ -338,7 +390,7 @@ const CodePreview = () => {
   const { shareId, fileId, e2eKey } = React.useContext(FilePreviewContext);
   const [text, setText] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const { colorScheme } = useMantineTheme();
+  const { colorScheme } = useMantineColorScheme();
 
   useEffect(() => {
     if (e2eKey) {
@@ -346,11 +398,11 @@ const CodePreview = () => {
         .then((buf) =>
           setText(truncateForPreview(new TextDecoder().decode(buf))),
         )
-        .catch(() => setText("Preview couldn't be fetched."))
+        .catch(() => setText("Impossible de charger l'aperçu."))
         .finally(() => setLoading(false));
     } else {
       // responseType: "text" prevents Axios from auto-parsing JSON files
-      // into objects (which would crash React - error #31).
+      // into objects (which would crash React — error #31).
       api
         .get(`/shares/${shareId}/files/${fileId}?download=false`, {
           responseType: "text",
@@ -358,7 +410,7 @@ const CodePreview = () => {
         .then((res) =>
           setText(
             truncateForPreview(ensureString(res.data)) ||
-              "Preview couldn't be fetched.",
+              "Impossible de charger l'aperçu.",
           ),
         )
         .finally(() => setLoading(false));
@@ -388,7 +440,7 @@ const CodePreview = () => {
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
           fontFamily:
-            '"Fira Code", "Cascadia Code", "JetBrains Mono", Consolas, Monaco, monospace',
+            "\"Fira Code\", \"Cascadia Code\", \"JetBrains Mono\", Consolas, Monaco, monospace",
           margin: 0,
           overflow: "auto",
         }}
@@ -403,6 +455,7 @@ const PdfPreview = () => {
   const { shareId, fileId, e2eKey, setIsNotSupported } =
     React.useContext(FilePreviewContext);
   const { blobUrl, loading } = useDecryptedBlobUrl("application/pdf");
+  const isMobile = useMediaQuery("(max-width: 48em)");
 
   if (e2eKey && loading)
     return (
@@ -415,6 +468,26 @@ const PdfPreview = () => {
     e2eKey && blobUrl
       ? blobUrl
       : `/api/shares/${shareId}/files/${fileId}?download=false`;
+
+  if (isMobile) {
+    return (
+      <Center style={{ minHeight: 200 }}>
+        <Stack align="center" gap="md">
+          <Text c="dimmed" size="sm" ta="center">
+            <FormattedMessage id="share.modal.file-preview.pdf-mobile" />
+          </Text>
+          <Button
+            component="a"
+            href={src}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <FormattedMessage id="share.modal.file-preview.pdf-open" />
+          </Button>
+        </Stack>
+      </Center>
+    );
+  }
 
   return (
     <iframe
@@ -430,7 +503,7 @@ const PdfPreview = () => {
 const UnSupportedFile = () => {
   return (
     <Center style={{ minHeight: 200 }}>
-      <Stack align="center" spacing={10}>
+      <Stack align="center" gap={10}>
         <Title order={3}>
           <FormattedMessage id="share.modal.file-preview.error.not-supported.title" />
         </Title>

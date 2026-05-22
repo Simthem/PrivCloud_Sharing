@@ -1,4 +1,3 @@
-import { getCookie } from "cookies-next";
 import api from "./api.service";
 
 const signIn = async (emailOrUsername: string, password: string, captchaToken?: string) => {
@@ -29,24 +28,32 @@ const signUp = async (email: string, username: string, password: string, captcha
 };
 
 const signOut = async () => {
-  const response = await api.post("/auth/signOut");
+  try {
+    const response = await api.post("/auth/signOut");
 
-  if (URL.canParse(response.data?.redirectURI))
-    window.location.href = response.data.redirectURI;
-  else window.location.reload();
+    // If there's an OAuth provider logout URL, use it
+    if (URL.canParse(response.data?.redirectURI)) {
+      window.location.href = response.data.redirectURI;
+      return;
+    }
+  } catch (e) {
+    console.error("SignOut API call failed:", e);
+    // Continue anyway -- server may have cleared cookies even if response failed
+  }
+
+  // Small delay to allow server to clear session cookie before reload
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  // Redirect to home instead of reload to avoid "team not found" on protected pages
+  window.location.href = "/";
 };
 
 const refreshAccessToken = async () => {
-  // The access_token cookie is httpOnly (not readable by JS).
-  // The logged_in cookie has the same 13-min maxAge and acts as the
-  // non-httpOnly sentinel to detect when a refresh is needed.
-  if (!getCookie("logged_in")) {
-    try {
-      await api.post("/auth/token");
-    } catch (e) {
-      console.info("Refresh token invalid or expired");
-      throw e;
-    }
+  try {
+    await api.post("/auth/token");
+  } catch (e) {
+    console.info("Refresh token invalid or expired");
+    throw e;
   }
 };
 
@@ -73,10 +80,11 @@ const enableTOTP = async (password: string) => {
 };
 
 const verifyTOTP = async (totpCode: string, password: string) => {
-  await api.post("/auth/totp/verify", {
+  const { data } = await api.post("/auth/totp/verify", {
     code: totpCode,
     password,
   });
+  return { backupCodes: data.backupCodes as string[] };
 };
 
 const disableTOTP = async (totpCode: string, password: string) => {

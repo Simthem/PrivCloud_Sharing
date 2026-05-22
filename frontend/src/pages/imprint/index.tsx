@@ -1,17 +1,28 @@
-import { Anchor, Title, useMantineTheme } from "@mantine/core";
+import { Anchor, Title, useMantineColorScheme } from "@mantine/core";
+import DOMPurify from "isomorphic-dompurify";
 import Meta from "../../components/Meta";
 import useTranslate from "../../hooks/useTranslate.hook";
 import { FormattedMessage } from "react-intl";
 import useConfig from "../../hooks/config.hook";
-import Markdown from "markdown-to-jsx";
+import dynamic from "next/dynamic";
+const Markdown = dynamic(() => import("markdown-to-jsx"), { ssr: false });
 
 const Imprint = () => {
   const t = useTranslate();
-  const { colorScheme } = useMantineTheme();
+  const { colorScheme } = useMantineColorScheme();
   const config = useConfig();
+  const metaDesc =
+    config.get("legal.metaDescriptionImprint") || t("imprint.meta.description");
+
+  // Sanitize Markdown content to prevent stored XSS via admin-controlled text
+  const rawMarkdown = config.get("legal.imprintText") || "";
+  const sanitizedMarkdown = DOMPurify.sanitize(rawMarkdown, {
+    ALLOWED_TAGS: [], // Strip ALL HTML tags - only pure Markdown syntax is kept
+    KEEP_CONTENT: true, // Keep text content, just strip the tags
+  });
   return (
     <>
-      <Meta title={t("imprint.title")} />
+      <Meta title={t("imprint.title")} description={metaDesc} />
       <Title mb={30} order={1}>
         <FormattedMessage id="imprint.title" />
       </Title>
@@ -19,6 +30,11 @@ const Imprint = () => {
         options={{
           forceBlock: true,
           overrides: {
+            h1: {
+              component: ({ children, ...props }: any) => (
+                <Title order={2} mt="lg" mb="sm" {...props}>{children}</Title>
+              ),
+            },
             pre: {
               props: {
                 style: {
@@ -46,7 +62,7 @@ const Imprint = () => {
           },
         }}
       >
-        {config.get("legal.imprintText")}
+        {sanitizedMarkdown}
       </Markdown>
     </>
   );

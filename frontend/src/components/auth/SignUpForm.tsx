@@ -36,6 +36,13 @@ const SignUpForm = () => {
   const [captchaToken, setCaptchaToken] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(false);
   const handleCaptchaExpire = () => setCaptchaToken(undefined);
+  const handleCaptchaError = (error: any) => {
+    console.warn("[hCaptcha Error]", error);
+    // Attempt to reset the captcha on error (e.g., WebGL context lost on Safari)
+    if (captchaRef.current?.resetCaptcha) {
+      captchaRef.current.resetCaptcha();
+    }
+  };
 
   const validationSchema = yup.object().shape({
     email: yup.string().email(t("common.error.invalid-email")).required(),
@@ -76,11 +83,12 @@ const SignUpForm = () => {
 
   return (
     <Container size={420} my={40}>
-      <Title order={2} align="center" weight={900}>
+      {/* h1 is required by Bing webmaster guidelines (one h1 per page). */}
+      <Title order={1} ta="center" fw={900} fz={{ base: 26, sm: 30 }}>
         <FormattedMessage id="signup.title" />
       </Title>
       {config.get("share.allowRegistration") && (
-        <Text color="dimmed" size="sm" align="center" mt={5}>
+        <Text c="dimmed" size="sm" ta="center" mt={5}>
           <FormattedMessage id="signup.description" />{" "}
           <Anchor component={Link} href={"signIn"} size="sm">
             <FormattedMessage id="signup.button.signin" />
@@ -114,13 +122,14 @@ const SignUpForm = () => {
             <FormattedMessage id="signup.button.submit" />
           </Button>
           {captchaEnabled && captchaSiteKey && (
-            <Group position="center" mt="md">
+            <Group justify="center" mt="md">
               <HCaptcha
                 sitekey={captchaSiteKey}
                 onVerify={setCaptchaToken}
                 onExpire={handleCaptchaExpire}
+                onError={handleCaptchaError}
                 ref={captchaRef}
-                theme={theme.colorScheme}
+                theme={theme.other.colorScheme}
               />
             </Group>
           )}

@@ -1,11 +1,10 @@
 import { Button, Stack, Text } from "@mantine/core";
 import { useModals } from "@mantine/modals";
-import { ModalsContextProps } from "@mantine/modals/lib/context";
 import { useRouter } from "next/router";
 import { FormattedMessage } from "react-intl";
 
 const showErrorModal = (
-  modals: ModalsContextProps,
+  modals: ReturnType<typeof useModals>,
   title: string,
   text: string,
   action: "go-back" | "go-home" = "go-back",

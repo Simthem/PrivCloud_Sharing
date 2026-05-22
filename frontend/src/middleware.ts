@@ -1,6 +1,5 @@
 import { jwtDecode } from "jwt-decode";
 import { NextRequest, NextResponse } from "next/server";
-import configService from "./services/config.service";
 
 // This middleware redirects based on different conditions:
 // - Authentication state
@@ -33,9 +32,6 @@ export async function middleware(request: NextRequest) {
   };
 
   // Get config from backend (cached for 1 minute to avoid per-request overhead)
-  // Use 127.0.0.1 instead of localhost: Alpine resolves localhost to ::1 (IPv6)
-  // but NestJS only listens on IPv4. Next.js 15 uses native fetch() which follows
-  // the OS DNS resolution order, causing requests to hang on IPv6.
   const apiUrl = process.env.API_URL || "http://127.0.0.1:8080";
   let configData;
   if (cachedConfig && Date.now() - cachedAt < CONFIG_CACHE_TTL) {
@@ -50,8 +46,17 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  const getConfig = (key: string) => {
-    return configService.get(key, configData);
+  // Inline config parser - avoids importing api.service.ts (uses BroadcastChannel)
+  // which is incompatible with the Edge Runtime.
+  const getConfig = (key: string): any => {
+    if (!configData) return null;
+    const cfg = (configData as any[]).find((v: any) => v.key === key);
+    if (!cfg) return null;
+    const value = cfg.value ?? cfg.defaultValue;
+    if (cfg.type === "number" || cfg.type === "filesize") return parseInt(value);
+    if (cfg.type === "boolean") return value === "true";
+    if (cfg.type === "string" || cfg.type === "text") return value;
+    return value;
   };
 
   const route = request.nextUrl.pathname;
@@ -127,7 +132,7 @@ export async function middleware(request: NextRequest) {
       path: "/",
     },
      // Authenticated state
-     {
+    {
       condition: user && routes.unauthenticated.contains(route) && !getConfig("share.allowUnauthenticatedShares"),
       path: "/upload",
     },

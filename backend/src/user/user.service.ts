@@ -12,6 +12,8 @@ import { FileService } from "../file/file.service";
 import { CreateUserDTO } from "./dto/createUser.dto";
 import { UpdateUserDto } from "./dto/updateUser.dto";
 
+type PlanName = "TEAM";
+
 @Injectable()
 export class UserSevice {
   private readonly logger = new Logger(UserSevice.name);
@@ -24,7 +26,9 @@ export class UserSevice {
   ) {}
 
   async list() {
-    return await this.prisma.user.findMany();
+    return await this.prisma.user.findMany({
+      include: { subscription: true },
+    });
   }
 
   async get(id: string) {
@@ -43,20 +47,35 @@ export class UserSevice {
       hash = await argon.hash(dto.password);
     }
 
+    const plan = dto.plan as PlanName | undefined;
+    // Strip plan and password from the DTO so they are not passed to Prisma user create
+    const { plan: _plan, password: _pwd, ...userData } = dto;
+
     try {
-      return await this.prisma.user.create({
+      const user = await this.prisma.user.create({
         data: {
-          ...dto,
+          ...userData,
           password: hash,
         },
       });
+
+      // Create subscription (always TEAM plan)
+      await this.prisma.subscription.create({
+        data: {
+          userId: user.id,
+          plan: "TEAM",
+          status: "active",
+        },
+      });
+
+      // Auto-create team for user
+      await this.autoCreateTeamForUser(user.id, user.username, user.email);
+
+      return user;
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code == "P2002") {
-          const duplicatedField: string =
-            (e.meta?.constraint as any)?.fields?.[0] ??
-            (e.meta?.target as any)?.[0] ??
-            "field";
+          const duplicatedField: string = e.meta.target[0];
           throw new BadRequestException(
             `A user with this ${duplicatedField} already exists`,
           );
@@ -68,18 +87,29 @@ export class UserSevice {
   async update(id: string, user: UpdateUserDto) {
     try {
       const hash = user.password && (await argon.hash(user.password));
+      const plan = (user as Record<string, unknown>).plan as PlanName | undefined;
+      // Strip plan from the data so it is not passed to Prisma user update
+      const { plan: _plan, ...userData } = user as Record<string, unknown>;
 
-      return await this.prisma.user.update({
+      const updated = await this.prisma.user.update({
         where: { id },
-        data: { ...user, password: hash },
+        data: { ...(userData as Prisma.UserUpdateInput), password: hash },
       });
+
+      // If admin provided a plan, update/create the subscription
+      if (plan) {
+        await this.prisma.subscription.upsert({
+          where: { userId: id },
+          update: { plan, status: "active" },
+          create: { userId: id, plan, status: "active" },
+        });
+      }
+
+      return updated;
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code == "P2002") {
-          const duplicatedField: string =
-            (e.meta?.constraint as any)?.fields?.[0] ??
-            (e.meta?.target as any)?.[0] ??
-            "field";
+          const duplicatedField: string = e.meta.target[0];
           throw new BadRequestException(
             `A user with this ${duplicatedField} already exists`,
           );
@@ -112,7 +142,7 @@ export class UserSevice {
     return await this.prisma.user.delete({ where: { id } });
   }
 
-  // --- E2E Encryption Key Management ---
+  // ─── E2E Encryption Key Management ──────────────────────────────
 
   async setEncryptionKeyHash(userId: string, keyHash: string) {
     return this.prisma.user.update({
@@ -128,6 +158,40 @@ export class UserSevice {
     });
   }
 
+  // ─── Passkey Wrapped Keys (multi-device sync) ─────────────────
+
+  async setWrappedKey(
+    userId: string,
+    data: { credentialId: string; wrappedKey: string; salt: string },
+  ) {
+    return this.prisma.wrappedKey.upsert({
+      where: {
+        userId_credentialId: { userId, credentialId: data.credentialId },
+      },
+      update: { wrappedKey: data.wrappedKey, salt: data.salt },
+      create: { userId, ...data },
+    });
+  }
+
+  async listWrappedKeys(userId: string) {
+    return this.prisma.wrappedKey.findMany({
+      where: { userId },
+      select: { credentialId: true, wrappedKey: true, salt: true },
+    });
+  }
+
+  async removeWrappedKey(userId: string, credentialId: string) {
+    return this.prisma.wrappedKey.deleteMany({
+      where: { userId, credentialId },
+    });
+  }
+
+  async removeAllWrappedKeys(userId: string) {
+    return this.prisma.wrappedKey.deleteMany({
+      where: { userId },
+    });
+  }
+
   async verifyEncryptionKeyHash(
     userId: string,
     keyHash: string,
@@ -140,8 +204,8 @@ export class UserSevice {
     if (!match) {
       this.logger.debug(
         `[E2E verify] hash mismatch for user ${userId} -- ` +
-          `stored: ${user.encryptionKeyHash.slice(0, 8)}... ` +
-          `submitted: ${keyHash.slice(0, 8)}...`,
+          `stored: ${user.encryptionKeyHash.slice(0, 8)}… ` +
+          `submitted: ${keyHash.slice(0, 8)}…`,
       );
     }
     return match;
@@ -258,15 +322,78 @@ export class UserSevice {
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code == "P2002") {
-          const duplicatedField: string =
-            (e.meta?.constraint as any)?.fields?.[0] ??
-            (e.meta?.target as any)?.[0] ??
-            "field";
+          const duplicatedField: string = e.meta.target[0];
           throw new BadRequestException(
             `A user with this ${duplicatedField} already exists`,
           );
         }
       }
     }
+  }
+
+  /**
+   * Auto-create a team when a user is assigned the TEAM plan (admin creation or upgrade).
+   */
+  private async autoCreateTeamForUser(
+    userId: string,
+    username: string,
+    email: string,
+  ): Promise<void> {
+    // Check if user already has a team as owner
+    const existingTeam = await this.prisma.team.findFirst({
+      where: { ownerId: userId },
+    });
+    if (existingTeam) {
+      if (!existingTeam.isActive) {
+        await this.prisma.team.update({
+          where: { id: existingTeam.id },
+          data: { isActive: true },
+        });
+      }
+      return;
+    }
+
+    const includedMembers = parseInt(process.env.TEAM_MAX_MEMBERS_INCLUDED || "3");
+    const maxMembers = includedMembers + 1; // +1 pour le propriétaire (owner compte dans le total)
+    const maxShareSize = BigInt(
+      process.env.TEAM_MAX_SHARE_SIZE || "0", // 0 = no limit
+    );
+    const totalStorage = BigInt(
+      process.env.TEAM_TOTAL_STORAGE_BYTES || "0", // 0 = no limit
+    );
+
+    // Generate slug from username
+    const baseSlug = (username || email.split("@")[0])
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+    let slug = `${baseSlug}-team`;
+
+    let attempt = 0;
+    while (await this.prisma.team.findUnique({ where: { slug } })) {
+      attempt++;
+      slug = `${baseSlug}-team-${attempt}`;
+    }
+
+    await this.prisma.team.create({
+      data: {
+        name: `Équipe de ${username || email.split("@")[0]}`,
+        slug,
+        ownerId: userId,
+        maxMembers,
+        maxShareSize,
+        totalStorageLimit: totalStorage,
+        members: {
+          create: {
+            userId,
+            role: "OWNER",
+            isActive: true,
+          },
+        },
+      },
+    });
+
+    this.logger.log(`Auto-created team for user ${userId} (plan: TEAM)`);
   }
 }

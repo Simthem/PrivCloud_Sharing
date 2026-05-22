@@ -45,7 +45,7 @@ const getCurrentUser = async (): Promise<CurrentUser | null> => {
   }
 };
 
-// --- E2E Encryption Key Management ---
+// ─── E2E Encryption Key Management ─────────────────────────────
 
 const setEncryptionKeyHash = async (keyHash: string) => {
   return (await api.put("/users/me/encryption-key", { keyHash })).data;
@@ -62,6 +62,32 @@ const verifyEncryptionKey = async (keyHash: string): Promise<boolean> => {
   return result.valid;
 };
 
+// ─── Passkey Wrapped Keys (multi-device sync) ──────────────────
+
+const setWrappedKey = async (data: {
+  credentialId: string;
+  wrappedKey: string;
+  salt: string;
+}) => {
+  return (await api.put("/users/me/wrapped-keys", data)).data;
+};
+
+const listWrappedKeys = async (): Promise<
+  { credentialId: string; wrappedKey: string; salt: string }[]
+> => {
+  return (await api.get("/users/me/wrapped-keys")).data;
+};
+
+const removeWrappedKey = async (credentialId: string) => {
+  await api.delete(
+    `/users/me/wrapped-keys/${encodeURIComponent(credentialId)}`,
+  );
+};
+
+const adminDisableTOTP = async (userId: string) => {
+  await api.delete(`/users/${userId}/totp`);
+};
+
 export default {
   list,
   create,
@@ -73,4 +99,8 @@ export default {
   setEncryptionKeyHash,
   removeEncryptionKey,
   verifyEncryptionKey,
+  setWrappedKey,
+  listWrappedKeys,
+  removeWrappedKey,
+  adminDisableTOTP,
 };

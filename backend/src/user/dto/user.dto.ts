@@ -1,5 +1,11 @@
 import { Expose, plainToClass } from "class-transformer";
-import { IsEmail, Length, Matches, MinLength } from "class-validator";
+import { IsEmail, IsIn, IsOptional, Length, Matches, MinLength } from "class-validator";
+
+export class UserSubscriptionDTO {
+  plan: string;
+  status: string;
+  currentPeriodEnd: Date | null;
+}
 
 export class UserDTO {
   @Expose()
@@ -36,10 +42,20 @@ export class UserDTO {
   @Expose()
   hasEncryptionKey: boolean;
 
+  @Expose()
+  @IsOptional()
+  @IsIn(["INSTANT", "DIGEST", "WEEKLY"])
+  notificationMode: string;
+
   encryptionKeyHash?: string;
 
   @Expose()
   createdAt: Date;
+
+  // Populated by controller when listing users (admin)
+  plan?: string;
+  planStatus?: string;
+  planRenewDate?: Date | null;
 
   from(partial: Partial<UserDTO>) {
     const result = plainToClass(UserDTO, partial, {

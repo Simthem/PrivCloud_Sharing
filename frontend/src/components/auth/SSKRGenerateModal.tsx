@@ -60,9 +60,9 @@ const SSKRGenerateModal = ({
       opened={opened}
       onClose={handleClose}
       title={
-        <Group spacing="xs">
+        <Group gap="xs">
           <TbShieldCheck size={20} />
-          <Text weight={600}>SSKR recovery fragments</Text>
+          <Text fw={600}>Fragments de récupération SSKR</Text>
         </Group>
       }
       centered
@@ -71,21 +71,21 @@ const SSKRGenerateModal = ({
     >
       {/* Step 0 : configuration */}
       {step === 0 && (
-        <Stack spacing="md">
-          <Text size="sm" color="dimmed">
-            Your encryption key will be split into <strong>N fragments</strong>.
-            You will need at least <strong>T</strong> of them to reconstruct it.
-            With T-1 fragments or fewer, it is mathematically impossible to
-            recover the key.
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Votre clé de chiffrement sera découpée en <strong>N fragments</strong>.
+            Il vous en faudra au minimum <strong>T</strong> pour la reconstituer.
+            Avec T-1 fragments ou moins, il est mathématiquement impossible de
+            retrouver la clé.
           </Text>
-          <Text size="sm" color="dimmed">
-            Store each fragment in a different location: password manager,
-            USB drive, paper safe, trusted contact...
+          <Text size="sm" c="dimmed">
+            Stockez chaque fragment dans un endroit différent : gestionnaire
+            de mots de passe, clé USB, coffre-fort papier, contact de confiance…
           </Text>
 
           <NumberInput
-            label="Minimum threshold (T)"
-            description="Number of fragments required to reconstruct the key"
+            label="Seuil minimum (T)"
+            description="Nombre de fragments nécessaires pour reconstituer la clé"
             value={threshold}
             onChange={(v) => {
               const val = typeof v === "number" ? v : 3;
@@ -96,20 +96,20 @@ const SSKRGenerateModal = ({
             max={10}
           />
           <NumberInput
-            label="Total fragments (N)"
-            description="Number of fragments to generate"
+            label="Total de fragments (N)"
+            description="Nombre de fragments à générer"
             value={total}
             onChange={(v) => setTotal(typeof v === "number" ? v : 5)}
             min={threshold}
             max={10}
           />
 
-          <Group position="right" mt="xs">
+          <Group justify="right" mt="xs">
             <Button variant="subtle" onClick={handleClose}>
-              Cancel
+              Annuler
             </Button>
             <Button onClick={handleGenerate}>
-              Generate {total} fragments
+              Générer {total} fragments
             </Button>
           </Group>
         </Stack>
@@ -117,16 +117,15 @@ const SSKRGenerateModal = ({
 
       {/* Steps 1..N : show each shard */}
       {isShowingShard && shards[shardIndex] && (
-        <Stack spacing="md">
-          <Text size="sm" weight={500}>
-            Fragment {shardIndex + 1} of {total}
+        <Stack gap="md">
+          <Text size="sm" fw={500}>
+            Fragment {shardIndex + 1} sur {total}
           </Text>
-          <Text size="xs" color="dimmed">
-            Copy this fragment and store it in a safe place. Only share
-            it with people you trust.
+          <Text size="xs" c="dimmed"> et stockez-le en lieu sûr. Ne le partagez
+            qu'avec des personnes en qui vous avez confiance.
           </Text>
 
-          <Group spacing="xs" noWrap>
+          <Group gap="xs" wrap="nowrap">
             <Code
               block
               style={{
@@ -140,7 +139,7 @@ const SSKRGenerateModal = ({
             </Code>
             <CopyButton value={shards[shardIndex]}>
               {({ copied, copy }) => (
-                <Tooltip label={copied ? "Copied!" : "Copy"}>
+                <Tooltip label={copied ? "Copié !" : "Copier"}>
                   <Button variant="subtle" size="xs" px={6} onClick={copy}>
                     {copied ? (
                       <TbCheck size={16} color="teal" />
@@ -154,7 +153,7 @@ const SSKRGenerateModal = ({
           </Group>
 
           <Checkbox
-            label="I have saved this fragment in a safe place"
+            label="J'ai sauvegardé ce fragment en lieu sûr"
             checked={acknowledged[shardIndex] ?? false}
             onChange={(e) => {
               const next = [...acknowledged];
@@ -163,17 +162,17 @@ const SSKRGenerateModal = ({
             }}
           />
 
-          <Group position="right" mt="xs">
+          <Group justify="right" mt="xs">
             {step > 1 && (
               <Button variant="subtle" onClick={() => setStep(step - 1)}>
-                Previous
+                Précédent
               </Button>
             )}
             <Button
               disabled={!acknowledged[shardIndex]}
               onClick={() => setStep(step + 1)}
             >
-              {step < total ? "Next" : "Finish"}
+              {step < total ? "Suivant" : "Terminer"}
             </Button>
           </Group>
         </Stack>
@@ -181,14 +180,14 @@ const SSKRGenerateModal = ({
 
       {/* Final step */}
       {isDone && (
-        <Stack spacing="md" align="center">
+        <Stack gap="md" align="center">
           <TbShieldCheck size={48} color="teal" />
           <Text size="sm" ta="center">
-            Your <strong>{total} fragments</strong> have been created.
-            You will need <strong>{threshold}</strong> of them to reconstruct
-            your key. Store them separately!
+            Vos <strong>{total} fragments</strong> ont été créés.
+            Il vous en faudra <strong>{threshold}</strong> pour reconstituer
+            votre clé. Conservez-les séparément !
           </Text>
-          <Button onClick={handleClose}>Close</Button>
+          <Button onClick={handleClose}>Fermer</Button>
         </Stack>
       )}
     </Modal>

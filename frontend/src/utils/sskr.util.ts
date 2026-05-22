@@ -1,10 +1,10 @@
 /**
  * SSKR -- Sharded Secret Key Recovery
  *
- * Shamir Secret Sharing over GF(2^8) with irreducible polynomial
- * x^8 + x^4 + x^3 + x^2 + 1 (0x11D), primitive element 2.
+ * Shamir Secret Sharing sur GF(2^8) avec polynôme irréductible
+ * x^8 + x^4 + x^3 + x^2 + 1 (0x11D), élément primitif 2.
  *
- * All computation is client-side. The server never sees the shards.
+ * Tout le calcul est client-side. Le serveur ne voit jamais les fragments.
  */
 
 // ---- GF(256) arithmetic ---------------------------------------------------
@@ -96,11 +96,11 @@ function shamirCombine(xs: number[], shares: Uint8Array[]): Uint8Array {
 //   [1]     threshold T
 //   [2]     total     N
 //   [3]     index     (1-based)
-//   [4..35] share data (32 bytes for AES-256)
+//   [4..35] share data (32 bytes pour AES-256)
 //   [36]    fletcher-16 sum1
 //   [37]    fletcher-16 sum2
 //
-// Encoded string : "sskr:" + base64url(38 bytes) -> ~55 characters
+// Encoded string : "sskr:" + base64url(38 bytes) -> ~55 caractères
 
 const SSKR_VERSION = 1;
 const SSKR_PREFIX = "sskr:";
@@ -163,19 +163,19 @@ export function decodeShard(encoded: string): Shard {
   const trimmed = encoded.trim();
   if (!trimmed.startsWith(SSKR_PREFIX))
     throw new Error(
-      "Invalid format: shard must start with 'sskr:'",
+      "Format invalide : le fragment doit commencer par « sskr: »",
     );
 
   const bytes = fromBase64Url(trimmed.slice(SSKR_PREFIX.length));
-  if (bytes.length < 6) throw new Error("Shard too short");
+  if (bytes.length < 6) throw new Error("Fragment trop court");
 
   const body = bytes.subarray(0, bytes.length - 2);
   const [c1, c2] = fletcher16(body);
   if (bytes[bytes.length - 2] !== c1 || bytes[bytes.length - 1] !== c2)
-    throw new Error("Checksum mismatch -- shard may be corrupted");
+    throw new Error("Checksum invalide -- fragment corrompu ?");
 
   if (body[0] !== SSKR_VERSION)
-    throw new Error(`Unsupported SSKR version: ${body[0]}`);
+    throw new Error(`Version SSKR non supportée : ${body[0]}`);
 
   return {
     version: body[0],
@@ -189,7 +189,7 @@ export function decodeShard(encoded: string): Shard {
 // ---- Public API -----------------------------------------------------------
 
 /**
- * Splits a base64url key into N SSKR shards.
+ * Découpe une clé base64url en N fragments SSKR.
  */
 export function splitKey(
   encodedKey: string,
@@ -211,7 +211,7 @@ export function splitKey(
 }
 
 /**
- * Reconstructs a base64url key from SSKR shards.
+ * Reconstitue une clé base64url à partir de fragments SSKR.
  */
 export function combineShards(shardStrings: string[]): string {
   const shards = shardStrings.map(decodeShard);
@@ -220,17 +220,17 @@ export function combineShards(shardStrings: string[]): string {
   const total = shards[0].total;
   for (const s of shards) {
     if (s.threshold !== t || s.total !== total)
-      throw new Error("Shards come from different sets");
+      throw new Error("Fragments provenant de jeux différents");
   }
 
   if (shards.length < t)
     throw new Error(
-      `${t} fragments required, only ${shards.length} provided`,
+      `${t} fragments requis, seulement ${shards.length} fourni(s)`,
     );
 
   const indices = shards.map((s) => s.index);
   if (new Set(indices).size !== indices.length)
-    throw new Error("Duplicate shards detected");
+    throw new Error("Fragments en doublon détectés");
 
   const used = shards.slice(0, t);
   const recovered = shamirCombine(

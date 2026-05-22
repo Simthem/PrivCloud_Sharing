@@ -1,16 +1,15 @@
 import {
   Center,
-  Col,
-  createStyles,
   Grid,
   Paper,
   Stack,
   Text,
   Title,
 } from "@mantine/core";
+import { createStyles } from "@mantine/emotion";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { TbLink, TbRefresh, TbSettings, TbUsers } from "react-icons/tb";
+import { TbLink, TbRefresh, TbSettings, TbUsers, TbUsersGroup } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import Meta from "../../components/Meta";
 import useTranslate from "../../hooks/useTranslate.hook";
@@ -45,6 +44,11 @@ const Admin = () => {
       title: t("admin.button.shares"),
       icon: TbLink,
       route: "/admin/shares",
+    },
+    {
+      title: t("admin.button.teams"),
+      icon: TbUsersGroup,
+      route: "/admin/teams",
     },
     {
       title: t("admin.button.config"),
@@ -83,7 +87,7 @@ const Admin = () => {
           <Grid>
             {managementOptions.map((item) => {
               return (
-                <Col xs={6} key={item.route}>
+                <Grid.Col span={{ base: 12, xs: 6 }} key={item.route}>
                   <Paper
                     withBorder
                     component={Link}
@@ -94,14 +98,14 @@ const Admin = () => {
                     <item.icon color={theme.colors[theme.primaryColor][8]} size={35} />
                     <Text mt={7}>{item.title}</Text>
                   </Paper>
-                </Col>
+                </Grid.Col>
               );
             })}
           </Grid>
         </Paper>
 
         <Center>
-          <Text size="xs" color="dimmed">
+          <Text size="xs" c="dimmed">
             <FormattedMessage id="admin.version" /> {process.env.VERSION}
           </Text>
         </Center>

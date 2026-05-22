@@ -7,18 +7,23 @@ export type Share = {
   creator?: User;
   description?: string;
   expiration: Date;
+  createdAt?: Date;
   size: number;
   hasPassword: boolean;
   isE2EEncrypted: boolean;
   previewEnabled?: boolean;
   encryptedReverseShareKey?: string | null;
   reverseShare?: { id: string; creatorId: string } | null;
+  teamFolderId?: string | null;
+  teamId?: string | null;
 };
 
 export type ReverseShare = {
   id: string;
   name?: string;
   maxShareSize: string;
+  /** min(creator plan limit, RS maxShareSize) -- computed by the API */
+  effectiveMaxShareSize?: string;
   shareExpiration: Date;
   token: string;
   simplified: boolean;
@@ -46,6 +51,8 @@ export type CreateShare = {
   captchaToken?: string;
   senderName?: string;
   senderEmail?: string;
+  notifyOnDownload?: boolean;
+  teamFolderId?: string;
 };
 
 export type CreateReverseShare = {

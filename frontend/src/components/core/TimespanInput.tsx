@@ -72,11 +72,11 @@ const TimespanInput = ({
       value={inputValue}
       min={0}
       max={999999}
-      precision={0}
+      decimalScale={0}
       rightSection={unitSelect}
       rightSectionWidth={120}
       onChange={(value) => {
-        const inputVal = value || 0;
+        const inputVal = Number(value) || 0;
         setInputValue(inputVal);
         onChange({ value: inputVal, unit });
       }}

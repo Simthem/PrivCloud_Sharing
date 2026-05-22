@@ -1,12 +1,9 @@
 import {
   Box,
   Center,
-  ColorScheme,
   SegmentedControl,
   Stack,
-  useMantineColorScheme,
 } from "@mantine/core";
-import { useColorScheme } from "@mantine/hooks";
 import { useState } from "react";
 import { TbDeviceLaptop, TbMoon, TbSun } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
@@ -16,8 +13,6 @@ const ThemeSwitcher = () => {
   const [colorScheme, setColorScheme] = useState(
     userPreferences.get("colorScheme"),
   );
-  const { toggleColorScheme } = useMantineColorScheme();
-  const systemColorScheme = useColorScheme();
   return (
     <Stack>
       <SegmentedControl
@@ -25,9 +20,7 @@ const ThemeSwitcher = () => {
         onChange={(value) => {
           userPreferences.set("colorScheme", value);
           setColorScheme(value);
-          toggleColorScheme(
-            value == "system" ? systemColorScheme : (value as ColorScheme),
-          );
+          window.dispatchEvent(new Event("theme-change"));
         }}
         data={[
           {

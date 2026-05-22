@@ -1,5 +1,6 @@
 import {
   ClassSerializerInterceptor,
+  HttpException,
   Logger,
   LogLevel,
   ValidationPipe,
@@ -7,9 +8,8 @@ import {
 import { NestFactory, Reflector } from "@nestjs/core";
 import { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
-import * as bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
-import { NextFunction, Request, Response } from "express";
+import helmet from "helmet";
 import * as fs from "fs";
 import { AppModule } from "./app.module";
 import { AbortedRequestFilter } from "./aborted-request.filter";
@@ -20,6 +20,20 @@ import {
   LOG_LEVEL_DEFAULT,
   LOG_LEVEL_ENV,
 } from "./constants";
+
+// Suppress DEP0060 (util._extend) emitted by internal Node.js / third-party
+// dependencies on Node 24+. The API is deprecated but still works; the warning
+// is noise we cannot fix upstream.
+const _originalEmit = process.emit.bind(process);
+(process as any).emit = (event: string, ...args: any[]) => {
+  if (
+    event === "warning" &&
+    args[0]?.code === "DEP0060"
+  ) {
+    return false;
+  }
+  return _originalEmit(event, ...args);
+};
 
 // global-agent (loaded via NODE_OPTIONS --require) patches http/https.globalAgent
 // but does NOT patch the native fetch() built-in de Node.js 24.
@@ -89,29 +103,81 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: logLevels,
     rawBody: true,
+    // Disable NestJS internal body parsers (default limit = 100 KB).
+    // We register our own below via useBodyParser() with proper limits.
+    // Without this, the internal 100 KB json parser rejects large JSON
+    // bodies (e.g. base64-encoded PDFs in E2E finalization) with 413
+    // before the custom 50 MB parser ever runs.
+    bodyParser: false,
   });
 
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      exceptionFactory: (errors) => {
+        const logger = new Logger("ValidationPipe");
+        logger.warn(
+          `Validation failed: ${JSON.stringify(
+            errors.map((e) => ({
+              property: e.property,
+              constraints: e.constraints,
+              children: e.children?.map((c) => ({
+                property: c.property,
+                constraints: c.constraints,
+              })),
+            })),
+          )}`,
+        );
+        const messages = errors
+          .map((e) => {
+            const own = Object.values(e.constraints || {});
+            const nested = (e.children || []).flatMap((c) =>
+              Object.values(c.constraints || {}),
+            );
+            return [...own, ...nested];
+          })
+          .flat();
+        return new HttpException(
+          { statusCode: 400, message: messages, error: "Bad Request" },
+          400,
+        );
+      },
+    }),
+  );
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   app.useGlobalFilters(new AbortedRequestFilter());
 
   const config = app.get<ConfigService>(ConfigService);
 
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    const chunkSize = config.get("share.chunkSize");
-    // Adaptive chunk sizing: the frontend may send chunks up to 200 MB
-    // based on measured bandwidth. Use 200 MB as the safety floor so
-    // the backend never rejects a chunk the frontend can send.
-    // E2E encrypted chunks add 28 bytes (12 IV + 16 GCM tag).
-    const limit = Math.max(chunkSize, 200_000_000) + 128;
-    bodyParser.raw({
-      type: "application/octet-stream",
-      limit: `${limit}B`,
-    })(req, res, next);
+  // Register body parsers via NestJS's useBodyParser() so the rawBody
+  app.useBodyParser("json", { limit: "50mb" });
+  app.useBodyParser("urlencoded", { limit: "50mb", extended: true });
+
+  // Adaptive chunk sizing: the frontend may send chunks up to 200 MB
+  // based on measured bandwidth.  Express buffers the entire raw body
+  // in RAM, so ensure the VM has ≥ 4 GB RAM and Node is launched with
+  // --max-old-space-size=3072 to handle concurrent 200 MB chunks.
+  // E2E encrypted chunks add 28 bytes (12 IV + 16 GCM tag).
+  const chunkSize = config.get("share.chunkSize");
+  const rawLimit = Math.max(chunkSize, 200_000_000) + 128;
+  app.useBodyParser("raw", {
+    type: "application/octet-stream",
+    limit: rawLimit,
   });
 
   app.use(cookieParser());
-  app.set("trust proxy", true);
+
+  // Security headers
+  app.use(
+    helmet({
+      contentSecurityPolicy: false, // Handled by upstream nginx
+      hsts: { maxAge: 31536000, includeSubDomains: true },
+    }),
+  );
+
+  // Trust only the immediate upstream proxy (nginx)
+  app.set("trust proxy", 1);
 
   await fs.promises.mkdir(`${DATA_DIRECTORY}/uploads/_temp`, {
     recursive: true,
@@ -119,8 +185,8 @@ async function bootstrap() {
 
   app.setGlobalPrefix("api");
 
-  // Setup Swagger in development mode
-  if (process.env.NODE_ENV == "development") {
+  // Setup Swagger in development mode only
+  if (process.env.NODE_ENV === "development") {
     const config = new DocumentBuilder()
       .setTitle("OttrBox API")
       .setVersion("1.0")
@@ -132,6 +198,24 @@ async function bootstrap() {
   await app.listen(
     parseInt(process.env.BACKEND_PORT || process.env.PORT || "8080"),
   );
+
+  // Fix Caddy <-> Node.js keepalive race condition (502 errors).
+  //
+  // Scenario: Caddy reuses a keepalive TCP connection that was idle for
+  // slightly more than Node.js's keepAliveTimeout (default: 5 s). Node.js
+  // has already sent FIN / RST on that socket, but Caddy hasn't received
+  // it yet when it dispatches the next request → "use of closed network
+  // connection" → Caddy returns 502.
+  //
+  // Fix: set keepAliveTimeout well above Caddy's backend idle timeout
+  // (Caddy default is 30 s; we set 65 s so Node.js always outlasts Caddy).
+  // headersTimeout must be strictly greater than keepAliveTimeout to avoid
+  // a secondary race where Node.js closes mid-headers.
+  //
+  // Reference: https://nodejs.org/api/http.html#serverkeepalivetimeout
+  const httpServer = app.getHttpServer() as import("http").Server;
+  httpServer.keepAliveTimeout = 65_000; // 65 s  (> Caddy's 30 s default)
+  httpServer.headersTimeout = 66_000;   // 66 s  (> keepAliveTimeout)
 
   const logger = new Logger("UnhandledAsyncError");
   process.on("unhandledRejection", (e) => logger.error(e));

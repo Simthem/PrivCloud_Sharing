@@ -59,10 +59,7 @@ export class AuthService {
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code == "P2002") {
-          const duplicatedField: string =
-            (e.meta?.constraint as any)?.fields?.[0] ??
-            (e.meta?.target as any)?.[0] ??
-            "field";
+          const duplicatedField: string = e.meta.target[0];
           throw new BadRequestException(
             `A user with this ${duplicatedField} already exists`,
           );
@@ -71,33 +68,54 @@ export class AuthService {
     }
   }
 
+  private readonly MAX_LOGIN_ATTEMPTS = 5;
+  private readonly LOCKOUT_DURATION_MINUTES = 15;
+
   async signIn(dto: AuthSignInDTO, ip: string) {
     if (!dto.email && !dto.username) {
       throw new BadRequestException("Email or username is required");
     }
 
-    if (!this.config.get("oauth.disablePassword")) {
-      const user = await this.prisma.user.findFirst({
-        where: {
-          OR: [{ email: dto.email }, { username: dto.username }],
-        },
-      });
+    // Lookup user for lockout check
+    const targetUser = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          ...(dto.email ? [{ email: dto.email }] : []),
+          ...(dto.username ? [{ username: dto.username }] : []),
+        ],
+      },
+    });
 
-      if (user?.password && (await argon.verify(user.password, dto.password))) {
+    // Check lockout
+    if (targetUser?.lockedUntil && targetUser.lockedUntil > new Date()) {
+      this.logger.warn(
+        `Locked account login attempt for ${dto.email || dto.username} from IP ${ip}`,
+      );
+      throw new ForbiddenException(
+        "Account temporarily locked due to too many failed attempts. Please try again later.",
+      );
+    }
+
+    if (!this.config.get("oauth.disablePassword")) {
+      if (
+        targetUser?.password &&
+        (await argon.verify(targetUser.password, dto.password))
+      ) {
+        // Reset failed attempts on successful login
+        if (targetUser.failedLoginAttempts > 0) {
+          await this.prisma.user.update({
+            where: { id: targetUser.id },
+            data: { failedLoginAttempts: 0, lockedUntil: null },
+          });
+        }
         this.logger.log(
-          `Successful password login for user ${user.email} from IP ${ip}`,
+          `Successful password login for user ${targetUser.email} from IP ${ip}`,
         );
-        return this.generateToken(user);
+        return this.generateToken(targetUser);
       }
     }
 
     if (this.config.get("ldap.enabled")) {
-      /*
-       * E-mail-like user credentials are passed as the email property
-       * instead of the username. Since the username format does not matter
-       * when searching for users in LDAP, we simply use the username
-       * in whatever format it is provided.
-       */
       const ldapUsername = dto.username || dto.email;
       this.logger.debug(`Trying LDAP login for user ${ldapUsername}`);
       const ldapUser = await this.ldapService.authenticateUser(
@@ -106,10 +124,40 @@ export class AuthService {
       );
       if (ldapUser) {
         const user = await this.userService.findOrCreateFromLDAP(dto, ldapUser);
+        // Reset failed attempts on successful LDAP login
+        if (user.failedLoginAttempts > 0) {
+          await this.prisma.user.update({
+            where: { id: user.id },
+            data: { failedLoginAttempts: 0, lockedUntil: null },
+          });
+        }
         this.logger.log(
           `Successful LDAP login for user ${ldapUsername} (${user.id}) from IP ${ip}`,
         );
         return this.generateToken(user);
+      }
+    }
+
+    // Increment failed attempts
+    if (targetUser) {
+      const attempts = targetUser.failedLoginAttempts + 1;
+      const lockout =
+        attempts >= this.MAX_LOGIN_ATTEMPTS
+          ? new Date(Date.now() + this.LOCKOUT_DURATION_MINUTES * 60 * 1000)
+          : null;
+
+      await this.prisma.user.update({
+        where: { id: targetUser.id },
+        data: {
+          failedLoginAttempts: attempts,
+          lockedUntil: lockout,
+        },
+      });
+
+      if (lockout) {
+        this.logger.warn(
+          `Account ${targetUser.email} locked after ${attempts} failed attempts from IP ${ip}`,
+        );
       }
     }
 
@@ -120,7 +168,9 @@ export class AuthService {
   }
 
   async generateToken(user: User, oauth?: { idToken?: string }) {
-    // TODO: Make all old loginTokens invalid when a new one is created
+    // Invalidate all old loginTokens when a new one is created
+    await this.prisma.loginToken.deleteMany({ where: { userId: user.id } });
+
     // Check if the user has TOTP enabled
     if (user.totpVerified && !(oauth && this.config.get("oauth.ignoreTotp"))) {
       const loginToken = await this.createLoginToken(user.id);
@@ -178,21 +228,28 @@ export class AuthService {
     if (this.config.get("oauth.disablePassword"))
       throw new ForbiddenException("Password sign in is disabled");
 
-    const user = await this.prisma.user.findFirst({
-      where: { resetPasswordToken: { token } },
+    const resetToken = await this.prisma.resetPasswordToken.findUnique({
+      where: { token },
+      include: { user: true },
     });
 
-    if (!user) throw new BadRequestException("Token invalid or expired");
+    if (!resetToken) throw new BadRequestException("Token invalid or expired");
+
+    if (resetToken.expiresAt < new Date()) {
+      await this.prisma.resetPasswordToken.delete({ where: { token } });
+      throw new BadRequestException("Token expired. Please request a new password reset.");
+    }
 
     const newPasswordHash = await argon.hash(newPassword);
 
-    await this.prisma.resetPasswordToken.delete({
-      where: { token },
-    });
-
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { password: newPasswordHash },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.resetPasswordToken.delete({ where: { token } });
+      await tx.user.update({
+        where: { id: resetToken.user.id },
+        data: { password: newPasswordHash },
+      });
+      // Invalidate all sessions on password reset
+      await tx.refreshToken.deleteMany({ where: { userId: resetToken.user.id } });
     });
   }
 
@@ -232,10 +289,28 @@ export class AuthService {
   }
 
   async signOut(accessToken: string) {
-    const { refreshTokenId } =
-      (this.jwtService.decode(accessToken) as {
-        refreshTokenId: string;
-      }) || {};
+    let refreshTokenId: string | undefined;
+    try {
+      const payload = this.jwtService.verify(accessToken, {
+        secret: this.config.get("internal.jwtSecret"),
+      }) as { refreshTokenId?: string };
+      refreshTokenId = payload.refreshTokenId;
+    } catch {
+      // Token expired but signature is still valid - allow graceful sign-out.
+      // Using verify() with ignoreExpiration instead of decode() ensures
+      // the token signature is cryptographically validated, preventing an
+      // attacker from forging a token with an arbitrary refreshTokenId.
+      try {
+        const payload = this.jwtService.verify(accessToken, {
+          secret: this.config.get("internal.jwtSecret"),
+          ignoreExpiration: true,
+        }) as { refreshTokenId?: string };
+        refreshTokenId = payload.refreshTokenId;
+      } catch {
+        // Signature invalid - reject entirely
+        return;
+      }
+    }
 
     if (!refreshTokenId) {
       return;
@@ -303,10 +378,21 @@ export class AuthService {
     if (!refreshTokenMetaData || refreshTokenMetaData.expiresAt < new Date())
       throw new UnauthorizedException();
 
-    return this.createAccessToken(
+    // Rotate: delete old token and create new one
+    await this.prisma.refreshToken.delete({ where: { token: refreshToken } });
+
+    const { refreshToken: newRefreshToken, refreshTokenId } =
+      await this.createRefreshToken(
+        refreshTokenMetaData.user.id,
+        refreshTokenMetaData.oauthIDToken,
+      );
+
+    const accessToken = await this.createAccessToken(
       refreshTokenMetaData.user,
-      refreshTokenMetaData.id,
+      refreshTokenId,
     );
+
+    return { accessToken, refreshToken: newRefreshToken };
   }
 
   async createRefreshToken(userId: string, idToken?: string) {
@@ -343,7 +429,7 @@ export class AuthService {
     if (accessToken)
       response.cookie("access_token", accessToken, {
         httpOnly: true,
-        sameSite: "lax",
+        sameSite: "strict",
         secure: isSecure,
         maxAge: 1000 * 60 * 13, // 13 min (JWT lives 15 min - 2 min safety margin)
       });
@@ -356,16 +442,16 @@ export class AuthService {
       response.cookie("refresh_token", refreshToken, {
         path: "/api/auth/token",
         httpOnly: true,
-        sameSite: "lax",
+        sameSite: "strict",
         secure: isSecure,
         maxAge,
       });
       // Non-httpOnly marker so the client can detect an active session
       // even after the short-lived access_token cookie has expired.
-      // httpOnly is deliberately omitted here -- this cookie carries no secret,
-      // it is only a boolean indicator read by frontend JS.
+      // httpOnly: false - intentional. Contains no sensitive data (value: "1").
       response.cookie("logged_in", "1", {
-        sameSite: "lax",
+        httpOnly: false,
+        sameSite: "strict",
         secure: isSecure,
         maxAge,
       });
@@ -392,8 +478,11 @@ export class AuthService {
 
   async verifyPassword(user: User, password: string) {
     if (!user.password && this.config.get("ldap.enabled")) {
-      return !!this.ldapService.authenticateUser(user.username, password);
+      const ldapUser = await this.ldapService.authenticateUser(user.username, password);
+      return !!ldapUser;
     }
+
+    if (!user.password) return false;
 
     return argon.verify(user.password, password);
   }

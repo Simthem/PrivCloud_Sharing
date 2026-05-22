@@ -1,9 +1,12 @@
 import { Type } from "class-transformer";
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsEmail,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   Matches,
   MaxLength,
@@ -30,6 +33,9 @@ export class CreateShareDTO {
   @IsOptional()
   description: string;
 
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
   @IsEmail({}, { each: true })
   recipients: string[];
 
@@ -53,4 +59,12 @@ export class CreateShareDTO {
   @IsOptional()
   @IsEmail()
   senderEmail?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  notifyOnDownload?: boolean;
+
+  @IsOptional()
+  @IsUUID()
+  teamFolderId?: string;
 }

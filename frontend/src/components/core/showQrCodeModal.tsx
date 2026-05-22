@@ -1,5 +1,5 @@
 import { ActionIcon, Center, Stack, Text, Tooltip } from "@mantine/core";
-import { ModalsContextProps } from "@mantine/modals/lib/context";
+import { useModals } from "@mantine/modals";
 import { useState } from "react";
 import { TbCheck, TbCopy } from "react-icons/tb";
 import dynamic from "next/dynamic";
@@ -11,7 +11,7 @@ const QRCodeSVG = dynamic(
 );
 import { copyToClipboard } from "../../utils/clipboard.util";
 
-const showQrCodeModal = (modals: ModalsContextProps, link: string) => {
+const showQrCodeModal = (modals: ReturnType<typeof useModals>, link: string) => {
   const t = translateOutsideContext();
   return modals.openModal({
     title: t("common.modal.qr-code.title"),
@@ -32,7 +32,7 @@ const QrCodeContent = ({ link }: { link: string }) => {
   };
 
   return (
-    <Stack align="center" spacing="md">
+    <Stack align="center" gap="md">
       <Center>
         <QRCodeSVG
           value={link}
@@ -45,9 +45,9 @@ const QrCodeContent = ({ link }: { link: string }) => {
       </Center>
       <Text
         size="xs"
-        color="dimmed"
-        align="center"
-        sx={{ wordBreak: "break-all", maxWidth: 280, cursor: "pointer" }}
+        c="dimmed"
+        ta="center"
+        style={{ wordBreak: "break-all", maxWidth: 280, cursor: "pointer" }}
         onClick={handleCopy}
       >
         {link}

@@ -1,12 +1,12 @@
 import {
   Center,
-  createStyles,
-  keyframes,
   Stack,
   Text,
   ThemeIcon,
   Title,
 } from "@mantine/core";
+import { createStyles } from "@mantine/emotion";
+import { keyframes } from "@emotion/react";
 import { TbTool } from "react-icons/tb";
 import Meta from "../components/Meta";
 import useConfig from "../hooks/config.hook";
@@ -26,7 +26,7 @@ const useStyles = createStyles((theme) => ({
   },
   card: {
     backgroundColor:
-      theme.colorScheme === "dark"
+      theme.other.colorScheme === "dark"
         ? theme.colors.dark[6]
         : theme.colors.gray[0],
     borderRadius: theme.radius.lg,
@@ -51,7 +51,7 @@ const Maintenance = () => {
       <Meta title={t("maintenance.title")} />
       <Center className={classes.wrapper}>
         <div className={classes.card}>
-          <Stack align="center" spacing="xl">
+          <Stack align="center" gap="xl">
             <ThemeIcon
               size={80}
               radius="xl"
@@ -61,14 +61,14 @@ const Maintenance = () => {
             >
               <TbTool size={42} />
             </ThemeIcon>
-            <Title order={2} align="center">
+            <Title order={2} ta="center">
               {t("maintenance.title")}
             </Title>
             <Text
-              color="dimmed"
-              align="center"
+              c="dimmed"
+              ta="center"
               size="md"
-              sx={{ whiteSpace: "pre-line" }}
+              style={{ whiteSpace: "pre-line" }}
             >
               {message}
             </Text>

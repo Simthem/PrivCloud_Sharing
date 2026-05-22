@@ -1,13 +1,18 @@
+import "@mantine/core/styles.css";
+import "@mantine/notifications/styles.css";
+
 import {
-  ColorScheme,
-  ColorSchemeProvider,
   Container,
+  CSSVariablesResolver,
+  MantineColorScheme,
   MantineProvider,
   Stack,
 } from "@mantine/core";
 import { useColorScheme } from "@mantine/hooks";
 import { ModalsProvider } from "@mantine/modals";
 import { Notifications } from "@mantine/notifications";
+import { emotionTransform, MantineEmotionProvider } from "@mantine/emotion";
+import emotionCache from "../utils/emotionCache";
 import axios from "axios";
 import { getCookie, setCookie } from "cookies-next";
 import { setDayjsLocale } from "../utils/dayjs";
@@ -23,7 +28,16 @@ import {
   QueryClientProvider,
 } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
+
+const ReactQueryDevtools = dynamic(
+  () =>
+    import("@tanstack/react-query-devtools").then((mod) => ({
+      default: mod.ReactQueryDevtools,
+    })),
+  { ssr: false },
+);
 import Header from "../components/header/Header";
+import { HEADER_HEIGHT } from "../components/header/Header.styles";
 import { ConfigContext } from "../hooks/config.hook";
 import { UserContext } from "../hooks/user.hook";
 import {
@@ -42,19 +56,34 @@ import Config from "../types/config.type";
 import { CurrentUser } from "../types/user.type";
 import i18nUtil from "../utils/i18n.util";
 import userPreferences from "../utils/userPreferences.util";
-import CookieConsent from "../components/cookie/CookieConsent";
-import E2EKeyPrompt from "../components/auth/E2EKeyPrompt";
-import { getUserKey, computeKeyHashFromEncoded } from "../utils/crypto.util";
 
-const ReactQueryDevtools = dynamic(
-  () =>
-    import("@tanstack/react-query-devtools").then((mod) => ({
-      default: mod.ReactQueryDevtools,
-    })),
-  { ssr: false },
-);
+// Module-level store for SSR i18n messages.
+// _app.getInitialProps loads messages here; _document.tsx reads them to emit
+// an inline <script> (avoids serializing ~120 kB into __NEXT_DATA__).
+// Safe: Next.js SSR pipeline is single-threaded per request.
+export let __ssrI18nMessages: Record<string, string> | null = null;
 const Footer = dynamic(() => import("../components/footer/Footer"), {
   ssr: false,
+});
+const CookieConsent = dynamic(
+  () => import("../components/cookie/CookieConsent"),
+  { ssr: false },
+);
+const E2EKeyPrompt = dynamic(
+  () => import("../components/auth/E2EKeyPrompt"),
+  { ssr: false },
+);
+const TeamStatusChecker = dynamic(
+  () => import("../components/team/TeamStatusChecker"),
+  { ssr: false },
+);
+
+// WCAG AA: override --mantine-color-dimmed for sufficient contrast on
+// both light (gray-7 = #495057, 7.5:1 on white) and dark (dark-1 = #A6A7AB, 8.5:1) backgrounds.
+const contrastResolver: CSSVariablesResolver = () => ({
+  variables: {},
+  light: { "--mantine-color-dimmed": "var(--mantine-color-gray-7)" },
+  dark: { "--mantine-color-dimmed": "var(--mantine-color-dark-1)" },
 });
 
 const excludeDefaultLayoutRoutes = ["/admin/config/[category]"];
@@ -67,23 +96,26 @@ function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
 
   const [queryClient] = useState(() => new QueryClient());
-  const [colorScheme, setColorScheme] = useState<ColorScheme>(
+  const [colorScheme, setColorScheme] = useState<MantineColorScheme>(
     pageProps.colorScheme ?? "dark",
   );
 
   const [user, setUser] = useState<CurrentUser | null>(pageProps.user);
-  const [route, setRoute] = useState<string>(pageProps.route);
+  const route = router.pathname;
 
   const [configVariables, setConfigVariables] = useState<Config[]>(
     pageProps.configVariables,
   );
 
+  // E2E key prompt: shown when user has a server-side key hash but the
+  // in-memory key is empty (RAM-only model -- key lost on tab close).
   const [showE2EPrompt, setShowE2EPrompt] = useState(false);
   const e2ePromptShownRef = useRef(false);
 
-  useEffect(() => {
-    setRoute(router.pathname);
-  }, [router.pathname]);
+  // Onboarding tour: shown once on first sign-in, gated by localStorage.
+  const mainOffset = route === "/" ? HEADER_HEIGHT : HEADER_HEIGHT + 40;
+
+
 
   // Attempt to recover/ maintain the session client-side.  This single
   // function covers both the "cold start" scenario (SSR didn't hydrate
@@ -108,6 +140,53 @@ function App({ Component, pageProps }: AppProps) {
     }
   };
 
+  // SafeLine challenge popup signal: if THIS window was opened as a popup
+  // by completeSafeLineChallenge() (api.service.ts) to resolve a WAF 468
+  // challenge, notify the main tab that the app loaded successfully.
+  //
+  // Detection: two methods -
+  //   1. sessionStorage.__sl_challenge = '1' (set by challenge-proxy.html)
+  //   2. window.opener exists (direct popup to '/')
+  // If either is true, this is a challenge popup.
+  //
+  // Communication: both BroadcastChannel AND postMessage are used for
+  // maximum compatibility.  BroadcastChannel works even when opener is
+  // null (noopener windows); postMessage works on older browsers.
+  useEffect(() => {
+    const isChallengeWindow =
+      sessionStorage.getItem("__sl_challenge") === "1" || !!window.opener;
+
+    if (!isChallengeWindow) return;
+
+    // Clean up the proxy flag if present
+    sessionStorage.removeItem("__sl_challenge");
+
+    // Broadcast via BroadcastChannel
+    try {
+      const bc = new BroadcastChannel("safeline-challenge");
+      bc.postMessage({ type: "safeline-challenge-complete" });
+      setTimeout(() => bc.close(), 2000);
+    } catch {
+      // BroadcastChannel not available - rely on postMessage below
+    }
+
+    // postMessage to opener
+    if (window.opener) {
+      try {
+        window.opener.postMessage(
+          { type: "safeline-challenge-complete" },
+          window.location.origin,
+        );
+      } catch {
+        // opener on a different origin or already GC'd -- ignore
+      }
+    }
+    // Note: no auto-close here - the main tab closes the popup via
+    // popup.close() inside cleanup() when completeSafeLineChallenge()
+    // resolves.  Auto-closing too early (e.g. 3s) would close the popup
+    // before SafeLine has shown its real challenge page.
+  }, []);
+
   // Cold-start recovery: SSR could not resolve the user (e.g. the
   // access_token cookie expired between SSR and hydration, or a
   // reverse-proxy / WAF stripped the cookies).
@@ -116,14 +195,31 @@ function App({ Component, pageProps }: AppProps) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Visibility recovery: when the user switches back to this tab /
-  // iframe, check the session immediately instead of waiting for the
+  // iframe, refresh the session immediately instead of waiting for the
   // next timer tick.  Browsers throttle setInterval in background
   // tabs / hidden iframes, so the periodic refresh might not have
-  // fired for a long time.
+  // fired for a long time.  On mobile the tab can be suspended for
+  // hours -- the access_token (13 min) will be expired on wake-up.
+  // Refreshing proactively here avoids a 401 race on the first API
+  // call the user triggers after returning to the app.
   useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === "visible" && !user) {
+    const onVisible = async () => {
+      if (document.visibilityState !== "visible") return;
+      if (isUploadActive()) return;
+
+      if (!user) {
         recoverSession();
+        return;
+      }
+
+      // User still set but access_token likely expired after sleep.
+      // Proactively refresh so the next API call won't 401.
+      if (getCookie("logged_in")) {
+        try {
+          await authService.refreshAccessToken();
+        } catch {
+          // refresh_token dead -- let the interval handle cleanup
+        }
       }
     };
     document.addEventListener("visibilitychange", onVisible);
@@ -152,8 +248,9 @@ function App({ Component, pageProps }: AppProps) {
 
     const interval = setInterval(async () => {
       // Skip token refresh entirely during uploads -- the upload loop
-      // handles its own auth retries and a refresh here can trigger a
-      // SafeLine 468 challenge that crashes the page.
+      // handles its own auth via manual fetch("/api/auth/token") on 401.
+      // Attempting a refresh here can trigger a SafeLine 468 challenge
+      // that crashes the page (iframe top-navigation or reload).
       if (isUploadActive()) return;
 
       if (!user && getCookie("logged_in")) {
@@ -168,41 +265,142 @@ function App({ Component, pageProps }: AppProps) {
         consecutiveFailures = 0;
       } catch {
         consecutiveFailures++;
-        if (consecutiveFailures >= 2 && !isUploadActive()) {
+        // Don't invalidate the user state while an upload is in
+        // progress -- the upload retry logic handles transient auth
+        // issues, and clearing the user mid-upload would break the UI.
+        if (consecutiveFailures >= 5 && !isUploadActive()) {
           setUser(null);
         }
       }
-    }, 60 * 1000); // 60 seconds
+    }, 60 * 1000); // 60 seconds -- access_token lives 13 min, no need to poll faster
 
     return () => clearInterval(interval);
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-refresh the E2E key hash on every authenticated page load.
+  // This keeps the server-side hash in sync with the local key and
+  // prevents verification mismatches on other browsers / devices.
   useEffect(() => {
     if (!user) return;
-    const localKey = getUserKey();
-    if (!localKey) {
-      if (user.hasEncryptionKey && !e2ePromptShownRef.current) {
-        e2ePromptShownRef.current = true;
-        setShowE2EPrompt(true);
+
+
+    import("../utils/crypto.util").then(({ getUserKey, computeKeyHashFromEncoded, loadKeyWithPasskey, hasPasskeyWrappedKey, storeUserKey }) => {
+      const localKey = getUserKey();
+      if (!localKey) {
+        // User has a server-side key but nothing in RAM -> try passkey auto-recovery
+        if (user.hasEncryptionKey && !e2ePromptShownRef.current) {
+          // Fetch server-side wrapped keys, then try local + server credentials
+          userService.listWrappedKeys().then((serverKeys) => {
+            if (!hasPasskeyWrappedKey() && serverKeys.length === 0) {
+              // No passkey data anywhere -> show manual prompt
+              e2ePromptShownRef.current = true;
+              setShowE2EPrompt(true);
+              return;
+            }
+            loadKeyWithPasskey(serverKeys).then(async (encodedKey) => {
+              if (encodedKey) {
+                // Verify key matches server-side hash before trusting it
+                const hash = await computeKeyHashFromEncoded(encodedKey, user.id);
+                const valid = await userService.verifyEncryptionKey(hash);
+                if (valid) {
+                  storeUserKey(encodedKey);
+                  return; // Key restored silently, no prompt needed
+                }
+              }
+              // Passkey recovery failed or key mismatch -> show manual prompt
+              e2ePromptShownRef.current = true;
+              setShowE2EPrompt(true);
+            }).catch(() => {
+              e2ePromptShownRef.current = true;
+              setShowE2EPrompt(true);
+            });
+          }).catch(() => {
+            // Server unreachable -> try local only
+            if (hasPasskeyWrappedKey()) {
+              loadKeyWithPasskey().then(async (encodedKey) => {
+                if (encodedKey) {
+                  const hash = await computeKeyHashFromEncoded(encodedKey, user.id);
+                  const valid = await userService.verifyEncryptionKey(hash);
+                  if (valid) {
+                    storeUserKey(encodedKey);
+                    return;
+                  }
+                }
+                e2ePromptShownRef.current = true;
+                setShowE2EPrompt(true);
+              }).catch(() => {
+                e2ePromptShownRef.current = true;
+                setShowE2EPrompt(true);
+              });
+            } else {
+              e2ePromptShownRef.current = true;
+              setShowE2EPrompt(true);
+            }
+          });
+        }
+        return;
       }
-      return;
-    }
-    computeKeyHashFromEncoded(localKey, user.id)
-      .then((hash) => userService.setEncryptionKeyHash(hash))
-      .catch(() => {});
+      computeKeyHashFromEncoded(localKey, user.id)
+        .then((hash) => userService.setEncryptionKeyHash(hash))
+        .catch(() => {
+          // Non-critical -- key may be malformed in storage
+        });
+    });
   }, [user]);
 
-  // Register service worker for PWA
+  // iOS fix: prevent auto-zoom on input focus without disabling user zoom.
+  // On iPhone/iPad, Safari zooms in whenever a form field receives focus if
+  // the font-size is below 16 px.  Setting maximum-scale=1 during focus
+  // suppresses that zoom while still letting the user pinch-zoom freely
+  // (the restriction is lifted again on blur).
   useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker
-        .register("/sw.js")
-        .catch(() => {
-          // Service worker registration failed -- non-critical
-        });
-    }
+    const isIOS =
+      /iPad|iPhone/.test(navigator.userAgent) && !(window as any).MSStream;
+    if (!isIOS) return;
 
-    // Manifest link is in _document.tsx <Head> for DevTools compatibility
+    const viewport = document.querySelector<HTMLMetaElement>(
+      "[name=viewport]",
+    );
+    if (!viewport) return;
+
+    const originalContent = viewport.getAttribute("content") ?? "";
+
+    const onFocusIn = (e: FocusEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        viewport.setAttribute(
+          "content",
+          originalContent.replace(/,?\s*maximum-scale=[^,]*/i, "") +
+            ", maximum-scale=1",
+        );
+      }
+    };
+
+    const onFocusOut = () => {
+      viewport.setAttribute("content", originalContent);
+    };
+
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
+    return () => {
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
+    };
+  }, []);
+
+  // Register service worker for PWA -- deferred after page load to avoid
+  // competing with hydration for main-thread time.
+  useEffect(() => {
+    const register = () => {
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/sw.js").catch(() => {});
+      }
+    };
+    if (document.readyState === "complete") {
+      register();
+    } else {
+      window.addEventListener("load", register, { once: true });
+    }
   }, []);
 
   useEffect(() => {
@@ -223,7 +421,17 @@ function App({ Component, pageProps }: AppProps) {
     toggleColorScheme(colorScheme);
   }, [systemTheme]);
 
-  const toggleColorScheme = (value: ColorScheme) => {
+  useEffect(() => {
+    const onThemeChange = () => {
+      const pref = userPreferences.get("colorScheme");
+      const resolved = pref === "system" ? systemTheme : pref;
+      toggleColorScheme(resolved);
+    };
+    window.addEventListener("theme-change", onThemeChange);
+    return () => window.removeEventListener("theme-change", onThemeChange);
+  }, [systemTheme]);
+
+  const toggleColorScheme = (value: MantineColorScheme) => {
     setColorScheme(value ?? "dark");
     setCookie("mantine-color-scheme", value ?? "dark", {
       sameSite: "lax",
@@ -233,27 +441,27 @@ function App({ Component, pageProps }: AppProps) {
   const language = useRef(pageProps.language);
   setDayjsLocale(language.current);
 
+  // Messages are NOT in pageProps (to keep __NEXT_DATA__ small).
+  // Server: read from the module-level variable set in getInitialProps.
+  // Client: read from window.__I18N__ (injected by _document.tsx).
   const i18nMessagesRef = useRef<Record<string, string>>(
-    pageProps.i18nMessages ?? englishMessages,
+    typeof window !== "undefined"
+      ? (window as any).__I18N__ ?? englishMessages
+      : __ssrI18nMessages ?? englishMessages,
   );
-  if (pageProps.i18nMessages) {
-    i18nMessagesRef.current = pageProps.i18nMessages;
-  }
   const i18nMessages = useMemo(
     () => ({ ...englishMessages, ...i18nMessagesRef.current }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [language.current],
   );
   setActiveMessages(i18nMessages);
 
+  const palette =
+    configVariables?.find((c) => c.key === "general.colorPalette")?.value ??
+    "victoria";
   const mantineTheme = useMemo(
-    () => ({
-      colorScheme,
-      ...buildTheme(
-        configVariables?.find((c) => c.key === "general.colorPalette")
-          ?.value ?? "victoria",
-      ),
-    }),
-    [colorScheme, configVariables],
+    () => buildTheme(palette, colorScheme),
+    [colorScheme, palette],
   );
 
   return (
@@ -263,6 +471,17 @@ function App({ Component, pageProps }: AppProps) {
           name="viewport"
           content="minimum-scale=1, initial-scale=1, width=device-width"
         />
+        {/* Prevent iOS Safari auto-zoom on input focus.
+            Safari zooms when a focused input has font-size < 16px.
+            maximum-scale in viewport meta is ignored since iOS 10.
+            This CSS override is the only reliable method. */}
+        <style>{`
+          @supports (-webkit-touch-callout: none) {
+            input, textarea, select, .mantine-Input-input {
+              font-size: 16px !important;
+            }
+          }
+        `}</style>
       </Head>
       <QueryClientProvider client={queryClient}>
         <HydrationBoundary state={pageProps.dehydratedState}>
@@ -272,16 +491,15 @@ function App({ Component, pageProps }: AppProps) {
             defaultLocale={LOCALES.ENGLISH.code}
           >
             <MantineProvider
-              withGlobalStyles
-              withNormalizeCSS
               theme={mantineTheme}
+              forceColorScheme={colorScheme === "auto" ? undefined : colorScheme}
+              defaultColorScheme="dark"
+              stylesTransform={emotionTransform}
+              cssVariablesResolver={contrastResolver}
             >
-              <ColorSchemeProvider
-                colorScheme={colorScheme}
-                toggleColorScheme={toggleColorScheme}
-              >
+              <MantineEmotionProvider cache={emotionCache}>
                 <GlobalStyle />
-                <Notifications position="bottom-right" />
+                <Notifications />
                 <ConfigContext.Provider
                   value={{
                     configVariables,
@@ -290,7 +508,7 @@ function App({ Component, pageProps }: AppProps) {
                     },
                   }}
                 >
-                  <ModalsProvider>
+                  <ModalsProvider modalProps={{ lockScroll: false }}>
                     <UserContext.Provider
                       value={{
                         user,
@@ -307,19 +525,15 @@ function App({ Component, pageProps }: AppProps) {
                         <>
                           <Stack
                             justify="space-between"
-                            sx={{ minHeight: "100vh" }}
+                            style={{ minHeight: "100vh" }}
                           >
                             <div>
                               <Header />
-                              <main>
-                <Container
+                              <main style={{ paddingTop: mainOffset }}>
+                                <Container
                                   fluid={route === "/"}
                                   px={route === "/" ? 0 : undefined}
-                                  sx={
-                                    route === "/"
-                                      ? { overflowX: "hidden" }
-                                      : undefined
-                                  }
+                                  style={route === "/" ? { overflowX: "hidden" } : undefined}
                                 >
                                   <Component {...pageProps} />
                                 </Container>
@@ -333,12 +547,13 @@ function App({ Component, pageProps }: AppProps) {
                             onClose={() => setShowE2EPrompt(false)}
                             userId={user?.id ?? ""}
                           />
+                          {user && <TeamStatusChecker />}
                         </>
                       )}
                     </UserContext.Provider>
                   </ModalsProvider>
                 </ConfigContext.Provider>
-              </ColorSchemeProvider>
+              </MantineEmotionProvider>
             </MantineProvider>
           </IntlProvider>
         </HydrationBoundary>
@@ -357,13 +572,12 @@ App.getInitialProps = async ({ ctx }: { ctx: GetServerSidePropsContext }) => {
     user?: CurrentUser;
     configVariables?: Config[];
     route?: string;
-    colorScheme: ColorScheme;
+    colorScheme: MantineColorScheme;
     language?: string;
-    i18nMessages?: Record<string, string>;
   } = {
     route: ctx.resolvedUrl,
     colorScheme:
-      (getCookie("mantine-color-scheme", ctx) as ColorScheme) ?? "dark",
+      (getCookie("mantine-color-scheme", ctx) as MantineColorScheme) ?? "dark",
   };
 
   if (ctx.req) {
@@ -371,65 +585,79 @@ App.getInitialProps = async ({ ctx }: { ctx: GetServerSidePropsContext }) => {
     const cookieHeader = ctx.req.headers.cookie;
     const hasSession = cookieHeader?.includes("logged_in=");
 
-    if (hasSession) {
-      pageProps.user = await axios(`${apiURL}/api/users/me`, {
-        headers: { cookie: cookieHeader },
-      })
-        .then((res) => res.data)
-        .catch(() => null);
+    // Only fetch user when a session cookie exists -- anonymous visitors
+    // (e.g. homepage) skip this entirely, saving ~100-200ms TTFB.
+    const userPromise = hasSession
+      ? axios(`${apiURL}/api/users/me`, {
+          headers: { cookie: cookieHeader },
+        })
+          .then((res) => res.data)
+          .catch(() => null)
+      : Promise.resolve(null);
 
-      // SSR token refresh: when the access_token cookie has expired but
-      // the refresh_token is still valid, ask the backend to issue a new
-      // access_token and retry the user fetch.  This avoids the flash of
-      // "logged-out" UI that otherwise happens on every full page load
-      // after 13 min of inactivity.
-      if (!pageProps.user && cookieHeader?.includes("refresh_token=")) {
-        try {
-          const refreshRes = await axios.post(
-            `${apiURL}/api/auth/token`,
-            {},
-            { headers: { cookie: cookieHeader } },
-          );
-          // Forward the Set-Cookie from the refresh response to the
-          // browser so the new access_token cookie is stored.
-          const setCookieHeaders = refreshRes.headers["set-cookie"];
-          if (setCookieHeaders && ctx.res) {
-            ctx.res.setHeader("Set-Cookie", setCookieHeaders);
-          }
-          // Extract the fresh access_token from the Set-Cookie to use
-          // it in the retry call (the cookie jar on the server is not
-          // automatically updated).
-          const freshCookie = setCookieHeaders
-            ?.find((c: string) => c.startsWith("access_token="));
-          if (freshCookie) {
-            const token = freshCookie.split(";")[0]; // "access_token=xxx"
-            pageProps.user = await axios(`${apiURL}/api/users/me`, {
-              headers: { cookie: `${cookieHeader}; ${token}` },
-            })
-              .then((res) => res.data)
-              .catch(() => null);
-          }
-        } catch {
-          // Refresh token also expired -- nothing to do, client-side
-          // recovery will handle it.
+    const configPromise = axios(`${apiURL}/api/configs`)
+      .then((res) => res.data)
+      .catch(() => []);
+
+    const [userData, configData] = await Promise.all([
+      userPromise,
+      configPromise,
+    ]);
+
+    pageProps.user = userData;
+    pageProps.configVariables = configData;
+
+    // SSR token refresh: when the access_token cookie has expired but
+    // the refresh_token is still valid, ask the backend to issue a new
+    // access_token and retry the user fetch.  This avoids the flash of
+    // "logged-out" UI that otherwise happens on every full page load
+    // after 13 min of inactivity.
+    if (!pageProps.user && cookieHeader?.includes("refresh_token=")) {
+      try {
+        const refreshRes = await axios.post(
+          `${apiURL}/api/auth/token`,
+          {},
+          { headers: { cookie: cookieHeader } },
+        );
+        // Forward the Set-Cookie from the refresh response to the
+        // browser so the new access_token cookie is stored.
+        const setCookieHeaders = refreshRes.headers["set-cookie"];
+        if (setCookieHeaders && ctx.res) {
+          ctx.res.setHeader("Set-Cookie", setCookieHeaders);
         }
+        // Extract the fresh access_token from the Set-Cookie to use
+        // it in the retry call (the cookie jar on the server is not
+        // automatically updated).
+        const freshCookie = setCookieHeaders
+          ?.find((c: string) => c.startsWith("access_token="));
+        if (freshCookie) {
+          const token = freshCookie.split(";")[0]; // "access_token=xxx"
+          pageProps.user = await axios(`${apiURL}/api/users/me`, {
+            headers: { cookie: `${cookieHeader}; ${token}` },
+          })
+            .then((res) => res.data)
+            .catch(() => null);
+        }
+      } catch {
+        // Refresh token also expired -- nothing to do, client-side
+        // recovery will handle it.
       }
     }
 
-    pageProps.configVariables = (await axios(`${apiURL}/api/configs`)).data;
-
     pageProps.route = ctx.req.url;
 
-    const requestLanguage = i18nUtil.getLanguageFromAcceptHeader(
-      ctx.req.headers["accept-language"],
-    );
+    // URL locale from Next.js i18n routing ('fr' or 'en')
+    pageProps.language = ctx.req.cookies["language"]
+      ?? (ctx.locale === "en" ? "en-US" : "fr-FR");
 
-    pageProps.language = ctx.req.cookies["language"] ?? requestLanguage;
-
-    if (pageProps.language) {
-      pageProps.i18nMessages = await loadLocaleMessages(pageProps.language).catch(
-        () => undefined,
-      );
+    // Load i18n messages for SSR rendering but do NOT include them in
+    // pageProps (which is serialized into __NEXT_DATA__, adding ~120 kB
+    // to every page).  Instead, store them in a module-level variable
+    // that the component reads during SSR, and _document.tsx emits as a
+    // separate inline <script> for client hydration.
+    const isDataRequest = ctx.req.headers["x-nextjs-data"] !== undefined;
+    if (!isDataRequest) {
+      __ssrI18nMessages = await loadLocaleMessages(pageProps.language);
     }
   }
   return { pageProps };

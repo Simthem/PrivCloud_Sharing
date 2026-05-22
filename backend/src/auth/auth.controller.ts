@@ -162,11 +162,15 @@ export class AuthController {
   ) {
     if (!request.cookies.refresh_token) throw new UnauthorizedException();
 
-    const accessToken = await this.authService.refreshAccessToken(
+    const result = await this.authService.refreshAccessToken(
       request.cookies.refresh_token,
     );
-    this.authService.addTokensToResponse(response, undefined, accessToken);
-    return new TokenDTO().from({ accessToken });
+    this.authService.addTokensToResponse(
+      response,
+      result.refreshToken,
+      result.accessToken,
+    );
+    return new TokenDTO().from({ accessToken: result.accessToken });
   }
 
   @Post("signOut")
@@ -192,8 +196,10 @@ export class AuthController {
       maxAge: -1,
       secure: isSecure,
     });
-    // logged_in is intentionally non-httpOnly: read by client JS to detect session state
+    // httpOnly: false - intentional. This is a non-sensitive session indicator (value: "")
+    // readable by JS to detect logout without exposing tokens.
     response.cookie("logged_in", "", {
+      httpOnly: false,
       sameSite: "lax",
       maxAge: -1,
       secure: isSecure,

@@ -1,9 +1,8 @@
 import {
+  Box,
   Burger,
   Button,
   Group,
-  Header,
-  MediaQuery,
   Text,
   useMantineTheme,
 } from "@mantine/core";
@@ -23,30 +22,27 @@ const ConfigurationHeader = ({
   const config = useConfig();
   const theme = useMantineTheme();
   return (
-    <Header height={60} p="md">
+    <Box component="header" h={60} p="md">
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: "100%" }}>
         <Link href="/" passHref>
           <Group>
             <Logo height={35} width={35} />
-            <Text weight={600}>{config.get("general.appName")}</Text>
+            <Text fw={600}>{config.get("general.appName")}</Text>
           </Group>
         </Link>
-        <MediaQuery smallerThan="sm" styles={{ display: "none" }}>
-          <Button variant="light" component={Link} href="/admin">
+        <Button variant="light" component={Link} href="/admin" visibleFrom="sm">
             <FormattedMessage id="common.button.go-back" />
-          </Button>
-        </MediaQuery>
-        <MediaQuery largerThan="sm" styles={{ display: "none" }}>
-          <Burger
+        </Button>
+        <Burger
             opened={isMobileNavBarOpened}
             onClick={() => setIsMobileNavBarOpened((o) => !o)}
             size="sm"
             color={theme.colors.gray[6]}
             aria-label="Toggle navigation menu"
-          />
-        </MediaQuery>
+            hiddenFrom="sm"
+        />
       </div>
-    </Header>
+    </Box>
   );
 };
 

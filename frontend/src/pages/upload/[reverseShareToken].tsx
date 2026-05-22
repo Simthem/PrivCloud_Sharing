@@ -49,12 +49,17 @@ const Share = ({ reverseShareToken }: { reverseShareToken: string }) => {
 
   if (isLoading) return <LoadingOverlay visible />;
 
+  const parsedMaxShareSize =
+    (reverseShare?.effectiveMaxShareSize || reverseShare?.maxShareSize)
+      ? parseInt(reverseShare.effectiveMaxShareSize || reverseShare.maxShareSize, 10)
+      : undefined;
+
   return (
     <Upload
       isReverseShare
       isE2EEncrypted={reverseShare?.isE2EEncrypted || false}
       name={reverseShare?.name}
-      maxShareSize={parseInt(reverseShare?.maxShareSize || "0")}
+      maxShareSize={parsedMaxShareSize}
       simplified={reverseShare?.simplified || false}
     />
   );

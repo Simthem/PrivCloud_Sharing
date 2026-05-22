@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  HttpException,
+  HttpStatus,
   Injectable,
   InternalServerErrorException,
-  NotFoundException,
   Logger,
+  NotFoundException,
 } from "@nestjs/common";
 import {
   AbortMultipartUploadCommand,
@@ -15,6 +17,7 @@ import {
   HeadObjectCommand,
   ListMultipartUploadsCommand,
   ListObjectsV2Command,
+  PutObjectCommand,
   S3Client,
   UploadPartCommand,
   UploadPartCommandOutput,
@@ -38,14 +41,74 @@ export class S3FileService {
       uploadId: string;
       parts: Array<{ ETag: string | undefined; PartNumber: number }>;
       lastActivity: number;
+      shareId: string;
     }
   > = {};
 
-  // TTL for abandoned multipart uploads: no chunk received for 30 min.
+  // TTL for abandoned multipart uploads: no chunk received for 60 min.
   // This is an *inactivity* timeout, not a total duration limit, so
   // multi-hour uploads of very large files (40 GB+) are safe as long
   // as chunks keep arriving.
-  private static readonly MULTIPART_TTL_MS = 30 * 60 * 1000;
+  // Set to 60 min (was 30 min): the client-side retry logic can spend
+  // up to ~38 min retrying a single chunk (20 transient retries with
+  // exponential backoff + 3 recovery cycles).  A 30-min TTL could clean
+  // up the session while the client is still retrying, causing a
+  // "session not found" error that kills the upload permanently.
+  private static readonly MULTIPART_TTL_MS = 60 * 60 * 1000;
+
+  // --- Global S3 upload concurrency limiter ---
+  // Each in-flight UploadPart holds a ~100-200 MB buffer in RAM.
+  // With parallel chunk upload, multiple users can have multiple parts
+  // in transit simultaneously.  Cap total to bound peak memory usage
+  // (4 × 200 MB = 800 MB worst case).
+  private static readonly MAX_S3_CONCURRENT = 4;
+  private s3ActiveUploads = 0;
+  private readonly s3UploadQueue: Array<{
+    resolve: (acquired: boolean) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }> = [];
+
+  private async acquireUploadSlot(timeoutMs = 60_000): Promise<boolean> {
+    if (this.s3ActiveUploads < S3FileService.MAX_S3_CONCURRENT) {
+      this.s3ActiveUploads++;
+      return true;
+    }
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        const idx = this.s3UploadQueue.findIndex((e) => e.resolve === resolve);
+        if (idx >= 0) this.s3UploadQueue.splice(idx, 1);
+        resolve(false);
+      }, timeoutMs);
+      this.s3UploadQueue.push({ resolve, timer });
+    });
+  }
+
+  private releaseUploadSlot(): void {
+    if (this.s3UploadQueue.length > 0) {
+      const next = this.s3UploadQueue.shift()!;
+      clearTimeout(next.timer);
+      // Transfer slot to the next waiter (s3ActiveUploads count stays same)
+      next.resolve(true);
+    } else {
+      this.s3ActiveUploads--;
+    }
+  }
+
+  /**
+   * Returns true when an S3/SDK error indicates the multipart upload
+   * session no longer exists on the S3 side.  This is a non-recoverable
+   * state: the client must restart the upload from chunk 0.
+   */
+  private isS3UploadGone(error: any): boolean {
+    if (!error) return false;
+    // AWS SDK v3: error.name or error.Code set to 'NoSuchUpload'
+    if (error.name === "NoSuchUpload" || error.Code === "NoSuchUpload") return true;
+    // HTTP 404 from S3 on multipart operations usually means the upload is gone
+    if (error.$metadata?.httpStatusCode === 404) return true;
+    // Fallback: check the message string
+    if (typeof error.message === "string" && error.message.includes("NoSuchUpload")) return true;
+    return false;
+  }
 
   constructor(
     private prisma: PrismaService,
@@ -70,6 +133,16 @@ export class S3FileService {
         // Actually abort the multipart upload on S3 so parts are freed
         try {
           const s3Instance = this.getS3Instance();
+          // We need to figure out the bucket + key.  The in-memory key
+          // format is either a fileId (upload) or "reencrypt:<fileId>".
+          // We don't store the full S3 key, so we use
+          // ListMultipartUploads filtered by UploadId is not possible --
+          // but we can abort by UploadId + any matching key.  Since
+          // AbortMultipartUpload only needs Bucket + Key + UploadId and
+          // we store the UploadId, we need to reconstruct the key.
+          // Unfortunately we don't store shareId here.  Best-effort:
+          // use the S3-side ListMultipartUploads to find the matching
+          // upload and abort it.
           const bucket = this.config.get("s3.bucketName");
           const prefix = this.getS3Path();
           const listResp = await s3Instance.send(
@@ -103,12 +176,136 @@ export class S3FileService {
     }
   }
 
+  /**
+   * Abort all in-memory multipart uploads for a given share.
+   * Called when a share is deleted or an upload is cancelled.
+   */
+  async abortShareMultipartUploads(shareId: string) {
+    const s3Instance = this.getS3Instance();
+    const bucket = this.config.get("s3.bucketName");
+
+    for (const [key, upload] of Object.entries(this.multipartUploads)) {
+      if (upload.shareId === shareId) {
+        delete this.multipartUploads[key];
+      }
+    }
+
+    // Abort all S3-side multipart uploads under this share's prefix
+    const prefix = `${this.getS3Path()}${shareId}/`;
+    try {
+      const listResp = await s3Instance.send(
+        new ListMultipartUploadsCommand({
+          Bucket: bucket,
+          Prefix: prefix,
+        }),
+      );
+      if (listResp.Uploads && listResp.Uploads.length > 0) {
+        for (const upload of listResp.Uploads) {
+          if (upload.Key && upload.UploadId) {
+            try {
+              await s3Instance.send(
+                new AbortMultipartUploadCommand({
+                  Bucket: bucket,
+                  Key: upload.Key,
+                  UploadId: upload.UploadId,
+                }),
+              );
+              this.logger.log(
+                `Aborted orphan multipart upload for share ${shareId}: key=${upload.Key}`,
+              );
+            } catch (e) {
+              this.logger.error(
+                `Failed to abort multipart upload: key=${upload.Key} error=${e}`,
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      this.logger.error(
+        `Failed to list multipart uploads for share ${shareId}: ${e}`,
+      );
+    }
+
+    // Clean in-memory tracking for any fileId matching this share
+    // (best-effort: we don't store shareId, so clean all entries whose
+    // S3 key starts with this share's prefix)
+    // This is already covered by deleting the share, but clean up memory.
+  }
+
+  /**
+   * Purge all stale S3-side multipart uploads older than the given age.
+   * Called periodically from jobs.service.ts to catch any uploads that
+   * slipped past the in-memory cleanup (e.g. after a server restart).
+   */
+  async cleanupStaleS3Multiparts(maxAgeMs: number = 2 * 60 * 60 * 1000) {
+    const s3Instance = this.getS3Instance();
+    const bucket = this.config.get("s3.bucketName");
+    const prefix = this.getS3Path();
+    const cutoff = new Date(Date.now() - maxAgeMs);
+    let aborted = 0;
+
+    try {
+      let keyMarker: string | undefined;
+      let uploadIdMarker: string | undefined;
+      let isTruncated = true;
+
+      while (isTruncated) {
+        const listResp = await s3Instance.send(
+          new ListMultipartUploadsCommand({
+            Bucket: bucket,
+            Prefix: prefix,
+            KeyMarker: keyMarker,
+            UploadIdMarker: uploadIdMarker,
+          }),
+        );
+
+        if (listResp.Uploads) {
+          for (const upload of listResp.Uploads) {
+            if (
+              upload.Initiated &&
+              upload.Initiated < cutoff &&
+              upload.Key &&
+              upload.UploadId
+            ) {
+              try {
+                await s3Instance.send(
+                  new AbortMultipartUploadCommand({
+                    Bucket: bucket,
+                    Key: upload.Key,
+                    UploadId: upload.UploadId,
+                  }),
+                );
+                aborted++;
+              } catch (e) {
+                this.logger.error(
+                  `Failed to abort stale multipart: key=${upload.Key} err=${e}`,
+                );
+              }
+            }
+          }
+        }
+
+        isTruncated = !!listResp.IsTruncated;
+        keyMarker = listResp.NextKeyMarker;
+        uploadIdMarker = listResp.NextUploadIdMarker;
+      }
+    } catch (e) {
+      this.logger.error(`Failed to list S3 multipart uploads: ${e}`);
+    }
+
+    if (aborted > 0) {
+      this.logger.log(`Aborted ${aborted} stale S3 multipart uploads`);
+    }
+  }
+
   async create(
-    data: string,
+    data: Buffer,
     chunk: { index: number; total: number },
     file: { id?: string; name: string },
     shareId: string,
     _clientChunkSize?: number,
+    _share?: any,
   ) {
     const originalFileId = file.id;
     if (!file.id) {
@@ -122,14 +319,16 @@ export class S3FileService {
       );
       throw new BadRequestException("Invalid file ID format");
     }
-
-    const buffer = Buffer.from(data, "base64");
+    // data is already a Buffer from Express raw body parser.
+    const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, "base64");
     // Use fileId as the S3 object key -- never the user-supplied filename.
     // This prevents overwrites when two files share the same name and
     // eliminates path-traversal risks from crafted filenames.
     const key = `${this.getS3Path()}${shareId}/${file.id}`;
     const bucketName = this.config.get("s3.bucketName");
     const s3Instance = this.getS3Instance();
+
+    let allPartsComplete = false;
 
     try {
       // Initialize multipart upload if it's the first chunk
@@ -151,6 +350,7 @@ export class S3FileService {
           uploadId,
           parts: [],
           lastActivity: Date.now(),
+          shareId,
         };
       }
 
@@ -168,64 +368,133 @@ export class S3FileService {
 
       const uploadId = multipartUpload.uploadId;
 
-      // Upload the current chunk
+      // Upload the current chunk (bounded by global concurrency semaphore).
+      // Each in-flight UploadPart holds a full chunk buffer (~200 MB).
       const partNumber = chunk.index + 1; // Part numbers start from 1
 
-      const uploadPartResponse: UploadPartCommandOutput = await s3Instance.send(
-        new UploadPartCommand({
-          Bucket: bucketName,
-          Key: key,
-          PartNumber: partNumber,
-          UploadId: uploadId,
-          Body: buffer,
-        }),
-      );
+      const acquired = await this.acquireUploadSlot();
+      if (!acquired) {
+        throw new HttpException(
+          "Server busy, retry later",
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
 
-      // Store the ETag and PartNumber for later completion
-      multipartUpload.parts.push({
-        ETag: uploadPartResponse.ETag,
-        PartNumber: partNumber,
-      });
-
-      // Complete the multipart upload if it's the last chunk
-      if (chunk.index === chunk.total - 1) {
-        await s3Instance.send(
-          new CompleteMultipartUploadCommand({
+      let uploadPartResponse: UploadPartCommandOutput;
+      try {
+        uploadPartResponse = await s3Instance.send(
+          new UploadPartCommand({
             Bucket: bucketName,
             Key: key,
+            PartNumber: partNumber,
             UploadId: uploadId,
-            MultipartUpload: {
-              Parts: multipartUpload.parts,
-            },
+            Body: buffer,
           }),
         );
-
-        // Remove the completed upload from memory
-        delete this.multipartUploads[file.id];
+      } finally {
+        this.releaseUploadSlot();
       }
-    } catch (error) {
-      // Abort the multipart upload if it fails
-      const multipartUpload = this.multipartUploads[file.id];
-      if (multipartUpload) {
+
+      // Store the ETag and PartNumber for later completion.
+      // Deduplicate: if a chunk was retried after a network failure that
+      // occurred *after* the backend had already pushed the part (e.g.
+      // Caddy 502 while writing the response back), the same PartNumber
+      // would be recorded twice.  Without dedup, parts.length would reach
+      // chunk.total prematurely with missing unique parts → corrupted file.
+      const existingIdx = multipartUpload.parts.findIndex(
+        (p) => p.PartNumber === partNumber,
+      );
+      if (existingIdx >= 0) {
+        multipartUpload.parts[existingIdx] = {
+          ETag: uploadPartResponse.ETag,
+          PartNumber: partNumber,
+        };
+      } else {
+        multipartUpload.parts.push({
+          ETag: uploadPartResponse.ETag,
+          PartNumber: partNumber,
+        });
+      }
+
+      // Complete the multipart upload when ALL unique parts have arrived.
+      // With parallel chunk uploads, the last part to finish may not
+      // have the highest index -- so check count, not index.
+      // Has its own try-catch so Complete failures are handled separately
+      // from UploadPart failures (see outer catch for the UploadPart logic).
+      if (multipartUpload.parts.length === chunk.total) {
+        multipartUpload.parts.sort((a, b) => a.PartNumber - b.PartNumber);
         try {
           await s3Instance.send(
-            new AbortMultipartUploadCommand({
+            new CompleteMultipartUploadCommand({
               Bucket: bucketName,
               Key: key,
-              UploadId: multipartUpload.uploadId,
+              UploadId: uploadId,
+              MultipartUpload: {
+                Parts: multipartUpload.parts,
+              },
             }),
           );
-        } catch (abortError) {
-          console.error("Error aborting multipart upload:", abortError);
+          // Remove the completed upload from memory
+          delete this.multipartUploads[file.id];
+          allPartsComplete = true;
+        } catch (completeError) {
+          // Complete failed: the upload state on S3 is uncertain.
+          // Abort the session to free S3 resources and signal the client
+          // to restart from chunk 0.  Do NOT return 503 here – retrying
+          // the last chunk after Complete could create a duplicate if the
+          // first Complete actually succeeded (response lost in transit).
+          try {
+            await s3Instance.send(
+              new AbortMultipartUploadCommand({
+                Bucket: bucketName,
+                Key: key,
+                UploadId: uploadId,
+              }),
+            );
+          } catch { /* ignore abort error on already-completed upload */ }
+          delete this.multipartUploads[file.id];
+          this.logger.error(
+            `S3 complete failed: fileId=${file.id} chunk=${chunk.index}/${chunk.total}: ${(completeError as any)?.message}`,
+            completeError instanceof Error ? completeError.stack : completeError,
+          );
+          throw new InternalServerErrorException(
+            "Multipart upload completion failed.",
+          );
         }
-        delete this.multipartUploads[file.id];
       }
-      this.logger.error(error);
-      throw new Error("Multipart upload failed. The upload has been aborted.");
+    } catch (error) {
+      // HttpExceptions (429, 503, "session not found", "completion failed", etc.)
+      // are already the correct final response - re-throw immediately.
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      // If S3 explicitly tells us the upload session is gone (NoSuchUpload),
+      // clean up in-memory state and return a non-recoverable error.
+      // The client must restart the upload from chunk 0.
+      if (this.isS3UploadGone(error)) {
+        delete this.multipartUploads[file.id];
+        this.logger.warn(
+          `S3 multipart session gone: fileId=${file.id} chunk=${chunk.index}/${chunk.total}: ${(error as any)?.message}`,
+        );
+        throw new InternalServerErrorException(
+          "Multipart upload session not found.",
+        );
+      }
+      // Transient error (network timeout, MinIO briefly unavailable, etc.).
+      // DO NOT abort the S3 session: the already-uploaded parts remain valid
+      // and the in-memory tracking is still correct.  Return 503 so the
+      // worker retries this specific chunk with exponential back-off.
+      this.logger.error(
+        `Transient S3 error: fileId=${file.id} chunk=${chunk.index}/${chunk.total}: ${(error as any)?.message}`,
+        error instanceof Error ? error.stack : error,
+      );
+      throw new HttpException(
+        "S3 upload temporarily unavailable, retry this chunk",
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
     }
 
-    const isLastChunk = chunk.index == chunk.total - 1;
-    if (isLastChunk) {
+    if (allPartsComplete) {
       const fileSize: number = await this.getFileSize(shareId, file.id);
 
       await this.prisma.file.create({
@@ -272,7 +541,7 @@ export class S3FileService {
         );
         const uploadId = multipartInitResponse.UploadId;
         if (!uploadId) throw new Error("Failed to initialize multipart upload.");
-        this.multipartUploads[reencryptKey] = { uploadId, parts: [], lastActivity: Date.now() };
+        this.multipartUploads[reencryptKey] = { uploadId, parts: [], lastActivity: Date.now(), shareId };
       }
 
       const multipartUpload = this.multipartUploads[reencryptKey];
@@ -293,10 +562,25 @@ export class S3FileService {
         }),
       );
 
-      multipartUpload.parts.push({
-        ETag: uploadPartResponse.ETag,
-        PartNumber: partNumber,
-      });
+      // Deduplicate: if a chunk was retried after a network failure that
+      // occurred *after* the backend had already pushed the part (e.g.
+      // Caddy 502 while writing the response back), the same PartNumber
+      // would be recorded twice.  Without dedup, CompleteMultipartUpload
+      // receives duplicate parts and fails.
+      const existingIdx = multipartUpload.parts.findIndex(
+        (p) => p.PartNumber === partNumber,
+      );
+      if (existingIdx >= 0) {
+        multipartUpload.parts[existingIdx] = {
+          ETag: uploadPartResponse.ETag,
+          PartNumber: partNumber,
+        };
+      } else {
+        multipartUpload.parts.push({
+          ETag: uploadPartResponse.ETag,
+          PartNumber: partNumber,
+        });
+      }
 
       if (chunk.index === chunk.total - 1) {
         await s3Instance.send(
@@ -330,11 +614,17 @@ export class S3FileService {
             }),
           );
         } catch (abortError) {
-          console.error("Error aborting multipart upload:", abortError);
+          this.logger.error(
+            `Error aborting multipart upload: shareId=${shareId} fileId=${fileId}`,
+            abortError instanceof Error ? abortError.stack : abortError,
+          );
         }
         delete this.multipartUploads[reencryptKey];
       }
-      this.logger.error(error);
+      this.logger.error(
+        `S3 re-encryption failed: shareId=${shareId} fileId=${fileId} chunk=${chunk.index}/${chunk.total}`,
+        error instanceof Error ? error.stack : error,
+      );
       throw new Error("Multipart re-encryption upload failed.");
     }
   }
@@ -350,15 +640,12 @@ export class S3FileService {
 
     const s3Instance = this.getS3Instance();
     const key = `${this.getS3Path()}${shareId}/${fileId}`;
-    const commandInput: any = {
-      Bucket: this.config.get("s3.bucketName"),
-      Key: key,
-    };
-    if (range) {
-      commandInput.Range = `bytes=${range.start}-${range.end}`;
-    }
     const response = await s3Instance.send(
-      new GetObjectCommand(commandInput),
+      new GetObjectCommand({
+        Bucket: this.config.get("s3.bucketName"),
+        Key: key,
+        ...(range ? { Range: `bytes=${range.start}-${range.end}` } : {}),
+      }),
     );
 
     const mimeType =
@@ -421,47 +708,31 @@ export class S3FileService {
   async deleteAllFiles(shareId: string) {
     this.logger.debug(`Delete all files requested: shareId=${shareId}`);
     const prefix = `${this.getS3Path()}${shareId}/`;
+    const bucket = this.config.get("s3.bucketName");
     const s3Instance = this.getS3Instance();
-    const bucketName = this.config.get("s3.bucketName");
 
-    // Abort any in-progress multipart uploads for this share
-    try {
-      const listUploads = await s3Instance.send(
-        new ListMultipartUploadsCommand({ Bucket: bucketName, Prefix: prefix }),
-      );
-      for (const upload of listUploads.Uploads || []) {
-        if (upload.UploadId && upload.Key) {
-          await s3Instance.send(
-            new AbortMultipartUploadCommand({
-              Bucket: bucketName,
-              Key: upload.Key,
-              UploadId: upload.UploadId,
-            }),
-          );
-          this.logger.debug(
-            `Aborted multipart upload: key=${upload.Key} uploadId=${upload.UploadId}`,
-          );
-        }
-      }
-    } catch (e) {
-      this.logger.warn(`Failed to list/abort multipart uploads for share ${shareId}: ${(e as Error).message}`);
-    }
+    // First, abort any in-progress multipart uploads for this share
+    await this.abortShareMultipartUploads(shareId);
 
     try {
-      // Paginate: ListObjectsV2 returns max 1000 objects per call
+      // Paginate through all objects under the prefix (handles >1000 files)
       let continuationToken: string | undefined;
+      let totalDeleted = 0;
+
       do {
         const listResponse = await s3Instance.send(
           new ListObjectsV2Command({
-            Bucket: bucketName,
+            Bucket: bucket,
             Prefix: prefix,
             ContinuationToken: continuationToken,
           }),
         );
 
         if (!listResponse.Contents || listResponse.Contents.length === 0) {
-          if (!continuationToken) {
-            this.logger.warn(`No files found in S3 for share ${shareId} - skipping deletion`);
+          if (totalDeleted === 0) {
+            this.logger.warn(
+              `No files found in S3 for share ${shareId} - skipping deletion`,
+            );
           }
           break;
         }
@@ -472,23 +743,30 @@ export class S3FileService {
 
         await s3Instance.send(
           new DeleteObjectsCommand({
-            Bucket: bucketName,
+            Bucket: bucket,
             Delete: { Objects: objectsToDelete },
           }),
         );
 
+        totalDeleted += objectsToDelete.length;
         continuationToken = listResponse.IsTruncated
           ? listResponse.NextContinuationToken
           : undefined;
       } while (continuationToken);
+
+      if (totalDeleted > 0) {
+        this.logger.log(
+          `Deleted ${totalDeleted} S3 objects for share ${shareId}`,
+        );
+      }
     } catch (error) {
       this.logger.error(error);
       throw new Error("Could not delete all files from S3");
     }
   }
 
-  async getFileSize(shareId: string, fileName: string): Promise<number> {
-    const key = `${this.getS3Path()}${shareId}/${fileName}`;
+  async getFileSize(shareId: string, fileId: string): Promise<number> {
+    const key = `${this.getS3Path()}${shareId}/${fileId}`;
     const s3Instance = this.getS3Instance();
 
     try {
@@ -613,39 +891,33 @@ export class S3FileService {
   }
 
   /**
-   * Abort multipart uploads that S3/MinIO still tracks but that the
-   * application no longer references (e.g. after a crash or timeout).
+   * Retrieve an object from S3 using a raw key (not shareId/fileId pair).
+   * Used by signing service to load/store PDFs at arbitrary paths.
    */
-  async cleanupStaleS3Multiparts() {
-    const s3Instance = this.getS3Instance();
-    const bucketName = this.config.get("s3.bucketName");
-    try {
-      const listUploads = await s3Instance.send(
-        new ListMultipartUploadsCommand({ Bucket: bucketName }),
-      );
-      for (const upload of listUploads.Uploads || []) {
-        if (upload.UploadId && upload.Key) {
-          const ageMs =
-            Date.now() - (upload.Initiated?.getTime() ?? Date.now());
-          // Only abort uploads older than 1 hour
-          if (ageMs > 60 * 60 * 1000) {
-            await s3Instance.send(
-              new AbortMultipartUploadCommand({
-                Bucket: bucketName,
-                Key: upload.Key,
-                UploadId: upload.UploadId,
-              }),
-            );
-            this.logger.log(
-              `Aborted stale S3 multipart upload: key=${upload.Key} uploadId=${upload.UploadId} age=${Math.round(ageMs / 60000)}min`,
-            );
-          }
-        }
-      }
-    } catch (e) {
-      this.logger.error(
-        `Failed to cleanup stale S3 multipart uploads: ${(e as Error).message}`,
-      );
-    }
+  async getRawObjectStream(rawKey: string): Promise<Readable> {
+    const s3 = this.getS3Instance();
+    const response = await s3.send(
+      new GetObjectCommand({
+        Bucket: this.config.get("s3.bucketName"),
+        Key: rawKey,
+      }),
+    );
+    return response.Body as Readable;
+  }
+
+  /**
+   * Store an object in S3 using a raw key.
+   * Used by signing service to persist signed PDFs at arbitrary paths.
+   */
+  async putRawObject(rawKey: string, data: Buffer, contentType = "application/pdf"): Promise<void> {
+    const s3 = this.getS3Instance();
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: this.config.get("s3.bucketName"),
+        Key: rawKey,
+        Body: data,
+        ContentType: contentType,
+      }),
+    );
   }
 }

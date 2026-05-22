@@ -1,11 +1,27 @@
-import { createStyles } from "@mantine/core";
+import { rgba } from "@mantine/core";
+import { createStyles } from "@mantine/emotion";
 
 export const HEADER_HEIGHT = 60;
 
 export const useStyles = createStyles((theme) => ({
   root: {
-    position: "relative",
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    width: "100%",
     zIndex: 100,
+    backgroundColor:
+      theme.other.colorScheme === "dark"
+        ? rgba(theme.colors.dark[8], 0.9)
+        : rgba(theme.white, 0.92),
+    backdropFilter: "blur(12px)",
+    WebkitBackdropFilter: "blur(12px)",
+    borderBottom: `1px solid ${
+      theme.other.colorScheme === "dark"
+        ? theme.colors.dark[4]
+        : theme.colors.gray[2]
+    }`,
   },
 
   dropdown: {
@@ -19,7 +35,7 @@ export const useStyles = createStyles((theme) => ({
     borderTop: "none !important",
     overflow: "hidden",
 
-    [theme.fn.largerThan("sm")]: {
+    [`@media (min-width: ${theme.breakpoints.sm})`]: {
       display: "none",
     },
   },
@@ -32,7 +48,7 @@ export const useStyles = createStyles((theme) => ({
   },
 
   links: {
-    [theme.fn.smallerThan("sm")]: {
+    [`@media (max-width: ${theme.breakpoints.sm})`]: {
       display: "none",
     },
   },
@@ -52,7 +68,7 @@ export const useStyles = createStyles((theme) => ({
     cursor: "pointer",
     userSelect: "none",
     color:
-      theme.colorScheme === "dark"
+      theme.other.colorScheme === "dark"
         ? theme.colors.dark[0]
         : theme.colors.gray[8],
     fontSize: theme.fontSizes.sm,
@@ -60,7 +76,7 @@ export const useStyles = createStyles((theme) => ({
 
     "&:hover": {
       backgroundColor:
-        theme.colorScheme === "dark"
+        theme.other.colorScheme === "dark"
           ? theme.colors.dark[6]
           : theme.colors.gray[0],
     },
@@ -69,7 +85,7 @@ export const useStyles = createStyles((theme) => ({
       transform: "translateY(1px)",
     },
 
-    [theme.fn.smallerThan("sm")]: {
+    [`@media (max-width: ${theme.breakpoints.sm})`]: {
       borderRadius: 0,
       padding: theme.spacing.md,
       "&:active": {
@@ -81,19 +97,19 @@ export const useStyles = createStyles((theme) => ({
   linkActive: {
     "&, &:hover": {
       backgroundColor:
-        theme.colorScheme === "dark"
-          ? theme.fn.rgba(theme.colors[theme.primaryColor][9], 0.25)
+        theme.other.colorScheme === "dark"
+          ? rgba(theme.colors[theme.primaryColor][9], 0.25)
           : theme.colors[theme.primaryColor][0],
       color:
-        theme.colors[theme.primaryColor][theme.colorScheme === "dark" ? 3 : 7],
+        theme.colors[theme.primaryColor][theme.other.colorScheme === "dark" ? 3 : 7],
     },
   },
 
   subLink: {
     paddingLeft: theme.spacing.xl,
     backgroundColor:
-      theme.colorScheme === "dark"
-        ? theme.fn.rgba(theme.black, 0.15)
-        : theme.fn.rgba(theme.black, 0.03),
+      theme.other.colorScheme === "dark"
+        ? rgba(theme.black, 0.15)
+        : rgba(theme.black, 0.03),
   },
 }));

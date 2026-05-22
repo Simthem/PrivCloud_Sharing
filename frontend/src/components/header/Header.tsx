@@ -1,9 +1,8 @@
 import {
+  Box,
   Burger,
   Container,
   Group,
-  Header as MantineHeader,
-  MediaQuery,
   Paper,
   Stack,
   Text,
@@ -16,6 +15,7 @@ import { Fragment, ReactNode, useEffect, useState } from "react";
 import useConfig from "../../hooks/config.hook";
 import useUser from "../../hooks/user.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
+import teamService from "../../services/team.service";
 import Logo from "../Logo";
 import ActionAvatar from "./ActionAvatar";
 import NavbarShareMenu from "./NavbarShareMenu";
@@ -40,10 +40,22 @@ const Header = () => {
   const [opened, toggleOpened] = useDisclosure(false);
 
   const [currentRoute, setCurrentRoute] = useState("");
+  const [homeLink, setHomeLink] = useState("/upload");
 
   useEffect(() => {
     setCurrentRoute(router.pathname);
   }, [router.pathname]);
+
+  useEffect(() => {
+    if (!user) { setHomeLink("/upload"); return; }
+    teamService.getTeamStatus().then((status) => {
+      if (status.ownsTeam && status.ownedTeamId) {
+        setHomeLink(`/team/${status.ownedTeamId}`);
+      } else {
+        setHomeLink("/upload");
+      }
+    }).catch(() => setHomeLink("/upload"));
+  }, [user]);
 
   const authenticatedLinks: NavLink[] = [
     {
@@ -148,20 +160,19 @@ const Header = () => {
   );
 
   return (
-    <MantineHeader height={HEADER_HEIGHT} mb={router.pathname === "/" ? 0 : 40} className={classes.root}>
+    <Box component="header" h={HEADER_HEIGHT} className={classes.root}>
       <Container className={classes.header}>
-        <Link href={user ? "/upload" : "/"} passHref>
+        <Link href={user ? homeLink : "/"} passHref>
           <Group>
             <Logo height={35} width={35} />
-            <Text weight={600}>{config.get("general.appName")}</Text>
+            <Text fw={600}>{config.get("general.appName")}</Text>
           </Group>
         </Link>
-        <Group spacing={5} className={classes.links}>
+        <Group gap={5} className={classes.links}>
           {user && <NotificationBell />}
           <Group>{items} </Group>
         </Group>
-        <MediaQuery largerThan="sm" styles={{ display: "none" }}>
-          <Group spacing={8} noWrap>
+          <Group gap={8} wrap="nowrap" hiddenFrom="sm">
             {user && <NotificationBell />}
             <Burger
               opened={opened}
@@ -170,16 +181,15 @@ const Header = () => {
               aria-label="Toggle navigation menu"
             />
           </Group>
-        </MediaQuery>
         <Transition transition="pop-top-right" duration={200} mounted={opened}>
           {(styles) => (
             <Paper className={classes.dropdown} withBorder style={styles}>
-              <Stack spacing={0}>{mobileItems}</Stack>
+              <Stack gap={0}>{mobileItems}</Stack>
             </Paper>
           )}
         </Transition>
       </Container>
-    </MantineHeader>
+    </Box>
   );
 };
 

@@ -6,7 +6,7 @@ const SignUp = () => {
   const t = useTranslate();
   return (
     <>
-      <Meta title={t("signup.title")} />
+      <Meta title={t("signup.title")} noIndex />
       <SignUpForm />
     </>
   );

@@ -2,13 +2,15 @@ import {
   Accordion,
   Button,
   Group,
+  NativeSelect,
   PasswordInput,
   Stack,
   Switch,
   TextInput,
 } from "@mantine/core";
-import { useForm, yupResolver } from "@mantine/form";
-import { ModalsContextProps } from "@mantine/modals/lib/context";
+import { useForm } from "@mantine/form";
+import { yupResolver } from "mantine-form-yup-resolver";
+import { useModals } from "@mantine/modals";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
 import useTranslate, {
@@ -19,7 +21,7 @@ import User from "../../../types/user.type";
 import toast from "../../../utils/toast.util";
 
 const showUpdateUserModal = (
-  modals: ModalsContextProps,
+  modals: ReturnType<typeof useModals>,
   user: User,
   getUsers: () => void,
 ) => {
@@ -35,7 +37,7 @@ const Body = ({
   modals,
   getUsers,
 }: {
-  modals: ModalsContextProps;
+  modals: ReturnType<typeof useModals>;
   user: User;
   getUsers: () => void;
 }) => {
@@ -46,6 +48,7 @@ const Body = ({
       username: user.username,
       email: user.email,
       isAdmin: user.isAdmin,
+      plan: user.plan || "FREE",
     },
     validate: yupResolver(
       yup.object().shape({
@@ -99,10 +102,20 @@ const Body = ({
             label={t("admin.users.edit.update.admin-privileges")}
             {...accountForm.getInputProps("isAdmin", { type: "checkbox" })}
           />
+          <NativeSelect
+            label={t("admin.users.edit.update.plan")}
+            data={[
+              { value: "FREE", label: "Free" },
+              { value: "STARTER", label: "Starter" },
+              { value: "PRO", label: "Pro" },
+              { value: "TEAM", label: "Team" },
+            ]}
+            {...accountForm.getInputProps("plan")}
+          />
         </Stack>
       </form>
       <Accordion>
-        <Accordion.Item sx={{ borderBottom: "none" }} value="changePassword">
+        <Accordion.Item style={{ borderBottom: "none" }} value="changePassword">
           <Accordion.Control px={0}>
             <FormattedMessage id="admin.users.edit.update.change-password.title" />
           </Accordion.Control>
@@ -134,7 +147,25 @@ const Body = ({
           </Accordion.Panel>
         </Accordion.Item>
       </Accordion>
-      <Group position="right">
+      {user.totpVerified && (
+        <Button
+          color="orange"
+          variant="light"
+          onClick={() => {
+            userService
+              .adminDisableTOTP(user.id)
+              .then(() => {
+                toast.success(t("admin.users.edit.update.totp.disabled"));
+                getUsers();
+                modals.closeAll();
+              })
+              .catch(toast.axiosError);
+          }}
+        >
+          <FormattedMessage id="admin.users.edit.update.totp.disable" />
+        </Button>
+      )}
+      <Group justify="right">
         <Button type="submit" form="accountForm">
           <FormattedMessage id="common.button.save" />
         </Button>

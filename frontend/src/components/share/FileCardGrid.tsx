@@ -1,7 +1,6 @@
 import {
   ActionIcon,
   Badge,
-  Box,
   Card,
   Group,
   Image,
@@ -33,17 +32,13 @@ const FileCardGrid = ({
   e2eKey?: string | null;
 }) => {
   const modals = useModals();
-  const t = useTranslate();
+  const _t = useTranslate();
 
   if (isLoading || !share) {
     return (
       <SimpleGrid
-        cols={3}
+        cols={{ base: 1, sm: 2, md: 3 }}
         spacing="md"
-        breakpoints={[
-          { maxWidth: "md", cols: 2 },
-          { maxWidth: "sm", cols: 1 },
-        ]}
       >
         {[...Array(6)].map((_, i) => (
           <Card key={i} withBorder shadow="sm" radius="md" p="md">
@@ -57,24 +52,24 @@ const FileCardGrid = ({
 
   return (
     <SimpleGrid
-      cols={3}
+      cols={{ base: 1, sm: 2, md: 3 }}
       spacing="md"
-      breakpoints={[
-        { maxWidth: "md", cols: 2 },
-        { maxWidth: "sm", cols: 1 },
-      ]}
     >
       {files.map((file) => {
         const mimeType = (mime.contentType(file.name) || "").split(";")[0];
         const isImage = mimeType.startsWith("image/");
         const supportsPreview =
           share.previewEnabled !== false &&
-          shareService.doesFileSupportPreview(file.name);
+          !(share.isE2EEncrypted && !e2eKey) &&
+          shareService.doesFileSupportPreview(file.name, {
+            fileSizeBytes: file.size ? parseInt(file.size) : undefined,
+            isE2EEncrypted: share.isE2EEncrypted,
+          });
 
         return (
           <Card key={file.id} withBorder shadow="sm" radius="md" p="sm">
             <Card.Section
-              sx={{
+              style={{
                 height: 140,
                 display: "flex",
                 alignItems: "center",
@@ -89,11 +84,10 @@ const FileCardGrid = ({
                   alt={file.name}
                   height={140}
                   fit="contain"
-                  withPlaceholder
-                  placeholder={<TbFile size={48} opacity={0.3} />}
+                  fallbackSrc=""
                 />
               ) : (
-                <Stack align="center" spacing={4}>
+                <Stack align="center" gap={4}>
                   <TbFile size={48} opacity={0.3} />
                   <Badge size="xs" variant="outline" color="gray">
                     {file.name.split(".").pop()?.toUpperCase() || "FILE"}
@@ -102,20 +96,20 @@ const FileCardGrid = ({
               )}
             </Card.Section>
 
-            <Stack spacing={4} mt="sm">
+            <Stack gap={4} mt="sm">
               <Tooltip label={file.name} openDelay={400}>
-                <Text size="sm" weight={500} lineClamp={1}>
+                <Text size="sm" fw={500} lineClamp={1}>
                   {file.name}
                 </Text>
               </Tooltip>
-              <Text size="xs" color="dimmed">
+              <Text size="xs" c="dimmed">
                 {file.size
                   ? byteToHumanSizeString(parseInt(file.size))
                   : "--"}
               </Text>
             </Stack>
 
-            <Group position="right" mt="xs" spacing={4}>
+            <Group justify="right" mt="xs" gap={4}>
               {supportsPreview && (
                 <ActionIcon
                   size={28}

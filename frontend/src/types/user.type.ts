@@ -7,6 +7,13 @@ type User = {
   totpVerified: boolean;
   hasPassword: boolean;
   hasEncryptionKey: boolean;
+  notificationMode: string;
+  createdAt?: string;
+  plan?: string;
+  planStatus?: string;
+  planRenewDate?: string | null;
+  hasTeamMembership?: boolean;
+  teamId?: string | null;
 };
 
 export type CreateUser = {
@@ -14,6 +21,7 @@ export type CreateUser = {
   email: string;
   password?: string;
   isAdmin?: boolean;
+  plan?: string;
 };
 
 export type UpdateUser = {
@@ -21,11 +29,13 @@ export type UpdateUser = {
   email?: string;
   password?: string;
   isAdmin?: boolean;
+  plan?: string;
 };
 
 export type UpdateCurrentUser = {
   username?: string;
   email?: string;
+  notificationMode?: string;
 };
 
 export type CurrentUser = User & {};

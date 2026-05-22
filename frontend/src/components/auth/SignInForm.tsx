@@ -2,7 +2,6 @@ import {
   Anchor,
   Button,
   Container,
-  createStyles,
   Group,
   Loader,
   Paper,
@@ -13,6 +12,7 @@ import {
   Title,
   useMantineTheme,
 } from "@mantine/core";
+import { createStyles } from "@mantine/emotion";
 import { useForm, yupResolver } from "@mantine/form";
 import { showNotification } from "@mantine/notifications";
 import HCaptcha from "@hcaptcha/react-hcaptcha";
@@ -26,7 +26,7 @@ import useConfig from "../../hooks/config.hook";
 import useUser from "../../hooks/user.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import authService from "../../services/auth.service";
-import { getOAuthIcon, getOAuthUrl } from "../../utils/oauth.util";
+import { getOAuthIcon, getOAuthUrl, getOAuthColor } from "../../utils/oauth.util";
 import { safeRedirectPath } from "../../utils/router.util";
 import toast from "../../utils/toast.util";
 
@@ -52,7 +52,7 @@ const useStyles = createStyles((theme) => ({
       borderTopWidth: 1,
       borderTopStyle: "solid",
       borderColor:
-        theme.colorScheme === "dark"
+        theme.other.colorScheme === "dark"
           ? theme.colors.dark[3]
           : theme.colors.gray[4],
     },
@@ -63,7 +63,7 @@ const useStyles = createStyles((theme) => ({
       borderTopWidth: 1,
       borderTopStyle: "solid",
       borderColor:
-        theme.colorScheme === "dark"
+        theme.other.colorScheme === "dark"
           ? theme.colors.dark[3]
           : theme.colors.gray[4],
     },
@@ -87,6 +87,15 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
   const captchaRef = useRef<HCaptcha>(null);
   const [captchaToken, setCaptchaToken] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(false);
+
+  const handleCaptchaExpire = () => setCaptchaToken(undefined);
+  const handleCaptchaError = (error: any) => {
+    console.warn("[hCaptcha Error]", error);
+    // Attempt to reset the captcha on error (e.g., WebGL context lost on Safari)
+    if (captchaRef.current?.resetCaptcha) {
+      captchaRef.current.resetCaptcha();
+    }
+  };
 
   const validationSchema = yup.object().shape({
     emailOrUsername: yup.string().required(t("common.error.field-required")),
@@ -129,8 +138,6 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
       .finally(() => setIsLoading(false));
   };
 
-  const handleCaptchaExpire = () => setCaptchaToken(undefined);
-
   useEffect(() => {
     authService
       .getAvailableOAuth()
@@ -151,9 +158,9 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
 
   if (isRedirectingToOauthProvider)
     return (
-      <Group align="center" position="center">
+      <Group align="center" justify="center">
         <Loader size="sm" />
-        <Text align="center">
+        <Text ta="center">
           <FormattedMessage id="common.text.redirecting" />
         </Text>
       </Group>
@@ -161,11 +168,12 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
 
   return (
     <Container size={420} my={40}>
-      <Title order={2} align="center" weight={900}>
+      {/* h1 is required by Bing webmaster guidelines (one h1 per page). */}
+      <Title order={1} ta="center" fw={900} fz={{ base: 26, sm: 30 }}>
         <FormattedMessage id="signin.title" />
       </Title>
       {config.get("share.allowRegistration") && (
-        <Text color="dimmed" size="sm" align="center" mt={5}>
+        <Text c="dimmed" size="sm" ta="center" mt={5}>
           <FormattedMessage id="signin.description" />{" "}
           <Anchor component={Link} href={"signUp"} size="sm">
             <FormattedMessage id="signin.button.signup" />
@@ -191,7 +199,7 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
               {...form.getInputProps("password")}
             />
             {config.get("smtp.enabled") && (
-              <Group position="right" mt="xs">
+              <Group justify="right" mt="xs">
                 <Anchor component={Link} href="/auth/resetPassword" size="xs">
                   <FormattedMessage id="resetPassword.title" />
                 </Anchor>
@@ -201,13 +209,14 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
               <FormattedMessage id="signin.button.submit" />
             </Button>
             {captchaEnabled && captchaSiteKey && (
-              <Group position="center" mt="md">
+              <Group justify="center" mt="md">
                 <HCaptcha
                   sitekey={captchaSiteKey}
                   onVerify={setCaptchaToken}
                   onExpire={handleCaptchaExpire}
+                  onError={handleCaptchaError}
                   ref={captchaRef}
-                  theme={theme.colorScheme}
+                  theme={theme.other.colorScheme}
                 />
               </Group>
             )}
@@ -224,14 +233,15 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
                 <Text>{t("signIn.oauth.or")}</Text>
               </Group>
             )}
-            <Group position="center">
+            <Group justify="center">
               {oauthProviders.map((provider) => (
                 <Button
                   key={provider}
                   component="a"
                   title={t(`signIn.oauth.${provider}`)}
                   href={getOAuthUrl(window.location.origin, provider)}
-                  variant="light"
+                  variant="outline"
+                  color={getOAuthColor(provider)}
                   fullWidth
                 >
                   {getOAuthIcon(provider)}

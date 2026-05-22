@@ -21,18 +21,10 @@ export class JobsService {
   async deleteExpiredShares() {
     const expiredShares = await this.prisma.share.findMany({
       where: {
-        OR: [
-          // Shares with an explicit expiration date in the past
-          {
-            AND: [
-              { expiration: { lt: new Date() } },
-              { expiration: { not: moment(0).toDate() } },
-            ],
-          },
-          // Plan policy: hard 15-day maximum retention regardless of expiration
-          {
-            createdAt: { lt: moment().subtract(15, "days").toDate() },
-          },
+        // Shares with an explicit expiration date in the past
+        AND: [
+          { expiration: { lt: new Date() } },
+          { expiration: { not: moment(0).toDate() } },
         ],
       },
     });

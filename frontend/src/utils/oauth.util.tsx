@@ -17,8 +17,18 @@ const getOAuthIcon = (provider: string) => {
   }[provider];
 };
 
+const getOAuthColor = (provider: string): string => {
+  return {
+    google: "red",
+    microsoft: "blue",
+    github: "gray",
+    discord: "violet",
+    oidc: "teal",
+  }[provider] ?? "gray";
+};
+
 const unlinkOAuth = (provider: string) => {
   return api.post(`/oauth/unlink/${provider}`);
 };
 
-export { getOAuthUrl, getOAuthIcon, unlinkOAuth };
+export { getOAuthUrl, getOAuthIcon, getOAuthColor, unlinkOAuth };

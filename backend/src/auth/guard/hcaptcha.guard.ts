@@ -81,10 +81,10 @@ export class HCaptchaGuard implements CanActivate {
 
     const secretKey = this.config.get("hcaptcha.secretKey");
     if (!secretKey) {
-      this.logger.warn(
-        "hCaptcha is enabled but no secret key is configured - skipping verification",
+      this.logger.error(
+        "hCaptcha is enabled but no secret key is configured - rejecting request",
       );
-      return true;
+      throw new BadRequestException("Captcha verification unavailable");
     }
 
     const siteKey = this.config.get("hcaptcha.siteKey");

@@ -1,9 +1,10 @@
-import { ActionIcon, Badge, Box, Group, Skeleton, Table } from "@mantine/core";
+import { ActionIcon, Badge, Box, Card, Group, Skeleton, Stack, Table, Text } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 import { useModals } from "@mantine/modals";
 import { TbCheck, TbEdit, TbTrash } from "react-icons/tb";
+import { FormattedMessage, useIntl } from "react-intl";
 import User from "../../../types/user.type";
 import showUpdateUserModal from "./showUpdateUserModal";
-import { FormattedMessage } from "react-intl";
 
 const ManageUserTable = ({
   users,
@@ -17,19 +18,103 @@ const ManageUserTable = ({
   isLoading: boolean;
 }) => {
   const modals = useModals();
+  const intl = useIntl();
+  const isMobile = useMediaQuery("(max-width: 680px)");
+
+  const fmtDate = (iso?: string | null) => {
+    if (!iso) return "—";
+    return intl.formatDate(iso, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  const planColor = () => "grape";
+
+  if (isMobile) {
+    return (
+      <Stack gap="sm">
+        {isLoading
+          ? [...Array(5)].map((_, i) => (
+              <Card key={i} withBorder padding="sm" radius="md">
+                <Skeleton height={14} mb={6} />
+                <Skeleton height={10} width="60%" />
+              </Card>
+            ))
+          : users.map((user) => (
+              <Card key={user.id} withBorder padding="sm" radius="md">
+                <Group justify="space-between" wrap="nowrap" align="flex-start">
+                  <Box style={{ minWidth: 0, flex: 1 }}>
+                    <Group gap={6} wrap="nowrap" mb={2}>
+                      <Text size="sm" fw={600} lineClamp={1}>
+                        {user.username}
+                      </Text>
+                      {user.isLdap && <Badge size="xs">LDAP</Badge>}
+                      {user.isAdmin && (
+                        <Badge size="xs" color="red" variant="light" style={{ flexShrink: 0 }}>
+                          Admin
+                        </Badge>
+                      )}
+                    </Group>
+                    <Text size="xs" c="dimmed" lineClamp={1} mb={6}>
+                      {user.email}
+                    </Text>
+                    <Group gap="xs" wrap="wrap">
+                      <Badge color={planColor()} variant="light" size="sm">
+                        TEAM
+                      </Badge>
+                      <Text size="xs" c="dimmed">{fmtDate(user.createdAt)}</Text>
+                    </Group>
+                  </Box>
+                  <Group gap={6} wrap="nowrap">
+                    {!user.isLdap && (
+                      <ActionIcon
+                        variant="light"
+                        color="blue"
+                        size={28}
+                        onClick={() => showUpdateUserModal(modals, user, getUsers)}
+                      >
+                        <TbEdit />
+                      </ActionIcon>
+                    )}
+                    <ActionIcon
+                      variant="light"
+                      color="red"
+                      size={28}
+                      onClick={() => deleteUser(user)}
+                    >
+                      <TbTrash />
+                    </ActionIcon>
+                  </Group>
+                </Group>
+              </Card>
+            ))}
+      </Stack>
+    );
+  }
 
   return (
-    <Box sx={{ display: "block", overflowX: "auto" }}>
+    <Box style={{ display: "block", overflowX: "auto" }}>
       <Table verticalSpacing="sm">
         <thead>
           <tr>
-            <th>
+            <th style={{ textAlign: "left" }}>
               <FormattedMessage id="admin.users.table.username" />
             </th>
-            <th>
+            <th style={{ textAlign: "left" }}>
               <FormattedMessage id="admin.users.table.email" />
             </th>
-            <th>
+            <th style={{ textAlign: "left" }}>
+              <FormattedMessage id="admin.users.table.plan" />
+            </th>
+            <th style={{ textAlign: "left" }}>
+              <FormattedMessage id="admin.users.table.created" />
+            </th>
+            <th style={{ textAlign: "left" }}>
+              <FormattedMessage id="admin.users.table.renew" />
+            </th>
+            <th style={{ textAlign: "left" }}>
               <FormattedMessage id="admin.users.table.admin" />
             </th>
             <th></th>
@@ -47,14 +132,25 @@ const ManageUserTable = ({
                     ) : null}
                   </td>
                   <td>{user.email}</td>
+                  <td>
+                    <Badge color={planColor()} variant="light">
+                      TEAM
+                    </Badge>
+                  </td>
+                  <td>
+                    <Text size="sm">{fmtDate(user.createdAt)}</Text>
+                  </td>
+                  <td>
+                    <Text size="sm">—</Text>
+                  </td>
                   <td>{user.isAdmin && <TbCheck />}</td>
                   <td>
-                    <Group position="right">
+                    <Group justify="right">
                       {user.isLdap ? null : (
                         <ActionIcon
                           variant="light"
-                          color="primary"
-                          size="sm"
+                          color="blue"
+                          size={25}
                           onClick={() =>
                             showUpdateUserModal(modals, user, getUsers)
                           }
@@ -65,7 +161,7 @@ const ManageUserTable = ({
                       <ActionIcon
                         variant="light"
                         color="red"
-                        size="sm"
+                        size={25}
                         onClick={() => deleteUser(user)}
                       >
                         <TbTrash />
@@ -82,6 +178,15 @@ const ManageUserTable = ({
 
 const skeletonRows = [...Array(10)].map((v, i) => (
   <tr key={i}>
+    <td>
+      <Skeleton key={i} height={20} />
+    </td>
+    <td>
+      <Skeleton key={i} height={20} />
+    </td>
+    <td>
+      <Skeleton key={i} height={20} />
+    </td>
     <td>
       <Skeleton key={i} height={20} />
     </td>

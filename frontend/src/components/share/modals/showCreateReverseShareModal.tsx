@@ -2,7 +2,6 @@ import {
   Accordion,
   Button,
   Checkbox,
-  Col,
   Grid,
   Group,
   NumberInput,
@@ -12,9 +11,9 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { useForm, yupResolver } from "@mantine/form";
+import { useForm } from "@mantine/form";
+import { yupResolver } from "mantine-form-yup-resolver";
 import { useModals } from "@mantine/modals";
-import { ModalsContextProps } from "@mantine/modals/lib/context";
 import { getCookie, setCookie } from "cookies-next";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
@@ -36,10 +35,11 @@ import {
 } from "../../../utils/crypto.util";
 
 const showCreateReverseShareModal = (
-  modals: ModalsContextProps,
+  modals: ReturnType<typeof useModals>,
   showSendEmailNotificationOption: boolean,
   maxExpiration: Timespan,
   getReverseShares: () => void,
+  planMaxShareSize?: number,
 ) => {
   const t = translateOutsideContext();
   return modals.openModal({
@@ -49,6 +49,7 @@ const showCreateReverseShareModal = (
         showSendEmailNotificationOption={showSendEmailNotificationOption}
         getReverseShares={getReverseShares}
         maxExpiration={maxExpiration}
+        planMaxShareSize={planMaxShareSize}
       />
     ),
   });
@@ -57,11 +58,13 @@ const showCreateReverseShareModal = (
 const Body = ({
   getReverseShares,
   showSendEmailNotificationOption,
-  maxExpiration,
+  maxExpiration: _maxExpiration,
+  planMaxShareSize,
 }: {
   getReverseShares: () => void;
   showSendEmailNotificationOption: boolean;
   maxExpiration: Timespan;
+  planMaxShareSize?: number;
 }) => {
   const modals = useModals();
   const t = useTranslate();
@@ -70,7 +73,7 @@ const Body = ({
     initialValues: {
       linkType: "limited" as "personal" | "limited",
       name: undefined,
-      maxShareSize: 104857600,
+      maxShareSize: planMaxShareSize || 104857600,
       maxUseCount: 1,
       sendEmailNotification: false,
       expiration_num: 1,
@@ -106,7 +109,7 @@ const Body = ({
     // RS link expiration is independent from share.maxExpiration.
     // No client-side validation against maxExpiration for RS links.
 
-    // ---- E2E: generate K_rs and encrypt with K_master ----
+    // ---- E2E : générer K_rs et chiffrer avec K_master ----
     let rsKeyEncoded: string | null = null;
     let wrappedKey: string | undefined;
     const masterKeyEncoded = getUserKey();
@@ -119,7 +122,7 @@ const Body = ({
         wrappedKey = await wrapReverseShareKey(rsKey, masterKey);
       } catch (e) {
         console.error(
-          "Failed to generate E2E reverse share key",
+          "Erreur lors de la génération de la clé E2E reverse share",
           e,
         );
         rsKeyEncoded = null;
@@ -170,18 +173,18 @@ const Body = ({
           {form.values.linkType === "limited" && (
           <div>
             <Grid align={form.errors.expiration_num ? "center" : "flex-end"}>
-              <Col xs={6}>
+              <Grid.Col span={{ base: 12, xs: 6 }}>
                 <NumberInput
                   min={1}
                   max={99999}
-                  precision={0}
+                  decimalScale={0}
                   variant="filled"
                   label={t("account.reverseShares.modal.expiration.label")}
                   disabled={form.values.never_expires}
                   {...form.getInputProps("expiration_num")}
                 />
-              </Col>
-              <Col xs={6}>
+              </Grid.Col>
+              <Grid.Col span={{ base: 12, xs: 6 }}>
                 <Select
                   {...form.getInputProps("expiration_unit")}
                   disabled={form.values.never_expires}
@@ -231,7 +234,7 @@ const Body = ({
                     },
                   ]}
                 />
-              </Col>
+              </Grid.Col>
             </Grid>
             <Checkbox
               mt="xs"
@@ -240,11 +243,11 @@ const Body = ({
             />
             <Text
               mt="sm"
-              italic
+              fs="italic"
               size="xs"
-              sx={(theme) => ({
-                color: theme.colors.gray[6],
-              })}
+              style={{
+                color: "var(--mantine-color-gray-6)",
+              }}
             >
               {getExpirationPreview(
                 {
@@ -265,7 +268,7 @@ const Body = ({
             <NumberInput
               min={1}
               max={1000}
-              precision={0}
+              decimalScale={0}
               variant="filled"
               label={t("account.reverseShares.modal.max-use.label")}
               description={t("account.reverseShares.modal.max-use.description")}
@@ -289,7 +292,7 @@ const Body = ({
             })}
           />
           <Accordion>
-            <Accordion.Item value="description" sx={{ borderBottom: "none" }}>
+            <Accordion.Item value="description" style={{ borderBottom: "none" }}>
               <Accordion.Control>
                 <FormattedMessage id="account.reverseShares.modal.additional-options.title" />
               </Accordion.Control>

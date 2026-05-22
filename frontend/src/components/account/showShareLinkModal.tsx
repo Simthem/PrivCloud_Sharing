@@ -1,10 +1,10 @@
 import { Stack, TextInput } from "@mantine/core";
-import { ModalsContextProps } from "@mantine/modals/lib/context";
+import { useModals } from "@mantine/modals";
 import { translateOutsideContext } from "../../hooks/useTranslate.hook";
 import useConfig from "../../hooks/config.hook";
 
 const showShareLinkModal = (
-  modals: ModalsContextProps,
+  modals: ReturnType<typeof useModals>,
   shareId: string,
   keyFragment?: string,
 ) => {

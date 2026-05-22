@@ -1,4 +1,5 @@
-import { createStyles } from "@mantine/core";
+import { rgba } from "@mantine/core";
+import { createStyles } from "@mantine/emotion";
 
 export default createStyles((theme) => ({
   root: {
@@ -17,7 +18,7 @@ export default createStyles((theme) => ({
     borderTopWidth: 0,
     overflow: "hidden",
 
-    [theme.fn.largerThan("sm")]: {
+    [`@media (min-width: ${theme.breakpoints.sm})`]: {
       display: "none",
     },
   },
@@ -30,13 +31,13 @@ export default createStyles((theme) => ({
   },
 
   links: {
-    [theme.fn.smallerThan("sm")]: {
+    [`@media (max-width: ${theme.breakpoints.sm})`]: {
       display: "none",
     },
   },
 
   burger: {
-    [theme.fn.largerThan("sm")]: {
+    [`@media (min-width: ${theme.breakpoints.sm})`]: {
       display: "none",
     },
   },
@@ -48,7 +49,7 @@ export default createStyles((theme) => ({
     borderRadius: theme.radius.sm,
     textDecoration: "none",
     color:
-      theme.colorScheme === "dark"
+      theme.other.colorScheme === "dark"
         ? theme.colors.dark[0]
         : theme.colors.gray[7],
     fontSize: theme.fontSizes.sm,
@@ -56,12 +57,12 @@ export default createStyles((theme) => ({
 
     "&:hover": {
       backgroundColor:
-        theme.colorScheme === "dark"
+        theme.other.colorScheme === "dark"
           ? theme.colors.dark[6]
           : theme.colors.gray[0],
     },
 
-    [theme.fn.smallerThan("sm")]: {
+    [`@media (max-width: ${theme.breakpoints.sm})`]: {
       borderRadius: 0,
       padding: theme.spacing.md,
     },
@@ -70,11 +71,11 @@ export default createStyles((theme) => ({
   linkActive: {
     "&, &:hover": {
       backgroundColor:
-        theme.colorScheme === "dark"
-          ? theme.fn.rgba(theme.colors[theme.primaryColor][9], 0.25)
+        theme.other.colorScheme === "dark"
+          ? rgba(theme.colors[theme.primaryColor][9], 0.25)
           : theme.colors[theme.primaryColor][0],
       color:
-        theme.colors[theme.primaryColor][theme.colorScheme === "dark" ? 3 : 7],
+        theme.colors[theme.primaryColor][theme.other.colorScheme === "dark" ? 3 : 7],
     },
   },
 }));

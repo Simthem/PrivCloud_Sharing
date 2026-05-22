@@ -66,9 +66,11 @@ const FileListRow = ({
 const FileList = <T extends FileListItem = FileListItem>({
   files,
   setFiles,
+  isUploading = false,
 }: {
   files: T[];
   setFiles: (_files: T[]) => void;
+  isUploading?: boolean;
 }) => {
   const remove = (index: number) => {
     const file = files[index];
@@ -104,13 +106,14 @@ const FileList = <T extends FileListItem = FileListItem>({
   ));
 
   return (
+    <div style={isUploading ? { opacity: 0.6, pointerEvents: "none" } : undefined}>
     <Table>
       <thead>
         <tr>
-          <th>
+          <th style={{ textAlign: "left" }}>
             <FormattedMessage id="upload.filelist.name" />
           </th>
-          <th>
+          <th style={{ textAlign: "left" }}>
             <FormattedMessage id="upload.filelist.size" />
           </th>
           <th></th>
@@ -118,6 +121,7 @@ const FileList = <T extends FileListItem = FileListItem>({
       </thead>
       <tbody>{rows}</tbody>
     </Table>
+    </div>
   );
 };
 

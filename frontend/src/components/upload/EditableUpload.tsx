@@ -17,7 +17,7 @@ import {
   getUserKey,
   importKeyFromBase64,
 } from "../../utils/crypto.util";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getAdaptiveChunkSize,
   uploadFileViaWorker,
@@ -74,7 +74,15 @@ const EditableUpload = ({
     setExistingFiles(_existingFiles);
   };
 
-  const effectiveMaxShareSize = maxShareSize ?? parseInt(config.get("share.maxSize"));
+  const { data: planMaxShareSize } = useQuery({
+    queryKey: ["uploadLimit"],
+    queryFn: async () => ({ maxSize: 0, usedSize: 0 }), // 0 = no limit
+    refetchInterval: Infinity,
+    refetchOnWindowFocus: false,
+  });
+
+  const rawEffectiveMaxShareSize = maxShareSize ?? planMaxShareSize?.maxSize ?? parseInt(config.get("share.maxSize"));
+  const effectiveMaxShareSize = rawEffectiveMaxShareSize === 0 ? Number.MAX_SAFE_INTEGER : rawEffectiveMaxShareSize;
 
   const uploadFiles = async (files: FileUpload[]) => {
     // E2E: enforce encryption consistency -- if the share is encrypted,
@@ -254,18 +262,18 @@ const EditableUpload = ({
 
   const cancelUpload = () => {
     modals.openConfirmModal({
-      title: t("upload.cancel.title", { defaultMessage: "Cancel upload" }),
+      title: t("upload.cancel.title", { defaultMessage: "Annuler l'envoi" }),
       children: (
         <Text size="sm">
           <FormattedMessage
             id="upload.cancel.confirm"
-            defaultMessage="The upload in progress will be interrupted. Continue?"
+            defaultMessage="L'envoi en cours sera interrompu. Continuer ?"
           />
         </Text>
       ),
       labels: {
-        confirm: t("common.button.confirm", { defaultMessage: "Confirm" }),
-        cancel: t("common.button.cancel", { defaultMessage: "No" }),
+        confirm: t("common.button.confirm", { defaultMessage: "Confirmer" }),
+        cancel: t("common.button.cancel", { defaultMessage: "Non" }),
       },
       confirmProps: { color: "red" },
       onConfirm: () => {
@@ -280,7 +288,7 @@ const EditableUpload = ({
             return f;
           }),
         );
-        toast.error(t("upload.cancel.done", { defaultMessage: "Upload cancelled" }));
+        toast.success(t("upload.cancel.done", { defaultMessage: "Envoi annulé" }));
       },
     });
   };
@@ -296,7 +304,6 @@ const EditableUpload = ({
         toast.error(
           t("upload.notify.count-failed", { count: fileErrorCount }),
           {
-            withCloseButton: false,
             autoClose: false,
           },
         );
@@ -310,12 +317,12 @@ const EditableUpload = ({
 
   return (
     <>
-      <Group position="right" mb={20} spacing="xs">
+      <Group justify="right" mb={20} gap="xs">
         {isUploading && (
           <Button size="sm" color="red" variant="subtle" onClick={cancelUpload}>
             <FormattedMessage
               id="upload.cancel.button"
-              defaultMessage="Cancel"
+              defaultMessage="Annuler"
             />
           </Button>
         )}

@@ -1,6 +1,7 @@
 import { Alert, Box, Group, Text, Title } from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import { GetServerSidePropsContext } from "next";
+import dayjs from "../../../utils/dayjs";
 import { useEffect, useState } from "react";
 import { FormattedMessage } from "react-intl";
 import { useQuery } from "@tanstack/react-query";
@@ -20,8 +21,8 @@ import { Share as ShareType } from "../../../types/share.type";
 import toast from "../../../utils/toast.util";
 import { byteToHumanSizeString } from "../../../utils/fileSize.util";
 import { extractKeyFromHash, getUserKey, unwrapReverseShareKey, importKeyFromBase64, exportKeyToBase64 } from "../../../utils/crypto.util";
+import teamService from "../../../services/team.service";
 import { AxiosError } from "axios";
-import { deleteCookie } from "cookies-next";
 
 export function getServerSideProps(context: GetServerSidePropsContext) {
   return {
@@ -34,14 +35,6 @@ const Share = ({ shareId }: { shareId: string }) => {
   const config = useConfig();
   const { user } = useUser();
 
-  // Always clear the share token cookie on each visit so password
-  // protected shares always require re-authentication.
-  const [tokenCleared, setTokenCleared] = useState(false);
-  useEffect(() => {
-    deleteCookie(`share_${shareId}_token`, { path: "/" });
-    setTokenCleared(true);
-  }, [shareId]);
-
   const {
     data: share,
     error,
@@ -51,7 +44,6 @@ const Share = ({ shareId }: { shareId: string }) => {
     queryKey: ["share", shareId],
     retry: false,
     queryFn: () => shareService.get(shareId),
-    enabled: tokenCleared,
   });
 
   const t = useTranslate();
@@ -59,11 +51,11 @@ const Share = ({ shareId }: { shareId: string }) => {
   const captchaEnabled = config.get("hcaptcha.enabled");
   const captchaSiteKey = config.get("hcaptcha.siteKey");
 
-  // -- E2E: decryption key resolution --
-  // Priority: #key= in URL > unwrapped K_rs (reverse share) > K_master (normal share)
+  // ── E2E : résolution de la clé de déchiffrement ──
+  // Priorité : #key= dans l'URL > K_rs unwrappée (reverse share) > K_master (share normal)
   const [e2eKey, setE2eKey] = useState<string | null>(null);
 
-  // Phase 1: key from the URL fragment (available immediately)
+  // Phase 1 : clé depuis le fragment d'URL (disponible immédiatement)
   useEffect(() => {
     const hashKey = extractKeyFromHash();
     if (hashKey) {
@@ -71,10 +63,11 @@ const Share = ({ shareId }: { shareId: string }) => {
     }
   }, [shareId]);
 
-  // Phase 2: once the share is loaded, resolve the key if missing
-  // - Reverse share E2E -> unwrap K_rs via backend endpoint
-  // - Normal E2E share  -> K_master from localStorage
-  // - Error (non-owner, not auth) -> leave e2eKey null -> "missing key" alert
+  // Phase 2 : une fois le share chargé, résoudre la clé si manquante
+  // - Reverse share E2E → unwrap K_rs via backend endpoint
+  // - Team share E2E    → unwrap K_team via team-key endpoint
+  // - Share E2E normal  → K_master depuis localStorage
+  // - Erreur (non-owner, non-auth) → laisser e2eKey null → alerte "clé manquante"
   useEffect(() => {
     if (e2eKey || !share?.isE2EEncrypted) return;
 
@@ -85,32 +78,43 @@ const Share = ({ shareId }: { shareId: string }) => {
 
     (async () => {
       try {
-        // Endpoint returns 200 in all cases except 403:
-        //   { encryptedReverseShareKey: null }   -> not a reverse share -> use K_master
-        //   { encryptedReverseShareKey: "..." }  -> reverse share -> unwrap K_rs
+        // Team share : la clé est K_team (wrappée par K_master)
+        if (share.teamId) {
+          const { wrappedTeamKey } = await teamService.getTeamKey(share.teamId);
+          if (cancelled || !wrappedTeamKey) return;
+          const masterKey = await importKeyFromBase64(userKeyB64);
+          const teamKey = await unwrapReverseShareKey(wrappedTeamKey, masterKey);
+          const teamKeyB64 = await exportKeyToBase64(teamKey);
+          if (!cancelled) setE2eKey(teamKeyB64);
+          return;
+        }
+
+        // Endpoint retourne 200 dans tous les cas sauf 403 :
+        //   { encryptedReverseShareKey: null }   → pas un reverse share → K_master
+        //   { encryptedReverseShareKey: "..." }  → reverse share → unwrap K_rs
         const encrypted = await shareService.getEncryptedE2eKey(shareId);
         if (cancelled) return;
 
         if (encrypted) {
-          // This is a reverse share - unwrap K_rs with K_master
+          // C'est un reverse share : unwrap K_rs avec K_master
           const masterKey = await importKeyFromBase64(userKeyB64);
           const rsKey = await unwrapReverseShareKey(encrypted, masterKey);
           const rsKeyB64 = await exportKeyToBase64(rsKey);
           if (!cancelled) setE2eKey(rsKeyB64);
         } else {
-          // Not a reverse share (backend returned null) -> fallback to K_master
+          // Pas un reverse share, pas un team share → K_master
           if (!cancelled) setE2eKey(userKeyB64);
         }
       } catch (err) {
-        // 403 = reverse share but user is not the owner, or network/decryption error.
-        // Do NOT fall back to K_master (it would be the wrong key).
-        // Leave e2eKey null -> the "missing key" alert will be shown.
-        console.error("[E2E] Failed to resolve reverse share key:", err);
+        // 403 = reverse share mais pas le propriétaire, ou erreur réseau/déchiffrement.
+        // NE PAS fallback sur K_master (ce serait la mauvaise clé).
+        // Laisser e2eKey null → l'alerte "clé manquante" s'affichera.
+        console.error("[E2E] Failed to resolve share key:", err);
       }
     })();
 
     return () => { cancelled = true; };
-  }, [share?.isE2EEncrypted, e2eKey, shareId]);
+  }, [share?.isE2EEncrypted, share?.teamId, e2eKey, shareId]);
 
   const isE2EMissingKey = share?.isE2EEncrypted && !e2eKey;
 
@@ -208,12 +212,12 @@ const Share = ({ shareId }: { shareId: string }) => {
         description={t("share.description")}
       />
 
-      <Group position="apart" mb="lg">
+      <Group justify="space-between" mb="lg">
         <Box style={{ maxWidth: "70%" }}>
-          <Title order={3}>{share?.name || share?.id}</Title>
+          <Title order={1} fz="h3">{share?.name || share?.id}</Title>
           <Text size="sm">{share?.description}</Text>
           {share?.files?.length > 0 && (
-            <Text size="sm" color="dimmed" mt={5}>
+            <Text size="sm" c="dimmed" mt={5}>
               <FormattedMessage
                 id="share.fileCount"
                 values={{
@@ -227,6 +231,20 @@ const Share = ({ shareId }: { shareId: string }) => {
                   ),
                 }}
               />
+            </Text>
+          )}
+          {share?.createdAt && (
+            <Text size="xs" c="dimmed" mt={2}>
+              {t("share.detail.deposited-on", {
+                date: dayjs(share.createdAt).format("LLL"),
+              })}
+            </Text>
+          )}
+          {share?.expiration && dayjs(share.expiration).unix() !== 0 && (
+            <Text size="xs" c="dimmed" mt={1}>
+              {t("share.detail.expires-on", {
+                date: dayjs(share.expiration).format("LLL"),
+              })}
             </Text>
           )}
         </Box>
@@ -244,13 +262,13 @@ const Share = ({ shareId }: { shareId: string }) => {
       {isE2EMissingKey && (
         <Alert
           icon={<TbLock size={16} />}
-          title="End-to-end encryption"
+          title="Chiffrement de bout en bout"
           color="red"
           mb="lg"
         >
-          This share is end-to-end encrypted. The decryption key is
-          missing from the URL. Please use the full link provided by
-          the sender (with the #key=... fragment).
+          Ce partage est chiffré de bout en bout. La clé de déchiffrement est
+          manquante dans l'URL. Veuillez utiliser le lien complet fourni par
+          l'expéditeur (avec le fragment #key=...).
         </Alert>
       )}
 

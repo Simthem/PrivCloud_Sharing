@@ -4,7 +4,6 @@ import {
   Button,
   Center,
   Container,
-  createStyles,
   Group,
   Paper,
   Text,
@@ -12,7 +11,9 @@ import {
   Title,
   useMantineTheme,
 } from "@mantine/core";
-import { useForm, yupResolver } from "@mantine/form";
+import { createStyles } from "@mantine/emotion";
+import { useForm } from "@mantine/form";
+import { yupResolver } from "mantine-form-yup-resolver";
 import HCaptcha from "@hcaptcha/react-hcaptcha";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -33,13 +34,13 @@ const useStyles = createStyles((theme) => ({
   },
 
   controls: {
-    [theme.fn.smallerThan("xs")]: {
+    [`@media (max-width: ${theme.breakpoints.xs})`]: {
       flexDirection: "column-reverse",
     },
   },
 
   control: {
-    [theme.fn.smallerThan("xs")]: {
+    [`@media (max-width: ${theme.breakpoints.xs})`]: {
       width: "100%",
       textAlign: "center",
     },
@@ -58,6 +59,13 @@ const ResetPassword = () => {
   const captchaRef = useRef<HCaptcha>(null);
   const [captchaToken, setCaptchaToken] = useState<string | undefined>();
   const handleCaptchaExpire = () => setCaptchaToken(undefined);
+  const handleCaptchaError = (error: any) => {
+    console.warn("[hCaptcha Error]", error);
+    // Attempt to reset the captcha on error (e.g., WebGL context lost on Safari)
+    if (captchaRef.current?.resetCaptcha) {
+      captchaRef.current.resetCaptcha();
+    }
+  };
 
   const form = useForm({
     initialValues: {
@@ -75,10 +83,10 @@ const ResetPassword = () => {
 
   return (
     <Container size={460} my={30}>
-      <Title order={2} weight={900} align="center">
+      <Title order={2} fw={900} ta="center">
         <FormattedMessage id="resetPassword.title" />
       </Title>
-      <Text color="dimmed" size="sm" align="center">
+      <Text c="dimmed" size="sm" ta="center">
         <FormattedMessage id="resetPassword.description" />
       </Text>
 
@@ -99,10 +107,10 @@ const ResetPassword = () => {
             placeholder={t("signup.input.email.placeholder")}
             {...form.getInputProps("email")}
           />
-          <Group position="apart" mt="lg" className={classes.controls}>
+          <Group justify="space-between" mt="lg" className={classes.controls}>
             <Anchor
               component={Link}
-              color="dimmed"
+              c="dimmed"
               size="sm"
               className={classes.control}
               href={"/auth/signIn"}
@@ -119,13 +127,14 @@ const ResetPassword = () => {
             </Button>
           </Group>
           {captchaEnabled && captchaSiteKey && (
-            <Group position="center" mt="md">
+            <Group justify="center" mt="md">
               <HCaptcha
                 sitekey={captchaSiteKey}
                 onVerify={setCaptchaToken}
                 onExpire={handleCaptchaExpire}
+                onError={handleCaptchaError}
                 ref={captchaRef}
-                theme={theme.colorScheme}
+                theme={theme.other.colorScheme}
               />
             </Group>
           )}

@@ -13,12 +13,13 @@ import {
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { useModals } from "@mantine/modals";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { TbDownload, TbEye, TbLink } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import useTranslate from "../../hooks/useTranslate.hook";
 import shareService from "../../services/share.service";
 import { FileMetaData } from "../../types/File.type";
+import DownloadProgressIndicator from "./DownloadProgressIndicator";
 import { Share } from "../../types/share.type";
 import { byteToHumanSizeString } from "../../utils/fileSize.util";
 import { copyToClipboard } from "../../utils/clipboard.util";
@@ -51,7 +52,11 @@ const FileList = ({
   // -- Selection state --
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [downloadingSelected, setDownloadingSelected] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState("");
+  const [selectedProgress, setSelectedProgress] = useState<number | null>(null);
+  const selectedAbortRef = useRef<AbortController | null>(null);
+
+  // -- Per-file download tracking (progress + cancellation) --
+  const [downloads, setDownloads] = useState<Map<string, { progress: number; controller: AbortController }>>(new Map());
 
   // -- Long press for mobile --
   const [longPressTimer, setLongPressTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
@@ -102,28 +107,97 @@ const FileList = ({
       return;
     }
 
+    const controller = new AbortController();
+    selectedAbortRef.current = controller;
     setDownloadingSelected(true);
-    setDownloadProgress("");
+    setSelectedProgress(0);
     try {
       if (share.isE2EEncrypted && e2eKey) {
         await shareService.downloadSelectedAsZipE2E(
           share.id,
           selectedFiles,
           e2eKey,
-          (done, total) => setDownloadProgress(`${done}/${total}`),
+          (done, total) => {
+            setSelectedProgress(total > 0 ? (done / total) * 100 : 0);
+          },
+          controller.signal,
         );
       } else {
         await shareService.downloadSelectedAsZip(
           share.id,
           selectedFiles,
-          (done, total) => setDownloadProgress(`${done}/${total}`),
+          (done, total) => {
+            setSelectedProgress(total > 0 ? (done / total) * 100 : 0);
+          },
+          controller.signal,
         );
       }
-    } catch {
-      toast.error(t("common.error"));
+    } catch (e: any) {
+      if (e?.name !== "AbortError") {
+        toast.error(t("common.error"));
+      }
     } finally {
+      selectedAbortRef.current = null;
       setDownloadingSelected(false);
-      setDownloadProgress("");
+      setSelectedProgress(null);
+    }
+  };
+
+  const cancelSelectedDownload = () => {
+    selectedAbortRef.current?.abort();
+  };
+
+  const startDownload = async (file: FileMetaData) => {
+    if (!share) return;
+    const controller = new AbortController();
+
+    setDownloads((prev) => {
+      const next = new Map(prev);
+      next.set(file.id, { progress: 0, controller });
+      return next;
+    });
+
+    const updateProgress = (downloaded: number, total: number) => {
+      const pct = total > 0 ? (downloaded / total) * 100 : 0;
+      setDownloads((prev) => {
+        const next = new Map(prev);
+        const entry = next.get(file.id);
+        if (entry) next.set(file.id, { ...entry, progress: Math.min(pct, 100) });
+        return next;
+      });
+    };
+
+    try {
+      if (share.isE2EEncrypted && e2eKey) {
+        await shareService.downloadFileE2E(
+          share.id, file.id, file.name, e2eKey,
+          updateProgress,
+          controller.signal,
+        );
+      } else {
+        await shareService.downloadFileWithProgress(
+          share.id, file.id, file.name,
+          updateProgress,
+          controller.signal,
+        );
+      }
+    } catch (e: any) {
+      if (e.name !== "AbortError") {
+        toast.error(t("common.error"));
+      }
+    } finally {
+      setDownloads((prev) => {
+        const next = new Map(prev);
+        next.delete(file.id);
+        return next;
+      });
+    }
+  };
+
+  const cancelDownload = (fileId: string) => {
+    const entry = downloads.get(fileId);
+    if (entry) {
+      entry.controller.abort();
     }
   };
 
@@ -170,23 +244,26 @@ const FileList = ({
   return (
     <Box>
       {selectionActive && (
-        <Group mb="xs" spacing="sm">
+        <Group mb="xs" gap="sm">
           <Button
             variant="light"
             size="xs"
-            leftIcon={<TbDownload size={14} />}
+            leftSection={<TbDownload size={14} />}
             loading={downloadingSelected}
+            disabled={downloadingSelected}
             onClick={handleDownloadSelected}
           >
-            {downloadProgress ? (
-              <Text size="xs">{downloadProgress}</Text>
-            ) : (
-              <FormattedMessage
-                id="share.button.download-selected"
-                values={{ count: selectedIds.size }}
-              />
-            )}
+            <FormattedMessage
+              id="share.button.download-selected"
+              values={{ count: selectedIds.size }}
+            />
           </Button>
+          {downloadingSelected && selectedProgress !== null && (
+            <DownloadProgressIndicator
+              progress={selectedProgress}
+              onCancel={cancelSelectedDownload}
+            />
+          )}
           <Button
             variant="subtle"
             size="xs"
@@ -197,8 +274,8 @@ const FileList = ({
         </Group>
       )}
       {isMobile ? (
-        /* Mobile: card layout */
-        <Stack spacing="xs">
+        /* --- Mobile: card layout --- */
+        <Stack gap="xs" style={{ touchAction: "pan-y" }}>
           {isLoading || !share
             ? [...Array(3)].map((_, i) => (
                 <Card key={i} withBorder padding="sm" radius="md">
@@ -212,29 +289,16 @@ const FileList = ({
                   <Card
                     key={file.id}
                     withBorder
-                    padding="sm"
+                    p="sm"
                     radius="md"
-                    onClick={() => {
-                      if (files.length > 1) toggleSelection(file.id);
-                    }}
-                    sx={(theme) => {
-                      const pc = theme.primaryColor;
-                      const shade = theme.fn.primaryShade();
-                      return {
-                        cursor: files.length > 1 ? "pointer" : undefined,
-                        borderColor: selected
-                          ? theme.colors[pc][shade]
-                          : undefined,
-                        backgroundColor: selected
-                          ? theme.colorScheme === "dark"
-                            ? theme.fn.rgba(theme.colors[pc][8], 0.15)
-                            : theme.fn.rgba(theme.colors[pc][1], 0.5)
-                          : undefined,
-                      };
+                    onClick={files.length > 1 ? () => toggleSelection(file.id) : undefined}
+                    style={{
+                      cursor: files.length > 1 ? "pointer" : undefined,
+                      touchAction: "pan-y",
                     }}
                   >
-                    <Group position="apart" noWrap>
-                      <Group spacing="sm" noWrap style={{ minWidth: 0, flex: 1 }}>
+                    <Group justify="space-between" wrap="nowrap">
+                      <Group gap="sm" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
                         {files.length > 1 && (
                           <Checkbox
                             size="xs"
@@ -245,27 +309,31 @@ const FileList = ({
                               input: {
                                 cursor: "pointer",
                                 "&:checked": {
-                                  backgroundColor: theme.colors[theme.primaryColor][theme.fn.primaryShade()],
-                                  borderColor: theme.colors[theme.primaryColor][theme.fn.primaryShade()],
+                                  backgroundColor: theme.colors[theme.primaryColor][(typeof theme.primaryShade === "object" ? theme.primaryShade[theme.other.colorScheme as "light" | "dark"] : theme.primaryShade)],
+                                  borderColor: theme.colors[theme.primaryColor][(typeof theme.primaryShade === "object" ? theme.primaryShade[theme.other.colorScheme as "light" | "dark"] : theme.primaryShade)],
                                 },
                               },
                             })}
                           />
                         )}
                         <Box style={{ minWidth: 0 }}>
-                          <Text size="sm" weight={500} lineClamp={1}>
+                          <Text size="sm" fw={500} lineClamp={1}>
                             {file.name}
                           </Text>
-                          <Text size="xs" color="dimmed">
+                          <Text size="xs" c="dimmed">
                             {file.size
                               ? byteToHumanSizeString(parseInt(file.size))
                               : "-"}
                           </Text>
                         </Box>
                       </Group>
-                      <Group spacing={6} noWrap onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                      <Group gap={6} wrap="nowrap" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                         {share.previewEnabled !== false &&
-                          shareService.doesFileSupportPreview(file.name) && (
+                          !(share.isE2EEncrypted && !e2eKey) &&
+                          shareService.doesFileSupportPreview(file.name, {
+                            fileSizeBytes: file.size ? parseInt(file.size) : undefined,
+                            isE2EEncrypted: share.isE2EEncrypted,
+                          }) && (
                           <ActionIcon
                             variant="light"
                             size={28}
@@ -285,24 +353,20 @@ const FileList = ({
                             <TbLink size={16} />
                           </ActionIcon>
                         )}
-                        <ActionIcon
-                          variant="light"
-                          size={28}
-                          onClick={async () => {
-                            if (share.isE2EEncrypted && e2eKey) {
-                              await shareService.downloadFileE2E(
-                                share.id,
-                                file.id,
-                                file.name,
-                                e2eKey,
-                              );
-                            } else {
-                              await shareService.downloadFile(share.id, file.id);
-                            }
-                          }}
-                        >
-                          <TbDownload size={16} />
-                        </ActionIcon>
+                        {downloads.has(file.id) ? (
+                          <DownloadProgressIndicator
+                            progress={downloads.get(file.id)!.progress}
+                            onCancel={() => cancelDownload(file.id)}
+                          />
+                        ) : (
+                          <ActionIcon
+                            variant="light"
+                            size={28}
+                            onClick={() => startDownload(file)}
+                          >
+                            <TbDownload size={16} />
+                          </ActionIcon>
+                        )}
                       </Group>
                     </Group>
                   </Card>
@@ -310,8 +374,8 @@ const FileList = ({
               })}
         </Stack>
       ) : (
-        /* Desktop: table layout */
-        <Box sx={{ display: "block", overflowX: "auto" }}>
+        /* --- Desktop: table layout --- */
+        <Box style={{ display: "block", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <Table>
             <thead>
               <tr>
@@ -326,13 +390,13 @@ const FileList = ({
                   </th>
                 )}
                 <th style={{ textAlign: "left" }}>
-                  <Group spacing="xs">
+                  <Group gap="xs">
                     <FormattedMessage id="share.table.name" />
                     <TableSortIcon sort={sort} setSort={setSort} property="name" />
                   </Group>
                 </th>
                 <th style={{ textAlign: "left" }}>
-                  <Group spacing="xs">
+                  <Group gap="xs">
                     <FormattedMessage id="share.table.size" />
                     <TableSortIcon sort={sort} setSort={setSort} property="size" />
                   </Group>
@@ -371,9 +435,13 @@ const FileList = ({
                           : "-"}
                       </td>
                       <td>
-                        <Group position="right">
+                        <Group justify="right">
                           {share.previewEnabled !== false &&
-                            shareService.doesFileSupportPreview(file.name) && (
+                            !(share.isE2EEncrypted && !e2eKey) &&
+                            shareService.doesFileSupportPreview(file.name, {
+                              fileSizeBytes: file.size ? parseInt(file.size) : undefined,
+                              isE2EEncrypted: share.isE2EEncrypted,
+                            }) && (
                             <ActionIcon
                               variant="light"
                               color="teal"
@@ -395,25 +463,21 @@ const FileList = ({
                               <TbLink />
                             </ActionIcon>
                           )}
-                          <ActionIcon
-                            variant="light"
-                            color="blue"
-                            size={25}
-                            onClick={async () => {
-                              if (share.isE2EEncrypted && e2eKey) {
-                                await shareService.downloadFileE2E(
-                                  share.id,
-                                  file.id,
-                                  file.name,
-                                  e2eKey,
-                                );
-                              } else {
-                                await shareService.downloadFile(share.id, file.id);
-                              }
-                            }}
-                          >
-                            <TbDownload />
-                          </ActionIcon>
+                          {downloads.has(file.id) ? (
+                            <DownloadProgressIndicator
+                              progress={downloads.get(file.id)!.progress}
+                              onCancel={() => cancelDownload(file.id)}
+                            />
+                          ) : (
+                            <ActionIcon
+                              variant="light"
+                              color="blue"
+                              size={25}
+                              onClick={() => startDownload(file)}
+                            >
+                              <TbDownload />
+                            </ActionIcon>
+                          )}
                         </Group>
                       </td>
                     </tr>

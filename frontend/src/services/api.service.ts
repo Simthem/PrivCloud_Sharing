@@ -17,59 +17,204 @@ export const setUploadActive = (active: boolean) => {
 };
 export const isUploadActive = () => _uploadActive;
 
+// Guard against SafeLine reload loops on non-upload pages.
+let _lastSafelineReload = 0;
+const SAFELINE_RELOAD_COOLDOWN_MS = 30_000; // 30s between reloads
+
 // --- SafeLine 468 challenge -------------------------------------------------
 // SafeLine WAF returns 468 when an anti-bot challenge is required.
-// XHR/fetch cannot render that challenge page.  We complete the
-// challenge inside a hidden iframe -- its JS will execute, set the
-// SafeLine cookie, and then we can retry the original request.
-// We NEVER reload the page (it destroys upload progress and state).
+// The challenge is a JavaScript verification that sets a session cookie.
+// Strategy (ordered by reliability):
+//   1. IFRAME (invisible): Create a hidden iframe to '/'. SafeLine
+//      intercepts and serves its JS challenge. The JS executes
+//      automatically (no user gesture needed), sets the cookie, and
+//      redirects to our app. We detect completion by polling
+//      validateSafeLineSession(). This is the PRIMARY method because
+//      it works 100% of the time without user interaction.
+//   2. POPUP (fallback): If iframe fails after 30s (e.g. X-Frame-Options
+//      or network issue), try a popup. May be blocked by the browser
+//      if no recent user gesture.
+//   3. NOTIFICATION (last resort): Show a clickable notification so the
+//      user can manually trigger the popup with a click (user gesture).
 let safelineChallengeInFlight: Promise<void> | null = null;
+const SAFELINE_BROADCAST_CHANNEL = "safeline-challenge";
+
+/**
+ * Validate that the SafeLine session cookie is active by making a
+ * lightweight fetch.  Returns true if the response is NOT 468.
+ */
+export async function validateSafeLineSession(): Promise<boolean> {
+  try {
+    const resp = await fetch("/?_sl_validate=" + Date.now(), {
+      credentials: "include",
+      cache: "no-store",
+      mode: "same-origin",
+    });
+    const valid = resp.status !== 468;
+    resp.body?.cancel();
+    return valid;
+  } catch {
+    // Network error - assume session is valid (don't block on transient issues)
+    return true;
+  }
+}
+
+/**
+ * Attempt to solve SafeLine challenge via a hidden iframe.
+ * The iframe loads '/', SafeLine intercepts with its JS challenge,
+ * the challenge executes and sets the session cookie.
+ * We poll validateSafeLineSession() until it passes.
+ * Returns true if solved, false if timed out.
+ */
+async function resolveChallengeViaIframe(timeoutMs = 45_000): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText =
+      "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;border:none;";
+    iframe.src = "/?_sl_iframe=" + Date.now();
+    // No sandbox: SafeLine's challenge JS may need full capabilities
+    // (navigation, form submission, cookie access). Since we load our
+    // own origin, this is safe.
+
+    let resolved = false;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let hardTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanup = () => {
+      if (resolved) return;
+      resolved = true;
+      if (pollTimer) clearInterval(pollTimer);
+      if (hardTimeout) clearTimeout(hardTimeout);
+      try { iframe.remove(); } catch { /* */ }
+    };
+
+    // Poll every 2s to see if the cookie is now valid
+    const startTime = Date.now();
+    pollTimer = setInterval(async () => {
+      // Don't poll until at least 3s have passed (give iframe time to load)
+      if (Date.now() - startTime < 3000) return;
+      try {
+        const valid = await validateSafeLineSession();
+        if (valid) {
+          cleanup();
+          resolve(true);
+        }
+      } catch { /* ignore poll errors */ }
+    }, 2000);
+
+    // Hard timeout
+    hardTimeout = setTimeout(() => {
+      cleanup();
+      resolve(false);
+    }, timeoutMs);
+
+    // Also listen for BroadcastChannel signal (if _app.tsx loads in iframe)
+    try {
+      const bc = new BroadcastChannel(SAFELINE_BROADCAST_CHANNEL);
+      bc.onmessage = (e) => {
+        if (e.data?.type === "safeline-challenge-complete") {
+          bc.close();
+          // Give 1s for cookie to propagate
+          setTimeout(async () => {
+            cleanup();
+            resolve(true);
+          }, 1000);
+        }
+      };
+      // Close BC on timeout
+      setTimeout(() => { try { bc.close(); } catch { /* ignore */ } }, timeoutMs);
+    } catch { /* BC not supported */ }
+
+    document.body.appendChild(iframe);
+  });
+}
 
 const completeSafeLineChallenge = (): Promise<void> => {
   if (safelineChallengeInFlight) return safelineChallengeInFlight;
 
-  safelineChallengeInFlight = new Promise<void>((resolve, reject) => {
-    const iframe = document.createElement("iframe");
-    iframe.style.position = "fixed";
-    iframe.style.left = "-9999px";
-    iframe.style.top = "-9999px";
-    iframe.style.width = "1px";
-    iframe.style.height = "1px";
-    iframe.style.opacity = "0";
-    // allow-scripts: challenge JS must execute to set the WAF cookie.
-    // allow-same-origin: required so the cookie is set on the correct origin.
-    // allow-top-navigation is intentionally OMITTED: prevents the challenge
-    // page from navigating the main frame (which would kill any in-progress
-    // upload and cause a white-screen crash).
-    iframe.setAttribute("sandbox", "allow-scripts allow-same-origin");
-    iframe.src = window.location.origin + "/";
+  safelineChallengeInFlight = (async () => {
+    // --- Layer 1: Invisible iframe (no user gesture needed) ---
+    try {
+      const iframeOk = await resolveChallengeViaIframe(45_000);
+      if (iframeOk) {
+        safelineChallengeInFlight = null;
+        return;
+      }
+    } catch {
+      // iframe failed - continue to popup
+    }
 
-    const cleanup = () => {
-      clearTimeout(timeout);
-      if (iframe.parentNode) document.body.removeChild(iframe);
+    // --- Layer 2: Popup (needs user gesture OR permissive browser settings) ---
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const popup = window.open(
+          window.location.origin + "/",
+          "safeline_challenge",
+          "popup,width=900,height=650,left=200,top=100",
+        );
+
+        if (!popup) {
+          reject(new Error("popup-blocked"));
+          return;
+        }
+
+        let bc: BroadcastChannel | null = null;
+        let pollClosed: ReturnType<typeof setInterval> | null = null;
+        let timeout: ReturnType<typeof setTimeout> | null = null;
+        let resolved = false;
+
+        const cleanup = () => {
+          if (resolved) return;
+          resolved = true;
+          if (timeout !== null) clearTimeout(timeout);
+          if (pollClosed !== null) clearInterval(pollClosed);
+          if (bc) { bc.close(); bc = null; }
+          window.removeEventListener("message", onLegacyMessage);
+          try { popup.close(); } catch { /* already closed */ }
+        };
+
+        const onChallengeSignal = () => {
+          if (resolved) return;
+          cleanup();
+          resolve();
+        };
+
+        try {
+          bc = new BroadcastChannel(SAFELINE_BROADCAST_CHANNEL);
+          bc.onmessage = (e) => {
+            if (e.data?.type === "safeline-challenge-complete") {
+              onChallengeSignal();
+            }
+          };
+        } catch { /* BC not supported */ }
+
+        const onLegacyMessage = (e: MessageEvent) => {
+          if (e.origin !== window.location.origin) return;
+          if (e.data?.type === "safeline-challenge-complete") {
+            onChallengeSignal();
+          }
+        };
+        window.addEventListener("message", onLegacyMessage);
+
+        pollClosed = setInterval(() => {
+          if (popup.closed) onChallengeSignal();
+        }, 800);
+
+        timeout = setTimeout(() => {
+          cleanup();
+          reject(new Error("SafeLine challenge timeout"));
+        }, 120_000);
+      });
       safelineChallengeInFlight = null;
-    };
+      return;
+    } catch {
+      // popup also failed
+    }
 
-    const timeout = setTimeout(() => {
-      cleanup();
-      reject(new Error("SafeLine challenge timeout"));
-    }, 15000);
-
-    iframe.onload = () => {
-      // Give the challenge JS time to execute and set the cookie
-      setTimeout(() => {
-        cleanup();
-        resolve();
-      }, 2500);
-    };
-
-    iframe.onerror = () => {
-      cleanup();
-      reject(new Error("SafeLine challenge iframe failed"));
-    };
-
-    document.body.appendChild(iframe);
-  });
+    // --- Layer 3: Reject (caller will show notification to user) ---
+    safelineChallengeInFlight = null;
+    throw new Error("popup-blocked");
+  })();
 
   return safelineChallengeInFlight;
 };
@@ -90,11 +235,23 @@ refreshApi.interceptors.response.use(
     const original = error.config;
     if (error.response?.status === 468 && !original._safelineRetried) {
       original._safelineRetried = true;
-      try {
-        await completeSafeLineChallenge();
-        return refreshApi(original);
-      } catch {
-        // iframe challenge failed -- nothing more we can do for refresh
+      // During upload: popup challenge (Worker may need cookie set).
+      if (_uploadActive) {
+        try {
+          await completeSafeLineChallenge();
+          return refreshApi(original);
+        } catch {
+          // popup failed -- fall through to reject
+        }
+      } else {
+        // Non-upload: silent page reload triggers SafeLine challenge
+        // naturally as a normal page load.
+        const now = Date.now();
+        if (now - _lastSafelineReload > SAFELINE_RELOAD_COOLDOWN_MS) {
+          _lastSafelineReload = now;
+          window.location.reload();
+          return new Promise(() => {}); // never resolves (page reloading)
+        }
       }
     }
     return Promise.reject(error);
@@ -115,29 +272,25 @@ api.interceptors.response.use(
 
     // SafeLine anti-bot challenge
     if (error.response?.status === 468) {
-      // During upload: skip the iframe challenge entirely -- it fails
-      // with ERR_CERT_COMMON_NAME_INVALID on challenge.js and wastes
-      // 15s per chunk retry.  The chunk upload loop handles 468 with
-      // a user-visible notification and unlimited retries.
+      // During upload: skip -- the chunk upload Worker handles 468
+      // with its own retry loop and user-visible notification.
       if (_uploadActive) {
         return Promise.reject(error);
       }
 
-      // Non-upload requests: try hidden iframe first
+      // Non-upload requests: trigger a page reload so SafeLine serves
+      // its challenge as a normal page load (transparent to the user).
+      // A 30s cooldown prevents reload loops if the user is truly
+      // rate-limited/banned.
       if (!original._safelineRetried) {
         original._safelineRetried = true;
-        try {
-          await completeSafeLineChallenge();
-          return api(original);
-        } catch {
-          // Hidden iframe did not solve the challenge
+        const now = Date.now();
+        if (now - _lastSafelineReload > SAFELINE_RELOAD_COOLDOWN_MS) {
+          _lastSafelineReload = now;
+          window.location.reload();
+          return new Promise(() => {}); // never resolves (page reloading)
         }
       }
-      // NEVER reload the page -- this destroys all state (upload
-      // progress, forms, etc.) and if the user is rate-limited/banned
-      // the reload just shows the block page anyway.  Instead, reject
-      // the error and let the caller handle it.  The periodic refresh
-      // in _app.tsx will silently retry later.
       return Promise.reject(error);
     }
 
@@ -188,8 +341,7 @@ api.interceptors.response.use(
 
       try {
         await refreshPromise;
-      } catch {
-        // Refresh token is invalid or expired -- the session is dead.
+      } catch (refreshError: any) {
         // During upload: reject the error so the upload retry / abort
         // logic handles it gracefully instead of navigating away.
         if (_uploadActive) {
@@ -201,10 +353,20 @@ api.interceptors.response.use(
         if (Date.now() - _uploadEndedAt < UPLOAD_COOLDOWN_MS) {
           return Promise.reject(error);
         }
-        // Hard-redirect to sign-in so the user can re-authenticate
-        // instead of silently swallowing every subsequent 401.
-        window.location.href = "/auth/signIn";
-        return new Promise(() => {});
+        // Only redirect to sign-in when the session is genuinely dead:
+        // backend returned 401 (refresh token invalid/expired) or the
+        // logged_in cookie is gone.  For transient failures (SafeLine
+        // 468, network glitch at mobile wake-up) let the error
+        // propagate -- the periodic refresh in _app.tsx will recover
+        // once the issue resolves.
+        const isSessionDead =
+          refreshError?.response?.status === 401 ||
+          !document.cookie.includes("logged_in");
+        if (isSessionDead) {
+          window.location.href = "/auth/signIn";
+          return new Promise(() => {});
+        }
+        return Promise.reject(error);
       }
 
       return api(original);

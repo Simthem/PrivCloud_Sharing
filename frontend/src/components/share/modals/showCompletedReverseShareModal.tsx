@@ -1,12 +1,11 @@
 import { Button, Stack } from "@mantine/core";
 import { useModals } from "@mantine/modals";
-import { ModalsContextProps } from "@mantine/modals/lib/context";
 import { FormattedMessage } from "react-intl";
 import { translateOutsideContext } from "../../../hooks/useTranslate.hook";
 import CopyTextField from "../../upload/CopyTextField";
 
 const showCompletedReverseShareModal = (
-  modals: ModalsContextProps,
+  modals: ReturnType<typeof useModals>,
   link: string,
   getReverseShares: () => void,
 ) => {

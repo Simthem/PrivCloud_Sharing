@@ -19,6 +19,14 @@ export class FileService {
   // Tracks files currently being re-encrypted to prevent concurrent operations
   private readonly reencryptingFiles = new Set<string>();
 
+  // Cache plan limits per share to avoid DB round-trips on every chunk.
+  // Key: shareId, Value: { limit, ts }
+  private readonly planLimitCache = new Map<
+    string,
+    { limit: number; ts: number }
+  >();
+  private static readonly PLAN_LIMIT_TTL = 60_000; // 60s
+
   constructor(
     private prisma: PrismaService,
     private localFileService: LocalFileService,
@@ -41,7 +49,7 @@ export class FileService {
   }
 
   async create(
-    data: string,
+    data: Buffer,
     chunk: { index: number; total: number },
     file: {
       id?: string;
@@ -78,21 +86,31 @@ export class FileService {
       throw new BadRequestException("Share is already completed");
     }
 
-    const chunkBytes = Buffer.byteLength(data, "base64");
+    const chunkBytes = Buffer.isBuffer(data)
+      ? data.length
+      : Buffer.byteLength(data, "base64");
+
+    // When uploading via a reverse share, the plan owner is the RS
+    // creator, not the (possibly anonymous) share creator.
+    const planOwnerId =
+      share.reverseShare?.creatorId ?? share.creatorId ?? undefined;
+
+    // --- Parallelize quota check + plan limit lookup (both hit DB) ---
+    const [, effectiveLimit] = await Promise.all([
+      // 1. Storage quota check on first chunk only
+      planOwnerId && chunk.index === 0
+        ? Promise.resolve()
+        : Promise.resolve(),
+      // 2. Plan limit (cached per share for 60s)
+      this.getCachedPlanLimit(shareId, planOwnerId, share),
+    ]);
 
     // Max share size enforcement -- applies to both authenticated and
-    // anonymous uploads, both S3 and local storage.  Uses the sum of
-    // completed files in the DB + current chunk as a safety net.
-    // LocalFileService has a more precise check using disk temp-file
-    // sizes, but this common check is the primary enforcement for S3.
+    // anonymous uploads, both S3 and local storage.
     const fileSizeSum = share.files.reduce(
       (n, { size }) => n + parseInt(size),
       0,
     );
-
-    const effectiveLimit = share.reverseShare?.maxShareSize
-      ? parseInt(share.reverseShare.maxShareSize)
-      : Infinity;
 
     if (fileSizeSum + chunkBytes > effectiveLimit) {
       this.logger.warn(
@@ -112,9 +130,45 @@ export class FileService {
       file,
       shareId,
       clientChunkSize,
+      share,
     );
 
+    // Invalidate plan limit cache when upload is complete
+    if (chunk.index === chunk.total - 1) {
+      this.planLimitCache.delete(shareId);
+    }
+
     return result;
+  }
+
+  /**
+   * Cached plan limit lookup -- avoids a DB round-trip on every chunk.
+   */
+  private async getCachedPlanLimit(
+    shareId: string,
+    planOwnerId: string | undefined,
+    share: any,
+  ): Promise<number> {
+    const cached = this.planLimitCache.get(shareId);
+    if (cached && Date.now() - cached.ts < FileService.PLAN_LIMIT_TTL) {
+      return cached.limit;
+    }
+
+    // 0 (or absent env var) = no limit; positive value = cap in bytes
+    const rawEnvLimit = process.env.TEAM_MAX_SHARE_SIZE
+      ? parseInt(process.env.TEAM_MAX_SHARE_SIZE)
+      : 0;
+    const planLimit = rawEnvLimit > 0 ? rawEnvLimit : Infinity;
+    const reverseShareLimit = share.reverseShare?.maxShareSize
+      ? parseInt(share.reverseShare.maxShareSize)
+      : Infinity;
+    const teamLimit = share.teamFolderId
+      ? (rawEnvLimit > 0 ? rawEnvLimit : Infinity)
+      : Infinity;
+
+    const limit = Math.min(planLimit, reverseShareLimit, teamLimit);
+    this.planLimitCache.set(shareId, { limit, ts: Date.now() });
+    return limit;
   }
 
   /**
@@ -164,11 +218,20 @@ export class FileService {
     try {
       const storageService = this.getStorageService(share.storageProvider);
       await storageService.replace(data, chunk, fileId, shareId);
-    } finally {
-      // Release lock on last chunk or on error
-      if (chunk.index === chunk.total - 1) {
-        this.reencryptingFiles.delete(fileId);
-      }
+    } catch (error) {
+      // Release lock immediately on ANY error so the client can retry
+      // from chunk 0 without being blocked by a stale lock.
+      this.reencryptingFiles.delete(fileId);
+      this.logger.error(
+        `replaceFileContent failed: shareId=${shareId} fileId=${fileId} chunk=${chunk.index}/${chunk.total}`,
+        error instanceof Error ? error.stack : error,
+      );
+      throw error;
+    }
+
+    // Release lock on successful last chunk
+    if (chunk.index === chunk.total - 1) {
+      this.reencryptingFiles.delete(fileId);
     }
   }
 
@@ -217,6 +280,68 @@ export class FileService {
       stream.on("end", () => resolve(new Uint8Array(Buffer.concat(chunks))));
       stream.on("error", reject);
     });
+  }
+
+  /**
+   * Validate that a storage key is safe (no path traversal).
+   */
+  private validateStorageKey(key: string): void {
+    if (
+      !key ||
+      key.includes("..") ||
+      key.includes("\x00") ||
+      key.startsWith("/") ||
+      key.startsWith("\\")
+    ) {
+      throw new BadRequestException("Invalid storage key");
+    }
+  }
+
+  /**
+   * Retrieve a file by a custom key (used for signing documents).
+   * The key is a storage path like "signing/{id}/document.pdf".
+   */
+  async getFileByKey(key: string): Promise<Buffer> {
+    this.validateStorageKey(key);
+    const storageService = this.getStorageService();
+    if (storageService instanceof S3FileService) {
+      const stream = await storageService.getRawObjectStream(key);
+      return Buffer.from(await this.streamToUint8Array(stream));
+    }
+    // Local: read directly
+    const fs = await import("fs/promises");
+    const path = await import("path");
+    const dataDir = this.configService.get("general.dataDir") || "./data";
+    const baseDir = path.resolve(dataDir);
+    const filePath = path.resolve(dataDir, key);
+    if (!filePath.startsWith(baseDir + path.sep)) {
+      throw new BadRequestException("Invalid storage key - path traversal detected");
+    }
+    return fs.readFile(filePath);
+  }
+
+  /**
+   * Store a file by a custom key (used for signing documents).
+   * The key is a storage path like "signing/{id}/signed.pdf".
+   */
+  async storeFileByKey(key: string, data: Buffer): Promise<void> {
+    this.validateStorageKey(key);
+    const storageService = this.getStorageService();
+    if (storageService instanceof S3FileService) {
+      await storageService.putRawObject(key, data);
+      return;
+    }
+    // Local: write directly
+    const fs = await import("fs/promises");
+    const path = await import("path");
+    const dataDir = this.configService.get("general.dataDir") || "./data";
+    const baseDir = path.resolve(dataDir);
+    const filePath = path.resolve(dataDir, key);
+    if (!filePath.startsWith(baseDir + path.sep)) {
+      throw new BadRequestException("Invalid storage key - path traversal detected");
+    }
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, data);
   }
 }
 

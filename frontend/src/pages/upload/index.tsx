@@ -1,9 +1,11 @@
-import { Button, Group, Progress, Stack, Text, Title } from "@mantine/core";
+import { Button, Group, Progress, Stack, Text, Title, Alert } from "@mantine/core";
 import { useModals } from "@mantine/modals";
-import { cleanNotifications } from "@mantine/notifications";
+import { cleanNotifications, showNotification } from "@mantine/notifications";
 import pLimit from "p-limit";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { FormattedMessage } from "react-intl";
+import { TbInfoCircle, TbFolder } from "react-icons/tb";
+import { TbCloudUpload } from "react-icons/tb";
 import Meta from "../../components/Meta";
 import Dropzone from "../../components/upload/Dropzone";
 import FileList from "../../components/upload/FileList";
@@ -26,9 +28,11 @@ import {
   getUserKey,
   storeUserKey,
   extractKeyFromHash,
+  unwrapReverseShareKey,
 } from "../../utils/crypto.util";
 import userService from "../../services/user.service";
-import { setUploadActive } from "../../services/api.service";
+import teamService from "../../services/team.service";
+import { setUploadActive, completeSafeLineChallenge } from "../../services/api.service";
 import { useRouter } from "next/router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -70,9 +74,170 @@ const Upload = ({
   const { user } = useUser();
   const config = useConfig();
   const wakeLock = useWakeLock();
+
+  // Pre-selected team folder from query params (from the folder page "Upload" button)
+  const qTeamFolderId = typeof router.query.teamFolderId === "string" ? router.query.teamFolderId : undefined;
+  const { data: writableFolders } = useQuery({
+    queryKey: ["myWritableFolders"],
+    queryFn: teamService.getMyWritableFolders,
+    enabled: !!user && !!qTeamFolderId,
+    staleTime: 60_000,
+  });
+  const targetFolderInfo = qTeamFolderId
+    ? writableFolders?.find((wf) => wf.folder.id === qTeamFolderId)
+    : undefined;
   const [files, setFiles] = useState<FileUpload[]>([]);
   const [isUploading, setisUploading] = useState(false);
   const uploadAbortRef = useRef<AbortController | null>(null);
+
+  // ---- Browser-setup banner (popups + notifications) ----
+  // Dismissible: stored in localStorage with a 30-day snooze so the user
+  // isn't nagged on every login. The banner reappears after 30 days or
+  // if the user clears localStorage - but never on every page visit.
+  const DISMISS_KEY = "privcloud_browser_setup_dismissed";
+  const DISMISS_DAYS = 30;
+
+  // SSR-safe: always start with the same defaults the server produces.
+  // Real values are read from localStorage / Notification API in a
+  // useEffect below, after hydration, to avoid React #418/#423.
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  // Popup permission state. Cached in localStorage so the intrusive
+  // window.open probe only runs ONCE (or when the user clicks "Test
+  // pop-ups" manually).  Re-probed after DISMISS_DAYS or on cache miss.
+  const POPUP_CACHE_KEY = "privcloud_popup_probe";
+  const POPUP_CACHE_DAYS = 30;
+  const [popupsAllowed, setPopupsAllowed] = useState(true);
+
+  // Browser notification permission state.
+  // "unsupported" covers browsers where the API is absent (e.g. Brave
+  // with shields up, older WebViews) - we skip the notification section
+  // entirely for these.
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">("unsupported");
+
+  // Hydrate browser-specific state after mount (avoids SSR mismatch).
+  useEffect(() => {
+    // Banner dismiss
+    const rawDismiss = localStorage.getItem(DISMISS_KEY);
+    if (rawDismiss) {
+      const ts = parseInt(rawDismiss, 10);
+      if (!isNaN(ts) && Date.now() - ts < DISMISS_DAYS * 86_400_000) {
+        setBannerDismissed(true);
+      }
+    }
+
+    // Popup cache: only trust a cached "true" result.
+    // On WebKit (Safari, Epiphany, GNOME Web…) window.open probes are
+    // unreliable (succeed silently even when popups are blocked), so we
+    // assume popups are NOT proven until the user clicks the test button.
+    const rawPopup = localStorage.getItem(POPUP_CACHE_KEY);
+    if (rawPopup) {
+      try {
+        const { value, ts } = JSON.parse(rawPopup);
+        if (Date.now() - ts <= POPUP_CACHE_DAYS * 86_400_000) {
+          setPopupsAllowed(value === true);
+        }
+        // expired -> stays at default (true), will be re-probed below
+      } catch { /* ignore */ }
+    }
+
+    // Notification permission
+    if (typeof Notification !== "undefined") {
+      setNotifPermission(Notification.permission);
+    }
+  }, []);
+
+  // Probe popup permission once on mount if no cached result exists (or expired).
+  // The result is persisted in localStorage so this flash only happens once.
+  // On WebKit (Safari, Epiphany, GNOME Web…) the window.open probe is
+  // unreliable - it succeeds silently even when popups are blocked.
+  // So we skip auto-probing on WebKit; the user must click "Test pop-ups".
+  useEffect(() => {
+    if (!user || router.pathname !== "/upload") return;
+
+    // Detect WebKit-only browsers (no Chrome/Chromium layer).
+    // Chrome on iOS also has AppleWebKit but includes "Chrome" in UA.
+    const ua = navigator.userAgent;
+    const isWebKit =
+      /AppleWebKit/.test(ua) && !/Chrome|Chromium|Edg|OPR|Brave/.test(ua);
+
+    // If WebKit and no cached positive result, assume unverified -> show banner.
+    if (isWebKit) {
+      const raw = localStorage.getItem(POPUP_CACHE_KEY);
+      if (raw) {
+        try {
+          const { value, ts } = JSON.parse(raw);
+          if (Date.now() - ts < POPUP_CACHE_DAYS * 86_400_000 && value === true) return; // user already confirmed
+        } catch { /* fall through */ }
+      }
+      setPopupsAllowed(false);
+      return;
+    }
+
+    // Non-WebKit: auto-probe with window.open
+    // Check if we have a fresh cached result
+    const raw = localStorage.getItem(POPUP_CACHE_KEY);
+    if (raw) {
+      try {
+        const { ts } = JSON.parse(raw);
+        if (Date.now() - ts < POPUP_CACHE_DAYS * 86_400_000) return; // still fresh
+      } catch { /* fall through to re-probe */ }
+    }
+    try {
+      const probe = window.open("about:blank", "_blank", "width=1,height=1,left=-9999,top=-9999");
+      if (probe) {
+        probe.close();
+        setPopupsAllowed(true);
+        localStorage.setItem(POPUP_CACHE_KEY, JSON.stringify({ value: true, ts: Date.now() }));
+      } else {
+        setPopupsAllowed(false);
+        localStorage.setItem(POPUP_CACHE_KEY, JSON.stringify({ value: false, ts: Date.now() }));
+      }
+    } catch {
+      setPopupsAllowed(false);
+      localStorage.setItem(POPUP_CACHE_KEY, JSON.stringify({ value: false, ts: Date.now() }));
+    }
+  }, [user, router.pathname]);
+
+  const notifActionable = notifPermission === "default";
+  // "denied" is permanent in most browsers (no re-prompt possible) - we
+  // also hide the section to avoid frustrating the user with a dead button.
+  const notifHidden = notifPermission === "unsupported" || notifPermission === "denied";
+  const showNotifPrompt = notifActionable && !notifHidden;
+
+  // Show the banner for authenticated users when there is something
+  // actionable (popups blocked OR notifications promptable), unless dismissed.
+  const showBrowserSetup = !!user && !bannerDismissed && (!popupsAllowed || showNotifPrompt);
+
+  const handleDismissBanner = useCallback(() => {
+    localStorage.setItem(DISMISS_KEY, String(Date.now()));
+    setBannerDismissed(true);
+  }, []);
+
+  const handleRequestNotifPermission = useCallback(async () => {
+    try {
+      const result = await Notification.requestPermission();
+      setNotifPermission(result);
+    } catch {
+      // Old Safari callback-style API
+      Notification.requestPermission((result) => setNotifPermission(result));
+    }
+  }, []);
+
+  const handleTestPopup = useCallback(() => {
+    try {
+      const win = window.open("about:blank", "_blank", "width=1,height=1,left=-9999,top=-9999");
+      if (win) {
+        win.close();
+        setPopupsAllowed(true);
+        localStorage.setItem(POPUP_CACHE_KEY, JSON.stringify({ value: true, ts: Date.now() }));
+      } else {
+        toast.error(t("upload.browser-setup.popup-still-blocked"));
+      }
+    } catch {
+      toast.error(t("upload.browser-setup.popup-still-blocked"));
+    }
+  }, [t]);
 
   useConfirmLeave({
     message: t("upload.notify.confirm-leave"),
@@ -88,12 +253,12 @@ const Upload = ({
       toast.error(
         t("upload.notify.tab-discarded", {
           defaultMessage:
-            "The browser discarded this tab to save memory. " +
-            "The upload in progress was interrupted. Please restart the upload. " +
-            "Tip: keep this tab in the foreground during large uploads, " +
-            "or disable the memory saver for this site.",
+            "Le navigateur a decharge cet onglet pour economiser de la memoire. " +
+            "L'envoi en cours a ete interrompu. Veuillez relancer l'envoi. " +
+            "Astuce : gardez cet onglet au premier plan pendant les gros envois, " +
+            "ou desactivez l'economiseur de memoire pour ce site.",
         }),
-        { withCloseButton: true, autoClose: false },
+        { autoClose: false },
       );
     }
   }, []);
@@ -127,9 +292,32 @@ const Upload = ({
   const chunkSize = useRef(parseInt(config.get("share.chunkSize")));
   const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Reverse-share pages pass maxShareSize as prop; otherwise use config limit
+  // Fetch plan-based upload limit (Team plan for all users)
+  const { data: planMaxShareSize } = useQuery({
+    queryKey: ["uploadLimit", user?.id],
+    queryFn: async () => ({ maxSize: 0, usedSize: 0 }), // 0 = no plan limit
+    // Reverse-share upload must always use reverseShare.maxShareSize,
+    // never the current client's plan/anonymous cap.
+    enabled: !isReverseShare,
+    refetchInterval: Infinity,
+    refetchOnWindowFocus: false,
+  });
+
+  // Fetch plan-based expiration limit (Team plan = unlimited)
+  const { data: planMaxExpirationDays } = useQuery({
+    queryKey: ["expirationLimit", user?.id],
+    queryFn: async () => ({ maxDays: 0 }),
+    enabled: !isReverseShare,
+    refetchInterval: Infinity,
+    refetchOnWindowFocus: false,
+  });
+
+  // Reverse-share pages pass maxShareSize as prop; otherwise use plan limit
+  // 0 means unlimited (no configured limit)
+  const rawEffectiveMaxShareSize =
+    maxShareSize ?? planMaxShareSize?.maxSize ?? parseInt(config.get("share.maxSize"));
   const effectiveMaxShareSize =
-    maxShareSize ?? parseInt(config.get("share.maxSize"));
+    rawEffectiveMaxShareSize === 0 ? Number.MAX_SAFE_INTEGER : rawEffectiveMaxShareSize;
 
   const autoOpenCreateUploadModal = config.get("share.autoOpenShareModal");
 
@@ -167,39 +355,75 @@ const Upload = ({
       );
     }
 
-    // Start SW keepalive to prevent browser from killing background uploads
-    let keepaliveInterval: ReturnType<typeof setInterval> | null = null;
-    if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
-      keepaliveInterval = setInterval(() => {
-        navigator.serviceWorker.controller?.postMessage({
-          type: "UPLOAD_KEEPALIVE",
-        });
-      }, 20000);
-      keepaliveRef.current = keepaliveInterval;
-    }
+    // NOTE: SW keepalive removed -- it was keeping Chrome's ServiceWorker
+    // thread alive for hours which triggered UD2 / IMMEDIATE_CRASH in
+    // Chrome's SW lifetime manager
 
-    // --- E2E: retrieve or create the encryption key ---
+    // --- E2E : récupérer ou créer la clé de chiffrement ---
     let cryptoKey: CryptoKey | null = null;
     let storedKey = user ? getUserKey() : null;
 
     if (isReverseShare && isE2EEncrypted) {
-      // Reverse share E2E: read K_rs from the URL fragment
+      // Reverse share E2E : lire K_rs depuis le fragment d'URL
       const rsKeyEncoded = extractKeyFromHash();
       if (rsKeyEncoded) {
         cryptoKey = await importKeyFromBase64(rsKeyEncoded);
         e2eKeyEncoded = rsKeyEncoded;
         share.isE2EEncrypted = true;
       } else {
-        // Key absent from fragment -> no encryption
+        // Clé absente du fragment -> pas de chiffrement
         e2eKeyEncoded = null;
+      }
+    } else if (user && share.teamFolderId) {
+      // Team folder upload: use K_team instead of K_user
+      try {
+        const userKeyB64 = getUserKey();
+        if (userKeyB64) {
+          // Find which team this folder belongs to
+          const writableFolders = await teamService.getMyWritableFolders();
+          const match = writableFolders.find(
+            (wf) => wf.folder.id === share.teamFolderId,
+          );
+          if (match) {
+            const { wrappedTeamKey } = await teamService.getTeamKey(match.teamId);
+            if (wrappedTeamKey) {
+              const masterKey = await importKeyFromBase64(userKeyB64);
+              cryptoKey = await unwrapReverseShareKey(wrappedTeamKey, masterKey);
+              e2eKeyEncoded = await exportKeyToBase64(cryptoKey);
+              share.isE2EEncrypted = true;
+            } else {
+              // No team key set yet - team E2E not configured.
+              // DO NOT fallback to user key: it would create files that
+              // other team members cannot decrypt.  Upload unencrypted.
+              cryptoKey = null;
+              e2eKeyEncoded = null;
+              share.isE2EEncrypted = false;
+            }
+          }
+        }
+      } catch (e) {
+        // Team key unwrap failed (user key was regenerated, localStorage
+        // cleared, or new device).  DO NOT fallback to user key - that
+        // would produce files encrypted with K_user that other team
+        // members cannot decrypt (OperationError on their side).
+        // Instead, upload without encryption and warn the user.
+        console.warn("[E2E] Team key unwrap failed - uploading without encryption:", e);
+        cryptoKey = null;
+        e2eKeyEncoded = null;
+        share.isE2EEncrypted = false;
+        toast.error(
+          "Impossible de déverrouiller la clé de chiffrement de l'équipe. " +
+          "L'envoi se poursuit sans chiffrement E2E. " +
+          "Demandez à un administrateur de l'équipe de resynchroniser votre clé.",
+        );
       }
     } else if (user) {
       if (storedKey) {
-        // Existing key -> reuse
+        // Clé existante -> réutiliser
         cryptoKey = await importKeyFromBase64(storedKey);
         e2eKeyEncoded = storedKey;
       } else {
-        // First use -> generate, store and register the hash
+        // Première utilisation -> générer, stocker et enregistrer le hash
         cryptoKey = await generateEncryptionKey();
         e2eKeyEncoded = await exportKeyToBase64(cryptoKey);
         storeUserKey(e2eKeyEncoded);
@@ -230,27 +454,65 @@ const Upload = ({
       return;
     }
 
-    // Store the key locally for the owner (already done via storeUserKey above)
+    // Stocker la clé localement pour le propriétaire (déjà fait dans storeUserKey ci-dessus)
 
     // --- Adaptive chunk sizing ---
     const totalSize = files.reduce((sum, f) => sum + f.size, 0);
-    const effectiveChunkSize = await getAdaptiveChunkSize(chunkSize.current);
+    // Pass the largest individual file size so chunk sizing guarantees
+    // we never exceed S3's 10,000-part limit for any single file.
+    const maxFileSize = Math.max(...files.map((f) => f.size));
+    const effectiveChunkSize = await getAdaptiveChunkSize(
+      chunkSize.current,
+      maxFileSize,
+    );
 
     const isLargeUpload = totalSize > 2_000_000_000;
-    const uploadLimit = pLimit(isLargeUpload ? 1 : DEFAULT_CONCURRENCY);
+    // Allow 2 concurrent files even for large uploads when there are
+    // multiple files -- keeps the connection pipeline busy while one
+    // chunk finishes and the next starts.  Single-file uploads stay
+    // at 1 (no benefit from concurrency with sequential chunks).
+    const concurrency = isLargeUpload
+      ? Math.min(2, files.length)
+      : DEFAULT_CONCURRENCY;
+    const uploadLimit = pLimit(concurrency);
 
     // Proactive SafeLine keepalive: periodically GET the main page
     // to keep the WAF session cookie alive during long uploads.
     // If the cookie is still valid, SafeLine passes the request
-    // through and may extend the session.  90s interval keeps the
+    // through and may extend the session.  60s interval keeps the
     // session fresh even for multi-hour uploads.
-    const safelineKeepalive = setInterval(() => {
-      fetch("/?_sl=" + Date.now(), { credentials: "include" })
-        .then((r) => {
+    //
+    // STRATEGY: Ping every 30s (SafeLine default session is typically
+    // 30-60 min, but we don't control it).  On 468, immediately solve
+    // via iframe (no popup needed = no user gesture needed = 100% silent).
+    // This makes the challenge invisible to the user in most cases.
+    let safelineKeepaliveResolving = false;
+    keepaliveRef.current = setInterval(async () => {
+      if (safelineKeepaliveResolving) return; // already resolving
+      try {
+        const r = await fetch("/?_sl=" + Date.now(), {
+          credentials: "include",
+          cache: "no-store",
+          // 10s timeout: don't let keepalive hang if network is saturated
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (r.status === 468) {
+          // Session expired - resolve silently via iframe
+          safelineKeepaliveResolving = true;
+          try {
+            await completeSafeLineChallenge();
+          } catch {
+            // iframe + popup both failed - worker retry will handle it
+          } finally {
+            safelineKeepaliveResolving = false;
+          }
+        } else {
           r.body?.cancel();
-        })
-        .catch(() => {});
-    }, 90_000); // every 90s
+        }
+      } catch {
+        // Network/timeout error - ignore, chunk requests will handle it
+      }
+    }, 30_000); // every 30s - aggressive enough to catch any session TTL
 
     // --- Upload via dedicated Web Worker ---
     // The entire slice + encrypt + fetch loop runs inside a Worker
@@ -259,80 +521,187 @@ const Upload = ({
     // the Worker and never accumulate on the main renderer process.
     // This is the primary fix for OOM/SIGTRAP during >10 GB uploads.
 
-    const fileUploadPromises = files.map((file, fileIndex) =>
-      uploadLimit(async () => {
-        let chunks = Math.ceil(file.size / effectiveChunkSize);
-        if (chunks == 0) chunks++;
-        const progressInterval = Math.max(1, Math.floor(chunks / 200));
+    // --- File upload with skip-and-retry ---
+    // Strategy: process all files through pLimit.  If a file fails with
+    // a retryable error, it releases its pLimit slot immediately (so
+    // other queued files can start) and is pushed to a retry queue.
+    // After all first-attempt files complete, retry the failed ones
+    // sequentially with increasing delays.  This prevents cascade
+    // failures: if SafeLine blocks one file, the others don't wait.
+    const MAX_FILE_RETRIES = 3;
+    const FILE_RETRY_DELAYS = [30_000, 60_000, 120_000]; // 30s, 60s, 2min
 
-        const setFileProgress = (progress: number) => {
-          setFiles((prev) =>
-            prev.map((file, callbackIndex) => {
-              if (fileIndex == callbackIndex) {
-                file.uploadingProgress = progress;
-              }
-              return file;
-            }),
-          );
-        };
+    const isRetryableError = (err: any): boolean => {
+      if (err?.cancelled) return false;
+      if (err?.quota) return false;
+      if (err?.status === 413) return false;
+      if (err?.status === 403 && err?.data?.error) return false;
+      if (err?.message && /crypto|key import/i.test(err.message)) return false;
+      return true;
+    };
 
-        setFileProgress(1);
+    const fileAttempts = new Map<number, number>();
+    const retryQueue: Array<{ file: (typeof files)[0]; fileIndex: number }> = [];
 
-        try {
-          await uploadFileViaWorker(
-            file,
-            createdShare.id,
-            effectiveChunkSize,
-            chunks,
-            share.isE2EEncrypted ?? false,
-            cryptoKey,
-            (chunkIndex, totalChunks, _fileId) => {
-              // Throttled progress update -- only re-render React
-              // every progressInterval chunks, plus always on last.
-              if (
-                chunkIndex % progressInterval === 0 ||
-                chunkIndex === totalChunks - 1
-              ) {
-                setFileProgress(((chunkIndex + 1) / totalChunks) * 100);
-              }
-            },
-            abortCtrl.signal,
-          );
-        } catch (e: any) {
-          if (e?.cancelled) return; // user cancelled -- skip error toast
+    const uploadSingleFile = async (
+      file: (typeof files)[0],
+      fileIndex: number,
+    ): Promise<"ok" | "failed" | "retryable"> => {
+      const attempt = fileAttempts.get(fileIndex) ?? 0;
+      fileAttempts.set(fileIndex, attempt + 1);
+
+      let chunks = Math.ceil(file.size / effectiveChunkSize);
+      if (chunks == 0) chunks++;
+      const progressInterval = Math.max(1, Math.floor(chunks / 200));
+      let completedChunks = 0;
+
+      const setFileProgress = (progress: number) => {
+        setFiles((prev) =>
+          prev.map((f, callbackIndex) => {
+            if (fileIndex == callbackIndex) {
+              f.uploadingProgress = progress;
+            }
+            return f;
+          }),
+        );
+      };
+
+      if (attempt > 0) completedChunks = 0;
+      setFileProgress(1);
+
+      try {
+        await uploadFileViaWorker(
+          file,
+          createdShare.id,
+          effectiveChunkSize,
+          chunks,
+          share.isE2EEncrypted ?? false,
+          cryptoKey,
+          (chunkIndex, totalChunks, _fileId) => {
+            completedChunks++;
+            if (
+              completedChunks % progressInterval === 0 ||
+              completedChunks === totalChunks
+            ) {
+              setFileProgress((completedChunks / totalChunks) * 100);
+            }
+          },
+          abortCtrl.signal,
+        );
+        setFileProgress(100);
+        return "ok";
+      } catch (e: any) {
+        if (e?.cancelled) return "failed";
+        if (!isRetryableError(e) || attempt >= MAX_FILE_RETRIES) {
           if (e?.quota) {
             toast.error(e.message || "Upload failed (quota limit)");
           } else if (e?.status === 413) {
             toast.error(e?.data?.message || "Upload failed (size limit)");
           } else if (e?.status === 403) {
             toast.error(e?.data?.message || "Upload failed (access denied)");
+          } else {
+            toast.error(
+              `${file.name}: échec après ${attempt + 1} tentative(s) - ${e?.message || "erreur inconnue"}`,
+            );
           }
           setFileProgress(-1);
+          return "failed";
+        }
+        // Mark as retryable - slot will be freed
+        setFileProgress(0);
+        return "retryable";
+      }
+    };
+
+    // Phase 1: initial pass - all files through pLimit
+    const fileUploadPromises = files.map((file, fileIndex) =>
+      uploadLimit(async () => {
+        if (abortCtrl.signal.aborted) return;
+        const result = await uploadSingleFile(file, fileIndex);
+        if (result === "retryable") {
+          retryQueue.push({ file, fileIndex });
         }
       }),
     );
 
-    Promise.all(fileUploadPromises)
-      .catch(() => {})
-      .finally(() => {
-        clearInterval(safelineKeepalive);
+    await Promise.all(fileUploadPromises).catch(() => {});
+
+    // Phase 2: retry failed files sequentially with delays
+    // By this point, the SafeLine iframe auto-resolver has had time
+    // to fix any session issues.  Retrying sequentially prevents
+    // overwhelming a just-recovered backend.
+    for (let i = 0; i < retryQueue.length; i++) {
+      if (abortCtrl.signal.aborted) break;
+      const { file, fileIndex } = retryQueue[i];
+
+      const attempt = fileAttempts.get(fileIndex) ?? 1;
+      const delay = FILE_RETRY_DELAYS[attempt - 1] ?? 120_000;
+
+      console.warn(
+        `[UPLOAD] "${file.name}" retry ${attempt}/${MAX_FILE_RETRIES}, waiting ${delay / 1000}s...`,
+      );
+      showNotification({
+        id: `file-retry-${fileIndex}`,
+        title: t("upload.notify.fileRetry.title", {
+          defaultMessage: "Retry fichier",
+        }),
+        message: t("upload.notify.fileRetry.message", {
+          defaultMessage: `${file.name} - tentative ${attempt + 1}/${MAX_FILE_RETRIES + 1} dans ${delay / 1000}s`,
+          name: file.name,
+          delay: delay / 1000,
+          attempt: attempt + 1,
+          max: MAX_FILE_RETRIES + 1,
+        }),
+        color: "yellow",
+        autoClose: delay,
       });
+      await new Promise((r) => setTimeout(r, delay));
+      if (abortCtrl.signal.aborted) break;
+
+      const result = await uploadSingleFile(file, fileIndex);
+      if (result === "retryable") {
+        // Push back for another round if we haven't exceeded max
+        const nextAttempt = fileAttempts.get(fileIndex) ?? 2;
+        if (nextAttempt <= MAX_FILE_RETRIES) {
+          retryQueue.push({ file, fileIndex });
+        } else {
+          toast.error(
+            `${file.name}: échec définitif après ${nextAttempt} tentatives`,
+          );
+          setFiles((prev) =>
+            prev.map((f, idx) => {
+              if (idx === fileIndex) f.uploadingProgress = -1;
+              return f;
+            }),
+          );
+        }
+      }
+    }
+
+    // Cleanup: stop keepalive, mark upload as inactive.
+    // The useEffect watching file progress handles completion (all 100%)
+    // or failure (some -1) states and triggers the appropriate UI.
+    if (keepaliveRef.current) {
+      clearInterval(keepaliveRef.current);
+      keepaliveRef.current = null;
+    }
+    setUploadActive(false);
   };
 
   const cancelUpload = () => {
     modals.openConfirmModal({
-      title: t("upload.cancel.title", { defaultMessage: "Cancel upload" }),
+      title: t("upload.cancel.title", { defaultMessage: "Annuler l'envoi" }),
       children: (
         <Text size="sm">
           <FormattedMessage
             id="upload.cancel.confirm"
-            defaultMessage="The upload in progress will be interrupted and the incomplete share deleted. Continue?"
+            defaultMessage="L'envoi en cours sera interrompu et le partage incomplet supprimé. Continuer ?"
           />
         </Text>
       ),
       labels: {
-        confirm: t("common.button.confirm", { defaultMessage: "Confirm" }),
-        cancel: t("common.button.cancel", { defaultMessage: "No" }),
+        confirm: t("common.button.confirm", { defaultMessage: "Confirmer" }),
+        cancel: t("common.button.cancel", { defaultMessage: "Non" }),
       },
       confirmProps: { color: "red" },
       onConfirm: () => {
@@ -365,7 +734,7 @@ const Upload = ({
         );
         e2eKeyEncoded = null;
         shouldShareE2EKeyViaEmail = false;
-        toast.error(t("upload.cancel.done", { defaultMessage: "Upload cancelled" }));
+        toast.success(t("upload.cancel.done", { defaultMessage: "Envoi annulé" }));
       },
     });
   };
@@ -381,14 +750,19 @@ const Upload = ({
         ),
         enableEmailRecepients: config.get("email.enableShareEmailRecipients"),
         enableE2EKeyEmailSharing: config.get("email.enableE2EKeyEmailSharing"),
+        // Show the "share E2E key via email" checkbox only when the user
+        // already has an E2E key set up (server hash recorded or key in RAM).
+        userHasE2E: !!user?.hasEncryptionKey || !!getUserKey(),
         maxExpiration: config.get("share.maxExpiration"),
         anonymousMaxExpiration: config.get("share.anonymousMaxExpiration"),
+        planMaxExpirationDays: planMaxExpirationDays?.maxDays ?? 0,
         shareIdLength: config.get("share.shareIdLength"),
         simplified,
         captchaSiteKey:
           !user && config.get("hcaptcha.enabled")
             ? config.get("hcaptcha.siteKey")
             : undefined,
+        preselectedTeamFolderId: qTeamFolderId,
       },
       files,
       uploadFiles,
@@ -413,10 +787,9 @@ const Upload = ({
 
     if (fileErrorCount > 0) {
       if (!errorToastShown) {
-        toast.error(
+        toast.info(
           t("upload.notify.count-failed", { count: fileErrorCount }),
           {
-            withCloseButton: false,
             autoClose: false,
           },
         );
@@ -469,6 +842,10 @@ const Upload = ({
 
     // All files finished but some (or all) failed -- reset upload state
     // so the UI is no longer stuck in "uploading" mode.
+    // Also delete the incomplete share to clean up any S3 objects that were
+    // already committed for the files that did succeed (partial multi-file
+    // upload failure). Without this, those S3 objects are orphaned until the
+    // deleteUnfinishedShares cron runs (up to 30 h later).
     const allFilesDone =
       files.length > 0 &&
       isUploading &&
@@ -485,14 +862,83 @@ const Upload = ({
       setUploadActive(false);
       webLockReleaseRef.current?.();
       webLockReleaseRef.current = null;
+      // Best-effort cleanup: delete the incomplete share (S3 prefix purge +
+      // DB record). Ignore errors - the cron will catch any leftovers.
+      if (createdShare?.id) {
+        shareService.remove(createdShare.id).catch(() => {});
+      }
     }
   }, [files]);
 
   return (
     <>
-      <Meta title={t("upload.title")} />
+      <Meta title={t("upload.title")} noIndex />
+      <Title order={1} visually-hidden style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap" }}>
+        {t("upload.title")}
+      </Title>
+      {showBrowserSetup && (
+        <Alert
+          variant="light"
+          color="blue"
+          mb="sm"
+          icon={<TbInfoCircle size={18} />}
+          title={t("upload.browser-setup.title")}
+          withCloseButton
+          closeButtonLabel={t("upload.browser-setup.dismiss")}
+          onClose={handleDismissBanner}
+        >
+          <Stack gap="sm">
+            {!popupsAllowed && (
+              <>
+                <Text size="sm">
+                  <FormattedMessage id="upload.browser-setup.popup-body" />
+                </Text>
+                <Group>
+                  <Button
+                    size="compact-sm"
+                    variant="light"
+                    color="yellow"
+                    onClick={handleTestPopup}
+                  >
+                    <FormattedMessage id="upload.browser-setup.popup-button" />
+                  </Button>
+                </Group>
+              </>
+            )}
+            {showNotifPrompt && (
+              <>
+                <Text size="sm">
+                  <FormattedMessage id="upload.browser-setup.notif-body" />
+                </Text>
+                <Group>
+                  <Button
+                    size="compact-sm"
+                    variant="light"
+                    onClick={handleRequestNotifPermission}
+                  >
+                    <FormattedMessage id="upload.browser-setup.notif-button" />
+                  </Button>
+                </Group>
+              </>
+            )}
+          </Stack>
+        </Alert>
+      )}
+      {qTeamFolderId && (
+        <Alert
+          variant="light"
+          color="teal"
+          mb="sm"
+          icon={<TbFolder size={18} />}
+          title={t("upload.team-folder.hint.title")}
+        >
+          {targetFolderInfo
+            ? t("upload.team-folder.hint", { folderName: targetFolderInfo.folder.name, teamName: targetFolderInfo.teamName })
+            : t("upload.team-folder.hint.unknown")}
+        </Alert>
+      )}
       <Group
-        {...(name ? { position: "apart" } : { position: "right" })}
+        justify={name ? "space-between" : "flex-end"}
         mb={20}
       >
         {name && <Title order={3}>{name}</Title>}
@@ -515,52 +961,141 @@ const Upload = ({
         onFilesChanged={handleDropzoneFilesChanged}
         isUploading={isUploading}
       />
+      {/* Quota Gauge - visible after files are added, before sharing */}
+      {files.length > 0 && !isUploading && (() => {
+        const totalFilesSize = files.reduce((sum, f) => sum + f.size, 0);
+        const quotaUsedPct = effectiveMaxShareSize > 0
+          ? Math.min(Math.round((totalFilesSize / effectiveMaxShareSize) * 100), 100)
+          : 0;
+        const isOverQuota = totalFilesSize > effectiveMaxShareSize;
+        const formatSize = (bytes: number) => {
+          if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(2)} GB`;
+          if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
+          if (bytes >= 1000) return `${(bytes / 1000).toFixed(0)} KB`;
+          return `${bytes} B`;
+        };
+        return (
+          <Stack gap={4} mt="sm" mb="xs">
+            <Group justify="space-between" align="center">
+              <Group gap="xs">
+                <TbCloudUpload size={16} />
+                <Text size="sm" fw={500}>
+                  <FormattedMessage id="upload.quota.label" defaultMessage="Quota d'envoi" />
+                </Text>
+              </Group>
+              <Text size="sm" c={isOverQuota ? "red" : "dimmed"} fw={isOverQuota ? 600 : 400}>
+                {formatSize(totalFilesSize)} / {formatSize(effectiveMaxShareSize)}
+              </Text>
+            </Group>
+            <Progress
+              value={quotaUsedPct}
+              size="md"
+              radius="xl"
+              color={isOverQuota ? "red" : quotaUsedPct > 80 ? "yellow" : "blue"}
+            />
+            {isOverQuota && (
+              <Text size="xs" c="red" ta="center">
+                <FormattedMessage
+                  id="upload.quota.exceeded"
+                  defaultMessage="La taille totale des fichiers dépasse votre quota. Retirez des fichiers ou passez à un plan supérieur."
+                />
+              </Text>
+            )}
+          </Stack>
+        );
+      })()}
       {isUploading && files.length > 0 && (() => {
         const totalSize = files.reduce((sum, f) => sum + f.size, 0);
         const uploadedSize = files.reduce((sum, f) => {
           const pct = Math.max(0, f.uploadingProgress ?? 0);
           return sum + (f.size * Math.min(pct, 100)) / 100;
         }, 0);
-        const globalPct = totalSize > 0 ? Math.round((uploadedSize / totalSize) * 100) : 0;
+        const globalPct = totalSize > 0 ? Math.min(Math.round((uploadedSize / totalSize) * 100), 100) : 0;
         const done = files.filter((f) => f.uploadingProgress >= 100).length;
         const failed = files.filter((f) => f.uploadingProgress === -1).length;
+        const fmtSz = (b: number) => {
+          if (b >= 1_000_000_000) return `${(b / 1_000_000_000).toFixed(2)} GB`;
+          if (b >= 1_000_000) return `${(b / 1_000_000).toFixed(1)} MB`;
+          if (b >= 1000) return `${(b / 1000).toFixed(0)} KB`;
+          return `${b} B`;
+        };
+        const sizeLabel = `${fmtSz(uploadedSize)} / ${fmtSz(totalSize)}`;
         return (
-          <Stack spacing={4} mt="sm" mb="xs">
-            <Group position="apart">
-              <Text size="sm" weight={500}>
+          <Stack gap={4} mt="sm" mb="xs">
+            <Group justify="space-between">
+              <Text size="sm" fw={500}>
                 <FormattedMessage
                   id="upload.progress.global"
                   defaultMessage="Upload: {done}/{total} files"
                   values={{ done: done + failed, total: files.length }}
                 />
               </Text>
-              <Group spacing="xs">
-                <Text size="sm" color="dimmed">{globalPct}%</Text>
+              <Group gap="xs">
+                <Text size="sm" c="dimmed">{globalPct}%</Text>
                 <Button
-                  size="xs"
-                  compact
+                  size="compact-sm"
                   color="red"
                   variant="subtle"
                   onClick={cancelUpload}
                 >
                   <FormattedMessage
                     id="upload.cancel.button"
-                    defaultMessage="Cancel"
+                    defaultMessage="Annuler"
                   />
                 </Button>
               </Group>
             </Group>
-            <Progress
-              value={globalPct}
-              size="lg"
-              radius="xl"
-              animate={globalPct < 100}
-            />
+            {/* Progress bar with contrast-inverted size label */}
+            <div style={{ position: "relative", width: "100%", height: 10, borderRadius: 10, overflow: "hidden" }}>
+              <Progress.Root size={10} style={{ position: "absolute", inset: 0 }}>
+                <Progress.Section
+                  value={globalPct}
+                  animated={globalPct < 100}
+                  color={globalPct >= 100 ? "green" : "yellow"}
+                />
+              </Progress.Root>
+              {/* White text on unfilled background */}
+              <span
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "#fff",
+                  pointerEvents: "none",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {sizeLabel}
+              </span>
+              {/* Dark text clipped to filled area */}
+              <span
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "#1a1b1e",
+                  pointerEvents: "none",
+                  whiteSpace: "nowrap",
+                  clipPath: `inset(0 ${100 - globalPct}% 0 0)`,
+                  transition: "clip-path 0.4s ease",
+                }}
+              >
+                {sizeLabel}
+              </span>
+            </div>
           </Stack>
         );
       })()}
       {files.length > 0 && (
-        <FileList<FileUpload> files={files} setFiles={setFiles} />
+        <FileList<FileUpload> files={files} setFiles={setFiles} isUploading={isUploading} />
       )}
     </>
   );

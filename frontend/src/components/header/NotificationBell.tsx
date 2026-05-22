@@ -1,5 +1,5 @@
 import { Indicator, Tooltip, UnstyledButton } from "@mantine/core";
-import { TbBell, TbBellOff, TbBellRinging } from "react-icons/tb";
+import { TbBell, TbBellRinging } from "react-icons/tb";
 import { useCallback, useEffect, useState } from "react";
 import useConfig from "../../hooks/config.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
@@ -54,6 +54,14 @@ const NotificationBell = () => {
     if (supported && pushEnabled && vapidPublicKey) checkSubscription();
   }, [supported, pushEnabled, vapidPublicKey, checkSubscription]);
 
+  // Re-check subscription when it changes from another component
+  // (e.g. PushNotificationSection on the account page).
+  useEffect(() => {
+    const handler = () => checkSubscription();
+    window.addEventListener("push-subscription-changed", handler);
+    return () => window.removeEventListener("push-subscription-changed", handler);
+  }, [checkSubscription]);
+
   if (!mounted || !pushEnabled || !vapidPublicKey || !supported) return null;
 
   const handleToggle = async () => {
@@ -70,6 +78,7 @@ const NotificationBell = () => {
           await sub.unsubscribe();
         }
         setSubscribed(false);
+        window.dispatchEvent(new Event("push-subscription-changed"));
         toast.success(t("account.notify.push.disabled"));
       } else {
         const permission = await Notification.requestPermission();
@@ -78,10 +87,28 @@ const NotificationBell = () => {
           return;
         }
         const reg = await navigator.serviceWorker.ready;
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-        });
+        let sub;
+        try {
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+          });
+        } catch (pushErr: any) {
+          // Brave / hardened browsers: permission granted but push service blocked
+          const msg = pushErr?.message?.toLowerCase?.() ?? "";
+          if (
+            msg.includes("push service") ||
+            msg.includes("registration failed") ||
+            msg.includes("permission denied") ||
+            msg.includes("not allowed") ||
+            (typeof (navigator as any).brave?.isBrave === "function")
+          ) {
+            toast.error(t("account.notify.push.browser-blocked"));
+          } else {
+            toast.error(t("account.notify.push.error"));
+          }
+          return;
+        }
         const json = sub.toJSON();
         await api.post("/push/subscribe", {
           endpoint: json.endpoint,
@@ -89,6 +116,7 @@ const NotificationBell = () => {
           auth: json.keys?.auth,
         });
         setSubscribed(true);
+        window.dispatchEvent(new Event("push-subscription-changed"));
         toast.success(t("account.notify.push.enabled"));
       }
     } catch {

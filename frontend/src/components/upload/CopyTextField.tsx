@@ -1,4 +1,4 @@
-import { ActionIcon, TextInput, Tooltip } from "@mantine/core";
+import { ActionIcon, Group, TextInput, Tooltip } from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import { useRef, useState } from "react";
 import { IoOpenOutline } from "react-icons/io5";
@@ -42,16 +42,21 @@ function CopyTextField(props: { link: string }) {
           setTextClicked(true);
         }
       }}
-      rightSectionWidth={92}
+      rightSectionWidth={95}
       rightSection={
-        <>
+        <Group gap={4} wrap="nowrap" align="center">
           <Tooltip
             label={t("common.button.showQrCode")}
             position="top"
             offset={-2}
             openDelay={200}
           >
-            <ActionIcon onClick={() => showQrCodeModal(modals, props.link)}>
+            <ActionIcon
+              variant="light"
+              color="grape"
+              size={25}
+              onClick={() => showQrCodeModal(modals, props.link)}
+            >
               <TbQrcode />
             </ActionIcon>
           </Tooltip>
@@ -62,11 +67,15 @@ function CopyTextField(props: { link: string }) {
             offset={-2}
             openDelay={200}
           >
-            <a href={props.link}>
-              <ActionIcon>
-                <IoOpenOutline />
-              </ActionIcon>
-            </a>
+            <ActionIcon
+              variant="light"
+              color="blue"
+              size={25}
+              component="a"
+              href={props.link}
+            >
+              <IoOpenOutline />
+            </ActionIcon>
           </Tooltip>
 
           <Tooltip
@@ -75,11 +84,16 @@ function CopyTextField(props: { link: string }) {
             offset={-2}
             openDelay={200}
           >
-            <ActionIcon onClick={copyLink}>
+            <ActionIcon
+              variant="light"
+              color="teal"
+              size={25}
+              onClick={copyLink}
+            >
               {checkState ? <TbCheck /> : <TbCopy />}
             </ActionIcon>
           </Tooltip>
-        </>
+        </Group>
       }
     />
   );

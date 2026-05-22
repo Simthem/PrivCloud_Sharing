@@ -1,5 +1,5 @@
 import { Button, Center, PasswordInput, Stack, Text, useMantineTheme } from "@mantine/core";
-import { ModalsContextProps } from "@mantine/modals/lib/context";
+import { useModals } from "@mantine/modals";
 import { useRef, useState } from "react";
 import { FormattedMessage } from "react-intl";
 import HCaptcha from "@hcaptcha/react-hcaptcha";
@@ -8,7 +8,7 @@ import useTranslate, {
 } from "../../hooks/useTranslate.hook";
 
 const showEnterPasswordModal = (
-  modals: ModalsContextProps,
+  modals: ReturnType<typeof useModals>,
   submitCallback: (
     _password: string,
     _captchaToken?: string,
@@ -46,6 +46,15 @@ const Body = ({
 
   const captchaEnabled = !!captchaSiteKey;
 
+  const handleCaptchaExpire = () => setCaptchaToken(null);
+  const handleCaptchaError = (error: any) => {
+    console.warn("[hCaptcha Error]", error);
+    // Attempt to reset the captcha on error (e.g., WebGL context lost on Safari)
+    if (captchaRef.current?.resetCaptcha) {
+      captchaRef.current.resetCaptcha();
+    }
+  };
+
   return (
     <Stack align="stretch">
       <Text size="sm">
@@ -73,8 +82,9 @@ const Body = ({
                 ref={captchaRef}
                 sitekey={captchaSiteKey!}
                 onVerify={setCaptchaToken}
-                onExpire={() => setCaptchaToken(null)}
-                theme={theme.colorScheme}
+                onExpire={handleCaptchaExpire}
+                onError={handleCaptchaError}
+                theme={theme.other.colorScheme}
               />
             </Center>
           )}

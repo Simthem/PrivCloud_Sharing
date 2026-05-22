@@ -21,8 +21,8 @@ share:
   maxExpiration: 0 days
   # Default length for the generated ID of a share. This value is also used to generate links for reverse shares. A value below 8 is not considered secure.
   shareIdLength: "8"
-  # Maximum share size
-  maxSize: "1000000000"
+  # Maximum share size in bytes. Set to 0 for unlimited.
+  maxSize: "0"
   # Adjust the level to balance between file size and compression speed. Valid values range from 0 to 9, with 0 being no compression and 9 being maximum compression.
   zipCompressionLevel: "9"
   # Adjust the chunk size for your uploads to balance efficiency and reliability according to your internet connection.

@@ -89,9 +89,9 @@ export class ShareController {
    * The key is encrypted with K_master - the server never sees K_rs in clear.
    *
    * Returns:
-   *  - 200 { encryptedReverseShareKey: null }   -> not a reverse share (use K_master)
-   *  - 200 { encryptedReverseShareKey: "..." }  -> reverse share key (unwrap with K_master)
-   *  - 403                                       -> reverse share but user is not owner
+   *  - 200 { encryptedReverseShareKey: null }   → not a reverse share (use K_master)
+   *  - 200 { encryptedReverseShareKey: "..." }  → reverse share key (unwrap with K_master)
+   *  - 403                                       → reverse share but user is not owner
    */
   @Get(":id/e2e-key")
   @UseGuards(JwtGuard)
@@ -101,12 +101,12 @@ export class ShareController {
   ) {
     const result = await this.shareService.getEncryptedReverseShareKey(id);
 
-    // Not a reverse share or no encrypted key stored -> client should use K_master
+    // Not a reverse share or no encrypted key stored → client should use K_master
     if (!result) {
       return { encryptedReverseShareKey: null };
     }
 
-    // Reverse share exists but user is not authenticated or not the owner -> 403
+    // Reverse share exists but user is not authenticated or not the owner → 403
     if (!user || result.creatorId !== user.id) {
       throw new ForbiddenException("Not the reverse share owner");
     }
@@ -201,27 +201,44 @@ export class ShareController {
    * Keeps the 10 most recent share token cookies and deletes the rest and all expired ones
    */
   private clearShareTokenCookies(request: Request, response: Response) {
-    const shareTokenCookies = Object.entries(request.cookies)
-      .filter(([key]) => key.startsWith("share_") && key.endsWith("_token"))
-      .map(([key, value]) => ({
-        key,
-        payload: this.jwtService.decode(value),
-      }));
+    const now = moment().unix();
+    const shareTokenCookies: { key: string; exp: number }[] = [];
 
-    const expiredTokens = shareTokenCookies.filter(
-      (cookie) => cookie.payload.exp < moment().unix(),
-    );
-    const validTokens = shareTokenCookies.filter(
-      (cookie) => cookie.payload.exp >= moment().unix(),
-    );
+    for (const [key, value] of Object.entries(request.cookies)) {
+      if (!key.startsWith("share_") || !key.endsWith("_token")) continue;
+      if (typeof value !== "string" || !value) {
+        // Malformed cookie value — clear it immediately
+        response.clearCookie(key);
+        continue;
+      }
+      try {
+        const payload = this.jwtService.decode(value);
+        if (
+          !payload ||
+          typeof payload !== "object" ||
+          typeof (payload as any).exp !== "number"
+        ) {
+          // Not a valid JWT payload — clear the cookie
+          response.clearCookie(key);
+          continue;
+        }
+        shareTokenCookies.push({ key, exp: (payload as any).exp });
+      } catch {
+        // jwtService.decode threw (not a JWT at all) — clear it
+        response.clearCookie(key);
+      }
+    }
 
-    expiredTokens.forEach((cookie) => response.clearCookie(cookie.key));
+    const expiredTokens = shareTokenCookies.filter((c) => c.exp < now);
+    const validTokens = shareTokenCookies.filter((c) => c.exp >= now);
+
+    expiredTokens.forEach((c) => response.clearCookie(c.key));
 
     if (validTokens.length > 10) {
       validTokens
-        .sort((a, b) => a.payload.exp - b.payload.exp)
+        .sort((a, b) => a.exp - b.exp)
         .slice(0, -10)
-        .forEach((cookie) => response.clearCookie(cookie.key));
+        .forEach((c) => response.clearCookie(c.key));
     }
   }
 }

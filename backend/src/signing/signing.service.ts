@@ -1,0 +1,1103 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
+import * as crypto from "crypto";
+import { PrismaService } from "src/prisma/prisma.service";
+import { EmailService } from "src/email/email.service";
+import { FileService } from "src/file/file.service";
+import { ConfigService } from "src/config/config.service";
+import { PdfSigningService } from "./pdf-signing.service";
+import {
+  CreateSignatureRequestDTO,
+  SignatureLevel,
+} from "./dto/createSignatureRequest.dto";
+import { SignDocumentDTO } from "./dto/signDocument.dto";
+import { User } from "@prisma/client";
+
+@Injectable()
+export class SigningService {
+  private readonly logger = new Logger(SigningService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private emailService: EmailService,
+    private fileService: FileService,
+    private configService: ConfigService,
+    private pdfSigningService: PdfSigningService,
+  ) {}
+
+  /**
+   * Create a signature request for a PDF file within a share.
+   * Sends email notifications to all recipients.
+   */
+  async createSignatureRequest(
+    dto: CreateSignatureRequestDTO,
+    user: User,
+  ) {
+    // Verify the share and file exist and belong to the user
+    const share = await this.prisma.share.findFirst({
+      where: { id: dto.shareId, creatorId: user.id },
+      include: { files: true },
+    });
+
+    if (!share) {
+      throw new NotFoundException("Share not found or access denied");
+    }
+
+    const file = share.files.find((f) => f.id === dto.fileId);
+    if (!file) {
+      throw new NotFoundException("File not found in this share");
+    }
+
+    // Verify it's a PDF
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      throw new BadRequestException(
+        "Electronic signatures are only supported for PDF files",
+      );
+    }
+
+    // Verify team membership if teamId is provided
+    if (dto.teamId) {
+      const membership = await this.prisma.teamMember.findFirst({
+        where: { teamId: dto.teamId, userId: user.id, isActive: true },
+      });
+      if (!membership) {
+        throw new ForbiddenException(
+          "You are not an active member of this team",
+        );
+      }
+
+      // Verify the share belongs to this team (via team folder)
+      const teamFolder = await this.prisma.teamFolder.findFirst({
+        where: { teamId: dto.teamId },
+        include: { shares: { where: { id: dto.shareId } } },
+      });
+      if (!teamFolder?.shares?.length) {
+        throw new ForbiddenException(
+          "This share does not belong to the specified team",
+        );
+      }
+    }
+
+    // Create the signature document
+    const document = await this.prisma.signatureDocument.create({
+      data: {
+        fileName: file.name,
+        originalFileKey: `${dto.shareId}/${file.id}`,
+        status: "PENDING",
+        message: dto.message,
+        signatureLevel: dto.signatureLevel || SignatureLevel.AES,
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+        addApprovalField: dto.addApprovalField ?? true,
+        addApprovalMention: dto.addApprovalMention ?? true,
+        addInitials: dto.addInitials ?? false,
+        isE2EEncrypted: dto.isE2EEncrypted ?? false,
+        creatorId: user.id,
+        shareId: dto.shareId,
+        fileId: dto.fileId,
+        teamId: dto.teamId || null,
+        recipients: {
+          create: dto.recipients.map((r, idx) => ({
+            email: r.email,
+            name: r.name,
+            role: r.role || "SIGNER",
+            order: r.order ?? idx + 1,
+            status: "PENDING",
+          })),
+        },
+        fields: dto.fields?.length
+          ? {
+              create: dto.fields.map((f, idx) => ({
+                type: f.type,
+                page: f.page ?? 1,
+                posX: f.posX ?? 72,
+                posY: f.posY ?? 200 + idx * 80,
+                width: f.width ?? 200,
+                height: f.height ?? 60,
+                rotation: f.rotation || 0,
+                label: f.label,
+                required: f.required ?? true,
+              })),
+            }
+          : undefined,
+      },
+      include: { recipients: true, fields: true },
+    });
+
+    // Create audit event
+    await this.createAuditEvent(document.id, "CREATED", user.email);
+
+    // Log team activity if this signature is for a team
+    if (dto.teamId) {
+      this.logger.log(`Logging SIGNATURE_REQUEST for team ${dto.teamId}`);
+      this.prisma.teamAccessLog.create({
+        data: {
+          teamId: dto.teamId,
+          action: "SIGNATURE_REQUEST",
+          actorEmail: user.email,
+          actorName: user.username || undefined,
+          fileName: file.name,
+          folderId: share.teamFolderId || undefined,
+        },
+      }).catch(err => this.logger.error(`Failed to log SIGNATURE_REQUEST: ${err.message}`));
+    }
+
+    // Send emails to recipients (in order)
+    const firstOrderRecipients = document.recipients.filter(
+      (r) => r.order === 1 && r.role !== "CC",
+    );
+
+    for (const recipient of firstOrderRecipients) {
+      await this.sendSigningInvitation(document, recipient);
+    }
+
+    // Notify CC recipients
+    const ccRecipients = document.recipients.filter((r) => r.role === "CC");
+    for (const cc of ccRecipients) {
+      await this.sendCcNotification(document, cc, user);
+    }
+
+    this.logger.log(
+      `Signature request created: docId=${document.id} by ${user.email} ` +
+        `with ${document.recipients.length} recipients`,
+    );
+
+    return document;
+  }
+
+  /**
+   * Get signature documents created by a user.
+   * Enriches each document with a `fileDeleted` flag indicating whether the
+   * source share has been removed since the signature request was created.
+   */
+  async getMyDocuments(userId: string) {
+    const docs = await this.prisma.signatureDocument.findMany({
+      where: { creatorId: userId },
+      include: {
+        recipients: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            status: true,
+            signedAt: true,
+            order: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return this.enrichWithFileDeleted(docs);
+  }
+
+  /**
+   * Get documents where the current user is a recipient (signer/approver/CC).
+   * Allows signers to see documents they've signed in their own space.
+   */
+  async getReceivedDocuments(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException("User not found");
+
+    const docs = await this.prisma.signatureDocument.findMany({
+      where: {
+        recipients: { some: { email: user.email } },
+        creatorId: { not: userId }, // Exclude docs the user created (those are in getMyDocuments)
+      },
+      include: {
+        recipients: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            status: true,
+            signedAt: true,
+            order: true,
+          },
+        },
+        creator: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return this.enrichWithFileDeleted(docs);
+  }
+
+  /**
+   * Get all signature documents for a team.
+   * Only accessible by team members (verified by the caller).
+   */
+  async getTeamDocuments(teamId: string, userId: string) {
+    // Verify user is a member of the team
+    const membership = await this.prisma.teamMember.findFirst({
+      where: { teamId, userId, isActive: true },
+    });
+    if (!membership) {
+      throw new ForbiddenException("You are not a member of this team");
+    }
+
+    // Only OWNER/ADMIN or members with canViewSignatures can list all team documents
+    const isAdmin = membership.role === "OWNER" || membership.role === "ADMIN";
+    if (!isAdmin && !membership.canViewSignatures) {
+      throw new ForbiddenException("You do not have permission to view signatures");
+    }
+
+    const docs = await this.prisma.signatureDocument.findMany({
+      where: { teamId },
+      include: {
+        recipients: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            status: true,
+            signedAt: true,
+            order: true,
+          },
+        },
+        creator: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return this.enrichWithFileDeleted(docs);
+  }
+
+  /**
+   * Get a specific signature document with full details.
+   */
+  async getDocument(documentId: string, userId: string) {
+    // Resolve user email for recipient lookup (recipients may not have userId set)
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    });
+
+    const doc = await this.prisma.signatureDocument.findFirst({
+      where: {
+        id: documentId,
+        OR: [
+          { creatorId: userId },
+          { recipients: { some: { userId } } },
+          ...(user?.email
+            ? [{ recipients: { some: { email: user.email } } }]
+            : []),
+        ],
+      },
+      include: {
+        recipients: true,
+        fields: true,
+        auditTrail: { orderBy: { createdAt: "asc" } },
+      },
+    });
+
+    if (!doc) throw new NotFoundException("Document not found");
+
+    // For E2E documents, resolve teamId so frontend can derive the decryption key
+    let teamId: string | null = null;
+    if (doc.isE2EEncrypted && doc.shareId) {
+      const share = await this.prisma.share.findUnique({
+        where: { id: doc.shareId },
+        select: { teamFolder: { select: { teamId: true } } },
+      });
+      teamId = share?.teamFolder?.teamId ?? null;
+    }
+
+    // Enrich with fileDeleted flag
+    const [enriched] = await this.enrichWithFileDeleted([doc]);
+
+    // Only expose shareId to the document creator (needed for E2E key resolution)
+    const safeShareId = doc.creatorId === userId ? doc.shareId : null;
+
+    return { ...enriched, teamId, shareId: safeShareId };
+  }
+
+  /**
+   * Get signing page data for a recipient via their signing token.
+   * No authentication required - the token IS the authentication.
+   */
+  async getSigningPage(signingToken: string) {
+    const recipient = await this.prisma.signatureRecipient.findUnique({
+      where: { signingToken },
+      include: {
+        document: {
+          include: { fields: true, creator: { select: { username: true, email: true } } },
+        },
+      },
+    });
+
+    if (!recipient) {
+      throw new NotFoundException("Invalid or expired signing link");
+    }
+
+    if (recipient.document.status === "CANCELLED") {
+      throw new BadRequestException("This signature request has been cancelled");
+    }
+
+    // Already signed - return data with flag instead of throwing
+    const alreadySigned = recipient.status === "SIGNED";
+
+    if (
+      recipient.document.expiresAt &&
+      new Date() > recipient.document.expiresAt
+    ) {
+      throw new BadRequestException("This signature request has expired");
+    }
+
+    // Record view event (only if not already signed)
+    if (!alreadySigned && recipient.status === "PENDING") {
+      await this.prisma.signatureRecipient.update({
+        where: { id: recipient.id },
+        data: { status: "VIEWED" },
+      });
+      await this.createAuditEvent(
+        recipient.documentId,
+        "VIEWED",
+        recipient.email,
+      );
+    }
+
+    return {
+      alreadySigned,
+      documentStatus: recipient.document.status,
+      document: {
+        id: recipient.document.id,
+        fileName: recipient.document.fileName,
+        message: recipient.document.message,
+        signatureLevel: recipient.document.signatureLevel,
+        addApprovalField: recipient.document.addApprovalField,
+        isE2EEncrypted: recipient.document.isE2EEncrypted,
+        creator: recipient.document.creator,
+      },
+      recipient: {
+        id: recipient.id,
+        name: recipient.name,
+        email: recipient.email,
+        role: recipient.role,
+        status: recipient.status,
+        otpVerified: recipient.otpVerified,
+      },
+      fields: alreadySigned
+        ? []
+        : recipient.document.fields.filter(
+            (f) =>
+              !f.assignedRecipientId ||
+              f.assignedRecipientId === recipient.id,
+          ),
+      requiresOtp:
+        !alreadySigned &&
+        recipient.document.signatureLevel === "AES" &&
+        !recipient.otpVerified,
+    };
+  }
+
+  /**
+   * Sign a document as a recipient.
+   * This is the core signing action - applies the signature to the PDF.
+   */
+  async signDocument(
+    signingToken: string,
+    dto: SignDocumentDTO,
+    ipAddress: string,
+    userAgent: string,
+  ) {
+    const recipient = await this.prisma.signatureRecipient.findUnique({
+      where: { signingToken },
+      include: {
+        document: { include: { recipients: true, fields: true } },
+      },
+    });
+
+    if (!recipient) throw new NotFoundException("Invalid signing link");
+
+    if (recipient.status === "SIGNED") {
+      throw new BadRequestException("Already signed");
+    }
+
+    if (recipient.document.status !== "PENDING") {
+      throw new BadRequestException(
+        `Document is ${recipient.document.status.toLowerCase()}, cannot sign`,
+      );
+    }
+
+    // For AES: verify OTP was completed
+    if (
+      recipient.document.signatureLevel === "AES" &&
+      !recipient.otpVerified
+    ) {
+      throw new ForbiddenException(
+        "Identity verification (OTP) required before signing",
+      );
+    }
+
+    // Check signing order
+    const currentOrder = Math.min(
+      ...recipient.document.recipients
+        .filter((r) => r.status !== "SIGNED" && r.role === "SIGNER")
+        .map((r) => r.order),
+    );
+    if (recipient.order > currentOrder) {
+      throw new BadRequestException(
+        "It is not your turn to sign yet. Please wait for previous signers.",
+      );
+    }
+
+    // Update recipient with signature data
+    await this.prisma.signatureRecipient.update({
+      where: { id: recipient.id },
+      data: {
+        status: "SIGNED",
+        signedAt: new Date(),
+        signatureData: dto.signatureData,
+        signatureType: dto.signatureType,
+        signingIp: ipAddress,
+        signingUserAgent: userAgent,
+      },
+    });
+
+    // Audit event
+    await this.createAuditEvent(
+      recipient.documentId,
+      "SIGNED",
+      recipient.email,
+      ipAddress,
+      userAgent,
+      JSON.stringify({ signatureType: dto.signatureType }),
+    );
+
+    // Log team activity if the document belongs to a team
+    const doc = await this.prisma.signatureDocument.findUnique({
+      where: { id: recipient.documentId },
+      select: { teamId: true, fileName: true },
+    });
+    if (doc?.teamId) {
+      this.logger.log(`Logging SIGNATURE_SIGNED for team ${doc.teamId}`);
+      this.prisma.teamAccessLog.create({
+        data: {
+          teamId: doc.teamId,
+          action: "SIGNATURE_SIGNED",
+          actorEmail: recipient.email,
+          actorName: recipient.name || undefined,
+          fileName: doc.fileName,
+        },
+      }).catch(err => this.logger.error(`Failed to log SIGNATURE_SIGNED: ${err.message}`));
+    }
+
+    // Check if all signers have signed
+    const allRecipients = await this.prisma.signatureRecipient.findMany({
+      where: { documentId: recipient.documentId, role: "SIGNER" },
+    });
+
+    const allSigned = allRecipients.every((r) => r.status === "SIGNED");
+    const signedCount = allRecipients.filter((r) => r.status === "SIGNED").length;
+
+    // Notify document owner of this signature
+    void this.notifyCreatorOfSignature(
+      recipient.document,
+      recipient.name,
+      recipient.email,
+      signedCount,
+      allRecipients.length,
+    );
+
+    if (allSigned) {
+      if (recipient.document.isE2EEncrypted) {
+        // E2E: mark as awaiting client-side finalization
+        await this.prisma.signatureDocument.update({
+          where: { id: recipient.documentId },
+          data: { status: "AWAITING_FINALIZATION" },
+        });
+        await this.createAuditEvent(
+          recipient.documentId,
+          "ALL_SIGNED",
+          "system",
+          undefined,
+          undefined,
+          "Awaiting client-side E2E finalization",
+        );
+      } else {
+        // Non-E2E: finalize server-side as before
+        await this.finalizeDocument(recipient.documentId);
+      }
+    } else {
+      // Notify next signer(s) in order
+      const nextOrder = Math.min(
+        ...allRecipients
+          .filter((r) => r.status !== "SIGNED")
+          .map((r) => r.order),
+      );
+      const nextSigners = allRecipients.filter(
+        (r) => r.order === nextOrder && r.status !== "SIGNED",
+      );
+
+      const doc = await this.prisma.signatureDocument.findUnique({
+        where: { id: recipient.documentId },
+      });
+
+      for (const next of nextSigners) {
+        await this.sendSigningInvitation(doc!, next);
+      }
+    }
+
+    return { status: "SIGNED", allSigned };
+  }
+
+  /**
+   * Notify the document creator that a specific signer has signed.
+   */
+  private async notifyCreatorOfSignature(
+    document: { id: string; creatorId: string; fileName: string },
+    signerName: string,
+    signerEmail: string,
+    signedCount: number,
+    totalSigners: number,
+  ) {
+    try {
+      const creator = await this.prisma.user.findUnique({
+        where: { id: document.creatorId },
+      });
+      if (!creator?.email) return;
+      const baseUrl = await this.configService.get("general.appUrl");
+      await this.emailService.sendMail(
+        creator.email,
+        `Signature reçue (${signedCount}/${totalSigners}) - ${document.fileName}`,
+        `Bonjour ${creator.username || ""},\n\n` +
+          `${signerName} (${signerEmail}) a signé le document "${document.fileName}".\n\n` +
+          `Progression : ${signedCount}/${totalSigners} signataires.\n\n` +
+          `Suivez l'avancement ici :\n${baseUrl}/signing/${document.id}\n\n` +
+          `-- \nPrivCloud Sharing - Signature Électronique`,
+      );
+    } catch {
+      // Non-blocking
+    }
+  }
+
+  /**
+   * Reject a document as a recipient.
+   */
+  async rejectDocument(
+    signingToken: string,
+    reason: string | undefined,
+    ipAddress: string,
+    userAgent: string,
+  ) {
+    const recipient = await this.prisma.signatureRecipient.findUnique({
+      where: { signingToken },
+      include: { document: { include: { creator: true } } },
+    });
+
+    if (!recipient) throw new NotFoundException("Invalid signing link");
+
+    await this.prisma.signatureRecipient.update({
+      where: { id: recipient.id },
+      data: {
+        status: "REJECTED",
+        rejectionReason: reason,
+        signingIp: ipAddress,
+        signingUserAgent: userAgent,
+      },
+    });
+
+    // Mark document as cancelled if a required signer rejects
+    if (recipient.role === "SIGNER") {
+      await this.prisma.signatureDocument.update({
+        where: { id: recipient.documentId },
+        data: { status: "CANCELLED" },
+      });
+    }
+
+    await this.createAuditEvent(
+      recipient.documentId,
+      "REJECTED",
+      recipient.email,
+      ipAddress,
+      userAgent,
+      reason ? JSON.stringify({ reason }) : undefined,
+    );
+
+    // Notify document creator
+    if (recipient.document.creator) {
+      await this.emailService.sendMail(
+        recipient.document.creator.email,
+        `Signature refusée - ${recipient.document.fileName}`,
+        `${recipient.name} (${recipient.email}) a refusé de signer le document "${recipient.document.fileName}".\n\n` +
+          (reason ? `Raison : ${reason}\n\n` : "") +
+          `La demande de signature a été annulée.`,
+      );
+    }
+
+    // Log team activity
+    if (recipient.document.teamId) {
+      this.logger.log(`Logging SIGNATURE_REJECTED for team ${recipient.document.teamId}`);
+      this.prisma.teamAccessLog.create({
+        data: {
+          teamId: recipient.document.teamId,
+          action: "SIGNATURE_REJECTED",
+          actorEmail: recipient.email,
+          actorName: recipient.name || undefined,
+          fileName: recipient.document.fileName,
+        },
+      }).catch(err => this.logger.error(`Failed to log SIGNATURE_REJECTED: ${err.message}`));
+    }
+
+    return { status: "REJECTED" };
+  }
+
+  /**
+   * Cancel a signature request (by the document creator).
+   */
+  async cancelDocument(documentId: string, userId: string) {
+    const doc = await this.prisma.signatureDocument.findFirst({
+      where: { id: documentId, creatorId: userId },
+      include: { recipients: true },
+    });
+
+    if (!doc) throw new NotFoundException("Document not found");
+    if (doc.status === "COMPLETED") {
+      throw new BadRequestException("Cannot cancel a completed document");
+    }
+
+    await this.prisma.signatureDocument.update({
+      where: { id: documentId },
+      data: { status: "CANCELLED" },
+    });
+
+    await this.createAuditEvent(documentId, "CANCELLED", "system");
+
+    // Log team activity
+    if (doc.teamId) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      this.logger.log(`Logging SIGNATURE_CANCEL for team ${doc.teamId}`);
+      this.prisma.teamAccessLog.create({
+        data: {
+          teamId: doc.teamId,
+          action: "SIGNATURE_CANCEL",
+          actorEmail: user?.email || "unknown",
+          actorName: user?.username || undefined,
+          fileName: doc.fileName,
+        },
+      }).catch(err => this.logger.error(`Failed to log SIGNATURE_CANCEL: ${err.message}`));
+    }
+
+    // Notify pending recipients
+    for (const r of doc.recipients.filter(
+      (r) => r.status === "PENDING" || r.status === "VIEWED",
+    )) {
+      await this.emailService.sendMail(
+        r.email,
+        `Signature annulée - ${doc.fileName}`,
+        `La demande de signature pour le document "${doc.fileName}" a été annulée par l'expéditeur.`,
+      );
+    }
+
+    return { status: "CANCELLED" };
+  }
+
+  /**
+   * Send a reminder to pending recipients.
+   */
+  async sendReminder(documentId: string, userId: string) {
+    const doc = await this.prisma.signatureDocument.findFirst({
+      where: { id: documentId, creatorId: userId, status: "PENDING" },
+      include: { recipients: true },
+    });
+
+    if (!doc) throw new NotFoundException("Document not found or not pending");
+
+    const pendingRecipients = doc.recipients.filter(
+      (r) => r.status === "PENDING" || r.status === "VIEWED",
+    );
+
+    for (const recipient of pendingRecipients) {
+      await this.sendSigningInvitation(doc, recipient, true);
+    }
+
+    await this.createAuditEvent(documentId, "REMINDER_SENT", userId);
+
+    return { remindersSent: pendingRecipients.length };
+  }
+
+  /**
+   * Retry server-side finalization for a non-E2E document.
+   * Only the creator can trigger this; document must be in AWAITING_FINALIZATION.
+   */
+  async retryFinalize(documentId: string, userId: string) {
+    const doc = await this.prisma.signatureDocument.findFirst({
+      where: {
+        id: documentId,
+        creatorId: userId,
+        status: "AWAITING_FINALIZATION",
+        isE2EEncrypted: false,
+      },
+    });
+
+    if (!doc) {
+      throw new NotFoundException(
+        "Document not found or not eligible for retry",
+      );
+    }
+
+    await this.finalizeDocument(documentId);
+
+    // Check if finalization succeeded
+    const updated = await this.prisma.signatureDocument.findUnique({
+      where: { id: documentId },
+      select: { status: true },
+    });
+
+    return { status: updated?.status || "AWAITING_FINALIZATION" };
+  }
+
+  // =========================================================================
+  // PRIVATE HELPERS
+  // =========================================================================
+
+  /**
+   * Finalize a document after all signatures are collected.
+   * - Apply all signatures to the PDF
+   * - Add "Bon pour Accord" watermark
+   * - Append certificate page
+   * - Cryptographically sign the final PDF
+   */
+  private async finalizeDocument(documentId: string) {
+    const doc = await this.prisma.signatureDocument.findUnique({
+      where: { id: documentId },
+      include: { recipients: { where: { role: "SIGNER" } } },
+    });
+
+    if (!doc) return;
+
+    this.logger.log(`Finalizing document ${documentId}`);
+
+    try {
+      // Load original PDF
+      let pdfBuffer = await this.fileService.getFileByKey(doc.originalFileKey);
+
+      // Apply each signer's signature to the PDF
+      for (const recipient of doc.recipients) {
+        const signatureImage = recipient.signatureData
+          ? Buffer.from(recipient.signatureData.replace(/^data:image\/\w+;base64,/, ""), "base64")
+          : undefined;
+
+        pdfBuffer = await this.pdfSigningService.addApprovalFieldAndSignature(
+          pdfBuffer,
+          {
+            name: recipient.name,
+            signatureImage:
+              recipient.signatureType === "DRAW" || recipient.signatureType === "UPLOAD"
+                ? signatureImage
+                : undefined,
+            signatureText:
+              recipient.signatureType === "TYPE" ? recipient.signatureData : undefined,
+            signedDate: recipient.signedAt!,
+          },
+          {
+            addApprovalWatermark: doc.addApprovalField,
+            addApprovalMention: doc.addApprovalMention,
+          },
+        );
+      }
+
+      // Add initials at bottom of each page if enabled
+      if (doc.addInitials && doc.recipients.length > 0) {
+        pdfBuffer = await this.pdfSigningService.addInitialsToAllPages(
+          pdfBuffer,
+          doc.recipients.map((r) => r.name),
+        );
+      }
+
+      // Generate certificate page
+      const documentHash = crypto
+        .createHash("sha256")
+        .update(pdfBuffer)
+        .digest("hex");
+
+      const certPage = await this.pdfSigningService.generateCertificatePage({
+        documentId: doc.id,
+        fileName: doc.fileName,
+        signedAt: new Date(),
+        signers: doc.recipients.map((r) => ({
+          name: r.name,
+          email: r.email,
+          signedAt: r.signedAt!,
+          ip: r.signingIp || "N/A",
+          signatureType: r.signatureType || "N/A",
+        })),
+        documentHash,
+        signatureLevel: doc.signatureLevel,
+      });
+
+      // Merge certificate page into the document
+      const { PDFDocument } = await import("pdf-lib");
+      const mainDoc = await PDFDocument.load(pdfBuffer);
+      const certDoc = await PDFDocument.load(certPage);
+      const [certPageCopy] = await mainDoc.copyPages(certDoc, [0]);
+      mainDoc.addPage(certPageCopy);
+      pdfBuffer = Buffer.from(await mainDoc.save());
+
+      // Apply cryptographic signature (PAdES)
+      pdfBuffer = await this.pdfSigningService.signPdf(pdfBuffer, {
+        name: "PrivCloud Sharing",
+        email: "signing@privcloud.eu",
+        reason: "Signature électronique eIDAS - Tous les signataires ont signé",
+      });
+
+      // Store the signed PDF
+      const signedKey = `signed/${documentId}/${doc.fileName}`;
+      await this.fileService.storeFileByKey(signedKey, pdfBuffer);
+
+      // Update document status
+      await this.prisma.signatureDocument.update({
+        where: { id: documentId },
+        data: { status: "COMPLETED", signedFileKey: signedKey },
+      });
+
+      await this.createAuditEvent(documentId, "COMPLETED", "system");
+
+      // Log team activity if this is a team document
+      if (doc.teamId) {
+        this.logger.log(`Logging SIGNATURE_COMPLETE for team ${doc.teamId}`);
+        this.prisma.teamAccessLog.create({
+          data: {
+            teamId: doc.teamId,
+            action: "SIGNATURE_COMPLETE",
+            actorEmail: "system",
+            actorName: "Signature automatique",
+            fileName: doc.fileName,
+          },
+        }).catch(err => this.logger.error(`Failed to log SIGNATURE_COMPLETE: ${err.message}`));
+      }
+
+      // Notify all parties
+      const allRecipients = await this.prisma.signatureRecipient.findMany({
+        where: { documentId },
+      });
+
+      const baseUrl = await this.configService.get("general.appUrl");
+      const documentUrl = `${baseUrl}/signing/${documentId}`;
+      const signersList = allRecipients
+        .filter(r => r.role === "SIGNER")
+        .map(r => `  • ${r.name} (${r.email}) - signé le ${r.signedAt ? new Date(r.signedAt).toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "Europe/Paris" }) : "N/A"}`)
+        .join("\n");
+
+      for (const r of allRecipients) {
+        const hasAccount = r.userId != null;
+        await this.emailService.sendMail(
+          r.email,
+          `Document signé - ${doc.fileName}`,
+          `Bonjour ${r.name},\n\n` +
+            `Le document "${doc.fileName}" a été signé par tous les signataires et la signature cryptographique PAdES a été appliquée.\n\n` +
+            `Signataires :\n${signersList}\n\n` +
+            (hasAccount
+              ? `Vous pouvez consulter et télécharger le document signé depuis votre espace :\n${documentUrl}\n\n` +
+                `Ce document apparaît également dans votre rubrique "Documents reçus" de l'onglet Signature.\n\n`
+              : `Si vous avez un compte PrivCloud Sharing, connectez-vous pour retrouver ce document dans vos "Documents reçus".\n\n`) +
+            `-- \nPrivCloud Sharing - Signature Électronique`,
+        );
+      }
+
+      // Notify the document owner/creator
+      const creator = await this.prisma.user.findUnique({
+        where: { id: doc.creatorId },
+      });
+      if (creator?.email) {
+        await this.emailService.sendMail(
+          creator.email,
+          `Document signé par tous les signataires - ${doc.fileName}`,
+          `Bonjour ${creator.username || ""},\n\n` +
+            `Le document "${doc.fileName}" a été signé par l'ensemble des signataires.\n\n` +
+            `Signataires :\n${signersList}\n\n` +
+            `Vous pouvez consulter et télécharger le document signé ici :\n` +
+            `${documentUrl}\n\n` +
+            (doc.teamId ? `Ce document est également visible dans l'espace de votre équipe.\n\n` : "") +
+            `-- \nPrivCloud Sharing - Signature Électronique`,
+        );
+      }
+
+      this.logger.log(`Document ${documentId} finalized successfully`);
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to finalize document ${documentId}: ${error?.message}`,
+      );
+
+      // Mark as AWAITING_FINALIZATION so it's visible in the UI as needing attention
+      await this.prisma.signatureDocument.update({
+        where: { id: documentId },
+        data: { status: "AWAITING_FINALIZATION" },
+      }).catch(() => {});
+
+      await this.createAuditEvent(
+        documentId,
+        "FINALIZATION_FAILED",
+        "system",
+        undefined,
+        undefined,
+        `Server-side finalization failed: ${error?.message || "Unknown error"}`,
+      ).catch(() => {});
+
+      // Notify creator of the failure
+      if (doc?.creatorId) {
+        const creator = await this.prisma.user.findUnique({
+          where: { id: doc.creatorId },
+        }).catch(() => null);
+        if (creator?.email) {
+          const baseUrl = await this.configService.get("general.appUrl").catch(() => "");
+          await this.emailService.sendMail(
+            creator.email,
+            `Erreur de finalisation - ${doc.fileName}`,
+            `Bonjour ${creator.username || ""},\n\n` +
+              `La finalisation automatique du document "${doc.fileName}" a échoué.\n` +
+              `Toutes les signatures ont été collectées mais le document n'a pas pu être finalisé.\n\n` +
+              `Vous pouvez réessayer en vous rendant sur :\n${baseUrl}/signing/${documentId}\n\n` +
+              `Si le problème persiste, contactez le support.\n\n` +
+              `-- \nPrivCloud Sharing - Signature Électronique`,
+          ).catch(() => {});
+        }
+      }
+    }
+  }
+
+  /**
+   * Send a signing invitation email to a recipient.
+   */
+  private async sendSigningInvitation(
+    document: any,
+    recipient: any,
+    isReminder = false,
+  ) {
+    const baseUrl = await this.configService.get("general.appUrl");
+    const signingUrl = `${baseUrl}/sign/${recipient.signingToken}`;
+
+    const subject = isReminder
+      ? `Rappel : Signature requise - ${document.fileName}`
+      : `Signature requise - ${document.fileName}`;
+
+    const body =
+      `Bonjour ${recipient.name},\n\n` +
+      (isReminder ? "Ceci est un rappel. " : "") +
+      `Vous avez reçu une demande de signature électronique pour le document "${document.fileName}".\n\n` +
+      (document.message ? `Message de l'expéditeur :\n${document.message}\n\n` : "") +
+      `Pour signer ce document, cliquez sur le lien ci-dessous :\n${signingUrl}\n\n` +
+      `Ce lien est personnel et sécurisé. Ne le partagez pas.\n\n` +
+      `Niveau de signature : ${document.signatureLevel === "QES" ? "Qualifiée (QES)" : "Avancée (AES)"}\n\n` +
+      `-- \nPrivCloud Sharing - Signature Électronique`;
+
+    await this.emailService.sendMail(recipient.email, subject, body);
+
+    await this.createAuditEvent(
+      document.id,
+      isReminder ? "REMINDER_SENT" : "SENT",
+      recipient.email,
+    );
+  }
+
+  /**
+   * Send a CC notification to a carbon-copy recipient.
+   */
+  private async sendCcNotification(document: any, recipient: any, creator: User) {
+    const body =
+      `Bonjour ${recipient.name},\n\n` +
+      `${creator.username} (${creator.email}) a envoyé une demande de signature électronique ` +
+      `pour le document "${document.fileName}".\n\n` +
+      `Vous êtes en copie de cette demande. Vous serez notifié(e) lorsque tous les signataires auront signé.\n\n` +
+      `-- \nPrivCloud Sharing - Signature Électronique`;
+
+    await this.emailService.sendMail(
+      recipient.email,
+      `Copie : Demande de signature - ${document.fileName}`,
+      body,
+    );
+  }
+
+  /**
+   * Enriches signature documents with a `fileDeleted` boolean.
+   * A file is considered deleted when:
+   *   - the source share no longer exists in DB (expired / manually removed), OR
+   *   - the individual file was deleted from the share while the share still exists.
+   */
+  private async enrichWithFileDeleted<
+    T extends { shareId: string | null; fileId?: string | null },
+  >(docs: T[]): Promise<(T & { fileDeleted: boolean })[]> {
+    if (docs.length === 0) return [];
+
+    const shareIds = [
+      ...new Set(docs.map((d) => d.shareId).filter(Boolean) as string[]),
+    ];
+    const fileIds = [
+      ...new Set(
+        docs
+          .map((d) => (d as { fileId?: string | null }).fileId)
+          .filter(Boolean) as string[],
+      ),
+    ];
+
+    const [existingShares, existingFiles] = await Promise.all([
+      shareIds.length > 0
+        ? this.prisma.share.findMany({
+            where: { id: { in: shareIds } },
+            select: { id: true },
+          })
+        : Promise.resolve([]),
+      fileIds.length > 0
+        ? this.prisma.file.findMany({
+            where: { id: { in: fileIds } },
+            select: { id: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const existingShareIds = new Set(existingShares.map((s) => s.id));
+    const existingFileIds = new Set(existingFiles.map((f) => f.id));
+
+    return docs.map((doc) => {
+      const docFileId = (doc as { fileId?: string | null }).fileId;
+      const shareGone =
+        doc.shareId == null || !existingShareIds.has(doc.shareId);
+      const fileGone =
+        docFileId != null && !existingFileIds.has(docFileId);
+      return { ...doc, fileDeleted: shareGone || fileGone };
+    });
+  }
+
+  /**
+   * Create an immutable audit trail event.
+   */
+  private async createAuditEvent(
+    documentId: string,
+    eventType: string,
+    actor: string,
+    ipAddress?: string,
+    userAgent?: string,
+    metadata?: string,
+  ) {
+    await this.prisma.signatureAuditEvent.create({
+      data: {
+        documentId,
+        eventType,
+        actor,
+        ipAddress,
+        userAgent,
+        metadata,
+      },
+    });
+  }
+}

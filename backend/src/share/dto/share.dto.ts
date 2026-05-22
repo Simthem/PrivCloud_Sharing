@@ -13,6 +13,9 @@ export class ShareDTO {
   expiration: Date;
 
   @Expose()
+  createdAt: Date;
+
+  @Expose()
   @Type(() => FileDTO)
   files: FileDTO[];
 
@@ -34,6 +37,12 @@ export class ShareDTO {
 
   @Expose()
   encryptedReverseShareKey?: string;
+
+  @Expose()
+  teamFolderId?: string;
+
+  @Expose()
+  teamId?: string;
 
   @Expose()
   size: number;

@@ -1,0 +1,16 @@
+-- Migration: add_otp_failures
+--
+-- NOTE: This migration was generated on 2026-05-16 during development.
+-- The schema changes it originally contained (otpFailures on SignatureRecipient,
+-- teamFolderId on Share) are handled by later migrations in their proper
+-- chronological position:
+--   - otpFailures: added to CREATE TABLE in 20260610120000_add_signing_and_teams
+--   - teamFolderId: added via ALTER TABLE in 20260614120000_add_share_team_folder
+--
+-- On existing databases where this migration was already applied (it ran AFTER
+-- the signing/team migrations due to Prisma ordering), the columns exist.
+-- On fresh databases, the shadow DB replay applies this as a no-op and the
+-- later migrations handle the columns correctly.
+--
+-- This is intentionally a no-op to maintain shadow database compatibility.
+SELECT 1;

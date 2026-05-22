@@ -120,26 +120,29 @@ export default function AppShellDemo() {
         styles={{
           main: {
             background:
-              theme.colorScheme === "dark"
+              theme.other.colorScheme === "dark"
                 ? theme.colors.dark[8]
                 : theme.colors.gray[0],
           },
         }}
-        navbar={
+        navbar={{ width: { sm: 200, lg: 300 }, breakpoint: "sm", collapsed: { mobile: !isMobileNavBarOpened } }}
+        header={{ height: 60 }}
+      >
+        <AppShell.Header>
+          <ConfigurationHeader
+            isMobileNavBarOpened={isMobileNavBarOpened}
+            setIsMobileNavBarOpened={setIsMobileNavBarOpened}
+          />
+        </AppShell.Header>
+        <AppShell.Navbar>
           <ConfigurationNavBar
             categoryId={categoryId}
             isMobileNavBarOpened={isMobileNavBarOpened}
             setIsMobileNavBarOpened={setIsMobileNavBarOpened}
           />
-        }
-        header={
-          <ConfigurationHeader
-            isMobileNavBarOpened={isMobileNavBarOpened}
-            setIsMobileNavBarOpened={setIsMobileNavBarOpened}
-          />
-        }
-      >
-        <Container size="lg">
+        </AppShell.Navbar>
+        <AppShell.Main>
+        <Container size="lg" mt="md" pb="xl">
           {!configVariables ? (
             <CenterLoader />
           ) : (
@@ -160,10 +163,10 @@ export default function AppShellDemo() {
                   {t("admin.config.category." + categoryId.toLowerCase())}
                 </Title>
                 {configVariables.map((configVariable) => (
-                  <Group key={configVariable.key} position="apart">
+                  <Group key={configVariable.key} justify="space-between">
                     <Stack
                       style={{ maxWidth: isMobile ? "100%" : "40%" }}
-                      spacing={0}
+                      gap={0}
                     >
                       <Title order={6}>
                         <FormattedMessage
@@ -184,10 +187,10 @@ export default function AppShellDemo() {
                       </Title>
 
                       <Text
-                        sx={{
+                        style={{
                           whiteSpace: "pre-line",
                         }}
-                        color="dimmed"
+                        c="dimmed"
                         size="sm"
                         mb="xs"
                       >
@@ -213,7 +216,7 @@ export default function AppShellDemo() {
                   <LogoConfigInput logo={logo} setLogo={setLogo} />
                 )}
               </Stack>
-              <Group mt="lg" position="right">
+              <Group mt="lg" justify="right">
                 {categoryId == "smtp" && (
                   <TestEmailButton
                     configVariablesChanged={updatedConfigVariables.length != 0}
@@ -227,6 +230,7 @@ export default function AppShellDemo() {
             </>
           )}
         </Container>
+        </AppShell.Main>
       </AppShell>
     </>
   );

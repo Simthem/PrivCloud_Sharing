@@ -14,21 +14,24 @@
 	}
 
 	# Reverse proxy for /api
-	reverse_proxy /api/* http://127.0.0.1:{$BACKEND_PORT:8080} {
-		trusted_proxies 0.0.0.0/0
+	reverse_proxy /api/* http://localhost:{$BACKEND_PORT:8080} {
+		# Trust only loopback + RFC-1918 private ranges (Docker bridge/overlay
+		# networks and the upstream Nginx reverse proxy on the host).
+		# NEVER use 0.0.0.0/0 - it lets any client spoof X-Forwarded-For.
+		trusted_proxies 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+		transport http {
+			response_header_timeout 600s
+			read_buffer 1mb
+			write_buffer 512kb
+		}
+		flush_interval -1
 		header_up -Via
 		header_down -Via
-		transport http {
-			# Stream large file downloads without buffering
-			# flush_interval -1 forces Caddy to flush every write
-			# immediately → no internal buffering → constant flow.
-			flush_interval -1
-		}
 	}
 
 	# Reverse proxy for all other requests
-	reverse_proxy /* http://127.0.0.1:{$PORT:3333} {
-		trusted_proxies 0.0.0.0/0
+	reverse_proxy /* http://localhost:{$PORT:3333} {
+		trusted_proxies 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
 		header_up -Via
 		header_down -Via
 	}

@@ -1,5 +1,5 @@
 import { Divider, Flex, Progress, Stack, Text } from "@mantine/core";
-import { ModalsContextProps } from "@mantine/modals/lib/context";
+import { useModals } from "@mantine/modals";
 import dayjs from "../../utils/dayjs";
 import { FormattedMessage } from "react-intl";
 import { translateOutsideContext } from "../../hooks/useTranslate.hook";
@@ -10,7 +10,7 @@ import useConfig from "../../hooks/config.hook";
 import { getUserKey, buildKeyFragment } from "../../utils/crypto.util";
 
 const showShareInformationsModal = (
-  modals: ModalsContextProps,
+  modals: ReturnType<typeof useModals>,
   share: MyShare,
   maxShareSize: number,
 ) => {
@@ -47,7 +47,7 @@ const ShareInformationsContent = ({
       : dayjs(share.expiration).format("LLL");
 
   return (
-    <Stack align="stretch" spacing="md">
+    <Stack align="stretch" gap="md">
       <Text size="sm">
         <b>
           <FormattedMessage id="account.shares.table.id" />:{" "}
@@ -98,13 +98,17 @@ const ShareInformationsContent = ({
             {formattedShareSize}
           </Text>
         )}
-        <Progress
-          value={shareSizeProgress}
-          label={share.size / maxShareSize >= 0.1 ? formattedShareSize : ""}
-          style={{ width: share.size / maxShareSize < 0.1 ? "70%" : "80%" }}
+        <Progress.Root
           size="xl"
           radius="xl"
-        />
+          style={{ width: share.size / maxShareSize < 0.1 ? "70%" : "80%" }}
+        >
+          <Progress.Section value={shareSizeProgress}>
+            {share.size / maxShareSize >= 0.1 && (
+              <Progress.Label>{formattedShareSize}</Progress.Label>
+            )}
+          </Progress.Section>
+        </Progress.Root>
         <Text size="xs" style={{ marginLeft: "4px" }}>
           {formattedMaxShareSize}
         </Text>

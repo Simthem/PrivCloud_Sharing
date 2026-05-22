@@ -23,6 +23,7 @@ const PushNotificationSection = () => {
   const [subscribed, setSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [pushBlocked, setPushBlocked] = useState(false);
 
   const pushEnabled = config.get("pushNotifications.enabled");
   const vapidPublicKey = config.get("pushNotifications.vapidPublicKey");
@@ -69,10 +70,31 @@ const PushNotificationSection = () => {
       }
       setPermissionDenied(false);
       const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-      });
+      let sub;
+      try {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+        });
+      } catch (pushErr: any) {
+        // Brave (and some hardened browsers) grant Notification permission
+        // but block pushManager.subscribe() because they block connections
+        // to Google's FCM/push service.  Detect this and show guidance.
+        const msg = pushErr?.message?.toLowerCase?.() ?? "";
+        if (
+          msg.includes("push service") ||
+          msg.includes("registration failed") ||
+          msg.includes("permission denied") ||
+          msg.includes("not allowed") ||
+          (typeof (navigator as any).brave?.isBrave === "function")
+        ) {
+          setPushBlocked(true);
+          toast.error(t("account.notify.push.browser-blocked"));
+        } else {
+          toast.error(t("account.notify.push.error"));
+        }
+        return;
+      }
       const json = sub.toJSON();
       await api.post("/push/subscribe", {
         endpoint: json.endpoint,
@@ -80,6 +102,7 @@ const PushNotificationSection = () => {
         auth: json.keys?.auth,
       });
       setSubscribed(true);
+      window.dispatchEvent(new Event("push-subscription-changed"));
       toast.success(t("account.notify.push.enabled"));
     } catch {
       toast.error(t("account.notify.push.error"));
@@ -100,6 +123,7 @@ const PushNotificationSection = () => {
         await sub.unsubscribe();
       }
       setSubscribed(false);
+      window.dispatchEvent(new Event("push-subscription-changed"));
       toast.success(t("account.notify.push.disabled"));
     } catch {
       toast.error(t("account.notify.push.error"));
@@ -110,23 +134,28 @@ const PushNotificationSection = () => {
 
   return (
     <Paper withBorder p="xl" mt="lg">
-      <Group mb="xs" spacing="xs">
+      <Group mb="xs" gap="xs">
         <TbBell size={20} />
         <Title order={5}>{t("account.card.push.title")}</Title>
       </Group>
-      <Text size="sm" color="dimmed" mb="md">
+      <Text size="sm" c="dimmed" mb="md">
         {t("account.card.push.description")}
       </Text>
-      <Stack spacing="xs">
+      <Stack gap="xs">
         {permissionDenied && !subscribed && (
-          <Text size="sm" color="red">
+          <Text size="sm" c="red">
             {t("account.card.push.permission-denied")}
           </Text>
         )}
-        <Group position="right">
+        {pushBlocked && !subscribed && (
+          <Text size="sm" c="orange">
+            {t("account.card.push.browser-blocked")}
+          </Text>
+        )}
+        <Group justify="right">
           {subscribed ? (
             <Button
-              leftIcon={<TbBellOff size={16} />}
+              leftSection={<TbBellOff size={16} />}
               variant="light"
               color="red"
               loading={loading}
@@ -136,7 +165,7 @@ const PushNotificationSection = () => {
             </Button>
           ) : (
             <Button
-              leftIcon={<TbBell size={16} />}
+              leftSection={<TbBell size={16} />}
               loading={loading}
               onClick={handleSubscribe}
               disabled={permissionDenied}

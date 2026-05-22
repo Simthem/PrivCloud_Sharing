@@ -1,7 +1,6 @@
 import {
   Button,
   Container,
-  createStyles,
   Group,
   List,
   Text,
@@ -17,6 +16,7 @@ import Meta from "../components/Meta";
 import useUser from "../hooks/user.hook";
 import useConfig from "../hooks/config.hook";
 import { useEffect, useState } from "react";
+import { createStyles } from "@mantine/emotion";
 
 const useStyles = createStyles((theme) => ({
   inner: {
@@ -30,41 +30,38 @@ const useStyles = createStyles((theme) => ({
     maxWidth: 480,
     marginRight: `calc(${theme.spacing.md} * 3)`,
 
-    [theme.fn.smallerThan("md")]: {
+    [`@media (max-width: ${theme.breakpoints.md})`]: {
       maxWidth: "100%",
       marginRight: 0,
     },
   },
 
   title: {
-    color: theme.colorScheme === "dark" ? theme.white : theme.black,
+    color: "var(--mantine-color-text)",
     fontSize: 44,
     lineHeight: 1.2,
     fontWeight: 900,
 
-    [theme.fn.smallerThan("xs")]: {
+    [`@media (max-width: ${theme.breakpoints.xs})`]: {
       fontSize: 28,
     },
   },
 
   control: {
-    [theme.fn.smallerThan("xs")]: {
+    [`@media (max-width: ${theme.breakpoints.xs})`]: {
       flex: 1,
     },
   },
 
   image: {
-    [theme.fn.smallerThan("md")]: {
+    [`@media (max-width: ${theme.breakpoints.md})`]: {
       display: "none",
     },
   },
 
   highlight: {
     position: "relative",
-    backgroundColor:
-      theme.colorScheme === "dark"
-        ? theme.fn.rgba(theme.colors[theme.primaryColor][6], 0.55)
-        : theme.colors[theme.primaryColor][0],
+    backgroundColor: "var(--mantine-primary-color-light)",
     borderRadius: theme.radius.sm,
     padding: "1.2px 12px 4px 12px",
   },
@@ -78,9 +75,6 @@ export default function Home() {
   const [signupEnabled, setSignupEnabled] = useState(true);
 
   // If user is already authenticated, redirect to the upload page.
-  // The SSR in _app.tsx already resolves the user via server-side cookies,
-  // so we rely on that instead of calling refreshUser() which would trigger
-  // a 401 POST /auth/token for unauthenticated visitors.
   useEffect(() => {
     if (user) {
       router.replace("/upload");
@@ -88,7 +82,6 @@ export default function Home() {
   }, [user]);
 
   useEffect(() => {
-    // If registration is disabled, get started button should redirect to the sign in page
     try {
       const allowRegistration = config.get("share.allowRegistration");
       setSignupEnabled(allowRegistration !== false);
@@ -117,7 +110,7 @@ export default function Home() {
                 }}
               />
             </Title>
-            <Text color="dimmed" mt="md" weight={500}>
+            <Text c="dimmed" mt="md" fw={500}>
               <FormattedMessage id="home.description" />
             </Text>
 

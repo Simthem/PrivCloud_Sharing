@@ -10,6 +10,14 @@ services:
           # HTTPS_PROXY: http://your-proxy:3128
 
     restart: unless-stopped
+    # Memory limit: Express buffers entire raw bodies in RAM (up to 200 MB
+    # per upload chunk).  With 2-3 concurrent uploads + V8 heap + Caddy +
+    # frontend SSR, the container can reach 3-4 GB RSS.
+    # Set mem_limit to prevent the container from eating all host RAM
+    # and triggering the OOM killer (which crashes the entire VM).
+    # On an 8 GB host with WordPress + ClamAV, 4 GB is a safe ceiling.
+    mem_limit: 4g
+    memswap_limit: 4g  # no swap - fail fast instead of thrashing
     cap_drop:
       - ALL
     cap_add:
@@ -22,7 +30,7 @@ services:
       - "127.0.0.1:3000:3000"
     # Healthcheck is defined in the Dockerfile (node fetch-based, no curl needed).
     # Do NOT override it here -- the runner image has no curl binary.
-    # environment:
+    environment:
       # - TRUST_PROXY=true  (Set to true if a reverse proxy is in front of the container)
 
       # -- Proxy (uncomment and set if your server accesses the internet through a proxy) --
@@ -32,6 +40,21 @@ services:
       # - HTTP_PROXY=http://your-proxy:3128
       # - HTTPS_PROXY=http://your-proxy:3128
       # - NO_PROXY=localhost,127.0.0.1,::1
+
+      # -- Plan Limits (Team plan for all users) --
+      - TEAM_MAX_MEMBERS_INCLUDED=3                        # Members included in base Team plan
+      - TEAM_MAX_FOLDERS=10                                # Max shared folders per team
+      # Storage limits - comment out (or remove) for NO limit (default behaviour).
+      # Set to a byte value to enforce a cap (e.g. 250 GB = 250000000000).
+      # - TEAM_MAX_SHARE_SIZE=250000000000                 # Max size per share (bytes)
+      # - TEAM_TOTAL_STORAGE_BYTES=500000000000            # Total storage per team (bytes)
+      # - TEAM_TRANSFER_BYTES=250000000000                 # Transfer quota per team (bytes)
+      # Public URL of the application
+      - APP_URL=https://your-domain.example.com
+      # -- PDF PAdES Signing Certificate --
+      - SIGNING_CERTIFICATE_PATH=/opt/app/backend/data/signing/certificate.p12
+      - SIGNING_CERTIFICATE_PASSWORD=XXXXXXXXXX
+      # - SIGNING_TSA_URL=https://freetsa.org/tsr  # RFC 3161 TSA (default) -- Prod -> http://timestamp.sectigo.com
     volumes:
       - "./data:/opt/app/backend/data"
       - "./data/images:/opt/app/frontend/public/img"

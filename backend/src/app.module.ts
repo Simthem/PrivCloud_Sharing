@@ -9,6 +9,7 @@ import { AppCacheModule } from "./cache/cache.module";
 import { AppController } from "./app.controller";
 import { ClamScanModule } from "./clamscan/clamscan.module";
 import { ConfigModule } from "./config/config.module";
+import { DownloadNotificationModule } from "./downloadNotification/downloadNotification.module";
 import { EmailModule } from "./email/email.module";
 import { FileModule } from "./file/file.module";
 import { JobsModule } from "./jobs/jobs.module";
@@ -17,6 +18,8 @@ import { PrismaModule } from "./prisma/prisma.module";
 import { PushModule } from "./push/push.module";
 import { ReverseShareModule } from "./reverseShare/reverseShare.module";
 import { ShareModule } from "./share/share.module";
+import { SigningModule } from "./signing/signing.module";
+import { TeamModule } from "./team/team.module";
 import { UserModule } from "./user/user.module";
 
 @Module({
@@ -29,6 +32,7 @@ import { UserModule } from "./user/user.module";
     PrismaModule,
     JobsModule,
     UserModule,
+    DownloadNotificationModule,
     ThrottlerModule.forRoot([
       {
         ttl: 60,
@@ -41,6 +45,8 @@ import { UserModule } from "./user/user.module";
     OAuthModule,
     AppCacheModule,
     PushModule,
+    SigningModule,
+    TeamModule,
   ],
   controllers: [AppController],
   providers: [

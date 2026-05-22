@@ -34,7 +34,7 @@ export class EmailService {
     });
   }
 
-  private async sendMail(email: string, subject: string, text: string) {
+  async sendMail(email: string, subject: string, text: string) {
     const replyTo = this.config.get("email.replyToEmail")?.trim() || undefined;
     const senderName =
       this.config.get("email.senderName")?.trim() ||
@@ -151,5 +151,47 @@ export class EmailService {
         this.logger.error(e);
         throw new InternalServerErrorException(e.message);
       });
+  }
+
+  async sendDownloadNotification(
+    recipientEmail: string,
+    shareName: string,
+    date: string,
+    shareUrl: string,
+  ) {
+    await this.sendMail(
+      recipientEmail,
+      this.config.get("email.downloadNotificationSubject"),
+      this.config
+        .get("email.downloadNotificationMessage")
+        .replaceAll("\\n", "\n")
+        .replaceAll("{shareName}", shareName)
+        .replaceAll("{date}", date)
+        .replaceAll("{shareUrl}", shareUrl),
+    );
+  }
+
+  async sendDownloadDigest(
+    recipientEmail: string,
+    digest: string,
+    mode: "digest" | "weekly",
+  ) {
+    const subjectKey =
+      mode === "weekly"
+        ? "email.downloadWeeklySubject"
+        : "email.downloadDigestSubject";
+    const messageKey =
+      mode === "weekly"
+        ? "email.downloadWeeklyMessage"
+        : "email.downloadDigestMessage";
+
+    await this.sendMail(
+      recipientEmail,
+      this.config.get(subjectKey),
+      this.config
+        .get(messageKey)
+        .replaceAll("\\n", "\n")
+        .replaceAll("{digest}", digest),
+    );
   }
 }

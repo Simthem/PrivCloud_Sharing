@@ -7,7 +7,6 @@ import {
   Center,
   Checkbox,
   Code,
-  Col,
   Collapse,
   Grid,
   Group,
@@ -53,6 +52,7 @@ import showCreateReverseShareModal from "../../components/share/modals/showCreat
 import useConfig from "../../hooks/config.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import shareService from "../../services/share.service";
+
 import { MyReverseShare } from "../../types/share.type";
 import { byteToHumanSizeString } from "../../utils/fileSize.util";
 import { copyToClipboard } from "../../utils/clipboard.util";
@@ -74,11 +74,11 @@ const RsKeyDisplay = ({ rsKey }: { rsKey: string }) => {
   const masked = rsKey.slice(0, 8) + "••••••••••••" + rsKey.slice(-8);
 
   return (
-    <Stack spacing="xs">
-      <Text size="sm" color="dimmed">
+    <Stack gap="xs">
+      <Text size="sm" c="dimmed">
         {t("account.reverseShares.rsKey.description")}
       </Text>
-      <Group spacing="xs" noWrap>
+      <Group gap="xs" wrap="nowrap">
         <Code
           block
           style={{
@@ -126,7 +126,7 @@ const RsKeyDisplay = ({ rsKey }: { rsKey: string }) => {
 // -- Edit expiration modal body --
 const EditExpirationBody = ({
   reverseShareId,
-  maxExpiration,
+  maxExpiration: _maxExpiration,
   onSaved,
 }: {
   reverseShareId: string;
@@ -163,20 +163,20 @@ const EditExpirationBody = ({
 
   return (
     <form onSubmit={handleSubmit}>
-      <Stack spacing="sm">
+      <Stack gap="sm">
         <Grid align={form.errors.expiration_num ? "center" : "flex-end"}>
-          <Col xs={6}>
+          <Grid.Col span={{ base: 12, xs: 6 }}>
             <NumberInput
               min={1}
               max={99999}
-              precision={0}
+              decimalScale={0}
               variant="filled"
               label={t("account.reverseShares.modal.expiration.label")}
               disabled={form.values.never_expires}
               {...form.getInputProps("expiration_num")}
             />
-          </Col>
-          <Col xs={6}>
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, xs: 6 }}>
             <Select
               disabled={form.values.never_expires}
               {...form.getInputProps("expiration_unit")}
@@ -225,16 +225,16 @@ const EditExpirationBody = ({
                 },
               ]}
             />
-          </Col>
+          </Grid.Col>
         </Grid>
         <Checkbox
           label={t("upload.modal.expires.never-long")}
           {...form.getInputProps("never_expires", { type: "checkbox" })}
         />
         <Text
-          italic
+          fs="italic"
           size="xs"
-          sx={(theme) => ({ color: theme.colors.gray[6] })}
+          style={{ color: "var(--mantine-color-gray-6)" }}
         >
           {getExpirationPreview(
             {
@@ -283,6 +283,14 @@ const MyShares = () => {
     },
   });
 
+  // Team plan upload limit (no billing)
+  const { data: planMaxShareSize } = useQuery({
+    queryKey: ["uploadLimit"],
+    queryFn: async () => ({ maxSize: 0, usedSize: 0 }), // 0 = no plan limit
+    refetchInterval: Infinity,
+    refetchOnWindowFocus: false,
+  });
+
   const deleteShareMutation = useMutation({
     mutationFn: (shareId: string) => shareService.remove(shareId),
     onSuccess: () => {
@@ -328,15 +336,15 @@ const MyShares = () => {
     });
   };
 
-  // -- Copy reverse share link with E2E fragment if applicable --
-  // Cache of decrypted K_rs keys: reverseShareId -> base64url of K_rs
+  // -- Copier le lien reverse share avec fragment E2E si applicable --
+  // Cache des clés K_rs déchiffrées : reverseShareId → base64url de K_rs
   const [rsKeyCache, setRsKeyCache] = useState<Record<string, string>>({});
 
   const unwrapRsKey = useCallback(
     async (reverseShare: MyReverseShare): Promise<string | null> => {
       if (!reverseShare.encryptedReverseShareKey) return null;
 
-      // Return from cache if available
+      // Retourner depuis le cache si disponible
       if (rsKeyCache[reverseShare.id]) return rsKeyCache[reverseShare.id];
 
       try {
@@ -352,7 +360,7 @@ const MyShares = () => {
         return rsKeyEncoded;
       } catch (e) {
         console.error(
-          "Failed to decrypt reverse share key",
+          "Erreur lors du déchiffrement de la clé reverse share",
           e,
         );
         return null;
@@ -361,7 +369,7 @@ const MyShares = () => {
     [rsKeyCache],
   );
 
-  // Pre-decrypt keys on load
+  // Pré-déchiffrer les clés au chargement
   useEffect(() => {
     if (!reverseShares) return;
     reverseShares.forEach((rs) => {
@@ -387,7 +395,7 @@ const MyShares = () => {
     }
   };
 
-  // Copy the link for a share received via reverse share (with K_rs)
+  // Copier le lien d'un share reçu via reverse share (avec K_rs)
   const handleCopyShareLink = async (
     shareId: string,
     reverseShare: MyReverseShare,
@@ -460,19 +468,19 @@ const MyShares = () => {
   return (
     <>
       <Meta title={t("account.reverseShares.title")} />
-      <Group position="apart" align="baseline" mb={20}>
-        <Group align="center" spacing={3} mb={30}>
+      <Group justify="space-between" align="baseline" mb={20}>
+        <Group align="center" gap={3} mb={30}>
           <Title order={3}>
             <FormattedMessage id="account.reverseShares.title" />
           </Title>
           <Tooltip
             position="bottom"
             multiline
-            width={220}
+            w={220}
             label={t("account.reverseShares.description")}
             events={{ hover: true, focus: false, touch: true }}
           >
-            <ActionIcon>
+            <ActionIcon color="blue" variant="subtle">
               <TbInfoCircle />
             </ActionIcon>
           </Tooltip>
@@ -484,16 +492,17 @@ const MyShares = () => {
               config.get("smtp.enabled"),
               config.get("share.maxExpiration"),
               refetch,
+              planMaxShareSize?.maxSize,
             )
           }
-          leftIcon={<TbPlus size={20} />}
+          leftSection={<TbPlus size={20} />}
         >
           <FormattedMessage id="common.button.create" />
         </Button>
       </Group>
       {reverseShares.length == 0 ? (
         <Center style={{ height: "70vh" }}>
-          <Stack align="center" spacing={10}>
+          <Stack align="center" gap={10}>
             <Title order={3}>
               <FormattedMessage id="account.reverseShares.title.empty" />
             </Title>
@@ -503,10 +512,10 @@ const MyShares = () => {
           </Stack>
         </Center>
       ) : isMobile ? (
-        /* Mobile: card layout with expandable sub-shares */
-        <Stack spacing="sm">
+        /* --- Mobile: card layout with expandable sub-shares --- */
+        <Stack gap="sm">
           {reverseShares.length > 0 && (
-            <Group position="apart">
+            <Group justify="space-between">
               <Checkbox
                 label={t("account.reverseShares.select-all")}
                 checked={selectedRs.size === reverseShares.length}
@@ -514,7 +523,7 @@ const MyShares = () => {
                 onChange={toggleAllRs}
               />
               {selectedRs.size > 0 && (
-                <Button size="xs" compact color="red" variant="light" leftIcon={<TbTrash size={16} />} onClick={bulkDeleteRs}>
+                <Button size="compact-sm" color="red" variant="light" leftSection={<TbTrash size={16} />} onClick={bulkDeleteRs}>
                   <FormattedMessage id="account.reverseShares.bulk-delete.button" values={{ count: selectedRs.size }} />
                 </Button>
               )}
@@ -525,22 +534,21 @@ const MyShares = () => {
             const hasShares = reverseShare.shares.length > 0;
             return (
               <Card key={reverseShare.id} withBorder padding="sm" radius="md">
-                {/* RS header card */}
-                <Group position="apart" noWrap mb={4}>
-                  <Group spacing="xs" noWrap style={{ minWidth: 0, flex: 1 }}>
+                {/* -- RS header card -- */}
+                <Group justify="space-between" wrap="nowrap" mb={4}>
+                  <Group gap="xs" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
                     <Checkbox
                       size="xs"
                       checked={selectedRs.has(reverseShare.id)}
                       onChange={() => toggleSelectRs(reverseShare.id)}
-                      onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
                     />
                     <Box
                       style={{ minWidth: 0, flex: 1 }}
                       onClick={hasShares ? () => setExpandedRs(isOpen ? null : reverseShare.id) : undefined}
-                      sx={hasShares ? { cursor: "pointer" } : undefined}
                     >
-                    <Group spacing={6} noWrap>
-                      <Text size="sm" weight={600} lineClamp={1}>
+                    <Group gap={6} wrap="nowrap">
+                      <Text size="sm" fw={600} lineClamp={1}>
                         {reverseShare.name || reverseShare.id}
                       </Text>
                       {reverseShare.publicAccess ? (
@@ -549,45 +557,45 @@ const MyShares = () => {
                         <TbWorldOff size={16} color="gray" />
                       )}
                     </Group>
-                    </Box>
+                  </Box>
                   </Group>
                   {hasShares && (
                     <ActionIcon
                       variant="subtle"
                       size={28}
-                      sx={{ transition: "transform 200ms", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}
+                      style={{ transition: "transform 200ms", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}
                     >
                       <TbChevronDown size={18} />
                     </ActionIcon>
                   )}
                 </Group>
 
-                {/* RS metadata */}
-                <Group spacing="xs" mb={8}>
-                  <Text size="xs" color="dimmed">
+                {/* -- RS metadata -- */}
+                <Group gap="xs" mb={8}>
+                  <Text size="xs" c="dimmed">
                     {hasShares
                       ? reverseShare.shares.length === 1
                         ? `1 ${t("account.reverseShares.table.count.singular")}`
                         : `${reverseShare.shares.length} ${t("account.reverseShares.table.count.plural")}`
                       : t("account.reverseShares.table.no-shares")}
                   </Text>
-                  <Text size="xs" color="dimmed">
+                  <Text size="xs" c="dimmed">
                     {t("account.reverseShares.table.max-size")}: {byteToHumanSizeString(parseInt(reverseShare.maxShareSize))}
                   </Text>
-                  <Text size="xs" color="dimmed">
+                  <Text size="xs" c="dimmed">
                     {dayjs(reverseShare.shareExpiration).unix() === 0
                       ? t("account.shares.table.expiry-never")
                       : `${t("account.reverseShares.table.expires")} ${dayjs(reverseShare.shareExpiration).format("L")}`}
                   </Text>
                   {dayjs(reverseShare.shareExpiration).unix() !== 0 && (
-                    <Text size="xs" color="dimmed">
+                    <Text size="xs" c="dimmed">
                       <FormattedMessage id="account.reverseShares.table.remaining" />: {reverseShare.remainingUses}
                     </Text>
                   )}
                 </Group>
 
-                {/* RS action buttons */}
-                <Group spacing={6} mb={hasShares ? 0 : undefined}>
+                {/* -- RS action buttons -- */}
+                <Group gap={6} mb={hasShares ? 0 : undefined}>
                   {reverseShare.encryptedReverseShareKey && (
                     <ActionIcon color="yellow" variant="light" size={28} onClick={() => handleShowRsKey(reverseShare)}>
                       <TbKey />
@@ -601,7 +609,7 @@ const MyShares = () => {
                   <ActionIcon color="teal" variant="light" size={28} onClick={() => handleCopyReverseShareLink(reverseShare)}>
                     <TbCopy />
                   </ActionIcon>
-                  <ActionIcon variant="light" size={28} onClick={async () => {
+                  <ActionIcon color="grape" variant="light" size={28} onClick={async () => {
                     let link = `${config.get("general.appUrl")}/upload/${reverseShare.token}`;
                     const rsKeyEncoded = await unwrapRsKey(reverseShare);
                     if (rsKeyEncoded) link += `#key=${rsKeyEncoded}`;
@@ -622,28 +630,28 @@ const MyShares = () => {
                   </ActionIcon>
                 </Group>
 
-                {/* Expandable sub-shares */}
+                {/* -- Expandable sub-shares -- */}
                 {hasShares && (
                   <Collapse in={isOpen}>
-                    <Stack spacing={6} mt="sm" pt="sm" sx={(theme) => ({ borderTop: `1px solid ${theme.colorScheme === "dark" ? theme.colors.dark[4] : theme.colors.gray[2]}` })}>
+                    <Stack gap={6} mt="sm" pt="sm" style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
                       {reverseShare.shares.map((share) => {
                         const shareHref = rsKeyCache[reverseShare.id]
                           ? `/share/${share.id}#key=${rsKeyCache[reverseShare.id]}`
                           : `/share/${share.id}`;
                         return (
-                          <Card key={share.id} withBorder padding="xs" radius="sm" sx={(theme) => ({ backgroundColor: theme.colorScheme === "dark" ? theme.colors.dark[6] : theme.colors.gray[0] })}>
-                            <Group position="apart" noWrap>
+                          <Card key={share.id} withBorder padding="xs" radius="sm" style={{ backgroundColor: "var(--mantine-color-body)" }}>
+                            <Group justify="space-between" wrap="nowrap">
                               <Box style={{ minWidth: 0, flex: 1 }}>
                                 <Link href={shareHref} style={{ textDecoration: "none", color: "inherit" }}>
-                                  <Text size="xs" weight={500} lineClamp={1} sx={{ "&:hover": { textDecoration: "underline" } }}>
+                                  <Text size="xs" fw={500} lineClamp={1} style={{ cursor: "pointer" }}>
                                     {share.name || share.id}
                                   </Text>
                                 </Link>
                                 {share.description && (
-                                  <Text size="xs" color="dimmed" lineClamp={1}>{share.description}</Text>
+                                  <Text size="xs" c="dimmed" lineClamp={1}>{share.description}</Text>
                                 )}
                               </Box>
-                              <Group spacing={4} noWrap>
+                              <Group gap={4} wrap="nowrap">
                                 {share.security.passwordProtected && <TbLock size={14} color="orange" />}
                                 <ActionIcon color="teal" variant="light" size={24} component={Link} href={shareHref}>
                                   <TbEye size={14} />
@@ -675,68 +683,68 @@ const MyShares = () => {
           })}
         </Stack>
       ) : (
-        /* Desktop: table layout */
+        /* --- Desktop: table layout --- */
         <>
           {selectedRs.size > 0 && (
             <Group mb="sm">
-              <Button size="xs" compact color="red" variant="light" leftIcon={<TbTrash size={16} />} onClick={bulkDeleteRs}>
+              <Button size="compact-sm" color="red" variant="light" leftSection={<TbTrash size={16} />} onClick={bulkDeleteRs}>
                 <FormattedMessage id="account.reverseShares.bulk-delete.button" values={{ count: selectedRs.size }} />
               </Button>
             </Group>
           )}
-          <Box sx={{ display: "block", overflowX: "auto" }}>
-          <Table striped highlightOnHover verticalSpacing="sm">
-            <thead>
-              <tr>
-                <th style={{ width: "3%" }}>
+          <Box style={{ display: "block", overflowX: "auto" }}>
+          <Table striped highlightOnHover withRowBorders verticalSpacing="sm" style={{ tableLayout: "fixed" }}>
+            <Table.Thead style={{ textAlign: "left" }}>
+              <Table.Tr>
+                <Table.Th style={{ width: "3%" }}>
                   <Checkbox
                     size="xs"
                     checked={selectedRs.size === reverseShares.length && reverseShares.length > 0}
                     indeterminate={selectedRs.size > 0 && selectedRs.size < reverseShares.length}
                     onChange={toggleAllRs}
                   />
-                </th>
-                <th>
+                </Table.Th>
+                <Table.Th style={{ width: "25%" }}>
                   <FormattedMessage id="account.reverseShares.table.shares" />
-                </th>
-                <th>
+                </Table.Th>
+                <Table.Th style={{ width: "18%" }}>
                   <FormattedMessage id="account.shares.table.name" />
-                </th>
-                <th>
+                </Table.Th>
+                <Table.Th style={{ width: "8%", textAlign: "center" }}>
                   <FormattedMessage id="account.reverseShares.table.public-access" />
-                </th>
-                <th>
+                </Table.Th>
+                <Table.Th style={{ width: "10%" }}>
                   <FormattedMessage id="account.reverseShares.table.remaining" />
-                </th>
-                <th>
+                </Table.Th>
+                <Table.Th style={{ width: "13%" }}>
                   <FormattedMessage id="account.reverseShares.table.max-size" />
-                </th>
-                <th>
+                </Table.Th>
+                <Table.Th style={{ whiteSpace: "nowrap", width: "16%" }}>
                   <FormattedMessage id="account.reverseShares.table.expires" />
-                </th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
+                </Table.Th>
+                <Table.Th style={{ width: "7%" }}></Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
               {reverseShares.map((reverseShare) => (
-                <tr key={reverseShare.id}>
-                  <td>
+                <Table.Tr key={reverseShare.id}>
+                  <Table.Td>
                     <Checkbox
                       size="xs"
                       checked={selectedRs.has(reverseShare.id)}
                       onChange={() => toggleSelectRs(reverseShare.id)}
                     />
-                  </td>
-                  <td style={{ width: 220 }}>
+                  </Table.Td>
+                  <Table.Td>
                     {reverseShare.shares.length == 0 ? (
-                      <Text color="dimmed" size="sm">
+                      <Text c="dimmed" size="sm">
                         <FormattedMessage id="account.reverseShares.table.no-shares" />
                       </Text>
                     ) : (
                       <Accordion>
                         <Accordion.Item
                           value="customization"
-                          sx={{ borderBottom: "none" }}
+                          style={{ borderBottom: "none" }}
                         >
                           <Accordion.Control p={0}>
                             <Text size="sm">
@@ -751,32 +759,35 @@ const MyShares = () => {
                           </Accordion.Control>
                           <Accordion.Panel>
                             {reverseShare.shares.map((share) => (
-                              <Stack key={share.id} mb={6} spacing={2}>
-                                <Group spacing="xs">
-                                  <Link
-                                    href={
-                                      rsKeyCache[reverseShare.id]
-                                        ? `/share/${share.id}#key=${rsKeyCache[reverseShare.id]}`
-                                        : `/share/${share.id}`
-                                    }
-                                    style={{ textDecoration: "none", color: "inherit" }}
-                                  >
-                                    <Text maw={120} truncate size="sm" sx={{ "&:hover": { textDecoration: "underline" } }}>
-                                      {share.name || share.id}
-                                    </Text>
-                                  </Link>
-                                  {share.security.passwordProtected && (
-                                    <Tooltip
-                                      label={t(
-                                        "account.reverseShares.table.password-protected",
-                                      )}
-                                      withArrow
+                              <Stack key={share.id} mb={6} gap={2}>
+                                <Group gap="xs" justify="space-between" wrap="nowrap">
+                                  <Box style={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
+                                    <Link
+                                      href={
+                                        rsKeyCache[reverseShare.id]
+                                          ? `/share/${share.id}#key=${rsKeyCache[reverseShare.id]}`
+                                          : `/share/${share.id}`
+                                      }
+                                      style={{ textDecoration: "none", color: "inherit", minWidth: 0 }}
                                     >
-                                      <ThemeIcon color="orange" variant="light">
-                                        <TbLock size="1rem" />
-                                      </ThemeIcon>
-                                    </Tooltip>
-                                  )}
+                                      <Text truncate size="sm" style={{ cursor: "pointer" }}>
+                                        {share.name || share.id}
+                                      </Text>
+                                    </Link>
+                                  </Box>
+                                  <Group gap={4} wrap="nowrap">
+                                    {share.security.passwordProtected && (
+                                      <Tooltip
+                                        label={t(
+                                          "account.reverseShares.table.password-protected",
+                                        )}
+                                        withArrow
+                                      >
+                                        <ThemeIcon color="orange" variant="light" size={25}>
+                                          <TbLock size={14} />
+                                        </ThemeIcon>
+                                      </Tooltip>
+                                    )}
                                 <Tooltip label={t("account.reverseShares.table.view-files")}>
                                   <ActionIcon
                                     color="teal"
@@ -826,9 +837,10 @@ const MyShares = () => {
                                 >
                                   <TbTrash />
                                 </ActionIcon>
+                                  </Group>
                                 </Group>
                                 {share.description && (
-                                  <Text size="xs" color="dimmed" maw={200} truncate>
+                                  <Text size="xs" c="dimmed" maw={200} truncate>
                                     {share.description}
                                   </Text>
                                 )}
@@ -838,9 +850,9 @@ const MyShares = () => {
                         </Accordion.Item>
                       </Accordion>
                     )}
-                  </td>
-                  <td>{reverseShare.name}</td>
-                  <td style={{ textAlign: "center" }}>
+                  </Table.Td>
+                  <Table.Td>{reverseShare.name}</Table.Td>
+                  <Table.Td style={{ textAlign: "center" }}>
                     {reverseShare.publicAccess ? (
                       <ThemeIcon color="green" variant="light">
                         <TbWorldCheck size="1.2rem" />
@@ -850,22 +862,22 @@ const MyShares = () => {
                         <TbWorldOff size="1.2rem" />
                       </ThemeIcon>
                     )}
-                  </td>
-                  <td>
+                  </Table.Td>
+                  <Table.Td>
                     {dayjs(reverseShare.shareExpiration).unix() === 0
                       ? "∞"
                       : reverseShare.remainingUses}
-                  </td>
-                  <td>
+                  </Table.Td>
+                  <Table.Td>
                     {byteToHumanSizeString(parseInt(reverseShare.maxShareSize))}
-                  </td>
-                  <td>
+                  </Table.Td>
+                  <Table.Td>
                     {dayjs(reverseShare.shareExpiration).unix() === 0
                       ? "Never"
                       : dayjs(reverseShare.shareExpiration).format("LLL")}
-                  </td>
-                  <td>
-                    <Group position="right" spacing={4}>
+                  </Table.Td>
+                  <Table.Td>
+                    <Group justify="right" gap={4}>
                       {reverseShare.encryptedReverseShareKey && (
                         <Tooltip label={t("account.reverseShares.table.show-key")}>
                           <ActionIcon
@@ -899,6 +911,7 @@ const MyShares = () => {
                         <TbCopy />
                       </ActionIcon>
                       <ActionIcon
+                        color="grape"
                         variant="light"
                         size={25}
                         onClick={async () => {
@@ -943,10 +956,10 @@ const MyShares = () => {
                         <TbTrash />
                       </ActionIcon>
                     </Group>
-                  </td>
-                </tr>
+                  </Table.Td>
+                </Table.Tr>
               ))}
-            </tbody>
+            </Table.Tbody>
           </Table>
         </Box>
         </>

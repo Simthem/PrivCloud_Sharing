@@ -1,4 +1,4 @@
-import { MantineThemeOverride } from "@mantine/core";
+import { createTheme, MantineColorScheme } from "@mantine/core";
 
 // Predefined color palettes selectable by the administrator
 export const COLOR_PALETTES: Record<string, { colors: Record<string, string[]>; primaryColor: string }> = {
@@ -79,10 +79,10 @@ export const COLOR_PALETTES: Record<string, { colors: Record<string, string[]>; 
         "#FFD54F",
         "#FFCA28",
         "#FFC107",
+        "#F59E0B",
         "#D97706",
         "#B45309",
         "#92400E",
-        "#78350F",
       ],
     },
     primaryColor: "amber",
@@ -106,51 +106,45 @@ export const COLOR_PALETTES: Record<string, { colors: Record<string, string[]>; 
   },
 };
 
-export function buildTheme(paletteName?: string): MantineThemeOverride {
-  const palette = COLOR_PALETTES[paletteName ?? "victoria"] ?? COLOR_PALETTES.victoria;
+// WCAG AA contrast helpers
+// Compute relative luminance of a hex color per WCAG 2.1
+export const wcagLuminance = (hex: string): number => {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const lin = (c: number) =>
+    c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+};
 
-  // WCAG AA contrast helpers
-  // Compute relative luminance of a hex color per WCAG 2.1
-  const luminance = (hex: string): number => {
-    const r = parseInt(hex.slice(1, 3), 16) / 255;
-    const g = parseInt(hex.slice(3, 5), 16) / 255;
-    const b = parseInt(hex.slice(5, 7), 16) / 255;
-    const lin = (c: number) =>
-      c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-  };
+export function buildTheme(paletteName?: string, colorScheme: MantineColorScheme = "dark") {
+  const palette = COLOR_PALETTES[paletteName ?? "victoria"] ?? COLOR_PALETTES.victoria;
+  const isDark = colorScheme === "dark";
+
+  const luminance = wcagLuminance;
 
   // For variant="light": pick a high-contrast text shade on a faint tinted bg.
-  const lightVariantColor = (theme: any, color: string | undefined, isDark: boolean) => {
+  const lightVariantColor = (theme: any, color: string | undefined) => {
     const c = color ?? theme.primaryColor;
     const colors = theme.colors[c];
     if (!colors) return {};
-    return { color: colors[isDark ? 2 : 9] };
+    return { color: colors[isDark ? 4 : 8] };
   };
 
   // For variant="filled": if the background shade is too bright for white text,
   // switch to dark text automatically (e.g. amber, yellow palettes).
   const filledTextColor = (theme: any, color: string | undefined) => {
     const c = color ?? theme.primaryColor;
-    const shade =
-      typeof theme.primaryShade === "object"
-        ? theme.primaryShade[theme.colorScheme] ?? 7
-        : theme.primaryShade ?? 7;
+    const shade = isDark ? 6 : 8;
     const bgHex = theme.colors[c]?.[shade];
     if (!bgHex || typeof bgHex !== "string" || !bgHex.startsWith("#")) return {};
-    // Luminance > 0.183 means white text cannot reach 4.5:1 contrast ratio
     return luminance(bgHex) > 0.183 ? { color: theme.black } : {};
   };
 
-  // Explicit text color for elements sitting on a primary-color background
-  // (e.g. selected dropdown items).  Unlike filledTextColor which returns {}
-  // when white text is fine, this ALWAYS returns an explicit color.
+  // Explicit text color for elements sitting on a primary-color background.
   const onPrimaryBg = (theme: any): { color: string } => {
     const c = theme.primaryColor;
-    const shade =
-      typeof theme.primaryShade === "object"
-        ? theme.primaryShade[theme.colorScheme] ?? 7
-        : theme.primaryShade ?? 7;
+    const shade = isDark ? 6 : 8;
     const bgHex = theme.colors[c]?.[shade];
     if (!bgHex || typeof bgHex !== "string" || !bgHex.startsWith("#"))
       return { color: theme.white };
@@ -159,103 +153,91 @@ export function buildTheme(paletteName?: string): MantineThemeOverride {
       : { color: theme.white };
   };
 
-  // Helper: build a "defaultProps.styles" function that injects the filled
-  // text-color fix at the component-styles level (highest CSS priority in
-  // Mantine's merge chain). This is more robust than relying solely on
-  // theme-level styles which may lose CSS specificity races in portals
-  // (used by modals).
-  const filledDefaultStyles = () => ({
-    defaultProps: (theme: any) => ({
-      styles: (t: any, params: any, ctx: any) => {
-        if (ctx?.variant !== "filled") return {};
-        const fix = filledTextColor(t, params?.color);
-        if (!fix.color) return {};
-        return { root: fix, label: fix };
-      },
-    }),
-  });
-
-  return {
-    colors: palette.colors as any,
+  return createTheme({
+    colors: {
+      ...(palette.colors as any),
+      dark: [
+        "#C1C2C5",
+        "#A6A7AB",
+        "#909296",
+        "#5c5f66",
+        "#373A40",
+        "#2C2E33",
+        "#25262b",
+        "#141517",
+        "#111214",
+        "#0D0E10",
+      ],
+    },
     primaryColor: palette.primaryColor,
-    primaryShade: { light: 8, dark: 5 },
+    primaryShade: { light: 8, dark: 6 },
+    other: { colorScheme },
     components: {
       Modal: {
         styles: (theme: any) => ({
           title: {
             fontSize: theme.fontSizes.lg,
             fontWeight: 700,
+            color: theme.colors[theme.primaryColor][isDark ? 4 : 7],
           },
         }),
       },
       Button: {
-        ...filledDefaultStyles(),
-        styles: (theme: any, params: any, { variant }: any) => {
-          const isDark = theme.colorScheme === "dark";
-          const filled = variant === "filled" ? filledTextColor(theme, params.color) : {};
+        styles: (theme: any, props: any) => {
+          const isFilled = !props.variant || props.variant === "filled";
+          const filled = isFilled ? filledTextColor(theme, props.color) : {};
           return {
             root: {
               ...filled,
-              ...(variant === "light" ? lightVariantColor(theme, params.color, isDark) : {}),
-              ...(variant === "outline" && isDark
+              ...(props.variant === "light" ? lightVariantColor(theme, props.color) : {}),
+              ...(props.variant === "outline" && isDark
                 ? {
-                    color: theme.colors[params.color ?? theme.primaryColor]?.[3],
-                    borderColor: theme.colors[params.color ?? theme.primaryColor]?.[4],
+                    color: theme.colors[props.color ?? theme.primaryColor]?.[3],
+                    borderColor: theme.colors[props.color ?? theme.primaryColor]?.[4],
                   }
                 : {}),
             },
             label: {
               fontWeight: 600,
               ...filled,
-              ...(variant === "subtle"
-                ? { color: theme.colors[params.color ?? theme.primaryColor]?.[isDark ? 3 : 8] }
+              ...(props.variant === "subtle"
+                ? { color: theme.colors[props.color ?? theme.primaryColor]?.[isDark ? 3 : 8] }
                 : {}),
             },
           };
         },
       },
       ActionIcon: {
-        ...filledDefaultStyles(),
-        styles: (theme: any, params: any, { variant }: any) => {
-          const isDark = theme.colorScheme === "dark";
-          return {
-            root: {
-              ...(variant === "filled" ? filledTextColor(theme, params.color) : {}),
-              ...(variant === "light" ? lightVariantColor(theme, params.color, isDark) : {}),
-            },
-          };
-        },
+        styles: (theme: any, props: any) => ({
+          root: {
+            ...(!props.variant || props.variant === "filled" ? filledTextColor(theme, props.color) : {}),
+            ...(props.variant === "light" ? lightVariantColor(theme, props.color) : {}),
+          },
+        }),
       },
       ThemeIcon: {
-        styles: (theme: any, params: any, { variant }: any) => {
-          const isDark = theme.colorScheme === "dark";
-          return {
-            root: {
-              ...(variant === "filled" ? filledTextColor(theme, params.color) : {}),
-              ...(variant === "light" ? lightVariantColor(theme, params.color, isDark) : {}),
-            },
-          };
-        },
+        styles: (theme: any, props: any) => ({
+          root: {
+            ...(!props.variant || props.variant === "filled" ? filledTextColor(theme, props.color) : {}),
+            ...(props.variant === "light" ? lightVariantColor(theme, props.color) : {}),
+          },
+        }),
       },
       Anchor: {
         styles: (theme: any) => ({
           root: {
-            color: theme.colors[theme.primaryColor][theme.colorScheme === "dark" ? 3 : 8],
+            color: theme.colors[theme.primaryColor][isDark ? 3 : 8],
             fontWeight: 500,
           },
         }),
       },
       Badge: {
-        ...filledDefaultStyles(),
-        styles: (theme: any, params: any, { variant }: any) => {
-          const isDark = theme.colorScheme === "dark";
-          return {
-            root: {
-              ...(variant === "filled" ? filledTextColor(theme, params.color) : {}),
-              ...(variant === "light" ? lightVariantColor(theme, params.color, isDark) : {}),
-            },
-          };
-        },
+        styles: (theme: any, props: any) => ({
+          root: {
+            ...(!props.variant || props.variant === "filled" ? filledTextColor(theme, props.color) : {}),
+            ...(props.variant === "light" ? lightVariantColor(theme, props.color) : {}),
+          },
+        }),
       },
       Progress: {
         styles: (theme: any) => {
@@ -264,50 +246,49 @@ export function buildTheme(paletteName?: string): MantineThemeOverride {
         },
       },
       Select: {
-        styles: (theme: any) => {
-          const isDark = theme.colorScheme === "dark";
-          return {
-            input: isDark ? { color: theme.white } : {},
-            item: {
-              "&[data-selected], &[data-selected][data-hovered]": onPrimaryBg(theme),
-            },
-          };
-        },
+        styles: (theme: any) => ({
+          input: isDark ? { color: theme.white } : {},
+          option: {
+            "&[data-selected], &[data-selected][data-hovered]": onPrimaryBg(theme),
+          },
+        }),
       },
       NativeSelect: {
-        styles: (theme: any) => {
-          const isDark = theme.colorScheme === "dark";
-          return { input: isDark ? { color: theme.white } : {} };
-        },
+        styles: (theme: any) => ({
+          input: isDark ? { color: theme.white } : {},
+        }),
       },
       MultiSelect: {
-        styles: (theme: any) => {
-          const isDark = theme.colorScheme === "dark";
+        styles: (theme: any) => ({
+          input: isDark ? { color: theme.white } : {},
+          option: {
+            "&[data-selected], &[data-selected][data-hovered]": onPrimaryBg(theme),
+          },
+        }),
+      },
+      Alert: {
+        styles: (theme: any, props: any) => {
+          const c = props.color ?? theme.primaryColor;
+          const colors = theme.colors[c];
+          if (!colors) return {};
           return {
-            input: isDark ? { color: theme.white } : {},
-            value: isDark ? { color: theme.white } : {},
-            item: {
-              "&[data-selected], &[data-selected][data-hovered]": onPrimaryBg(theme),
-            },
+            root: isDark
+              ? { backgroundColor: `rgba(${parseInt(colors[6]?.slice(1,3),16)}, ${parseInt(colors[6]?.slice(3,5),16)}, ${parseInt(colors[6]?.slice(5,7),16)}, 0.15)` }
+              : { backgroundColor: colors[0] },
+            title: { color: colors[isDark ? 4 : 7], fontWeight: 600 },
           };
         },
       },
       Switch: {
         styles: (theme: any) => {
           const c = theme.primaryColor;
-          const shade =
-            typeof theme.primaryShade === "object"
-              ? theme.primaryShade[theme.colorScheme] ?? 7
-              : theme.primaryShade ?? 7;
+          const shade = isDark ? 6 : 8;
           const trackBg = theme.colors[c]?.[shade];
-          // If the track is too bright, use a darker shade for better contrast
-          // and darken the thumb shadow for visibility.
           const isBright =
             trackBg &&
             typeof trackBg === "string" &&
             trackBg.startsWith("#") &&
             luminance(trackBg) > 0.183;
-          // Use a noticeably darker shade for the "on" track
           const darkerShade = Math.min(shade + 2, 9);
           return {
             track: isBright
@@ -322,5 +303,5 @@ export function buildTheme(paletteName?: string): MantineThemeOverride {
         },
       },
     },
-  };
+  });
 }

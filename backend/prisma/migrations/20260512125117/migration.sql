@@ -13,12 +13,6 @@
 DROP INDEX "Subscription_userId_key";
 
 -- DropIndex
-DROP INDEX "Subscription_stripeSubscriptionId_key";
-
--- DropIndex
-DROP INDEX "Subscription_stripeCustomerId_key";
-
--- DropIndex
 DROP INDEX "WrappedKey_userId_credentialId_key";
 
 -- DropTable

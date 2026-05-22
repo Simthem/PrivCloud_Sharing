@@ -21,17 +21,23 @@ import { Readable } from "stream";
 export class LocalFileService {
   private readonly logger = new Logger(LocalFileService.name);
 
+  // Cache plan limits per share to avoid a DB round-trip on every chunk.
+  // Key: shareId, Value: { limit, ts }
+  private planLimitCache = new Map<string, { limit: number; ts: number }>();
+  private static readonly PLAN_LIMIT_TTL = 60_000; // 60s
+
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
   ) {}
 
   async create(
-    data: string,
+    data: Buffer,
     chunk: { index: number; total: number },
     file: { id?: string; name: string },
     shareId: string,
     clientChunkSize?: number,
+    share?: any,
   ) {
     const originalFileId = file.id;
     if (!file.id) {
@@ -50,10 +56,13 @@ export class LocalFileService {
       );
     }
 
-    const share = await this.prisma.share.findUnique({
-      where: { id: shareId },
-      include: { files: true, reverseShare: true },
-    });
+    // Use share passed from file.service (avoids duplicate DB query)
+    if (!share) {
+      share = await this.prisma.share.findUnique({
+        where: { id: shareId },
+        include: { files: true, reverseShare: true },
+      });
+    }
 
     if (share.uploadLocked) {
       this.logger.warn(
@@ -62,14 +71,19 @@ export class LocalFileService {
       throw new BadRequestException("Share is already completed");
     }
 
-    let diskFileSize: number;
-    try {
-      diskFileSize = (
-        await fs.stat(`${SHARE_DIRECTORY}/${shareId}/${file.id}.tmp-chunk`)
-      ).size;
-    } catch {
-      diskFileSize = 0;
-    }
+    // --- Parallelize independent I/O + DB lookups ---
+    const tmpChunkPath = `${SHARE_DIRECTORY}/${shareId}/${file.id}.tmp-chunk`;
+    const planOwnerId =
+      share.reverseShare?.creatorId ?? share.creatorId ?? undefined;
+
+    const [diskFileSize, space, effectiveLimit] = await Promise.all([
+      // 1. Disk file size for chunk index validation
+      fs.stat(tmpChunkPath).then((s) => s.size).catch(() => 0),
+      // 2. Available disk space
+      fs.statfs(SHARE_DIRECTORY),
+      // 3. Plan limit (cached per share for 60s)
+      this.getCachedPlanLimit(shareId, planOwnerId, share.reverseShare),
+    ]);
 
     // If the sent chunk index and the expected chunk index doesn't match throw an error
     const configChunkSize = this.config.get("share.chunkSize");
@@ -81,7 +95,7 @@ export class LocalFileService {
       clientChunkSize && clientChunkSize >= MIN_CHUNK && clientChunkSize <= MAX_CHUNK
         ? clientChunkSize
         : configChunkSize;
-     // Each E2E encrypted chunk has 28 bytes of overhead (12 IV + 16 GCM tag)
+    // Chaque chunk E2E chiffré a 28 octets de surcharge (12 IV + 16 GCM tag)
     const effectiveChunkSize = share.isE2EEncrypted
       ? chunkSize + 28
       : chunkSize;
@@ -98,10 +112,11 @@ export class LocalFileService {
       });
     }
 
-    const buffer = Buffer.from(data, "base64");
+    // data is already a Buffer from Express raw body parser.
+    // Avoid Buffer.from(data, "base64") which needlessly copies up to 200 MB.
+    const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, "base64");
 
-    // Check if there is enough space on the server
-    const space = await fs.statfs(SHARE_DIRECTORY);
+    // Check if there is enough space on the server (space from parallel fetch)
     const availableSpace = space.bavail * space.bsize;
     if (availableSpace < buffer.byteLength) {
       this.logger.error(
@@ -110,7 +125,7 @@ export class LocalFileService {
       throw new InternalServerErrorException("Not enough space on the server");
     }
 
-    // Check if share size limit is exceeded
+    // Check if share size limit is exceeded (effectiveLimit from parallel fetch)
     const fileSizeSum = share.files.reduce(
       (n, { size }) => n + parseInt(size),
       0,
@@ -118,21 +133,20 @@ export class LocalFileService {
 
     const shareSizeSum = fileSizeSum + diskFileSize + buffer.byteLength;
 
-    if (
-      shareSizeSum > this.config.get("share.maxSize") ||
-      (share.reverseShare?.maxShareSize &&
-        shareSizeSum > parseInt(share.reverseShare.maxShareSize))
-    ) {
+    if (shareSizeSum > effectiveLimit) {
       throw new HttpException(
         "Max share size exceeded",
         HttpStatus.PAYLOAD_TOO_LARGE,
       );
     }
 
-    await fs.appendFile(
-      `${SHARE_DIRECTORY}/${shareId}/${file.id}.tmp-chunk`,
-      buffer,
-    );
+    // Use file handle for direct write - avoids open/close overhead per chunk
+    const fh = await fs.open(tmpChunkPath, "a");
+    try {
+      await fh.writeFile(buffer);
+    } finally {
+      await fh.close();
+    }
 
     const isLastChunk = chunk.index == chunk.total - 1;
     this.logger.debug(
@@ -140,7 +154,7 @@ export class LocalFileService {
     );
     if (isLastChunk) {
       await fs.rename(
-        `${SHARE_DIRECTORY}/${shareId}/${file.id}.tmp-chunk`,
+        tmpChunkPath,
         `${SHARE_DIRECTORY}/${shareId}/${file.id}`,
       );
       const fileSize = (
@@ -154,11 +168,40 @@ export class LocalFileService {
           share: { connect: { id: shareId } },
         },
       });
+      // Invalidate plan limit cache on upload complete
+      this.planLimitCache.delete(shareId);
       this.logger.debug(
         `File uploaded: shareId=${shareId} fileId=${file.id} fileName="${file.name}" size=${fileSize} mimeType=${mime.contentType(file.name.split(".").pop() ?? "") || false}`,
       );
     }
     return file;
+  }
+
+  /**
+   * Get effective plan limit, cached per shareId for PLAN_LIMIT_TTL.
+   * Avoids a DB round-trip on every single chunk.
+   */
+  private async getCachedPlanLimit(
+    shareId: string,
+    planOwnerId: string | undefined,
+    reverseShare?: { maxShareSize?: string | null } | null,
+  ): Promise<number> {
+    const cached = this.planLimitCache.get(shareId);
+    if (cached && Date.now() - cached.ts < LocalFileService.PLAN_LIMIT_TTL) {
+      return cached.limit;
+    }
+    // 0 (or absent env var) = no limit; positive value = cap in bytes
+    const rawEnvLimit = process.env.TEAM_MAX_SHARE_SIZE
+      ? parseInt(process.env.TEAM_MAX_SHARE_SIZE)
+      : 0;
+    const planLimit = rawEnvLimit > 0 ? rawEnvLimit : Infinity;
+    const reverseShareLimit =
+      reverseShare?.maxShareSize
+        ? parseInt(reverseShare.maxShareSize)
+        : Infinity;
+    const limit = Math.min(planLimit, reverseShareLimit);
+    this.planLimitCache.set(shareId, { limit, ts: Date.now() });
+    return limit;
   }
 
   /**
@@ -201,7 +244,7 @@ export class LocalFileService {
         data: { size: fileSize.toString() },
       });
       this.logger.debug(
-        `File re-encrypted: shareId=${shareId} fileId=${fileId} size=${fileSize}`,
+        `Reencrypt complete: shareId=${shareId} fileId=${fileId} newSize=${fileSize}`,
       );
     }
   }
@@ -219,8 +262,8 @@ export class LocalFileService {
 
     const filePath = `${SHARE_DIRECTORY}/${shareId}/${fileId}`;
     const file = range
-      ? createReadStream(filePath, { start: range.start, end: range.end })
-      : createReadStream(filePath);
+      ? createReadStream(filePath, { start: range.start, end: range.end, highWaterMark: 1_048_576 })
+      : createReadStream(filePath, { highWaterMark: 1_048_576 });
 
     this.logger.debug(
       `File downloaded: shareId=${shareId} fileId=${fileMetaData.id} fileName="${fileMetaData.name}" size=${fileMetaData.size} range=${range ? `${range.start}-${range.end}` : "full"} mimeType=${mime.contentType(fileMetaData.name.split(".").pop() ?? "") || false}`,
@@ -263,6 +306,7 @@ export class LocalFileService {
     return new Promise((resolve, reject) => {
       const zipStream = createReadStream(
         `${SHARE_DIRECTORY}/${shareId}/archive.zip`,
+        { highWaterMark: 1_048_576 },
       );
 
       zipStream.on("error", (err) => {

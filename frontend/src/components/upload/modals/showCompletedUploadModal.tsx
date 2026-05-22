@@ -1,6 +1,5 @@
 import { Button, Stack, Text, ThemeIcon } from "@mantine/core";
 import { useModals } from "@mantine/modals";
-import { ModalsContextProps } from "@mantine/modals/lib/context";
 import dayjs from "../../../utils/dayjs";
 import { useRouter } from "next/router";
 import { TbCircleCheck } from "react-icons/tb";
@@ -14,7 +13,7 @@ import useConfig from "../../../hooks/config.hook";
 import { buildKeyFragment } from "../../../utils/crypto.util";
 
 const showCompletedUploadModal = (
-  modals: ModalsContextProps,
+  modals: ReturnType<typeof useModals>,
   share: CompletedShare,
   e2eKeyEncoded?: string | null,
 ) => {
@@ -47,28 +46,21 @@ const Body = ({
 
   return (
     <Stack align="stretch">
-      <ThemeIcon color="green" variant="light" size="xl" radius="xl" sx={{ alignSelf: "center" }}>
+      <ThemeIcon color="green" variant="light" size="xl" radius="xl" style={{ alignSelf: "center" }}>
         <TbCircleCheck size={24} />
       </ThemeIcon>
       <CopyTextField link={link} />
       {share.notifyReverseShareCreator === true && (
         <Text
           size="sm"
-          sx={(theme) => ({
-            color:
-              theme.colorScheme === "dark"
-                ? theme.colors.gray[3]
-                : theme.colors.dark[4],
-          })}
+          c="dimmed"
         >
           {t("upload.modal.completed.notified-reverse-share-creator")}
         </Text>
       )}
       <Text
         size="xs"
-        sx={(theme) => ({
-          color: theme.colors.gray[6],
-        })}
+        c="dimmed"
       >
         {/* If our share.expiration is timestamp 0, show a different message */}
         {dayjs(share.expiration).unix() === 0

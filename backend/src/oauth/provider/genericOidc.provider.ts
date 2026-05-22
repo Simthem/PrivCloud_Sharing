@@ -1,6 +1,7 @@
 import { InternalServerErrorException, Logger } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import * as jmespath from "jmespath";
+import * as jose from "jose";
 import { nanoid } from "nanoid";
 import { ConfigService } from "../../config/config.service";
 import { OAuthCallbackDto } from "../dto/oauthCallback.dto";
@@ -12,6 +13,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
   protected discoveryUri: string;
   private configuration: OidcConfigurationCache;
   private jwk: OidcJwkCache;
+  private remoteJwks: ReturnType<typeof jose.createRemoteJWKSet> | undefined;
   private logger: Logger = new Logger(
     Object.getPrototypeOf(this).constructor.name,
   );
@@ -126,7 +128,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
       adminAccess?: string;
     },
   ): Promise<OAuthSignInDto> {
-    const idTokenData = this.decodeIdToken(token.idToken);
+    const idTokenData = await this.verifyIdToken(token.idToken);
 
     if (!idTokenData) {
       this.logger.error(
@@ -245,10 +247,48 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
     this.discoveryUri = undefined;
     this.configuration = undefined;
     this.jwk = undefined;
+    this.remoteJwks = undefined;
   }
 
-  private decodeIdToken(idToken: string): OidcIdToken {
-    return this.jwtService.decode(idToken) as OidcIdToken;
+  /**
+   * Build (or return cached) a JOSE RemoteJWKSet bound to the provider's jwks_uri.
+   */
+  private async getRemoteJwks() {
+    if (!this.remoteJwks) {
+      const configuration = await this.getConfiguration();
+      this.remoteJwks = jose.createRemoteJWKSet(
+        new URL(configuration.jwks_uri),
+      );
+    }
+    return this.remoteJwks;
+  }
+
+  /**
+   * Cryptographically verify the id_token:
+   * - Signature checked against the provider's JWKS
+   * - `iss` must match the OIDC discovery issuer
+   * - `aud` must match our client_id
+   * - `exp` is enforced (token must not be expired)
+   * - Unsafe algorithms (e.g. "none") are rejected by jose
+   */
+  private async verifyIdToken(idToken: string): Promise<OidcIdToken> {
+    try {
+      const jwks = await this.getRemoteJwks();
+      const configuration = await this.getConfiguration();
+      const clientId = this.config.get(`oauth.${this.name}-clientId`);
+
+      const { payload } = await jose.jwtVerify(idToken, jwks, {
+        issuer: configuration.issuer,
+        audience: clientId,
+      });
+
+      return payload as unknown as OidcIdToken;
+    } catch (error: any) {
+      this.logger.error(
+        `ID token verification failed: ${error?.message}`,
+      );
+      throw new ErrorPageException("invalid_token");
+    }
   }
 }
 

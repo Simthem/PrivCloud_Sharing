@@ -18,17 +18,18 @@
 	reverse_proxy /api/* http://127.0.0.1:{$BACKEND_PORT:8080} {
 		transport http {
 			response_header_timeout 600s
-			read_buffer 1mb
-			write_buffer 512kb
+			dial_timeout 30s
+			read_buffer 4mb
+			write_buffer 4mb
 		}
 		flush_interval -1
 		header_up -Via
-    	header_down -Via
+		header_down -Via
 	}
 
-	# Reverse proxy for all other requests
+	# Reverse proxy for all other requests (frontend Next.js)
 	reverse_proxy http://127.0.0.1:{$PORT:3333} {
 		header_up -Via
-    	header_down -Via
+		header_down -Via
 	}
 }

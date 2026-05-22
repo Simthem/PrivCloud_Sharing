@@ -70,7 +70,8 @@ export class ShareService {
     // If share is created by a reverse share token override the expiration date
     const reverseShare =
       await this.reverseShareService.getByToken(reverseShareToken);
-    if (reverseShare) {
+    if (reverseShare && moment(reverseShare.shareExpiration).unix() !== 0) {
+      // RS with a finite expiration: use it directly
       expirationDate = reverseShare.shareExpiration;
       this.logger.debug(
         `Using reverse share expiration: shareId=${share.id} reverseShareToken=provided expiration=${expirationDate.toISOString()}`,
@@ -78,6 +79,7 @@ export class ShareService {
     } else {
       const parsedExpiration = parseRelativeDateToAbsolute(share.expiration);
       const expiresNever = moment(0).toDate() == parsedExpiration;
+      const isPermanentRS = reverseShare && moment(reverseShare.shareExpiration).unix() === 0;
 
       // Enforce stricter limits for anonymous (unauthenticated) shares
       if (!user) {
@@ -97,27 +99,60 @@ export class ShareService {
         }
       }
 
-      const maxExpiration = this.config.get("share.maxExpiration");
-      const maxExpiryDate = moment()
-        .add(maxExpiration.value, maxExpiration.unit)
-        .toDate();
-
-      if (
-        maxExpiration.value !== 0 &&
-        (expiresNever || parsedExpiration > maxExpiryDate)
-      ) {
-        this.logger.warn(
-          `Expiration exceeds maximum: shareId=${share.id} requested=${parsedExpiration.toISOString()} max=${maxExpiryDate.toISOString()}`,
-        );
-        throw new BadRequestException(
-          "Expiration date exceeds maximum expiration date",
-        );
+      // For authenticated users, per-plan logic handles the limit.
+      // Global share.maxExpiration only applies to anonymous or as RS clamp.
+      if (!user) {
+        const maxExpiration = this.config.get("share.maxExpiration");
+        if (maxExpiration.value !== 0) {
+          const maxExpiryDate = moment()
+            .add(maxExpiration.value, maxExpiration.unit)
+            .toDate();
+          if (expiresNever || parsedExpiration > maxExpiryDate) {
+            this.logger.warn(
+              `Expiration exceeds maximum: shareId=${share.id} requested=${parsedExpiration.toISOString()} max=${maxExpiryDate.toISOString()}`,
+            );
+            throw new BadRequestException(
+              "Expiration date exceeds maximum expiration date",
+            );
+          }
+        }
+        expirationDate = parsedExpiration;
+      } else if (isPermanentRS) {
+        // For permanent RS uploads by authenticated users: clamp to plan limit
+        const planMaxDays = 0 /* unlimited - Team plan */;
+        if (planMaxDays > 0) {
+          const planMaxDate = moment().add(planMaxDays, "days").toDate();
+          if (parsedExpiration > planMaxDate) {
+            expirationDate = planMaxDate;
+            this.logger.debug(
+              `Permanent RS share clamped to plan limit: shareId=${share.id} expiration=${planMaxDate.toISOString()}`,
+            );
+          } else {
+            expirationDate = parsedExpiration;
+          }
+        } else {
+          expirationDate = parsedExpiration;
+        }
+      } else {
+        expirationDate = parsedExpiration;
       }
 
-      expirationDate = parsedExpiration;
-      this.logger.debug(
-        `Computed expiration: shareId=${share.id} expiration=${expirationDate.toISOString()}`,
-      );
+      // Enforce per-plan max expiration when user is authenticated
+      if (user && !isPermanentRS) {
+        const planMaxDays = 0 /* unlimited - Team plan */;
+
+        if (planMaxDays > 0) {
+          const planMaxDate = moment().add(planMaxDays, "days").toDate();
+          if (expiresNever || expirationDate > planMaxDate) {
+            this.logger.warn(
+              `Expiration exceeds plan limit: shareId=${share.id} maxDays=${planMaxDays} requested=${expiresNever ? "never" : expirationDate.toISOString()}`,
+            );
+            throw new BadRequestException(
+              `Your plan allows a maximum transfer duration of ${planMaxDays} days`,
+            );
+          }
+        }
+      }
     }
 
     // [UX/Security] Defense-in-depth: when the share is created via a
@@ -145,6 +180,55 @@ export class ShareService {
       }
     }
 
+    // --- Team folder assignment: verify membership & folder access ---
+    let teamFolderConnect: { id: string } | undefined;
+    if (share.teamFolderId) {
+      if (!user) {
+        throw new ForbiddenException(
+          "Anonymous users cannot share to a team folder",
+        );
+      }
+      // Verify the folder exists and get the team info
+      const folder = await this.prisma.teamFolder.findUnique({
+        where: { id: share.teamFolderId },
+        include: {
+          team: { include: { members: true } },
+          accessRules: true,
+        },
+      });
+      if (!folder) {
+        throw new NotFoundException("Team folder not found");
+      }
+      // Check user is a member of the team that owns this folder
+      const membership = folder.team.members.find(
+        (m) => m.userId === user.id,
+      );
+      if (!membership) {
+        throw new ForbiddenException(
+          "You are not a member of this team",
+        );
+      }
+      // Check the member has at least WRITE access to the folder
+      const accessRule = folder.accessRules.find(
+        (a) => a.memberId === membership.id,
+      );
+      const memberRole = membership.role;
+      // OWNER and ADMIN have implicit full access; others need explicit WRITE or ADMIN
+      if (
+        memberRole !== "OWNER" &&
+        memberRole !== "ADMIN" &&
+        (!accessRule || accessRule.permission === "READ")
+      ) {
+        throw new ForbiddenException(
+          "You do not have write access to this team folder",
+        );
+      }
+      this.logger.debug(
+        `Team folder validated: shareId=${share.id} teamFolderId=${share.teamFolderId} teamId=${folder.teamId} userId=${user.id}`,
+      );
+      teamFolderConnect = { id: share.teamFolderId };
+    }
+
     fs.mkdirSync(`${SHARE_DIRECTORY}/${share.id}`, {
       recursive: true,
     });
@@ -159,9 +243,12 @@ export class ShareService {
       `Selected storage provider: shareId=${share.id} provider=${storageProvider}`,
     );
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { teamFolderId: _tfId, ...shareData } = share;
+
     const shareTuple = await this.prisma.share.create({
       data: {
-        ...share,
+        ...shareData,
         expiration: expirationDate,
         creator: { connect: user ? { id: user.id } : undefined },
         security: { create: share.security },
@@ -171,12 +258,36 @@ export class ShareService {
             : [],
         },
         storageProvider: this.configService.get("s3.enabled") ? "S3" : "LOCAL",
+        ...(teamFolderConnect && {
+          teamFolder: { connect: teamFolderConnect },
+        }),
       },
     });
 
     this.logger.debug(
       `Share created: shareId=${share.id} userId=${user?.id ?? "anonymous"} recipients=${share.recipients?.length ?? 0} storage=${storageProvider} expires=${expirationDate.toISOString()}`,
     );
+
+    // Log team activity for team-folder uploads
+    if (teamFolderConnect && user) {
+      const folder = await this.prisma.teamFolder.findUnique({
+        where: { id: teamFolderConnect.id },
+        select: { teamId: true, name: true },
+      });
+      if (folder) {
+        this.logger.log(`Logging UPLOAD for team ${folder.teamId}`);
+        this.prisma.teamAccessLog.create({
+          data: {
+            teamId: folder.teamId,
+            action: "UPLOAD",
+            actorEmail: user.email,
+            actorName: user.username || undefined,
+            fileName: share.id,
+            folderId: teamFolderConnect.id,
+          },
+        }).catch(err => this.logger.error(`Failed to log UPLOAD: ${err.message}`));
+      }
+    }
 
     if (reverseShare) {
       // Assign share to reverse share token
@@ -188,7 +299,6 @@ export class ShareService {
           },
         },
       });
-      this.logger.debug(`Linked share to reverse share: shareId=${share.id}`);
     }
 
     return shareTuple;
@@ -414,8 +524,9 @@ export class ShareService {
       data: {
         uploadLocked: false,
         isZipReady: false,
-        // Reset createdAt so the "delete unfinished shares after 1 day" cron
-        // does not remove the share while the user is still editing it.
+        // Reset createdAt so the deleteUnfinishedShares cron job
+        // (which deletes shares with uploadLocked=false older than 24h)
+        // won't remove this share while it is being edited.
         createdAt: new Date(),
       },
     });
@@ -501,6 +612,7 @@ export class ShareService {
         creator: true,
         security: true,
         reverseShare: true,
+        teamFolder: true,
       },
     });
 
@@ -509,14 +621,37 @@ export class ShareService {
 
     if (!share || !share.uploadLocked)
       throw new NotFoundException("Share not found");
+
+    // Preview is enabled for STARTER, PRO, and TEAM plans, and always for admins.
+    // For reverse shares, the RS creator (who owns the link) determines the plan,
+    // not the uploader (who may have a FREE account).
+    const effectiveCreatorId =
+      share.reverseShare?.creatorId ?? share.creatorId ?? null;
+    let previewEnabled = false;
+    if (effectiveCreatorId) {
+      const creator = await this.prisma.user.findUnique({
+        where: { id: effectiveCreatorId },
+        select: { isAdmin: true },
+      });
+      if (creator?.isAdmin) {
+        previewEnabled = true;
+      } else {
+        const sub = ({ plan: "TEAM", status: "active" } as any);
+        previewEnabled = sub.plan === "STARTER" || sub.plan === "PRO" || sub.plan === "TEAM";
+      }
+    }
+
     return {
       ...share,
       hasPassword: !!share.security?.password,
-      previewEnabled: true,
+      previewEnabled,
       // Expose the encrypted reverse share key (K_rs wrapped by K_master).
       // It is AES-GCM ciphertext - useless without K_master, safe to expose.
       encryptedReverseShareKey:
         share.reverseShare?.encryptedReverseShareKey ?? null,
+      // Expose team context so the frontend can resolve K_team instead of K_master
+      teamFolderId: share.teamFolderId ?? null,
+      teamId: share.teamFolder?.teamId ?? null,
     };
   }
 
@@ -545,10 +680,28 @@ export class ShareService {
     if (share.removedReason)
       throw new NotFoundException(share.removedReason, "share_removed");
 
+    // Preview is enabled for STARTER, PRO, and TEAM plans, and always for admins.
+    // For reverse shares, the RS creator (who owns the link) determines the plan.
+    const effectiveCreatorId =
+      share.reverseShare?.creatorId ?? share.creatorId ?? null;
+    let previewEnabled = false;
+    if (effectiveCreatorId) {
+      const creator = await this.prisma.user.findUnique({
+        where: { id: effectiveCreatorId },
+        select: { isAdmin: true },
+      });
+      if (creator?.isAdmin) {
+        previewEnabled = true;
+      } else {
+        const sub = ({ plan: "TEAM", status: "active" } as any);
+        previewEnabled = sub.plan === "STARTER" || sub.plan === "PRO" || sub.plan === "TEAM";
+      }
+    }
+
     return {
       ...share,
       hasPassword: !!share.security?.password,
-      previewEnabled: true,
+      previewEnabled,
       encryptedReverseShareKey:
         share.reverseShare?.encryptedReverseShareKey ?? null,
     };
@@ -578,7 +731,7 @@ export class ShareService {
       include: { reverseShare: true },
     });
 
-    if (!share) throw new NotFoundException("Share not found");
+    if (!share) return null; // Share was deleted - caller handles null gracefully
 
     if (
       !share.reverseShare ||
@@ -629,6 +782,26 @@ export class ShareService {
 
     // Only if files deletion succeeded, remove DB record
     await this.prisma.share.delete({ where: { id: shareId } });
+
+    // Log team activity if this share belonged to a team folder
+    if (share.teamFolderId) {
+      const folder = await this.prisma.teamFolder.findUnique({
+        where: { id: share.teamFolderId },
+      });
+      if (folder) {
+        this.logger.log(`Logging SHARE_DELETE for team ${folder.teamId}`);
+        this.prisma.teamAccessLog.create({
+          data: {
+            teamId: folder.teamId,
+            action: "SHARE_DELETE",
+            actorEmail: share.creatorId ? "owner" : "admin",
+            fileName: share.name || shareId,
+            folderId: share.teamFolderId,
+          },
+        }).catch(err => this.logger.error(`Failed to log SHARE_DELETE: ${err.message}`));
+      }
+    }
+
     this.logger.debug(
       `Share removed: shareId=${shareId} deletedBy=${share.creatorId ? "owner_or_user" : isDeleterAdmin ? "admin" : "unknown"}`,
     );

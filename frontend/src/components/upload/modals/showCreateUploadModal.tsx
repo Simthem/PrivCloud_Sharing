@@ -4,7 +4,6 @@ import {
   Button,
   Center,
   Checkbox,
-  Col,
   Grid,
   Group,
   MultiSelect,
@@ -17,20 +16,22 @@ import {
   TextInput,
   useMantineTheme,
 } from "@mantine/core";
-import { useForm, yupResolver } from "@mantine/form";
+import { useForm } from "@mantine/form";
+import { yupResolver } from "mantine-form-yup-resolver";
 import { useModals } from "@mantine/modals";
-import { ModalsContextProps } from "@mantine/modals/lib/context";
 import dayjs from "../../../utils/dayjs";
 import { ManipulateType } from "dayjs";
-import React, { useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { TbAlertCircle } from "react-icons/tb";
 import HCaptcha from "@hcaptcha/react-hcaptcha";
 import { FormattedMessage } from "react-intl";
+import { useQuery } from "@tanstack/react-query";
 import * as yup from "yup";
 import useTranslate, {
   translateOutsideContext,
 } from "../../../hooks/useTranslate.hook";
 import shareService from "../../../services/share.service";
+import teamService from "../../../services/team.service";
 import { FileUpload } from "../../../types/File.type";
 import { CreateShare } from "../../../types/share.type";
 import { getExpirationPreview } from "../../../utils/date.util";
@@ -39,18 +40,21 @@ import { Timespan } from "../../../types/timespan.type";
 import useConfig from "../../../hooks/config.hook";
 
 const showCreateUploadModal = (
-  modals: ModalsContextProps,
+  modals: ReturnType<typeof useModals>,
   options: {
     isUserSignedIn: boolean;
     isReverseShare: boolean;
     allowUnauthenticatedShares: boolean;
     enableEmailRecepients: boolean;
     enableE2EKeyEmailSharing: boolean;
+    userHasE2E: boolean;
     maxExpiration: Timespan;
     anonymousMaxExpiration: Timespan;
+    planMaxExpirationDays: number;
     shareIdLength: number;
     simplified: boolean;
     captchaSiteKey?: string;
+    preselectedTeamFolderId?: string;
   },
   files: FileUpload[],
   uploadCallback: (_createShare: CreateShare, _files: FileUpload[]) => void,
@@ -124,11 +128,14 @@ const CreateUploadModalBody = ({
     isReverseShare: boolean;
     allowUnauthenticatedShares: boolean;
     enableEmailRecepients: boolean;
+    userHasE2E: boolean;
     enableE2EKeyEmailSharing: boolean;
     maxExpiration: Timespan;
     anonymousMaxExpiration: Timespan;
+    planMaxExpirationDays: number;
     shareIdLength: number;
     captchaSiteKey?: string;
+    preselectedTeamFolderId?: string;
   };
   pastRecipients?: string[];
 }) => {
@@ -140,6 +147,15 @@ const CreateUploadModalBody = ({
   const captchaRef = useRef<HCaptcha>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const showCaptcha = !options.isUserSignedIn && !!options.captchaSiteKey;
+
+  const handleCaptchaExpire = () => setCaptchaToken(null);
+  const handleCaptchaError = (error: any) => {
+    console.warn("[hCaptcha Error]", error);
+    // Attempt to reset the captcha on error (e.g., WebGL context lost on Safari)
+    if (captchaRef.current?.resetCaptcha) {
+      captchaRef.current.resetCaptcha();
+    }
+  };
 
   const generatedLink = generateShareId(options.shareIdLength);
 
@@ -185,6 +201,50 @@ const CreateUploadModalBody = ({
 
   const [storedRecipients, setStoredRecipients] =
     useState<string[]>(pastRecipients);
+  const [emailSearch, setEmailSearch] = useState("");
+
+  // iOS contacts: force autocomplete="email" on Mantine's internal search
+  // input so Safari's contact-picker keyboard button can pre-fill the field.
+  // The attribute is set after mount via DOM access because Mantine v6 does
+  // not expose a direct searchProps passthrough on MultiSelect.
+  const recipientWrapperRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const input = recipientWrapperRef.current?.querySelector("input");
+    if (input) {
+      input.setAttribute("autocomplete", "email");
+      // When iOS autofills via the contact picker it fires a native "input"
+      // event rather than a React synthetic event.  Capture it here so the
+      // email ends up in the form field.
+      const handleNativeInput = (e: Event) => {
+        const value = (e.target as HTMLInputElement).value.trim();
+        if (value && value.match(/^\S+@\S+\.\S+$/)) {
+          if (!storedRecipients.includes(value)) {
+            setStoredRecipients((prev) => [...prev, value]);
+          }
+          form.setFieldValue("recipients", [
+            ...form.values.recipients,
+            value,
+          ]);
+          form.setFieldError("recipients", null);
+          (e.target as HTMLInputElement).value = "";
+          setEmailSearch("");
+        } else {
+          setEmailSearch(value);
+        }
+      };
+      input.addEventListener("change", handleNativeInput);
+      return () => input.removeEventListener("change", handleNativeInput);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const recipientOptions = useMemo(() => {
+    const options = [...storedRecipients];
+    const trimmed = emailSearch.trim();
+    if (trimmed && trimmed.match(/^\S+@\S+\.\S+$/) && !options.includes(trimmed)) {
+      options.push(trimmed);
+    }
+    return options;
+  }, [storedRecipients, emailSearch]);
 
   const form = useForm({
     initialValues: {
@@ -200,9 +260,53 @@ const CreateUploadModalBody = ({
       shareE2EKeyViaEmail: false,
       senderName: "",
       senderEmail: "",
+      notifyOnDownload: false,
+      teamFolderId: options.preselectedTeamFolderId || (undefined as string | undefined),
     },
     validate: yupResolver(validationSchema),
   });
+
+  // Fetch team folders the user can write to (only when signed in & not reverse share)
+  const { data: teamFolders } = useQuery({
+    queryKey: ["teams", "writable-folders"],
+    queryFn: () => teamService.getMyWritableFolders(),
+    enabled: options.isUserSignedIn && !options.isReverseShare,
+    staleTime: 120_000,
+  });
+
+  // Fetch user's teams to detect "has teams but no writable folders"
+  const { data: myTeams } = useQuery({
+    queryKey: ["teams", "my"],
+    queryFn: () => teamService.getMyTeams(),
+    enabled: options.isUserSignedIn && !options.isReverseShare,
+    staleTime: 120_000,
+  });
+
+  const teamFolderOptions = useMemo(() => {
+    if (!teamFolders?.length) return [];
+    // Group folders by team name for better readability
+    const grouped: Record<string, { value: string; label: string }[]> = {};
+    for (const tf of teamFolders) {
+      if (!grouped[tf.teamName]) grouped[tf.teamName] = [];
+      grouped[tf.teamName].push({
+        value: tf.folder.id,
+        label: tf.folder.name,
+      });
+    }
+    // If only one team, return flat list
+    const teamNames = Object.keys(grouped);
+    if (teamNames.length === 1) {
+      return grouped[teamNames[0]].map((item) => ({
+        value: item.value,
+        label: `${teamNames[0]} / ${item.label}`,
+      }));
+    }
+    // Multiple teams: return grouped format
+    return teamNames.map((teamName) => ({
+      group: teamName,
+      items: grouped[teamName],
+    }));
+  }, [teamFolders]);
 
   const onSubmit = form.onSubmit(async (values) => {
     if (!(await shareService.isShareIdAvailable(values.link))) {
@@ -220,28 +324,50 @@ const CreateUploadModalBody = ({
         ) as ManipulateType,
       );
 
-      // Use anonymous limit when user is not signed in, otherwise use global max
-      const effectiveMax = !options.isUserSignedIn && options.anonymousMaxExpiration.value !== 0
-        ? options.anonymousMaxExpiration
-        : options.maxExpiration;
+      // For authenticated users with a per-plan limit, use planMaxExpirationDays
+      // planMaxExpirationDays === 0 means unlimited (admin) -> no check
+      // For anonymous users, use anonymousMaxExpiration
+      // Fallback to global maxExpiration (only for anonymous without specific limit)
+      let expirationExceeded = false;
+      let maxHumanized = "";
 
-      if (
-        effectiveMax.value != 0 &&
-        (form.values.never_expires ||
-          expirationDate.isAfter(
-            dayjs().add(
-              effectiveMax.value,
-              effectiveMax.unit as ManipulateType,
-            ),
-          ))
-      ) {
+      if (options.isUserSignedIn && options.planMaxExpirationDays === 0) {
+        // Unlimited (admin) - no expiration enforcement
+      } else if (options.isUserSignedIn && options.planMaxExpirationDays > 0) {
+        // Per-plan limit (accounts for team membership)
+        const planMaxDate = dayjs().add(options.planMaxExpirationDays, "days");
+        if (form.values.never_expires || expirationDate.isAfter(planMaxDate)) {
+          expirationExceeded = true;
+          maxHumanized = dayjs.duration(options.planMaxExpirationDays, "days").humanize();
+        }
+      } else if (!options.isUserSignedIn && options.anonymousMaxExpiration.value !== 0) {
+        const anonMaxDate = dayjs().add(
+          options.anonymousMaxExpiration.value,
+          options.anonymousMaxExpiration.unit as ManipulateType,
+        );
+        if (form.values.never_expires || expirationDate.isAfter(anonMaxDate)) {
+          expirationExceeded = true;
+          maxHumanized = dayjs
+            .duration(options.anonymousMaxExpiration.value, options.anonymousMaxExpiration.unit as ManipulateType)
+            .humanize();
+        }
+      } else if (!options.isUserSignedIn && options.maxExpiration.value != 0) {
+        const globalMaxDate = dayjs().add(
+          options.maxExpiration.value,
+          options.maxExpiration.unit as ManipulateType,
+        );
+        if (form.values.never_expires || expirationDate.isAfter(globalMaxDate)) {
+          expirationExceeded = true;
+          maxHumanized = dayjs
+            .duration(options.maxExpiration.value, options.maxExpiration.unit as ManipulateType)
+            .humanize();
+        }
+      }
+
+      if (expirationExceeded) {
         form.setFieldError(
           "expiration_num",
-          t("upload.modal.expires.error.too-long", {
-            max: dayjs
-              .duration(effectiveMax.value, effectiveMax.unit as ManipulateType)
-              .humanize(),
-          }),
+          t("upload.modal.expires.error.too-long", { max: maxHumanized }),
         );
         return;
       }
@@ -261,6 +387,8 @@ const CreateUploadModalBody = ({
           ...(captchaToken && { captchaToken }),
           ...(values.senderName && { senderName: values.senderName }),
           ...(values.senderEmail && { senderEmail: values.senderEmail }),
+          notifyOnDownload: values.notifyOnDownload,
+          ...(values.teamFolderId && { teamFolderId: values.teamFolderId }),
         },
         files,
       );
@@ -300,53 +428,21 @@ const CreateUploadModalBody = ({
               />
             </Group>
           )}
-          <Group align={form.errors.link ? "center" : "flex-end"}>
-            <TextInput
-              style={{ flex: "1" }}
-              variant="filled"
-              label={t("upload.modal.link.label")}
-              placeholder="myAwesomeShare"
-              {...form.getInputProps("link")}
-            />
-            <Button
-              style={{ flex: "0 0 auto" }}
-              variant="outline"
-              onClick={() =>
-                form.setFieldValue(
-                  "link",
-                  generateShareId(options.shareIdLength),
-                )
-              }
-            >
-              <FormattedMessage id="common.button.generate" />
-            </Button>
-          </Group>
-
-          <Text
-            truncate
-            italic
-            size="xs"
-            sx={(theme) => ({
-              color: theme.colors.gray[6],
-            })}
-          >
-            {`${config.get("general.appUrl")}/s/${form.values.link}`}
-          </Text>
           {!options.isReverseShare && (
             <>
               <Grid align={form.errors.expiration_num ? "center" : "flex-end"}>
-                <Col xs={6}>
+                <Grid.Col span={{ base: 12, xs: 6 }}>
                   <NumberInput
                     min={1}
                     max={99999}
-                    precision={0}
+                    decimalScale={0}
                     variant="filled"
                     label={t("upload.modal.expires.label")}
                     disabled={form.values.never_expires}
                     {...form.getInputProps("expiration_num")}
                   />
-                </Col>
-                <Col xs={6}>
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, xs: 6 }}>
                   <Select
                     disabled={form.values.never_expires}
                     {...form.getInputProps("expiration_unit")}
@@ -395,20 +491,20 @@ const CreateUploadModalBody = ({
                       },
                     ]}
                   />
-                </Col>
+                </Grid.Col>
               </Grid>
-              {options.maxExpiration.value == 0 && options.isUserSignedIn && (
+              {options.isUserSignedIn && options.planMaxExpirationDays === 0 && (
                 <Checkbox
                   label={t("upload.modal.expires.never-long")}
                   {...form.getInputProps("never_expires")}
                 />
               )}
               <Text
-                italic
+                fs="italic"
                 size="xs"
-                sx={(theme) => ({
-                  color: theme.colors.gray[6],
-                })}
+                style={{
+                  color: "var(--mantine-color-gray-6)",
+                }}
               >
                 {getExpirationPreview(
                   {
@@ -421,7 +517,47 @@ const CreateUploadModalBody = ({
             </>
           )}
           <Accordion>
-            <Accordion.Item value="description" sx={{ borderBottom: "none" }}>
+            <Accordion.Item value="link" style={{ borderBottom: "none" }}>
+              <Accordion.Control>
+                <FormattedMessage id="upload.modal.accordion.link.title" />
+              </Accordion.Control>
+              <Accordion.Panel>
+                <Stack align="stretch">
+                  <Group align={form.errors.link ? "center" : "flex-end"}>
+                    <TextInput
+                      style={{ flex: "1" }}
+                      variant="filled"
+                      label={t("upload.modal.link.label")}
+                      placeholder="myAwesomeShare"
+                      {...form.getInputProps("link")}
+                    />
+                    <Button
+                      style={{ flex: "0 0 auto" }}
+                      variant="outline"
+                      onClick={() =>
+                        form.setFieldValue(
+                          "link",
+                          generateShareId(options.shareIdLength),
+                        )
+                      }
+                    >
+                      <FormattedMessage id="common.button.random" />
+                    </Button>
+                  </Group>
+                  <Text
+                    truncate="end"
+                    fs="italic"
+                    size="xs"
+                    style={{
+                      color: "var(--mantine-color-gray-6)",
+                    }}
+                  >
+                    {`${config.get("general.appUrl")}/s/${form.values.link}`}
+                  </Text>
+                </Stack>
+              </Accordion.Panel>
+            </Accordion.Item>
+            <Accordion.Item value="description" style={{ borderBottom: "none" }}>
               <Accordion.Control>
                 <FormattedMessage id="upload.modal.accordion.name-and-description.title" />
               </Accordion.Control>
@@ -449,61 +585,108 @@ const CreateUploadModalBody = ({
                third-party recipients. Only the reverse share creator
                should receive the completed share link. */}
             {options.enableEmailRecepients && !options.isReverseShare && (
-              <Accordion.Item value="recipients" sx={{ borderBottom: "none" }}>
+              <Accordion.Item value="recipients" style={{ borderBottom: "none" }}>
                 <Accordion.Control>
                   <FormattedMessage id="upload.modal.accordion.email.title" />
                 </Accordion.Control>
                 <Accordion.Panel>
+                  <div ref={recipientWrapperRef}>
                   <MultiSelect
-                    data={storedRecipients}
+                    data={recipientOptions}
                     placeholder={t("upload.modal.accordion.email.placeholder")}
                     searchable
-                    creatable
                     id="recipient-emails"
                     inputMode="email"
-                    getCreateLabel={(query) => `+ ${query}`}
-                    onCreate={(query) => {
-                      if (!query.match(/^\S+@\S+\.\S+$/)) {
-                        form.setFieldError(
-                          "recipients",
-                          t("upload.modal.accordion.email.invalid-email"),
-                        );
-                      } else {
-                        setStoredRecipients((prev) => [...prev, query]);
-                        form.setFieldError("recipients", null);
+                    searchValue={emailSearch}
+                    onSearchChange={setEmailSearch}
+                    {...form.getInputProps("recipients")}
+                    onOptionSubmit={(value) => {
+                      if (!storedRecipients.includes(value)) {
+                        setStoredRecipients((prev) => [...prev, value]);
+                      }
+                      if (!form.values.recipients.includes(value)) {
                         form.setFieldValue("recipients", [
                           ...form.values.recipients,
-                          query,
+                          value,
                         ]);
-                        return query;
                       }
+                      form.setFieldError("recipients", null);
+                      setEmailSearch("");
                     }}
-                    {...form.getInputProps("recipients")}
                     onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
-                      // Add email on comma or semicolon
-                      if (e.key === "Enter" || e.key === "," || e.key === ";") {
+                      if (e.key === "," || e.key === ";") {
                         e.preventDefault();
                         const inputValue = (
                           e.target as HTMLInputElement
                         ).value.trim();
                         if (inputValue.match(/^\S+@\S+\.\S+$/)) {
+                          if (!storedRecipients.includes(inputValue)) {
+                            setStoredRecipients((prev) => [...prev, inputValue]);
+                          }
                           form.setFieldValue("recipients", [
                             ...form.values.recipients,
                             inputValue,
                           ]);
-                          (e.target as HTMLInputElement).value = "";
+                          form.setFieldError("recipients", null);
+                          setEmailSearch("");
                         }
                       } else if (e.key === " ") {
                         e.preventDefault();
-                        (e.target as HTMLInputElement).value = "";
                       }
                     }}
                   />
+                  </div>
                 </Accordion.Panel>
               </Accordion.Item>
             )}
 
-            <Accordion.Item value="security" sx={{ borderBottom: "none" }}>
+            {/* Team folder selector: only shown when user is signed in, not a reverse share, has team folders, and no preselected folder */}
+            {options.isUserSignedIn && !options.isReverseShare && !options.preselectedTeamFolderId && teamFolderOptions.length > 0 && (
+              <Accordion.Item value="team-folder" style={{ borderBottom: "none" }}>
+                <Accordion.Control>
+                  <FormattedMessage id="upload.modal.team-folder.title" />
+                </Accordion.Control>
+                <Accordion.Panel>
+                  <Stack align="stretch">
+                    <Select
+                      variant="filled"
+                      label={t("upload.modal.team-folder.label")}
+                      placeholder={t("upload.modal.team-folder.placeholder")}
+                      data={teamFolderOptions}
+                      clearable
+                      searchable
+                      {...form.getInputProps("teamFolderId")}
+                    />
+                    <Text size="xs" c="dimmed">
+                      <FormattedMessage id="upload.modal.team-folder.description" />
+                    </Text>
+                  </Stack>
+                </Accordion.Panel>
+              </Accordion.Item>
+            )}
+
+            {/* Info: user has teams but no writable folders yet */}
+            {options.isUserSignedIn && !options.isReverseShare && teamFolderOptions.length === 0 && myTeams && myTeams.length > 0 && (
+              <Accordion.Item value="team-folder-info" style={{ borderBottom: "none" }}>
+                <Accordion.Control>
+                  <FormattedMessage id="upload.modal.team-folder.title" />
+                </Accordion.Control>
+                <Accordion.Panel>
+                  <Alert
+                    icon={<TbAlertCircle size={16} />}
+                    color="blue"
+                    variant="light"
+                  >
+                    Vous faites partie d'une équipe mais aucun dossier n'y est
+                    encore créé. Pour envoyer des fichiers dans votre équipe,
+                    rendez-vous d'abord sur la page de l'équipe et créez un
+                    dossier dans l'onglet « Dossiers ».
+                  </Alert>
+                </Accordion.Panel>
+              </Accordion.Item>
+            )}
+
+            <Accordion.Item value="security" style={{ borderBottom: "none" }}>
               <Accordion.Control>
                 <FormattedMessage id="upload.modal.accordion.security.title" />
               </Accordion.Control>
@@ -524,7 +707,6 @@ const CreateUploadModalBody = ({
                   {!options.isReverseShare && (
                     <NumberInput
                       min={1}
-                      type="number"
                       variant="filled"
                       placeholder={t(
                         "upload.modal.accordion.security.max-views.placeholder",
@@ -533,11 +715,13 @@ const CreateUploadModalBody = ({
                       {...form.getInputProps("maxViews")}
                     />
                   )}
-                  {/* [UX/Security] E2E key email checkbox hidden for reverse
-                     shares: K_rs is delivered via the URL fragment (#key=...),
-                     not email. The checkbox would be misleading. */}
+                  {/* [UX/Security] E2E key email checkbox hidden
+                     Also hidden when the user has not yet set up E2E encryption
+                     in their account: the key doesn't exist yet so sharing it
+                     via email would be meaningless. */}
                   {!options.isReverseShare &&
                     options.isUserSignedIn &&
+                    options.userHasE2E &&
                     options.enableEmailRecepients &&
                     options.enableE2EKeyEmailSharing && (
                       <Checkbox
@@ -557,14 +741,23 @@ const CreateUploadModalBody = ({
               </Accordion.Panel>
             </Accordion.Item>
           </Accordion>
+          <Checkbox
+            label={t("upload.modal.notify-download.label")}
+            description={t("upload.modal.notify-download.description")}
+            styles={{ description: { whiteSpace: "pre-line" } }}
+            {...form.getInputProps("notifyOnDownload", {
+              type: "checkbox",
+            })}
+          />
           {showCaptcha && (
             <Center>
               <HCaptcha
                 ref={captchaRef}
                 sitekey={options.captchaSiteKey!}
                 onVerify={setCaptchaToken}
-                onExpire={() => setCaptchaToken(null)}
-                theme={theme.colorScheme}
+                onExpire={handleCaptchaExpire}
+                onError={handleCaptchaError}
+                theme={theme.other.colorScheme}
               />
             </Center>
           )}
@@ -596,6 +789,7 @@ const SimplifiedCreateUploadModalModal = ({
     enableE2EKeyEmailSharing: boolean;
     maxExpiration: Timespan;
     anonymousMaxExpiration: Timespan;
+    planMaxExpirationDays: number;
     shareIdLength: number;
     captchaSiteKey?: string;
   };
@@ -607,6 +801,15 @@ const SimplifiedCreateUploadModalModal = ({
   const captchaRef = useRef<HCaptcha>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const showCaptcha = !options.isUserSignedIn && !!options.captchaSiteKey;
+
+  const handleCaptchaExpire = () => setCaptchaToken(null);
+  const handleCaptchaError = (error: any) => {
+    console.warn("[hCaptcha Error]", error);
+    // Attempt to reset the captcha on error (e.g., WebGL context lost on Safari)
+    if (captchaRef.current?.resetCaptcha) {
+      captchaRef.current.resetCaptcha();
+    }
+  };
 
   const [showNotSignedInAlert, setShowNotSignedInAlert] = useState(true);
 
@@ -638,10 +841,21 @@ const SimplifiedCreateUploadModalModal = ({
       return;
     }
 
-    // For anonymous users, enforce the anonymous max expiration instead of "never"
-    const expiration = !options.isUserSignedIn && options.anonymousMaxExpiration.value !== 0
-      ? `${options.anonymousMaxExpiration.value}-${options.anonymousMaxExpiration.unit}`
-      : "never";
+    // Expiration defaults:
+    // - Anonymous: anonymousMaxExpiration (5d), fallback to maxExpiration
+    // - Signed-in with plan limit: planMaxExpirationDays
+    // - Admin (planMaxExpirationDays === 0): "never" (unlimited)
+    let expiration: string;
+    if (!options.isUserSignedIn && options.anonymousMaxExpiration.value !== 0) {
+      expiration = `${options.anonymousMaxExpiration.value}-${options.anonymousMaxExpiration.unit}`;
+    } else if (!options.isUserSignedIn && options.maxExpiration.value !== 0) {
+      expiration = `${options.maxExpiration.value}-${options.maxExpiration.unit}`;
+    } else if (options.isUserSignedIn && options.planMaxExpirationDays > 0) {
+      expiration = `${options.planMaxExpirationDays}-days`;
+    } else {
+      // Admin SaaS (planMaxExpirationDays === 0) = unlimited
+      expiration = "never";
+    }
 
     uploadCallback(
       {
@@ -698,8 +912,9 @@ const SimplifiedCreateUploadModalModal = ({
                 ref={captchaRef}
                 sitekey={options.captchaSiteKey!}
                 onVerify={setCaptchaToken}
-                onExpire={() => setCaptchaToken(null)}
-                theme={theme.colorScheme}
+                onExpire={handleCaptchaExpire}
+                onError={handleCaptchaError}
+                theme={theme.other.colorScheme}
               />
             </Center>
           )}

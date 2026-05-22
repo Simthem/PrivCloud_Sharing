@@ -10,7 +10,7 @@ import {
   Stack,
   Text,
 } from "@mantine/core";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { TbCopy, TbCheck, TbShieldLock } from "react-icons/tb";
 import {
@@ -18,6 +18,8 @@ import {
   computeKeyHashFromEncoded,
   computeKeyHashFromEncodedLegacy,
   storeUserKey,
+  loadKeyWithPasskey,
+  hasPasskeyWrappedKey,
 } from "../../utils/crypto.util";
 import { combineShards } from "../../utils/sskr.util";
 import userService from "../../services/user.service";
@@ -44,6 +46,18 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
   const [recoverError, setRecoverError] = useState("");
   const [recovering, setRecovering] = useState(false);
 
+  // -- passkey recovery --
+  const [loadingPasskey, setLoadingPasskey] = useState(false);
+  const [passkeyAvailable, setPasskeyAvailable] = useState(hasPasskeyWrappedKey());
+
+  // Also check server-side wrapped keys for multi-device
+  useEffect(() => {
+    if (!opened || passkeyAvailable) return;
+    userService.listWrappedKeys().then((keys) => {
+      if (keys.length > 0) setPasskeyAvailable(true);
+    }).catch(() => {});
+  }, [opened]);
+
   // -- recovered mode (show key after SSKR success) --
   const [recoveredKey, setRecoveredKey] = useState("");
 
@@ -59,7 +73,7 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
     setRecoveredKey("");
   };
 
-  /** Verifies an encodedKey (HMAC then legacy), stores and migrates if needed. */
+  /** Vérifie un encodedKey (HMAC puis legacy), stocke et migre si besoin. */
   const verifyAndStore = async (encodedKey: string) => {
     await importKeyFromBase64(encodedKey);
     const hash = await computeKeyHashFromEncoded(encodedKey, userId);
@@ -78,7 +92,7 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
     setError("");
     const sanitized = value.replace(/[^A-Za-z0-9_-]/g, "");
     if (!sanitized) {
-      setError("Please enter your encryption key.");
+      setError("Veuillez entrer votre clé de chiffrement.");
       return;
     }
     setLoading(true);
@@ -86,17 +100,43 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
       const ok = await verifyAndStore(sanitized);
       if (!ok) {
         setError(
-          "This key does not match the one registered on your account.",
+          "Cette clé ne correspond pas à celle enregistrée sur votre compte.",
         );
         return;
       }
-      toast.success("Key loaded for this session.");
+      toast.success("Clé chargée pour cette session.");
       resetAll();
       onClose();
     } catch {
-      setError("Invalid key.");
+      setError("Clé invalide.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePasskeyRecover = async () => {
+    setError("");
+    setLoadingPasskey(true);
+    try {
+      // Fetch server-side wrapped keys for multi-device recovery
+      const serverKeys = await userService.listWrappedKeys().catch(() => []);
+      const encodedKey = await loadKeyWithPasskey(serverKeys);
+      if (!encodedKey) {
+        setError(intl.formatMessage({ id: "e2ePrompt.passkey.prfUnsupported" }));
+        return;
+      }
+      const ok = await verifyAndStore(encodedKey);
+      if (!ok) {
+        setError(intl.formatMessage({ id: "e2ePrompt.passkey.mismatch" }));
+        return;
+      }
+      toast.success(intl.formatMessage({ id: "e2ePrompt.passkey.success" }));
+      resetAll();
+      onClose();
+    } catch {
+      setError(intl.formatMessage({ id: "e2ePrompt.passkey.error" }));
+    } finally {
+      setLoadingPasskey(false);
     }
   };
 
@@ -104,7 +144,7 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
     setRecoverError("");
     const filled = shardValues.filter((s) => s.trim().length > 0);
     if (filled.length < 2) {
-      setRecoverError("Enter at least 2 fragments.");
+      setRecoverError("Entrez au moins 2 fragments.");
       return;
     }
     setRecovering(true);
@@ -113,16 +153,16 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
       const ok = await verifyAndStore(encodedKey);
       if (!ok) {
         setRecoverError(
-          "The reconstructed key does not match the one on your account. " +
-            "Please verify that the fragments are correct.",
+          "La clé reconstituée ne correspond pas à celle de votre compte. " +
+            "Vérifiez que les fragments sont corrects.",
         );
         return;
       }
       setRecoveredKey(encodedKey);
       setMode("recovered");
-      toast.success("Key reconstructed and loaded for this session.");
+      toast.success("Clé reconstituée et chargée pour cette session.");
     } catch (e: any) {
-      setRecoverError(e?.message ?? "Unable to reconstruct the key.");
+      setRecoverError(e?.message ?? "Impossible de reconstituer la clé.");
     } finally {
       setRecovering(false);
     }
@@ -138,7 +178,7 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
     onClose();
   };
 
-  const updateShardCount = (v: number | "") => {
+  const updateShardCount = (v: string | number) => {
     const n = typeof v === "number" ? Math.max(2, Math.min(10, v)) : 3;
     setShardCount(n);
     setShardValues((prev) => {
@@ -153,9 +193,9 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
       opened={opened}
       onClose={handleSkip}
       title={
-        <Group spacing="xs">
+        <Group gap="xs">
           <TbShieldLock size={20} />
-          <Text weight={600}>
+          <Text fw={600}>
             <FormattedMessage id="e2ePrompt.title" />
           </Text>
         </Group>
@@ -165,11 +205,11 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
       size={mode === "recover" ? "lg" : "md"}
     >
       {mode === "recovered" && (
-        <Stack spacing="sm">
-          <Text size="sm" color="teal" weight={600}>
+        <Stack gap="sm">
+          <Text size="sm" color="teal" fw={600}>
             <FormattedMessage id="e2ePrompt.recovered.success" />
           </Text>
-          <Text size="sm" color="dimmed">
+          <Text size="sm" c="dimmed">
             <FormattedMessage id="e2ePrompt.recovered.instructions" />
           </Text>
           <Code
@@ -179,13 +219,13 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
           >
             {recoveredKey}
           </Code>
-          <Group position="right" spacing="xs">
+          <Group justify="right" gap="xs">
             <CopyButton value={recoveredKey} timeout={3000}>
               {({ copied, copy }) => (
                 <Button
                   variant="light"
                   size="xs"
-                  leftIcon={copied ? <TbCheck size={14} /> : <TbCopy size={14} />}
+                  leftSection={copied ? <TbCheck size={14} /> : <TbCopy size={14} />}
                   onClick={copy}
                   aria-label={intl.formatMessage({ id: "e2ePrompt.recovered.copy.aria" })}
                 >
@@ -209,8 +249,8 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
             handleImport();
           }}
         >
-          <Stack spacing="sm">
-            <Text size="sm" color="dimmed">
+          <Stack gap="sm">
+            <Text size="sm" c="dimmed">
               <FormattedMessage id="e2ePrompt.import.description" />
             </Text>
             <PasswordInput
@@ -228,7 +268,7 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
             <div role="alert" aria-live="assertive">
               {error && <Text size="xs" color="red">{error}</Text>}
             </div>
-            <Group position="right" mt="xs">
+            <Group justify="right" mt="xs">
               <Button
                 variant="subtle"
                 onClick={handleSkip}
@@ -243,15 +283,27 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
 
             <Divider label={intl.formatMessage({ id: "e2ePrompt.divider.or" })} labelPosition="center" />
 
+            {passkeyAvailable && (
+              <Button
+                variant="light"
+                size="compact-sm"
+                leftSection={<TbShieldLock size={14} />}
+                onClick={handlePasskeyRecover}
+                loading={loadingPasskey}
+              >
+                <FormattedMessage id="e2ePrompt.import.passkeyLink" />
+              </Button>
+            )}
+
             <Button
               variant="subtle"
-              compact
+              size="compact-sm"
               onClick={() => setMode("recover")}
             >
               <FormattedMessage id="e2ePrompt.import.sskrLink" />
             </Button>
 
-            <Text size="xs" color="dimmed">
+            <Text size="xs" c="dimmed">
               <FormattedMessage id="e2ePrompt.import.skipWarning" />
             </Text>
           </Stack>
@@ -259,8 +311,8 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
       )}
 
       {mode === "recover" && (
-        <Stack spacing="sm">
-          <Text size="sm" color="dimmed">
+        <Stack gap="sm">
+          <Text size="sm" c="dimmed">
             <FormattedMessage id="e2ePrompt.recover.description" />
           </Text>
 
@@ -293,13 +345,13 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
 
           <div role="alert" aria-live="assertive">
             {recoverError && (
-              <Text size="xs" color="red">
+              <Text size="xs" c="red">
                 {recoverError}
               </Text>
             )}
           </div>
 
-          <Group position="right" mt="xs">
+          <Group justify="right" mt="xs">
             <Button variant="subtle" onClick={() => setMode("import")}>
               <FormattedMessage id="e2ePrompt.recover.back" />
             </Button>

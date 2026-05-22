@@ -21,6 +21,6 @@ import { OAuthModule } from "../oauth/oauth.module";
   ],
   controllers: [AuthController],
   providers: [AuthService, AuthTotpService, JwtStrategy, LdapService, HCaptchaGuard],
-  exports: [AuthService],
+  exports: [AuthService, AuthTotpService],
 })
 export class AuthModule {}

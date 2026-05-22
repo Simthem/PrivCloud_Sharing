@@ -26,12 +26,17 @@ export const configVariables = {
     },
     showHomePage: {
       type: "boolean",
-      defaultValue: "false",
+      defaultValue: "true",
       secret: false,
     },
-    metaDescription: {
+    metaDescriptionEn: {
       type: "string",
-      defaultValue: "A self-hosted and privacy-focused file sharing platform.",
+      defaultValue: "The secure alternative to WeTransfer. Send files with end-to-end encryption and zero-knowledge privacy. No account required. Open-source and GDPR-compliant.",
+      secret: false,
+    },
+    metaDescriptionFr: {
+      type: "string",
+      defaultValue: "L'alternative sécurisée à WeTransfer. Envoyez vos fichiers avec un chiffrement de bout en bout et une confidentialité zéro connaissance. Aucun compte requis. Open-source et conforme au RGPD.",
       secret: false,
     },
     colorPalette: {
@@ -191,6 +196,33 @@ export const configVariables = {
       type: "text",
       defaultValue:
         'Hey!\n\nYou were invited to PrivCloud_Sharing. Click this link to accept the invite: {url}\n\nYou can use the email "{email}" and the password "{password}" to sign in.\n\nPrivCloud_Sharing 🔒',
+    },
+    downloadNotificationSubject: {
+      type: "string",
+      defaultValue: "Votre partage a été téléchargé",
+    },
+    downloadNotificationMessage: {
+      type: "text",
+      defaultValue:
+        "Bonjour,\n\nVotre partage \"{shareName}\" a été téléchargé le {date}.\n\nConsulter votre partage : {shareUrl}\n\nPrivCloud_Sharing 🔒",
+    },
+    downloadDigestSubject: {
+      type: "string",
+      defaultValue: "Résumé des téléchargements de vos partages",
+    },
+    downloadDigestMessage: {
+      type: "text",
+      defaultValue:
+        "Bonjour,\n\nVoici un résumé des téléchargements récents :\n\n{digest}\n\nPrivCloud_Sharing 🔒",
+    },
+    downloadWeeklySubject: {
+      type: "string",
+      defaultValue: "Résumé hebdomadaire des téléchargements",
+    },
+    downloadWeeklyMessage: {
+      type: "text",
+      defaultValue:
+        "Bonjour,\n\nVoici votre résumé hebdomadaire des téléchargements :\n\n{digest}\n\nPrivCloud_Sharing 🔒",
     },
   },
   smtp: {
@@ -473,6 +505,12 @@ export const configVariables = {
       defaultValue: "",
       secret: false,
     },
+    metaDescriptionImprint: {
+      type: "string",
+      defaultValue:
+        "Legal notice for PrivCloud: service operator, hosting provider, GDPR and NIS2 compliance, applicable law.",
+      secret: false,
+    },
     privacyPolicyText: {
       type: "text",
       defaultValue:
@@ -537,6 +575,12 @@ export const configVariables = {
       defaultValue: "",
       secret: false,
     },
+    metaDescriptionPrivacy: {
+      type: "string",
+      defaultValue:
+        "PrivCloud Privacy Policy: data collected, GDPR legal basis, end-to-end encryption, user rights and DPO contact.",
+      secret: false,
+    },
   },
   pushNotifications: {
     enabled: {
@@ -577,6 +621,56 @@ export const configVariables = {
       defaultValue: "",
       secret: true,
       obscured: true,
+    },
+  },
+  signing: {
+    enabled: {
+      type: "boolean",
+      defaultValue: "true",
+      secret: false,
+    },
+    certificatePath: {
+      type: "string",
+      defaultValue: "",
+      secret: true,
+    },
+    certificatePassword: {
+      type: "string",
+      defaultValue: "",
+      secret: true,
+      obscured: true,
+    },
+    tsaUrl: {
+      type: "string",
+      defaultValue: "http://timestamp.digicert.com",
+      secret: false,
+    },
+    defaultLevel: {
+      type: "string",
+      defaultValue: "AES",
+      secret: false,
+    },
+  },
+  team: {
+    enabled: {
+      type: "boolean",
+      defaultValue: "true",
+      secret: false,
+    },
+    maxTeamsPerUser: {
+      type: "number",
+      defaultValue: "5",
+      secret: false,
+    },
+    basePrice: {
+      type: "number",
+      defaultValue: "1799",
+      secret: false,
+    },
+    extraMemberPrice: {
+      type: "number",
+      defaultValue: "499",
+      secret: false,
     },
   },
 } satisfies ConfigVariables;

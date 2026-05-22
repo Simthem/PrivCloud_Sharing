@@ -32,11 +32,11 @@ const SignIn = ({ redirectPath }: { redirectPath?: string }) => {
     });
   }, []);
 
-  if (isLoading) return <LoadingOverlay overlayOpacity={1} visible />;
+  if (isLoading) return <LoadingOverlay overlayProps={{ backgroundOpacity: 1 }} visible />;
 
   return (
     <>
-      <Meta title={t("signin.title")} />
+      <Meta title={t("signin.title")} noIndex />
       <SignInForm redirectPath={redirectPath ?? "/upload"} />
     </>
   );

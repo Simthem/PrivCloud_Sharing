@@ -9,7 +9,7 @@ interface Props {
   oldKey: string;
   newKey: string;
   onSuccess: () => void;
-  onError: (err: string) => void;
+  onError: (_err: string) => void;
 }
 
 const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) => {
@@ -97,15 +97,15 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
       closeOnEscape={false}
       withCloseButton={false}
       title={
-        <Group spacing="xs">
+        <Group gap="xs">
           <TbLock size={18} />
-          <Text weight={600}>
+          <Text fw={600}>
             <FormattedMessage id="reencrypt.modal.title" />
           </Text>
         </Group>
       }
     >
-      <Stack spacing="md">
+      <Stack gap="md">
         <div role="status" aria-live="polite" aria-atomic="true">
           {error ? (
             <Alert
@@ -142,25 +142,28 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
             </Alert>
           ) : (
             <>
-              <Text size="sm" color="dimmed">
+              <Text size="sm" c="dimmed">
                 <FormattedMessage id="reencrypt.inprogress.message" />
               </Text>
 
-              <Text size="xs" weight={600} color="red" mt="xs">
+              <Text size="xs" fw={600} c="red" mt="xs">
                 <FormattedMessage id="reencrypt.inprogress.warning" />
               </Text>
 
-              <Progress
-                value={pct}
-                animate={!done}
+              <Progress.Root
                 size="lg"
                 mt="sm"
-                label={totalItems > 0 ? `${pct}%` : undefined}
                 aria-label={intl.formatMessage({ id: "reencrypt.progress.label" })}
-              />
+              >
+                <Progress.Section value={pct} animated={!done}>
+                  {totalItems > 0 && (
+                    <Progress.Label>{`${pct}%`}</Progress.Label>
+                  )}
+                </Progress.Section>
+              </Progress.Root>
 
               {progress?.phase === "files" && (
-                <Text size="xs" color="dimmed" mt="xs">
+                <Text size="xs" c="dimmed" mt="xs">
                   <FormattedMessage
                     id="reencrypt.progress.files"
                     values={{
@@ -173,7 +176,7 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
               )}
 
               {progress?.phase === "reverseShares" && (
-                <Text size="xs" color="dimmed" mt="xs">
+                <Text size="xs" c="dimmed" mt="xs">
                   <FormattedMessage
                     id="reencrypt.progress.reverseShares"
                     values={{
@@ -189,12 +192,12 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
 
         {/* Buttons */}
         {!done && !error && (
-          <Group position="right">
+          <Group justify="right">
             <Button
               variant="subtle"
               color="red"
               size="xs"
-              leftIcon={<TbX size={14} />}
+              leftSection={<TbX size={14} />}
               onClick={handleCancel}
             >
               <FormattedMessage id="reencrypt.button.cancel" />
@@ -203,7 +206,7 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
         )}
 
         {done && !hasPartialFailures && (
-          <Group position="right">
+          <Group justify="right">
             <Button
               variant="light"
               color="green"
@@ -215,7 +218,7 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
         )}
 
         {done && hasPartialFailures && (
-          <Group position="right">
+          <Group justify="right">
             <Button
               variant="light"
               color="orange"
@@ -227,11 +230,11 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
         )}
 
         {error && (
-          <Group position="right" spacing="xs">
+          <Group justify="right" gap="xs">
             <Button
               variant="light"
               color="blue"
-              leftIcon={<TbRefresh size={14} />}
+              leftSection={<TbRefresh size={14} />}
               onClick={handleRetry}
             >
               <FormattedMessage id="reencrypt.button.retry" />

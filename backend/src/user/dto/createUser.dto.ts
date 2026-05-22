@@ -1,5 +1,5 @@
 import { plainToClass } from "class-transformer";
-import { Allow, IsOptional, MinLength } from "class-validator";
+import { Allow, IsIn, IsOptional, MinLength } from "class-validator";
 import { UserDTO } from "./user.dto";
 
 export class CreateUserDTO extends UserDTO {
@@ -9,6 +9,10 @@ export class CreateUserDTO extends UserDTO {
   @MinLength(8)
   @IsOptional()
   password: string;
+
+  @IsOptional()
+  @IsIn(["FREE", "STARTER", "PRO", "TEAM"])
+  plan?: string;
 
   from(partial: Partial<CreateUserDTO>) {
     return plainToClass(CreateUserDTO, partial, {

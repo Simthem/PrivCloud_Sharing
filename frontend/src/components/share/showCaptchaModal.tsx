@@ -1,12 +1,12 @@
 import { Button, Center, Stack, Text, useMantineTheme } from "@mantine/core";
-import { ModalsContextProps } from "@mantine/modals/lib/context";
+import { useModals } from "@mantine/modals";
 import { useRef, useState } from "react";
 import HCaptcha from "@hcaptcha/react-hcaptcha";
 import { FormattedMessage } from "react-intl";
 import { translateOutsideContext } from "../../hooks/useTranslate.hook";
 
 const showCaptchaModal = (
-  modals: ModalsContextProps,
+  modals: ReturnType<typeof useModals>,
   siteKey: string,
   submitCallback: (
     _password?: string,
@@ -42,6 +42,14 @@ const Body = ({
     setCaptchaToken(null);
   };
 
+  const handleCaptchaError = (error: any) => {
+    console.warn("[hCaptcha Error]", error);
+    // Attempt to reset the captcha on error (e.g., WebGL context lost on Safari)
+    if (captchaRef.current?.resetCaptcha) {
+      captchaRef.current.resetCaptcha();
+    }
+  };
+
   return (
     <Stack align="stretch">
       <Text size="sm">
@@ -54,7 +62,8 @@ const Body = ({
           sitekey={siteKey}
           onVerify={setCaptchaToken}
           onExpire={handleCaptchaExpire}
-          theme={theme.colorScheme}
+          onError={handleCaptchaError}
+          theme={theme.other.colorScheme}
         />
       </Center>
 

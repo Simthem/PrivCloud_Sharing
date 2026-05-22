@@ -1,10 +1,11 @@
-import { Button, Text } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { Button, Group } from "@mantine/core";
+import { useEffect, useRef, useState } from "react";
 import { FormattedMessage } from "react-intl";
 import useTranslate from "../../hooks/useTranslate.hook";
 import shareService from "../../services/share.service";
 import toast from "../../utils/toast.util";
 import { FileMetaData } from "../../types/File.type";
+import DownloadProgressIndicator from "./DownloadProgressIndicator";
 
 const DownloadAllButton = ({
   shareId,
@@ -19,37 +20,63 @@ const DownloadAllButton = ({
 }) => {
   const [isZipReady, setIsZipReady] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [progress, setProgress] = useState("");
+  const [progress, setProgress] = useState<number | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const t = useTranslate();
 
   const downloadAllE2E = async () => {
     if (!e2eKey || !files) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setIsLoading(true);
-    setProgress("");
+    setProgress(0);
     try {
       await shareService.downloadAllAsZipE2E(
         shareId,
         files,
         e2eKey,
-        (done, total) => setProgress(`${done}/${total}`),
+        (done, total) => {
+          setProgress(total > 0 ? (done / total) * 100 : 0);
+        },
+        controller.signal,
       );
-    } catch {
-      toast.error(t("common.error"));
+    } catch (e: any) {
+      if (e.name !== "AbortError") {
+        toast.error(t("common.error"));
+      }
     } finally {
+      abortRef.current = null;
       setIsLoading(false);
-      setProgress("");
+      setProgress(null);
     }
   };
 
   const downloadAll = async () => {
+    const controller = new AbortController();
+    abortRef.current = controller;
     setIsLoading(true);
-    await shareService
-      .downloadFile(shareId, "zip")
-      .then(() => setIsLoading(false));
+    setProgress(0);
+    try {
+      await shareService.downloadAllAsZip(
+        shareId,
+        (downloaded, total) => {
+          setProgress(total > 0 ? (downloaded / total) * 100 : 0);
+        },
+        controller.signal,
+      );
+    } catch (e: any) {
+      if (e.name !== "AbortError") {
+        toast.error(t("common.error"));
+      }
+    } finally {
+      abortRef.current = null;
+      setIsLoading(false);
+      setProgress(null);
+    }
   };
 
   useEffect(() => {
-    // For E2E shares, no server-side ZIP
+    // Pour les partages E2E, pas de ZIP côté serveur
     if (isE2EEncrypted) {
       setIsZipReady(true);
       return;
@@ -75,25 +102,30 @@ const DownloadAllButton = ({
   }, [isE2EEncrypted]);
 
   return (
-    <Button
-      variant="outline"
-      loading={isLoading}
-      onClick={() => {
-        if (!isZipReady) {
-          toast.error(t("share.notify.download-all-preparing"));
-        } else if (isE2EEncrypted && e2eKey) {
-          downloadAllE2E();
-        } else {
-          downloadAll();
-        }
-      }}
-    >
-      {progress ? (
-        <Text size="sm">{progress}</Text>
-      ) : (
+    <Group gap="xs" wrap="nowrap">
+      <Button
+        variant="outline"
+        loading={isLoading}
+        disabled={isLoading}
+        onClick={() => {
+          if (!isZipReady) {
+            toast.error(t("share.notify.download-all-preparing"));
+          } else if (isE2EEncrypted && e2eKey) {
+            downloadAllE2E();
+          } else {
+            downloadAll();
+          }
+        }}
+      >
         <FormattedMessage id="share.button.download-all" />
+      </Button>
+      {isLoading && progress !== null && (
+        <DownloadProgressIndicator
+          progress={progress}
+          onCancel={() => abortRef.current?.abort()}
+        />
       )}
-    </Button>
+    </Group>
   );
 };
 

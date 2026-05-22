@@ -1,3 +1,268 @@
+## [1.22.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.21.3...v1.22.2) (2026-05-23)
+
+
+### Features
+
+* **signing -- eIDAS-compliant PAdES-B-B electronic signature module:**
+  complete PDF signing module (EU Regulation 910/2014); backend split into four
+  focused services (`SigningService`, `SigningOtpService`, `SigningDownloadService`,
+  `SigningE2EService`, `PdfSigningService`); frontend pages `/signing`,
+  `/signing/new`, `/signing/[id]`:
+  PAdES-B-B cryptographic signature embedded in PDF via P12/PFX certificate;
+  AES level (identity check via email OTP + audit trail) and QES level (qualified
+  TSP certificate); TSA (Timestamp Authority) for LTV validation configurable via
+  `SIGNING_TSA_URL`; multi-signer flow with configurable signing order;
+  roles SIGNER / APPROVER / CC; signature field placement (coordinates,
+  dimensions, initials, approval, consent notice); signing tokens for external
+  signatories without an account (URL token + email OTP); complete audit trail
+  (CREATED, SIGNED, REJECTED, COMPLETED, CANCELLED) with IP + User-Agent;
+  team integration via `SIGNATURE_REQUEST` events in `TeamAccessLog`;
+  actions: cancel, nudge pending signatories, download signed PDF;
+  `generate-signing-cert.sh` provided for dev/staging self-signed certificates
+
+* **signing -- PAdES pipeline rewrite (self-contained ByteRange):**
+  eliminates `@signpdf/signpdf` runtime dependency; `signPdfWithPadesCms()`
+  finds the placeholder via `/<(\x00{1000,})>/`, calculates `ByteRange` from
+  bracket positions, patches `/ByteRange` with actual values (space-padded),
+  builds PAdES CMS with `signingCertificateV2` (OID 1.2.840.113549.1.9.16.2.47)
+  + full cert chain + SHA-256, hex-encodes and writes directly into the PDF
+  buffer; only `@signpdf/placeholder-pdf-lib`, `pdf-lib` and `node-forge`
+  remain as runtime signing deps
+
+* **signing -- retry-finalize endpoint for stuck documents:**
+  new `POST /documents/:id/retry-finalize` (3 calls/hour); lets the creator
+  re-trigger server-side PDF finalization for documents stuck in
+  `AWAITING_FINALIZATION`
+
+* **signing -- full i18n of statuses, roles and dates:**
+  all document statuses (PENDING, VIEWED, SIGNED, PARTIAL, COMPLETED, CANCELLED,
+  REJECTED, AWAITING_FINALIZATION) and recipient roles (SIGNER, APPROVER, CC)
+  resolved through the i18n system via a `statusKeyMap` lookup; dates formatted
+  locale-aware via `Intl.DateTimeFormat`
+
+* **signing -- dual E2E key resolution (team path + share path):**
+  signing detail page resolves the AES decryption key via two paths: team
+  folder (wrapped team key) or non-team share (share e2e-key endpoint);
+  `shareId` only returned to the document creator
+
+* **upload -- File System Access API, streaming progress and cancellation:**
+  single-file download streams directly to disk on Chrome/Edge via
+  `showSaveFilePicker` + `createWritable`; falls back to Blob accumulation on
+  Firefox/Safari; real-time byte-level progress bar driven by a `TransformStream`
+  in the response body pipeline; `AbortSignal` cancellation cleans up the
+  writable stream and removes the empty stub file
+
+* **upload -- resilient retry for large file uploads:**
+  up to 20 retries per chunk (exponential backoff 5s->120s with jitter) + 3
+  recovery cycles (2-min pause + counter reset) before giving up -- ~80 total
+  attempts per chunk; permanent HTTP errors (4xx) keep the original 5-retry
+  limit; user notified via toast when retrying or entering recovery mode
+
+* **preview -- video file preview:**
+  video files (`video/*`) previewed via the existing `VideoPreview` component
+  in `FileDecider`; non-E2E files streamed natively by the browser with no
+  memory overhead; E2E files capped at 100 MB (`VIDEO_PREVIEW_MAX_SIZE_E2E`)
+  because `useDecryptedBlobUrl` loads the full file into memory; beyond that
+  threshold the preview button is not shown; `doesFileSupportPreview` now accepts
+  an optional second argument `{ fileSizeBytes?, isE2EEncrypted? }`
+
+* **auth -- account lockout after 5 consecutive failed login attempts:**
+  account locked for 15 minutes; added `failedLoginAttempts Int @default(0)`
+  and `lockedUntil DateTime?` to the Prisma `User` model; lock reset on
+  successful login; constants `MAX_LOGIN_ATTEMPTS = 5` and
+  `LOCKOUT_DURATION_MINUTES = 15`
+
+* **team -- per-member activity and signature visibility permissions:**
+  added `canViewActivity` and `canViewSignatures` booleans to `TeamMember`
+  (Prisma schema); admins toggle per member via the member actions menu;
+  backend enforcement in `getTeamDocuments()` (403 if `canViewSignatures` is
+  false); frontend: conditional rendering of `Tabs.Tab` + `Tabs.Panel`
+
+* **team -- per-folder download and delete granular permissions:**
+  added `canDownload` and `canDelete` booleans to `TeamFolderAccess` (Prisma
+  schema, default `true`); configurable per member per folder via two `Switch`
+  controls in the access management modal; folder detail page disables action
+  buttons when flags are `false`; `setFolderAccess` forces both flags to `false`
+  when `permission=NONE`
+
+* **team/settings -- mobile responsive member list:**
+  member table switches to card layout on screens narrower than 680 px
+
+* **self-hosted -- unlimited TEAM plan for all users, Stripe removed:**
+  all users unconditionally assigned `plan=TEAM`; no billing endpoints, no
+  plan-based upload size or expiration limits unless configured via environment
+  variables; `showHomePage` now defaults to `true`; admin UI shows TEAM for all
+  users without billing tab or renewal date
+
+
+### Bug Fixes
+
+* **upload -- S3 multipart TTL extended from 30 min to 60 min:**
+  previous TTL could expire during the client exponential-backoff retry cycle
+  (up to 38 min); raised to 60 min to cover the full client retry window
+
+* **upload -- NoSuchUpload detection and clean-restart signal:**
+  `isS3UploadGone()` in `s3.service.ts` detects `NoSuchUpload` / HTTP 404;
+  `upload-worker.js` signals a full restart from chunk 0 on "session not found"
+  and "completion failed" HTTP 500 messages
+
+* **upload -- HTTP 503 short backoff capped at 30 s:**
+  NestJS 503 uses short exponential backoff (5s-10s-20s-30s cap) instead of
+  120 s, since the S3 multipart session remains alive during NestJS restarts
+
+* **upload -- team E2E key unwrap failure no longer crashes upload:**
+  when the team key cannot be unwrapped (new device, regenerated user key),
+  upload continues without E2E and shows an error toast; previously crashed or
+  fell back to the personal user key
+
+* **upload -- CompleteMultipartUpload/Abort race condition:**
+  on `CompleteMultipartUpload` failure the session is aborted to free S3
+  resources and the client is signaled to restart from chunk 0; prevents
+  duplicate objects if Complete succeeded but the response was lost in transit
+
+* **upload -- recovery pause reduced from 2 min to 1 min**
+
+* **signing -- recipient lookup by email when `userId` is absent:**
+  `getDocumentForUser` now matches recipients by email address in addition to
+  `userId`, fixing cases where recipients added by email could not see documents
+
+* **signing -- `shareId` only exposed to the document creator**
+
+* **share -- admin users no longer capped by global `maxExpiration`:**
+  when `planMaxExpirationDays === 0` (unlimited), added explicit unlimited case
+  in validation cascade; global `share.maxExpiration` config no longer applies
+  to authenticated users with unlimited access
+
+* **robots.txt -- explicit Allow for `/auth/signIn/` and `/auth/signUp/`:**
+  prevents bots from treating authentication pages as disallowed
+
+* **migration -- Prisma chain repaired (non-destructive, no data loss):**
+  removed `20260522150000_remove_saas_fields` which always failed on both
+  fresh installs and upgrades (Subscription already dropped by
+  `20260512125117`, Team not yet created); Stripe columns removed directly
+  from source migrations instead; the Docker entrypoint now automatically
+  detects the stuck FAILED record in `_prisma_migrations` and marks it as
+  `rolled_back_at` before `prisma migrate deploy` runs -- existing production
+  databases upgrade without any manual intervention or data loss
+
+
+### Security
+
+* **CRITICAL -- auth bypass on LDAP authentication (CWE-287):**
+  missing `await` before `ldapService.authenticate()` in `auth.service.ts`
+  caused the promise to always evaluate as truthy, allowing any LDAP user to
+  bypass password validation entirely; added `await`
+
+* **CRITICAL -- path traversal in local file storage (CWE-23):**
+  `getFileByKey()` and `storeFileByKey()` in `local.service.ts` did not
+  sanitise the key parameter; replaced with UUID format validation + allowlist
+  path construction
+
+* **CRITICAL -- reset password token expiry not enforced (CWE-613):**
+  `resetPassword()` in `auth.service.ts` was not verifying token expiration;
+  added expiry check, wrapped in `prisma.$transaction()`, and invalidated all
+  existing sessions on success
+
+* **CRITICAL -- PlanGuard invitation bypass (CWE-863):**
+  `plan.guard.ts` allowed any user with a PENDING team invitation to pass
+  `@RequirePlan` checks; removed the `pendingInvite` lookup block -- only
+  active team members now get elevated access
+
+* **HIGH -- JWT decode bypass in signOut (CWE-347):**
+  `jwtService.decode()` (no signature verification) was used as fallback when
+  `verify()` failed, allowing an attacker to forge a token with an arbitrary
+  `refreshTokenId` and delete another user's refresh token; replaced with
+  `jwtService.verify(token, { ignoreExpiration: true })`
+
+* **HIGH -- refresh token rotation to prevent replay attacks (CWE-613):**
+  tokens are now rotated on each use; old token deleted and a new pair
+  (access + refresh) returned
+
+* **HIGH -- login token invalidation on new sign-in (CWE-384):**
+  `deleteMany()` before token creation in `signIn()` to prevent session
+  fixation
+
+* **HIGH -- security headers via helmet v7 (OWASP A05):**
+  added `helmet` to `main.ts` with CSP, HSTS, X-Content-Type-Options,
+  X-Frame-Options and Referrer-Policy
+
+* **HIGH -- cookie `sameSite` raised to `"strict"` (CWE-352):**
+  `access_token` and `refresh_token` changed from `"lax"` to `"strict"` to
+  prevent CSRF attacks on same-site endpoints
+
+* **HIGH -- global `ValidationPipe` with `whitelist: true` (OWASP A03):**
+  strips unexpected DTO fields globally -- mass assignment protection
+
+* **HIGH -- `HttpOnly` flag missing on `access_token` expiration cookie (OWASP A05):**
+  `signOut` and `deleteCurrentUser` now set `access_token` with `httpOnly: true`;
+  `sameSite` raised to `"strict"` on `deleteCurrentUser`
+
+* **HIGH -- Caddy `trusted_proxies` restricted from `0.0.0.0/0` (CWE-291):**
+  restricted to loopback + RFC-1918 ranges (`127.0.0.0/8 10.0.0.0/8
+  172.16.0.0/12 192.168.0.0/16`); prevents `X-Forwarded-For` IP spoofing
+
+* **HIGH -- OTP pepper runtime crash in `signing-otp.service.ts`:**
+  `configService.get("general.secret")` does not exist in config seed; `get()`
+  throws before the `||` fallback executes, crashing every OTP send/verify
+  call; replaced with `process.env.OTP_PEPPER || configService.get("internal.jwtSecret")`
+
+* **HIGH -- Swagger bearer token strict equality (CWE-697):**
+  replaced `==` with `===` in Swagger auth middleware
+
+* **MEDIUM -- `setFolderAccess` contradictory permission state (CWE-285):**
+  `canDownload` and `canDelete` could be set to `true` alongside
+  `permission=NONE`; added server-side validation forcing both flags to `false`
+  when permission is `NONE`
+
+* **MEDIUM -- signing DTO hardening + `shareId` validator fix:**
+  added `@MaxLength` on all text fields, `@ArrayMaxSize` on recipients/fields,
+  `@Matches(/^\d{6}$/)` on OTP, `@IsISO8601` on `expiresAt`; fixed `@IsUUID`
+  on `shareId` (share IDs are alphanumeric, not UUID) to
+  `@Matches(/^[a-zA-Z0-9_-]+$/) @Length(3, 50)` -- was rejecting every signing
+  request
+
+* **MEDIUM -- `TypeError` 500 on unauthenticated `user.controller.ts` calls:**
+  `JwtGuard` falls back to `allowUnauthenticatedShares` when auth fails, letting
+  anonymous requests through with `user = undefined`; added
+  `if (!user?.id) throw new UnauthorizedException()` guard on
+  `updateCurrentUser`, `deleteCurrentUser`, `setEncryptionKey`,
+  `removeEncryptionKey`, `verifyEncryptionKey`, `setWrappedKey`,
+  `listWrappedKeys`, `removeWrappedKey`
+
+* **MEDIUM -- `NotFoundException` log spam on deleted shares in signing:**
+  `getEncryptedReverseShareKey` returns `null` instead of throwing, eliminating
+  spurious 500 stack traces in logs
+
+* **MEDIUM -- filename sanitization in `downloadDecryptedBlob`:**
+  strips path separators and null bytes from server-provided filename before
+  setting `a.download`
+
+* **MEDIUM -- `scripts/tsconfig.json` invalid include glob (CWE-23):**
+  `"include": ["/**/*.ts"]` referenced the filesystem root; fixed to
+  `"./**/*.ts"`; `"moduleResolution"` updated to `"node16"`
+
+
+### Dependencies
+
+* **cve:** Caddy upgraded from v2.11.2 to v2.11.3 --
+  CVE-2026-45135 (HIGH -- FastCGI `splitPos` unsafe Unicode, allows non-PHP
+  file execution),
+  CVE-2026-45692 (MEDIUM -- Admin `/config` API authorization bypass via array
+  index),
+  GHSA-gx7w-56w6-g48x (MEDIUM -- PKI endpoint prefix-based path matching bypass)
+
+* **cve:** `qs>=6.15.2` and `brace-expansion>=5.0.6` in npm overrides --
+  `qs` bumped from `^6.14.1` to `>=6.15.2` (CVE via body-parser);
+  `brace-expansion` bumped from `>=5.0.5` to `>=5.0.6`
+  (CVE-2026-45149 -- DoS via large numeric ranges);
+  `npm install` confirms `found 0 vulnerabilities`
+
+* **cve:** `brace-expansion>=5.0.6` in Docker npm-bundled dependencies --
+  npm CLI bundles its own `minimatch` -> `brace-expansion` tree outside of
+  project-level overrides; tarball-replacement in `Dockerfile` and
+  `Dockerfile.full-build` updated from `5.0.5` to `5.0.6` (CVE-2026-45149)
+
+
 ## [1.21.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.21.2...v1.21.3) (2026-05-12)
 
 

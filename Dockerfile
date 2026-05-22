@@ -10,11 +10,13 @@
 # + CVE-2026-33811 (HIGH), CVE-2026-33814 (HIGH), CVE-2026-39820 (HIGH),
 # + CVE-2026-39836 (HIGH), CVE-2026-42499 (HIGH), CVE-2026-39823 (MEDIUM),
 # + CVE-2026-39825 (MEDIUM), CVE-2026-39826 (MEDIUM) -- tous fixés en 1.26.3.
-# Caddy 2.11.2 requis pour fixer CVE-2026-30851 (HIGH), CVE-2026-30852 (MEDIUM).
+# Caddy 2.11.3 requis pour fixer CVE-2026-30851 (HIGH), CVE-2026-30852 (MEDIUM),
+# CVE-2026-45135 (HIGH - FastCGI splitPos), CVE-2026-45692 (MEDIUM - Admin /config bypass),
+# GHSA-gx7w-56w6-g48x (MEDIUM - PKI path matching bypass).
+# GHSA-wwhq-w58m-w29c (MEDIUM - CVE-2026-30852 fix bypass) - status: affected, no fix yet.
 FROM golang:1.26.3-alpine AS caddy-builder
-# CVE-2026-27171 : zlib 1.3.1-r2 -> 1.3.2-r0 disponible dans Alpine
 RUN apk upgrade --no-cache && apk add --no-cache git
-RUN git clone --depth 1 --branch v2.11.2 \
+RUN git clone --depth 1 --branch v2.11.3 \
       https://github.com/caddyserver/caddy.git /caddy
 WORKDIR /caddy
 # Forcer la mise à jour des dépendances vulnérables
@@ -29,8 +31,10 @@ WORKDIR /caddy
 # CVE-2026-33817 (CVSS 6.9, MEDIUM) : go.etcd.io/bbolt (no release yet, pin to fix commit)
 # SNYK-GOLANG-GOOPENTELEMETRYIO* (HIGH x4) : go.opentelemetry.io/otel < 1.43.0
 # SNYK-GOLANG-GITHUBCOMYUINGOLDMARKRENDERERHTML-15838406 (MEDIUM) : goldmark XSS < 1.7.17
+# SNYK-GOLANG-GOLANGORGXCRYPTOSSH* (HIGH x5 + MEDIUM x7) : golang.org/x/crypto/ssh{,/agent} < 0.52.0
 # go mod tidy runs FIRST, then we re-pin smallstep + bbolt AFTER to prevent transitive downgrade
 RUN go get golang.org/x/net@latest \
+    && go get golang.org/x/crypto@v0.52.0 \
     && go get github.com/yuin/goldmark@v1.7.17 \
     && go get google.golang.org/grpc@v1.79.3 \
     && go get github.com/go-jose/go-jose/v3@v3.0.5 \
@@ -78,36 +82,12 @@ RUN CGO_ENABLED=0 go install -trimpath -ldflags='-s -w' github.com/tianon/gosu@l
 # so the binary identifies as 3.6.2 (the code IS post-fix).
 # ABI-compatible: libssl.so.3 / libcrypto.so.3 soname unchanged across 3.x.
 #
-# NOTE: this stage takes ~5-10 min to compile. If you want to speed up
-# subsequent builds, build this stage once and tag it:
-#   docker build --target openssl-builder -t my-registry/openssl-cache .
-# Then replace the FROM line below with:
-#   FROM my-registry/openssl-cache AS openssl-builder
-FROM debian:trixie-slim AS openssl-builder
-ARG HTTP_PROXY
-ARG HTTPS_PROXY
-ARG NO_PROXY=localhost,127.0.0.1,::1
-ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY}
-ENV http_proxy=${HTTP_PROXY} https_proxy=${HTTPS_PROXY}
-ENV NO_PROXY=${NO_PROXY}
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        build-essential ca-certificates git perl && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-RUN git clone --depth 50 --branch openssl-3.6 \
-      https://github.com/openssl/openssl.git /openssl-src
-WORKDIR /openssl-src
-# Strip -dev pre-release tag so the binary identifies as 3.6.2.
-# PATCH is already 2 on the branch; only PRE_RELEASE_TAG needs clearing.
-RUN sed -i 's/^PRE_RELEASE_TAG=.*/PRE_RELEASE_TAG=/' VERSION.dat && \
-    grep -E '^(MAJOR|MINOR|PATCH|PRE_RELEASE_TAG)=' VERSION.dat
-# Build shared libraries only (no static, no tests, no docs)
-RUN ./Configure --prefix=/usr/local/openssl --openssldir=/usr/local/openssl/ssl \
-      --libdir=lib shared no-tests no-docs && \
-    make -j"$(nproc)" && \
-    make install_sw && \
-    # Verify the built version (must use its own libs, not Debian's 3.5.5)
-    LD_LIBRARY_PATH=/usr/local/openssl/lib /usr/local/openssl/bin/openssl version
+# CACHE MODE: using pre-built image extracted from simthem/private:saas-sharing.
+# To rebuild from source: see original stage in git history.
+# To switch back: replace the FROM line below with:
+#   FROM debian:trixie-slim AS openssl-builder
+# and restore the full build instructions.
+FROM simthem/private:openssl-builder-cache AS openssl-builder
 
 # ---------------------------
 # Stage 0d: Build Node.js from source with OpenSSL 3.6.2
@@ -118,46 +98,12 @@ RUN ./Configure --prefix=/usr/local/openssl --openssldir=/usr/local/openssl/ssl 
 # OpenSSL 3.6.2 libs, so the node binary links dynamically against the
 # patched OpenSSL instead of embedding the vulnerable version.
 #
-# NOTE: this stage takes ~15-25 min to compile. If you want to speed up
-# subsequent builds, build this stage once and tag it:
-#   docker build --target node-builder -t my-registry/node-cache .
-# Then replace the FROM line below with:
-#   FROM my-registry/node-cache AS node-builder
-FROM debian:trixie-slim AS node-builder
-ARG HTTP_PROXY
-ARG HTTPS_PROXY
-ARG NO_PROXY=localhost,127.0.0.1,::1
-ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY}
-ENV http_proxy=${HTTP_PROXY} https_proxy=${HTTPS_PROXY}
-ENV NO_PROXY=${NO_PROXY}
-
-COPY --from=openssl-builder /usr/local/openssl /usr/local/openssl
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        build-essential ca-certificates curl python3 xz-utils && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Download the Node.js source matching the base image (node:24-slim).
-# Update NODE_VERSION when upgrading the base image.
-ARG NODE_VERSION=24.14.1
-RUN curl -sL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}.tar.xz" \
-      | tar xJ -C / && \
-    mv "/node-v${NODE_VERSION}" /node-src
-
-WORKDIR /node-src
-# Compile Node.js with --shared-openssl pointing to our OpenSSL 3.6.2 build.
-# --without-npm: npm is copied from the base image (already patched).
-RUN ./configure \
-      --shared-openssl \
-      --shared-openssl-includes=/usr/local/openssl/include \
-      --shared-openssl-libpath=/usr/local/openssl/lib \
-      --without-npm && \
-    make -j"$(nproc)" && \
-    strip out/Release/node && \
-    # Verify the binary links against our OpenSSL
-    LD_LIBRARY_PATH=/usr/local/openssl/lib ldd out/Release/node | grep -q libssl && \
-    echo "Node.js linked against shared OpenSSL -- OK"
+# CACHE MODE: using pre-built image extracted from simthem/private:saas-sharing.
+# To rebuild from source: see original stage in git history.
+# To switch back: replace the FROM line below with:
+#   FROM debian:trixie-slim AS node-builder
+# and restore the full build instructions (--shared-openssl, --without-npm, etc.).
+FROM simthem/private:node-builder-cache AS node-builder
 
 # ---------------------------
 # Stage 1: Base  (Debian Bookworm slim)
@@ -216,10 +162,10 @@ RUN apt-get update && \
     rm -rf "$PICO_DIR" && \
     mkdir -p "$PICO_DIR" && \
     curl -sL "$PICO_URL" | tar xz -C "$PICO_DIR" --strip-components=1 && \
-    # CVE-2026-33750 (MEDIUM) : npm -> minimatch -> brace-expansion 5.0.4 (ReDoS).
+    # CVE-2026-33750 (MEDIUM) + CVE-2026-45149 (MEDIUM) : npm -> minimatch -> brace-expansion < 5.0.6.
     # Le minimatch@latest patchée ci-dessus tire brace-expansion@^5.0.2 qui résout
-    # en 5.0.4 (vulnérable). On force 5.0.5 via tarball.
-    BRACE_URL=$(npm view brace-expansion@5.0.5 dist.tarball) && \
+    # en 5.0.5 (vulnérable). On force 5.0.6 via tarball.
+    BRACE_URL=$(npm view brace-expansion@5.0.6 dist.tarball) && \
     BRACE_DIR=/usr/local/lib/node_modules/npm/node_modules/brace-expansion && \
     rm -rf "$BRACE_DIR" && \
     mkdir -p "$BRACE_DIR" && \
@@ -312,6 +258,20 @@ RUN npx prisma generate
 RUN npm run build && npm prune --omit=dev
 
 # ---------------------------
+# Stage 5b: Caddyfile patching (build-only)
+# ---------------------------
+# Ce stage intermédiaire patch les Caddyfiles avec sed (disponible dans base).
+# On évite ainsi toute dépendance à sed dans le runner après durcissement.
+FROM base AS caddyfile-patcher
+WORKDIR /opt/app
+COPY ./reverse-proxy /opt/app/reverse-proxy
+# Certains systèmes résolvent « localhost » en ::1 (IPv6) avant 127.0.0.1 (IPv4).
+# NestJS n'écoute qu'en IPv4 -> Caddy obtient "connection refused" sur [::1]:8080.
+RUN sed -i 's|http://localhost:|http://127.0.0.1:|g' \
+    /opt/app/reverse-proxy/Caddyfile \
+    /opt/app/reverse-proxy/Caddyfile.trust-proxy
+
+# ---------------------------
 # Stage 6: Final runner image - Debian Trixie (13) slim
 # ---------------------------
 # Debian Bookworm (12) via node:24-slim souffrait de ~86 CVEs (Trivy) /
@@ -320,6 +280,7 @@ RUN npm run build && npm prune --omit=dev
 #   - zlib 1.2.13   -> CVE-2023-45853 (CRITICAL), CVE-2026-27171 (MEDIUM)
 #   - ncurses 6.4   -> CVE-2025-69720 (CRITICAL)
 #   - systemd 252   -> CVE-2026-4105 (MEDIUM), 4 LOW
+#   (Trixie systemd < 257.13: CVE-2026-4105, CVE-2026-40226, CVE-2026-40225, CVE-2026-29111)
 #   - util-linux 2.38 -> ~21 LOW (bsdutils, libmount, libuuid...)
 #   - libpam 1.5.2  -> CVE-2024-10041 (MEDIUM × 4 packages)
 #   - gpgv 2.2.40   -> CVE-2025-30258/CVE-2025-68972 (MEDIUM)
@@ -345,6 +306,13 @@ FROM debian:trixie-slim AS runner
 # NODE_ENV=docker is required by PrivCloud_Sharing: it controls paths,
 # backend port (8080) and the behavior of create-user.sh / entrypoint.sh.
 ENV NODE_ENV=docker
+
+# NOTE: NODE_OPTIONS must NOT be set globally here.
+# global-agent is only needed by the backend (S3, OAuth outbound calls).
+# Setting it globally would break: frontend SSR (routes localhost calls
+# through proxy), healthcheck (timeout on proxied localhost), prisma
+# commands (local SQLite, no network needed).
+# -> NODE_OPTIONS is set inline in entrypoint.sh for `node dist/src/main` only.
 
 # Proxy build-args : nécessaires pour apt-get (le stage runner est indépendant
 # de base, il n'hérite pas de ses ARG). Positionnés comme ENV temporairement
@@ -376,13 +344,16 @@ ENV NO_PROXY=${NO_PROXY}
 # APT_CACHE_BUST : changer cette valeur (ex: date du jour) pour forcer
 # Docker à invalider le cache apt et récupérer les derniers security fixes.
 # Usage : docker build --build-arg APT_CACHE_BUST=$(date +%Y%m%d) ...
-ARG APT_CACHE_BUST=1
+ARG APT_CACHE_BUST=20260516
 # checkov:skip=CKV_DOCKER_9:apt-get is the only package manager on Debian -
 # required to install runtime dependencies (ca-certificates, libstdc++6, libssl3t64).
+# CVE-2026-4105, CVE-2026-40226, CVE-2026-40225, CVE-2026-29111 : systemd < 257.13-1~deb13u1
+# Pin libsystemd0t64 to fixed version before the aggressive purge removes it.
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-        ca-certificates libstdc++6 libssl3t64 && \
+        ca-certificates libstdc++6 libssl3t64 \
+        libsystemd0t64 libudev1t64 && \
     # passwd fournit groupadd/useradd pour create-user.sh
     dpkg -l passwd 2>/dev/null | grep -q '^ii' || \
         apt-get install -y --no-install-recommends passwd && \
@@ -460,7 +431,8 @@ RUN \
         libudev1 libudev1t64 \
         libblkid1 libblkid1t64 \
         libmount1 libmount1t64 \
-        libsmartcols1 libsmartcols1t64 2>/dev/null || true && \
+        libsmartcols1 libsmartcols1t64 \
+        libsystemd-shared 2>/dev/null || true && \
     # perl-base (dépendance de dpkg uniquement)
     dpkg --purge --force-remove-essential --force-depends perl-base 2>/dev/null || true && \
     # apt + gpgv + chaîne crypto (gnutls, gcrypt, tasn1, p11-kit, nettle)
@@ -535,9 +507,9 @@ COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/type-fe
 # --- Caddy : recompilé depuis les sources (golang.org/x/net patché) ---
 COPY --from=caddy-builder /usr/bin/caddy /usr/bin/caddy
 
-# --- Reverse proxy : Caddyfiles (already use 127.0.0.1 in source) ---
+# --- Reverse proxy : Caddyfiles pré-patchés (sed dans le stage caddyfile-patcher) ---
 WORKDIR /opt/app
-COPY --chown=1000:1000 ./reverse-proxy /opt/app/reverse-proxy
+COPY --chown=1000:1000 --from=caddyfile-patcher /opt/app/reverse-proxy /opt/app/reverse-proxy
 COPY --chown=1000:1000 ./scripts/docker ./scripts/docker
 
 # Ownership applicatif défini via COPY --chown=1000:1000 (build-time, zero-cost).
@@ -557,10 +529,13 @@ RUN mkdir -p /home/privcloud-sharing/.config/caddy \
 EXPOSE 3000
 
 # Healthcheck via Node.js fetch API - curl n'est plus disponible dans le runner.
+# NODE_OPTIONS= ensures the healthcheck is immune to any runtime NODE_OPTIONS
+# (e.g. passed via docker-compose). Healthcheck must always connect directly
+# to localhost, never through a forward proxy.
 HEALTHCHECK --interval=10s --timeout=3s CMD sh -c \
     'P=${BACKEND_PORT:-8080}; U="http://localhost:3000/api/health"; \
     [ "$CADDY_DISABLED" = "true" ] && U="http://localhost:$P/api/health"; \
-    node -e "fetch(process.argv[1]).then(r=>r.ok||process.exit(1)).catch(()=>process.exit(1))" "$U"'
+    NODE_OPTIONS= node -e "fetch(process.argv[1]).then(r=>r.ok||process.exit(1)).catch(()=>process.exit(1))" "$U"'
 
 ENTRYPOINT ["sh", "./scripts/docker/create-user.sh"]
 CMD ["sh", "./scripts/docker/entrypoint.sh"]

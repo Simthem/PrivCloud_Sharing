@@ -45,7 +45,7 @@ const CookieConsent = () => {
       shadow="lg"
       p="md"
       withBorder
-      sx={{
+      style={{
         position: "fixed",
         bottom: 16,
         left: 16,
@@ -56,15 +56,15 @@ const CookieConsent = () => {
         marginRight: "auto",
       }}
     >
-      <Text size="sm" weight={600} mb="sm" sx={(theme) => ({ color: theme.colorScheme === "dark" ? theme.colors.gray[3] : theme.colors.gray[8] })}>
+      <Text size="sm" fw={600} mb="sm" style={{ color: "var(--mantine-color-text)" }}>
         {t("cookie.banner.message")}{" "}
         {hasPrivacy && (
-          <Anchor size="sm" href={privacyUrl} underline>
+          <Anchor size="sm" href={privacyUrl} underline="always">
             {t("cookie.banner.learn-more")}
           </Anchor>
         )}
       </Text>
-      <Group position="right">
+      <Group justify="right">
         <Button size="xs" onClick={dismiss}>
           {t("cookie.banner.dismiss")}
         </Button>

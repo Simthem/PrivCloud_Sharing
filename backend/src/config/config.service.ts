@@ -206,8 +206,8 @@ export class ConfigService extends EventEmitter {
     const validations = [
       {
         key: "share.shareIdLength",
-        condition: (value: number) => value >= 2 && value <= 50,
-        message: "Share ID length must be between 2 and 50",
+        condition: (value: number) => value >= 8 && value <= 50,
+        message: "Share ID length must be between 8 and 50 (values below 8 are vulnerable to brute-force enumeration)",
       },
       {
         key: "share.zipCompressionLevel",
