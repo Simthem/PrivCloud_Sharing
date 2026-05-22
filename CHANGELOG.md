@@ -1,3 +1,20 @@
+## [1.22.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.22.2...v1.22.3) (2026-05-23)
+
+
+### Dependencies
+
+* **cve -- docs: qs>=6.15.2 override (Dependabot qs#67, no CVE assigned):**
+  `qs.stringify` crashes with `TypeError` when an array entry is `null` or
+  `undefined`, `arrayFormat: "comma"` is used and `encodeValuesOnly` is `true`;
+  the exception propagates uncaught and is remotely triggerable via any server-side
+  code path serialising user-supplied data through `qs.stringify` with those options;
+  `qs` was transitively pinned at `~6.14.0` via `@docusaurus/core 3.9.2` with no
+  upstream fix available without an explicit override; added `"qs": ">=6.15.2"` to
+  `overrides` in `docs/package.json`; `docs/package-lock.json` regenerated;
+  `npm audit` confirms `found 0 vulnerabilities`;
+  scope: docs dev tooling only -- docs site not deployed in production
+
+
 ## [1.22.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.21.3...v1.22.2) (2026-05-23)
 
 
