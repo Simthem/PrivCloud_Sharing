@@ -313,6 +313,7 @@ const EditableUpload = ({
       cleanNotifications();
       errorToastShown = false;
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uploadingFiles]);
 
   return (

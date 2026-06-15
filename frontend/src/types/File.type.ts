@@ -1,4 +1,16 @@
-export type FileUpload = File & { uploadingProgress: number };
+export type BridgeWebDavSource = {
+  endpoint: string;
+  username: string;
+  password: string;
+  href: string;
+  contentType?: string;
+  lastModified?: string;
+};
+
+export type FileUpload = File & {
+  uploadingProgress: number;
+  privcloudBridgeSource?: BridgeWebDavSource;
+};
 
 export type FileUploadResponse = { id: string; name: string };
 

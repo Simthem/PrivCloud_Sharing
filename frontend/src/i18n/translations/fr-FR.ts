@@ -7,6 +7,7 @@ export default {
   "navbar.signup": "S’inscrire",
   "navbar.links.shares": "Mes partages",
   "navbar.links.reverse": "Partages inversés",
+  "navbar.links.signatures": "Signatures",
   "navbar.avatar.account": "Mon compte",
   "navbar.avatar.my-team": "Mon équipe",
   "navbar.avatar.admin": "Administration",
@@ -228,11 +229,11 @@ export default {
   "account.upgrade.transfer": "{amount} de transfert",
   "account.upgrade.storage": "{amount} de stockage",
   "account.upgrade.current-plan": "Plan actuel : {plan}",
-  "account.subscription.title": "Mon abonnement",
-  "account.subscription.transfer": "Transfert : {used} / {total}",
-  "account.subscription.storage": "Stockage : {used} / {total}",
-  "account.subscription.renews": "Renouvellement le {date}",
-  "account.subscription.manage": "Gérer mon abonnement",
+  "account.usage.title": "Utilisation",
+  "account.usage.transfer": "Transfert : {used} / {total}",
+  "account.usage.storage": "Stockage : {used} / {total}",
+  "account.usage.updated": "Mis a jour le {date}",
+  "account.usage.manage": "Gerer l'utilisation",
   "account.card.info.title": "Détails du compte",
   "account.card.info.username": "Surnom",
   "account.card.info.email": "Adresse email",
@@ -429,12 +430,10 @@ export default {
   "admin.users.table.username": "Surnom",
   "admin.users.table.email": "Courriel",
   "admin.users.table.admin": "Admin",
-  "admin.users.table.plan": "Forfait",
+  "admin.users.table.access": "Acces",
   "admin.users.table.created": "Inscription",
-  "admin.users.table.renew": "Renouvellement",
   "admin.users.edit.update.title": "Modifier l'utilisateur : {username}",
   "admin.users.edit.update.admin-privileges": "Privilèges d’admin",
-  "admin.users.edit.update.plan": "Forfait d'abonnement",
   "admin.users.edit.update.change-password.title": "Changer le mot de passe",
   "admin.users.edit.update.change-password.field": "Nouveau mot de passe",
   "admin.users.edit.update.change-password.button": "Enregistrer le nouveau mot de passe",
@@ -452,7 +451,7 @@ export default {
   "admin.users.modal.create.manual-password.description": "S’il n'est pas coché, l’utilisateur recevra un email avec un lien pour définir son mot de passe.",
   "admin.users.modal.create.admin": "Privilèges d’admin",
   "admin.users.modal.create.admin.description": "Si coché, l’utilisateur pourra accéder au panneau d'administration.",
-  "admin.users.modal.create.plan": "Forfait d'abonnement",  // END /admin/users
+  // END /admin/users
   // /admin/shares
   "admin.shares.title": "Gestion des partages",
   "admin.shares.table.id": "ID de partage",
@@ -482,6 +481,7 @@ export default {
   "upload.notify.retrying.message": "Le chunk {chunk} a échoué (tentative {attempt}/{max}). Nouvel essai dans {delay}s…",
   "upload.notify.recovery.title": "Mode récupération",
   "upload.notify.recovery.message": "Trop d'erreurs consécutives. Pause de {pause}s avant de réessayer (cycle {attempt}/{max}).",
+  "upload.bridge.error": "{fileName} : échec Bridge - {error}",
   "upload.reverse-share.error.invalid.title": "Lien de partage inversé invalide",
   "upload.reverse-share.error.invalid.description": "Ce partage inversé a expiré ou n'est pas valide.",
   // Dropzone.tsx
@@ -494,6 +494,10 @@ export default {
   "upload.filelist.size": "Taille",
   // Global upload progress
   "upload.progress.global": "Upload : {done}/{total} fichiers",
+  "upload.quota.label": "Quota d'envoi",
+  "upload.quota.exceeded":
+    "La taille totale des fichiers dépasse la limite configurée. Retirez des fichiers ou demandez à l'administrateur de l'instance de l'augmenter.",
+  "upload.cancel.button": "Annuler",
   // showCreateUploadModal.tsx
   "upload.modal.title": "Créer un partage",
   "upload.modal.link.error.invalid": "Ne peut contenir que des lettres, des chiffres, des tirets bas et des traits d'union",
@@ -548,7 +552,7 @@ export default {
   "upload.modal.team-folder.label": "Associer à un dossier d'équipe",
   "upload.modal.team-folder.placeholder": "Aucun (partage personnel)",
   "upload.modal.team-folder.description":
-    "Sélectionnez un dossier d'équipe pour que les membres y aient accès. La taille max du partage sera celle du plan Équipe (250 Go).",
+    "Sélectionnez un dossier d'équipe pour que les membres puissent accéder aux fichiers déposés.",
 
   // showCompletedUploadModal.tsx
   "upload.modal.completed.never-expires": "Ce partage n’expirera jamais.",
@@ -559,6 +563,69 @@ export default {
   // Toast
   "upload.cancel.done": "Envoi annulé",
   "upload.cancel.error": "Erreur lors de l'annulation de l'envoi",
+  "webdav.button.import": "Importer depuis un cloud",
+  "webdav.modal.title": "Connecter un cloud WebDAV",
+  "bridge.status.ready":
+    "PrivCloud Companion {version} prêt pour les imports WebDAV.",
+  "bridge.status.enabled":
+    "PrivCloud Companion activé pour cette session WebDAV.",
+  "bridge.status.detected":
+    "PrivCloud Companion {version} détecté. Activez-le pour éviter les limites CORS du navigateur.",
+  "bridge.status.proxyDefault":
+    "Le proxy WebDAV serveur est utilisé par défaut. Activez PrivCloud Companion uniquement pour les imports locaux managés.",
+  "bridge.status.unavailable":
+    "PrivCloud Companion n'est pas détecté. L'import direct reste disponible si votre cloud WebDAV autorise CORS.",
+  "bridge.pair.start": "Activer",
+  "bridge.pair.code.label": "Code d'association",
+  "bridge.pair.confirm": "Valider",
+  "bridge.toast.paired": "PrivCloud Companion activé",
+  "bridge.error.updateRequired":
+    "PrivCloud Companion est détecté, mais cette version ne prend pas encore en charge l'activation en un clic. Réinstallez le Companion depuis la page Intégrations puis redémarrez-le.",
+  "bridge.error.badRequest": "Requête Bridge invalide.",
+  "bridge.error.fileSelectionLimit":
+    "Le Companion accepte jusqu'à 1000 fichiers par lot WebDAV. Sélectionnez moins de fichiers ou lancez un second lot.",
+  "bridge.error.internal": "Erreur interne du Companion.",
+  "bridge.error.localNetworkBlocked":
+    "Le navigateur a bloqué l'accès au Companion local. Autorisez l'accès au réseau local pour ce site, ou continuez avec le proxy WebDAV serveur.",
+  "bridge.error.jobNotFound": "Tâche Bridge introuvable ou expirée.",
+  "bridge.error.staleJob":
+    "L'ancien transfert Bridge a été interrompu car il ne progressait plus.",
+  "bridge.error.tooManyJobs":
+    "Trop de transferts Bridge sont déjà actifs. Attendez la fin d'un transfert en cours puis réessayez.",
+  "webdav.endpoint.label": "URL WebDAV",
+  "webdav.username.label": "Utilisateur",
+  "webdav.password.label": "Mot de passe applicatif",
+  "webdav.connect": "Connecter",
+  "webdav.disconnect": "Déconnecter",
+  "webdav.import": "Importer",
+  "webdav.back": "Retour",
+  "webdav.refresh": "Actualiser",
+  "webdav.openFolder": "Ouvrir le dossier",
+  "webdav.selectAll": "Tout sélectionner",
+  "webdav.clearSelection": "Tout désélectionner",
+  "webdav.footer.zeroPersistence":
+    "Identifiants conservés uniquement dans cet onglet pour la session WebDAV. Utilisez Déconnecter pour les oublier.",
+  "webdav.footer.zeroPersistence.bridge":
+    "Identifiants conservés dans cet onglet puis transmis au Companion local, sur votre machine, pour l'envoi chiffré.",
+  "webdav.toast.imported": "{count} fichier(s) importé(s)",
+  "webdav.toast.disconnected": "Session WebDAV déconnectée",
+  "webdav.warning.quota":
+    "La sélection dépasse la limite disponible pour ce partage.",
+  "webdav.warning.maxFiles":
+    "Vous avez sélectionné plus de 20 fichiers sans import Bridge managé. L'import reste autorisé, mais peut consommer beaucoup de mémoire navigateur.",
+  "webdav.warning.largeFiles":
+    "Certains fichiers dépassent {max}. L'import reste autorisé, mais il peut être long et dépendre de la mémoire disponible du navigateur.",
+  "webdav.error.https": "Utilisez une URL WebDAV HTTPS.",
+  "webdav.error.auth": "Authentification WebDAV refusée.",
+  "webdav.error.cors":
+    "Connexion WebDAV bloquée par le navigateur. Activez CORS sur le serveur WebDAV ou utilisez un connecteur local.",
+  "webdav.error.directory": "Impossible d'importer un dossier directement.",
+  "webdav.error.invalidXml": "Réponse WebDAV invalide.",
+  "webdav.error.redirectRefused": "Redirection WebDAV refusée.",
+  "webdav.error.sameOriginRequired":
+    "La ressource WebDAV doit rester sur le même domaine que l'endpoint connecté.",
+  "webdav.error.upstream": "Le serveur WebDAV distant a refusé la requête.",
+  "webdav.error.generic": "Erreur WebDAV.",
   // END /upload
   // /share/[id]
   "share.title": "Partage {shareId}",
@@ -1280,6 +1347,10 @@ export default {
   "signing.modal.error.no-recipients": "Ajoutez au moins un signataire",
   "signing.modal.notify.success": "Demande de signature envoyée avec succès",
   "signing.modal.notify.error": "Échec de l'envoi de la demande de signature",
+  "signing.option.e2e-key-email":
+    "Envoyer la clé E2E dans un second email",
+  "signing.option.e2e-key-email.desc":
+    "Le lien principal reste sans clé. La clé est envoyée séparément aux signataires et approbateurs ; pratique, mais moins cloisonné qu'un autre canal sécurisé.",
 
   // Pages signature - index
   "signing.my-signatures": "Mes signatures",
@@ -1476,7 +1547,7 @@ export default {
   "admin.teams.modal.role": "Rôle",
   "admin.teams.modal.confirm-add": "Ajouter le membre",
   "admin.teams.modal.max-members": "Configurer le nombre max de membres",
-  "admin.teams.modal.max-members-label": "Nombre maximum de membres avant facturation supplémentaire",
+  "admin.teams.modal.max-members-label": "Nombre maximum de membres (0 = illimite)",
   "admin.teams.modal.confirm-max": "Enregistrer",
   "admin.teams.action.create": "Créer une équipe",
   "admin.teams.created": "Équipe créée avec succès",
@@ -1617,7 +1688,7 @@ export default {
   "team.dashboard.tabs.folders": "Dossiers",
   "team.dashboard.tabs.activity": "Activité",
   "team.dashboard.tabs.signatures": "Signatures",
-  "team.dashboard.tabs.billing": "Facturation",
+  "team.dashboard.tabs.limits": "Limites",
 
   "team.dashboard.metrics.storage": "Stockage",
   "team.dashboard.metrics.members": "Membres",

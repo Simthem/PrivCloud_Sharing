@@ -1,9 +1,9 @@
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsBoolean,
   IsEmail,
-  IsEnum,
   IsIn,
   IsInt,
   IsNumber,
@@ -13,7 +13,10 @@ import {
   MaxLength,
   Min,
   MinLength,
+  Matches,
+  ValidateNested,
 } from "class-validator";
+import { Type } from "class-transformer";
 
 export class CreateTeamDTO {
   @IsString()
@@ -45,7 +48,8 @@ export class UpdateTeamDTO {
 
   @IsOptional()
   @IsString()
-  reportFrequency?: string; // DAILY | WEEKLY | MONTHLY
+  @IsIn(["DAILY", "WEEKLY", "MONTHLY"])
+  reportFrequency?: string;
 }
 
 export class InviteMemberDTO {
@@ -55,16 +59,20 @@ export class InviteMemberDTO {
 
   @IsOptional()
   @IsString()
-  role?: string; // ADMIN | MEMBER
+  @IsIn(["ADMIN", "MEMBER"])
+  role?: string;
 
   @IsOptional()
   @IsString()
-  encryptedTeamKey?: string; // K_team wrapped for the invitee (base64url)
+  @MaxLength(8192)
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  encryptedTeamKey?: string;
 }
 
 export class UpdateMemberRoleDTO {
   @IsString()
-  role: string; // OWNER | ADMIN | MEMBER
+  @IsIn(["ADMIN", "MEMBER"])
+  role: string;
 }
 
 export class CreateFolderDTO {
@@ -75,19 +83,23 @@ export class CreateFolderDTO {
 
   @IsOptional()
   @IsString()
+  @MaxLength(500)
   description?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(128)
   parentId?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(32)
   color?: string;
 }
 
 export class SetFolderAccessDTO {
   @IsString()
+  @MaxLength(128)
   memberId: string;
 
   @IsIn(["NONE", "READ", "WRITE", "ADMIN"])
@@ -96,42 +108,62 @@ export class SetFolderAccessDTO {
   @IsOptional()
   @IsBoolean()
   canRequestSignature?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  canShareE2E?: boolean;
 }
 
 export class SetFileAccessDTO {
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(500)
   @IsString({ each: true })
+  @MaxLength(128, { each: true })
   fileIds: string[];
 
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => SetFileAccessMemberDTO)
   members: SetFileAccessMemberDTO[];
 }
 
 export class SetFileAccessMemberDTO {
   @IsString()
+  @MaxLength(128)
   memberId: string;
 
-  @IsIn(["READ", "WRITE", "ADMIN"])
+  @IsIn(["NONE", "READ", "WRITE", "ADMIN", "DENY"])
   permission: string;
 
   @IsOptional()
   @IsBoolean()
   canRequestSignature?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  canShareE2E?: boolean;
+}
+
+export class BulkDeleteFileItemDTO {
+  @IsString()
+  @MaxLength(128)
+  shareId: string;
+
+  @IsString()
+  @MaxLength(128)
+  fileId: string;
 }
 
 export class BulkDeleteFilesDTO {
   @IsArray()
   @ArrayMinSize(1)
-  files: { shareId: string; fileId: string }[];
-}
-
-export class AddTeamMemberSeatDTO {
-  @IsInt()
-  @Min(1)
-  @Max(50)
-  additionalSeats: number; // how many extra members to purchase
+  @ArrayMaxSize(500)
+  @ValidateNested({ each: true })
+  @Type(() => BulkDeleteFileItemDTO)
+  files: BulkDeleteFileItemDTO[];
 }
 
 export class AdminCreateTeamDTO {
@@ -183,6 +215,7 @@ export class AdminSetMaxMembersDTO {
 
 export class CreateGuestLinkDTO {
   @IsString()
+  @MaxLength(128)
   folderId: string;
 
   @IsOptional()
@@ -192,15 +225,20 @@ export class CreateGuestLinkDTO {
 
   @IsOptional()
   @IsString()
-  permission?: string; // READ | WRITE (default READ)
+  @IsIn(["READ", "WRITE"])
+  permission?: string;
 
   @IsOptional()
   @IsNumber()
-  expiresInHours?: number; // null = no expiry
+  @Min(1)
+  @Max(8760)
+  expiresInHours?: number;
 
   @IsOptional()
   @IsNumber()
-  maxDownloads?: number; // null = unlimited
+  @Min(1)
+  @Max(10000)
+  maxDownloads?: number;
 
   @IsOptional()
   @IsBoolean()
@@ -208,5 +246,6 @@ export class CreateGuestLinkDTO {
 
   @IsOptional()
   @IsString()
+  @MaxLength(128)
   password?: string;
 }

@@ -1,0 +1,13 @@
+{
+  "name": "@privcloud/bridge",
+  "version": "0.1.2",
+  "type": "module",
+  "bin": {
+    "privcloud-bridge": "./src/privcloud-bridge.mjs"
+  },
+  "scripts": {
+    "start": "node ./src/privcloud-bridge.mjs",
+    "start:native": "node ./src/privcloud-bridge.mjs --native-messaging",
+    "check": "node --check ./src/privcloud-bridge.mjs"
+  }
+}

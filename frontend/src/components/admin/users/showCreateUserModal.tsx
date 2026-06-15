@@ -1,7 +1,6 @@
 import {
   Button,
   Group,
-  NativeSelect,
   PasswordInput,
   Stack,
   Switch,
@@ -46,7 +45,6 @@ const Body = ({
       password: undefined,
       isAdmin: false,
       setPasswordManually: false,
-      plan: "TEAM",
     },
     validate: yupResolver(
       yup.object().shape({
@@ -104,13 +102,6 @@ const Body = ({
               {...form.getInputProps("password")}
             />
           )}
-          <NativeSelect
-            label={t("admin.users.modal.create.plan")}
-            data={[
-              { value: "TEAM", label: "Team" },
-            ]}
-            {...form.getInputProps("plan")}
-          />
           <Switch
             styles={{
               body: {

@@ -40,6 +40,7 @@ const AcceptInvitePage = () => {
   }, []);
 
   // Check if user has their personal encryption key
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const userHasKey = useMemo(() => !!getUserKey(), [user]);
 
   // If team uses E2E but user has no personal key, block acceptance

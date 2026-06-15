@@ -9,7 +9,6 @@ import {
   Button,
   Card,
   Container,
-  Divider,
   Grid,
   Group,
   Loader,
@@ -88,18 +87,12 @@ const TeamDashboard = () => {
   const user = useUser();
   const isMobile = useMediaQuery("(max-width: 680px)");
 
-  // Redirect if not authenticated or not team-eligible
+  // Redirect if not authenticated.
   useEffect(() => {
     if (user.user === null) {
       router.replace(`/auth/signIn?redirect=/team/${teamIdStr}`);
-    } else if (
-      user.user &&
-      user.user.plan !== "TEAM" &&
-      !user.user.isAdmin &&
-      !user.user.hasTeamMembership
-    ) {
-      router.replace("/pricing");
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.user]);
 
   const [inviteEmail, setInviteEmail] = useState("");
@@ -124,7 +117,7 @@ const TeamDashboard = () => {
   // E2E state
   const [myWrappedTeamKey, setMyWrappedTeamKey] = useState<string | null | undefined>(undefined); // undefined=loading, null=none
   const [e2eInitializing, setE2eInitializing] = useState(false);
-  const [memberKeyLinks, setMemberKeyLinks] = useState<Record<string, string>>({}); // memberId → secure link
+  const [memberKeyLinks, setMemberKeyLinks] = useState<Record<string, string>>({}); // memberId to secure link
   const [initLinksOpened, { open: openInitLinks, close: closeInitLinks }] = useDisclosure(false);
   const [allMemberLinks, setAllMemberLinks] = useState<{ memberId: string; name: string; email: string; link: string }[]>([]);
   const [rotateOpened, { open: openRotate, close: closeRotate }] = useDisclosure(false);
@@ -163,6 +156,7 @@ const TeamDashboard = () => {
       }
     })();
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamIdStr, user.user]);
 
   // Initialize K_team for a team that has none (OWNER action)
@@ -246,7 +240,7 @@ const TeamDashboard = () => {
       const newTeamKey = await generateEncryptionKey();
       const newTeamKeyB64 = await exportKeyToBase64(newTeamKey);
 
-      // Phase 1: re-encrypt all team files (old → new)
+      // Phase 1: re-encrypt all team files from old key to new key.
       const result = await reencryptTeam(
         teamIdStr,
         oldTeamKeyB64,
@@ -323,6 +317,11 @@ const TeamDashboard = () => {
   const isTeamAdmin = myRole === "OWNER" || myRole === "ADMIN";
   const canViewActivity = isTeamAdmin || !!myMember?.canViewActivity;
   const canViewSignatures = isTeamAdmin || !!myMember?.canViewSignatures;
+  const configuredFolderLimit = parseInt(
+    process.env.NEXT_PUBLIC_TEAM_MAX_FOLDERS || "0",
+    10,
+  );
+  const hasFolderLimit = Number.isFinite(configuredFolderLimit) && configuredFolderLimit > 0;
 
   const activeTab = useMemo(() => {
     if (!rawTab || !(VALID_TABS as readonly string[]).includes(rawTab)) return "members";
@@ -967,14 +966,16 @@ const TeamDashboard = () => {
           <Tabs.Panel value="folders">
             <Group justify="space-between" mb="md">
               <Text size="sm" c="dimmed">
-                {t("team.dashboard.folders.count", { n: folders?.length || 0, max: process.env.NEXT_PUBLIC_TEAM_MAX_FOLDERS || 10 })}
+                {hasFolderLimit
+                  ? t("team.dashboard.folders.count", { n: folders?.length || 0, max: configuredFolderLimit })
+                  : `${folders?.length || 0} dossier(s)`}
               </Text>
               {isTeamAdmin && (
                 <Button
                   size="compact-sm"
                   leftSection={<TbFolderPlus size={14} />}
                   onClick={openFolder}
-                  disabled={(folders?.length || 0) >= (parseInt(process.env.NEXT_PUBLIC_TEAM_MAX_FOLDERS || "10"))}
+                  disabled={hasFolderLimit && (folders?.length || 0) >= configuredFolderLimit}
                 >
                   {t("team.dashboard.buttons.newFolder")}
                 </Button>

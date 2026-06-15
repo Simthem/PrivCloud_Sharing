@@ -15,10 +15,11 @@ import {
   StreamableFile,
   UseGuards,
 } from "@nestjs/common";
-import { SkipThrottle, Throttle } from "@nestjs/throttler";
+import { Throttle } from "@nestjs/throttler";
 import contentDisposition from "content-disposition";
 import { Request, Response } from "express";
 import { User } from "@prisma/client";
+import { BridgeUploadTokenService } from "src/bridgeUpload/bridge-upload-token.service";
 import { CreateShareGuard } from "src/share/guard/createShare.guard";
 import { ShareOwnerGuard } from "src/share/guard/shareOwner.guard";
 import { DownloadNotificationService } from "src/downloadNotification/downloadNotification.service";
@@ -28,6 +29,15 @@ import { FileSecurityGuard } from "./guard/fileSecurity.guard";
 import * as mime from "mime-types";
 import { SafeIdPipe } from "src/share/pipe/safeId.pipe";
 
+const DEFAULT_MAX_UPLOAD_CHUNK_BYTES = 200_000_000;
+const MAX_UPLOAD_CHUNK_BYTES = Math.max(
+  1,
+  parseInt(
+    process.env.UPLOAD_MAX_CHUNK_BYTES || `${DEFAULT_MAX_UPLOAD_CHUNK_BYTES}`,
+    10,
+  ) || DEFAULT_MAX_UPLOAD_CHUNK_BYTES,
+);
+
 @Controller("shares/:shareId/files")
 export class FileController {
   private readonly logger = new Logger(FileController.name);
@@ -36,6 +46,7 @@ export class FileController {
     private fileService: FileService,
     private downloadNotificationService: DownloadNotificationService,
     private prisma: PrismaService,
+    private bridgeUploadTokenService: BridgeUploadTokenService,
   ) {}
 
   @Post()
@@ -59,24 +70,92 @@ export class FileController {
     const name = headerFileName
       ? decodeURIComponent(headerFileName)
       : query.name;
-    const { id, chunkIndex, totalChunks, chunkSize } = query;
-
-    // S3 multipart uploads are limited to 10,000 parts.
-    if (parseInt(totalChunks) > 10000) {
-      throw new BadRequestException(
-        "totalChunks exceeds the S3 multipart upload limit of 10,000. " +
-          "Use a larger chunk size.",
-      );
-    }
+    const { id, parsedChunkIndex, parsedTotalChunks, parsedChunkSize } =
+      this.parseUploadQuery(query);
 
     // Data can be empty if the file is empty
     return await this.fileService.create(
       body,
-      { index: parseInt(chunkIndex), total: parseInt(totalChunks) },
+      { index: parsedChunkIndex, total: parsedTotalChunks },
       { id, name },
       shareId,
-      chunkSize ? parseInt(chunkSize) : undefined,
+      parsedChunkSize,
     );
+  }
+
+  @Post("bridge")
+  @Throttle({ default: { limit: 5000, ttl: 3600 } })
+  async createViaBridge(
+    @Query()
+    query: {
+      id: string;
+      name?: string;
+      chunkIndex: string;
+      totalChunks: string;
+      chunkSize?: string;
+    },
+    @Headers("authorization") authorization: string | undefined,
+    @Headers("x-file-name") headerFileName: string | undefined,
+    @Body() body: Buffer,
+    @Param("shareId", SafeIdPipe) shareId: string,
+  ) {
+    const token = this.getBearerToken(authorization);
+    await this.bridgeUploadTokenService.validateToken(shareId, token);
+
+    const name = headerFileName
+      ? decodeURIComponent(headerFileName)
+      : query.name;
+    const { id, parsedChunkIndex, parsedTotalChunks, parsedChunkSize } =
+      this.parseUploadQuery(query);
+
+    return await this.fileService.create(
+      body,
+      { index: parsedChunkIndex, total: parsedTotalChunks },
+      { id, name },
+      shareId,
+      parsedChunkSize,
+    );
+  }
+
+  private parseUploadQuery(query: {
+    id: string;
+    name?: string;
+    chunkIndex: string;
+    totalChunks: string;
+    chunkSize?: string;
+  }) {
+    const { id, chunkIndex, totalChunks, chunkSize } = query;
+    const parsedChunkIndex = parseInt(chunkIndex, 10);
+    const parsedTotalChunks = parseInt(totalChunks, 10);
+    const parsedChunkSize = chunkSize ? parseInt(chunkSize, 10) : undefined;
+
+    if (
+      !Number.isFinite(parsedChunkIndex) ||
+      !Number.isFinite(parsedTotalChunks) ||
+      parsedTotalChunks < 1 ||
+      parsedTotalChunks > 10000 ||
+      parsedChunkIndex < 0 ||
+      parsedChunkIndex >= parsedTotalChunks
+    ) {
+      throw new BadRequestException("Invalid chunk parameters");
+    }
+
+    if (
+      parsedChunkSize !== undefined &&
+      (!Number.isFinite(parsedChunkSize) ||
+        parsedChunkSize < 1 ||
+        parsedChunkSize > MAX_UPLOAD_CHUNK_BYTES)
+    ) {
+      throw new BadRequestException("Invalid chunkSize parameter");
+    }
+
+    return { id, parsedChunkIndex, parsedTotalChunks, parsedChunkSize };
+  }
+
+  private getBearerToken(authorization?: string): string {
+    const match = authorization?.match(/^Bearer\s+(.+)$/i);
+    if (!match) throw new BadRequestException("Missing Bridge upload token");
+    return match[1];
   }
 
   @Get("zip")

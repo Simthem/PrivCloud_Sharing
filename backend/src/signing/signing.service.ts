@@ -38,29 +38,9 @@ export class SigningService {
     dto: CreateSignatureRequestDTO,
     user: User,
   ) {
-    // Verify the share and file exist and belong to the user
-    const share = await this.prisma.share.findFirst({
-      where: { id: dto.shareId, creatorId: user.id },
-      include: { files: true },
-    });
+    let share: any;
+    let file: any;
 
-    if (!share) {
-      throw new NotFoundException("Share not found or access denied");
-    }
-
-    const file = share.files.find((f) => f.id === dto.fileId);
-    if (!file) {
-      throw new NotFoundException("File not found in this share");
-    }
-
-    // Verify it's a PDF
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
-      throw new BadRequestException(
-        "Electronic signatures are only supported for PDF files",
-      );
-    }
-
-    // Verify team membership if teamId is provided
     if (dto.teamId) {
       const membership = await this.prisma.teamMember.findFirst({
         where: { teamId: dto.teamId, userId: user.id, isActive: true },
@@ -71,22 +51,75 @@ export class SigningService {
         );
       }
 
-      // Verify the share belongs to this team (via team folder)
-      const teamFolder = await this.prisma.teamFolder.findFirst({
-        where: { teamId: dto.teamId },
-        include: { shares: { where: { id: dto.shareId } } },
+      share = await this.prisma.share.findFirst({
+        where: {
+          id: dto.shareId,
+          teamFolder: { teamId: dto.teamId },
+        },
+        include: { files: true },
       });
-      if (!teamFolder?.shares?.length) {
+      if (!share) {
         throw new ForbiddenException(
           "This share does not belong to the specified team",
         );
       }
+
+      if (membership.role !== "OWNER" && membership.role !== "ADMIN") {
+        const folderAccess = await this.prisma.teamFolderAccess.findFirst({
+          where: {
+            memberId: membership.id,
+            folderId: share.teamFolderId,
+            canRequestSignature: true,
+          },
+        });
+        const fileAccess = dto.fileId
+          ? await this.prisma.fileAccess.findFirst({
+              where: {
+                memberId: membership.id,
+                fileId: dto.fileId,
+                canRequestSignature: true,
+              },
+            })
+          : null;
+        if (!folderAccess && !fileAccess) {
+          throw new ForbiddenException(
+            "You do not have permission to request signatures in this folder",
+          );
+        }
+      }
+
+      file = share.files.find((f: any) => f.id === dto.fileId);
+      if (!file) {
+        throw new NotFoundException("File not found in this share");
+      }
+    } else {
+      share = await this.prisma.share.findFirst({
+        where: { id: dto.shareId, creatorId: user.id },
+        include: { files: true },
+      });
+      if (!share) {
+        throw new NotFoundException("Share not found or access denied");
+      }
+
+      file = share.files.find((f: any) => f.id === dto.fileId);
+      if (!file) {
+        throw new NotFoundException("File not found in this share");
+      }
+    }
+
+    // Verify it's a PDF
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      throw new BadRequestException(
+        "Electronic signatures are only supported for PDF files",
+      );
     }
 
     // Create the signature document
     const document = await this.prisma.signatureDocument.create({
       data: {
         fileName: file.name,
+        title: file.name,
+        fileKey: `${dto.shareId}/${file.id}`,
         originalFileKey: `${dto.shareId}/${file.id}`,
         status: "PENDING",
         message: dto.message,
@@ -96,6 +129,7 @@ export class SigningService {
         addApprovalMention: dto.addApprovalMention ?? true,
         addInitials: dto.addInitials ?? false,
         isE2EEncrypted: dto.isE2EEncrypted ?? false,
+        ownerId: user.id,
         creatorId: user.id,
         shareId: dto.shareId,
         fileId: dto.fileId,
@@ -128,6 +162,10 @@ export class SigningService {
       include: { recipients: true, fields: true },
     });
 
+    const shouldEmailE2EKey = Boolean(
+      dto.isE2EEncrypted && dto.sendE2EKeyByEmail && dto.e2eKey,
+    );
+
     // Create audit event
     await this.createAuditEvent(document.id, "CREATED", user.email);
 
@@ -151,14 +189,25 @@ export class SigningService {
       (r) => r.order === 1 && r.role !== "CC",
     );
 
+    let emailDeliveryFailures = 0;
     for (const recipient of firstOrderRecipients) {
-      await this.sendSigningInvitation(document, recipient);
+      const sent = await this.sendSigningInvitation(document, recipient);
+      if (!sent) emailDeliveryFailures++;
     }
 
     // Notify CC recipients
     const ccRecipients = document.recipients.filter((r) => r.role === "CC");
     for (const cc of ccRecipients) {
-      await this.sendCcNotification(document, cc, user);
+      const sent = await this.sendCcNotification(document, cc, user);
+      if (!sent) emailDeliveryFailures++;
+    }
+
+    if (shouldEmailE2EKey && dto.e2eKey) {
+      const keyRecipients = document.recipients.filter((r) => r.role !== "CC");
+      for (const recipient of keyRecipients) {
+        const sent = await this.sendE2EKeyEmail(document, recipient, dto.e2eKey);
+        if (!sent) emailDeliveryFailures++;
+      }
     }
 
     this.logger.log(
@@ -166,7 +215,7 @@ export class SigningService {
         `with ${document.recipients.length} recipients`,
     );
 
-    return document;
+    return { ...document, emailDeliveryFailures };
   }
 
   /**
@@ -396,17 +445,14 @@ export class SigningService {
         status: recipient.status,
         otpVerified: recipient.otpVerified,
       },
-      fields: alreadySigned
+      fields: alreadySigned || !recipient.otpVerified
         ? []
         : recipient.document.fields.filter(
             (f) =>
               !f.assignedRecipientId ||
               f.assignedRecipientId === recipient.id,
           ),
-      requiresOtp:
-        !alreadySigned &&
-        recipient.document.signatureLevel === "AES" &&
-        !recipient.otpVerified,
+      requiresOtp: !alreadySigned && !recipient.otpVerified,
     };
   }
 
@@ -439,11 +485,18 @@ export class SigningService {
       );
     }
 
-    // For AES: verify OTP was completed
-    if (
-      recipient.document.signatureLevel === "AES" &&
-      !recipient.otpVerified
-    ) {
+    if (recipient.document.expiresAt && recipient.document.expiresAt < new Date()) {
+      throw new ForbiddenException("This signing request has expired");
+    }
+
+    if (recipient.status !== "PENDING" && recipient.status !== "VIEWED") {
+      throw new ForbiddenException(
+        `You have already ${recipient.status.toLowerCase()} this document`,
+      );
+    }
+
+    // SECURITY: the token opens the public flow, but email OTP unlocks actions.
+    if (!recipient.otpVerified) {
       throw new ForbiddenException(
         "Identity verification (OTP) required before signing",
       );
@@ -607,6 +660,29 @@ export class SigningService {
 
     if (!recipient) throw new NotFoundException("Invalid signing link");
 
+    if (recipient.document.status !== "PENDING") {
+      throw new ForbiddenException(
+        "This document is no longer pending and cannot be rejected",
+      );
+    }
+
+    if (recipient.document.expiresAt && recipient.document.expiresAt < new Date()) {
+      throw new ForbiddenException("This signing request has expired");
+    }
+
+    if (recipient.status !== "PENDING" && recipient.status !== "VIEWED") {
+      throw new ForbiddenException(
+        `You have already ${recipient.status.toLowerCase()} this document`,
+      );
+    }
+
+    // SECURITY: the token opens the public flow, but email OTP unlocks actions.
+    if (!recipient.otpVerified) {
+      throw new ForbiddenException(
+        "Identity verification (OTP) required before rejecting",
+      );
+    }
+
     await this.prisma.signatureRecipient.update({
       where: { id: recipient.id },
       data: {
@@ -727,13 +803,17 @@ export class SigningService {
       (r) => r.status === "PENDING" || r.status === "VIEWED",
     );
 
+    let remindersSent = 0;
+    let emailDeliveryFailures = 0;
     for (const recipient of pendingRecipients) {
-      await this.sendSigningInvitation(doc, recipient, true);
+      const sent = await this.sendSigningInvitation(doc, recipient, true);
+      if (sent) remindersSent++;
+      else emailDeliveryFailures++;
     }
 
     await this.createAuditEvent(documentId, "REMINDER_SENT", userId);
 
-    return { remindersSent: pendingRecipients.length };
+    return { remindersSent, emailDeliveryFailures };
   }
 
   /**
@@ -983,7 +1063,7 @@ export class SigningService {
     document: any,
     recipient: any,
     isReminder = false,
-  ) {
+  ): Promise<boolean> {
     const baseUrl = await this.configService.get("general.appUrl");
     const signingUrl = `${baseUrl}/sign/${recipient.signingToken}`;
 
@@ -1001,19 +1081,32 @@ export class SigningService {
       `Niveau de signature : ${document.signatureLevel === "QES" ? "Qualifiée (QES)" : "Avancée (AES)"}\n\n` +
       `-- \nPrivCloud Sharing - Signature Électronique`;
 
-    await this.emailService.sendMail(recipient.email, subject, body);
+    try {
+      await this.emailService.sendMail(recipient.email, subject, body);
 
-    await this.createAuditEvent(
-      document.id,
-      isReminder ? "REMINDER_SENT" : "SENT",
-      recipient.email,
-    );
+      await this.createAuditEvent(
+        document.id,
+        isReminder ? "REMINDER_SENT" : "SENT",
+        recipient.email,
+      );
+
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        `Signing invitation email failed for ${recipient.email}: ${this.getErrorMessage(error)}`,
+      );
+      return false;
+    }
   }
 
   /**
    * Send a CC notification to a carbon-copy recipient.
    */
-  private async sendCcNotification(document: any, recipient: any, creator: User) {
+  private async sendCcNotification(
+    document: any,
+    recipient: any,
+    creator: User,
+  ): Promise<boolean> {
     const body =
       `Bonjour ${recipient.name},\n\n` +
       `${creator.username} (${creator.email}) a envoyé une demande de signature électronique ` +
@@ -1021,11 +1114,56 @@ export class SigningService {
       `Vous êtes en copie de cette demande. Vous serez notifié(e) lorsque tous les signataires auront signé.\n\n` +
       `-- \nPrivCloud Sharing - Signature Électronique`;
 
-    await this.emailService.sendMail(
-      recipient.email,
-      `Copie : Demande de signature - ${document.fileName}`,
-      body,
-    );
+    try {
+      await this.emailService.sendMail(
+        recipient.email,
+        `Copie : Demande de signature - ${document.fileName}`,
+        body,
+      );
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        `Signing CC email failed for ${recipient.email}: ${this.getErrorMessage(error)}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Send the E2E key in a separate email when the sender explicitly opts in.
+   */
+  private async sendE2EKeyEmail(
+    document: any,
+    recipient: any,
+    e2eKey: string,
+  ): Promise<boolean> {
+    const subject = `Clé de déchiffrement E2E - ${document.fileName}`;
+    const keyFragment = `#key=${e2eKey}`;
+    const body =
+      `Bonjour ${recipient.name},\n\n` +
+      `Vous recevez cet email séparé car l'expéditeur a choisi de vous transmettre ` +
+      `la clé de déchiffrement du document "${document.fileName}" par email.\n\n` +
+      `Le lien personnel de signature reste dans l'email principal. Pour ouvrir le document, ` +
+      `ajoutez le fragment ci-dessous à la fin de ce lien :\n${keyFragment}\n\n` +
+      `Si votre invitation principale n'est pas encore arrivée, conservez cet email : ` +
+      `elle peut être envoyée plus tard selon l'ordre de signature.\n\n` +
+      `Ne transférez pas cette clé et ne la publiez pas.\n\n` +
+      `-- \nPrivCloud Sharing - Signature Électronique`;
+
+    try {
+      await this.emailService.sendMail(recipient.email, subject, body);
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        `Signing E2E key email failed for ${recipient.email}: ${this.getErrorMessage(error)}`,
+      );
+      return false;
+    }
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    return String(error);
   }
 
   /**

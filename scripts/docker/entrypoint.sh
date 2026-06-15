@@ -162,13 +162,10 @@ _db_diag "after-seed"
 # main.ts additionally patches globalThis.fetch() via undici ProxyAgent
 # for OAuth/hCaptcha calls.
 #
-# --max-old-space-size=3072 : allow 3 GB of V8 heap for the backend.
-# Express buffers entire raw bodies in RAM (up to 200 MB per chunk).
-# With 2-3 concurrent uploads, the process can need 1.5-2 GB of heap.
-# The default V8 limit (~1.5 GB) is too low and causes OOM.
-# Note: Buffer memory (body parser) is "external" to V8 but still
-# counts toward process RSS - set Docker mem_limit accordingly.
-NODE_OPTIONS="--max-old-space-size=3072 --require ./node_modules/global-agent/bootstrap" node dist/src/main
+# Express buffers entire raw bodies in RAM. Tune NODE_MAX_OLD_SPACE_SIZE
+# together with UPLOAD_MAX_CHUNK_BYTES and the container mem_limit.
+NODE_MAX_OLD_SPACE_SIZE="${NODE_MAX_OLD_SPACE_SIZE:-3072}"
+NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE} --require ./node_modules/global-agent/bootstrap" node dist/src/main
 
 # Wait for all processes to finish
 wait

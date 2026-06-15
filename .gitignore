@@ -42,5 +42,7 @@ yarn-error.log*
 /docs/.cache-loader
 /config.yaml*_orig
 Dockerfile.cache
-COMMIT_MSG.txt
+COMMIT_*
 frontend/public/img/*_orig
+
+*_old

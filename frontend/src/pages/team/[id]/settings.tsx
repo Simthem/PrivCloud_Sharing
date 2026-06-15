@@ -12,6 +12,7 @@ import {
   Loader,
   Modal,
   Paper,
+  SegmentedControl,
   Select,
   Stack,
   Table,
@@ -26,6 +27,7 @@ import { useMediaQuery } from "@mantine/hooks";
 import {
   TbAlertTriangle,
   TbArrowLeft,
+  TbBell,
   TbDeviceFloppy,
   TbFolder,
   TbShieldCheck,
@@ -53,12 +55,12 @@ const TeamSettings = () => {
     enabled: !!teamIdStr,
   });
 
-  // Determine current user role
-  const myRole = useMemo(() => {
+  // Determine current user membership and role.
+  const myMembership = useMemo(() => {
     if (!team?.members || !user.user) return null;
-    const me = team.members.find((m: any) => m.user?.id === user.user!.id);
-    return me?.role ?? null;
+    return team.members.find((m: any) => m.user?.id === user.user!.id) ?? null;
   }, [team, user.user]);
+  const myRole = myMembership?.role ?? null;
   const isTeamAdmin = myRole === "OWNER" || myRole === "ADMIN";
 
   const [name, setName] = useState("");
@@ -68,6 +70,7 @@ const TeamSettings = () => {
   const [selectedMember, setSelectedMember] = useState<any>(null);
   const [memberModalOpen, setMemberModalOpen] = useState(false);
   const [removeMemberConfirm, setRemoveMemberConfirm] = useState(false);
+  const [pushNotifMode, setPushNotifMode] = useState("EVERY_FILE");
 
   // Fetch folder access for selected member
   const { data: memberAccess, isLoading: memberAccessLoading } = useQuery({
@@ -82,6 +85,12 @@ const TeamSettings = () => {
       setDescription(team.description || "");
     }
   }, [team]);
+
+  useEffect(() => {
+    if (myMembership?.pushNotifMode) {
+      setPushNotifMode(myMembership.pushNotifMode);
+    }
+  }, [myMembership]);
 
   const updateMutation = useMutation({
     mutationFn: () => teamService.updateTeam(teamIdStr, { name, description }),
@@ -155,6 +164,17 @@ const TeamSettings = () => {
     },
     onError: (err: any) =>
       toast.error(err?.response?.data?.message || "Impossible de quitter l'équipe"),
+  });
+
+  const pushPrefMutation = useMutation({
+    mutationFn: (mode: string) =>
+      teamService.updateMyPreferences(teamIdStr, { pushNotifMode: mode }),
+    onSuccess: () => {
+      toast.success("Préférence de notifications mise à jour");
+      queryClient.invalidateQueries({ queryKey: ["team", teamIdStr] });
+    },
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.message || "Erreur"),
   });
 
   if (isLoading || !teamIdStr) {
@@ -253,7 +273,7 @@ const TeamSettings = () => {
           </Stack>
         </Paper>
 
-        {/* ───── Section membres (admins uniquement) ───── */}
+        {/* Member management. */}
         {isTeamAdmin && (
           <>
             <Divider my="lg" />
@@ -383,7 +403,37 @@ const TeamSettings = () => {
           </>
         )}
 
-        {/* ───── Quitter l'équipe (membres non-owner) ───── */}
+        {/* Push notification preferences. */}
+        <Divider my="lg" />
+        <Paper withBorder p="lg" mb="lg">
+          <Group mb="md">
+            <TbBell size={20} />
+            <Title order={4}>Notifications push</Title>
+          </Group>
+          <Text size="sm" c="dimmed" mb="md">
+            Choisissez quand recevoir des notifications push sur cet appareil
+            pour cette équipe.
+          </Text>
+          <SegmentedControl
+            value={pushNotifMode}
+            onChange={(value) => {
+              setPushNotifMode(value);
+              pushPrefMutation.mutate(value);
+            }}
+            data={[
+              { value: "EVERY_FILE", label: "Tous les fichiers" },
+              { value: "SHARES_ONLY", label: "Partages directs uniquement" },
+            ]}
+            fullWidth
+          />
+          <Text size="xs" c="dimmed" mt="xs">
+            Tous les fichiers : notification à chaque dépôt dans vos dossiers
+            accessibles. Partages directs : uniquement quand un fichier vous est
+            explicitement partagé.
+          </Text>
+        </Paper>
+
+        {/* Leave team. */}
         {myRole && myRole !== "OWNER" && (
           <>
             <Divider my="lg" />
@@ -445,7 +495,7 @@ const TeamSettings = () => {
               </Stack>
             </Paper>
 
-            {/* Modal de confirmation de suppression */}
+            {/* Delete confirmation modal. */}
             <Modal
               opened={deleteModalOpen}
               onClose={() => setDeleteModalOpen(false)}
@@ -519,7 +569,7 @@ const TeamSettings = () => {
           </>
         )}
 
-        {/* ───── Modal gestion d'un membre ───── */}
+        {/* Member management modal. */}
         <Modal
           opened={memberModalOpen}
           onClose={() => {

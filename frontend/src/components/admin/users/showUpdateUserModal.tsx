@@ -2,7 +2,6 @@ import {
   Accordion,
   Button,
   Group,
-  NativeSelect,
   PasswordInput,
   Stack,
   Switch,
@@ -48,7 +47,6 @@ const Body = ({
       username: user.username,
       email: user.email,
       isAdmin: user.isAdmin,
-      plan: user.plan || "FREE",
     },
     validate: yupResolver(
       yup.object().shape({
@@ -101,16 +99,6 @@ const Body = ({
             labelPosition="left"
             label={t("admin.users.edit.update.admin-privileges")}
             {...accountForm.getInputProps("isAdmin", { type: "checkbox" })}
-          />
-          <NativeSelect
-            label={t("admin.users.edit.update.plan")}
-            data={[
-              { value: "FREE", label: "Free" },
-              { value: "STARTER", label: "Starter" },
-              { value: "PRO", label: "Pro" },
-              { value: "TEAM", label: "Team" },
-            ]}
-            {...accountForm.getInputProps("plan")}
           />
         </Stack>
       </form>

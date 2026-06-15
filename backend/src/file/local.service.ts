@@ -11,25 +11,64 @@ import * as crypto from "crypto";
 import { createReadStream } from "fs";
 import * as fs from "fs/promises";
 import * as mime from "mime-types";
+import * as path from "path";
 import { ConfigService } from "src/config/config.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { validate as isValidUUID } from "uuid";
 import { SHARE_DIRECTORY } from "../constants";
 import { Readable } from "stream";
 
+const DEFAULT_MAX_UPLOAD_CHUNK_BYTES = 200_000_000;
+const MAX_UPLOAD_CHUNK_BYTES = Math.max(
+  1,
+  parseInt(
+    process.env.UPLOAD_MAX_CHUNK_BYTES || `${DEFAULT_MAX_UPLOAD_CHUNK_BYTES}`,
+    10,
+  ) || DEFAULT_MAX_UPLOAD_CHUNK_BYTES,
+);
+
 @Injectable()
 export class LocalFileService {
   private readonly logger = new Logger(LocalFileService.name);
 
-  // Cache plan limits per share to avoid a DB round-trip on every chunk.
+  // Cache configured limits per share to avoid a DB round-trip on every chunk.
   // Key: shareId, Value: { limit, ts }
-  private planLimitCache = new Map<string, { limit: number; ts: number }>();
-  private static readonly PLAN_LIMIT_TTL = 60_000; // 60s
+  private configuredLimitCache = new Map<string, { limit: number; ts: number }>();
+  private static readonly CONFIGURED_LIMIT_TTL = 60_000; // 60s
 
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
   ) {}
+
+  private isUnsafeStorageSegment(segment: string): boolean {
+    return (
+      !segment ||
+      segment === "." ||
+      segment.includes("\0") ||
+      segment.includes("..") ||
+      segment.includes("/") ||
+      segment.includes("\\")
+    );
+  }
+
+  private resolveSharePath(shareId: string, ...segments: string[]): string {
+    const allSegments = [shareId, ...segments];
+    if (allSegments.some((segment) => this.isUnsafeStorageSegment(segment))) {
+      throw new BadRequestException("Invalid storage identifier");
+    }
+
+    const root = path.resolve(SHARE_DIRECTORY);
+    const resolved = path.resolve(root, shareId, ...segments);
+    const expectedShareRoot = path.resolve(root, shareId);
+    if (
+      resolved !== expectedShareRoot &&
+      !resolved.startsWith(`${expectedShareRoot}${path.sep}`)
+    ) {
+      throw new BadRequestException("Invalid storage path");
+    }
+    return resolved;
+  }
 
   async create(
     data: Buffer,
@@ -72,8 +111,8 @@ export class LocalFileService {
     }
 
     // --- Parallelize independent I/O + DB lookups ---
-    const tmpChunkPath = `${SHARE_DIRECTORY}/${shareId}/${file.id}.tmp-chunk`;
-    const planOwnerId =
+    const tmpChunkPath = this.resolveSharePath(shareId, `${file.id}.tmp-chunk`);
+    const limitOwnerId =
       share.reverseShare?.creatorId ?? share.creatorId ?? undefined;
 
     const [diskFileSize, space, effectiveLimit] = await Promise.all([
@@ -81,21 +120,22 @@ export class LocalFileService {
       fs.stat(tmpChunkPath).then((s) => s.size).catch(() => 0),
       // 2. Available disk space
       fs.statfs(SHARE_DIRECTORY),
-      // 3. Plan limit (cached per share for 60s)
-      this.getCachedPlanLimit(shareId, planOwnerId, share.reverseShare),
+      // 3. Configured limit (cached per share for 60s)
+      this.getCachedConfiguredLimit(shareId, limitOwnerId, share.reverseShare),
     ]);
 
     // If the sent chunk index and the expected chunk index doesn't match throw an error
     const configChunkSize = this.config.get("share.chunkSize");
     // Accept client-provided chunkSize for adaptive uploads, clamped
-    // between 1 MB and 200 MB to prevent abuse.
+    // between 1 MB and the configured upload ceiling to prevent abuse.
     const MIN_CHUNK = 1_000_000;
-    const MAX_CHUNK = 200_000_000;
     const chunkSize =
-      clientChunkSize && clientChunkSize >= MIN_CHUNK && clientChunkSize <= MAX_CHUNK
+      clientChunkSize &&
+      clientChunkSize >= MIN_CHUNK &&
+      clientChunkSize <= MAX_UPLOAD_CHUNK_BYTES
         ? clientChunkSize
         : configChunkSize;
-    // Chaque chunk E2E chiffré a 28 octets de surcharge (12 IV + 16 GCM tag)
+    // Each E2E encrypted chunk adds 28 bytes of overhead (12 IV + 16 GCM tag).
     const effectiveChunkSize = share.isE2EEncrypted
       ? chunkSize + 28
       : chunkSize;
@@ -153,13 +193,9 @@ export class LocalFileService {
       `Chunk appended: shareId=${shareId} fileId=${file.id} fileName="${file.name}" chunkIndex=${chunk.index} chunkTotal=${chunk.total} last=${isLastChunk}`,
     );
     if (isLastChunk) {
-      await fs.rename(
-        tmpChunkPath,
-        `${SHARE_DIRECTORY}/${shareId}/${file.id}`,
-      );
-      const fileSize = (
-        await fs.stat(`${SHARE_DIRECTORY}/${shareId}/${file.id}`)
-      ).size;
+      await fs.rename(tmpChunkPath, this.resolveSharePath(shareId, file.id));
+      const fileSize = (await fs.stat(this.resolveSharePath(shareId, file.id)))
+        .size;
       await this.prisma.file.create({
         data: {
           id: file.id,
@@ -168,8 +204,8 @@ export class LocalFileService {
           share: { connect: { id: shareId } },
         },
       });
-      // Invalidate plan limit cache on upload complete
-      this.planLimitCache.delete(shareId);
+      // Invalidate configured limit cache on upload complete.
+      this.configuredLimitCache.delete(shareId);
       this.logger.debug(
         `File uploaded: shareId=${shareId} fileId=${file.id} fileName="${file.name}" size=${fileSize} mimeType=${mime.contentType(file.name.split(".").pop() ?? "") || false}`,
       );
@@ -178,29 +214,33 @@ export class LocalFileService {
   }
 
   /**
-   * Get effective plan limit, cached per shareId for PLAN_LIMIT_TTL.
+   * Get effective configured limit, cached per shareId.
    * Avoids a DB round-trip on every single chunk.
    */
-  private async getCachedPlanLimit(
+  private async getCachedConfiguredLimit(
     shareId: string,
-    planOwnerId: string | undefined,
+    limitOwnerId: string | undefined,
     reverseShare?: { maxShareSize?: string | null } | null,
   ): Promise<number> {
-    const cached = this.planLimitCache.get(shareId);
-    if (cached && Date.now() - cached.ts < LocalFileService.PLAN_LIMIT_TTL) {
+    void limitOwnerId;
+    const cached = this.configuredLimitCache.get(shareId);
+    if (
+      cached &&
+      Date.now() - cached.ts < LocalFileService.CONFIGURED_LIMIT_TTL
+    ) {
       return cached.limit;
     }
     // 0 (or absent env var) = no limit; positive value = cap in bytes
     const rawEnvLimit = process.env.TEAM_MAX_SHARE_SIZE
       ? parseInt(process.env.TEAM_MAX_SHARE_SIZE)
       : 0;
-    const planLimit = rawEnvLimit > 0 ? rawEnvLimit : Infinity;
+    const configuredLimit = rawEnvLimit > 0 ? rawEnvLimit : Infinity;
     const reverseShareLimit =
       reverseShare?.maxShareSize
         ? parseInt(reverseShare.maxShareSize)
         : Infinity;
-    const limit = Math.min(planLimit, reverseShareLimit);
-    this.planLimitCache.set(shareId, { limit, ts: Date.now() });
+    const limit = Math.min(configuredLimit, reverseShareLimit);
+    this.configuredLimitCache.set(shareId, { limit, ts: Date.now() });
     return limit;
   }
 
@@ -218,8 +258,8 @@ export class LocalFileService {
       throw new BadRequestException("Invalid file ID format");
     }
 
-    const tmpPath = `${SHARE_DIRECTORY}/${shareId}/${fileId}.tmp-reencrypt`;
-    const finalPath = `${SHARE_DIRECTORY}/${shareId}/${fileId}`;
+    const tmpPath = this.resolveSharePath(shareId, `${fileId}.tmp-reencrypt`);
+    const finalPath = this.resolveSharePath(shareId, fileId);
 
     // On first chunk, remove any stale temp file
     if (chunk.index === 0) {
@@ -260,7 +300,7 @@ export class LocalFileService {
 
     if (!fileMetaData) throw new NotFoundException("File not found");
 
-    const filePath = `${SHARE_DIRECTORY}/${shareId}/${fileId}`;
+    const filePath = this.resolveSharePath(shareId, fileId);
     const file = range
       ? createReadStream(filePath, { start: range.start, end: range.end, highWaterMark: 1_048_576 })
       : createReadStream(filePath, { highWaterMark: 1_048_576 });
@@ -286,7 +326,7 @@ export class LocalFileService {
 
     if (!fileMetaData) throw new NotFoundException("File not found");
 
-    await fs.unlink(`${SHARE_DIRECTORY}/${shareId}/${fileId}`);
+    await fs.unlink(this.resolveSharePath(shareId, fileId));
 
     await this.prisma.file.delete({ where: { id: fileId } });
     this.logger.debug(
@@ -296,7 +336,7 @@ export class LocalFileService {
 
   async deleteAllFiles(shareId: string) {
     this.logger.debug(`Delete all files requested: shareId=${shareId}`);
-    await fs.rm(`${SHARE_DIRECTORY}/${shareId}`, {
+    await fs.rm(this.resolveSharePath(shareId), {
       recursive: true,
       force: true,
     });
@@ -305,7 +345,7 @@ export class LocalFileService {
   async getZip(shareId: string): Promise<Readable> {
     return new Promise((resolve, reject) => {
       const zipStream = createReadStream(
-        `${SHARE_DIRECTORY}/${shareId}/archive.zip`,
+        this.resolveSharePath(shareId, "archive.zip"),
         { highWaterMark: 1_048_576 },
       );
 

@@ -10,6 +10,7 @@ import {
 import { JwtService } from "@nestjs/jwt";
 import { User, Prisma } from "@prisma/client";
 import * as argon from "argon2";
+import * as crypto from "crypto";
 import { Request, Response } from "express";
 import moment from "moment";
 import { ConfigService } from "src/config/config.service";
@@ -24,6 +25,12 @@ import { LdapService } from "./ldap.service";
 
 @Injectable()
 export class AuthService {
+  private readonly refreshReplayGraceMs = 15_000;
+  private readonly rotatedRefreshTokens = new Map<
+    string,
+    { accessToken: string; refreshToken: string; expiresAt: number }
+  >();
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
@@ -55,7 +62,9 @@ export class AuthService {
       const accessToken = await this.createAccessToken(user, refreshTokenId);
 
       this.logger.log(`User ${user.email} signed up from IP ${ip}`);
-      return { accessToken, refreshToken, user };
+      // SECURITY: Strip sensitive fields before returning
+      const { password: _pw, ...safeUser } = user;
+      return { accessToken, refreshToken, user: safeUser };
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code == "P2002") {
@@ -354,6 +363,21 @@ export class AuthService {
         const configuration = await provider.getConfiguration();
         if (URL.canParse(configuration.end_session_endpoint)) {
           const redirectURI = new URL(configuration.end_session_endpoint);
+          const isLocalHttp =
+            redirectURI.protocol === "http:" &&
+            ["localhost", "127.0.0.1", "::1"].includes(redirectURI.hostname);
+          if (redirectURI.protocol !== "https:" && !isLocalHttp) {
+            this.logger.warn(
+              `Refusing insecure OIDC logout endpoint for provider ${providerName}`,
+            );
+            return;
+          }
+          if (redirectURI.username || redirectURI.password) {
+            this.logger.warn(
+              `Refusing OIDC logout endpoint with embedded credentials for provider ${providerName}`,
+            );
+            return;
+          }
           redirectURI.searchParams.append(
             "post_logout_redirect_uri",
             this.config.get("general.appUrl"),
@@ -370,16 +394,38 @@ export class AuthService {
   }
 
   async refreshAccessToken(refreshToken: string) {
-    const refreshTokenMetaData = await this.prisma.refreshToken.findUnique({
-      where: { token: refreshToken },
+    const hashedToken = this.hashRefreshToken(refreshToken);
+
+    // Try hashed lookup first (new tokens stored as HMAC-SHA256)
+    let refreshTokenMetaData = await this.prisma.refreshToken.findUnique({
+      where: { token: hashedToken },
       include: { user: true },
     });
+
+    const replay = this.getRotatedRefreshToken(hashedToken);
+    if (!refreshTokenMetaData && replay) {
+      return {
+        accessToken: replay.accessToken,
+        refreshToken: replay.refreshToken,
+      };
+    }
+
+    // Fallback: legacy tokens stored as raw values (pre-migration)
+    let isLegacyToken = false;
+    if (!refreshTokenMetaData) {
+      refreshTokenMetaData = await this.prisma.refreshToken.findUnique({
+        where: { token: refreshToken },
+        include: { user: true },
+      });
+      isLegacyToken = !!refreshTokenMetaData;
+    }
 
     if (!refreshTokenMetaData || refreshTokenMetaData.expiresAt < new Date())
       throw new UnauthorizedException();
 
-    // Rotate: delete old token and create new one
-    await this.prisma.refreshToken.delete({ where: { token: refreshToken } });
+    // Rotate: delete old token and create new one (new token will be hashed)
+    const deleteToken = isLegacyToken ? refreshToken : hashedToken;
+    await this.prisma.refreshToken.delete({ where: { token: deleteToken } });
 
     const { refreshToken: newRefreshToken, refreshTokenId } =
       await this.createRefreshToken(
@@ -392,13 +438,54 @@ export class AuthService {
       refreshTokenId,
     );
 
+    this.rememberRotatedRefreshToken(hashedToken, {
+      accessToken,
+      refreshToken: newRefreshToken,
+    });
+
     return { accessToken, refreshToken: newRefreshToken };
+  }
+
+  private rememberRotatedRefreshToken(
+    previousHashedToken: string,
+    tokens: { accessToken: string; refreshToken: string },
+  ) {
+    const expiresAt = Date.now() + this.refreshReplayGraceMs;
+    this.rotatedRefreshTokens.set(previousHashedToken, {
+      ...tokens,
+      expiresAt,
+    });
+
+    setTimeout(() => {
+      const current = this.rotatedRefreshTokens.get(previousHashedToken);
+      if (current?.expiresAt === expiresAt) {
+        this.rotatedRefreshTokens.delete(previousHashedToken);
+      }
+    }, this.refreshReplayGraceMs).unref?.();
+  }
+
+  private getRotatedRefreshToken(previousHashedToken: string) {
+    const cached = this.rotatedRefreshTokens.get(previousHashedToken);
+    if (!cached) return null;
+
+    if (cached.expiresAt < Date.now()) {
+      this.rotatedRefreshTokens.delete(previousHashedToken);
+      return null;
+    }
+
+    return cached;
   }
 
   async createRefreshToken(userId: string, idToken?: string) {
     const sessionDuration = this.config.get("general.sessionDuration");
-    const { id, token } = await this.prisma.refreshToken.create({
+    // SECURITY: Generate a cryptographically random token and store only
+    // its HMAC-SHA256 hash in the DB. If the DB leaks, tokens are unusable.
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const hashedToken = this.hashRefreshToken(rawToken);
+
+    const { id } = await this.prisma.refreshToken.create({
       data: {
+        token: hashedToken,
         userId,
         expiresAt: moment()
           .add(sessionDuration.value, sessionDuration.unit)
@@ -407,7 +494,18 @@ export class AuthService {
       },
     });
 
-    return { refreshTokenId: id, refreshToken: token };
+    return { refreshTokenId: id, refreshToken: rawToken };
+  }
+
+  /** Compute HMAC-SHA256 of a refresh token using the JWT secret as key. */
+  private hashRefreshToken(token: string): string {
+    const secret = this.config.get("internal.jwtSecret") || process.env.JWT_SECRET;
+    if (!secret) {
+      throw new Error(
+        "FATAL: No JWT secret configured. Set internal.jwtSecret in config or JWT_SECRET env var.",
+      );
+    }
+    return crypto.createHmac("sha256", secret).update(token).digest("hex");
   }
 
   async createLoginToken(userId: string) {
@@ -428,6 +526,7 @@ export class AuthService {
     const isSecure = this.config.get("general.secureCookies");
     if (accessToken)
       response.cookie("access_token", accessToken, {
+        path: "/",
         httpOnly: true,
         sameSite: "strict",
         secure: isSecure,
@@ -450,6 +549,7 @@ export class AuthService {
       // even after the short-lived access_token cookie has expired.
       // httpOnly: false - intentional. Contains no sensitive data (value: "1").
       response.cookie("logged_in", "1", {
+        path: "/",
         httpOnly: false,
         sameSite: "strict",
         secure: isSecure,

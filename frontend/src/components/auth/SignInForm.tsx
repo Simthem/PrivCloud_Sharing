@@ -152,6 +152,7 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
         }
       })
       .catch(toast.axiosError);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!oauthProviders) return null;

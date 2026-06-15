@@ -18,7 +18,6 @@ const Logo = ({
       alt={alt}
       height={height}
       width={width}
-      // eslint-disable-next-line react/no-unknown-property
       fetchPriority="high"
       decoding="async"
     />

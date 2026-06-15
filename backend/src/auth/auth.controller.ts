@@ -3,7 +3,6 @@ import {
   Controller,
   ForbiddenException,
   HttpCode,
-  Param,
   Patch,
   Post,
   Req,
@@ -23,7 +22,7 @@ import { AuthSignInDTO } from "./dto/authSignIn.dto";
 import { AuthSignInTotpDTO } from "./dto/authSignInTotp.dto";
 import { EnableTotpDTO } from "./dto/enableTotp.dto";
 import { ResetPasswordDTO } from "./dto/resetPassword.dto";
-import { TokenDTO } from "./dto/token.dto";
+
 import { UpdatePasswordDTO } from "./dto/updatePassword.dto";
 import { VerifyTotpDTO } from "./dto/verifyTotp.dto";
 import { HCaptchaGuard } from "./guard/hcaptcha.guard";
@@ -61,7 +60,8 @@ export class AuthController {
       result.accessToken,
     );
 
-    return result;
+    // SECURITY: Only return user info; tokens are in HttpOnly cookies
+    return { user: result.user };
   }
 
   @Post("signIn")
@@ -86,7 +86,11 @@ export class AuthController {
       );
     }
 
-    return result;
+    // SECURITY: Only return loginToken (for TOTP flow) if present; tokens are in HttpOnly cookies
+    if (result.loginToken) {
+      return { loginToken: result.loginToken };
+    }
+    return {};
   }
 
   @Post("signIn/totp")
@@ -109,10 +113,11 @@ export class AuthController {
       result.accessToken,
     );
 
-    return new TokenDTO().from(result);
+    // SECURITY: Tokens are in HttpOnly cookies; no need to expose in body
+    return {};
   }
 
-  @Post("resetPassword/:email")
+  @Post("resetPassword/request")
   @Throttle({
     default: {
       limit: 10,
@@ -121,7 +126,8 @@ export class AuthController {
   })
   @UseGuards(HCaptchaGuard)
   @HttpCode(202)
-  async requestResetPassword(@Param("email") email: string) {
+  async requestResetPassword(@Body("email") email: string) {
+    // SECURITY: Email moved from URL param to body to avoid logging in access logs
     await this.authService.requestResetPassword(email);
   }
 
@@ -151,7 +157,8 @@ export class AuthController {
     );
 
     this.authService.addTokensToResponse(response, result.refreshToken);
-    return new TokenDTO().from(result);
+    // SECURITY: Tokens are set in HttpOnly cookies - do not leak in response body
+    return {};
   }
 
   @Post("token")
@@ -170,7 +177,8 @@ export class AuthController {
       result.refreshToken,
       result.accessToken,
     );
-    return new TokenDTO().from({ accessToken: result.accessToken });
+    // SECURITY: Tokens are set in HttpOnly cookies - do not leak in response body
+    return {};
   }
 
   @Post("signOut")
@@ -184,6 +192,7 @@ export class AuthController {
 
     const isSecure = this.config.get("general.secureCookies");
     response.cookie("access_token", "", {
+      path: "/",
       httpOnly: true,
       sameSite: "lax",
       maxAge: -1,
@@ -199,6 +208,7 @@ export class AuthController {
     // httpOnly: false - intentional. This is a non-sensitive session indicator (value: "")
     // readable by JS to detect logout without exposing tokens.
     response.cookie("logged_in", "", {
+      path: "/",
       httpOnly: false,
       sameSite: "lax",
       maxAge: -1,

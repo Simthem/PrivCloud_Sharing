@@ -99,8 +99,8 @@ export class ShareService {
         }
       }
 
-      // For authenticated users, per-plan logic handles the limit.
-      // Global share.maxExpiration only applies to anonymous or as RS clamp.
+      // Global share.maxExpiration only applies to anonymous shares or as a
+      // reverse-share clamp. Authenticated shares are unlimited by default.
       if (!user) {
         const maxExpiration = this.config.get("share.maxExpiration");
         if (maxExpiration.value !== 0) {
@@ -118,41 +118,11 @@ export class ShareService {
         }
         expirationDate = parsedExpiration;
       } else if (isPermanentRS) {
-        // For permanent RS uploads by authenticated users: clamp to plan limit
-        const planMaxDays = 0 /* unlimited - Team plan */;
-        if (planMaxDays > 0) {
-          const planMaxDate = moment().add(planMaxDays, "days").toDate();
-          if (parsedExpiration > planMaxDate) {
-            expirationDate = planMaxDate;
-            this.logger.debug(
-              `Permanent RS share clamped to plan limit: shareId=${share.id} expiration=${planMaxDate.toISOString()}`,
-            );
-          } else {
-            expirationDate = parsedExpiration;
-          }
-        } else {
-          expirationDate = parsedExpiration;
-        }
+        expirationDate = parsedExpiration;
       } else {
         expirationDate = parsedExpiration;
       }
 
-      // Enforce per-plan max expiration when user is authenticated
-      if (user && !isPermanentRS) {
-        const planMaxDays = 0 /* unlimited - Team plan */;
-
-        if (planMaxDays > 0) {
-          const planMaxDate = moment().add(planMaxDays, "days").toDate();
-          if (expiresNever || expirationDate > planMaxDate) {
-            this.logger.warn(
-              `Expiration exceeds plan limit: shareId=${share.id} maxDays=${planMaxDays} requested=${expiresNever ? "never" : expirationDate.toISOString()}`,
-            );
-            throw new BadRequestException(
-              `Your plan allows a maximum transfer duration of ${planMaxDays} days`,
-            );
-          }
-        }
-      }
     }
 
     // [UX/Security] Defense-in-depth: when the share is created via a
@@ -243,7 +213,6 @@ export class ShareService {
       `Selected storage provider: shareId=${share.id} provider=${storageProvider}`,
     );
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { teamFolderId: _tfId, ...shareData } = share;
 
     const shareTuple = await this.prisma.share.create({
@@ -622,24 +591,7 @@ export class ShareService {
     if (!share || !share.uploadLocked)
       throw new NotFoundException("Share not found");
 
-    // Preview is enabled for STARTER, PRO, and TEAM plans, and always for admins.
-    // For reverse shares, the RS creator (who owns the link) determines the plan,
-    // not the uploader (who may have a FREE account).
-    const effectiveCreatorId =
-      share.reverseShare?.creatorId ?? share.creatorId ?? null;
-    let previewEnabled = false;
-    if (effectiveCreatorId) {
-      const creator = await this.prisma.user.findUnique({
-        where: { id: effectiveCreatorId },
-        select: { isAdmin: true },
-      });
-      if (creator?.isAdmin) {
-        previewEnabled = true;
-      } else {
-        const sub = ({ plan: "TEAM", status: "active" } as any);
-        previewEnabled = sub.plan === "STARTER" || sub.plan === "PRO" || sub.plan === "TEAM";
-      }
-    }
+    const previewEnabled = true;
 
     return {
       ...share,
@@ -680,23 +632,7 @@ export class ShareService {
     if (share.removedReason)
       throw new NotFoundException(share.removedReason, "share_removed");
 
-    // Preview is enabled for STARTER, PRO, and TEAM plans, and always for admins.
-    // For reverse shares, the RS creator (who owns the link) determines the plan.
-    const effectiveCreatorId =
-      share.reverseShare?.creatorId ?? share.creatorId ?? null;
-    let previewEnabled = false;
-    if (effectiveCreatorId) {
-      const creator = await this.prisma.user.findUnique({
-        where: { id: effectiveCreatorId },
-        select: { isAdmin: true },
-      });
-      if (creator?.isAdmin) {
-        previewEnabled = true;
-      } else {
-        const sub = ({ plan: "TEAM", status: "active" } as any);
-        previewEnabled = sub.plan === "STARTER" || sub.plan === "PRO" || sub.plan === "TEAM";
-      }
-    }
+    const previewEnabled = true;
 
     return {
       ...share,

@@ -11,7 +11,6 @@ type User = {
   createdAt?: string;
   plan?: string;
   planStatus?: string;
-  planRenewDate?: string | null;
   hasTeamMembership?: boolean;
   teamId?: string | null;
 };
@@ -21,7 +20,6 @@ export type CreateUser = {
   email: string;
   password?: string;
   isAdmin?: boolean;
-  plan?: string;
 };
 
 export type UpdateUser = {
@@ -29,7 +27,6 @@ export type UpdateUser = {
   email?: string;
   password?: string;
   isAdmin?: boolean;
-  plan?: string;
 };
 
 export type UpdateCurrentUser = {

@@ -1,5 +1,20 @@
 import api from "./api.service";
 
+let refreshAccessTokenPromise: Promise<void> | null = null;
+
+function isSafeLogoutRedirect(value: unknown): value is string {
+  if (typeof value !== "string" || !URL.canParse(value)) return false;
+  const url = new URL(value);
+  const isLocalHttp =
+    url.protocol === "http:" &&
+    ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+  return (
+    !url.username &&
+    !url.password &&
+    (url.protocol === "https:" || isLocalHttp)
+  );
+}
+
 const signIn = async (emailOrUsername: string, password: string, captchaToken?: string) => {
   const emailOrUsernameBody = emailOrUsername.includes("@")
     ? { email: emailOrUsername }
@@ -32,7 +47,7 @@ const signOut = async () => {
     const response = await api.post("/auth/signOut");
 
     // If there's an OAuth provider logout URL, use it
-    if (URL.canParse(response.data?.redirectURI)) {
+    if (isSafeLogoutRedirect(response.data?.redirectURI)) {
       window.location.href = response.data.redirectURI;
       return;
     }
@@ -49,16 +64,24 @@ const signOut = async () => {
 };
 
 const refreshAccessToken = async () => {
-  try {
-    await api.post("/auth/token");
-  } catch (e) {
-    console.info("Refresh token invalid or expired");
-    throw e;
+  if (!refreshAccessTokenPromise) {
+    refreshAccessTokenPromise = api
+      .post("/auth/token")
+      .then(() => {})
+      .catch((e) => {
+        console.info("Refresh token invalid or expired");
+        throw e;
+      })
+      .finally(() => {
+        refreshAccessTokenPromise = null;
+      });
   }
+
+  return refreshAccessTokenPromise;
 };
 
 const requestResetPassword = async (email: string, captchaToken?: string) => {
-  await api.post(`/auth/resetPassword/${email}`, { ...(captchaToken && { captchaToken }) });
+  await api.post("/auth/resetPassword/request", { email, ...(captchaToken && { captchaToken }) });
 };
 
 const resetPassword = async (token: string, password: string) => {

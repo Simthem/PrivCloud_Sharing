@@ -8,6 +8,7 @@ export default {
 
   "navbar.links.shares": "My shares",
   "navbar.links.reverse": "Reverse shares",
+  "navbar.links.signatures": "Signatures",
 
   "navbar.avatar.account": "My account",
   "navbar.avatar.my-team": "My team",
@@ -244,11 +245,11 @@ export default {
   "account.upgrade.transfer": "{amount} transfer",
   "account.upgrade.storage": "{amount} storage",
   "account.upgrade.current-plan": "Current plan: {plan}",
-  "account.subscription.title": "My subscription",
-  "account.subscription.transfer": "Transfer: {used} / {total}",
-  "account.subscription.storage": "Storage: {used} / {total}",
-  "account.subscription.renews": "Renews on {date}",
-  "account.subscription.manage": "Manage subscription",
+  "account.usage.title": "Usage",
+  "account.usage.transfer": "Transfer: {used} / {total}",
+  "account.usage.storage": "Storage: {used} / {total}",
+  "account.usage.updated": "Updated on {date}",
+  "account.usage.manage": "Manage usage",
 
   "account.card.info.title": "Account info",
   "account.card.info.username": "Username",
@@ -487,13 +488,11 @@ export default {
   "admin.users.table.username": "Username",
   "admin.users.table.email": "Email",
   "admin.users.table.admin": "Admin",
-  "admin.users.table.plan": "Plan",
+  "admin.users.table.access": "Access",
   "admin.users.table.created": "Created",
-  "admin.users.table.renew": "Renewal",
 
   "admin.users.edit.update.title": "Edit user: {username}",
   "admin.users.edit.update.admin-privileges": "Admin privileges",
-  "admin.users.edit.update.plan": "Subscription plan",
   "admin.users.edit.update.change-password.title": "Change password",
   "admin.users.edit.update.change-password.field": "New password",
   "admin.users.edit.update.change-password.button": "Save new password",
@@ -517,7 +516,6 @@ export default {
   "admin.users.modal.create.admin": "Admin privileges",
   "admin.users.modal.create.admin.description":
     "If checked, the user will be able to access the admin panel.",
-  "admin.users.modal.create.plan": "Subscription plan",
 
   // END /admin/users
 
@@ -557,6 +555,7 @@ export default {
   "upload.notify.retrying.message": "Chunk {chunk} failed (attempt {attempt}/{max}). Retrying in {delay}s…",
   "upload.notify.recovery.title": "Recovery mode",
   "upload.notify.recovery.message": "Too many consecutive errors. Pausing {pause}s before retrying (cycle {attempt}/{max}).",
+  "upload.bridge.error": "{fileName}: Bridge failed - {error}",
   "upload.reverse-share.error.invalid.title": "Invalid reverse share link",
   "upload.reverse-share.error.invalid.description":
     "This reverse share is no longer valid.",
@@ -576,7 +575,8 @@ export default {
   // Global upload progress
   "upload.progress.global": "Upload: {done}/{total} files",
   "upload.quota.label": "Upload quota",
-  "upload.quota.exceeded": "Total file size exceeds your quota. Remove some files or upgrade your plan.",
+  "upload.quota.exceeded":
+    "Total file size exceeds the configured limit. Remove some files or ask the instance administrator to raise it.",
   "upload.cancel.button": "Cancel",
 
   // showCreateUploadModal.tsx
@@ -643,7 +643,7 @@ export default {
   "upload.modal.team-folder.label": "Link to a team folder",
   "upload.modal.team-folder.placeholder": "None (personal share)",
   "upload.modal.team-folder.description":
-    "Select a team folder so team members can access it. Max share size will be the Team plan limit (250 GB).",
+    "Select a team folder so team members can access the uploaded files.",
 
   // showCompletedUploadModal.tsx
   "upload.modal.completed.never-expires": "This share will never expire.",
@@ -656,6 +656,69 @@ export default {
   // Toast
   "upload.cancel.done": "Upload canceled",
   "upload.cancel.error": "Failed to cancel upload. Please try again.",
+  "webdav.button.import": "Import from cloud",
+  "webdav.modal.title": "Connect a WebDAV cloud",
+  "bridge.status.ready":
+    "PrivCloud Companion {version} is ready for WebDAV imports.",
+  "bridge.status.enabled":
+    "PrivCloud Companion is enabled for this WebDAV session.",
+  "bridge.status.detected":
+    "PrivCloud Companion {version} detected. Enable it to avoid browser CORS limits.",
+  "bridge.status.proxyDefault":
+    "Server-side WebDAV proxy is used by default. Enable PrivCloud Companion only for local managed uploads.",
+  "bridge.status.unavailable":
+    "PrivCloud Companion is not detected. Direct import remains available if your WebDAV cloud allows CORS.",
+  "bridge.pair.start": "Enable",
+  "bridge.pair.code.label": "Pairing code",
+  "bridge.pair.confirm": "Confirm",
+  "bridge.toast.paired": "PrivCloud Companion enabled",
+  "bridge.error.updateRequired":
+    "PrivCloud Companion is detected, but this version does not support one-click enablement yet. Reinstall Companion from the Integrations page, then restart it.",
+  "bridge.error.badRequest": "Invalid Bridge request.",
+  "bridge.error.fileSelectionLimit":
+    "Companion accepts up to 1000 files per WebDAV batch. Select fewer files or start a second batch.",
+  "bridge.error.internal": "Internal Companion error.",
+  "bridge.error.localNetworkBlocked":
+    "The browser blocked access to the local Companion. Allow local network access for this site, or keep using the server-side WebDAV proxy.",
+  "bridge.error.jobNotFound": "Bridge job was not found or has expired.",
+  "bridge.error.staleJob":
+    "The previous Bridge transfer was stopped because it was no longer progressing.",
+  "bridge.error.tooManyJobs":
+    "Too many Bridge transfers are already active. Wait for an active transfer to finish, then try again.",
+  "webdav.endpoint.label": "WebDAV URL",
+  "webdav.username.label": "Username",
+  "webdav.password.label": "App password",
+  "webdav.connect": "Connect",
+  "webdav.disconnect": "Disconnect",
+  "webdav.import": "Import",
+  "webdav.back": "Back",
+  "webdav.refresh": "Refresh",
+  "webdav.openFolder": "Open folder",
+  "webdav.selectAll": "Select all",
+  "webdav.clearSelection": "Clear selection",
+  "webdav.footer.zeroPersistence":
+    "Credentials are kept only in this tab for the WebDAV session. Use Disconnect to forget them.",
+  "webdav.footer.zeroPersistence.bridge":
+    "Credentials are kept in this tab, then passed to the local Companion on your machine for encrypted upload.",
+  "webdav.toast.imported": "{count} file(s) imported",
+  "webdav.toast.disconnected": "WebDAV session disconnected",
+  "webdav.warning.quota":
+    "The selection exceeds the available limit for this share.",
+  "webdav.warning.maxFiles":
+    "You selected more than 20 files without managed Bridge import. Import is still allowed, but it can use a lot of browser memory.",
+  "webdav.warning.largeFiles":
+    "Some files are larger than {max}. Import is still allowed, but it can take a long time and depends on the browser's available memory.",
+  "webdav.error.https": "Use an HTTPS WebDAV URL.",
+  "webdav.error.auth": "WebDAV authentication was rejected.",
+  "webdav.error.cors":
+    "The browser blocked the WebDAV connection. Enable CORS on the WebDAV server or use a local connector.",
+  "webdav.error.directory": "Cannot import a folder directly.",
+  "webdav.error.invalidXml": "Invalid WebDAV response.",
+  "webdav.error.redirectRefused": "WebDAV redirect was refused.",
+  "webdav.error.sameOriginRequired":
+    "The WebDAV resource must stay on the same domain as the connected endpoint.",
+  "webdav.error.upstream": "The remote WebDAV server refused the request.",
+  "webdav.error.generic": "WebDAV error.",
   // END /upload
 
   // /share/[id]
@@ -1500,6 +1563,9 @@ export default {
   "signing.modal.error.no-recipients": "Add at least one signer",
   "signing.modal.notify.success": "Signature request sent successfully",
   "signing.modal.notify.error": "Failed to send signature request",
+  "signing.option.e2e-key-email": "Send the E2E key in a second email",
+  "signing.option.e2e-key-email.desc":
+    "The main link stays keyless. The key is sent separately to signers and approvers; convenient, but less isolated than another secure channel.",
 
   // Signing pages - index
   "signing.my-signatures": "My signatures",
@@ -1696,7 +1762,7 @@ export default {
   "admin.teams.modal.role": "Role",
   "admin.teams.modal.confirm-add": "Add member",
   "admin.teams.modal.max-members": "Configure max members",
-  "admin.teams.modal.max-members-label": "Maximum members before extra billing",
+  "admin.teams.modal.max-members-label": "Maximum members (0 = unlimited)",
   "admin.teams.modal.confirm-max": "Save",
   "admin.teams.action.create": "Create a team",
   "admin.teams.created": "Team created successfully",
@@ -1837,7 +1903,7 @@ export default {
   "team.dashboard.tabs.folders": "Folders",
   "team.dashboard.tabs.activity": "Activity",
   "team.dashboard.tabs.signatures": "Signatures",
-  "team.dashboard.tabs.billing": "Billing",
+  "team.dashboard.tabs.limits": "Limits",
 
   "team.dashboard.metrics.storage": "Storage",
   "team.dashboard.metrics.members": "Members",

@@ -1,3 +1,2 @@
--- Add signing display options to SignatureDocument
-ALTER TABLE "SignatureDocument" ADD COLUMN "addApprovalMention" BOOLEAN NOT NULL DEFAULT true;
-ALTER TABLE "SignatureDocument" ADD COLUMN "addInitials" BOOLEAN NOT NULL DEFAULT false;
+-- No-op: columns included in consolidated CREATE TABLE (20260610120000)
+SELECT 1;

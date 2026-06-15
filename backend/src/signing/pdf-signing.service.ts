@@ -1,5 +1,4 @@
 import { Injectable, Logger } from "@nestjs/common";
-import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -150,9 +149,6 @@ export class PdfSigningService {
     if (!this.tsaUrl) return null;
 
     try {
-      // Create a TimeStampReq (RFC 3161)
-      const nonce = crypto.randomBytes(8);
-
       // ASN.1 DER encoding of TimeStampReq
       // MessageImprint: hash algorithm OID (SHA-256) + hash value
       const sha256Oid = Buffer.from([
@@ -242,7 +238,7 @@ export class PdfSigningService {
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-    const { width, height } = page.getSize();
+    const { height } = page.getSize();
     let y = height - 60;
 
     // Header
@@ -423,7 +419,7 @@ export class PdfSigningService {
 
     // Position in bottom-right area
     const sigX = width - 250;
-    let sigY = 120;
+    const sigY = 120;
 
     if (addMention) {
       // "Lu et approuvé le ..."

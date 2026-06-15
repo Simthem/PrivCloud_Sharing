@@ -22,7 +22,7 @@ export type ReverseShare = {
   id: string;
   name?: string;
   maxShareSize: string;
-  /** min(creator plan limit, RS maxShareSize) -- computed by the API */
+  /** min(creator configured limit, RS maxShareSize) -- computed by the API */
   effectiveMaxShareSize?: string;
   shareExpiration: Date;
   token: string;

@@ -75,6 +75,7 @@ export default class _Document extends Document {
               serialized into __NEXT_DATA__ (saves ~120 kB in pageProps). */}
           <script
             id="__I18N__"
+            // eslint-disable-next-line react/no-danger
             dangerouslySetInnerHTML={{
               __html: __ssrI18nMessages
                 ? `self.__I18N__=JSON.parse(${JSON.stringify(JSON.stringify(__ssrI18nMessages)).replace(/</g, "\\u003c")})`

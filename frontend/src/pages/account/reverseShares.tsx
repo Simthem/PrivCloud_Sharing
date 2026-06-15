@@ -283,10 +283,10 @@ const MyShares = () => {
     },
   });
 
-  // Team plan upload limit (no billing)
-  const { data: planMaxShareSize } = useQuery({
+  // Configured upload limit
+  const { data: configuredMaxShareSize } = useQuery({
     queryKey: ["uploadLimit"],
-    queryFn: async () => ({ maxSize: 0, usedSize: 0 }), // 0 = no plan limit
+    queryFn: async () => ({ maxSize: 0, usedSize: 0 }), // 0 = no configured limit
     refetchInterval: Infinity,
     refetchOnWindowFocus: false,
   });
@@ -377,6 +377,7 @@ const MyShares = () => {
         unwrapRsKey(rs);
       }
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reverseShares]);
 
   const handleCopyReverseShareLink = async (reverseShare: MyReverseShare) => {
@@ -492,7 +493,7 @@ const MyShares = () => {
               config.get("smtp.enabled"),
               config.get("share.maxExpiration"),
               refetch,
-              planMaxShareSize?.maxSize,
+              configuredMaxShareSize?.maxSize,
             )
           }
           leftSection={<TbPlus size={20} />}

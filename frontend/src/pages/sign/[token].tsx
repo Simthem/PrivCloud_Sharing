@@ -51,7 +51,7 @@ const SignPage = () => {
 
   const [step, setStep] = useState(0);
   const [otpCode, setOtpCode] = useState("");
-  const [_otpVerified, setOtpVerified] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
   const [signatureImage, setSignatureImage] = useState<string | null>(null);
   const [signatureType, setSignatureType] = useState<"DRAW" | "TYPE" | "UPLOAD">("DRAW");
   const [rejecting, setRejecting] = useState(false);
@@ -83,9 +83,24 @@ const SignPage = () => {
     enabled: !!tokenStr,
   });
 
+  useEffect(() => {
+    if (!signingData?.recipient?.otpVerified) return;
+    setOtpVerified(true);
+    setStep((current) => (current < 2 ? 2 : current));
+  }, [signingData?.recipient?.otpVerified]);
+
   // E2E: fetch encrypted preview, decrypt client-side, create blob URL
   useEffect(() => {
-    if (!e2eKey || !tokenStr || !signingData?.document?.isE2EEncrypted) return;
+    const canPreviewDocument = otpVerified || !!signingData?.recipient?.otpVerified;
+    if (
+      !canPreviewDocument ||
+      step < 2 ||
+      !e2eKey ||
+      !tokenStr ||
+      !signingData?.document?.isE2EEncrypted
+    ) {
+      return;
+    }
     if (decryptedBlobUrl) return; // already done
 
     let cancelled = false;
@@ -115,7 +130,7 @@ const SignPage = () => {
         blobUrlRef.current = null;
       }
     };
-  }, [e2eKey, tokenStr, signingData]);
+  }, [e2eKey, tokenStr, signingData, otpVerified, step, decryptedBlobUrl]);
 
   // Cleanup blob URL on unmount
   useEffect(() => {
@@ -287,107 +302,35 @@ const SignPage = () => {
             />
           </Stepper>
 
-          {/* Step 0: View document & start OTP */}
+          {/* Step 0: Start identity verification */}
           {step === 0 && (
             <Stack gap="md">
               <Paper
                 withBorder
                 style={{
-                  height: isMobile ? 320 : 520,
+                  minHeight: isMobile ? 240 : 280,
                   overflow: "hidden",
                   background: "#f8f9fa",
                   borderRadius: "var(--mantine-radius-md)",
                 }}
               >
-                {sigDoc.isE2EEncrypted && e2eKey ? (
-                  // E2E: client-side decrypted preview
-                  decryptedBlobUrl ? (
-                    isMobile ? (
-                      <Stack align="center" justify="center" h="100%" gap="md" p="md">
-                        <TbPencil size={40} color="var(--mantine-color-blue-6)" />
-                        <Text size="sm" ta="center" c="dimmed">
-                          {intl.formatMessage({ id: "signing.mobile.pdf-e2e-unavailable" })}
-                        </Text>
-                        <Button
-                          variant="light"
-                          leftSection={<TbExternalLink size={16} />}
-                          component="a"
-                          href={decryptedBlobUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {intl.formatMessage({ id: "share.modal.file-preview.pdf-open" })}
-                        </Button>
-                      </Stack>
-                    ) : (
-                      <iframe
-                        src={decryptedBlobUrl}
-                        title="Apercu du document (E2E)"
-                        style={{ width: "100%", height: "100%", border: "none" }}
-                      />
-                    )
-                  ) : decryptError ? (
-                    <Center style={{ height: "100%" }}>
-                      <Alert color="red" title={intl.formatMessage({ id: "signing.mobile.decrypt-error-title" })}>
-                        {intl.formatMessage({ id: "signing.mobile.decrypt-error-description" })}
-                      </Alert>
-                    </Center>
-                  ) : (
-                    <Center style={{ height: "100%" }}>
-                      <Stack align="center" gap="xs">
-                        <Loader />
-                        <Text size="sm" c="dimmed">Dechiffrement du document...</Text>
-                      </Stack>
-                    </Center>
-                  )
-                ) : sigDoc.isE2EEncrypted && !e2eKey ? (
-                  // E2E but no key in fragment
-                  <Center style={{ height: "100%" }}>
-                    <Alert color="orange" icon={<TbLock />} title="Document chiffre">
-                      Ce document est protege par chiffrement de bout en bout.
-                      Le lien que vous avez recu semble incomplet (cle manquante).
-                    </Alert>
-                  </Center>
-                ) : tokenStr ? (
-                  // Non-E2E: direct server preview
-                  isMobile ? (
-                    <Stack align="center" justify="center" h="100%" gap="md" p="md">
-                      <TbPencil size={40} color="var(--mantine-color-blue-6)" />
-                      <Text size="sm" ta="center" c="dimmed">
-                        {intl.formatMessage({ id: "signing.mobile.view-before-sign" })}
-                      </Text>
-                      <Button
-                        variant="light"
-                        leftSection={<TbExternalLink size={16} />}
-                        component="a"
-                        href={signingService.getPreviewUrl(tokenStr)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {intl.formatMessage({ id: "share.modal.file-preview.pdf-open" })}
-                      </Button>
-                      <object
-                        data={signingService.getPreviewUrl(tokenStr)}
-                        type="application/pdf"
-                        style={{ width: "100%", height: "220px", border: "none" }}
-                      >
-                        <Text size="xs" c="dimmed" ta="center" mt="xs">
-                          {intl.formatMessage({ id: "signing.mobile.pdf-fallback-hint" })}
-                        </Text>
-                      </object>
-                    </Stack>
-                  ) : (
-                    <iframe
-                      src={signingService.getPreviewUrl(tokenStr)}
-                      title="Apercu du document"
-                      style={{ width: "100%", height: "100%", border: "none" }}
-                    />
-                  )
-                ) : (
-                  <Center style={{ height: "100%" }}>
-                    <Loader />
-                  </Center>
-                )}
+                <Center style={{ minHeight: isMobile ? 240 : 280 }} p="md">
+                  <Stack align="center" gap="sm" maw={520}>
+                    <TbLock size={44} color="var(--mantine-color-blue-6)" />
+                    <Title order={3} ta="center">
+                      Verification d'identite requise
+                    </Title>
+                    <Text size="sm" c="dimmed" ta="center">
+                      Pour proteger ce document, son contenu sera affiche
+                      uniquement apres verification de l'adresse email du
+                      signataire.
+                    </Text>
+                    <Text size="sm" ta="center">
+                      Un code a 6 chiffres sera envoye a{" "}
+                      <strong>{recipient.email}</strong>.
+                    </Text>
+                  </Stack>
+                </Center>
               </Paper>
 
               <Alert variant="light" color="blue" icon={<TbShieldCheck />}>
@@ -462,6 +405,103 @@ const SignPage = () => {
                 Identite verifiee. Vous pouvez maintenant apposer votre
                 signature.
               </Alert>
+
+              <Paper
+                withBorder
+                style={{
+                  height: isMobile ? 320 : 520,
+                  overflow: "hidden",
+                  background: "#f8f9fa",
+                  borderRadius: "var(--mantine-radius-md)",
+                }}
+              >
+                {sigDoc.isE2EEncrypted && e2eKey ? (
+                  decryptedBlobUrl ? (
+                    isMobile ? (
+                      <Stack align="center" justify="center" h="100%" gap="md" p="md">
+                        <TbPencil size={40} color="var(--mantine-color-blue-6)" />
+                        <Text size="sm" ta="center" c="dimmed">
+                          {intl.formatMessage({ id: "signing.mobile.pdf-e2e-unavailable" })}
+                        </Text>
+                        <Button
+                          variant="light"
+                          leftSection={<TbExternalLink size={16} />}
+                          component="a"
+                          href={decryptedBlobUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {intl.formatMessage({ id: "share.modal.file-preview.pdf-open" })}
+                        </Button>
+                      </Stack>
+                    ) : (
+                      <iframe
+                        src={decryptedBlobUrl}
+                        title="Apercu du document (E2E)"
+                        style={{ width: "100%", height: "100%", border: "none" }}
+                      />
+                    )
+                  ) : decryptError ? (
+                    <Center style={{ height: "100%" }}>
+                      <Alert color="red" title={intl.formatMessage({ id: "signing.mobile.decrypt-error-title" })}>
+                        {intl.formatMessage({ id: "signing.mobile.decrypt-error-description" })}
+                      </Alert>
+                    </Center>
+                  ) : (
+                    <Center style={{ height: "100%" }}>
+                      <Stack align="center" gap="xs">
+                        <Loader />
+                        <Text size="sm" c="dimmed">Dechiffrement du document...</Text>
+                      </Stack>
+                    </Center>
+                  )
+                ) : sigDoc.isE2EEncrypted && !e2eKey ? (
+                  <Center style={{ height: "100%" }}>
+                    <Alert color="orange" icon={<TbLock />} title="Document chiffre">
+                      Ce document est protege par chiffrement de bout en bout.
+                      Le lien que vous avez recu semble incomplet (cle manquante).
+                    </Alert>
+                  </Center>
+                ) : tokenStr ? (
+                  isMobile ? (
+                    <Stack align="center" justify="center" h="100%" gap="md" p="md">
+                      <TbPencil size={40} color="var(--mantine-color-blue-6)" />
+                      <Text size="sm" ta="center" c="dimmed">
+                        {intl.formatMessage({ id: "signing.mobile.view-before-sign" })}
+                      </Text>
+                      <Button
+                        variant="light"
+                        leftSection={<TbExternalLink size={16} />}
+                        component="a"
+                        href={signingService.getPreviewUrl(tokenStr)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {intl.formatMessage({ id: "share.modal.file-preview.pdf-open" })}
+                      </Button>
+                      <object
+                        data={signingService.getPreviewUrl(tokenStr)}
+                        type="application/pdf"
+                        style={{ width: "100%", height: "220px", border: "none" }}
+                      >
+                        <Text size="xs" c="dimmed" ta="center" mt="xs">
+                          {intl.formatMessage({ id: "signing.mobile.pdf-fallback-hint" })}
+                        </Text>
+                      </object>
+                    </Stack>
+                  ) : (
+                    <iframe
+                      src={signingService.getPreviewUrl(tokenStr)}
+                      title="Apercu du document"
+                      style={{ width: "100%", height: "100%", border: "none" }}
+                    />
+                  )
+                ) : (
+                  <Center style={{ height: "100%" }}>
+                    <Loader />
+                  </Center>
+                )}
+              </Paper>
 
               <Text fw={500} size="lg">
                 Apposer votre signature

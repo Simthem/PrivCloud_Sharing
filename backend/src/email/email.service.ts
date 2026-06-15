@@ -171,6 +171,26 @@ export class EmailService {
     );
   }
 
+  async sendTeamShareNotificationEmail(
+    recipientEmail: string,
+    teamName?: string,
+  ) {
+    const appUrl = this.config.get("general.appUrl");
+    const subject = this.config.get("email.teamShareNotificationSubject");
+
+    // E2EE team shares are zero-knowledge: the email never exposes the sender
+    // name or file name. Detailed metadata stays in the encrypted in-app feed.
+    const body = this.config
+      .get("email.teamShareNotificationMessage")
+      .replaceAll("\\n", "\n")
+      .replaceAll("{sender}", "A team member")
+      .replaceAll("{fileName}", "an encrypted file")
+      .replaceAll("{teamName}", teamName || "your team")
+      .replaceAll("{appUrl}", appUrl);
+
+    await this.sendMail(recipientEmail, subject, body);
+  }
+
   async sendDownloadDigest(
     recipientEmail: string,
     digest: string,

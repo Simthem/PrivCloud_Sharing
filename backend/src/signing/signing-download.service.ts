@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -109,6 +110,12 @@ export class SigningDownloadService {
       throw new BadRequestException("This signature request has expired");
     }
 
+    if (!recipient.otpVerified) {
+      throw new ForbiddenException(
+        "Identity verification (OTP) required before viewing this document",
+      );
+    }
+
     const buffer = await this.fileService.getFileByKey(recipient.document.originalFileKey);
     return { buffer, fileName: recipient.document.fileName };
   }
@@ -132,6 +139,12 @@ export class SigningDownloadService {
 
     if (recipient.document.status !== "COMPLETED" || !recipient.document.signedFileKey) {
       throw new BadRequestException("Le document signé n'est pas encore disponible. Veuillez réessayer dans quelques instants.");
+    }
+
+    if (!recipient.otpVerified) {
+      throw new ForbiddenException(
+        "Identity verification (OTP) required before downloading this document",
+      );
     }
 
     const buffer = await this.fileService.getFileByKey(recipient.document.signedFileKey);

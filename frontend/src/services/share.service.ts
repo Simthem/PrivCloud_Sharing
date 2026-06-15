@@ -42,6 +42,13 @@ const completeShare = async (id: string, e2eKey?: string) => {
   return response;
 };
 
+const createBridgeUploadToken = async (
+  id: string,
+  label?: string,
+): Promise<{ token: string; expiresAt: string }> => {
+  return (await api.post(`shares/${id}/bridge-upload-token`, { label })).data;
+};
+
 const revertComplete = async (id: string) => {
   return (await api.delete(`shares/${id}/complete`)).data;
 };
@@ -1024,6 +1031,7 @@ export default {
   list,
   create,
   completeShare,
+  createBridgeUploadToken,
   revertComplete,
   getShareToken,
   get,

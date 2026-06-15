@@ -20,6 +20,7 @@ import moment from "moment";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { AdministratorGuard } from "src/auth/guard/isAdmin.guard";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
+import { BridgeUploadTokenService } from "src/bridgeUpload/bridge-upload-token.service";
 import { AdminShareDTO } from "./dto/adminShare.dto";
 import { CreateShareDTO } from "./dto/createShare.dto";
 import { MyShareDTO } from "./dto/myShare.dto";
@@ -41,6 +42,7 @@ export class ShareController {
     private shareService: ShareService,
     private jwtService: JwtService,
     private config: ConfigService,
+    private bridgeUploadTokenService: BridgeUploadTokenService,
   ) {}
 
   @Get("all")
@@ -141,6 +143,18 @@ export class ShareController {
     return new CompletedShareDTO().from(
       await this.shareService.complete(id, reverse_share_token, body?.e2eKey),
     );
+  }
+
+  @Post(":id/bridge-upload-token")
+  @Throttle({ default: { limit: 120, ttl: 3600 } })
+  @UseGuards(ShareOwnerGuard)
+  async createBridgeUploadToken(
+    @Param("id", SafeIdPipe) id: string,
+    @GetUser() user: User,
+    @Body() body?: { label?: string },
+  ) {
+    if (!user) throw new UnauthorizedException();
+    return this.bridgeUploadTokenService.createToken(id, user.id, body?.label);
   }
 
   @Delete(":id/complete")

@@ -32,6 +32,14 @@ export class SigningController {
     private signingE2EService: SigningE2EService,
   ) {}
 
+  private setPublicSigningHeaders(res: Response) {
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+  }
+
   // =========================================================================
   // AUTHENTICATED ENDPOINTS (document creator)
   // =========================================================================
@@ -243,7 +251,11 @@ export class SigningController {
    * Authentication is via the signing token (URL parameter).
    */
   @Get("sign/:token")
-  async getSigningPage(@Param("token") token: string) {
+  async getSigningPage(
+    @Param("token") token: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.setPublicSigningHeaders(res);
     return this.signingService.getSigningPage(token);
   }
 
@@ -257,6 +269,7 @@ export class SigningController {
     @Res() res: Response,
   ) {
     const { buffer, fileName } = await this.signingDownloadService.getOriginalPdfForPreview(token);
+    this.setPublicSigningHeaders(res);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(fileName)}"`);
     res.setHeader("Content-Length", buffer.length);
@@ -273,6 +286,7 @@ export class SigningController {
     @Res() res: Response,
   ) {
     const { buffer, fileName } = await this.signingDownloadService.getSignedPdfByToken(token);
+    this.setPublicSigningHeaders(res);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(fileName)}"`);
     res.setHeader("Content-Length", buffer.length);
@@ -284,7 +298,11 @@ export class SigningController {
    */
   @Post("sign/:token/otp/send")
   @Throttle({ default: { limit: 3, ttl: 60 } })
-  async sendOtp(@Param("token") token: string) {
+  async sendOtp(
+    @Param("token") token: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.setPublicSigningHeaders(res);
     return this.signingOtpService.sendOtp(token);
   }
 
@@ -296,7 +314,9 @@ export class SigningController {
   async verifyOtp(
     @Param("token") token: string,
     @Body() dto: VerifyOtpDTO,
+    @Res({ passthrough: true }) res: Response,
   ) {
+    this.setPublicSigningHeaders(res);
     return this.signingOtpService.verifyOtp(token, dto.otpCode);
   }
 
@@ -304,13 +324,16 @@ export class SigningController {
    * Sign the document.
    */
   @Post("sign/:token/sign")
+  @Throttle({ default: { limit: 5, ttl: 60 } })
   async signDocument(
     @Param("token") token: string,
     @Body() dto: SignDocumentDTO,
     @Ip() ip: string,
     @Headers("x-forwarded-for") forwardedFor: string,
     @Headers("user-agent") userAgent: string,
+    @Res({ passthrough: true }) res: Response,
   ) {
+    this.setPublicSigningHeaders(res);
     // Use the first IP from X-Forwarded-For if available (real client IP behind proxy)
     const clientIp = forwardedFor
       ? forwardedFor.split(",")[0].trim()
@@ -322,13 +345,16 @@ export class SigningController {
    * Reject the document.
    */
   @Post("sign/:token/reject")
+  @Throttle({ default: { limit: 5, ttl: 60 } })
   async rejectDocument(
     @Param("token") token: string,
     @Body() dto: RejectDocumentDTO,
     @Ip() ip: string,
     @Headers("x-forwarded-for") forwardedFor: string,
     @Headers("user-agent") userAgent: string,
+    @Res({ passthrough: true }) res: Response,
   ) {
+    this.setPublicSigningHeaders(res);
     const clientIp = forwardedFor
       ? forwardedFor.split(",")[0].trim()
       : ip;

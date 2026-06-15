@@ -31,9 +31,8 @@ const TeamsIndexPage = () => {
   useEffect(() => {
     if (user === null) {
       router.replace("/auth/signIn?redirect=/team");
-    } else if (user && user.plan !== "TEAM" && !user.isAdmin && !user.hasTeamMembership) {
-      router.replace("/pricing");
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const { data: teams, isLoading } = useQuery({

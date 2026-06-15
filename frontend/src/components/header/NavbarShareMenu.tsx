@@ -1,9 +1,10 @@
 import { Collapse, Menu, UnstyledButton } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import Link from "next/link";
-import { TbArrowLoopLeft, TbChevronRight, TbLink } from "react-icons/tb";
+import { TbArrowLoopLeft, TbChevronRight, TbLink, TbSend, TbSignature } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import { useStyles } from "./Header.styles";
+import useUser from "../../hooks/user.hook";
 
 const NavbarShareMneu = ({
   onNavigate,
@@ -14,6 +15,9 @@ const NavbarShareMneu = ({
 }) => {
   const { classes, cx } = useStyles();
   const [expanded, { toggle }] = useDisclosure(false);
+  const { user } = useUser();
+
+  const showSignature = user?.hasTeamMembership;
 
   if (mobile) {
     return (
@@ -39,7 +43,7 @@ const NavbarShareMneu = ({
             onClick={onNavigate}
             className={cx(classes.link, classes.withIcon, classes.subLink)}
           >
-            <TbLink size={14} />
+            <TbSend size={14} />
             <FormattedMessage id="navbar.links.shares" />
           </Link>
           <Link
@@ -50,6 +54,18 @@ const NavbarShareMneu = ({
             <TbArrowLoopLeft size={14} />
             <FormattedMessage id="navbar.links.reverse" />
           </Link>
+          {showSignature && (
+            <Link
+              href="/signing"
+              onClick={onNavigate}
+              className={cx(classes.link, classes.withIcon, classes.subLink)}
+            >
+              <TbSignature size={14} />
+              <span style={{ marginLeft: 4 }}>
+                <FormattedMessage id="navbar.links.signatures" />
+              </span>
+            </Link>
+          )}
         </Collapse>
       </>
     );
@@ -75,6 +91,16 @@ const NavbarShareMneu = ({
         >
           <FormattedMessage id="navbar.links.reverse" />
         </Menu.Item>
+        {showSignature && (
+          <Menu.Item
+            component={Link}
+            href="/signing"
+            leftSection={<TbSignature />}
+            onClick={onNavigate}
+          >
+            <FormattedMessage id="navbar.links.signatures" />
+          </Menu.Item>
+        )}
       </Menu.Dropdown>
     </Menu>
   );

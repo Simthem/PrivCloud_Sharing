@@ -23,9 +23,7 @@ interface HCaptchaResponse {
 // we must use undici.fetch() from the npm package so that dispatcher and
 // fetch come from the same codebase - guaranteed compatible.
 //
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let proxyDispatcher: any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let undiciModule: any;
 
 const proxyUrl =
@@ -37,7 +35,6 @@ const proxyUrl =
 
 if (proxyUrl) {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     undiciModule = require("undici");
     proxyDispatcher = new undiciModule.ProxyAgent(proxyUrl);
   } catch {

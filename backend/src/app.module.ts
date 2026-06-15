@@ -9,6 +9,7 @@ import { AppCacheModule } from "./cache/cache.module";
 import { AppController } from "./app.controller";
 import { ClamScanModule } from "./clamscan/clamscan.module";
 import { ConfigModule } from "./config/config.module";
+import { CryptoModule } from "./crypto/crypto.module";
 import { DownloadNotificationModule } from "./downloadNotification/downloadNotification.module";
 import { EmailModule } from "./email/email.module";
 import { FileModule } from "./file/file.module";
@@ -20,7 +21,9 @@ import { ReverseShareModule } from "./reverseShare/reverseShare.module";
 import { ShareModule } from "./share/share.module";
 import { SigningModule } from "./signing/signing.module";
 import { TeamModule } from "./team/team.module";
+import { TeamNotificationModule } from "./teamNotification/teamNotification.module";
 import { UserModule } from "./user/user.module";
+import { WebDavModule } from "./webdav/webdav.module";
 
 @Module({
   imports: [
@@ -47,6 +50,9 @@ import { UserModule } from "./user/user.module";
     PushModule,
     SigningModule,
     TeamModule,
+    TeamNotificationModule,
+    CryptoModule,
+    WebDavModule,
   ],
   controllers: [AppController],
   providers: [

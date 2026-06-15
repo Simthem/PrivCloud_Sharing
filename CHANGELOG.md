@@ -1,3 +1,392 @@
+## [1.23.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.22.3...v1.23.0) (2026-06-15)
+
+This public release intentionally aggregates the open-source-compatible work
+that existed across private SaaS releases after `v1.22.3`. The intermediate
+private versions were not published as public tags, so the public version jumps
+directly from `v1.22.3` to `v1.23.0` with one coherent changelog entry.
+
+### Features
+
+* **crypto -- E2EE identity, grants and PQ-ready key layer:**
+  added the public `CryptoModule` with identity-key, access-grant and enrollment
+  APIs; new Prisma models store X25519/Ed25519 identity keys, encrypted
+  per-recipient DEK grants, one-time enrollment tokens and ML-KEM public keys so
+  team sharing can remain zero-knowledge while preparing post-quantum key
+  exchange metadata
+
+* **crypto -- grant lifecycle for shares, files and team files:**
+  added single and bulk grant creation, grant listing for the current user,
+  grant lookups by file/team-file, grant revocation, full file/team-file grant
+  cleanup and team-share grant discovery endpoints; grants accept both
+  `x25519-aes256gcm` and `x25519-ml-kem-768-aes256gcm` algorithm identifiers
+
+* **crypto -- enrollment token workflow:**
+  added authenticated creation, consumption, listing and revocation of
+  onboarding/team-join/device-add enrollment tokens with bounded expiry windows
+  and optional metadata
+
+* **crypto -- client services and team E2E share modal:**
+  added front-end crypto service calls and the `E2EShareModal` so public team
+  users can manage encrypted access grants from the UI
+
+* **team -- full public collaboration sync restored:**
+  synced team folders, team shares, member access, file access, E2EE team-key
+  handling, key rotation, `canShareE2E`, signature permissions, activity logs,
+  guest links and multi-team status plumbing so the open-source build carries
+  the same collaboration workflow without commercial gates
+
+* **team -- configurable instance limits instead of fixed plan limits:**
+  team ownership, member, folder, share-size and storage limits now come from
+  instance configuration; `0` means unlimited where applicable, and compose
+  examples document `TEAM_MAX_MEMBERS`, `TEAM_MAX_OWNED_TEAMS`,
+  `TEAM_MAX_FOLDERS`, `TEAM_MAX_SHARE_SIZE` and `TEAM_TOTAL_STORAGE_BYTES`
+
+* **team -- push notification preferences:**
+  added per-member `pushNotifMode` with `EVERY_FILE` and `SHARES_ONLY`, a
+  `/api/teams/:teamId/my-preferences` endpoint, and a settings UI segmented
+  control so each member can choose how noisy team push alerts should be
+
+* **team -- notification feed for the public build:**
+  added `TeamNotificationModule`, persisted notification records, unread-count
+  API, mark-read/mark-all-read/delete endpoints, encrypted metadata support and
+  a header notification panel for team users on desktop and mobile; stale SSE
+  clients receive a `204` compatibility stub while the UI uses bounded polling
+  plus Web Push
+
+* **team -- SMTP-optional invitations:**
+  team invitations no longer fail when SMTP is disabled; the invitation token is
+  still generated and returned so self-hosted admins can share it manually
+
+* **team -- admin maintenance tools:**
+  added admin-safe member-role updates, configurable max-member updates,
+  improved admin folder rename/delete logging and E2EE grant revocation when a
+  member is removed
+
+* **signing -- public recipient links without account registration:**
+  `/sign/*` links now open as a public recipient flow; email OTP verification
+  gates PDF preview, signing, rejection and signed-PDF download so external
+  signers do not need to register an account before signing
+
+* **signing -- optional separate E2E key email:**
+  the signature request modal and `/signing/new` page now expose a default-off
+  checkbox allowing the sender to email the E2E decryption key separately from
+  the personal signing link; the main invitation remains keyless, the second
+  email only contains the `#key=...` fragment and explanatory instructions, and
+  the key is not persisted server-side
+
+* **signing -- team-aware request creation:**
+  `/signing/new` resolves the selected team's wrapped key, sends the matching
+  `teamId`, marks encrypted team documents correctly and lets the backend
+  validate active membership plus folder/file signature permissions before
+  creating the request
+
+* **upload -- WebDAV/Nextcloud import in the public build:**
+  the public upload page now exposes a WebDAV import modal for authenticated
+  users without any paid-tier gate, including directory browsing, file
+  selection, quota warnings, large-file warnings, connection reset/disconnect
+  state and English/French translations
+
+* **upload -- authenticated server-side WebDAV proxy:**
+  added `/api/webdav/list` and `/api/webdav/download` for JWT-protected HTTPS
+  PROPFIND/GET proxying; the proxy rejects credentials embedded in URLs,
+  refuses private IP literals, keeps target URLs on the configured origin and
+  streams downloads back to the browser
+
+* **bridge -- local Companion managed upload flow:**
+  added share-scoped `BridgeUploadToken` storage, migration
+  `20260718110000_add_bridge_upload_tokens`, `BridgeUploadModule`, token
+  creation via `POST /api/shares/:id/bridge-upload-token`, and Bridge chunk
+  uploads via `POST /api/shares/:shareId/files/bridge`; tokens are hashed,
+  short-lived, owner-scoped and avoid forwarding browser cookies to the local
+  Companion
+
+* **bridge -- Companion WebDAV upload jobs:**
+  added a local Node-based Companion with Native Messaging templates, pairing,
+  health/token endpoints, WebDAV listing, managed encrypted upload jobs,
+  per-file progress, stale-job cleanup and browser-side services for job
+  start/progress polling
+
+* **integrations -- publishable browser, mail and desktop scaffolds:**
+  added browser extension, Thunderbird extension, Outlook add-in, Google
+  Workspace add-on, desktop Native Messaging templates, Linux/macOS/Windows
+  registration helpers and publishing documentation with instance-neutral
+  placeholder domains
+
+* **integrations -- install assets exposed by the Docker image:**
+  the runtime image now publishes integration and Companion sources under
+  `/install/...` so self-hosted instances can distribute the browser/mail
+  extensions and Native Messaging host templates from their own deployment
+
+
+### Performance
+
+* **upload -- configurable memory and throughput knobs:**
+  upload raw-body limits now follow `UPLOAD_MAX_CHUNK_BYTES`, S3 multipart
+  concurrency follows `S3_MAX_CONCURRENT_UPLOADS`, and backend V8 heap sizing
+  follows `NODE_MAX_OLD_SPACE_SIZE`; compose examples expose these knobs and
+  `entrypoint.sh` applies the configured V8 heap size
+
+* **push -- bounded parallel delivery:**
+  Web Push notifications are now sent with per-endpoint timeouts and parallel
+  settlement, preventing one slow or stale subscription from delaying the rest
+  of the recipient fan-out
+
+* **team -- faster notification creation:**
+  team notifications are batched with `createMany`, folder access is loaded in
+  the member query, and push fan-out is dispatched in parallel after the DB
+  records are created
+
+* **upload -- safer chunk validation and caching:**
+  chunk indexes, chunk counts and client-provided chunk sizes are validated
+  before upload processing; configured share limits are cached briefly per
+  share and invalidated on completion
+
+* **storage -- streaming and path hardening for local files:**
+  local file reads keep the 1 MiB stream high-water mark, while all share/file
+  paths now resolve through a share-root guard to avoid traversal and accidental
+  writes outside the share directory
+
+* **frontend -- upload batching through Companion:**
+  WebDAV files using the same remote credentials are grouped into a single
+  Companion upload job, avoiding one local job per file and reducing browser
+  memory pressure for large imports
+
+
+### Security
+
+* **auth -- refresh sessions hardened and kept persistent:**
+  refresh tokens are now stored as HMAC hashes with legacy-token fallback,
+  refresh replay is accepted only inside a short grace window, cookie paths are
+  explicit, front-end refresh calls are coalesced, and OAuth logout redirects
+  are validated before use
+
+* **auth -- tokens removed from response bodies:**
+  sign-up, sign-in, TOTP, password reset and refresh endpoints now rely on
+  HttpOnly cookies instead of returning access/refresh tokens in JSON bodies
+
+* **auth -- reset-password email moved out of the URL:**
+  password reset requests now use `POST /api/auth/resetPassword/request` with
+  the email in the body so addresses are not written into reverse-proxy access
+  logs
+
+* **signing -- public recipient links hardened without account friction:**
+  `/sign/*` is now treated as a public no-login flow, while PDF preview,
+  signing, rejection and signed-PDF download all require email OTP verification;
+  signing pages and public signing API/PDF responses now emit no-store and
+  `X-Robots-Tag: noindex, nofollow, noarchive`, `Referrer-Policy: no-referrer`
+  and `X-Content-Type-Options: nosniff` headers
+
+* **signing -- OTP flow tightened:**
+  OTP send/verify is now refused for expired, non-pending or already-processed
+  recipients, and sign/reject actions reject repeated or stale recipient states
+
+* **webdav -- SSRF and credential safeguards:**
+  the server-side WebDAV proxy accepts HTTPS only, refuses URL-embedded
+  credentials, blocks explicit private/loopback IP literals, requires same
+  origin between the endpoint and target href, and rate-limits list/download
+  requests
+
+* **upload -- Bridge upload tokens hardened:**
+  Companion upload tokens use random `pcbu_` secrets, SHA-256 hashes at rest,
+  owner checks, 12-hour expiry, revoked/expired/upload-locked checks and a
+  separate bearer-auth upload endpoint
+
+* **storage -- path traversal mitigations:**
+  local storage operations reject unsafe share/file segments, null bytes,
+  slash/backslash separators and `..` sequences before resolving paths inside
+  the share root
+
+* **team -- stricter DTO validation:**
+  team DTOs now validate roles, frequencies, permissions, ids, guest-link
+  bounds, bulk file access sizes and wrapped key formats with explicit
+  `class-validator` constraints
+
+* **team -- admin invitation privilege check:**
+  only team owners can invite new admins; non-owner admins can still invite
+  regular members
+
+* **team -- E2EE grants revoked on member removal:**
+  removing a member deactivates the membership and revokes active encrypted
+  access grants for matching team files, team-folder shares and underlying
+  files
+
+* **email -- zero-knowledge team share notifications:**
+  team share notification emails use generic wording for encrypted team shares
+  and keep detailed metadata inside the encrypted in-app notification feed
+
+* **runtime -- proxy credentials masked in logs:**
+  backend proxy bootstrap still routes native `fetch()` through undici
+  `ProxyAgent`, but logs only a sanitized proxy URL without username or
+  password
+
+* **docker -- Go 1.26.4 and patched Go module metadata:**
+  Caddy and gosu builder stages now use Go 1.26.4; `gosu` is built from source
+  with `golang.org/x/sys@v0.44.0`, covering the Go toolchain fixes for
+  CVE-2026-42504, CVE-2026-27145 and CVE-2026-42507, and fixing Docker Scout
+  reporting for CVE-2026-39824 in `pkg:golang/golang.org/x/sys`
+
+
+### Bug Fixes
+
+* **signing -- SignatureDocument legacy column compatibility restored:**
+  signature request creation now writes `title` from the PDF file name and
+  mirrors the original storage key into `fileKey` and the requester into
+  `ownerId`, so existing databases with non-null legacy
+  `SignatureDocument.title`, `SignatureDocument.fileKey` or
+  `SignatureDocument.ownerId` columns do not reject new requests with a Prisma
+  null constraint violation; startup now adds the compatibility columns when
+  they are missing from older SQLite databases
+
+* **signing -- fresh public migrations create compatibility columns:**
+  the consolidated signing/team migration now creates
+  `SignatureDocument.title`, `SignatureDocument.fileKey` and
+  `SignatureDocument.ownerId`, signing options and E2E flags directly; later
+  migrations for those same columns are no-ops so fresh SQLite installs do not
+  fail on duplicate columns
+
+* **signing -- email delivery no longer blocks request creation:**
+  signing invitations, CC notifications, reminders and optional E2E-key emails
+  catch delivery errors, log warnings and return `emailDeliveryFailures` to the
+  UI instead of failing the whole signature request
+
+* **signing -- recipient UI hides protected fields until OTP:**
+  public signing pages now start with an identity verification step, unlock PDF
+  preview only after OTP verification and preserve E2E preview decryption until
+  the recipient has the key and is verified
+
+* **team -- public header notifications wired back in:**
+  the public header now renders the team notification panel for team users on
+  both desktop and mobile viewports, while non-team users keep the existing
+  notification bell; team notification refresh uses bounded polling with
+  no-store responses, while `/team-notifications/events` returns a no-content
+  compatibility response for stale browser clients
+
+* **team -- storage usage now reflects real files:**
+  team status now computes total and personal storage usage from completed
+  team-folder shares and classic member shares instead of relying only on a
+  stored counter
+
+* **team -- folder and signature permissions scoped correctly:**
+  signable team files and signature permission checks now restrict file-level
+  access to files inside the current team, preventing cross-team permission
+  leakage
+
+* **team -- folder limits can be unlimited:**
+  the team dashboard disables the new-folder button only when a positive
+  configured folder limit exists; public self-hosted instances can leave folder
+  count unlimited
+
+* **upload -- Companion loopback compatibility restored:**
+  WebDAV import now reuses an existing Companion token when the modal opens,
+  avoids browser-side private-network address-space hints that break loopback
+  requests in Chromium, and refreshes Companion health only after successful
+  bridge usage or explicit enablement
+
+* **upload -- reverse-share and public quota wording fixed:**
+  upload and reverse-share screens now refer to configured instance limits
+  rather than plan quotas, and reverse-share uploads continue to respect the
+  reverse-share owner/link limits instead of the current visitor
+
+* **share -- previews enabled by default in the public build:**
+  public share responses now enable preview without checking commercial plan
+  fields
+
+* **auth -- session cookies clear reliably on logout and account deletion:**
+  sign-out and account deletion now clear `access_token`, `refresh_token` and
+  `logged_in` with explicit cookie paths
+
+* **frontend -- Next middleware removed from public routing:**
+  the tracked Next middleware file was removed so routing no longer depends on
+  an edge-runtime JWT/config parser; client-side refresh can restore sessions
+  without premature server-side redirects
+
+* **lint -- TypeScript warnings fixed:**
+  removed unused imports/directives and changed the PDF signing `sigY` binding
+  to `const`, allowing backend lint to pass cleanly
+
+
+### Open Source Hygiene
+
+* **public defaults -- configurable examples without proprietary gates:**
+  compose examples describe optional admin-defined collaboration/storage
+  limits, legal seed defaults use generic placeholders, and public integration
+  packages avoid private image tags; upload-limit wording now refers to
+  configured instance policy instead of commercial tiers
+
+* **public UI/API -- full feature defaults without exposed tier controls:**
+  admin user forms no longer expose tier selectors, preview is enabled by
+  default, team access checks no longer depend on user tier fields, and
+  compatibility renewal metadata is no longer returned by user endpoints
+
+* **public user management -- full-access language:**
+  admin user tables and translations now show full access/usage wording instead
+  of subscription, renewal, billing or plan selectors
+
+* **public Dockerfile -- private cache image references removed:**
+  OpenSSL and Node builder cache images are now configurable with public ARGs
+  instead of hard-coded private image names
+
+* **public teams -- billing API removed from front-end service:**
+  public team service types no longer expose seat purchase or checkout helpers;
+  team metrics report limits rather than billing metadata
+
+* **public tree -- remove stale backup sources:**
+  removed the tracked `frontend/src/pages/signing/index.tsx_orig` backup file
+  so old tier-redirection code is not published with the open-source sources
+
+* **public repo -- ignored local helper artifacts documented:**
+  `.gitignore` now keeps local commit message drafts and cache Dockerfiles out
+  of normal publication unless they are intentionally force-added
+
+
+### Dependencies
+
+* **cve -- fixed since public `origin/main` 536d312:**
+  the public delta from the last pushed release explicitly addresses
+  CVE-2026-42504, CVE-2026-27145 and CVE-2026-42507 by moving the Caddy and
+  gosu builder toolchains from `golang:1.26.3-alpine` to
+  `golang:1.26.4-alpine`; CVE-2026-39824 by pinning
+  `golang.org/x/sys@v0.44.0` in the Caddy/gosu Go module metadata; and
+  CVE-2026-45149 by moving the backend `brace-expansion` override from
+  `>=5.0.5` to `>=5.0.6`
+
+* **backend -- vulnerability override refresh:**
+  backend overrides now include `hono>=4.12.21`, `qs>=6.15.2`,
+  `brace-expansion>=5.0.6`, `ajv` override alignment, `postman-runtime` jose
+  pinning and existing vulnerable transitive pins for tar, multer, minimatch,
+  picomatch, validator, node-forge, lodash and related tooling
+
+* **backend -- non-CVE advisory carried into runtime deps:**
+  `qs` is now forced to `>=6.15.2` in the backend runtime override as well as
+  the docs toolchain; the known `qs.stringify` crash advisory tracked by
+  Dependabot `qs#67` has no CVE assigned
+
+* **frontend -- Next/ESLint tooling migration:**
+  front-end linting moved from the legacy `.eslintrc.json` to flat
+  `eslint.config.mjs`, with `eslint@9`, `eslint-config-next@16.2.6` and
+  `@next/eslint-plugin-next@16.2.6`
+
+* **package install policy -- allowed native scripts declared:**
+  backend and frontend package manifests now declare explicit `allowScripts`
+  entries for required native/build-time packages such as Prisma, sharp,
+  argon2, better-sqlite3 and unrs-resolver
+
+
+### Developer Experience
+
+* **integrations -- publishing documentation:**
+  added README and publishing guides for browser extension, Thunderbird,
+  Outlook, Google Workspace and desktop Native Messaging distribution
+
+* **bridge -- local development package:**
+  added a standalone `bridge/package.json`, Companion README and platform
+  registration templates for Chrome/Chromium and Firefox
+
+* **i18n -- public wording expanded:**
+  English and French translations now cover WebDAV import, Companion pairing,
+  Bridge errors, optional signing key email, public usage wording and team
+  limit labels
+
 ## [1.22.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.22.2...v1.22.3) (2026-05-23)
 
 
@@ -105,11 +494,11 @@
 * **team/settings -- mobile responsive member list:**
   member table switches to card layout on screens narrower than 680 px
 
-* **self-hosted -- unlimited TEAM plan for all users, Stripe removed:**
-  all users unconditionally assigned `plan=TEAM`; no billing endpoints, no
-  plan-based upload size or expiration limits unless configured via environment
-  variables; `showHomePage` now defaults to `true`; admin UI shows TEAM for all
-  users without billing tab or renewal date
+* **self-hosted -- full feature defaults for all users:**
+  all users receive the open collaboration feature set; no commercial endpoints
+  and no upload size or expiration limits unless configured via environment
+  variables; `showHomePage` now defaults to `true`; admin UI no longer shows
+  renewal metadata
 
 
 ### Bug Fixes
@@ -155,12 +544,12 @@
 
 * **migration -- Prisma chain repaired (non-destructive, no data loss):**
   removed `20260522150000_remove_saas_fields` which always failed on both
-  fresh installs and upgrades (Subscription already dropped by
-  `20260512125117`, Team not yet created); Stripe columns removed directly
-  from source migrations instead; the Docker entrypoint now automatically
-  detects the stuck FAILED record in `_prisma_migrations` and marks it as
-  `rolled_back_at` before `prisma migrate deploy` runs -- existing production
-  databases upgrade without any manual intervention or data loss
+  fresh installs and upgrades (legacy compatibility fields already handled by
+  `20260512125117`, Team not yet created); commercial columns are removed
+  directly from source migrations instead; the Docker entrypoint now
+  automatically detects the stuck FAILED record in `_prisma_migrations` and
+  marks it as `rolled_back_at` before `prisma migrate deploy` runs -- existing
+  production databases upgrade without any manual intervention or data loss
 
 
 ### Security
@@ -180,10 +569,10 @@
   added expiry check, wrapped in `prisma.$transaction()`, and invalidated all
   existing sessions on success
 
-* **CRITICAL -- PlanGuard invitation bypass (CWE-863):**
-  `plan.guard.ts` allowed any user with a PENDING team invitation to pass
-  `@RequirePlan` checks; removed the `pendingInvite` lookup block -- only
-  active team members now get elevated access
+* **CRITICAL -- invitation access bypass (CWE-863):**
+  legacy access checks allowed any user with a PENDING team invitation to pass
+  gated team routes; removed the `pendingInvite` lookup block -- only active
+  team members now get elevated access
 
 * **HIGH -- JWT decode bypass in signOut (CWE-347):**
   `jwtService.decode()` (no signature verification) was used as fallback when
@@ -1158,7 +1547,7 @@
   `complete()` flow only sends the email when `sendEmailNotification` is true and
   the uploader has no account, but the creator email lookup requires the reverse
   share relation which may not resolve the creator email correctly in this path
-* sharing without any account is currently possible ONLY by sharing link by user 
+* sharing without any account is currently possible ONLY by sharing link by user
   himself
 * **reverse-share:** editing a reverse share expiration does not pre-fill the
   previously chosen date -- the edit modal always starts with default values
@@ -2757,4 +3146,3 @@
 * system test github action ([a2c9755](https://github.com/stonith404/pingvin-share/commit/a2c9755756932086c63a282330f80e410137b1d9))
 * upload volume path ([7522221](https://github.com/stonith404/pingvin-share/commit/7522221ee163cb0bd6144e7b924c77065f223fb9))
 * wrong environment configuration for `ALLOW_REGISTRATION` ([759db40](https://github.com/stonith404/pingvin-share/commit/759db40ac9f42ff71a795ceec521a7f9531d71c9))
-

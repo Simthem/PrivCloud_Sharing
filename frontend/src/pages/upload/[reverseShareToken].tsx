@@ -45,6 +45,7 @@ const Share = ({ reverseShareToken }: { reverseShareToken: string }) => {
     } else {
       showErrorModal(modals, t("common.error"), t("common.error.unknown"));
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [error]);
 
   if (isLoading) return <LoadingOverlay visible />;

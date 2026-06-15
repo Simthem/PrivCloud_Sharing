@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-frontend",
-  "version": "1.22.3",
+  "version": "1.23.0",
   "scripts": {
     "dev": "next dev",
     "prebuild": "sh scripts/strip-legacy-polyfills.sh",
@@ -48,15 +48,16 @@
     "yup": "^1.4.0"
   },
   "devDependencies": {
+    "@next/eslint-plugin-next": "^16.2.6",
     "@tanstack/react-query-devtools": "^5.83.0",
     "@types/mime-types": "^2.1.4",
     "@types/node": "^25.8.0",
     "@types/react": "18.3.7",
     "@types/react-dom": "18.3.0",
-    "@typescript-eslint/parser": "^8.6.0",
+    "@typescript-eslint/parser": "^8.60.0",
     "axios": "^1.16.0",
-    "eslint": "8.57.0",
-    "eslint-config-next": "^15.0.8",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.6",
     "eslint-config-prettier": "^9.1.0",
     "postcss": ">=8.5.10",
     "prettier": "^3.3.3",
@@ -64,23 +65,20 @@
   },
   "overrides": {
     "postcss": ">=8.5.10",
-    "minimatch": "^10.2.3",
     "serialize-javascript": "^7.0.3",
-    "glob": "^10.5.0",
     "tar": "^7.5.10",
     "diff": "^8.0.3",
-    "picomatch": ">=4.0.4",
-    "brace-expansion": ">=5.0.5",
-    "eslint-config-next": {
-      "@next/eslint-plugin-next": {
-        "glob": "^10.5.0"
-      }
-    }
+    "picomatch": ">=4.0.4"
   },
   "browserslist": [
     "last 2 Chrome versions",
     "last 2 Firefox versions",
     "last 2 Safari versions",
     "last 2 Edge versions"
-  ]
+  ],
+  "allowScripts": {
+    "sharp@0.34.5": true,
+    "sharp@0.33.5": true,
+    "unrs-resolver@1.11.1": true
+  }
 }

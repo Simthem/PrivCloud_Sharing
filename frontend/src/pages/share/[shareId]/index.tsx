@@ -203,6 +203,7 @@ const Share = ({ shareId }: { shareId: string }) => {
         "go-home",
       );
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [error]);
 
   return (

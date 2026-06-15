@@ -281,7 +281,6 @@ const ImagePreview = () => {
       : `/api/shares/${shareId}/files/${fileId}?download=false`;
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
     <img
       src={src}
       alt={`${fileId}_preview`}

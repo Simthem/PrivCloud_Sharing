@@ -1,5 +1,6 @@
 import { ActionIcon, Anchor, Box, Group, SimpleGrid, Stack, Text } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
+import Link from "next/link";
 import { TbBrandGithub, TbBrandLinkedin } from "react-icons/tb";
 import useConfig from "../../hooks/config.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
@@ -127,6 +128,11 @@ const Footer = () => {
                 )}
               </Text>
             )}
+            <Text size="sm" c="dimmed" fw={500} ta="right" mt={2}>
+              <Anchor component={Link} size="sm" href="/integrations">
+                Intégrations
+              </Anchor>
+            </Text>
             <Group gap="xs" justify="flex-end" mt={4}>
               <ActionIcon
                 component="a"

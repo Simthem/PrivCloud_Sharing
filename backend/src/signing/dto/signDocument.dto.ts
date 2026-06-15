@@ -1,5 +1,4 @@
 import {
-  IsBase64,
   IsIn,
   IsOptional,
   IsString,

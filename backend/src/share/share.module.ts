@@ -1,5 +1,6 @@
 import { forwardRef, Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
+import { BridgeUploadModule } from "src/bridgeUpload/bridge-upload.module";
 import { ClamScanModule } from "src/clamscan/clamscan.module";
 import { EmailModule } from "src/email/email.module";
 import { FileModule } from "src/file/file.module";
@@ -12,6 +13,7 @@ import { HCaptchaGuard } from "src/auth/guard/hcaptcha.guard";
 @Module({
   imports: [
     JwtModule.register({}),
+    BridgeUploadModule,
     EmailModule,
     forwardRef(() => ClamScanModule),
     ReverseShareModule,

@@ -14,17 +14,20 @@ const CONFIG_CACHE_TTL = 60_000; // 1 minute
 let cachedConfig: any = null;
 let cachedAt = 0;
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const routes = {
     unauthenticated: new Routes(["/auth/*", "/"]),
     public: new Routes([
       "/share/*",
       "/s/*",
+      "/sign/*",
       "/upload/*",
       "/maintenance",
       "/error",
       "/imprint",
       "/privacy",
+      "/integrations",
+      "/install/beta/*",
     ]),
     admin: new Routes(["/admin/*"]),
     account: new Routes(["/account*"]),
@@ -177,6 +180,17 @@ export async function middleware(request: NextRequest) {
       }
       return NextResponse.redirect(new URL(path, request.url));
     }
+  }
+
+  if (new Routes(["/sign/*"]).contains(route)) {
+    const response = NextResponse.next();
+    response.headers.set("Cache-Control", "no-store, max-age=0");
+    response.headers.set(
+      "X-Robots-Tag",
+      "noindex, nofollow, noarchive",
+    );
+    response.headers.set("Referrer-Policy", "no-referrer");
+    return response;
   }
 }
 

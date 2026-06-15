@@ -224,6 +224,15 @@ export const configVariables = {
       defaultValue:
         "Bonjour,\n\nVoici votre résumé hebdomadaire des téléchargements :\n\n{digest}\n\nPrivCloud_Sharing 🔒",
     },
+    teamShareNotificationSubject: {
+      type: "string",
+      defaultValue: "New team share",
+    },
+    teamShareNotificationMessage: {
+      type: "text",
+      defaultValue:
+        "Hello,\n\nYou received a new encrypted share in {teamName}.\n\nSign in to access it: {appUrl}\n\nPrivCloud_Sharing",
+    },
   },
   smtp: {
     enabled: {
@@ -471,22 +480,22 @@ export const configVariables = {
       defaultValue:
         "# Legal Notice\n\n" +
         "## Service Operator\n\n" +
-        "**THEMIOT Informatique**  \n" +
+        "**Instance Operator**  \n" +
         "Cybersecurity Expert - System & Network Architecture  \n" +
-        "Contact: [simon.themiot@informatiquenevers.fr](mailto:simon.themiot@informatiquenevers.fr)  \n" +
-        "Website: [www.stprive.net](https://www.stprive.net)\n\n" +
+        "Contact: [admin@example.com](mailto:admin@example.com)  \n" +
+        "Website: [example.com](https://example.com)\n\n" +
         "## About This Service\n\n" +
-        "PrivCloud\\_Sharing is a self-hosted file sharing platform operated by THEMIOT Informatique. " +
+        "PrivCloud\\_Sharing is a self-hosted file sharing platform operated by the configured instance administrator. " +
         "This instance is hosted on a dedicated infrastructure located in the European Union, " +
         "managed in compliance with EU data protection regulations.\n\n" +
         "## Intellectual Property\n\n" +
         "PrivCloud\\_Sharing is an open-source project released under the BSD 2-Clause license. " +
         "The source code is available at [github.com/Simthem/PrivCloud\\_Sharing](https://github.com/Simthem/PrivCloud_Sharing). " +
-        "The PrivCloud brand and associated logos are the property of THEMIOT Informatique.\n\n" +
+        "Review branding and logo rights before publishing a public instance.\n\n" +
         "## Hosting Provider\n\n" +
-        "GENIUSWEER SAS  \n" +
-        "78 Avenue des Champs-Élysées, Bureau 562, 75008 Paris, France  \n" +
-        "[holycloud.fr](https://holycloud.fr)\n\n" +
+        "Your hosting provider  \n" +
+        "Your hosting provider address  \n" +
+        "[provider.example.com](https://provider.example.com)\n\n" +
         "## Applicable Law\n\n" +
         "This service is governed by the laws of France and the European Union. " +
         "Any disputes shall be submitted to the competent courts of Lyon, France.\n\n" +
@@ -497,7 +506,7 @@ export const configVariables = {
         "- **ISO 27001:2022** - Information Security Management (best practices)\n\n" +
         "## Contact\n\n" +
         "For any legal inquiry or to exercise your data protection rights, please contact: " +
-        "[simon.themiot@informatiquenevers.fr](mailto:simon.themiot@informatiquenevers.fr)",
+        "[admin@example.com](mailto:admin@example.com)",
       secret: false,
     },
     imprintUrl: {
@@ -517,9 +526,9 @@ export const configVariables = {
         "# Privacy Policy\n\n" +
         "*Last updated: March 2026*\n\n" +
         "## 1. Data Controller\n\n" +
-        "**THEMIOT Informatique**  \n" +
-        "Contact: [simon.themiot@informatiquenevers.fr](mailto:simon.themiot@informatiquenevers.fr)  \n" +
-        "Website: [www.stprive.net](https://www.stprive.net)\n\n" +
+        "**Instance Operator**  \n" +
+        "Contact: [admin@example.com](mailto:admin@example.com)  \n" +
+        "Website: [example.com](https://example.com)\n\n" +
         "## 2. Data We Collect\n\n" +
         "When you use PrivCloud\\_Sharing, we may collect:\n\n" +
         "| Data | Purpose | Retention |\n" +
@@ -558,7 +567,7 @@ export const configVariables = {
         "- **Data portability** (receive your data in a structured format)\n" +
         "- **Object** to processing\n" +
         "- **Lodge a complaint** with the French DPA (CNIL): [www.cnil.fr](https://www.cnil.fr)\n\n" +
-        "To exercise your rights, contact: [simon.themiot@informatiquenevers.fr](mailto:simon.themiot@informatiquenevers.fr)\n\n" +
+        "To exercise your rights, contact: [admin@example.com](mailto:admin@example.com)\n\n" +
         "## 7. Cookies\n\n" +
         "PrivCloud\\_Sharing uses only **strictly necessary cookies** for authentication and session management. " +
         "No tracking cookies, analytics, or third-party cookies are used.\n\n" +

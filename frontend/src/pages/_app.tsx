@@ -410,6 +410,7 @@ function App({ Component, pageProps }: AppProps) {
       i18nUtil.setLanguageCookie(pageProps.language);
       if (cookieLanguage) location.reload();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

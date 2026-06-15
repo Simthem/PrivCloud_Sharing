@@ -21,6 +21,15 @@ import {
   LOG_LEVEL_ENV,
 } from "./constants";
 
+const DEFAULT_MAX_UPLOAD_CHUNK_BYTES = 200_000_000;
+const MAX_UPLOAD_CHUNK_BYTES = Math.max(
+  1,
+  parseInt(
+    process.env.UPLOAD_MAX_CHUNK_BYTES || `${DEFAULT_MAX_UPLOAD_CHUNK_BYTES}`,
+    10,
+  ) || DEFAULT_MAX_UPLOAD_CHUNK_BYTES,
+);
+
 // Suppress DEP0060 (util._extend) emitted by internal Node.js / third-party
 // dependencies on Node 24+. The API is deprecated but still works; the warning
 // is noise we cannot fix upstream.
@@ -56,7 +65,6 @@ const proxyUrl =
 
 if (proxyUrl) {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const undici = require("undici");
     const dispatcher = new undici.ProxyAgent(proxyUrl);
 
@@ -65,7 +73,6 @@ if (proxyUrl) {
     undici.setGlobalDispatcher(dispatcher);
 
     // Replace the built-in fetch() so ALL call sites automatically proxy.
-    const nativeFetch = globalThis.fetch;
     globalThis.fetch = ((
       input: string | URL | globalThis.Request,
       init?: RequestInit,
@@ -75,7 +82,19 @@ if (proxyUrl) {
         dispatcher,
       })) as typeof globalThis.fetch;
 
-    console.log(`[Proxy] globalThis.fetch replaced with undici.fetch -> ${proxyUrl}`);
+    const safeProxyUrl = (() => {
+      try {
+        const url = new URL(proxyUrl);
+        url.username = "";
+        url.password = "";
+        return url.toString();
+      } catch {
+        return "[invalid URL]";
+      }
+    })();
+    console.log(
+      `[Proxy] globalThis.fetch replaced with undici.fetch -> ${safeProxyUrl}`,
+    );
   } catch (err: any) {
     console.error(`[Proxy] Failed to load undici: ${err.message}`);
     console.error(`[Proxy] OAuth / hCaptcha calls to external providers may fail/timeout.`);
@@ -154,13 +173,12 @@ async function bootstrap() {
   app.useBodyParser("json", { limit: "50mb" });
   app.useBodyParser("urlencoded", { limit: "50mb", extended: true });
 
-  // Adaptive chunk sizing: the frontend may send chunks up to 200 MB
-  // based on measured bandwidth.  Express buffers the entire raw body
-  // in RAM, so ensure the VM has ≥ 4 GB RAM and Node is launched with
-  // --max-old-space-size=3072 to handle concurrent 200 MB chunks.
+  // Adaptive chunk sizing: the frontend may send chunks up to the configured
+  // upload ceiling based on measured bandwidth. Express buffers the entire raw
+  // body in RAM, so tune NODE_MAX_OLD_SPACE_SIZE and Docker mem_limit together.
   // E2E encrypted chunks add 28 bytes (12 IV + 16 GCM tag).
   const chunkSize = config.get("share.chunkSize");
-  const rawLimit = Math.max(chunkSize, 200_000_000) + 128;
+  const rawLimit = Math.max(chunkSize, MAX_UPLOAD_CHUNK_BYTES) + 128;
   app.useBodyParser("raw", {
     type: "application/octet-stream",
     limit: rawLimit,

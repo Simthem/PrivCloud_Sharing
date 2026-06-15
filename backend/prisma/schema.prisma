@@ -37,6 +37,7 @@ model User {
   oAuthUsers OAuthUser[]
   pushSubscriptions PushSubscription[]
   subscription Subscription?
+  bridgeUploadTokens BridgeUploadToken[]
 
   // Passkey-wrapped E2E keys for multi-device sync
   wrappedKeys WrappedKey[]
@@ -50,6 +51,15 @@ model User {
   teamMemberships TeamMember[]
   // Teams: owned teams
   ownedTeams Team[]
+
+  // E2EE Identity layer (X25519 + Ed25519 key pairs)
+  identityKeys UserIdentityKey[]
+  // E2EE Access grants received (encrypted DEKs)
+  accessGrants AccessGrant[]
+  // E2EE Post-quantum keys (ML-KEM)
+  pqKeys UserPQKey[]
+  // Team notifications
+  teamNotifications TeamNotification[]
 
   // Account lockout protection
   failedLoginAttempts Int       @default(0)
@@ -166,9 +176,13 @@ model Share {
   security   ShareSecurity?
   recipients ShareRecipient[]
   files      File[]
+  bridgeUploadTokens BridgeUploadToken[]
   downloadEvents DownloadEvent[]
   storageProvider String @default("LOCAL")
   isE2EEncrypted  Boolean @default(false)
+
+  // E2EE access grants for this share.
+  accessGrants AccessGrant[]
 
   // Optional: share linked to a team folder
   teamFolderId String?
@@ -188,8 +202,8 @@ model ReverseShare {
   simplified            Boolean  @default(false)
   publicAccess          Boolean  @default(true)
 
-  // E2E encryption: K_rs chiffré par la clé maître (K_master) de l'owner.
-  // Stocké en base64url. Le serveur ne connaît jamais K_rs en clair.
+  // E2E encryption: K_rs encrypted by the owner's master key (K_master).
+  // Stored as base64url. The server never sees K_rs in clear text.
   encryptedReverseShareKey String?
 
   creatorId String
@@ -217,6 +231,28 @@ model File {
   share   Share  @relation(fields: [shareId], references: [id], onDelete: Cascade)
 
   accessRules FileAccess[]
+  // E2EE access grants for this file.
+  accessGrants AccessGrant[]
+}
+
+model BridgeUploadToken {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  tokenHash String    @unique
+  label     String?
+  usedAt    DateTime?
+  revokedAt DateTime?
+
+  shareId String
+  share   Share  @relation(fields: [shareId], references: [id], onDelete: Cascade)
+
+  creatorId String
+  creator   User   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([shareId])
+  @@index([expiresAt])
 }
 
 model ShareSecurity {
@@ -285,6 +321,10 @@ model SignatureDocument {
 
   // Original PDF file name
   fileName String
+  // Backward-compatible display title for existing deployments.
+  title String
+  // Legacy storage key kept for databases created before originalFileKey.
+  fileKey String
   // Storage path/key for the original PDF
   originalFileKey String
   // Storage path/key for the signed PDF (set after all signatures complete)
@@ -315,6 +355,8 @@ model SignatureDocument {
   isE2EEncrypted Boolean @default(false)
 
   // Creator / requester
+  // Legacy owner alias kept for databases created before creatorId.
+  ownerId String
   creatorId String
   creator   User @relation(fields: [creatorId], references: [id], onDelete: Cascade)
 
@@ -528,6 +570,8 @@ model Team {
   invitations      TeamInvitation[]
   signatureDocuments SignatureDocument[]
   guestLinks       TeamGuestLink[]
+  // Team notification feed.
+  notifications    TeamNotification[]
 
   // Notification frequency for access reports: DAILY | WEEKLY | MONTHLY
   reportFrequency String @default("WEEKLY")
@@ -557,6 +601,9 @@ model TeamMember {
   // Per-member feature access (controlled by OWNER/ADMIN)
   canViewActivity   Boolean @default(false)
   canViewSignatures Boolean @default(false)
+
+  // Push notification preference: EVERY_FILE | SHARES_ONLY
+  pushNotifMode String @default("EVERY_FILE")
 
   // Folder access permissions
   folderAccess TeamFolderAccess[]
@@ -596,6 +643,7 @@ model TeamFolder {
   accessLogs   TeamAccessLog[]
   guestLinks   TeamGuestLink[]
   shares       Share[]
+  notifications TeamNotification[]
 }
 
 model TeamFolderAccess {
@@ -609,6 +657,7 @@ model TeamFolderAccess {
   canDownload Boolean @default(true)
   canDelete   Boolean @default(true)
   canRequestSignature Boolean @default(false)
+  canShareE2E Boolean @default(false)
 
   memberId String
   member   TeamMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -626,6 +675,7 @@ model FileAccess {
   // Permission level: READ | WRITE | ADMIN
   permission String @default("READ")
   canRequestSignature Boolean @default(false)
+  canShareE2E Boolean @default(false)
 
   memberId String
   member   TeamMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -666,6 +716,10 @@ model TeamFile {
   folder   TeamFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
 
   accessLogs TeamAccessLog[]
+  // E2EE access grants for this team file.
+  accessGrants AccessGrant[]
+  // Notifications related to this file.
+  notifications TeamNotification[]
 }
 
 model TeamAccessLog {
@@ -752,4 +806,159 @@ model TeamGuestLink {
 
   @@index([teamId])
   @@index([folderId])
+}
+
+// ============================================================================
+// E2EE IDENTITY LAYER (X25519 + Ed25519 per-user key pairs)
+// ============================================================================
+
+// Each user has an asymmetric identity for key exchange and signing.
+// Private keys are encrypted client-side before storage; the server never sees
+// them in plaintext.
+model UserIdentityKey {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Key type: X25519 | Ed25519
+  keyType String
+
+  // Public key shared for encryption or verification.
+  publicKey String
+
+  // Private key encrypted client-side with the user's master key.
+  encryptedPrivateKey String
+
+  // Algorithm identifier, for example x25519 or ed25519.
+  algorithm String @default("x25519")
+
+  // Active keys are used for newly created grants.
+  isActive Boolean @default(true)
+
+  // Key version, incremented on rotation.
+  version Int @default(1)
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, keyType, version])
+  @@index([userId, keyType, isActive])
+}
+
+// ============================================================================
+// ACCESS GRANTS - Encrypted DEK per user
+// ============================================================================
+
+// Each grant is an encrypted copy of a file key for one recipient.
+// The server stores only ciphertext and cannot derive the plaintext key.
+model AccessGrant {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  encryptedFileKey String
+  ephemeralPublicKey String
+  nonce String
+  algorithm String @default("x25519-aes256gcm")
+  dekVersion Int @default(1)
+  status String @default("ACTIVE")
+  revokedAt DateTime?
+
+  // User who created the grant.
+  grantorId String
+
+  // Recipient user.
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  fileId String?
+  file   File? @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  teamFileId String?
+  teamFile   TeamFile? @relation(fields: [teamFileId], references: [id], onDelete: Cascade)
+
+  shareId String?
+  share   Share? @relation(fields: [shareId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([fileId, status])
+  @@index([teamFileId, status])
+  @@index([shareId, status])
+  @@index([userId, fileId, dekVersion])
+}
+
+// ============================================================================
+// ENROLLMENT TOKEN - One-time bootstrap for onboarding or device addition
+// ============================================================================
+
+model EnrollmentToken {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  token String @unique
+  purpose String
+  metadata String?
+  status String @default("PENDING")
+  usedAt   DateTime?
+  usedById String?
+  expiresAt DateTime
+  creatorId String
+  teamId String?
+
+  @@index([token])
+  @@index([teamId, status])
+}
+
+// ============================================================================
+// TEAM FILE NOTIFICATIONS
+// ============================================================================
+
+model TeamNotification {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  type String
+  title String
+  metadata String?
+  encryptedMetadata String?
+  isRead Boolean @default(false)
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  teamId String
+  team   Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  teamFileId String?
+  teamFile   TeamFile? @relation(fields: [teamFileId], references: [id], onDelete: SetNull)
+
+  folderId String?
+  folder   TeamFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  actorId String?
+
+  @@index([userId, isRead])
+  @@index([teamId, createdAt])
+  @@index([userId, teamId])
+}
+
+// ============================================================================
+// POST-QUANTUM KEY ENCAPSULATION PREPARATION
+// ============================================================================
+
+model UserPQKey {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  variant String @default("ML-KEM-768")
+  publicKey String
+  encryptedPrivateKey String
+  version Int @default(1)
+  isActive Boolean @default(true)
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, version])
+  @@index([userId, isActive])
 }

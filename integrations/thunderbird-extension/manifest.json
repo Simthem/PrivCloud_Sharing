@@ -1,0 +1,20 @@
+{
+  "manifest_version": 2,
+  "name": "PrivCloud Thunderbird",
+  "description": "Send Thunderbird attachments through PrivCloud Companion.",
+  "version": "0.1.0",
+  "applications": {
+    "gecko": {
+      "id": "thunderbird@privcloud.fr",
+      "strict_min_version": "128.0"
+    }
+  },
+  "permissions": ["compose", "messagesRead", "nativeMessaging"],
+  "background": {
+    "scripts": ["src/background.js"]
+  },
+  "compose_action": {
+    "default_title": "PrivCloud",
+    "default_popup": "src/compose.html"
+  }
+}

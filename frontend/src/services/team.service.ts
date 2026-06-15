@@ -5,8 +5,8 @@ export interface Team {
   name: string;
   slug: string;
   description?: string;
-  plan: string;
-  status: string;
+  plan?: string;
+  status?: string;
   maxMembers: number;
   maxShareSize: number;
   totalStorageLimit: number;
@@ -25,6 +25,7 @@ export interface TeamMember {
   hasTeamKey?: boolean;
   canViewActivity?: boolean;
   canViewSignatures?: boolean;
+  pushNotifMode?: string;
   user?: { id: string; username: string; email: string };
 }
 
@@ -41,8 +42,6 @@ export interface TeamFolder {
 export interface TeamMetrics {
   team: {
     name: string;
-    plan: string;
-    status: string;
     membersCount: number;
     maxMembers: number;
     foldersCount: number;
@@ -60,11 +59,7 @@ export interface TeamMetrics {
     signatures: number;
     topDownloaders: { email: string; count: number }[];
   };
-  billing: {
-    basePrice: number;
-    extraMemberPrice: number;
-    includedMembers: number;
-    currentMembers: number;
+  limits: {
     maxShareSize: number;
     totalStorage: number;
   };
@@ -224,9 +219,16 @@ const updateMemberRole = async (
 const updateMemberPermissions = async (
   teamId: string,
   memberId: string,
-  permissions: { canViewActivity?: boolean; canViewSignatures?: boolean },
+  permissions: { canViewActivity?: boolean; canViewSignatures?: boolean; pushNotifMode?: string },
 ): Promise<void> => {
   await api.patch(`teams/${teamId}/members/${memberId}/permissions`, permissions);
+};
+
+const updateMyPreferences = async (
+  teamId: string,
+  preferences: { pushNotifMode?: string },
+): Promise<{ updated: boolean; pushNotifMode?: string }> => {
+  return (await api.patch(`teams/${teamId}/my-preferences`, preferences)).data;
 };
 
 // ============================================================
@@ -251,7 +253,7 @@ const getFolders = async (
 const setFolderAccess = async (
   teamId: string,
   folderId: string,
-  data: { memberId: string; permission: string; canRequestSignature?: boolean },
+  data: { memberId: string; permission: string; canRequestSignature?: boolean; canShareE2E?: boolean },
 ): Promise<void> => {
   await api.post(`teams/${teamId}/folders/${folderId}/access`, data);
 };
@@ -267,6 +269,7 @@ const getFolderAccess = async (
     canDownload: boolean;
     canDelete: boolean;
     canRequestSignature: boolean;
+    canShareE2E: boolean;
     user: { id: string; username: string; email: string };
     role: string;
   }[]
@@ -305,8 +308,8 @@ const getFolderShares = async (
     files: { id: string; name: string; size: string; createdAt: string }[];
     creator?: { id: string; username: string; email: string };
   }[];
-  myAccess?: { permission: string; canDownload: boolean; canDelete: boolean; canRequestSignature: boolean } | null;
-  myFileAccess?: Record<string, { permission: string; canRequestSignature: boolean }>;
+  myAccess?: { permission: string; canDownload: boolean; canDelete: boolean; canRequestSignature: boolean; canShareE2E: boolean } | null;
+  myFileAccess?: Record<string, { permission: string; canRequestSignature: boolean; canShareE2E: boolean }>;
 }> => {
   return (await api.get(`teams/${teamId}/folders/${folderId}/shares`)).data;
 };
@@ -320,7 +323,7 @@ const setFileAccess = async (
   folderId: string,
   data: {
     fileIds: string[];
-    members: { memberId: string; permission: string; canRequestSignature?: boolean }[];
+    members: { memberId: string; permission: string; canRequestSignature?: boolean; canShareE2E?: boolean }[];
   },
 ): Promise<{ set: boolean; filesCount: number; membersCount: number }> => {
   return (await api.post(`teams/${teamId}/folders/${folderId}/file-access`, data)).data;
@@ -336,6 +339,8 @@ const getFileAccess = async (
     fileName: string;
     memberId: string;
     permission: string;
+    canRequestSignature: boolean;
+    canShareE2E: boolean;
     user: { id: string; username: string; email: string };
     role: string;
   }[]
@@ -372,23 +377,6 @@ const getAccessLogs = async (
   if (options?.action) params.set("action", options.action);
   const qs = params.toString();
   return (await api.get(`teams/${teamId}/logs${qs ? `?${qs}` : ""}`)).data;
-};
-
-// ============================================================
-// Billing
-// ============================================================
-
-const purchaseSeats = async (
-  teamId: string,
-  additionalSeats: number,
-): Promise<{ checkoutUrl?: string; newMaxMembers?: number }> => {
-  return (await api.post(`teams/${teamId}/billing/seats`, { additionalSeats })).data;
-};
-
-const createCheckout = async (
-  teamId: string,
-): Promise<{ url: string }> => {
-  return (await api.post(`teams/${teamId}/billing/checkout`)).data;
 };
 
 /** Returns all team folders the user can write to (for share upload flow) */
@@ -447,6 +435,7 @@ const teamService = {
   getMemberFolderAccess,
   updateMemberRole,
   updateMemberPermissions,
+  updateMyPreferences,
   createFolder,
   getFolders,
   setFolderAccess,
@@ -459,8 +448,6 @@ const teamService = {
   bulkDeleteFiles,
   getMetrics,
   getAccessLogs,
-  purchaseSeats,
-  createCheckout,
   getMyWritableFolders,
   getTeamShares,
   rotateTeamKey,

@@ -1,0 +1,29 @@
+{
+  "timeZone": "Europe/Paris",
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/gmail.addons.current.action.compose",
+    "https://www.googleapis.com/auth/script.external_request"
+  ],
+  "addOns": {
+    "common": {
+      "name": "PrivCloud",
+      "logoUrl": "https://share.example.com/img/logo.png",
+      "homepageTrigger": {
+        "runFunction": "homepage"
+      }
+    },
+    "gmail": {
+      "composeTrigger": {
+        "selectActions": [
+          {
+            "text": "Send with PrivCloud",
+            "runFunction": "composeAction"
+          }
+        ],
+        "draftAccess": "METADATA"
+      }
+    }
+  }
+}

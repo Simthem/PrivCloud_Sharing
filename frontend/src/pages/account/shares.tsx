@@ -44,7 +44,7 @@ const MyShares = () => {
   const queryClient = useQueryClient();
   const isMobile = useMediaQuery("(max-width: 680px)");
   const { user } = useUser();
-  const isTeamPlan = user?.plan === "TEAM" || user?.hasTeamMembership;
+  const hasTeamAccess = !!user;
 
   const {
     data: shares,
@@ -241,7 +241,7 @@ const MyShares = () => {
                   >
                     <TbQrcode />
                   </ActionIcon>
-                  {isTeamPlan && (share.files || []).some((f: any) => /\.pdf$/i.test(f.name || "")) && (
+                  {hasTeamAccess && (share.files || []).some((f: any) => /\.pdf$/i.test(f.name || "")) && (
                     <ActionIcon color="violet" variant="light" size={28}
                       onClick={() => {
                         const fileList = (share.files || [])
@@ -435,7 +435,7 @@ const MyShares = () => {
                           variant="light"
                           size={25}
                           style={{
-                            display: isTeamPlan && (share.files || []).some((f: any) => /\.pdf$/i.test(f.name || ""))
+                            display: hasTeamAccess && (share.files || []).some((f: any) => /\.pdf$/i.test(f.name || ""))
                               ? undefined
                               : "none",
                           }}

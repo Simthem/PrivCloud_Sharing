@@ -30,6 +30,7 @@ const SignIn = ({ redirectPath }: { redirectPath?: string }) => {
         setIsLoading(false);
       }
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (isLoading) return <LoadingOverlay overlayProps={{ backgroundOpacity: 1 }} visible />;

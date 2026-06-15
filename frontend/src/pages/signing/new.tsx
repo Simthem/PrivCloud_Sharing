@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import {
@@ -29,6 +29,12 @@ import signingService, {
 } from "../../services/signing.service";
 import teamService from "../../services/team.service";
 import toast from "../../utils/toast.util";
+import {
+  getUserKey,
+  importKeyFromBase64,
+  exportKeyToBase64,
+  unwrapReverseShareKey,
+} from "../../utils/crypto.util";
 
 interface RecipientForm {
   name: string;
@@ -52,13 +58,13 @@ const NewSigningRequestPage = () => {
   const router = useRouter();
   const { user } = useUser();
   const t = useTranslate();
+  const [teamKeyB64, setTeamKeyB64] = useState<string | null>(null);
 
   useEffect(() => {
     if (user === null) {
       router.replace("/auth/signIn?redirect=/signing/new");
-    } else if (user && user.plan !== "TEAM" && !user.isAdmin && !user.hasTeamMembership) {
-      router.replace("/pricing");
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   // Fetch signable files from all teams
@@ -93,6 +99,7 @@ const NewSigningRequestPage = () => {
       addApprovalField: true,
       addApprovalMention: true,
       addInitials: false,
+      sendE2EKeyByEmail: false,
       selectedFile: "" as string,
       shareId: "",
       fileId: "",
@@ -110,6 +117,39 @@ const NewSigningRequestPage = () => {
       },
     },
   });
+
+  const selectedFileValue = form.values.selectedFile;
+  useEffect(() => {
+    if (!selectedFileValue || !signableFiles) {
+      setTeamKeyB64(null);
+      return;
+    }
+    const [shareId] = selectedFileValue.split("::");
+    const fileEntry = signableFiles.find((f) => f.shareId === shareId);
+    if (!fileEntry) {
+      setTeamKeyB64(null);
+      return;
+    }
+    setTeamKeyB64(null);
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const userKeyB64 = getUserKey();
+        if (!userKeyB64) return;
+        const { wrappedTeamKey } = await teamService.getTeamKey(fileEntry.teamId);
+        if (cancelled || !wrappedTeamKey) return;
+        const masterKey = await importKeyFromBase64(userKeyB64);
+        const teamKey = await unwrapReverseShareKey(wrappedTeamKey, masterKey);
+        const keyB64 = await exportKeyToBase64(teamKey);
+        if (!cancelled) setTeamKeyB64(keyB64);
+      } catch {
+        const userKeyB64 = getUserKey();
+        if (!cancelled && userKeyB64) setTeamKeyB64(userKeyB64);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedFileValue, signableFiles]);
 
   const createMutation = useMutation({
     mutationFn: (data: CreateSignatureRequestPayload) =>
@@ -166,6 +206,9 @@ const NewSigningRequestPage = () => {
       return;
     }
 
+    const fileEntry = signableFiles?.find((f) => f.shareId === shareId && f.fileId === fileId);
+    const shouldEmailE2EKey = Boolean(teamKeyB64 && values.sendE2EKeyByEmail);
+
     // Auto-add a signature field if none exists
     let fields = values.fields;
     if (fields.length === 0) {
@@ -191,6 +234,10 @@ const NewSigningRequestPage = () => {
       addApprovalField: values.addApprovalField,
       addApprovalMention: values.addApprovalMention,
       addInitials: values.addInitials,
+      isE2EEncrypted: !!teamKeyB64,
+      sendE2EKeyByEmail: shouldEmailE2EKey,
+      e2eKey: shouldEmailE2EKey ? teamKeyB64 || undefined : undefined,
+      teamId: fileEntry?.teamId || undefined,
       recipients: values.recipients.map((r) => ({
         name: r.name,
         email: r.email,
@@ -280,6 +327,13 @@ const NewSigningRequestPage = () => {
                   description={t("signing.new.option.initials.desc")}
                   {...form.getInputProps("addInitials", { type: "checkbox" })}
                 />
+                {teamKeyB64 && (
+                  <Checkbox
+                    label={t("signing.option.e2e-key-email")}
+                    description={t("signing.option.e2e-key-email.desc")}
+                    {...form.getInputProps("sendE2EKeyByEmail", { type: "checkbox" })}
+                  />
+                )}
               </Stack>
             </Paper>
 

@@ -31,6 +31,7 @@ export class SigningOtpService {
     });
 
     if (!recipient) throw new NotFoundException("Invalid signing link");
+    this.assertOtpAllowed(recipient);
     if (recipient.otpVerified) {
       throw new BadRequestException("Identity already verified");
     }
@@ -76,9 +77,11 @@ export class SigningOtpService {
   async verifyOtp(signingToken: string, otpCode: string) {
     const recipient = await this.prisma.signatureRecipient.findUnique({
       where: { signingToken },
+      include: { document: true },
     });
 
     if (!recipient) throw new NotFoundException("Invalid signing link");
+    this.assertOtpAllowed(recipient);
     if (recipient.otpVerified) {
       return { verified: true };
     }
@@ -127,6 +130,30 @@ export class SigningOtpService {
   private hmacOtp(otp: string): string {
     const pepper = process.env.OTP_PEPPER || this.configService.get("internal.jwtSecret");
     return crypto.createHmac("sha256", pepper).update(otp).digest("hex");
+  }
+
+  private assertOtpAllowed(recipient: {
+    status: string;
+    document: { status: string; expiresAt: Date | null };
+  }) {
+    if (recipient.document.status !== "PENDING") {
+      throw new BadRequestException(
+        "This signing request is no longer pending",
+      );
+    }
+
+    if (
+      recipient.document.expiresAt &&
+      recipient.document.expiresAt < new Date()
+    ) {
+      throw new BadRequestException("This signing request has expired");
+    }
+
+    if (recipient.status !== "PENDING" && recipient.status !== "VIEWED") {
+      throw new BadRequestException(
+        `This recipient is already ${recipient.status.toLowerCase()}`,
+      );
+    }
   }
 
   private async createAuditEvent(

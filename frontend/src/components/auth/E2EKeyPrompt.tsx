@@ -56,6 +56,7 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
     userService.listWrappedKeys().then((keys) => {
       if (keys.length > 0) setPasskeyAvailable(true);
     }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
 
   // -- recovered mode (show key after SSKR success) --

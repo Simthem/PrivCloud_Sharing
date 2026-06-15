@@ -6,6 +6,7 @@ import {
   Button,
   Checkbox,
   CopyButton,
+  Divider,
   Group,
   Modal,
   Paper,
@@ -64,6 +65,7 @@ export default function RequestSignatureModal({
       addApprovalField: true,
       addApprovalMention: true,
       addInitials: false,
+      sendE2EKeyByEmail: false,
       recipients: [{ name: "", email: "", role: "SIGNER" as const }] as RecipientEntry[],
     },
     validate: {
@@ -80,6 +82,7 @@ export default function RequestSignatureModal({
 
   const [loading, setLoading] = useState(false);
   const [createdRecipients, setCreatedRecipients] = useState<SignatureRecipient[] | null>(null);
+  const [emailDeliveryFailures, setEmailDeliveryFailures] = useState(0);
 
   const createMutation = useMutation({
     mutationFn: (data: CreateSignatureRequestPayload) =>
@@ -87,7 +90,8 @@ export default function RequestSignatureModal({
     onSuccess: (result: any) => {
       toast.success(t("signing.modal.notify.success"));
       setLoading(false);
-      // Show signing links — the backend returns recipients with signingToken
+      setEmailDeliveryFailures(result?.emailDeliveryFailures || 0);
+      // Show signing links returned by the backend.
       if (result?.recipients?.length) {
         setCreatedRecipients(result.recipients);
       } else {
@@ -102,6 +106,7 @@ export default function RequestSignatureModal({
 
   const handleClose = () => {
     setCreatedRecipients(null);
+    setEmailDeliveryFailures(0);
     form.reset();
     onClose();
   };
@@ -128,6 +133,8 @@ export default function RequestSignatureModal({
         required: true,
       }));
 
+    const shouldEmailE2EKey = Boolean(encryptionKey && values.sendE2EKeyByEmail);
+
     createMutation.mutate({
       shareId,
       fileId: values.fileId,
@@ -137,6 +144,8 @@ export default function RequestSignatureModal({
       addApprovalMention: values.addApprovalMention,
       addInitials: values.addInitials,
       isE2EEncrypted: !!encryptionKey,
+      sendE2EKeyByEmail: shouldEmailE2EKey,
+      e2eKey: shouldEmailE2EKey ? encryptionKey || undefined : undefined,
       teamId: teamId || undefined,
       recipients: values.recipients.map((r) => ({
         name: r.name,
@@ -172,9 +181,10 @@ export default function RequestSignatureModal({
     >
       {createdRecipients ? (
         <Stack gap="md">
-          <Alert color="green" icon={<TbMail size={16} />}>
-            La demande de signature a été créée. Les invitations par email ont été envoyées.
-            Vous pouvez aussi partager les liens ci-dessous directement :
+          <Alert color={emailDeliveryFailures > 0 ? "yellow" : "green"} icon={<TbMail size={16} />}>
+            {emailDeliveryFailures > 0
+              ? "La demande de signature a été créée, mais certains emails n'ont pas pu être envoyés. Partagez les liens ci-dessous directement :"
+              : "La demande de signature a été créée. Les invitations par email ont été envoyées. Vous pouvez aussi partager les liens ci-dessous directement :"}
           </Alert>
           {createdRecipients
             .filter((r) => r.signingToken && r.role !== "CC")
@@ -277,6 +287,16 @@ export default function RequestSignatureModal({
                 description="Affiche les initiales de chaque signataire en pied de page"
                 {...form.getInputProps("addInitials", { type: "checkbox" })}
               />
+              {encryptionKey && (
+                <>
+                  <Divider my="xs" />
+                  <Checkbox
+                    label={t("signing.option.e2e-key-email")}
+                    description={t("signing.option.e2e-key-email.desc")}
+                    {...form.getInputProps("sendE2EKeyByEmail", { type: "checkbox" })}
+                  />
+                </>
+              )}
             </Stack>
           </div>
 

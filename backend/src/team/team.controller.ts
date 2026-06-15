@@ -336,7 +336,7 @@ export class TeamController {
   updateMemberPermissions(
     @Param("teamId") teamId: string,
     @Param("memberId") memberId: string,
-    @Body() dto: { canViewActivity?: boolean; canViewSignatures?: boolean },
+    @Body() dto: { canViewActivity?: boolean; canViewSignatures?: boolean; pushNotifMode?: string },
     @GetUser() user: User,
   ) {
     return this.teamService.updateMemberPermissions(
@@ -345,6 +345,17 @@ export class TeamController {
       dto,
       user.id,
     );
+  }
+
+  @Patch(":teamId/my-preferences")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 10, ttl: 60 } })
+  updateMyPreferences(
+    @Param("teamId") teamId: string,
+    @Body() dto: { pushNotifMode?: string },
+    @GetUser() user: User,
+  ) {
+    return this.teamService.updateMyPreferences(teamId, dto, user.id);
   }
 
   // =========================================================================

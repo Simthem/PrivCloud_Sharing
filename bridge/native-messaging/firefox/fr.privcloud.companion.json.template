@@ -1,0 +1,9 @@
+{
+  "name": "fr.privcloud.companion",
+  "description": "PrivCloud Companion native host",
+  "path": "__COMPANION_PATH__",
+  "type": "stdio",
+  "allowed_extensions": [
+    "companion@privcloud.fr"
+  ]
+}

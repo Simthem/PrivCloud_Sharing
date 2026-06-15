@@ -79,13 +79,14 @@ export default function Home() {
     if (user) {
       router.replace("/upload");
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   useEffect(() => {
     try {
       const allowRegistration = config.get("share.allowRegistration");
       setSignupEnabled(allowRegistration !== false);
-    } catch (error) {
+    } catch {
       setSignupEnabled(true);
     }
   }, [config]);

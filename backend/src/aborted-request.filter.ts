@@ -64,7 +64,9 @@ export class AbortedRequestFilter implements ExceptionFilter {
     // 401 on /auth/token: the refresh token is absent or expired.
     // This is expected (e.g. session expired, private browsing) and generates
     // only noise in the logs - send the 401 silently without a stack trace.
-    if (this.isExpectedRefreshTokenUnauthorized(exception, host)) {
+    // Also silences all other UnauthorizedException from JwtGuard - unauthenticated
+    // users hitting protected endpoints is normal operational behavior.
+    if (exception instanceof UnauthorizedException) {
       const ctx = host.switchToHttp();
       const res = ctx.getResponse<Response>();
       const httpEx = exception as HttpException;
@@ -116,15 +118,6 @@ export class AbortedRequestFilter implements ExceptionFilter {
       );
     }
     return false;
-  }
-
-  private isExpectedRefreshTokenUnauthorized(
-    exception: unknown,
-    host: ArgumentsHost,
-  ): boolean {
-    if (!(exception instanceof UnauthorizedException)) return false;
-    const req = host.switchToHttp().getRequest<Request>();
-    return req.url?.includes("/auth/token");
   }
 
   private isGuardForbidden(exception: unknown): boolean {

@@ -19,13 +19,13 @@ export class FileService {
   // Tracks files currently being re-encrypted to prevent concurrent operations
   private readonly reencryptingFiles = new Set<string>();
 
-  // Cache plan limits per share to avoid DB round-trips on every chunk.
+  // Cache configured limits per share to avoid DB round-trips on every chunk.
   // Key: shareId, Value: { limit, ts }
-  private readonly planLimitCache = new Map<
+  private readonly configuredLimitCache = new Map<
     string,
     { limit: number; ts: number }
   >();
-  private static readonly PLAN_LIMIT_TTL = 60_000; // 60s
+  private static readonly CONFIGURED_LIMIT_TTL = 60_000; // 60s
 
   constructor(
     private prisma: PrismaService,
@@ -60,11 +60,12 @@ export class FileService {
   ) {
     // Sanitize filename: strip path separators, null bytes, ".." sequences,
     // and enforce a reasonable length limit (CWE-23, CWE-73 mitigation).
-    if (
-      !file.name ||
-      file.name.length > 255 ||
-      /[\/\\]|\.{2}|\x00/.test(file.name)
-    ) {
+    const hasUnsafeFileName =
+      file.name.includes("\0") ||
+      file.name.includes("..") ||
+      file.name.includes("/") ||
+      file.name.includes("\\");
+    if (!file.name || file.name.length > 255 || hasUnsafeFileName) {
       throw new BadRequestException("Invalid file name");
     }
 
@@ -90,19 +91,19 @@ export class FileService {
       ? data.length
       : Buffer.byteLength(data, "base64");
 
-    // When uploading via a reverse share, the plan owner is the RS
-    // creator, not the (possibly anonymous) share creator.
-    const planOwnerId =
+    // When uploading via a reverse share, the configured limit owner is the
+    // reverse share creator, not the possibly anonymous share creator.
+    const limitOwnerId =
       share.reverseShare?.creatorId ?? share.creatorId ?? undefined;
 
-    // --- Parallelize quota check + plan limit lookup (both hit DB) ---
+    // --- Parallelize quota check + configured limit lookup (both hit DB) ---
     const [, effectiveLimit] = await Promise.all([
       // 1. Storage quota check on first chunk only
-      planOwnerId && chunk.index === 0
+      limitOwnerId && chunk.index === 0
         ? Promise.resolve()
         : Promise.resolve(),
-      // 2. Plan limit (cached per share for 60s)
-      this.getCachedPlanLimit(shareId, planOwnerId, share),
+      // 2. Configured limit (cached per share for 60s)
+      this.getCachedConfiguredLimit(shareId, share),
     ]);
 
     // Max share size enforcement -- applies to both authenticated and
@@ -133,24 +134,26 @@ export class FileService {
       share,
     );
 
-    // Invalidate plan limit cache when upload is complete
+    // Invalidate configured limit cache when upload is complete.
     if (chunk.index === chunk.total - 1) {
-      this.planLimitCache.delete(shareId);
+      this.configuredLimitCache.delete(shareId);
     }
 
     return result;
   }
 
   /**
-   * Cached plan limit lookup -- avoids a DB round-trip on every chunk.
+   * Cached configured limit lookup -- avoids a DB round-trip on every chunk.
    */
-  private async getCachedPlanLimit(
+  private async getCachedConfiguredLimit(
     shareId: string,
-    planOwnerId: string | undefined,
     share: any,
   ): Promise<number> {
-    const cached = this.planLimitCache.get(shareId);
-    if (cached && Date.now() - cached.ts < FileService.PLAN_LIMIT_TTL) {
+    const cached = this.configuredLimitCache.get(shareId);
+    if (
+      cached &&
+      Date.now() - cached.ts < FileService.CONFIGURED_LIMIT_TTL
+    ) {
       return cached.limit;
     }
 
@@ -158,7 +161,7 @@ export class FileService {
     const rawEnvLimit = process.env.TEAM_MAX_SHARE_SIZE
       ? parseInt(process.env.TEAM_MAX_SHARE_SIZE)
       : 0;
-    const planLimit = rawEnvLimit > 0 ? rawEnvLimit : Infinity;
+    const configuredLimit = rawEnvLimit > 0 ? rawEnvLimit : Infinity;
     const reverseShareLimit = share.reverseShare?.maxShareSize
       ? parseInt(share.reverseShare.maxShareSize)
       : Infinity;
@@ -166,8 +169,8 @@ export class FileService {
       ? (rawEnvLimit > 0 ? rawEnvLimit : Infinity)
       : Infinity;
 
-    const limit = Math.min(planLimit, reverseShareLimit, teamLimit);
-    this.planLimitCache.set(shareId, { limit, ts: Date.now() });
+    const limit = Math.min(configuredLimit, reverseShareLimit, teamLimit);
+    this.configuredLimitCache.set(shareId, { limit, ts: Date.now() });
     return limit;
   }
 

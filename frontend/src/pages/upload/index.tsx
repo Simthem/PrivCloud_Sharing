@@ -5,10 +5,11 @@ import pLimit from "p-limit";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { FormattedMessage } from "react-intl";
 import { TbInfoCircle, TbFolder } from "react-icons/tb";
-import { TbCloudUpload } from "react-icons/tb";
+import { TbCloudDownload, TbCloudUpload } from "react-icons/tb";
 import Meta from "../../components/Meta";
 import Dropzone from "../../components/upload/Dropzone";
 import FileList from "../../components/upload/FileList";
+import WebDavImportModal from "../../components/upload/WebDavImportModal";
 import showCompletedUploadModal from "../../components/upload/modals/showCompletedUploadModal";
 import showCreateUploadModal from "../../components/upload/modals/showCreateUploadModal";
 import useConfig from "../../hooks/config.hook";
@@ -17,6 +18,10 @@ import useTranslate from "../../hooks/useTranslate.hook";
 import useUser from "../../hooks/user.hook";
 import useWakeLock from "../../hooks/useWakeLock.hook";
 import shareService from "../../services/share.service";
+import {
+  startBridgeWebDavUploadJob,
+  waitForBridgeUploadJob,
+} from "../../services/privcloudBridge.service";
 import { FileUpload } from "../../types/File.type";
 import { CreateShare, Share } from "../../types/share.type";
 import toast from "../../utils/toast.util";
@@ -49,6 +54,36 @@ let errorToastShown = false;
 let createdShare: Share;
 let e2eKeyEncoded: string | null = null;
 let shouldShareE2EKeyViaEmail = false;
+
+const isBridgeWebDavUploadFile = (file: FileUpload) =>
+  !!file.privcloudBridgeSource;
+
+const bridgeBatchKey = (file: FileUpload) => {
+  const source = file.privcloudBridgeSource;
+  if (!source) return "";
+  return JSON.stringify([source.endpoint, source.username, source.password]);
+};
+
+const translateBridgeUploadError = (
+  message: string | undefined,
+  t: ReturnType<typeof useTranslate>,
+) => {
+  if (!message) return t("bridge.error.internal");
+  if (
+    message.startsWith("bridge.") ||
+    message.startsWith("webdav.") ||
+    message.startsWith("upload.")
+  ) {
+    return t(message);
+  }
+  if (message.includes("Too many active Bridge jobs")) {
+    return t("bridge.error.tooManyJobs");
+  }
+  if (message.includes("Select between 1 and")) {
+    return t("bridge.error.fileSelectionLimit");
+  }
+  return message;
+};
 
 type UploadProps = {
   maxShareSize?: number;
@@ -88,6 +123,7 @@ const Upload = ({
     : undefined;
   const [files, setFiles] = useState<FileUpload[]>([]);
   const [isUploading, setisUploading] = useState(false);
+  const [webDavOpened, setWebDavOpened] = useState(false);
   const uploadAbortRef = useRef<AbortController | null>(null);
 
   // ---- Browser-setup banner (popups + notifications) ----
@@ -261,6 +297,7 @@ const Upload = ({
         { autoClose: false },
       );
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Reset the API-layer upload guard if this component unmounts (e.g.
@@ -292,19 +329,19 @@ const Upload = ({
   const chunkSize = useRef(parseInt(config.get("share.chunkSize")));
   const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Fetch plan-based upload limit (Team plan for all users)
-  const { data: planMaxShareSize } = useQuery({
+  // Fetch configured upload limit (optional instance policy)
+  const { data: configuredMaxShareSize } = useQuery({
     queryKey: ["uploadLimit", user?.id],
-    queryFn: async () => ({ maxSize: 0, usedSize: 0 }), // 0 = no plan limit
+    queryFn: async () => ({ maxSize: 0, usedSize: 0 }), // 0 = no configured limit
     // Reverse-share upload must always use reverseShare.maxShareSize,
-    // never the current client's plan/anonymous cap.
+    // never the current client's configured/anonymous cap.
     enabled: !isReverseShare,
     refetchInterval: Infinity,
     refetchOnWindowFocus: false,
   });
 
-  // Fetch plan-based expiration limit (Team plan = unlimited)
-  const { data: planMaxExpirationDays } = useQuery({
+  // Fetch configured expiration limit (unlimited by default)
+  const { data: configuredMaxExpirationDays } = useQuery({
     queryKey: ["expirationLimit", user?.id],
     queryFn: async () => ({ maxDays: 0 }),
     enabled: !isReverseShare,
@@ -312,14 +349,15 @@ const Upload = ({
     refetchOnWindowFocus: false,
   });
 
-  // Reverse-share pages pass maxShareSize as prop; otherwise use plan limit
+  // Reverse-share pages pass maxShareSize as prop; otherwise use configured limit
   // 0 means unlimited (no configured limit)
   const rawEffectiveMaxShareSize =
-    maxShareSize ?? planMaxShareSize?.maxSize ?? parseInt(config.get("share.maxSize"));
+    maxShareSize ?? configuredMaxShareSize?.maxSize ?? parseInt(config.get("share.maxSize"));
   const effectiveMaxShareSize =
     rawEffectiveMaxShareSize === 0 ? Number.MAX_SAFE_INTEGER : rawEffectiveMaxShareSize;
 
   const autoOpenCreateUploadModal = config.get("share.autoOpenShareModal");
+  const canUseWebDav = !!user && !isReverseShare;
 
   // Web Lock: signals the browser that this tab is doing critical work,
   // preventing Chromium (Chrome/Opera/Edge) from discarding it in the
@@ -359,7 +397,7 @@ const Upload = ({
     // thread alive for hours which triggered UD2 / IMMEDIATE_CRASH in
     // Chrome's SW lifetime manager
 
-    // --- E2E : récupérer ou créer la clé de chiffrement ---
+    // --- E2E: read or create the encryption key ---
     let cryptoKey: CryptoKey | null = null;
     let storedKey = user ? getUserKey() : null;
 
@@ -371,7 +409,7 @@ const Upload = ({
         e2eKeyEncoded = rsKeyEncoded;
         share.isE2EEncrypted = true;
       } else {
-        // Clé absente du fragment -> pas de chiffrement
+        // Missing fragment key: upload without encryption.
         e2eKeyEncoded = null;
       }
     } else if (user && share.teamFolderId) {
@@ -419,11 +457,11 @@ const Upload = ({
       }
     } else if (user) {
       if (storedKey) {
-        // Clé existante -> réutiliser
+        // Existing key: reuse it.
         cryptoKey = await importKeyFromBase64(storedKey);
         e2eKeyEncoded = storedKey;
       } else {
-        // Première utilisation -> générer, stocker et enregistrer le hash
+        // First use: generate, store and register the hash.
         cryptoKey = await generateEncryptionKey();
         e2eKeyEncoded = await exportKeyToBase64(cryptoKey);
         storeUserKey(e2eKeyEncoded);
@@ -454,7 +492,7 @@ const Upload = ({
       return;
     }
 
-    // Stocker la clé localement pour le propriétaire (déjà fait dans storeUserKey ci-dessus)
+    // The owner key is stored locally by storeUserKey above.
 
     // --- Adaptive chunk sizing ---
     const totalSize = files.reduce((sum, f) => sum + f.size, 0);
@@ -465,6 +503,25 @@ const Upload = ({
       chunkSize.current,
       maxFileSize,
     );
+    let bridgeUploadToken: { token: string; expiresAt: string } | null = null;
+    if (files.some(isBridgeWebDavUploadFile)) {
+      try {
+        bridgeUploadToken = await shareService.createBridgeUploadToken(
+          createdShare.id,
+          "WebDAV Bridge import",
+        );
+      } catch (e) {
+        toast.axiosError(e);
+        await shareService.remove(createdShare.id).catch(() => undefined);
+        setisUploading(false);
+        setUploadActive(false);
+        webLockReleaseRef.current?.();
+        webLockReleaseRef.current = null;
+        wakeLock.release();
+        e2eKeyEncoded = null;
+        return;
+      }
+    }
 
     const isLargeUpload = totalSize > 2_000_000_000;
     // Allow 2 concurrent files even for large uploads when there are
@@ -542,6 +599,22 @@ const Upload = ({
 
     const fileAttempts = new Map<number, number>();
     const retryQueue: Array<{ file: (typeof files)[0]; fileIndex: number }> = [];
+    const bridgeBatches = new Map<
+      string,
+      Array<{ file: (typeof files)[0]; fileIndex: number }>
+    >();
+    const bridgeBatchLeaders = new Map<string, number>();
+
+    files.forEach((file, fileIndex) => {
+      if (!isBridgeWebDavUploadFile(file)) return;
+      const key = bridgeBatchKey(file);
+      const batch = bridgeBatches.get(key) ?? [];
+      batch.push({ file, fileIndex });
+      bridgeBatches.set(key, batch);
+      if (!bridgeBatchLeaders.has(key)) {
+        bridgeBatchLeaders.set(key, fileIndex);
+      }
+    });
 
     const uploadSingleFile = async (
       file: (typeof files)[0],
@@ -570,28 +643,135 @@ const Upload = ({
       setFileProgress(1);
 
       try {
-        await uploadFileViaWorker(
-          file,
-          createdShare.id,
-          effectiveChunkSize,
-          chunks,
-          share.isE2EEncrypted ?? false,
-          cryptoKey,
-          (chunkIndex, totalChunks, _fileId) => {
-            completedChunks++;
-            if (
-              completedChunks % progressInterval === 0 ||
-              completedChunks === totalChunks
-            ) {
-              setFileProgress((completedChunks / totalChunks) * 100);
-            }
-          },
-          abortCtrl.signal,
-        );
+        if (isBridgeWebDavUploadFile(file)) {
+          const source = file.privcloudBridgeSource!;
+          const batch =
+            bridgeBatches.get(bridgeBatchKey(file)) ?? [{ file, fileIndex }];
+          const batchIndexes = new Set(batch.map(({ fileIndex }) => fileIndex));
+          setFiles((prev) =>
+            prev.map((f, callbackIndex) => {
+              if (batchIndexes.has(callbackIndex)) {
+                f.uploadingProgress = 1;
+              }
+              return f;
+            }),
+          );
+          if (!bridgeUploadToken) {
+            throw new Error("Bridge upload token is missing");
+          }
+          if (share.isE2EEncrypted && !e2eKeyEncoded) {
+            throw new Error("E2E key is missing for Bridge upload");
+          }
+
+          const job = await startBridgeWebDavUploadJob({
+            appBaseUrl: window.location.origin,
+            shareId: createdShare.id,
+            uploadToken: bridgeUploadToken.token,
+            chunkSize: effectiveChunkSize,
+            isE2EEncrypted: share.isE2EEncrypted ?? false,
+            encryptionKey: share.isE2EEncrypted ? e2eKeyEncoded : undefined,
+            webdav: {
+              endpoint: source.endpoint,
+              username: source.username,
+              password: source.password,
+            },
+            files: batch.map(({ file: batchFile }) => {
+              const batchSource = batchFile.privcloudBridgeSource!;
+              return {
+                href: batchSource.href,
+                name: batchFile.name,
+                size: batchFile.size,
+                contentType: batchSource.contentType || batchFile.type,
+                lastModified: batchSource.lastModified,
+              };
+            }),
+          });
+
+          await waitForBridgeUploadJob(job.id, {
+            signal: abortCtrl.signal,
+            onProgress: (currentJob) => {
+              const progressByIndex = new Map<number, number>();
+              batch.forEach(({ file: batchFile, fileIndex: batchIndex }, i) => {
+                const remote = currentJob.files[i];
+                const uploaded = remote?.uploadedBytes ?? 0;
+                const total = Math.max(remote?.size ?? batchFile.size, 1);
+                const completed = remote?.state === "completed";
+                const failed = remote?.state === "failed";
+                let progress = Math.min(
+                  99,
+                  Math.max(1, (uploaded / total) * 100),
+                );
+                if (currentJob.state === "completed" || completed) {
+                  progress = 100;
+                } else if (failed) {
+                  progress = -1;
+                }
+                progressByIndex.set(batchIndex, progress);
+              });
+              setFiles((prev) =>
+                prev.map((f, callbackIndex) => {
+                  const progress = progressByIndex.get(callbackIndex);
+                  if (progress !== undefined) {
+                    f.uploadingProgress = progress;
+                  }
+                  return f;
+                }),
+              );
+            },
+          });
+          setFiles((prev) =>
+            prev.map((f, callbackIndex) => {
+              if (batchIndexes.has(callbackIndex)) {
+                f.uploadingProgress = 100;
+              }
+              return f;
+            }),
+          );
+        } else {
+          await uploadFileViaWorker(
+            file,
+            createdShare.id,
+            effectiveChunkSize,
+            chunks,
+            share.isE2EEncrypted ?? false,
+            cryptoKey,
+            (chunkIndex, totalChunks, _fileId) => {
+              completedChunks++;
+              if (
+                completedChunks % progressInterval === 0 ||
+                completedChunks === totalChunks
+              ) {
+                setFileProgress((completedChunks / totalChunks) * 100);
+              }
+            },
+            abortCtrl.signal,
+          );
+        }
         setFileProgress(100);
         return "ok";
       } catch (e: any) {
         if (e?.cancelled) return "failed";
+        if (isBridgeWebDavUploadFile(file)) {
+          const batch =
+            bridgeBatches.get(bridgeBatchKey(file)) ?? [{ file, fileIndex }];
+          const batchIndexes = new Set(batch.map(({ fileIndex }) => fileIndex));
+          setFiles((prev) =>
+            prev.map((f, callbackIndex) => {
+              if (batchIndexes.has(callbackIndex)) {
+                f.uploadingProgress = -1;
+              }
+              return f;
+            }),
+          );
+          toast.error(
+            t("upload.bridge.error", {
+              fileName: file.name,
+              error: translateBridgeUploadError(e?.message, t),
+            }),
+          );
+          setFileProgress(-1);
+          return "failed";
+        }
         if (!isRetryableError(e) || attempt >= MAX_FILE_RETRIES) {
           if (e?.quota) {
             toast.error(e.message || "Upload failed (quota limit)");
@@ -614,15 +794,23 @@ const Upload = ({
     };
 
     // Phase 1: initial pass - all files through pLimit
-    const fileUploadPromises = files.map((file, fileIndex) =>
-      uploadLimit(async () => {
-        if (abortCtrl.signal.aborted) return;
-        const result = await uploadSingleFile(file, fileIndex);
-        if (result === "retryable") {
-          retryQueue.push({ file, fileIndex });
+    const fileUploadPromises = files
+      .map((file, fileIndex) => {
+        if (
+          isBridgeWebDavUploadFile(file) &&
+          bridgeBatchLeaders.get(bridgeBatchKey(file)) !== fileIndex
+        ) {
+          return null;
         }
-      }),
-    );
+        return uploadLimit(async () => {
+          if (abortCtrl.signal.aborted) return;
+          const result = await uploadSingleFile(file, fileIndex);
+          if (result === "retryable") {
+            retryQueue.push({ file, fileIndex });
+          }
+        });
+      })
+      .filter((promise): promise is Promise<void> => !!promise);
 
     await Promise.all(fileUploadPromises).catch(() => {});
 
@@ -755,7 +943,7 @@ const Upload = ({
         userHasE2E: !!user?.hasEncryptionKey || !!getUserKey(),
         maxExpiration: config.get("share.maxExpiration"),
         anonymousMaxExpiration: config.get("share.anonymousMaxExpiration"),
-        planMaxExpirationDays: planMaxExpirationDays?.maxDays ?? 0,
+        configuredMaxExpirationDays: configuredMaxExpirationDays?.maxDays ?? 0,
         shareIdLength: config.get("share.shareIdLength"),
         simplified,
         captchaSiteKey:
@@ -777,6 +965,10 @@ const Upload = ({
     } else {
       setFiles((oldArr) => [...oldArr, ...files]);
     }
+  };
+
+  const handleWebDavFilesImported = (importedFiles: FileUpload[]) => {
+    setFiles((currentFiles) => [...currentFiles, ...importedFiles]);
   };
 
   useEffect(() => {
@@ -868,6 +1060,7 @@ const Upload = ({
         shareService.remove(createdShare.id).catch(() => {});
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [files]);
 
   return (
@@ -942,14 +1135,33 @@ const Upload = ({
         mb={20}
       >
         {name && <Title order={3}>{name}</Title>}
-        <Button
-          loading={isUploading}
-          disabled={files.length <= 0}
-          onClick={() => showCreateUploadModalCallback(files)}
-        >
-          <FormattedMessage id="common.button.share" />
-        </Button>
+        <Group gap="xs">
+          {canUseWebDav && (
+            <Button
+              variant="light"
+              leftSection={<TbCloudDownload size={16} />}
+              disabled={isUploading}
+              onClick={() => setWebDavOpened(true)}
+            >
+              <FormattedMessage id="webdav.button.import" />
+            </Button>
+          )}
+          <Button
+            loading={isUploading}
+            disabled={files.length <= 0}
+            onClick={() => showCreateUploadModalCallback(files)}
+          >
+            <FormattedMessage id="common.button.share" />
+          </Button>
+        </Group>
       </Group>
+      <WebDavImportModal
+        opened={webDavOpened}
+        onClose={() => setWebDavOpened(false)}
+        onFilesImported={handleWebDavFilesImported}
+        maxShareSize={effectiveMaxShareSize}
+        existingFilesSize={files.reduce((sum, f) => sum + f.size, 0)}
+      />
       <Dropzone
         title={
           !autoOpenCreateUploadModal && files.length > 0
@@ -997,7 +1209,7 @@ const Upload = ({
               <Text size="xs" c="red" ta="center">
                 <FormattedMessage
                   id="upload.quota.exceeded"
-                  defaultMessage="La taille totale des fichiers dépasse votre quota. Retirez des fichiers ou passez à un plan supérieur."
+                  defaultMessage="La taille totale des fichiers dépasse la limite configurée. Retirez des fichiers ou demandez à l'administrateur de l'instance de l'augmenter."
                 />
               </Text>
             )}

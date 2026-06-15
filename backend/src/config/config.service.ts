@@ -92,7 +92,6 @@ export class ConfigService extends EventEmitter {
     });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   get(key: `${string}.${string}`): any {
     const configVariable = this.configVariables.filter(
       (variable) => `${variable.category}.${variable.name}` == key,

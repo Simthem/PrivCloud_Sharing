@@ -5,7 +5,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { User } from "@prisma/client";
-import { generateSecret, generate, verify, generateURI } from "otplib";
+import { generateSecret, verify, generateURI } from "otplib";
 import { createGuardrails } from "@otplib/core";
 import * as argon from "argon2";
 import * as crypto from "crypto";

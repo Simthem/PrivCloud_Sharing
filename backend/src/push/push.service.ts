@@ -79,47 +79,52 @@ export class PushService implements OnModuleInit {
 
     const data = JSON.stringify(payload);
 
-    for (const sub of subscriptions) {
-      try {
-        await webpush.sendNotification(
-          {
-            endpoint: sub.endpoint,
-            keys: { p256dh: sub.p256dh, auth: sub.auth },
-          },
-          data,
-          { TTL: 86400, urgency: "normal" },
-        );
-      } catch (err: unknown) {
-        const statusCode = (err as { statusCode?: number }).statusCode;
-        const errCode = (err as { code?: string }).code;
-        if (statusCode === 410 || statusCode === 404) {
-          // Subscription expired or unsubscribed - clean up
-          await this.prisma.pushSubscription.delete({
-            where: { id: sub.id },
-          });
-          this.logger.debug(
-            `Removed stale push subscription: ${sub.endpoint}`,
+    // Send to all subscriptions in parallel for faster delivery
+    await Promise.allSettled(
+      subscriptions.map(async (sub) => {
+        try {
+          await webpush.sendNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: { p256dh: sub.p256dh, auth: sub.auth },
+            },
+            data,
+            {
+              urgency: "high",
+              TTL: 86400,
+              timeout: 10000, // 10s max per push endpoint
+            },
           );
-        } else if (
-          errCode === "EPROTO" ||
-          errCode === "ECONNREFUSED" ||
-          errCode === "ECONNRESET" ||
-          errCode === "ETIMEDOUT" ||
-          errCode === "ERR_SSL_WRONG_VERSION_NUMBER"
-        ) {
-          // Push endpoint unreachable (TLS error, connection refused, etc.)
-          await this.prisma.pushSubscription.delete({
-            where: { id: sub.id },
-          });
-          this.logger.debug(
-            `Removed unreachable push subscription (${errCode}): ${sub.endpoint}`,
-          );
-        } else {
-          this.logger.error(
-            `Push failed for ${sub.endpoint}: ${(err as Error).message}`,
-          );
+        } catch (err: unknown) {
+          const statusCode = (err as { statusCode?: number }).statusCode;
+          const errCode = (err as { code?: string }).code;
+          if (statusCode === 410 || statusCode === 404) {
+            await this.prisma.pushSubscription.delete({
+              where: { id: sub.id },
+            });
+            this.logger.debug(
+              `Removed stale push subscription: ${sub.endpoint}`,
+            );
+          } else if (
+            errCode === "EPROTO" ||
+            errCode === "ECONNREFUSED" ||
+            errCode === "ECONNRESET" ||
+            errCode === "ETIMEDOUT" ||
+            errCode === "ERR_SSL_WRONG_VERSION_NUMBER"
+          ) {
+            await this.prisma.pushSubscription.delete({
+              where: { id: sub.id },
+            });
+            this.logger.warn(
+              `Removed unreachable push subscription (${errCode}): ${sub.endpoint}`,
+            );
+          } else {
+            this.logger.error(
+              `Push failed for ${sub.endpoint}: ${(err as Error).message}`,
+            );
+          }
         }
-      }
-    }
+      }),
+    );
   }
 }

@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "PrivCloud Companion",
+  "description": "Client-side PrivCloud connector for browser, WebDAV and mail workflows.",
+  "version": "0.1.0",
+  "permissions": ["nativeMessaging", "storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "https://share.example.com/*",
+    "http://127.0.0.1:3000/*",
+    "http://localhost:3000/*",
+    "http://127.0.0.1:47631/*",
+    "http://localhost:47631/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "PrivCloud",
+    "default_popup": "src/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://share.example.com/*",
+        "http://127.0.0.1:3000/*",
+        "http://localhost:3000/*"
+      ],
+      "js": ["src/page-bridge.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://mail.google.com/*"],
+      "js": ["src/content/gmail.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*/remote.php/dav/*", "https://*/apps/files/*"],
+      "js": ["src/content/nextcloud.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "companion@privcloud.fr",
+      "strict_min_version": "128.0"
+    }
+  }
+}

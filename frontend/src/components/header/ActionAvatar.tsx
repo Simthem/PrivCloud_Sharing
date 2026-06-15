@@ -27,12 +27,12 @@ const ActionAvatar = ({
   const [expanded, { toggle }] = useDisclosure(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
-  const isTeamPlan = user?.plan === "TEAM" || user?.isAdmin || user?.hasTeamMembership;
+  const hasTeamAccess = !!user;
 
   const { data: teams } = useQuery({
     queryKey: ["teams.list"],
     queryFn: () => teamService.getMyTeams(),
-    enabled: !!user && isTeamPlan,
+    enabled: hasTeamAccess,
     staleTime: 60_000,
   });
 
@@ -77,7 +77,7 @@ const ActionAvatar = ({
             <TbUser size={14} />
             <FormattedMessage id="navbar.avatar.account" />
           </Link>
-          {(teams && teams.length > 0 || isTeamPlan) && (
+          {(teams && teams.length > 0 || hasTeamAccess) && (
             <Link
               href={teams && teams.length === 1 ? `/team/${teams[0].id}` : "/team"}
               onClick={onNavigate}
@@ -127,7 +127,7 @@ const ActionAvatar = ({
         <Menu.Item component={Link} href="/account" leftSection={<TbUser size={14} />} onClick={onNavigate}>
           <FormattedMessage id="navbar.avatar.account" />
         </Menu.Item>
-        {(teams && teams.length > 0 || isTeamPlan) && (
+        {(teams && teams.length > 0 || hasTeamAccess) && (
           <Menu.Item
             component={Link}
             href={teams && teams.length === 1 ? `/team/${teams[0].id}` : "/team"}

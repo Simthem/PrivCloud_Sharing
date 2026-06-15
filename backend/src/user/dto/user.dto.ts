@@ -1,12 +1,6 @@
 import { Expose, plainToClass } from "class-transformer";
 import { IsEmail, IsIn, IsOptional, Length, Matches, MinLength } from "class-validator";
 
-export class UserSubscriptionDTO {
-  plan: string;
-  status: string;
-  currentPeriodEnd: Date | null;
-}
-
 export class UserDTO {
   @Expose()
   id: string;
@@ -55,7 +49,6 @@ export class UserDTO {
   // Populated by controller when listing users (admin)
   plan?: string;
   planStatus?: string;
-  planRenewDate?: Date | null;
 
   from(partial: Partial<UserDTO>) {
     const result = plainToClass(UserDTO, partial, {

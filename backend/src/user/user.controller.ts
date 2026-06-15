@@ -45,12 +45,11 @@ export class UserController {
     const userDTO = new UserDTO().from(user);
     userDTO.hasPassword = !!user.password;
 
-    const sub = { plan: "TEAM", status: "active", transferUsed: BigInt(0) } as any;
+    const sub = { plan: "TEAM", status: "active" };
     userDTO.plan = sub.plan;
     userDTO.planStatus = sub.status;
-    userDTO.planRenewDate = sub.plan !== "FREE" ? (sub.currentPeriodEnd ?? null) : null;
 
-    // Check active team membership (invited members may not have plan=TEAM)
+    // Check active team membership for users invited into an existing team.
     const teamMembership = await this.prisma.teamMember.findFirst({
       where: { userId: user.id, isActive: true },
       select: { teamId: true },
@@ -63,7 +62,6 @@ export class UserController {
       subscription: {
         plan: sub.plan,
         status: sub.status,
-        currentPeriodEnd: sub.currentPeriodEnd,
       },
     };
   }
@@ -91,6 +89,7 @@ export class UserController {
     const isSecure = this.config.get("general.secureCookies");
 
     response.cookie("access_token", "", {
+      path: "/",
       httpOnly: true,
       sameSite: "strict",
       maxAge: -1,
@@ -99,6 +98,13 @@ export class UserController {
     response.cookie("refresh_token", "", {
       path: "/api/auth/token",
       httpOnly: true,
+      sameSite: "strict",
+      maxAge: -1,
+      secure: isSecure,
+    });
+    response.cookie("logged_in", "", {
+      path: "/",
+      httpOnly: false,
       sameSite: "strict",
       maxAge: -1,
       secure: isSecure,
@@ -182,12 +188,10 @@ export class UserController {
       const dto = new UserDTO().from(user);
       dto.createdAt = user.createdAt;
       const sub = (user as Record<string, unknown>).subscription as
-        | { plan: string; status: string; currentPeriodEnd: Date | null }
+        | { plan: string; status: string }
         | undefined;
-      dto.plan = sub?.plan || "FREE";
+      dto.plan = sub?.plan || "TEAM";
       dto.planStatus = sub?.status || "active";
-      dto.planRenewDate =
-        dto.plan !== "FREE" ? (sub?.currentPeriodEnd ?? null) : null;
       return dto;
     });
   }

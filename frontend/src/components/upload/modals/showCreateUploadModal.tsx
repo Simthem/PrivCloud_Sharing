@@ -50,7 +50,7 @@ const showCreateUploadModal = (
     userHasE2E: boolean;
     maxExpiration: Timespan;
     anonymousMaxExpiration: Timespan;
-    planMaxExpirationDays: number;
+    configuredMaxExpirationDays: number;
     shareIdLength: number;
     simplified: boolean;
     captchaSiteKey?: string;
@@ -132,7 +132,7 @@ const CreateUploadModalBody = ({
     enableE2EKeyEmailSharing: boolean;
     maxExpiration: Timespan;
     anonymousMaxExpiration: Timespan;
-    planMaxExpirationDays: number;
+    configuredMaxExpirationDays: number;
     shareIdLength: number;
     captchaSiteKey?: string;
     preselectedTeamFolderId?: string;
@@ -324,21 +324,21 @@ const CreateUploadModalBody = ({
         ) as ManipulateType,
       );
 
-      // For authenticated users with a per-plan limit, use planMaxExpirationDays
-      // planMaxExpirationDays === 0 means unlimited (admin) -> no check
+      // For authenticated users with a per-configured limit, use configuredMaxExpirationDays
+      // configuredMaxExpirationDays === 0 means unlimited (admin) -> no check
       // For anonymous users, use anonymousMaxExpiration
       // Fallback to global maxExpiration (only for anonymous without specific limit)
       let expirationExceeded = false;
       let maxHumanized = "";
 
-      if (options.isUserSignedIn && options.planMaxExpirationDays === 0) {
+      if (options.isUserSignedIn && options.configuredMaxExpirationDays === 0) {
         // Unlimited (admin) - no expiration enforcement
-      } else if (options.isUserSignedIn && options.planMaxExpirationDays > 0) {
-        // Per-plan limit (accounts for team membership)
-        const planMaxDate = dayjs().add(options.planMaxExpirationDays, "days");
+      } else if (options.isUserSignedIn && options.configuredMaxExpirationDays > 0) {
+        // Per-configured limit (accounts for team membership)
+        const planMaxDate = dayjs().add(options.configuredMaxExpirationDays, "days");
         if (form.values.never_expires || expirationDate.isAfter(planMaxDate)) {
           expirationExceeded = true;
-          maxHumanized = dayjs.duration(options.planMaxExpirationDays, "days").humanize();
+          maxHumanized = dayjs.duration(options.configuredMaxExpirationDays, "days").humanize();
         }
       } else if (!options.isUserSignedIn && options.anonymousMaxExpiration.value !== 0) {
         const anonMaxDate = dayjs().add(
@@ -493,7 +493,7 @@ const CreateUploadModalBody = ({
                   />
                 </Grid.Col>
               </Grid>
-              {options.isUserSignedIn && options.planMaxExpirationDays === 0 && (
+              {options.isUserSignedIn && options.configuredMaxExpirationDays === 0 && (
                 <Checkbox
                   label={t("upload.modal.expires.never-long")}
                   {...form.getInputProps("never_expires")}
@@ -789,7 +789,7 @@ const SimplifiedCreateUploadModalModal = ({
     enableE2EKeyEmailSharing: boolean;
     maxExpiration: Timespan;
     anonymousMaxExpiration: Timespan;
-    planMaxExpirationDays: number;
+    configuredMaxExpirationDays: number;
     shareIdLength: number;
     captchaSiteKey?: string;
   };
@@ -843,17 +843,17 @@ const SimplifiedCreateUploadModalModal = ({
 
     // Expiration defaults:
     // - Anonymous: anonymousMaxExpiration (5d), fallback to maxExpiration
-    // - Signed-in with plan limit: planMaxExpirationDays
-    // - Admin (planMaxExpirationDays === 0): "never" (unlimited)
+    // - Signed-in with configured limit: configuredMaxExpirationDays
+    // - Admin (configuredMaxExpirationDays === 0): "never" (unlimited)
     let expiration: string;
     if (!options.isUserSignedIn && options.anonymousMaxExpiration.value !== 0) {
       expiration = `${options.anonymousMaxExpiration.value}-${options.anonymousMaxExpiration.unit}`;
     } else if (!options.isUserSignedIn && options.maxExpiration.value !== 0) {
       expiration = `${options.maxExpiration.value}-${options.maxExpiration.unit}`;
-    } else if (options.isUserSignedIn && options.planMaxExpirationDays > 0) {
-      expiration = `${options.planMaxExpirationDays}-days`;
+    } else if (options.isUserSignedIn && options.configuredMaxExpirationDays > 0) {
+      expiration = `${options.configuredMaxExpirationDays}-days`;
     } else {
-      // Admin SaaS (planMaxExpirationDays === 0) = unlimited
+      // Admin SaaS (configuredMaxExpirationDays === 0) = unlimited
       expiration = "never";
     }
 

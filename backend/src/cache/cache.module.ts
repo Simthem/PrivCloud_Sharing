@@ -29,7 +29,6 @@ const logger = new Logger("AppCacheModule");
         const config = {
           ttl,
           max,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           stores: [memoryStore] as any[],
           // Secondary store (Redis) writes are fire-and-forget so a
           // slow / unreachable Redis never blocks cache operations.

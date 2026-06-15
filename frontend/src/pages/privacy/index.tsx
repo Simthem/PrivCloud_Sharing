@@ -1,6 +1,5 @@
 import { Anchor, Divider, Title, useMantineColorScheme } from "@mantine/core";
 import DOMPurify from "isomorphic-dompurify";
-import { useIntl } from "react-intl";
 import { FormattedMessage } from "react-intl";
 import Meta from "../../components/Meta";
 import useTranslate from "../../hooks/useTranslate.hook";
@@ -10,8 +9,6 @@ const Markdown = dynamic(() => import("markdown-to-jsx"), { ssr: false });
 
 const PrivacyPolicy = () => {
   const t = useTranslate();
-  const intl = useIntl();
-  const isFr = intl.locale?.startsWith("fr") ?? true;
   const { colorScheme } = useMantineColorScheme();
   const config = useConfig();
   const metaDesc =

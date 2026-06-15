@@ -107,9 +107,8 @@ const SigningDetailPage = () => {
   useEffect(() => {
     if (user === null) {
       router.replace(`/auth/signIn?redirect=/signing/${docId}`);
-    } else if (user && user.plan !== "TEAM" && !user.isAdmin && !user.hasTeamMembership) {
-      router.replace("/pricing");
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   // E2E key resolution state
@@ -180,6 +179,7 @@ const SigningDetailPage = () => {
       setAutoFinalizeTriggered(true);
       handleFinalizeE2E();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typedDoc?.status, e2eKeyB64, finalizing, autoFinalizeTriggered]);
 
   // E2E finalization:

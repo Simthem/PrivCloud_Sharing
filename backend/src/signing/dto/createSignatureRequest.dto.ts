@@ -144,6 +144,16 @@ export class CreateSignatureRequestDTO {
   @IsOptional()
   isE2EEncrypted?: boolean;
 
+  @IsBoolean()
+  @IsOptional()
+  sendE2EKeyByEmail?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  @Length(16, 4096)
+  e2eKey?: string;
+
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(50)

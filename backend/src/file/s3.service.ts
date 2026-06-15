@@ -57,11 +57,14 @@ export class S3FileService {
   private static readonly MULTIPART_TTL_MS = 60 * 60 * 1000;
 
   // --- Global S3 upload concurrency limiter ---
-  // Each in-flight UploadPart holds a ~100-200 MB buffer in RAM.
+  // Each in-flight UploadPart holds a full chunk buffer in RAM.
   // With parallel chunk upload, multiple users can have multiple parts
   // in transit simultaneously.  Cap total to bound peak memory usage
-  // (4 × 200 MB = 800 MB worst case).
-  private static readonly MAX_S3_CONCURRENT = 4;
+  // Defaults to 4 slots; lower S3_MAX_CONCURRENT_UPLOADS on small VMs.
+  private static readonly MAX_S3_CONCURRENT = Math.max(
+    1,
+    parseInt(process.env.S3_MAX_CONCURRENT_UPLOADS || "4", 10) || 4,
+  );
   private s3ActiveUploads = 0;
   private readonly s3UploadQueue: Array<{
     resolve: (acquired: boolean) => void;

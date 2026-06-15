@@ -8,7 +8,7 @@ import {
   Text,
   Transition,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { Fragment, ReactNode, useEffect, useState } from "react";
@@ -20,6 +20,7 @@ import Logo from "../Logo";
 import ActionAvatar from "./ActionAvatar";
 import NavbarShareMenu from "./NavbarShareMenu";
 import NotificationBell from "./NotificationBell";
+import TeamNotificationPanel from "./TeamNotificationPanel";
 import { useStyles, HEADER_HEIGHT } from "./Header.styles";
 import { TbUpload } from "react-icons/tb";
 
@@ -41,20 +42,24 @@ const Header = () => {
 
   const [currentRoute, setCurrentRoute] = useState("");
   const [homeLink, setHomeLink] = useState("/upload");
+  const [isTeamUser, setIsTeamUser] = useState(false);
+  const isMobileViewport = useMediaQuery("(max-width: 47.99em)");
 
   useEffect(() => {
     setCurrentRoute(router.pathname);
   }, [router.pathname]);
 
   useEffect(() => {
-    if (!user) { setHomeLink("/upload"); return; }
+    if (!user) { setHomeLink("/upload"); setIsTeamUser(false); return; }
     teamService.getTeamStatus().then((status) => {
+      const inTeam = !!(status.ownsTeam || status.isTeamMember);
+      setIsTeamUser(inTeam);
       if (status.ownsTeam && status.ownedTeamId) {
         setHomeLink(`/team/${status.ownedTeamId}`);
       } else {
         setHomeLink("/upload");
       }
-    }).catch(() => setHomeLink("/upload"));
+    }).catch(() => { setHomeLink("/upload"); setIsTeamUser(false); });
   }, [user]);
 
   const authenticatedLinks: NavLink[] = [
@@ -169,11 +174,13 @@ const Header = () => {
           </Group>
         </Link>
         <Group gap={5} className={classes.links}>
-          {user && <NotificationBell />}
+          {user && isTeamUser && !isMobileViewport && <TeamNotificationPanel />}
+          {user && !isTeamUser && !isMobileViewport && <NotificationBell />}
           <Group>{items} </Group>
         </Group>
           <Group gap={8} wrap="nowrap" hiddenFrom="sm">
-            {user && <NotificationBell />}
+            {user && isTeamUser && isMobileViewport && <TeamNotificationPanel />}
+            {user && !isTeamUser && isMobileViewport && <NotificationBell />}
             <Burger
               opened={opened}
               onClick={() => toggleOpened.toggle()}

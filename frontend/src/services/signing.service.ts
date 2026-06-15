@@ -42,6 +42,7 @@ export interface SigningPageData {
     email: string;
     role: string;
     status: string;
+    otpVerified?: boolean;
   };
   fields: {
     id: string;
@@ -54,6 +55,7 @@ export interface SigningPageData {
     required: boolean;
   }[];
   pdfUrl: string;
+  requiresOtp?: boolean;
 }
 
 export interface CreateSignatureRequestPayload {
@@ -66,6 +68,8 @@ export interface CreateSignatureRequestPayload {
   addApprovalMention?: boolean;
   addInitials?: boolean;
   isE2EEncrypted?: boolean;
+  sendE2EKeyByEmail?: boolean;
+  e2eKey?: string;
   recipients: {
     name: string;
     email: string;

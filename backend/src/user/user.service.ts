@@ -12,8 +12,6 @@ import { FileService } from "../file/file.service";
 import { CreateUserDTO } from "./dto/createUser.dto";
 import { UpdateUserDto } from "./dto/updateUser.dto";
 
-type PlanName = "TEAM";
-
 @Injectable()
 export class UserSevice {
   private readonly logger = new Logger(UserSevice.name);
@@ -47,9 +45,8 @@ export class UserSevice {
       hash = await argon.hash(dto.password);
     }
 
-    const plan = dto.plan as PlanName | undefined;
-    // Strip plan and password from the DTO so they are not passed to Prisma user create
-    const { plan: _plan, password: _pwd, ...userData } = dto;
+    // Strip password from the DTO so it is not passed to Prisma user create.
+    const { password: _pwd, ...userData } = dto;
 
     try {
       const user = await this.prisma.user.create({
@@ -59,7 +56,7 @@ export class UserSevice {
         },
       });
 
-      // Create subscription (always TEAM plan)
+      // Keep the compatibility subscription row enabled for the full feature set.
       await this.prisma.subscription.create({
         data: {
           userId: user.id,
@@ -87,23 +84,12 @@ export class UserSevice {
   async update(id: string, user: UpdateUserDto) {
     try {
       const hash = user.password && (await argon.hash(user.password));
-      const plan = (user as Record<string, unknown>).plan as PlanName | undefined;
-      // Strip plan from the data so it is not passed to Prisma user update
-      const { plan: _plan, ...userData } = user as Record<string, unknown>;
+      const { password: _password, ...userData } = user as Record<string, unknown>;
 
       const updated = await this.prisma.user.update({
         where: { id },
         data: { ...(userData as Prisma.UserUpdateInput), password: hash },
       });
-
-      // If admin provided a plan, update/create the subscription
-      if (plan) {
-        await this.prisma.subscription.upsert({
-          where: { userId: id },
-          update: { plan, status: "active" },
-          create: { userId: id, plan, status: "active" },
-        });
-      }
 
       return updated;
     } catch (e) {
@@ -332,7 +318,7 @@ export class UserSevice {
   }
 
   /**
-   * Auto-create a team when a user is assigned the TEAM plan (admin creation or upgrade).
+   * Auto-create a team for users created by an instance admin.
    */
   private async autoCreateTeamForUser(
     userId: string,
@@ -353,8 +339,7 @@ export class UserSevice {
       return;
     }
 
-    const includedMembers = parseInt(process.env.TEAM_MAX_MEMBERS_INCLUDED || "3");
-    const maxMembers = includedMembers + 1; // +1 pour le propriétaire (owner compte dans le total)
+    const maxMembers = parseInt(process.env.TEAM_MAX_MEMBERS || "0", 10);
     const maxShareSize = BigInt(
       process.env.TEAM_MAX_SHARE_SIZE || "0", // 0 = no limit
     );
@@ -378,7 +363,7 @@ export class UserSevice {
 
     await this.prisma.team.create({
       data: {
-        name: `Équipe de ${username || email.split("@")[0]}`,
+        name: `Team of ${username || email.split("@")[0]}`,
         slug,
         ownerId: userId,
         maxMembers,
@@ -394,6 +379,6 @@ export class UserSevice {
       },
     });
 
-    this.logger.log(`Auto-created team for user ${userId} (plan: TEAM)`);
+    this.logger.log(`Auto-created team for user ${userId}`);
   }
 }

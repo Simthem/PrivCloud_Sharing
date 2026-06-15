@@ -33,6 +33,7 @@ const useWakeLock = () => {
       // Do NOT register the visibilitychange listener -- it would
       // retry forever, leaking Promises on every tab focus/blur.
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const release = useCallback(async () => {
@@ -43,6 +44,7 @@ const useWakeLock = () => {
       // Already released
     }
     wakeLockRef.current = null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleVisibilityChange = async () => {

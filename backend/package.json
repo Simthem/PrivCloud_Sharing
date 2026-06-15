@@ -1,12 +1,12 @@
 {
   "name": "privcloud-sharing-backend",
-  "version": "1.22.3",
+  "version": "1.23.0",
   "scripts": {
     "build": "nest build",
     "postinstall": "[ -f prisma/schema.prisma ] && prisma generate || true",
     "dev": "cross-env NODE_ENV=development nest start --watch",
     "prod": "prisma migrate deploy && prisma db seed && node dist/src/main",
-    "lint": "eslint 'src/**/*.ts'",
+    "lint": "eslint src/",
     "format": "prettier --end-of-line=auto --write 'src/**/*.ts'",
     "test:system": "prisma migrate reset -f && nest start & wait-on http://localhost:8080/api/configs && newman run ./test/newman-system-tests.json"
   },
@@ -40,8 +40,8 @@
     "content-disposition": "^0.5.4",
     "cookie-parser": "^1.4.7",
     "helmet": "^8.1.0",
-    "jose": "^4.15.5",
     "jmespath": "^0.16.0",
+    "jose": "^4.15.5",
     "ldapts": "^7.4.0",
     "mime-types": "^3.0.1",
     "moment": "^2.30.1",
@@ -87,7 +87,7 @@
     "wait-on": "^8.0.3"
   },
   "overrides": {
-    "hono": ">=4.12.18",
+    "hono": ">=4.12.21",
     "@hono/node-server": ">=1.19.13",
     "fast-xml-builder": ">=1.1.7",
     "fast-uri": ">=3.1.2",
@@ -100,13 +100,19 @@
     "minimatch": "^10.2.3",
     "multer": "^2.1.0",
     "serialize-javascript": "^7.0.3",
-    "qs": "^6.14.1",
+    "qs": ">=6.15.2",
     "validator": "^13.15.22",
     "node-forge": "^1.3.2",
-    "jose": "^4.15.5",
     "lodash": "^4.18.1",
     "@nestjs/cli": {
       "glob": "^11.1.0"
+    },
+    "ajv": "^8.18.0",
+    "eslint": {
+      "ajv": "^6.14.0"
+    },
+    "@eslint/eslintrc": {
+      "ajv": "^6.14.0"
     },
     "@angular-devkit/core": {
       "ajv": "^8.18.0"
@@ -126,9 +132,21 @@
     "tough-cookie": "^4.1.3",
     "word-wrap": "^1.2.4",
     "picomatch": ">=4.0.4",
-    "brace-expansion": ">=5.0.5",
+    "brace-expansion": ">=5.0.6",
     "path-to-regexp": ">=8.4.0",
     "defu": ">=6.1.5",
+    "postman-runtime": {
+      "jose": ">=4.15.5"
+    },
     "uuid": "$uuid"
+  },
+  "allowScripts": {
+    "prisma@7.8.0": true,
+    "argon2@0.41.1": true,
+    "sharp@0.34.5": true,
+    "better-sqlite3@12.9.0": true,
+    "@nestjs/core@11.1.19": true,
+    "@prisma/engines@7.8.0": true,
+    "@scarf/scarf@1.4.0": true
   }
 }

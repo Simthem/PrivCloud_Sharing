@@ -22,7 +22,7 @@ const ManageUserTable = ({
   const isMobile = useMediaQuery("(max-width: 680px)");
 
   const fmtDate = (iso?: string | null) => {
-    if (!iso) return "—";
+    if (!iso) return "N/A";
     return intl.formatDate(iso, {
       year: "numeric",
       month: "short",
@@ -30,7 +30,7 @@ const ManageUserTable = ({
     });
   };
 
-  const planColor = () => "grape";
+  const accessColor = () => "green";
 
   if (isMobile) {
     return (
@@ -61,8 +61,8 @@ const ManageUserTable = ({
                       {user.email}
                     </Text>
                     <Group gap="xs" wrap="wrap">
-                      <Badge color={planColor()} variant="light" size="sm">
-                        TEAM
+                      <Badge color={accessColor()} variant="light" size="sm">
+                        Full access
                       </Badge>
                       <Text size="xs" c="dimmed">{fmtDate(user.createdAt)}</Text>
                     </Group>
@@ -106,13 +106,10 @@ const ManageUserTable = ({
               <FormattedMessage id="admin.users.table.email" />
             </th>
             <th style={{ textAlign: "left" }}>
-              <FormattedMessage id="admin.users.table.plan" />
+              <FormattedMessage id="admin.users.table.access" />
             </th>
             <th style={{ textAlign: "left" }}>
               <FormattedMessage id="admin.users.table.created" />
-            </th>
-            <th style={{ textAlign: "left" }}>
-              <FormattedMessage id="admin.users.table.renew" />
             </th>
             <th style={{ textAlign: "left" }}>
               <FormattedMessage id="admin.users.table.admin" />
@@ -133,15 +130,12 @@ const ManageUserTable = ({
                   </td>
                   <td>{user.email}</td>
                   <td>
-                    <Badge color={planColor()} variant="light">
-                      TEAM
+                    <Badge color={accessColor()} variant="light">
+                      Full access
                     </Badge>
                   </td>
                   <td>
                     <Text size="sm">{fmtDate(user.createdAt)}</Text>
-                  </td>
-                  <td>
-                    <Text size="sm">—</Text>
                   </td>
                   <td>{user.isAdmin && <TbCheck />}</td>
                   <td>

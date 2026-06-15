@@ -1,9 +1,13 @@
+ARG OPENSSL_BUILDER_IMAGE=simthem/privcloud-sharing:openssl-builder-cache
+ARG NODE_BUILDER_IMAGE=simthem/privcloud-sharing:node-builder-cache
+
 # ---------------------------
 # Stage 0: Build Caddy from source with patched Go dependencies
 # ---------------------------
-# CVE-2026-27141: caddy:2-alpine embarque golang.org/x/net v0.50.0 (vuln).
-# On clone les sources Caddy, on force golang.org/x/net >= v0.51.0, puis on compile.
-# Go 1.26.3 : corrige CVE-2026-27142, CVE-2026-25679, CVE-2026-27139
+# CVE-2026-27141: caddy:2-alpine ships a vulnerable golang.org/x/net.
+# Build Caddy from source and pin patched Go dependencies explicitly.
+# Go 1.26.4 fixes CVE-2026-42504, CVE-2026-27145, CVE-2026-42507,
+# CVE-2026-27142, CVE-2026-25679, CVE-2026-27139
 # + CVE-2026-32280 (HIGH), CVE-2026-32282 (HIGH), CVE-2026-32281 (MEDIUM),
 # + CVE-2026-32288 (MEDIUM), CVE-2026-32289 (MEDIUM), CVE-2026-32283 (UNKNOWN),
 # + CVE-2026-33810 (UNKNOWN) -- tous fixés en 1.26.2.
@@ -14,12 +18,12 @@
 # CVE-2026-45135 (HIGH - FastCGI splitPos), CVE-2026-45692 (MEDIUM - Admin /config bypass),
 # GHSA-gx7w-56w6-g48x (MEDIUM - PKI path matching bypass).
 # GHSA-wwhq-w58m-w29c (MEDIUM - CVE-2026-30852 fix bypass) - status: affected, no fix yet.
-FROM golang:1.26.3-alpine AS caddy-builder
+FROM golang:1.26.4-alpine AS caddy-builder
 RUN apk upgrade --no-cache && apk add --no-cache git
 RUN git clone --depth 1 --branch v2.11.3 \
       https://github.com/caddyserver/caddy.git /caddy
 WORKDIR /caddy
-# Forcer la mise à jour des dépendances vulnérables
+# Force patched vulnerable dependencies.
 # CVE-2026-33186 (CVSS 9.1, CRITICAL) : google.golang.org/grpc < 1.79.3
 # GHSA-q4r8-xm5f-56gw (CRITICAL) + CVE-2026-30836 (CVSS 7.8, HIGH) : github.com/smallstep/certificates < 0.30.2
 # CVE-2026-34986 (CVSS 8.7, HIGH) : github.com/go-jose/go-jose v3 < 3.0.5, v4 < 4.1.4
@@ -35,6 +39,7 @@ WORKDIR /caddy
 # go mod tidy runs FIRST, then we re-pin smallstep + bbolt AFTER to prevent transitive downgrade
 RUN go get golang.org/x/net@latest \
     && go get golang.org/x/crypto@v0.52.0 \
+    && go get golang.org/x/sys@v0.44.0 \
     && go get github.com/yuin/goldmark@v1.7.17 \
     && go get google.golang.org/grpc@v1.79.3 \
     && go get github.com/go-jose/go-jose/v3@v3.0.5 \
@@ -55,22 +60,27 @@ RUN go get golang.org/x/net@latest \
         -replace=go.etcd.io/bbolt=go.etcd.io/bbolt@v1.4.0-beta.0.0.20260331144421-cae11e991754 \
     && go mod download go.etcd.io/bbolt \
     && go mod tidy \
-    && echo "=== go.mod: smallstep + bbolt ===" && grep -E 'smallstep|bbolt' go.mod
-# Compiler Caddy (binaire statique, stripped, sans symboles de debug)
+    && go mod edit -replace=golang.org/x/sys=golang.org/x/sys@v0.44.0 \
+    && go mod tidy \
+    && echo "=== go.mod: security pins ===" && grep -E 'replace|smallstep|bbolt|x/sys' go.mod
+# Build Caddy as a static, stripped binary.
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/caddy \
     && go clean -cache -modcache
 
 # ---------------------------
-# Stage 0b: Build gosu from source (Go 1.26.2)
+# Stage 0b: Build gosu from source (Go 1.26.4)
 # ---------------------------
-# Le gosu packagé par Debian (apt) est compilé avec Go 1.19.8, ce qui injecte
-# 54 CVEs Go stdlib dans l'image finale (4 CRITICAL, 20 HIGH, 28 MEDIUM, 2 LOW).
-# On compile gosu depuis les sources avec Go 1.26.3 : binaire statique,
-# zéro dépendance système, zéro CVE Go stdlib.
-FROM golang:1.26.3-alpine AS gosu-builder
-# CVE-2026-27171 : zlib 1.3.1-r2 -> 1.3.2-r0 disponible dans Alpine
-RUN apk upgrade --no-cache
-RUN CGO_ENABLED=0 go install -trimpath -ldflags='-s -w' github.com/tianon/gosu@latest
+# Debian's packaged gosu is built with an old Go toolchain. Build gosu from
+# source with Go 1.26.4 and pin golang.org/x/sys to avoid CVE-2026-39824.
+FROM golang:1.26.4-alpine AS gosu-builder
+RUN apk upgrade --no-cache && apk add --no-cache git
+RUN git clone --depth 1 https://github.com/tianon/gosu.git /gosu
+WORKDIR /gosu
+RUN go mod edit -replace=golang.org/x/sys=golang.org/x/sys@v0.44.0 \
+    && go get golang.org/x/sys@v0.44.0 \
+    && go mod tidy \
+    && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /go/bin/gosu . \
+    && go version -m /go/bin/gosu | grep 'golang.org/x/sys.*v0.44.0'
 
 # ---------------------------
 # Stage 0c: Build OpenSSL from patched branch
@@ -82,12 +92,12 @@ RUN CGO_ENABLED=0 go install -trimpath -ldflags='-s -w' github.com/tianon/gosu@l
 # so the binary identifies as 3.6.2 (the code IS post-fix).
 # ABI-compatible: libssl.so.3 / libcrypto.so.3 soname unchanged across 3.x.
 #
-# CACHE MODE: using pre-built image extracted from simthem/private:saas-sharing.
+# CACHE MODE: using a pre-built OpenSSL builder image.
 # To rebuild from source: see original stage in git history.
 # To switch back: replace the FROM line below with:
 #   FROM debian:trixie-slim AS openssl-builder
 # and restore the full build instructions.
-FROM simthem/private:openssl-builder-cache AS openssl-builder
+FROM ${OPENSSL_BUILDER_IMAGE} AS openssl-builder
 
 # ---------------------------
 # Stage 0d: Build Node.js from source with OpenSSL 3.6.2
@@ -98,12 +108,12 @@ FROM simthem/private:openssl-builder-cache AS openssl-builder
 # OpenSSL 3.6.2 libs, so the node binary links dynamically against the
 # patched OpenSSL instead of embedding the vulnerable version.
 #
-# CACHE MODE: using pre-built image extracted from simthem/private:saas-sharing.
+# CACHE MODE: using a pre-built Node.js builder image.
 # To rebuild from source: see original stage in git history.
 # To switch back: replace the FROM line below with:
 #   FROM debian:trixie-slim AS node-builder
 # and restore the full build instructions (--shared-openssl, --without-npm, etc.).
-FROM simthem/private:node-builder-cache AS node-builder
+FROM ${NODE_BUILDER_IMAGE} AS node-builder
 
 # ---------------------------
 # Stage 1: Base  (Debian Bookworm slim)
@@ -386,7 +396,7 @@ COPY --from=base /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
     ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
-# gosu compilé depuis les sources avec Go 1.26.1 (binaire statique).
+# gosu built from source with Go 1.26.4 and patched module metadata.
 COPY --from=gosu-builder /go/bin/gosu /usr/local/bin/gosu
 RUN chmod +x /usr/local/bin/gosu
 
@@ -461,6 +471,15 @@ COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/package.json /o
 COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/.next/standalone ./
 COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/.next/static ./.next/static
 COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/public ./public
+COPY --chown=1000:1000 ./integrations/browser-extension ./public/install/browser-extension
+COPY --chown=1000:1000 ./integrations/thunderbird-extension ./public/install/thunderbird-extension
+COPY --chown=1000:1000 ./integrations/outlook-addin ./public/install/outlook-addin
+COPY --chown=1000:1000 ./integrations/gmail-workspace-addon ./public/install/gmail-workspace-addon
+COPY --chown=1000:1000 ./bridge/native-messaging ./public/install/native-messaging
+COPY --chown=1000:1000 ./bridge/install ./public/install/companion/install
+COPY --chown=1000:1000 ./bridge/src/privcloud-bridge.mjs ./public/install/companion/privcloud-companion.mjs
+COPY --chown=1000:1000 ./bridge/package.json ./public/install/companion/package.json
+COPY --chown=1000:1000 ./bridge/README.md ./public/install/companion/README.md
 # Images par défaut copiées dans /tmp/img - create-user.sh les déplace
 # vers public/img avec les bonnes permissions au démarrage
 COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/public/img /tmp/img
