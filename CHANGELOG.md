@@ -1,3 +1,47 @@
+## [1.23.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.0...v1.23.1) (2026-06-16)
+
+### Security
+
+* **backend -- multer override for upload parsing CVEs:**
+  forced the dependency tree to `multer@2.2.0` so NestJS upload handling no
+  longer resolves to the vulnerable Multer releases reported for
+  `CVE-2026-5079` and `CVE-2026-5038`.
+
+* **backend and docs -- js-yaml DoS advisory remediated:**
+  pinned transitive `js-yaml` resolution to `4.2.0` for the
+  `GHSA-h67p-54hq-rp68` quadratic-complexity merge-key DoS advisory; the docs
+  build now carries a `patch-package` compatibility patch for `gray-matter`
+  so Docusaurus works with js-yaml v4 without a forced major downgrade.
+
+* **docker -- npm bundled brace-expansion patched:**
+  patched the npm runtime bundled inside the image to use
+  `brace-expansion@5.0.6`, including npm lock metadata, addressing
+  `CVE-2026-45149` findings from scanners that inspect the bundled npm tree.
+
+* **docker full-build -- build-only dependency exposure reduced:**
+  the OpenSSL and Node source builder stages now fetch release tarballs without
+  installing `git`, purge build dependencies in the same layer and expose only
+  clean artifact cache stages; this removes the retained build-stage path that
+  triggered scanner findings around `git`/`gnutls28`/`binutils` packages such as
+  `CVE-2026-33845`, `CVE-2026-42011`, `CVE-2026-3833`, `CVE-2024-52005`,
+  `CVE-2025-5244`, `CVE-2025-5245`, `CVE-2025-7546` and `CVE-2025-7545` when
+  rebuilding caches from source.
+
+* **backend -- current Hono security baseline enforced:**
+  forced transitive Hono resolution to `>=4.12.25` so the backend stays on the
+  patched Hono line expected by current scanners.
+
+### Bug Fixes
+
+* **docker -- cached Node builder artifact path restored:**
+  runtime Dockerfiles now copy the cached Node binary from `/node-artifact/node`,
+  matching the builder-cache image layout; full-build cache stages also expose
+  the compatibility `/node-src/out/Release/node` path for older Dockerfiles.
+
+### Release
+
+* Bumped root, backend and frontend package metadata to `1.23.1`.
+
 ## [1.23.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.22.3...v1.23.0) (2026-06-15)
 
 This public release intentionally aggregates the open-source-compatible work

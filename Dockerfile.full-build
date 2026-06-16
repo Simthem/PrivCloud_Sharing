@@ -104,7 +104,7 @@ RUN go mod edit -replace=golang.org/x/sys=golang.org/x/sys@v0.44.0 \
 # VERSION.dat already reads PATCH=2 -- we only strip PRE_RELEASE_TAG=dev
 # so the binary identifies as 3.6.2 (the code IS post-fix).
 # ABI-compatible: libssl.so.3 / libcrypto.so.3 soname unchanged across 3.x.
-FROM debian:trixie-slim AS openssl-builder
+FROM debian:trixie-slim AS openssl-source-builder
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY=localhost,127.0.0.1,::1
@@ -112,23 +112,30 @@ ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY}
 ENV http_proxy=${HTTP_PROXY} https_proxy=${HTTPS_PROXY}
 ENV NO_PROXY=${NO_PROXY}
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-        build-essential ca-certificates git perl && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-RUN git clone --depth 50 --branch openssl-3.6 \
-      https://github.com/openssl/openssl.git /openssl-src
-WORKDIR /openssl-src
-# Strip -dev pre-release tag so the binary identifies as 3.6.2.
-# PATCH is already 2 on the branch; only PRE_RELEASE_TAG needs clearing.
-RUN sed -i 's/^PRE_RELEASE_TAG=.*/PRE_RELEASE_TAG=/' VERSION.dat && \
-    grep -E '^(MAJOR|MINOR|PATCH|PRE_RELEASE_TAG)=' VERSION.dat
-# Build shared libraries only (no static, no tests, no docs)
-RUN ./Configure --prefix=/usr/local/openssl --openssldir=/usr/local/openssl/ssl \
+        build-essential ca-certificates curl perl && \
+    mkdir -p /openssl-src && \
+    curl -fsSL https://github.com/openssl/openssl/archive/refs/heads/openssl-3.6.tar.gz \
+      | tar xz -C /openssl-src --strip-components=1 && \
+    cd /openssl-src && \
+    # Strip -dev pre-release tag so the binary identifies as 3.6.2.
+    # PATCH is already 2 on the branch; only PRE_RELEASE_TAG needs clearing.
+    sed -i 's/^PRE_RELEASE_TAG=.*/PRE_RELEASE_TAG=/' VERSION.dat && \
+    grep -E '^(MAJOR|MINOR|PATCH|PRE_RELEASE_TAG)=' VERSION.dat && \
+    # Build shared libraries only (no static, no tests, no docs)
+    ./Configure --prefix=/usr/local/openssl --openssldir=/usr/local/openssl/ssl \
       --libdir=lib shared no-tests no-docs && \
     make -j"$(nproc)" && \
     make install_sw && \
     # Verify the built version (must use its own libs, not Debian's 3.5.5)
-    LD_LIBRARY_PATH=/usr/local/openssl/lib /usr/local/openssl/bin/openssl version
+    LD_LIBRARY_PATH=/usr/local/openssl/lib /usr/local/openssl/bin/openssl version && \
+    cd / && rm -rf /openssl-src && \
+    apt-get purge -y --auto-remove build-essential curl perl && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache
+
+FROM debian:trixie-slim AS openssl-builder
+COPY --from=openssl-source-builder /usr/local/openssl /usr/local/openssl
 
 # ---------------------------
 # Stage 0d: Build Node.js from source with OpenSSL 3.6.2
@@ -138,7 +145,7 @@ RUN ./Configure --prefix=/usr/local/openssl --openssldir=/usr/local/openssl/ssl 
 # We compile Node.js from source with --shared-openssl pointing to our
 # OpenSSL 3.6.2 libs, so the node binary links dynamically against the
 # patched OpenSSL instead of embedding the vulnerable version.
-FROM debian:trixie-slim AS node-builder
+FROM debian:trixie-slim AS node-source-builder
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY=localhost,127.0.0.1,::1
@@ -148,26 +155,36 @@ ENV NO_PROXY=${NO_PROXY}
 # Copy our pre-built OpenSSL 3.6.2 headers + libs
 COPY --from=openssl-builder /usr/local/openssl /usr/local/openssl
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-        build-essential ca-certificates git python3 python3-setuptools && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-# Use the exact Node.js version from the official image
-RUN git clone --depth 1 --branch v24.14.1 \
-      https://github.com/nodejs/node.git /node-src
-WORKDIR /node-src
-# Configure with shared (dynamic) OpenSSL -> node binary will NOT embed OpenSSL.
-# --shared-openssl : link dynamically against our 3.6.2 libs (no embedded 3.5.5).
-# --without-npm    : runtime starts with node + local project binaries only.
-# --without-corepack: not needed at runtime.
-# Default ICU (small-icu) is sufficient -- frontend handles i18n via react-intl.
-RUN ./configure \
+        build-essential ca-certificates curl python3 python3-setuptools && \
+    # Use the exact Node.js version from the official image.
+    mkdir -p /node-src /node-artifact && \
+    curl -fsSL https://github.com/nodejs/node/archive/refs/tags/v24.14.1.tar.gz \
+      | tar xz -C /node-src --strip-components=1 && \
+    cd /node-src && \
+    # Configure with shared (dynamic) OpenSSL -> node binary will NOT embed OpenSSL.
+    # --shared-openssl : link dynamically against our 3.6.2 libs (no embedded 3.5.5).
+    # --without-npm    : runtime starts with node + local project binaries only.
+    # --without-corepack: not needed at runtime.
+    # Default ICU (small-icu) is sufficient -- frontend handles i18n via react-intl.
+    ./configure \
       --shared-openssl \
       --shared-openssl-includes=/usr/local/openssl/include \
       --shared-openssl-libpath=/usr/local/openssl/lib \
       --without-npm \
       --without-corepack && \
     make -j"$(nproc)" && \
-    strip out/Release/node
+    strip out/Release/node && \
+    cp out/Release/node /node-artifact/node && \
+    cd / && rm -rf /node-src && \
+    apt-get purge -y --auto-remove build-essential curl python3 python3-setuptools && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache
+
+FROM debian:trixie-slim AS node-builder
+RUN mkdir -p /node-src/out/Release /node-artifact
+COPY --from=node-source-builder /node-artifact/node /node-src/out/Release/node
+COPY --from=node-source-builder /node-artifact/node /node-artifact/node
 
 # ---------------------------
 # Stage 1: Base  (Debian Bookworm slim)
@@ -230,10 +247,13 @@ RUN apt-get update && \
     # Le minimatch@latest patchée ci-dessus tire brace-expansion@^5.0.2 qui résout
     # en 5.0.5 (vulnérable). On force 5.0.6 via tarball.
     BRACE_URL=$(npm view brace-expansion@5.0.6 dist.tarball) && \
+    find /usr/local/lib/node_modules/npm -path '*/node_modules/brace-expansion' -type d -prune -exec rm -rf {} + && \
     BRACE_DIR=/usr/local/lib/node_modules/npm/node_modules/brace-expansion && \
-    rm -rf "$BRACE_DIR" && \
     mkdir -p "$BRACE_DIR" && \
-    curl -sL "$BRACE_URL" | tar xz -C "$BRACE_DIR" --strip-components=1
+    curl -sL "$BRACE_URL" | tar xz -C "$BRACE_DIR" --strip-components=1 && \
+    node -e "const fs=require('fs'); const lock='/usr/local/lib/node_modules/npm/package-lock.json'; if (fs.existsSync(lock)) { const data=JSON.parse(fs.readFileSync(lock,'utf8')); const patch=(pkg)=>{ if (!pkg) return; pkg.version='5.0.6'; pkg.resolved='https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.6.tgz'; pkg.integrity='sha512-kLpxurY4Z4r9sgMsyG0Z9uzsBlgiU/EFKhj/h91/8yHu0edo7XuixOIH3VcJ8kkxs6/jPzoI6U9Vj3WqbMQ94g=='; }; if (data.packages) for (const [name,pkg] of Object.entries(data.packages)) if (name.endsWith('node_modules/brace-expansion')) patch(pkg); if (data.dependencies && data.dependencies['brace-expansion']) patch(data.dependencies['brace-expansion']); fs.writeFileSync(lock, JSON.stringify(data,null,2)+'\n'); }" && \
+    find /usr/local/lib/node_modules/npm -path '*/node_modules/brace-expansion/package.json' \
+      -exec node -e "const fs=require('fs'); const p=process.argv[1]; const v=JSON.parse(fs.readFileSync(p,'utf8')).version; if (v !== '5.0.6') { console.error(p + ': ' + v); process.exit(1); }" {} \;
 
 # ---------------------------
 # Stage 1b: Frontend dependencies
@@ -431,7 +451,7 @@ ENV NO_PROXY=
 # --- Node.js runtime (compiled from source with shared OpenSSL 3.6.2) ---
 # Links dynamically against libssl.so.3 / libcrypto.so.3 (our 3.6.2 build)
 # instead of embedding vulnerable OpenSSL 3.5.5 statically.
-COPY --from=node-builder /node-src/out/Release/node /usr/local/bin/node
+COPY --from=node-builder /node-artifact/node /usr/local/bin/node
 # npm/npx intentionally absent from the published runtime image.
 # entrypoint.sh calls prisma directly through backend/node_modules/.bin and
 # then starts Node, which removes npm's bundled dependency tree from prod

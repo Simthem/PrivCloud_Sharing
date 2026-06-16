@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-frontend",
-  "version": "1.23.0",
+  "version": "1.23.1",
   "scripts": {
     "dev": "next dev",
     "prebuild": "sh scripts/strip-legacy-polyfills.sh",

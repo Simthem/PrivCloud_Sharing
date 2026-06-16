@@ -176,10 +176,13 @@ RUN apt-get update && \
     # Le minimatch@latest patchée ci-dessus tire brace-expansion@^5.0.2 qui résout
     # en 5.0.5 (vulnérable). On force 5.0.6 via tarball.
     BRACE_URL=$(npm view brace-expansion@5.0.6 dist.tarball) && \
+    find /usr/local/lib/node_modules/npm -path '*/node_modules/brace-expansion' -type d -prune -exec rm -rf {} + && \
     BRACE_DIR=/usr/local/lib/node_modules/npm/node_modules/brace-expansion && \
-    rm -rf "$BRACE_DIR" && \
     mkdir -p "$BRACE_DIR" && \
-    curl -sL "$BRACE_URL" | tar xz -C "$BRACE_DIR" --strip-components=1
+    curl -sL "$BRACE_URL" | tar xz -C "$BRACE_DIR" --strip-components=1 && \
+    node -e "const fs=require('fs'); const lock='/usr/local/lib/node_modules/npm/package-lock.json'; if (fs.existsSync(lock)) { const data=JSON.parse(fs.readFileSync(lock,'utf8')); const patch=(pkg)=>{ if (!pkg) return; pkg.version='5.0.6'; pkg.resolved='https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.6.tgz'; pkg.integrity='sha512-kLpxurY4Z4r9sgMsyG0Z9uzsBlgiU/EFKhj/h91/8yHu0edo7XuixOIH3VcJ8kkxs6/jPzoI6U9Vj3WqbMQ94g=='; }; if (data.packages) for (const [name,pkg] of Object.entries(data.packages)) if (name.endsWith('node_modules/brace-expansion')) patch(pkg); if (data.dependencies && data.dependencies['brace-expansion']) patch(data.dependencies['brace-expansion']); fs.writeFileSync(lock, JSON.stringify(data,null,2)+'\n'); }" && \
+    find /usr/local/lib/node_modules/npm -path '*/node_modules/brace-expansion/package.json' \
+      -exec node -e "const fs=require('fs'); const p=process.argv[1]; const v=JSON.parse(fs.readFileSync(p,'utf8')).version; if (v !== '5.0.6') { console.error(p + ': ' + v); process.exit(1); }" {} \;
 
 # ---------------------------
 # Stage 1b: Frontend dependencies
@@ -388,7 +391,7 @@ ENV NO_PROXY=
 # --- Node.js runtime (compiled from source with shared OpenSSL 3.6.2) ---
 # Links dynamically against libssl.so.3 / libcrypto.so.3 (our 3.6.2 build)
 # instead of embedding vulnerable OpenSSL 3.5.5 statically.
-COPY --from=node-builder /node-src/out/Release/node /usr/local/bin/node
+COPY --from=node-builder /node-artifact/node /usr/local/bin/node
 # npm est nécessaire pour 'npm run prod' dans entrypoint.sh
 # (prisma migrate deploy && prisma db seed && node dist/src/main).
 # On copie le npm patché (minimatch + tar + picomatch corrigés dans le stage base).
