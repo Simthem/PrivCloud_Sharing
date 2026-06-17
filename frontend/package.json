@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-frontend",
-  "version": "1.23.1",
+  "version": "1.23.2",
   "scripts": {
     "dev": "next dev",
     "prebuild": "sh scripts/strip-legacy-polyfills.sh",
@@ -24,7 +24,7 @@
     "@mantine/modals": "8.3.18",
     "@mantine/notifications": "8.3.18",
     "@tanstack/react-query": "^5.83.0",
-    "axios": "^1.16.0",
+    "axios": "1.16.0",
     "clsx": "^2.1.1",
     "cookies-next": "^4.2.1",
     "dayjs": "^1.11.20",
@@ -55,7 +55,7 @@
     "@types/react": "18.3.7",
     "@types/react-dom": "18.3.0",
     "@typescript-eslint/parser": "^8.60.0",
-    "axios": "^1.16.0",
+    "axios": "1.16.0",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.6",
     "eslint-config-prettier": "^9.1.0",
@@ -68,7 +68,9 @@
     "serialize-javascript": "^7.0.3",
     "tar": "^7.5.10",
     "diff": "^8.0.3",
-    "picomatch": ">=4.0.4"
+    "picomatch": ">=4.0.4",
+    "axios": "1.16.0",
+    "next": "16.2.6"
   },
   "browserslist": [
     "last 2 Chrome versions",

@@ -1,3 +1,36 @@
+## [1.23.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.1...v1.23.2) (2026-06-17)
+
+### Security
+
+* **frontend and backend -- axios scanner remediation pinned:**
+  pinned direct frontend axios usage and npm overrides to `axios@1.16.0`,
+  ensuring audits cannot resolve the vulnerable `axios@1.15.0` line. This
+  covers `CVE-2026-42035`, `CVE-2026-42264`, `CVE-2026-42044`,
+  `CVE-2026-42039`, `CVE-2026-42033`, `CVE-2026-42038`, `CVE-2026-42043`,
+  `CVE-2026-42041`, `CVE-2026-42042`, `CVE-2026-42037`, `CVE-2026-42034`,
+  `CVE-2026-42040` and `CVE-2026-42036`.
+
+* **frontend -- Next.js scanner remediation pinned:**
+  kept Next.js on the patched `16.2.6` release and added an explicit npm
+  override so audits cannot downgrade or report the vulnerable `16.2.3` line.
+  This covers `CVE-2026-23870`, `CVE-2026-44574`, `CVE-2026-44578`,
+  `CVE-2026-44579`, `CVE-2026-44575`, `CVE-2026-45109`, `CVE-2026-44577`,
+  `CVE-2026-44573`, `CVE-2026-44576`, `CVE-2026-44580`, `CVE-2026-44581`,
+  `CVE-2026-44572` and `CVE-2026-44582`.
+
+* **docker -- Caddy Go module CVEs documented and verified:**
+  documented the Caddy builder pins already present for
+  `go.opentelemetry.io/otel` packages at `v1.44.0` and
+  `github.com/quic-go/quic-go/http3@v0.59.1`, covering `CVE-2026-41178` and
+  `CVE-2026-40898`; the full-build Dockerfile carries the same Caddy module
+  pins.
+
+### Maintenance
+
+* **release -- explicit audit-friendly package pins:**
+  bumped root, backend and frontend package metadata to `1.23.2`, refreshed the
+  npm lockfiles and ignored accidental copied package-lock files.
+
 ## [1.23.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.0...v1.23.1) (2026-06-16)
 
 ### Security
