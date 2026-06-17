@@ -33,23 +33,26 @@ WORKDIR /caddy
 #   VEX not_affected: pgx is a transitive dep of Caddy via smallstep/certificates;
 #   Caddy never connects to PostgreSQL, vulnerable code is dead. See .docker/vex.json.
 # CVE-2026-33817 (CVSS 6.9, MEDIUM) : go.etcd.io/bbolt (no release yet, pin to fix commit)
+# CVE-2026-41178 (CVSS 6.9, MEDIUM) : go.opentelemetry.io/otel/baggage@v1.44.0
+#                                     go.opentelemetry.io/otel/propagation@v1.44.0
+# CVE-2026-40898 (CVSS 6.9, MEDIUM) : github.com/quic-go/quic-go/http3@v0.59.1
 # SNYK-GOLANG-GOOPENTELEMETRYIO* (HIGH x4) : go.opentelemetry.io/otel < 1.43.0
 # SNYK-GOLANG-GITHUBCOMYUINGOLDMARKRENDERERHTML-15838406 (MEDIUM) : goldmark XSS < 1.7.17
 # SNYK-GOLANG-GOLANGORGXCRYPTOSSH* (HIGH x5 + MEDIUM x7) : golang.org/x/crypto/ssh{,/agent} < 0.52.0
 # go mod tidy runs FIRST, then we re-pin smallstep + bbolt AFTER to prevent transitive downgrade
-RUN go get golang.org/x/net@latest \
+RUN go get golang.org/x/net@v0.55.0 \
     && go get golang.org/x/crypto@v0.52.0 \
-    && go get golang.org/x/sys@v0.44.0 \
     && go get github.com/yuin/goldmark@v1.7.17 \
     && go get google.golang.org/grpc@v1.79.3 \
     && go get github.com/go-jose/go-jose/v3@v3.0.5 \
     && go get github.com/go-jose/go-jose/v4@v4.1.4 \
     && go get github.com/jackc/pgx/v5@v5.9.2 \
-    && go get go.opentelemetry.io/otel@v1.43.0 \
-    && go get go.opentelemetry.io/otel/sdk@v1.43.0 \
-    && go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.43.0 \
-    && go get go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp@v1.43.0 \
-    && go get go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.19.0 \
+    && go get go.opentelemetry.io/otel@v1.44.0 \
+    && go get go.opentelemetry.io/otel/sdk@v1.44.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.44.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp@v1.44.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.20.0 \
+    && go get github.com/quic-go/quic-go/http3@v0.59.1 \
     && go get github.com/smallstep/certificates@v0.30.2 \
     && go get go.etcd.io/bbolt@cae11e991754 \
     && go mod tidy \

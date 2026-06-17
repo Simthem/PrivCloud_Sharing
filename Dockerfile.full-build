@@ -32,6 +32,7 @@ WORKDIR /caddy
 #   Caddy never connects to PostgreSQL, vulnerable code is dead. See .docker/vex.json.
 # CVE-2026-33817 (CVSS 6.9, MEDIUM) : go.etcd.io/bbolt (no release yet, pin to fix commit)
 # SNYK-GOLANG-GOOPENTELEMETRYIO* (MEDIUM x4) : go.opentelemetry.io/otel{/propagation,/baggage} < 1.44.0
+# CVE-2026-40898 (CVSS 6.9, MEDIUM) : github.com/quic-go/quic-go/http3@v0.59.1
 # CVE-2026-39824 (LOW) : golang.org/x/sys < 0.44.0
 # SNYK-GOLANG-GITHUBCOMYUINGOLDMARKRENDERERHTML-15838406 (MEDIUM) : goldmark XSS < 1.7.17
 # SNYK-GOLANG-GOLANGORGXCRYPTOSSH* (CRITICAL x7 + HIGH x2 + MEDIUM x4) : golang.org/x/crypto/ssh{,/agent} < 0.52.0
@@ -53,6 +54,7 @@ RUN go get golang.org/x/net@v0.55.0 \
     && go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.44.0 \
     && go get go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp@v1.44.0 \
     && go get go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.20.0 \
+    && go get github.com/quic-go/quic-go/http3@v0.59.1 \
     && go get golang.org/x/sys@v0.44.0 \
     && go get github.com/smallstep/certificates@v0.30.2 \
     && go get go.etcd.io/bbolt@cae11e991754 \

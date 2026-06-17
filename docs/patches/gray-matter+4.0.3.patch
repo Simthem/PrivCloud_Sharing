@@ -2,14 +2,8 @@ diff --git a/node_modules/gray-matter/lib/engines.js b/node_modules/gray-matter/
 index 3311411..25e0a48 100644
 --- a/node_modules/gray-matter/lib/engines.js
 +++ b/node_modules/gray-matter/lib/engines.js
-@@ -13,8 +13,8 @@ const engines = exports = module.exports;
-  */
- 
- engines.yaml = {
+@@ -16,2 +16,2 @@ engines.yaml = {
 -  parse: yaml.safeLoad.bind(yaml),
 -  stringify: yaml.safeDump.bind(yaml)
 +  parse: yaml.load.bind(yaml),
 +  stringify: yaml.dump.bind(yaml)
- };
- 
- /**
