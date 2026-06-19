@@ -6,6 +6,7 @@ import {
   Alert,
   Badge,
   Button,
+  Card,
   Container,
   Divider,
   Group,
@@ -133,7 +134,8 @@ const TeamSettings = () => {
         memberId: selectedMember?.id,
         permission,
       }),
-    onSuccess: () => {
+    onSuccess: (_data, { folderId, permission }) => {
+      updateMemberAccessCache(folderId, permission);
       queryClient.invalidateQueries({
         queryKey: ["team.memberAccess", teamIdStr, selectedMember?.id],
       });
@@ -146,7 +148,8 @@ const TeamSettings = () => {
   const removeFolderAccessMutation = useMutation({
     mutationFn: (folderId: string) =>
       teamService.removeFolderAccess(teamIdStr, folderId, selectedMember?.id),
-    onSuccess: () => {
+    onSuccess: (_data, folderId) => {
+      updateMemberAccessCache(folderId, null);
       queryClient.invalidateQueries({
         queryKey: ["team.memberAccess", teamIdStr, selectedMember?.id],
       });
@@ -223,6 +226,33 @@ const TeamSettings = () => {
     };
     const v = map[perm] || { color: "gray", label: perm };
     return <Badge size="sm" variant="filled" color={v.color}>{v.label}</Badge>;
+  };
+
+  const updateMemberAccessCache = (
+    folderId: string,
+    permission: string | null,
+  ) => {
+    queryClient.setQueryData<
+      | {
+          member: any;
+          folders: {
+            id: string;
+            name: string;
+            color: string | null;
+            permission: string | null;
+          }[];
+        }
+      | undefined
+    >(["team.memberAccess", teamIdStr, selectedMember?.id], (current) =>
+      current
+        ? {
+            ...current,
+            folders: current.folders.map((folder) =>
+              folder.id === folderId ? { ...folder, permission } : folder,
+            ),
+          }
+        : current,
+    );
   };
 
   return (
@@ -578,25 +608,42 @@ const TeamSettings = () => {
             setRemoveMemberConfirm(false);
           }}
           title={
-            <Group gap="xs">
-              <TbShieldCheck size={20} />
-              <Text fw={700}>
+            <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+              <TbShieldCheck size={20} style={{ flexShrink: 0 }} />
+              <Text fw={700} style={{ minWidth: 0, overflowWrap: "anywhere" }}>
                 {selectedMember?.user?.username || selectedMember?.user?.email || "Membre"}
               </Text>
             </Group>
           }
-          size="lg"
+          size={isMobile ? "calc(100vw - 24px)" : "lg"}
+          styles={{
+            content: {
+              maxHeight: isMobile ? "45dvh" : undefined,
+            },
+            body: {
+              maxHeight: isMobile ? "calc(45dvh - 64px)" : undefined,
+              overflowY: isMobile ? "auto" : undefined,
+            },
+          }}
           centered
         >
           {selectedMember && (
             <Stack gap="md">
-              <Group gap="lg">
-                <Text size="sm" c="dimmed">
-                  Email : <Text span fw={500}>{selectedMember.user?.email}</Text>
+              <Group gap="lg" align="flex-start">
+                <Text
+                  size="sm"
+                  c="dimmed"
+                  style={{ minWidth: 0, flex: "1 1 220px" }}
+                >
+                  Email :{" "}
+                  <Text span fw={500} style={{ overflowWrap: "anywhere" }}>
+                    {selectedMember.user?.email}
+                  </Text>
                 </Text>
                 <Badge
                   variant="light"
                   color={selectedMember.role === "ADMIN" ? "blue" : "gray"}
+                  style={{ flexShrink: 0 }}
                 >
                   {selectedMember.role === "ADMIN" ? "Admin" : "Membre"}
                 </Badge>
@@ -616,66 +663,169 @@ const TeamSettings = () => {
                   <Loader size="sm" />
                 </Box>
               ) : memberAccess?.folders && memberAccess.folders.length > 0 ? (
-                <Table striped>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>Dossier</Table.Th>
-                      <Table.Th>Permission actuelle</Table.Th>
-                      <Table.Th>Modifier</Table.Th>
-                      <Table.Th></Table.Th>
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
+                isMobile ? (
+                  <Stack gap="sm">
                     {memberAccess.folders.map((folder) => (
-                      <Table.Tr key={folder.id}>
-                        <Table.Td>
-                          <Group gap="xs">
-                            <TbFolder
-                              size={14}
-                              color={folder.color || "var(--mantine-color-blue-6)"}
-                            />
-                            <Text size="sm">{folder.name}</Text>
-                          </Group>
-                        </Table.Td>
-                        <Table.Td>{permissionBadge(folder.permission)}</Table.Td>
-                        <Table.Td>
-                          <Select
-                            size="xs"
-                            w={160}
-                            placeholder="Définir..."
-                            data={permissionOptions}
-                            value={folder.permission || ""}
-                            onChange={(val) => {
-                              if (val) {
-                                setFolderAccessMutation.mutate({
-                                  folderId: folder.id,
-                                  permission: val,
-                                });
-                              }
+                      <Card key={folder.id} withBorder padding="sm" radius="md">
+                        <Stack gap="sm">
+                          <Box
+                            style={{
+                              alignItems: "start",
+                              columnGap: 8,
+                              display: "grid",
+                              gridTemplateColumns: "28px minmax(0, 1fr)",
                             }}
-                            clearable={false}
-                          />
-                        </Table.Td>
-                        <Table.Td>
-                          {folder.permission && (
-                            <Tooltip label="Supprimer la règle (accès par défaut)">
-                              <ActionIcon
-                                variant="light"
-                                color="gray"
+                          >
+                            <Box
+                              style={{
+                                alignItems: "center",
+                                display: "flex",
+                                flexShrink: 0,
+                                height: 28,
+                                justifyContent: "center",
+                                width: 28,
+                              }}
+                            >
+                              <TbFolder
+                                size={16}
+                                color={folder.color || "var(--mantine-color-blue-6)"}
+                              />
+                            </Box>
+                            <Box style={{ minWidth: 0 }}>
+                              <Text
                                 size="sm"
-                                onClick={() =>
-                                  removeFolderAccessMutation.mutate(folder.id)
-                                }
+                                fw={600}
+                                style={{
+                                  lineHeight: 1.25,
+                                  overflowWrap: "anywhere",
+                                  wordBreak: "break-word",
+                                }}
                               >
-                                <TbTrash size={14} />
-                              </ActionIcon>
-                            </Tooltip>
-                          )}
-                        </Table.Td>
-                      </Table.Tr>
+                                {folder.name}
+                              </Text>
+                            </Box>
+                          </Box>
+
+                          <Group justify="space-between" gap="xs" wrap="wrap">
+                            <Text size="xs" c="dimmed">
+                              Permission actuelle
+                            </Text>
+                            <Box>
+                              {permissionBadge(folder.permission)}
+                            </Box>
+                          </Group>
+
+                          <Group gap="xs" wrap="nowrap" align="center">
+                            <Select
+                              size="sm"
+                              placeholder="Définir..."
+                              data={permissionOptions}
+                              value={folder.permission ?? null}
+                              onChange={(val) => {
+                                if (val) {
+                                  setFolderAccessMutation.mutate({
+                                    folderId: folder.id,
+                                    permission: val,
+                                  });
+                                }
+                              }}
+                              clearable={false}
+                              style={{ minWidth: 0, flex: 1 }}
+                            />
+                            {folder.permission && (
+                              <Tooltip label="Supprimer la règle (accès par défaut)">
+                                <ActionIcon
+                                  variant="light"
+                                  color="red"
+                                  size="lg"
+                                  aria-label="Supprimer la règle d'accès"
+                                  onClick={() =>
+                                    removeFolderAccessMutation.mutate(folder.id)
+                                  }
+                                  style={{ flexShrink: 0 }}
+                                >
+                                  <TbTrash size={14} />
+                                </ActionIcon>
+                              </Tooltip>
+                            )}
+                          </Group>
+                        </Stack>
+                      </Card>
                     ))}
-                  </Table.Tbody>
-                </Table>
+                  </Stack>
+                ) : (
+                  <Table striped style={{ tableLayout: "fixed", width: "100%" }}>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>Dossier</Table.Th>
+                        <Table.Th style={{ width: 145 }}>Permission actuelle</Table.Th>
+                        <Table.Th style={{ width: 140 }}>Modifier</Table.Th>
+                        <Table.Th style={{ width: 44 }}></Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {memberAccess.folders.map((folder) => (
+                        <Table.Tr key={folder.id}>
+                          <Table.Td>
+                            <Group gap="xs" align="center" wrap="nowrap">
+                              <TbFolder
+                                size={14}
+                                color={folder.color || "var(--mantine-color-blue-6)"}
+                                style={{ flexShrink: 0 }}
+                              />
+                              <Text
+                                size="sm"
+                                style={{
+                                  lineHeight: 1.25,
+                                  minWidth: 0,
+                                  overflowWrap: "anywhere",
+                                }}
+                              >
+                                {folder.name}
+                              </Text>
+                            </Group>
+                          </Table.Td>
+                          <Table.Td>{permissionBadge(folder.permission)}</Table.Td>
+                          <Table.Td>
+                            <Select
+                              size="xs"
+                              w="100%"
+                              placeholder="Définir..."
+                              data={permissionOptions}
+                              value={folder.permission ?? null}
+                              onChange={(val) => {
+                                if (val) {
+                                  setFolderAccessMutation.mutate({
+                                    folderId: folder.id,
+                                    permission: val,
+                                  });
+                                }
+                              }}
+                              clearable={false}
+                            />
+                          </Table.Td>
+                          <Table.Td>
+                            {folder.permission && (
+                              <Tooltip label="Supprimer la règle (accès par défaut)">
+                                <ActionIcon
+                                  variant="light"
+                                  color="gray"
+                                  size="sm"
+                                  aria-label="Supprimer la règle d'accès"
+                                  onClick={() =>
+                                    removeFolderAccessMutation.mutate(folder.id)
+                                  }
+                                >
+                                  <TbTrash size={14} />
+                                </ActionIcon>
+                              </Tooltip>
+                            )}
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                )
               ) : (
                 <Text size="sm" c="dimmed" ta="center" py="md">
                   Aucun dossier dans l&apos;équipe.

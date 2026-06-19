@@ -39,7 +39,9 @@ export type CurrentUser = User & {};
 
 export type UserHook = {
   user: CurrentUser | null;
-  refreshUser: () => Promise<CurrentUser | null>;
+  refreshUser: (
+    _options?: { refresh?: boolean },
+  ) => Promise<CurrentUser | null>;
 };
 
 export default User;

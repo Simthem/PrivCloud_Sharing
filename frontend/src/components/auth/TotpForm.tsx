@@ -16,7 +16,7 @@ import * as yup from "yup";
 import useTranslate from "../../hooks/useTranslate.hook";
 import useUser from "../../hooks/user.hook";
 import authService from "../../services/auth.service";
-import { safeRedirectPath } from "../../utils/router.util";
+import { resolvePostAuthRedirectPath } from "../../utils/router.util";
 import toast from "../../utils/toast.util";
 
 function TotpForm({ redirectPath }: { redirectPath: string }) {
@@ -57,8 +57,9 @@ function TotpForm({ redirectPath }: { redirectPath: string }) {
         form.values.code,
         router.query.loginToken as string,
       );
-      await refreshUser();
-      await router.replace(safeRedirectPath(redirectPath));
+      const user = await refreshUser({ refresh: false });
+      const target = await resolvePostAuthRedirectPath(redirectPath, user);
+      await router.replace(target);
     } catch (e) {
       toast.axiosError(e);
       form.setFieldError("code", "error");

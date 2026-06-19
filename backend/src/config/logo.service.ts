@@ -3,35 +3,48 @@ import * as fs from "fs";
 import sharp from "sharp";
 
 const IMAGES_PATH = "../frontend/public/img";
+const TRANSPARENT_BACKGROUND = { r: 0, g: 0, b: 0, alpha: 0 };
+const SQUARE_RESIZE = {
+  fit: "contain" as const,
+  background: TRANSPARENT_BACKGROUND,
+};
 
 @Injectable()
 export class LogoService {
   async create(file: Buffer) {
-    const resized = await sharp(file).resize(512).webp({ quality: 85 }).toBuffer();
-    fs.writeFileSync(`${IMAGES_PATH}/logo.webp`, resized, "binary");
-    this.createHomepageLogo(file);
-    this.createFavicon(file);
-    this.createPWAIcons(file);
+    await fs.promises.mkdir(`${IMAGES_PATH}/icons`, { recursive: true });
+    await Promise.all([
+      this.createLogoFiles(file),
+      this.createFavicon(file),
+      this.createPWAIcons(file),
+    ]);
   }
 
-  async createHomepageLogo(file: Buffer) {
-    const resized = await sharp(file)
-      .resize(200, 200, { fit: "cover" })
-      .webp({ quality: 85 })
-      .toBuffer();
-    fs.promises.writeFile(
-      `${IMAGES_PATH}/logo-200x200.webp`,
-      resized,
-      "binary",
-    );
+  async createLogoFiles(file: Buffer) {
+    await Promise.all([
+      sharp(file)
+        .resize(512, 512, SQUARE_RESIZE)
+        .png()
+        .toFile(`${IMAGES_PATH}/logo.png`),
+      sharp(file)
+        .resize(512, 512, SQUARE_RESIZE)
+        .webp({ quality: 85 })
+        .toFile(`${IMAGES_PATH}/logo.webp`),
+      ...[72, 144, 200].map((size) =>
+        sharp(file)
+          .resize(size, size, SQUARE_RESIZE)
+          .webp({ quality: 85 })
+          .toFile(`${IMAGES_PATH}/logo-${size}x${size}.webp`),
+      ),
+    ]);
   }
 
   async createFavicon(file: Buffer) {
     const resized = await sharp(file)
-      .resize(16, 16, { fit: "cover" })
+      .resize(32, 32, SQUARE_RESIZE)
       .png()
       .toBuffer();
-    fs.promises.writeFile(`${IMAGES_PATH}/favicon.ico`, resized, "binary");
+    await fs.promises.writeFile(`${IMAGES_PATH}/favicon.ico`, resized);
   }
 
   async createPWAIcons(file: Buffer) {
@@ -39,13 +52,12 @@ export class LogoService {
 
     for (const size of sizes) {
       const resized = await sharp(file)
-        .resize(size, size, { fit: "cover" })
+        .resize(size, size, SQUARE_RESIZE)
         .png()
         .toBuffer();
-      fs.promises.writeFile(
+      await fs.promises.writeFile(
         `${IMAGES_PATH}/icons/icon-${size}x${size}.png`,
         resized,
-        "binary",
       );
     }
   }

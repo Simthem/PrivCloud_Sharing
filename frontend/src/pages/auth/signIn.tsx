@@ -6,6 +6,10 @@ import SignInForm from "../../components/auth/SignInForm";
 import Meta from "../../components/Meta";
 import useUser from "../../hooks/user.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
+import {
+  resolvePostAuthRedirectPath,
+  safeRedirectPath,
+} from "../../utils/router.util";
 
 export function getServerSideProps(context: GetServerSidePropsContext) {
   return {
@@ -17,15 +21,21 @@ const SignIn = ({ redirectPath }: { redirectPath?: string }) => {
   const { refreshUser } = useUser();
   const router = useRouter();
   const t = useTranslate();
+  const safePath =
+    typeof redirectPath === "string"
+      ? safeRedirectPath(redirectPath)
+      : undefined;
 
-  const [isLoading, setIsLoading] = useState(redirectPath ? true : false);
+  const [isLoading, setIsLoading] = useState(!!redirectPath);
 
   // If the access token is expired, the middleware redirects to this page.
   // If the refresh token is still valid, the user will be redirected to the last page.
   useEffect(() => {
     refreshUser().then((user) => {
       if (user) {
-        router.replace(redirectPath ?? "/upload");
+        resolvePostAuthRedirectPath(safePath, user).then((target) =>
+          router.replace(target),
+        );
       } else {
         setIsLoading(false);
       }
@@ -38,7 +48,7 @@ const SignIn = ({ redirectPath }: { redirectPath?: string }) => {
   return (
     <>
       <Meta title={t("signin.title")} noIndex />
-      <SignInForm redirectPath={redirectPath ?? "/upload"} />
+      <SignInForm redirectPath={safePath} />
     </>
   );
 };

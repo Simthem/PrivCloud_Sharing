@@ -56,6 +56,7 @@ import { buildTheme } from "../styles/mantine.style";
 import Config from "../types/config.type";
 import { CurrentUser } from "../types/user.type";
 import i18nUtil from "../utils/i18n.util";
+import { resolvePostAuthRedirectPath } from "../utils/router.util";
 import userPreferences from "../utils/userPreferences.util";
 
 // Module-level store for SSR i18n messages.
@@ -126,11 +127,12 @@ function App({ Component, pageProps }: AppProps) {
     if (!(await authService.hasActiveSession())) return;
     try {
       await authService.refreshAccessToken();
-      const u = await userService.getCurrentUser();
+      const u = await userService.getCurrentUser({ refresh: false });
       if (u) {
         setUser(u);
         if (router.pathname === "/" || router.pathname.startsWith("/auth/")) {
-          router.replace("/upload");
+          const target = await resolvePostAuthRedirectPath(undefined, u);
+          router.replace(target);
         }
       }
     } catch {
@@ -269,75 +271,115 @@ function App({ Component, pageProps }: AppProps) {
     return () => clearInterval(interval);
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-refresh the E2E key hash on every authenticated page load.
-  // This keeps the server-side hash in sync with the local key and
-  // prevents verification mismatches on other browsers / devices.
+  // Validate the tab-scoped E2E key before trusting it. A stale key can remain
+  // in sessionStorage if another account signs in from the same browser tab.
   useEffect(() => {
     if (!user) return;
 
+    import("../utils/crypto.util").then(
+      ({
+        getUserKey,
+        computeKeyHashFromEncoded,
+        computeKeyHashFromEncodedLegacy,
+        loadKeyWithPasskey,
+        hasPasskeyWrappedKey,
+        storeUserKey,
+        removeUserKey,
+      }) => {
+        const showPrompt = () => {
+          if (e2ePromptShownRef.current) return;
+          e2ePromptShownRef.current = true;
+          setShowE2EPrompt(true);
+        };
 
-    import("../utils/crypto.util").then(({ getUserKey, computeKeyHashFromEncoded, loadKeyWithPasskey, hasPasskeyWrappedKey, storeUserKey }) => {
-      const localKey = getUserKey();
-      if (!localKey) {
-        // User has a server-side key but nothing in RAM -> try passkey auto-recovery
-        if (user.hasEncryptionKey && !e2ePromptShownRef.current) {
-          // Fetch server-side wrapped keys, then try local + server credentials
-          userService.listWrappedKeys().then((serverKeys) => {
-            if (!hasPasskeyWrappedKey() && serverKeys.length === 0) {
-              // No passkey data anywhere -> show manual prompt
-              e2ePromptShownRef.current = true;
-              setShowE2EPrompt(true);
-              return;
+        const verifyAndMigrateKey = async (encodedKey: string) => {
+          const hash = await computeKeyHashFromEncoded(encodedKey, user.id);
+          let valid = await userService.verifyEncryptionKey(hash);
+          if (!valid) {
+            const legacyHash = await computeKeyHashFromEncodedLegacy(
+              encodedKey,
+            );
+            valid = await userService.verifyEncryptionKey(legacyHash);
+            if (valid) {
+              await userService.setEncryptionKeyHash(hash);
             }
-            loadKeyWithPasskey(serverKeys).then(async (encodedKey) => {
-              if (encodedKey) {
-                // Verify key matches server-side hash before trusting it
-                const hash = await computeKeyHashFromEncoded(encodedKey, user.id);
-                const valid = await userService.verifyEncryptionKey(hash);
-                if (valid) {
-                  storeUserKey(encodedKey);
-                  return; // Key restored silently, no prompt needed
+          }
+          return valid;
+        };
+
+        const localKey = getUserKey();
+        if (!localKey) {
+          // User has a server-side key but nothing in RAM -> try passkey auto-recovery
+          if (user.hasEncryptionKey) {
+            // Fetch server-side wrapped keys, then try local + server credentials
+            userService
+              .listWrappedKeys()
+              .then((serverKeys) => {
+                if (!hasPasskeyWrappedKey() && serverKeys.length === 0) {
+                  // No passkey data anywhere -> show manual prompt
+                  showPrompt();
+                  return;
                 }
-              }
-              // Passkey recovery failed or key mismatch -> show manual prompt
-              e2ePromptShownRef.current = true;
-              setShowE2EPrompt(true);
-            }).catch(() => {
-              e2ePromptShownRef.current = true;
-              setShowE2EPrompt(true);
-            });
-          }).catch(() => {
-            // Server unreachable -> try local only
-            if (hasPasskeyWrappedKey()) {
-              loadKeyWithPasskey().then(async (encodedKey) => {
-                if (encodedKey) {
-                  const hash = await computeKeyHashFromEncoded(encodedKey, user.id);
-                  const valid = await userService.verifyEncryptionKey(hash);
-                  if (valid) {
-                    storeUserKey(encodedKey);
-                    return;
-                  }
+                loadKeyWithPasskey(serverKeys)
+                  .then(async (encodedKey) => {
+                    if (encodedKey) {
+                      // Verify key matches server-side hash before trusting it
+                      const valid = await verifyAndMigrateKey(encodedKey);
+                      if (valid) {
+                        storeUserKey(encodedKey);
+                        return; // Key restored silently, no prompt needed
+                      }
+                    }
+                    // Passkey recovery failed or key mismatch -> show manual prompt
+                    showPrompt();
+                  })
+                  .catch(showPrompt);
+              })
+              .catch(() => {
+                // Server unreachable -> try local only
+                if (hasPasskeyWrappedKey()) {
+                  loadKeyWithPasskey()
+                    .then(async (encodedKey) => {
+                      if (encodedKey) {
+                        const valid = await verifyAndMigrateKey(encodedKey);
+                        if (valid) {
+                          storeUserKey(encodedKey);
+                          return;
+                        }
+                      }
+                      showPrompt();
+                    })
+                    .catch(showPrompt);
+                } else {
+                  showPrompt();
                 }
-                e2ePromptShownRef.current = true;
-                setShowE2EPrompt(true);
-              }).catch(() => {
-                e2ePromptShownRef.current = true;
-                setShowE2EPrompt(true);
               });
-            } else {
-              e2ePromptShownRef.current = true;
-              setShowE2EPrompt(true);
-            }
-          });
+          } else if (user.hasTeamMembership) {
+            // Team member without any encryption key yet -> prompt to set up E2E
+            showPrompt();
+          }
+          return;
         }
-        return;
-      }
-      computeKeyHashFromEncoded(localKey, user.id)
-        .then((hash) => userService.setEncryptionKeyHash(hash))
-        .catch(() => {
-          // Non-critical -- key may be malformed in storage
-        });
-    });
+
+        if (!user.hasEncryptionKey) {
+          removeUserKey();
+          if (user.hasTeamMembership) showPrompt();
+          return;
+        }
+
+        verifyAndMigrateKey(localKey)
+          .then((valid) => {
+            if (!valid) {
+              removeUserKey();
+              showPrompt();
+              throw new Error("stale_e2e_session_key");
+            }
+          })
+          .catch(() => {
+            // Non-critical -- key may be malformed in storage or server unreachable.
+          });
+      },
+    );
   }, [user]);
 
   // iOS fix: prevent auto-zoom on input focus without disabling user zoom.
@@ -505,8 +547,10 @@ function App({ Component, pageProps }: AppProps) {
                     <UserContext.Provider
                       value={{
                         user,
-                        refreshUser: async () => {
-                          const user = await userService.getCurrentUser();
+                        refreshUser: async (options) => {
+                          const user = await userService.getCurrentUser(
+                            options,
+                          );
                           setUser(user);
                           return user;
                         },

@@ -1,3 +1,43 @@
+## [1.23.4](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.3...v1.23.4) (2026-06-19)
+
+### Bug Fixes
+
+- **auth -- post-login team routing:** sign-in, TOTP, app bootstrap and home
+  redirects now send team users to the right team workspace while preserving
+  explicit safe redirect paths.
+- **auth -- password and refresh handling:** sign-in/sign-up keep password input
+  unchanged instead of trimming it, and post-auth current-user lookups can reuse
+  the freshly refreshed access token to avoid duplicate refresh calls.
+- **encryption -- tab-scoped E2E key validation:** locally stored E2E keys are
+  verified against user-scoped server hashes, legacy hashes are migrated,
+  stale keys are cleared on account changes/sign-out and team users without a
+  usable key are prompted to configure E2E.
+- **frontend -- responsive long-text wrapping:** long document names, file names,
+  recipient names and email addresses now wrap/hyphenate instead of overflowing
+  narrow mobile layouts, including signing detail views.
+- **webdav -- Companion-only zero-knowledge import path:** WebDAV imports now
+  require PrivCloud Companion instead of silently falling back to the server
+  proxy; the import modal keeps a compact directory-first A-Z browser with a
+  wider name column, right-aligned size data and no duplicate folder icon beside
+  folder names.
+- **team settings -- member permissions modal:** folder access management now
+  switches to account-share-style mobile cards with a fixed icon/name grid,
+  explicit current permission rows and full-width controls; desktop columns
+  remain constrained so permission selects and delete actions stay visible
+  without horizontal scrolling, and removing a folder rule immediately resets
+  the permission badge/select to the default state; on mobile, the member
+  modal now stays compact with internal scrolling instead of taking the full
+  screen height.
+- **admin logo upload -- complete image regeneration:** uploaded logos now
+  regenerate `logo.png`, `logo.webp`, homepage WebP variants, favicon and all
+  manifest icon sizes with transparent square padding, avoiding mixed old/new
+  branding assets after a logo restore.
+
+### Maintenance
+
+- Bumped root, backend and frontend package metadata and lockfiles to `1.23.4`.
+- Refreshed WebDAV/Companion user-facing copy and release notes.
+
 ## [1.23.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.2...v1.23.3) (2026-06-19)
 
 ### Security

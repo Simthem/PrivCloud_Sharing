@@ -31,9 +31,13 @@ const removeCurrentUser = async () => {
   await api.delete("/users/me");
 };
 
-const getCurrentUser = async (): Promise<CurrentUser | null> => {
+const getCurrentUser = async (
+  options: { refresh?: boolean } = {},
+): Promise<CurrentUser | null> => {
   try {
-    await authService.refreshAccessToken();
+    if (options.refresh !== false) {
+      await authService.refreshAccessToken();
+    }
     return (await api.get("users/me")).data;
   } catch {
     return null;

@@ -79,7 +79,7 @@ const Share = ({ shareId }: { shareId: string }) => {
   // Phase 2 : une fois le share chargé, résoudre la clé si manquante
   // - Reverse share E2E -> unwrap K_rs via backend endpoint
   // - Team share E2E    -> unwrap K_team via team-key endpoint
-  // - Share E2E normal  -> K_master depuis localStorage
+  // - Share E2E normal  -> K_master depuis sessionStorage
   // - Erreur (non-owner, non-auth) -> laisser e2eKey null -> alerte "clé manquante"
   useEffect(() => {
     if (e2eKey || !share?.isE2EEncrypted) return;

@@ -32,7 +32,7 @@ import {
   getOAuthUrl,
   getOAuthColor,
 } from "../../utils/oauth.util";
-import { safeRedirectPath } from "../../utils/router.util";
+import { resolvePostAuthRedirectPath } from "../../utils/router.util";
 import toast from "../../utils/toast.util";
 
 const useStyles = createStyles((theme) => ({
@@ -75,7 +75,7 @@ const useStyles = createStyles((theme) => ({
   },
 }));
 
-const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
+const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
   const config = useConfig();
   const router = useRouter();
   const t = useTranslate();
@@ -132,7 +132,7 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
   ) => {
     setIsLoading(true);
     await authService
-      .signIn(email.trim(), password.trim(), captchaPayload)
+      .signIn(email.trim(), password, captchaPayload)
       .then(async (response) => {
         if (response.data["loginToken"]) {
           // Prompt the user to enter their totp code
@@ -146,11 +146,15 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
           router.push(
             `/auth/totp/${
               response.data["loginToken"]
-            }?redirect=${encodeURIComponent(redirectPath)}`,
+            }?redirect=${encodeURIComponent(redirectPath ?? "")}`,
           );
         } else {
-          await refreshUser();
-          router.replace(safeRedirectPath(redirectPath));
+          const user = await refreshUser({ refresh: false });
+          const target = await resolvePostAuthRedirectPath(
+            redirectPath,
+            user,
+          );
+          router.replace(target);
         }
       })
       .catch(() => {

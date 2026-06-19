@@ -183,11 +183,16 @@ const SigningIndexPage = () => {
             <Stack gap="sm">
               {documents.map((doc) => (
                 <Card key={doc.id} withBorder padding="sm" style={{ cursor: "pointer" }} onClick={() => router.push(`/signing/${doc.id}`)}>
-                  <Group justify="space-between" mb={4}>
-                    <Text fw={600} size="sm" lineClamp={1} style={{ flex: 1 }}>
+                  <Group justify="space-between" align="flex-start" wrap="nowrap" mb={4}>
+                    <Text
+                      fw={600}
+                      size="sm"
+                      lineClamp={1}
+                      style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", hyphens: "auto" }}
+                    >
                       {doc.fileName || doc.title || t("signing.no-title")}
                     </Text>
-                    <Badge color={statusColors[doc.status] || "gray"} variant="light" size="sm">
+                    <Badge color={statusColors[doc.status] || "gray"} variant="light" size="sm" style={{ flexShrink: 0 }}>
                       {getStatusLabel(doc.status)}
                     </Badge>
                   </Group>
@@ -213,7 +218,7 @@ const SigningIndexPage = () => {
                           variant="dot"
                           style={{ maxWidth: "100%" }}
                         >
-                          <Text size="xs" truncate style={{ maxWidth: 140 }}>{r.name}</Text>
+                          <Text size="xs" style={{ maxWidth: 140, overflowWrap: "anywhere" }}>{r.name}</Text>
                         </Badge>
                       </Tooltip>
                     ))}
@@ -420,11 +425,16 @@ const SigningIndexPage = () => {
                 );
                 return (
                   <Card key={doc.id} withBorder padding="sm" style={{ cursor: "pointer" }} onClick={() => router.push(`/signing/${doc.id}`)}>
-                    <Group justify="space-between" mb={4}>
-                      <Text fw={600} size="sm" lineClamp={1} style={{ flex: 1 }}>
+                    <Group justify="space-between" align="flex-start" wrap="nowrap" mb={4}>
+                      <Text
+                        fw={600}
+                        size="sm"
+                        lineClamp={1}
+                        style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", hyphens: "auto" }}
+                      >
                         {doc.fileName || doc.title || t("signing.no-title")}
                       </Text>
-                      <Badge color={statusColors[doc.status] || "gray"} variant="light" size="sm">
+                      <Badge color={statusColors[doc.status] || "gray"} variant="light" size="sm" style={{ flexShrink: 0 }}>
                         {getStatusLabel(doc.status)}
                       </Badge>
                     </Group>

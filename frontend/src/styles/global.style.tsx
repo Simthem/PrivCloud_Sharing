@@ -12,6 +12,16 @@ const GlobalStyle = () => {
           color: "inherit",
           textDecoration: "none",
         },
+        "h1, h2, h3, h4, h5, h6, .mantine-Title-root": {
+          overflowWrap: "anywhere",
+          wordBreak: "normal",
+          hyphens: "auto",
+        },
+        ".mantine-Text-root, .mantine-Anchor-root, .mantine-Table-th, .mantine-Table-td":
+          {
+            overflowWrap: "anywhere",
+            wordBreak: "normal",
+          },
         "table.md, table.md th:nth-of-type(odd), table.md td:nth-of-type(odd)":
           {
             background:
@@ -80,6 +90,18 @@ const GlobalStyle = () => {
           ".account-settings > .mantine-Paper-root": {
             padding: "calc(1rem * var(--mantine-scale)) !important",
           },
+          ".mantine-Text-root[data-truncate], .mantine-Text-root[data-line-clamp], .mantine-Anchor-root[data-line-clamp], .mantine-Title-root[data-line-clamp]":
+            {
+              display: "block",
+              overflow: "visible",
+              textOverflow: "clip",
+              whiteSpace: "normal",
+              WebkitBoxOrient: "initial",
+              WebkitLineClamp: "unset",
+              overflowWrap: "anywhere",
+              wordBreak: "normal",
+              hyphens: "auto",
+            },
         },
         "@keyframes progress-stripes": {
           from: { backgroundPosition: "0 0" },

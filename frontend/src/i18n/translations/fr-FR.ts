@@ -570,23 +570,27 @@ export default {
   "bridge.status.enabled":
     "PrivCloud Companion activé pour cette session WebDAV.",
   "bridge.status.detected":
-    "PrivCloud Companion {version} détecté. Activez-le pour éviter les limites CORS du navigateur.",
+    "PrivCloud Companion {version} détecté. Activez-le pour garder l'import WebDAV en zero-knowledge.",
   "bridge.status.proxyDefault":
-    "Le proxy WebDAV serveur est utilisé par défaut. Activez PrivCloud Companion uniquement pour les imports locaux managés.",
+    "PrivCloud Companion est requis pour les imports WebDAV zero-knowledge. Activez-le avant de connecter votre cloud.",
   "bridge.status.unavailable":
-    "PrivCloud Companion n'est pas détecté. L'import direct reste disponible si votre cloud WebDAV autorise CORS.",
+    "PrivCloud Companion n'est pas détecté. Installez-le ou démarrez-le pour importer un cloud WebDAV sans exposer vos fichiers au serveur.",
   "bridge.pair.start": "Activer",
   "bridge.pair.code.label": "Code d'association",
   "bridge.pair.confirm": "Valider",
   "bridge.toast.paired": "PrivCloud Companion activé",
   "bridge.error.updateRequired":
     "PrivCloud Companion est détecté, mais cette version ne prend pas encore en charge l'activation en un clic. Réinstallez le Companion depuis la page Intégrations puis redémarrez-le.",
+  "bridge.error.companionRequired":
+    "PrivCloud Companion doit être activé pour importer depuis WebDAV en zero-knowledge.",
+  "bridge.error.companionUpdateRequiredVpn":
+    "Mettez à jour PrivCloud Companion : cette version bloque encore les domaines WebDAV accessibles via VPN ou réseau privé.",
   "bridge.error.badRequest": "Requête Bridge invalide.",
   "bridge.error.fileSelectionLimit":
     "Le Companion accepte jusqu'à 1000 fichiers par lot WebDAV. Sélectionnez moins de fichiers ou lancez un second lot.",
   "bridge.error.internal": "Erreur interne du Companion.",
   "bridge.error.localNetworkBlocked":
-    "Le navigateur a bloqué l'accès au Companion local. Autorisez l'accès au réseau local pour ce site, ou continuez avec le proxy WebDAV serveur.",
+    "Le navigateur a bloqué l'accès au Companion local. Autorisez l'accès au réseau local pour ce site puis réessayez.",
   "bridge.error.localNetworkRequired":
     "Ce serveur WebDAV est sur un réseau local ou privé. Activez PrivCloud Companion pour l'importer.",
   "bridge.error.jobNotFound": "Tâche Bridge introuvable ou expirée.",

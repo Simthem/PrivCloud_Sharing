@@ -1,4 +1,5 @@
 import api from "./api.service";
+import { removeUserKey } from "../utils/crypto.util";
 
 let refreshAccessTokenPromise: Promise<void> | null = null;
 
@@ -43,6 +44,8 @@ const signUp = async (email: string, username: string, password: string, captcha
 };
 
 const signOut = async () => {
+  removeUserKey();
+
   try {
     const response = await api.post("/auth/signOut");
 

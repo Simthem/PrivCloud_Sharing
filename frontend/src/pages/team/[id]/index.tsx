@@ -1103,7 +1103,9 @@ const TeamDashboard = () => {
                     </Group>
                     <Text size="xs">{log.actorEmail}</Text>
                     {(log.fileName || log.folder?.name) && (
-                      <Text size="xs" c="dimmed" lineClamp={1}>{log.fileName || log.folder?.name}</Text>
+                      <Text size="xs" c="dimmed" lineClamp={1} style={{ overflowWrap: "anywhere", hyphens: "auto" }}>
+                        {log.fileName || log.folder?.name}
+                      </Text>
                     )}
                   </Card>
                 ))}
@@ -1266,9 +1268,14 @@ const TeamDashboard = () => {
                   };
                   return (
                     <Card key={doc.id} withBorder padding="sm" style={{ cursor: "pointer" }} onClick={() => router.push(`/signing/${doc.id}`)}>
-                      <Group justify="space-between" mb={4}>
-                        <Group gap={6} style={{ flex: 1, minWidth: 0 }}>
-                          <Text fw={600} size="sm" lineClamp={1} style={{ flex: 1 }}>
+                      <Group justify="space-between" align="flex-start" wrap="nowrap" mb={4}>
+                        <Group gap={6} align="flex-start" style={{ flex: 1, minWidth: 0 }}>
+                          <Text
+                            fw={600}
+                            size="sm"
+                            lineClamp={1}
+                            style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", hyphens: "auto" }}
+                          >
                             {doc.fileName || doc.title || t("team.dashboard.signatures.untitled")}
                           </Text>
                           {(doc as any).fileDeleted && (
@@ -1279,7 +1286,7 @@ const TeamDashboard = () => {
                             </Tooltip>
                           )}
                         </Group>
-                        <Badge color={sigStatusColors[doc.status] || "gray"} variant="light" size="sm">
+                        <Badge color={sigStatusColors[doc.status] || "gray"} variant="light" size="sm" style={{ flexShrink: 0 }}>
                           {sigStatusLabels[doc.status] || doc.status}
                         </Badge>
                       </Group>
@@ -1357,7 +1364,11 @@ const TeamDashboard = () => {
                         >
                           <Table.Td style={{ overflow: "hidden" }}>
                             <Group gap={6} wrap="nowrap">
-                              <Text fw={500} truncate style={{ flex: 1 }}>
+                              <Text
+                                fw={500}
+                                truncate
+                                style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", hyphens: "auto" }}
+                              >
                                 {doc.fileName || doc.title || t("team.dashboard.signatures.untitled")}
                               </Text>
                               {(doc as any).fileDeleted && (
@@ -1496,7 +1507,9 @@ const TeamDashboard = () => {
                 {t("team.dashboard.modals.rotation.progress", { done: rotateProgress.filesDone, total: rotateProgress.filesTotal })}
               </Text>
               {rotateProgress.currentFile && (
-                <Text size="xs" c="dimmed" lineClamp={1}>{rotateProgress.currentFile}</Text>
+                <Text size="xs" c="dimmed" lineClamp={1} style={{ overflowWrap: "anywhere", hyphens: "auto" }}>
+                  {rotateProgress.currentFile}
+                </Text>
               )}
               <Progress
                 value={rotateProgress.filesTotal > 0

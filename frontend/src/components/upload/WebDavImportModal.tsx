@@ -28,9 +28,7 @@ import {
 } from "react-icons/tb";
 import useTranslate from "../../hooks/useTranslate.hook";
 import {
-  downloadWebDavViaProxy,
   isLocalOrPrivateWebDavTarget,
-  listWebDavViaProxy,
   WebDavCredentials,
   WebDavEntry,
 } from "../../services/webdav.service";
@@ -76,12 +74,25 @@ function errorToMessage(error: unknown, t: ReturnType<typeof useTranslate>) {
   if (message.includes("Too many active Bridge jobs")) {
     return t("bridge.error.tooManyJobs");
   }
+  if (message.includes("Private or reserved WebDAV addresses are not allowed")) {
+    return t("bridge.error.companionUpdateRequiredVpn");
+  }
   if (error instanceof TypeError) return t("bridge.error.localNetworkBlocked");
   return message || t("webdav.error.generic");
 }
 
 function asUploadFile(file: File): FileUpload {
   return Object.assign(file, { uploadingProgress: 0 }) as FileUpload;
+}
+
+function sortWebDavEntries(entries: WebDavEntry[]): WebDavEntry[] {
+  return [...entries].sort((a, b) => {
+    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+    return a.name.localeCompare(b.name, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
 }
 
 function readStoredWebDavSession(): StoredWebDavSession | null {
@@ -344,22 +355,23 @@ const WebDavImportModal = ({
       let bridgeError: unknown;
       let bridgeOk = false;
       const bridgeTokenAvailable = hasBridgeToken();
-      if (bridgeTokenAvailable) {
-        try {
-          result = await listWebDavDirectoryViaBridge(credentials, url);
-          bridgeOk = true;
-          void getBridgeHealth().then((health) => {
-            if (health) setBridgeHealth(health);
-          });
-        } catch (e) {
-          bridgeError = e;
-        }
+      if (!bridgeTokenAvailable) {
+        throw new Error("bridge.error.companionRequired");
+      }
+      try {
+        result = await listWebDavDirectoryViaBridge(credentials, url);
+        bridgeOk = true;
+        void getBridgeHealth().then((health) => {
+          if (health) setBridgeHealth(health);
+        });
+      } catch (e) {
+        bridgeError = e;
       }
       if (!bridgeOk) {
-        if (requiresBridge || bridgeTokenAvailable) {
+        if (requiresBridge) {
           throw bridgeError || new Error("bridge.error.localNetworkRequired");
         }
-        result = await listWebDavViaProxy(credentials, url);
+        throw bridgeError || new Error("bridge.error.companionRequired");
       }
       if (!url) {
         setHistory([]);
@@ -368,7 +380,7 @@ const WebDavImportModal = ({
         setHistory((prev) => [...prev, currentUrl]);
       }
       setCurrentUrl(result!.url);
-      setEntries(result!.entries);
+      setEntries(sortWebDavEntries(result!.entries));
       setSelectedIds(new Set());
     } catch (e) {
       setError(errorToMessage(e, t));
@@ -439,18 +451,19 @@ const WebDavImportModal = ({
             entry.href || credentials.endpoint,
           );
           const bridgeTokenAvailable = hasBridgeToken();
-          if (bridgeTokenAvailable) {
-            try {
-              file = await downloadWebDavFileViaBridge(credentials, entry);
-            } catch (e) {
-              bridgeError = e;
-            }
+          if (!bridgeTokenAvailable) {
+            throw new Error("bridge.error.companionRequired");
+          }
+          try {
+            file = await downloadWebDavFileViaBridge(credentials, entry);
+          } catch (e) {
+            bridgeError = e;
           }
           if (!file) {
-            if (requiresBridge || bridgeTokenAvailable) {
+            if (requiresBridge) {
               throw bridgeError || new Error("bridge.error.localNetworkRequired");
             }
-            file = await downloadWebDavViaProxy(credentials, entry);
+            throw bridgeError || new Error("bridge.error.companionRequired");
           }
           imported.push(asUploadFile(file));
           setImportProgress(
@@ -657,7 +670,7 @@ const WebDavImportModal = ({
                   <th>
                     <FormattedMessage id="upload.filelist.name" />
                   </th>
-                  <th style={{ width: 130 }}>
+                  <th style={{ width: 92, textAlign: "right", paddingRight: 8 }}>
                     <FormattedMessage id="upload.filelist.size" />
                   </th>
                 </tr>
@@ -700,9 +713,7 @@ const WebDavImportModal = ({
                       </td>
                       <td>
                         <Group gap="xs" wrap="nowrap">
-                          {entry.isDirectory ? (
-                            <TbFolder size={18} />
-                          ) : (
+                          {!entry.isDirectory && (
                             <TbFile size={18} />
                           )}
                           <Text size="sm" fw={entry.isDirectory ? 500 : 400} lineClamp={1}>
@@ -710,8 +721,8 @@ const WebDavImportModal = ({
                           </Text>
                         </Group>
                       </td>
-                      <td>
-                        <Text size="sm" c="dimmed">
+                      <td style={{ width: 92, textAlign: "right", paddingRight: 8 }}>
+                        <Text size="sm" c="dimmed" ta="right" style={{ whiteSpace: "nowrap" }}>
                           {entry.isDirectory
                             ? "-"
                             : byteToHumanSizeString(entry.size)}
@@ -762,7 +773,7 @@ const WebDavImportModal = ({
           <Text size="xs" c="dimmed">
             <FormattedMessage
               id={
-                bridgeManagedImport
+                bridgeEnabled
                   ? "webdav.footer.zeroPersistence.bridge"
                   : "webdav.footer.zeroPersistence"
               }

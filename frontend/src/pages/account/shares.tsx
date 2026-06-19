@@ -175,8 +175,8 @@ const MyShares = () => {
             const shareHref = `/share/${share.id}${keyFragment}`;
             return (
               <Card key={share.id} withBorder padding="sm" radius="md">
-                <Group justify="space-between" wrap="nowrap" mb={4}>
-                  <Group gap="xs" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
+                <Group justify="space-between" wrap="nowrap" align="flex-start" mb={4}>
+                  <Group gap="xs" wrap="nowrap" align="flex-start" style={{ minWidth: 0, flex: 1 }}>
                     <Checkbox
                       size="xs"
                       checked={selected.has(share.id)}
@@ -184,17 +184,22 @@ const MyShares = () => {
                     />
                     <Box style={{ minWidth: 0, flex: 1 }}>
                     <Link href={shareHref} style={{ textDecoration: "none", color: "inherit" }}>
-                      <Text size="sm" fw={600} lineClamp={1} style={{ cursor: "pointer" }}>
+                      <Text
+                        size="sm"
+                        fw={600}
+                        lineClamp={1}
+                        style={{ cursor: "pointer", overflowWrap: "anywhere", hyphens: "auto" }}
+                      >
                         {share.name || share.id}
                       </Text>
                     </Link>
                     {share.description && (
-                      <Text size="xs" c="dimmed" lineClamp={1}>
+                      <Text size="xs" c="dimmed" lineClamp={1} style={{ overflowWrap: "anywhere" }}>
                         {share.description}
                       </Text>
                     )}
                   </Box>                  </Group>                  {share.security.passwordProtected && (
-                    <TbLock color="orange" size={16} />
+                    <TbLock color="orange" size={16} style={{ flexShrink: 0 }} />
                   )}
                 </Group>
 

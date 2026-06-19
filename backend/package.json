@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-backend",
-  "version": "1.23.3",
+  "version": "1.23.4",
   "scripts": {
     "build": "nest build",
     "postinstall": "[ -f prisma/schema.prisma ] && prisma generate || true",

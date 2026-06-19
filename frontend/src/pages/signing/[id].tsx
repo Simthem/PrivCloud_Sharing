@@ -605,19 +605,43 @@ const SigningDetailPage = () => {
           {t("signing.detail.back")}
         </Button>
 
-        <Group justify="space-between" mb="lg" align="flex-start">
-          <div>
+        <Group
+          justify="space-between"
+          mb="lg"
+          align="flex-start"
+          wrap={isMobile ? "wrap" : "nowrap"}
+        >
+          <Box style={{ minWidth: 0, flex: 1 }}>
             <Title order={2}>
-              <Group gap="xs">
-                <TbFileDescription size={24} />
-                {typedDoc.fileName || typedDoc.title || t("signing.document")}
+              <Group gap="xs" align="flex-start" wrap="nowrap">
+                <TbFileDescription
+                  size={24}
+                  style={{ flexShrink: 0, marginTop: 4 }}
+                />
+                <Text
+                  span
+                  inherit
+                  style={{
+                    minWidth: 0,
+                    overflowWrap: "anywhere",
+                    hyphens: "auto",
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {typedDoc.fileName || typedDoc.title || t("signing.document")}
+                </Text>
               </Group>
             </Title>
             <Text size="sm" c="dimmed" mt={4}>
               {t("signing.detail.created-at", { date: formatDateTime(typedDoc.createdAt) })}
             </Text>
-          </div>
-          <Badge color={statusColors[typedDoc.status] || "gray"} size="lg" variant="light">
+          </Box>
+          <Badge
+            color={statusColors[typedDoc.status] || "gray"}
+            size="lg"
+            variant="light"
+            style={{ flexShrink: 0 }}
+          >
             {getStatusLabel(typedDoc.status)}
           </Badge>
         </Group>
@@ -730,11 +754,33 @@ const SigningDetailPage = () => {
                   const keyFragment = typedDoc.isE2EEncrypted && e2eKeyB64 ? `#key=${e2eKeyB64}` : "";
                   const signingUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/sign/${r.signingToken}${keyFragment}`;
                   return (
-                    <Group key={r.id} gap="xs" wrap="nowrap">
-                      <div style={{ minWidth: 140 }}>
-                        <Text size="sm" fw={500} lineClamp={1}>{r.name}</Text>
-                        <Text size="xs" c="dimmed">{r.email}</Text>
-                      </div>
+                    <Group
+                      key={r.id}
+                      gap="xs"
+                      align="flex-start"
+                      wrap={isMobile ? "wrap" : "nowrap"}
+                    >
+                      <Box
+                        style={{
+                          minWidth: 0,
+                          flex: isMobile ? "1 1 100%" : "0 0 140px",
+                        }}
+                      >
+                        <Text
+                          size="sm"
+                          fw={500}
+                          style={{ overflowWrap: "anywhere" }}
+                        >
+                          {r.name}
+                        </Text>
+                        <Text
+                          size="xs"
+                          c="dimmed"
+                          style={{ overflowWrap: "anywhere" }}
+                        >
+                          {r.email}
+                        </Text>
+                      </Box>
                       <Badge
                         color={statusColors[r.status] || "gray"}
                         variant="light"
@@ -747,7 +793,10 @@ const SigningDetailPage = () => {
                         readOnly
                         size="sm"
                         value={signingUrl}
-                        style={{ flex: 1 }}
+                        style={{
+                          flex: "1 1 240px",
+                          minWidth: isMobile ? "100%" : 0,
+                        }}
                         rightSectionPointerEvents="all"
                         rightSection={
                           <CopyButton value={signingUrl}>
@@ -773,17 +822,24 @@ const SigningDetailPage = () => {
             <Stack gap="sm" p="md">
               {typedDoc.recipients?.map((r: any) => (
                 <Card key={r.id} withBorder padding="sm">
-                  <Group justify="space-between" mb={4}>
-                    <Text fw={500} size="sm">{r.name}</Text>
+                  <Group justify="space-between" mb={4} align="flex-start" wrap="nowrap">
+                    <Text
+                      fw={500}
+                      size="sm"
+                      style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}
+                    >
+                      {r.name}
+                    </Text>
                     <Badge
                       color={r.role === "SIGNER" ? "blue" : r.role === "APPROVER" ? "grape" : "gray"}
                       variant="light"
                       size="sm"
+                      style={{ flexShrink: 0 }}
                     >
                       {getRoleLabel(r.role)}
                     </Badge>
                   </Group>
-                  <Text size="xs" c="dimmed" mb={4}>{r.email}</Text>
+                  <Text size="xs" c="dimmed" mb={4} style={{ overflowWrap: "anywhere" }}>{r.email}</Text>
                   <Group justify="space-between">
                     <Badge color={statusColors[r.status] || "gray"} variant="dot" size="sm">
                       {getStatusLabel(r.status)}

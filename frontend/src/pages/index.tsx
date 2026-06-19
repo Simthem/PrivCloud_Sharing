@@ -17,6 +17,7 @@ import useUser from "../hooks/user.hook";
 import useConfig from "../hooks/config.hook";
 import { useEffect, useState } from "react";
 import { createStyles } from "@mantine/emotion";
+import { resolvePostAuthRedirectPath } from "../utils/router.util";
 
 const useStyles = createStyles((theme) => ({
   inner: {
@@ -77,7 +78,9 @@ export default function Home() {
   // If user is already authenticated, redirect to the upload page.
   useEffect(() => {
     if (user) {
-      router.replace("/upload");
+      void resolvePostAuthRedirectPath(undefined, user).then((target) =>
+        router.replace(target),
+      );
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);

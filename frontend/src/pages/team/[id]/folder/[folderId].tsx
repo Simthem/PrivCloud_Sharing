@@ -546,7 +546,7 @@ const TeamFolderPage = () => {
               return (
                 <Card key={`${file.shareId}-${file.id}`} withBorder padding="sm" radius="md">
                   <Group justify="space-between" wrap="nowrap" mb={6}>
-                    <Group gap="xs" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
+                    <Group gap="xs" wrap="nowrap" align="flex-start" style={{ minWidth: 0, flex: 1 }}>
                       {isTeamAdmin && (
                         <Checkbox
                           size="sm"
@@ -554,8 +554,13 @@ const TeamFolderPage = () => {
                           onChange={() => toggleFileSelection(`${file.shareId}-${file.id}`)}
                         />
                       )}
-                      <TbFile size={18} color={isPdf ? "var(--mantine-color-red-6)" : undefined} />
-                      <Text size="sm" fw={600} lineClamp={1}>
+                      <TbFile size={18} color={isPdf ? "var(--mantine-color-red-6)" : undefined} style={{ flexShrink: 0 }} />
+                      <Text
+                        size="sm"
+                        fw={600}
+                        lineClamp={1}
+                        style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere", hyphens: "auto" }}
+                      >
                         {file.name}
                       </Text>
                       {myFileAccess[file.id] && (
@@ -683,7 +688,12 @@ const TeamFolderPage = () => {
                             ) : (
                               <TbFile size={16} />
                             )}
-                            <Text size="sm" fw={500} lineClamp={1} style={{ cursor: "pointer" }}>
+                            <Text
+                              size="sm"
+                              fw={500}
+                              lineClamp={1}
+                              style={{ cursor: "pointer", minWidth: 0, overflowWrap: "anywhere", hyphens: "auto" }}
+                            >
                               {file.name}
                             </Text>
                             {myFileAccess[file.id] && (
@@ -864,15 +874,20 @@ const TeamFolderPage = () => {
                   >
                     <Group justify="space-between" wrap="nowrap" align="flex-start">
                       <Box style={{ minWidth: 0, flex: 1 }}>
-                        <Group gap="xs" wrap="nowrap" mb={2}>
-                          <Text size="sm" fw={600} lineClamp={1}>
+                        <Group gap="xs" wrap="wrap" align="flex-start" mb={2}>
+                          <Text
+                            size="sm"
+                            fw={600}
+                            lineClamp={1}
+                            style={{ minWidth: 0, overflowWrap: "anywhere", hyphens: "auto" }}
+                          >
                             {share.name || share.id}
                           </Text>
                           <Badge variant="light" size="xs" color="blue" style={{ flexShrink: 0 }}>
                             {t("team.folder.shares.fileCount", { count: share.files.length })}
                           </Badge>
                         </Group>
-                        <Text size="xs" c="dimmed" lineClamp={1}>
+                        <Text size="xs" c="dimmed" lineClamp={1} style={{ overflowWrap: "anywhere" }}>
                           {share.files.map((f) => f.name).join(", ")}
                         </Text>
                       </Box>
@@ -973,9 +988,14 @@ const TeamFolderPage = () => {
               <Stack gap="xs">
                 {accessRules.filter((rule) => team?.members?.some((m: any) => m.id === rule.memberId)).map((rule) => (
                   <Card key={rule.id} withBorder p="sm" radius="sm">
-                    <Group justify="space-between" wrap="nowrap" mb={4}>
+                    <Group justify="space-between" wrap="nowrap" align="flex-start" mb={4}>
                       <Box style={{ minWidth: 0, flex: 1 }}>
-                        <Text size="sm" fw={500} lineClamp={1}>
+                        <Text
+                          size="sm"
+                          fw={500}
+                          lineClamp={1}
+                          style={{ overflowWrap: "anywhere", hyphens: "auto" }}
+                        >
                           {rule.user?.username || rule.user?.email || rule.memberId}
                         </Text>
                         {rule.user?.email && (
@@ -1205,7 +1225,12 @@ const TeamFolderPage = () => {
                 return (
                   <Card key={m.id} withBorder p="xs" radius="sm">
                     <Group justify="space-between" wrap="nowrap">
-                      <Text size="sm" fw={500} style={{ minWidth: 0, flex: 1 }} lineClamp={1}>
+                      <Text
+                        size="sm"
+                        fw={500}
+                        style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere", hyphens: "auto" }}
+                        lineClamp={1}
+                      >
                         {m.user?.email || m.id}
                       </Text>
                       <Select

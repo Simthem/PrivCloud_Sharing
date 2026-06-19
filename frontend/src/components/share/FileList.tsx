@@ -316,8 +316,13 @@ const FileList = ({
                             })}
                           />
                         )}
-                        <Box style={{ minWidth: 0 }}>
-                          <Text size="sm" fw={500} lineClamp={1}>
+                        <Box style={{ minWidth: 0, flex: 1 }}>
+                          <Text
+                            size="sm"
+                            fw={500}
+                            lineClamp={1}
+                            style={{ overflowWrap: "anywhere", hyphens: "auto" }}
+                          >
                             {file.name}
                           </Text>
                           <Text size="xs" c="dimmed">

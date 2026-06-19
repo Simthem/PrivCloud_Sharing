@@ -98,7 +98,12 @@ const FileCardGrid = ({
 
             <Stack gap={4} mt="sm">
               <Tooltip label={file.name} openDelay={400}>
-                <Text size="sm" fw={500} lineClamp={1}>
+                <Text
+                  size="sm"
+                  fw={500}
+                  lineClamp={1}
+                  style={{ overflowWrap: "anywhere", hyphens: "auto" }}
+                >
                   {file.name}
                 </Text>
               </Tooltip>
