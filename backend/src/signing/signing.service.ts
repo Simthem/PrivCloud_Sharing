@@ -114,8 +114,10 @@ export class SigningService {
       );
     }
 
+    this.validateSignatureFields(dto);
+
     // Create the signature document
-    const document = await this.prisma.signatureDocument.create({
+    let document = await this.prisma.signatureDocument.create({
       data: {
         fileName: file.name,
         title: file.name,
@@ -143,24 +145,38 @@ export class SigningService {
             status: "PENDING",
           })),
         },
-        fields: dto.fields?.length
-          ? {
-              create: dto.fields.map((f, idx) => ({
-                type: f.type,
-                page: f.page ?? 1,
-                posX: f.posX ?? 72,
-                posY: f.posY ?? 200 + idx * 80,
-                width: f.width ?? 200,
-                height: f.height ?? 60,
-                rotation: f.rotation || 0,
-                label: f.label,
-                required: f.required ?? true,
-              })),
-            }
-          : undefined,
       },
       include: { recipients: true, fields: true },
     });
+
+    if (dto.fields?.length) {
+      const recipientByEmail = new Map(
+        document.recipients.map((r) => [r.email.toLowerCase(), r.id]),
+      );
+      await this.prisma.signatureField.createMany({
+        data: dto.fields.map((f, idx) => ({
+          documentId: document.id,
+          assignedRecipientId: f.assignedRecipientEmail
+            ? recipientByEmail.get(f.assignedRecipientEmail.toLowerCase()) || null
+            : null,
+          type: f.type,
+          page: f.page ?? 1,
+          posX: f.posX ?? 72,
+          posY: f.posY ?? 200 + idx * 80,
+          width: f.width ?? 200,
+          height: f.height ?? 60,
+          rotation: f.rotation || 0,
+          label: f.label?.trim() || null,
+          required: f.required ?? true,
+        })),
+      });
+
+      document =
+        (await this.prisma.signatureDocument.findUnique({
+          where: { id: document.id },
+          include: { recipients: true, fields: true },
+        })) || document;
+    }
 
     const shouldEmailE2EKey = Boolean(
       dto.isE2EEncrypted && dto.sendE2EKeyByEmail && dto.e2eKey,
@@ -514,17 +530,31 @@ export class SigningService {
       );
     }
 
-    // Update recipient with signature data
-    await this.prisma.signatureRecipient.update({
-      where: { id: recipient.id },
-      data: {
-        status: "SIGNED",
-        signedAt: new Date(),
-        signatureData: dto.signatureData,
-        signatureType: dto.signatureType,
-        signingIp: ipAddress,
-        signingUserAgent: userAgent,
-      },
+    const fieldValueRows = this.collectFieldValuesForRecipient(
+      recipient.id,
+      recipient.document.fields,
+      dto.fieldValues || [],
+    );
+
+    const signedAt = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.signatureRecipient.update({
+        where: { id: recipient.id },
+        data: {
+          status: "SIGNED",
+          signedAt,
+          signatureData: dto.signatureData,
+          signatureType: dto.signatureType,
+          signingIp: ipAddress,
+          signingUserAgent: userAgent,
+        },
+      });
+
+      if (fieldValueRows.length > 0) {
+        await tx.signatureFieldValue.createMany({
+          data: fieldValueRows,
+        });
+      }
     });
 
     // Audit event
@@ -847,6 +877,94 @@ export class SigningService {
     return { status: updated?.status || "AWAITING_FINALIZATION" };
   }
 
+  private validateSignatureFields(dto: CreateSignatureRequestDTO) {
+    if (!dto.fields?.length) return;
+    const recipientEmails = new Set(
+      dto.recipients.map((recipient) => recipient.email.toLowerCase()),
+    );
+
+    for (const field of dto.fields) {
+      if (
+        field.assignedRecipientEmail &&
+        !recipientEmails.has(field.assignedRecipientEmail.toLowerCase())
+      ) {
+        throw new BadRequestException(
+          "Signature field is assigned to an unknown recipient",
+        );
+      }
+      if (field.type === "APPROVAL" && !field.label?.trim()) {
+        throw new BadRequestException(
+          "Approval fields require the exact text the signer must type",
+        );
+      }
+    }
+  }
+
+  private collectFieldValuesForRecipient(
+    recipientId: string,
+    fields: Array<{
+      id: string;
+      type: string;
+      label: string | null;
+      required: boolean;
+      assignedRecipientId: string | null;
+    }>,
+    submittedValues: Array<{ fieldId: string; value: string }>,
+  ) {
+    const fillableFields = fields.filter(
+      (field) =>
+        !field.assignedRecipientId || field.assignedRecipientId === recipientId,
+    );
+    const fillableFieldIds = new Set(fillableFields.map((field) => field.id));
+    const submittedByField = new Map(
+      submittedValues.map((entry) => [entry.fieldId, entry.value.trim()]),
+    );
+
+    for (const submitted of submittedValues) {
+      if (!fillableFieldIds.has(submitted.fieldId)) {
+        throw new ForbiddenException("Cannot fill a field assigned to another signer");
+      }
+    }
+
+    const rows: Array<{ fieldId: string; recipientId: string; value: string }> = [];
+    for (const field of fillableFields) {
+      if (field.type === "SIGNATURE" || field.type === "INITIALS") continue;
+
+      let value = submittedByField.get(field.id) || "";
+      if (field.type === "DATE" && !value) {
+        value = new Date().toLocaleDateString("fr-FR", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+          timeZone: "Europe/Paris",
+        });
+      }
+
+      if (field.required && !value) {
+        throw new BadRequestException("A required signature field is missing");
+      }
+
+      if (
+        field.type === "APPROVAL" &&
+        field.label?.trim() &&
+        this.normalizeSignatureText(value) !==
+          this.normalizeSignatureText(field.label)
+      ) {
+        throw new BadRequestException(
+          "The approval mention does not match the expected text",
+        );
+      }
+
+      if (value) rows.push({ fieldId: field.id, recipientId, value });
+    }
+
+    return rows;
+  }
+
+  private normalizeSignatureText(value: string): string {
+    return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("fr-FR");
+  }
+
   // =========================================================================
   // PRIVATE HELPERS
   // =========================================================================
@@ -861,7 +979,18 @@ export class SigningService {
   private async finalizeDocument(documentId: string) {
     const doc = await this.prisma.signatureDocument.findUnique({
       where: { id: documentId },
-      include: { recipients: { where: { role: "SIGNER" } } },
+      include: {
+        recipients: { where: { role: "SIGNER" } },
+        fields: {
+          include: {
+            fieldValues: {
+              include: {
+                recipient: { select: { name: true, email: true } },
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!doc) return;
@@ -872,11 +1001,34 @@ export class SigningService {
       // Load original PDF
       let pdfBuffer = await this.fileService.getFileByKey(doc.originalFileKey);
 
-      // Apply each signer's signature to the PDF
+      const filledTextFields = doc.fields.filter(
+        (field) =>
+          !["SIGNATURE", "INITIALS"].includes(field.type) &&
+          field.fieldValues.length > 0,
+      );
+      if (filledTextFields.length > 0) {
+        pdfBuffer = await this.pdfSigningService.addSignatureFieldValues(
+          pdfBuffer,
+          filledTextFields,
+        );
+      }
+
+      // Apply each signer's signature to the PDF after text fields so it stays visible.
       for (const recipient of doc.recipients) {
         const signatureImage = recipient.signatureData
           ? Buffer.from(recipient.signatureData.replace(/^data:image\/\w+;base64,/, ""), "base64")
           : undefined;
+        const signatureField =
+          doc.fields.find(
+            (field) =>
+              field.type === "SIGNATURE" &&
+              field.assignedRecipientId === recipient.id,
+          ) ||
+          doc.fields.find(
+            (field) =>
+              field.type === "SIGNATURE" &&
+              !field.assignedRecipientId,
+          );
 
         pdfBuffer = await this.pdfSigningService.addApprovalFieldAndSignature(
           pdfBuffer,
@@ -893,6 +1045,15 @@ export class SigningService {
           {
             addApprovalWatermark: doc.addApprovalField,
             addApprovalMention: doc.addApprovalMention,
+            signatureField: signatureField
+              ? {
+                  page: signatureField.page,
+                  posX: signatureField.posX,
+                  posY: signatureField.posY,
+                  width: signatureField.width,
+                  height: signatureField.height,
+                }
+              : undefined,
           },
         );
       }

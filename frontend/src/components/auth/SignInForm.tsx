@@ -10,23 +10,28 @@ import {
   Text,
   TextInput,
   Title,
-  useMantineTheme,
 } from "@mantine/core";
 import { createStyles } from "@mantine/emotion";
 import { useForm, yupResolver } from "@mantine/form";
 import { showNotification } from "@mantine/notifications";
-import HCaptcha from "@hcaptcha/react-hcaptcha";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useRef, useState } from "react";
 import { TbInfoCircle } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
+import AltchaCaptcha from "../captcha/AltchaCaptcha";
+import type { AltchaWidgetHandle } from "../captcha/AltchaWidget";
+import { useAltchaSettings } from "../../hooks/altcha.hook";
 import useConfig from "../../hooks/config.hook";
 import useUser from "../../hooks/user.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import authService from "../../services/auth.service";
-import { getOAuthIcon, getOAuthUrl, getOAuthColor } from "../../utils/oauth.util";
+import {
+  getOAuthIcon,
+  getOAuthUrl,
+  getOAuthColor,
+} from "../../utils/oauth.util";
 import { safeRedirectPath } from "../../utils/router.util";
 import toast from "../../utils/toast.util";
 
@@ -76,26 +81,23 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
   const t = useTranslate();
   const { refreshUser } = useUser();
   const { classes } = useStyles();
-  const theme = useMantineTheme();
+  const altcha = useAltchaSettings();
 
   const [oauthProviders, setOauthProviders] = useState<string[] | null>(null);
   const [isRedirectingToOauthProvider, setIsRedirectingToOauthProvider] =
     useState(false);
 
-  const captchaEnabled = config.get("hcaptcha.enabled");
-  const captchaSiteKey = config.get("hcaptcha.siteKey");
-  const captchaRef = useRef<HCaptcha>(null);
+  const captchaEnabled = altcha.enabled;
   const [captchaToken, setCaptchaToken] = useState<string | undefined>();
+  const captchaRef = useRef<AltchaWidgetHandle>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleCaptchaExpire = () => setCaptchaToken(undefined);
-  const handleCaptchaError = (error: any) => {
-    console.warn("[hCaptcha Error]", error);
-    // Attempt to reset the captcha on error (e.g., WebGL context lost on Safari)
-    if (captchaRef.current?.resetCaptcha) {
-      captchaRef.current.resetCaptcha();
-    }
+  const resetCaptcha = () => {
+    setCaptchaToken(undefined);
+    captchaRef.current?.reset();
   };
+  const handleCaptchaExpire = () => setCaptchaToken(undefined);
+  const handleCaptchaError = resetCaptcha;
 
   const validationSchema = yup.object().shape({
     emailOrUsername: yup.string().required(t("common.error.field-required")),
@@ -110,10 +112,27 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
     validate: yupResolver(validationSchema),
   });
 
-  const signIn = async (email: string, password: string) => {
+  const resolveCaptchaToken = async () => {
+    if (!captchaEnabled) return undefined;
+    if (captchaToken) return captchaToken;
+
+    const result = await captchaRef.current?.verify();
+    if (result?.payload) {
+      setCaptchaToken(result.payload);
+      return result.payload;
+    }
+
+    return undefined;
+  };
+
+  const signIn = async (
+    email: string,
+    password: string,
+    captchaPayload?: string,
+  ) => {
     setIsLoading(true);
     await authService
-      .signIn(email.trim(), password.trim(), captchaToken)
+      .signIn(email.trim(), password.trim(), captchaPayload)
       .then(async (response) => {
         if (response.data["loginToken"]) {
           // Prompt the user to enter their totp code
@@ -134,7 +153,10 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
           router.replace(safeRedirectPath(redirectPath));
         }
       })
-      .catch(() => toast.error(t("signIn.notify.error")))
+      .catch(() => {
+        resetCaptcha();
+        toast.error(t("signIn.notify.error"));
+      })
       .finally(() => setIsLoading(false));
   };
 
@@ -152,7 +174,7 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
         }
       })
       .catch(toast.axiosError);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!oauthProviders) return null;
@@ -184,8 +206,11 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
       <Paper withBorder shadow="md" p={30} mt={30} radius="md">
         {config.get("oauth.disablePassword") || (
           <form
-            onSubmit={form.onSubmit((values) => {
-              signIn(values.emailOrUsername, values.password);
+            onSubmit={form.onSubmit(async (values) => {
+              const token = await resolveCaptchaToken();
+              if (captchaEnabled && !token) return;
+
+              await signIn(values.emailOrUsername, values.password, token);
             })}
           >
             <TextInput
@@ -206,18 +231,24 @@ const SignInForm = ({ redirectPath }: { redirectPath: string }) => {
                 </Anchor>
               </Group>
             )}
-            <Button fullWidth mt="xl" type="submit" loading={isLoading} disabled={captchaEnabled && !captchaToken}>
+            <Button
+              fullWidth
+              mt="xl"
+              type="submit"
+              loading={isLoading}
+              disabled={
+                captchaEnabled && altcha.shouldWaitForToken && !captchaToken
+              }
+            >
               <FormattedMessage id="signin.button.submit" />
             </Button>
-            {captchaEnabled && captchaSiteKey && (
+            {captchaEnabled && (
               <Group justify="center" mt="md">
-                <HCaptcha
-                  sitekey={captchaSiteKey}
+                <AltchaCaptcha
                   onVerify={setCaptchaToken}
                   onExpire={handleCaptchaExpire}
                   onError={handleCaptchaError}
-                  ref={captchaRef}
-                  theme={theme.other.colorScheme}
+                  widgetRef={captchaRef}
                 />
               </Group>
             )}

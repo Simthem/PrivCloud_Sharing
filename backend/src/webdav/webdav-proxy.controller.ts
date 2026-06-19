@@ -7,6 +7,9 @@ import {
   HttpCode,
   BadRequestException,
 } from "@nestjs/common";
+import type { IncomingHttpHeaders, IncomingMessage } from "node:http";
+import { lookup } from "node:dns/promises";
+import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import { Response } from "express";
 import { JwtGuard } from "../auth/guard/jwt.guard";
@@ -23,8 +26,7 @@ import { IsString, IsNotEmpty, IsOptional } from "class-validator";
  * Security:
  * - Requires JWT auth (logged-in user only)
  * - Only HTTPS WebDAV targets accepted (TLS alone blocks most SSRF against internal services)
- * - IP literals are validated: direct private/loopback IPs in URLs are refused
- * - Domain names are allowed regardless of where they resolve (self-hosted WebDAV support)
+ * - Hostnames are resolved server-side and private/reserved addresses are refused
  * - Credentials are used for the single request and immediately discarded
  * - Rate-limited to prevent abuse
  */
@@ -77,6 +79,33 @@ const PROPFIND_BODY =
   "</d:prop>" +
   "</d:propfind>";
 
+type ValidatedWebDavTarget = {
+  href: string;
+  url: URL;
+  address: string;
+  family: 4 | 6;
+};
+
+type WebDavRequestOptions = {
+  method: "GET" | "PROPFIND";
+  headers?: Record<string, string>;
+  body?: string;
+};
+
+type WebDavUpstreamResponse = {
+  status: number;
+  headers: IncomingHttpHeaders;
+  stream: IncomingMessage;
+  text: () => Promise<string>;
+};
+
+const WEBDAV_REQUEST_TIMEOUT_MS = 60_000;
+
+type ResolvedPublicHost = {
+  address: string;
+  family: 4 | 6;
+};
+
 @Controller("webdav")
 @UseGuards(JwtGuard)
 export class WebDavProxyController {
@@ -89,14 +118,15 @@ export class WebDavProxyController {
         "Missing required fields: endpoint, username, password",
       );
     }
-    const url = this.normalizeTargetUrl(
+    const url = await this.normalizeTargetUrlOrBridgeRequired(
       dto.endpoint,
       dto.href || dto.endpoint,
       true,
     );
-    const response = await fetch(url, {
+    if (!url) return { error: "bridge_required", status: 400 };
+
+    const response = await this.requestWebDav(url, {
       method: "PROPFIND",
-      redirect: "manual",
       headers: {
         Authorization: this.basicAuth(dto.username, dto.password),
         Depth: "1",
@@ -108,12 +138,12 @@ export class WebDavProxyController {
     if (response.status === 401 || response.status === 403) {
       return { error: "auth", status: response.status };
     }
-    if (!response.ok && response.status !== 207) {
+    if (!this.isSuccessfulStatus(response.status) && response.status !== 207) {
       return { error: "http", status: response.status };
     }
 
     const xml = await response.text();
-    return { url, xml };
+    return { url: url.href, xml };
   }
 
   @Post("download")
@@ -125,55 +155,52 @@ export class WebDavProxyController {
         "Missing required fields: endpoint, username, password, href",
       );
     }
-    const url = this.normalizeTargetUrl(dto.endpoint, dto.href, false);
-    const response = await fetch(url, {
+    const url = await this.normalizeTargetUrlOrBridgeRequired(
+      dto.endpoint,
+      dto.href,
+      false,
+    );
+    if (!url) {
+      res.status(200).json({ error: "bridge_required", status: 400 });
+      return;
+    }
+
+    const response = await this.requestWebDav(url, {
       method: "GET",
-      redirect: "manual",
       headers: {
         Authorization: this.basicAuth(dto.username, dto.password),
       },
     });
 
     if (response.status === 401 || response.status === 403) {
+      response.stream.resume();
       res.status(401).json({ error: "auth" });
       return;
     }
-    if (!response.ok) {
+    if (!this.isSuccessfulStatus(response.status)) {
+      response.stream.resume();
       res.status(response.status).json({ error: "http" });
       return;
     }
 
     const contentType =
-      response.headers.get("content-type") || "application/octet-stream";
-    const contentLength = response.headers.get("content-length");
+      this.headerValue(response.headers["content-type"]) ||
+      "application/octet-stream";
+    const contentLength = this.headerValue(response.headers["content-length"]);
 
     res.setHeader("Content-Type", contentType);
     if (contentLength) res.setHeader("Content-Length", contentLength);
     res.status(200);
 
-    // Stream the body directly to the client
-    const reader = response.body?.getReader();
-    if (!reader) {
-      res.end();
-      return;
-    }
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        res.write(value);
-      }
-    } finally {
-      reader.releaseLock();
-      res.end();
-    }
+    response.stream.on("error", () => res.end());
+    response.stream.pipe(res);
   }
 
-  private normalizeTargetUrl(
+  private async normalizeTargetUrl(
     endpointRaw: string,
     raw: string | undefined,
     asDirectory: boolean,
-  ): string {
+  ): Promise<ValidatedWebDavTarget> {
     const endpoint = this.parseHttpsUrl(endpointRaw, true);
     const target = this.parseHttpsUrl(raw, asDirectory);
 
@@ -183,12 +210,42 @@ export class WebDavProxyController {
       );
     }
 
-    // Only block explicit private IP literals in the URL.
-    // Domain names are allowed even if they resolve to private IPs so that
-    // self-hosted WebDAV/Nextcloud servers work. HTTPS + JWT auth already
-    // prevent meaningful SSRF against internal services.
-    this.assertNotPrivateIpLiteral(target.hostname);
-    return target.href;
+    const resolved = await this.resolvePublicHost(target.hostname);
+    return {
+      href: target.href,
+      url: target,
+      address: resolved.address,
+      family: resolved.family,
+    };
+  }
+
+  private async normalizeTargetUrlOrBridgeRequired(
+    endpointRaw: string,
+    raw: string | undefined,
+    asDirectory: boolean,
+  ): Promise<ValidatedWebDavTarget | null> {
+    try {
+      return await this.normalizeTargetUrl(endpointRaw, raw, asDirectory);
+    } catch (error) {
+      if (this.isClientNetworkOnlyError(error)) return null;
+      throw error;
+    }
+  }
+
+  private isClientNetworkOnlyError(error: unknown): boolean {
+    if (!(error instanceof BadRequestException)) return false;
+    const response = error.getResponse();
+    const message =
+      typeof response === "string"
+        ? response
+        : Array.isArray((response as { message?: unknown }).message)
+          ? (response as { message: string[] }).message.join(" ")
+          : String((response as { message?: unknown }).message || "");
+
+    return (
+      message.includes("Unable to resolve WebDAV host") ||
+      message.includes("Private or reserved WebDAV addresses are not allowed")
+    );
   }
 
   private parseHttpsUrl(raw: string | undefined, asDirectory: boolean): URL {
@@ -213,12 +270,42 @@ export class WebDavProxyController {
     return url;
   }
 
-  private assertNotPrivateIpLiteral(hostname: string) {
-    // Strip IPv6 brackets if present
+  private async resolvePublicHost(hostname: string): Promise<ResolvedPublicHost> {
     const addr = hostname.replace(/^\[|\]$/g, "");
+    const literalFamily = isIP(addr);
+    if (literalFamily !== 0) {
+      this.assertPublicAddress(addr);
+      return { address: addr, family: literalFamily as 4 | 6 };
+    }
+
+    let records: { address: string }[];
+    try {
+      records = await lookup(hostname, { all: true, verbatim: true });
+    } catch {
+      throw new BadRequestException("Unable to resolve WebDAV host");
+    }
+
+    if (!records.length) {
+      throw new BadRequestException("Unable to resolve WebDAV host");
+    }
+
+    for (const record of records) {
+      this.assertPublicAddress(record.address);
+    }
+    const selected = records[0].address;
+    const family = isIP(selected);
+    if (family === 0) {
+      throw new BadRequestException("Invalid WebDAV host address");
+    }
+    return { address: selected, family: family as 4 | 6 };
+  }
+
+  private assertPublicAddress(address: string) {
+    const addr = address.replace(/^\[|\]$/g, "");
     const version = isIP(addr);
-    // If not an IP literal (i.e. it's a domain name), always allow
-    if (version === 0) return;
+    if (version === 0) {
+      throw new BadRequestException("Invalid WebDAV host address");
+    }
 
     if (version === 4) {
       const parts = addr.split(".").map(Number);
@@ -230,12 +317,16 @@ export class WebDavProxyController {
         (a === 100 && b >= 64 && b <= 127) ||
         (a === 169 && b === 254) ||
         (a === 172 && b >= 16 && b <= 31) ||
+        (a === 192 && b === 0) ||
+        (a === 192 && b === 0 && parts[2] === 2) ||
         (a === 192 && b === 168) ||
+        (a === 198 && b === 51 && parts[2] === 100) ||
         (a === 198 && (b === 18 || b === 19)) ||
+        (a === 203 && b === 0 && parts[2] === 113) ||
         a >= 224;
       if (isPrivate) {
         throw new BadRequestException(
-          "Private IP address literals are not allowed in WebDAV URLs",
+          "Private or reserved WebDAV addresses are not allowed",
         );
       }
       return;
@@ -243,6 +334,12 @@ export class WebDavProxyController {
 
     // IPv6
     const lower = addr.toLowerCase();
+    const mappedV4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
+    if (mappedV4) {
+      this.assertPublicAddress(mappedV4[1]);
+      return;
+    }
+
     const isPrivate =
       lower === "::" ||
       lower === "::1" ||
@@ -252,10 +349,11 @@ export class WebDavProxyController {
       lower.startsWith("fe9") ||
       lower.startsWith("fea") ||
       lower.startsWith("feb") ||
+      lower.startsWith("2001:db8") ||
       lower.startsWith("ff");
     if (isPrivate) {
       throw new BadRequestException(
-        "Private IP address literals are not allowed in WebDAV URLs",
+        "Private or reserved WebDAV addresses are not allowed",
       );
     }
   }
@@ -267,5 +365,59 @@ export class WebDavProxyController {
       );
     }
     return "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
+  }
+
+  private requestWebDav(
+    target: ValidatedWebDavTarget,
+    options: WebDavRequestOptions,
+  ): Promise<WebDavUpstreamResponse> {
+    return new Promise((resolve, reject) => {
+      const req = httpsRequest(
+        target.url,
+        {
+          method: options.method,
+          headers: options.headers,
+          lookup: (_hostname, _options, callback) => {
+            callback(null, target.address, target.family);
+          },
+          timeout: WEBDAV_REQUEST_TIMEOUT_MS,
+        },
+        (stream) => {
+          resolve({
+            status: stream.statusCode || 0,
+            headers: stream.headers,
+            stream,
+            text: () => this.readStreamText(stream),
+          });
+        },
+      );
+
+      req.on("timeout", () =>
+        req.destroy(new Error("WebDAV upstream request timed out")),
+      );
+      req.on("error", reject);
+      if (options.body) req.write(options.body);
+      req.end();
+    });
+  }
+
+  private readStreamText(stream: IncomingMessage): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      stream.on("data", (chunk: Buffer | string) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      stream.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+      stream.on("error", reject);
+    });
+  }
+
+  private isSuccessfulStatus(status: number): boolean {
+    return status >= 200 && status < 300;
+  }
+
+  private headerValue(value: string | string[] | undefined): string | undefined {
+    if (Array.isArray(value)) return value[0];
+    return value;
   }
 }

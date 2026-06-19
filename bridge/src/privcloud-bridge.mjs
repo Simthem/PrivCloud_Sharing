@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import http from "node:http";
+import { createServer as createLoopbackHttpServer } from "node:http";
 import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -51,6 +51,19 @@ const NATIVE_ALLOWED_ORIGINS = new Set(
     .filter(Boolean),
 );
 
+function assertLoopbackBindHost(host) {
+  const normalized = String(host || "").replace(/^\[|\]$/g, "").toLowerCase();
+  const isLoopback =
+    normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
+    normalized === "::1";
+  if (!isLoopback && process.env.PRIVCLOUD_BRIDGE_ALLOW_NON_LOOPBACK !== "1") {
+    throw new Error(
+      "Refusing to start the HTTP bridge on a non-loopback interface. Set PRIVCLOUD_BRIDGE_ALLOW_NON_LOOPBACK=1 only for a trusted local network.",
+    );
+  }
+}
+
 let state = {
   bridgeId: crypto.randomUUID(),
   tokens: [],
@@ -71,6 +84,14 @@ const PUBLIC_ERROR_MESSAGES = {
   webdav_same_origin_required: "webdav.error.sameOriginRequired",
   webdav_upstream_error: "webdav.error.upstream",
 };
+const ERROR_RESPONSE_JSON = Object.freeze(
+  Object.fromEntries(
+    Object.entries(PUBLIC_ERROR_MESSAGES).map(([code, message]) => [
+      code,
+      JSON.stringify({ error: code, message }),
+    ]),
+  ),
+);
 
 function now() {
   return Date.now();
@@ -186,9 +207,14 @@ function sendJson(res, statusCode, body) {
   res.end(JSON.stringify(body));
 }
 
-function sendError(res, err) {
-  // Extract status and code BEFORE any response is built.
-  const statusCode = Number(err?.statusCode || 500);
+function publicErrorFrom(err) {
+  const candidateStatus = Number(err?.statusCode || 500);
+  const statusCode =
+    Number.isInteger(candidateStatus) &&
+    candidateStatus >= 400 &&
+    candidateStatus <= 599
+      ? candidateStatus
+      : 500;
   const rawCode = String(
     err?.code || (statusCode >= 500 ? "internal_error" : "bad_request"),
   );
@@ -203,11 +229,20 @@ function sendError(res, err) {
     console.error(`[Bridge] Internal error: ${err.message || err}`);
   }
 
-  const safeMessage = PUBLIC_ERROR_MESSAGES[code];
+  return {
+    statusCode,
+    code,
+  };
+}
 
-  // Write response using inline object - severs the err→end taint path.
-  res.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
-  res.end(JSON.stringify({ error: code, message: safeMessage }));
+function sendError(res, err) {
+  const publicError = publicErrorFrom(err);
+  res.writeHead(publicError.statusCode, {
+    "Content-Type": "application/json; charset=utf-8",
+  });
+  res.end(
+    ERROR_RESPONSE_JSON[publicError.code] || ERROR_RESPONSE_JSON.internal_error,
+  );
 }
 
 async function readJson(req) {
@@ -1417,13 +1452,14 @@ setInterval(cleanupJobs, 60_000).unref();
 if (process.argv.includes("--native-messaging")) {
   await runNativeMessaging();
 } else {
+  assertLoopbackBindHost(HOST);
   setInterval(cleanupPairings, 30_000).unref();
 
   // snyk:ignore CleartextTransmission - Bridge listens on localhost only (127.0.0.1).
   // HTTPS would require a self-signed certificate, adding complexity for no security
   // benefit since traffic never leaves the local machine. Origin validation (CORS)
   // ensures only the authorized PrivCloud tab can communicate with the bridge.
-  const server = http.createServer((req, res) => {
+  const server = createLoopbackHttpServer((req, res) => {
     route(req, res).catch((err) => sendError(res, err));
   });
 

@@ -680,6 +680,8 @@ export default {
   "bridge.error.internal": "Internal Companion error.",
   "bridge.error.localNetworkBlocked":
     "The browser blocked access to the local Companion. Allow local network access for this site, or keep using the server-side WebDAV proxy.",
+  "bridge.error.localNetworkRequired":
+    "This WebDAV server is on a local or private network. Enable PrivCloud Companion to import from it.",
   "bridge.error.jobNotFound": "Bridge job was not found or has expired.",
   "bridge.error.staleJob":
     "The previous Bridge transfer was stopped because it was no longer progressing.",
@@ -1257,16 +1259,56 @@ export default {
   "admin.config.push-notifications.vapid-private-key.description":
     "The associated VAPID private key. Never share this.",
 
-  "admin.config.category.hcaptcha": "hCaptcha",
-  "admin.config.hcaptcha.enabled": "Enable hCaptcha",
-  "admin.config.hcaptcha.enabled.description":
-    "Protect sign in, sign up, and password reset forms with hCaptcha to prevent bot abuse.",
-  "admin.config.hcaptcha.site-key": "Site key",
-  "admin.config.hcaptcha.site-key.description":
-    "The public site key from your hCaptcha dashboard.",
-  "admin.config.hcaptcha.secret-key": "Secret key",
-  "admin.config.hcaptcha.secret-key.description":
-    "The secret key from your hCaptcha dashboard used for server-side verification.",
+  "admin.config.category.altcha": "ALTCHA",
+  "admin.config.altcha.enabled": "Enable ALTCHA",
+  "admin.config.altcha.enabled.description":
+    "Protect sign in, sign up, password reset, anonymous upload, and share access with a self-hosted proof-of-work challenge.",
+  "admin.config.altcha.language": "Language",
+  "admin.config.altcha.language.description":
+    "Widget language loaded in the browser. fr-fr is the recommended default for this SaaS.",
+  "admin.config.altcha.theme": "Theme",
+  "admin.config.altcha.theme.description":
+    "Widget visual theme. Lime is selected by default to match the application palette.",
+  "admin.config.altcha.random-effort": "Random effort",
+  "admin.config.altcha.random-effort.description":
+    "Randomize the challenge target around the configured effort so automated clients cannot assume a fixed workload.",
+  "admin.config.altcha.mock-challenge": "Mock challenge",
+  "admin.config.altcha.mock-challenge.description":
+    "Enable simulated verification in the admin preview only. Public forms always use real server challenges.",
+  "admin.config.altcha.algorithm": "Algorithm",
+  "admin.config.altcha.algorithm.description":
+    "PBKDF2/SHA-256 is recommended: it is bundled, broadly compatible, and faster than SHA-384 or SHA-512 for this use case.",
+  "admin.config.altcha.cost": "Cost",
+  "admin.config.altcha.cost.description":
+    "PBKDF2 cost per attempt. 5000 is the recommended default; tune user friction mostly with effort.",
+  "admin.config.altcha.effort": "Effort",
+  "admin.config.altcha.effort.description":
+    "Average number of counters the browser must test. 250 is a good default; increase gradually if you need more resistance.",
+  "admin.config.altcha.expires-in-seconds": "Challenge expiration",
+  "admin.config.altcha.expires-in-seconds.description":
+    "Challenge validity in seconds. Short lifetimes limit token reuse windows.",
+  "admin.config.altcha.hmac-key": "HMAC key",
+  "admin.config.altcha.hmac-key.description":
+    "Server-side secret used to sign and verify challenges. A strong key is generated automatically; rotate only when needed.",
+  "admin.config.altcha.type": "Interaction type",
+  "admin.config.altcha.type.description":
+    "Widget interaction control: checkbox, native checkbox, or switch.",
+  "admin.config.altcha.code-challenge-display": "Code challenge display",
+  "admin.config.altcha.code-challenge-display.description":
+    "Layout used if a code challenge is ever returned by the server.",
+  "admin.config.altcha.display": "Display",
+  "admin.config.altcha.display.description":
+    "Widget layout mode.",
+  "admin.config.altcha.auto": "Auto verification",
+  "admin.config.altcha.auto.description":
+    "When the widget starts verification automatically.",
+  "admin.config.altcha.preview.title": "Live preview",
+  "admin.config.altcha.preview.description":
+    "Preview the current visual settings and run real or simulated verification according to the mock option.",
+  "admin.config.altcha.preview.verify": "Verify",
+  "admin.config.altcha.preview.reset": "Reset",
+  "admin.config.altcha.preview.verified": "Verified",
+  "admin.config.altcha.preview.unverified": "Unverified",
 
   // 404
   "404.description": "Oops this page doesn't exist.",
@@ -1651,7 +1693,10 @@ export default {
   "signing.new.recipients.order": "Order",
   "signing.new.fields": "Signature fields",
   "signing.new.fields.add": "Add a field",
-  "signing.new.fields.desc": "Define the areas where signers will place their signature. If no field is defined, a signature field will automatically be created for each signer.",
+  "signing.new.fields.add-signature": "Signature",
+  "signing.new.fields.add-text": "Text field",
+  "signing.new.fields.add-approval": "Required mention",
+  "signing.new.fields.desc": "Add signature areas, free text fields, dates or exact mentions. A signature field is automatically added for each signer if missing.",
   "signing.new.fields.signer": "Signer",
   "signing.new.fields.type": "Type",
   "signing.new.fields.type.signature": "Signature",
@@ -1660,6 +1705,23 @@ export default {
   "signing.new.fields.type.text": "Text",
   "signing.new.fields.type.approval": "Approval",
   "signing.new.fields.page": "Page",
+  "signing.new.fields.width": "Width",
+  "signing.new.fields.height": "Height",
+  "signing.new.fields.required": "Required",
+  "signing.new.fields.label": "Instruction or required text",
+  "signing.new.fields.label.placeholder": "Example: Customer signature, preceded by the required statement",
+  "signing.new.fields.label.approval-placeholder": "Text the signer must type exactly",
+  "signing.new.fields.approval.default": "Read and approved",
+  "signing.new.fields.placement": "Quick placement",
+  "signing.new.fields.placement.top-left": "Top left",
+  "signing.new.fields.placement.top-center": "Top center",
+  "signing.new.fields.placement.top-right": "Top right",
+  "signing.new.fields.placement.middle-left": "Middle left",
+  "signing.new.fields.placement.middle-center": "Middle",
+  "signing.new.fields.placement.middle-right": "Middle right",
+  "signing.new.fields.placement.bottom-left": "Bottom left",
+  "signing.new.fields.placement.bottom-center": "Bottom center",
+  "signing.new.fields.placement.bottom-right": "Bottom right",
   "signing.new.cancel": "Cancel",
   "signing.new.submit-button": "Send signature request",
   "signing.new.validate.share-required": "Please select a share",
@@ -1667,6 +1729,7 @@ export default {
   "signing.new.validate.name-required": "Name required",
   "signing.new.validate.email-invalid": "Invalid email",
   "signing.new.validate.min-signer": "Add at least one signer",
+  "signing.new.validate.field-label-required": "Add the instruction or exact text for each required text field.",
   "signing.toast.created": "Signature request created and sent to signers",
   "signing.toast.create-error": "Error creating the request",
 

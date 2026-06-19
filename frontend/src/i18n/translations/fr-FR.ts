@@ -587,6 +587,8 @@ export default {
   "bridge.error.internal": "Erreur interne du Companion.",
   "bridge.error.localNetworkBlocked":
     "Le navigateur a bloqué l'accès au Companion local. Autorisez l'accès au réseau local pour ce site, ou continuez avec le proxy WebDAV serveur.",
+  "bridge.error.localNetworkRequired":
+    "Ce serveur WebDAV est sur un réseau local ou privé. Activez PrivCloud Companion pour l'importer.",
   "bridge.error.jobNotFound": "Tâche Bridge introuvable ou expirée.",
   "bridge.error.staleJob":
     "L'ancien transfert Bridge a été interrompu car il ne progressait plus.",
@@ -1050,16 +1052,56 @@ export default {
   "admin.config.push-notifications.vapid-private-key.description":
     "La clé privée VAPID associée. Ne la partagez jamais.",
 
-  "admin.config.category.hcaptcha": "hCaptcha",
-  "admin.config.hcaptcha.enabled": "Activer hCaptcha",
-  "admin.config.hcaptcha.enabled.description":
-    "Protège les formulaires de connexion, d'inscription et de réinitialisation de mot de passe avec hCaptcha pour empêcher les abus de bots.",
-  "admin.config.hcaptcha.site-key": "Clé de site",
-  "admin.config.hcaptcha.site-key.description":
-    "La clé de site publique depuis votre tableau de bord hCaptcha.",
-  "admin.config.hcaptcha.secret-key": "Clé secrète",
-  "admin.config.hcaptcha.secret-key.description":
-    "La clé secrète depuis votre tableau de bord hCaptcha, utilisée pour la vérification côté serveur.",
+  "admin.config.category.altcha": "ALTCHA",
+  "admin.config.altcha.enabled": "Activer ALTCHA",
+  "admin.config.altcha.enabled.description":
+    "Protège la connexion, l'inscription, la réinitialisation du mot de passe, l'envoi anonyme et l'accès aux partages avec un challenge de preuve de travail auto-hébergé.",
+  "admin.config.altcha.language": "Langue",
+  "admin.config.altcha.language.description":
+    "Langue du widget chargée dans le navigateur. fr-fr est le réglage recommandé pour ce SaaS.",
+  "admin.config.altcha.theme": "Thème",
+  "admin.config.altcha.theme.description":
+    "Thème visuel du widget. Lime est sélectionné par défaut pour rester proche de la palette de l'application.",
+  "admin.config.altcha.random-effort": "Effort aléatoire",
+  "admin.config.altcha.random-effort.description":
+    "Fait varier la cible du challenge autour de l’effort configuré afin que les clients automatisés ne puissent pas supposer une charge fixe.",
+  "admin.config.altcha.mock-challenge": "Mock challenge",
+  "admin.config.altcha.mock-challenge.description":
+    "Active une validation simulée dans l’aperçu admin uniquement. Les formulaires publics utilisent toujours de vrais challenges serveur.",
+  "admin.config.altcha.algorithm": "Algorithme",
+  "admin.config.altcha.algorithm.description":
+    "PBKDF2/SHA-256 est recommandé : il est intégré, largement compatible et plus rapide que SHA-384 ou SHA-512 pour cet usage.",
+  "admin.config.altcha.cost": "Coût",
+  "admin.config.altcha.cost.description":
+    "Coût PBKDF2 par tentative. 5000 est le défaut recommandé ; la fluidité se règle surtout avec l’effort.",
+  "admin.config.altcha.effort": "Effort",
+  "admin.config.altcha.effort.description":
+    "Nombre moyen de compteurs que le navigateur doit tester. 250 est un bon défaut ; augmentez progressivement si vous voulez plus de résistance.",
+  "admin.config.altcha.expires-in-seconds": "Expiration du challenge",
+  "admin.config.altcha.expires-in-seconds.description":
+    "Durée de validité du challenge en secondes. Une durée courte limite la fenêtre de réutilisation d'un jeton.",
+  "admin.config.altcha.hmac-key": "Clé HMAC",
+  "admin.config.altcha.hmac-key.description":
+    "Secret côté serveur utilisé pour signer et vérifier les challenges. Une clé forte est générée automatiquement ; à remplacer seulement en cas de rotation volontaire.",
+  "admin.config.altcha.type": "Type d'interaction",
+  "admin.config.altcha.type.description":
+    "Contrôle d'interaction du widget : checkbox, checkbox native ou switch.",
+  "admin.config.altcha.code-challenge-display": "Affichage du challenge code",
+  "admin.config.altcha.code-challenge-display.description":
+    "Disposition utilisée si un challenge code est un jour renvoyé par le serveur.",
+  "admin.config.altcha.display": "Affichage",
+  "admin.config.altcha.display.description":
+    "Mode d'affichage du widget.",
+  "admin.config.altcha.auto": "Vérification automatique",
+  "admin.config.altcha.auto.description":
+    "Moment où le widget lance automatiquement la vérification.",
+  "admin.config.altcha.preview.title": "Aperçu en direct",
+  "admin.config.altcha.preview.description":
+    "Prévisualise les réglages visuels actuels et permet de lancer une vérification réelle ou simulée selon l’option mock.",
+  "admin.config.altcha.preview.verify": "Vérifier",
+  "admin.config.altcha.preview.reset": "Réinitialiser",
+  "admin.config.altcha.preview.verified": "Vérifié",
+  "admin.config.altcha.preview.unverified": "Non vérifié",
 
   // 404
   "404.description": "Désolé, mais cette page n’existe pas.",
@@ -1436,7 +1478,10 @@ export default {
   "signing.new.recipients.order": "Ordre",
   "signing.new.fields": "Champs de signature",
   "signing.new.fields.add": "Ajouter un champ",
-  "signing.new.fields.desc": "Définissez les zones où les signataires apposeront leur signature. Si aucun champ n'est défini, un champ de signature sera automatiquement créé pour chaque signataire.",
+  "signing.new.fields.add-signature": "Signature",
+  "signing.new.fields.add-text": "Champ libre",
+  "signing.new.fields.add-approval": "Mention obligatoire",
+  "signing.new.fields.desc": "Ajoutez des zones de signature, champs libres, dates ou mentions exactes. Une signature est automatiquement ajoutée pour chaque signataire si elle manque.",
   "signing.new.fields.signer": "Signataire",
   "signing.new.fields.type": "Type",
   "signing.new.fields.type.signature": "Signature",
@@ -1445,6 +1490,23 @@ export default {
   "signing.new.fields.type.text": "Texte",
   "signing.new.fields.type.approval": "Approbation",
   "signing.new.fields.page": "Page",
+  "signing.new.fields.width": "Largeur",
+  "signing.new.fields.height": "Hauteur",
+  "signing.new.fields.required": "Obligatoire",
+  "signing.new.fields.label": "Instruction ou texte obligatoire",
+  "signing.new.fields.label.placeholder": "Exemple : Signature du client, précédée de la mention attendue",
+  "signing.new.fields.label.approval-placeholder": "Texte que le signataire doit recopier exactement",
+  "signing.new.fields.approval.default": "Bon pour accord et réception sans réserve",
+  "signing.new.fields.placement": "Placement rapide",
+  "signing.new.fields.placement.top-left": "Haut gauche",
+  "signing.new.fields.placement.top-center": "Haut milieu",
+  "signing.new.fields.placement.top-right": "Haut droite",
+  "signing.new.fields.placement.middle-left": "Milieu gauche",
+  "signing.new.fields.placement.middle-center": "Milieu",
+  "signing.new.fields.placement.middle-right": "Milieu droite",
+  "signing.new.fields.placement.bottom-left": "Bas gauche",
+  "signing.new.fields.placement.bottom-center": "Bas milieu",
+  "signing.new.fields.placement.bottom-right": "Bas droite",
   "signing.new.cancel": "Annuler",
   "signing.new.submit-button": "Envoyer la demande de signature",
   "signing.new.validate.share-required": "Veuillez sélectionner un partage",
@@ -1452,6 +1514,7 @@ export default {
   "signing.new.validate.name-required": "Nom requis",
   "signing.new.validate.email-invalid": "Email invalide",
   "signing.new.validate.min-signer": "Ajoutez au moins un signataire",
+  "signing.new.validate.field-label-required": "Ajoutez l'instruction ou le texte exact pour chaque champ texte obligatoire.",
   "signing.toast.created": "Demande de signature créée et envoyée aux signataires",
   "signing.toast.create-error": "Erreur lors de la création de la demande",
 

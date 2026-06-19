@@ -1,11 +1,27 @@
 import {
+  ArrayMaxSize,
   IsIn,
+  IsArray,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   MaxLength,
   MinLength,
+  ValidateNested,
 } from "class-validator";
+import { Type } from "class-transformer";
+
+export class SignatureFieldValueDTO {
+  @IsString()
+  @IsUUID()
+  fieldId: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(4000)
+  value: string;
+}
 
 export class SignDocumentDTO {
   @IsString()
@@ -20,6 +36,13 @@ export class SignDocumentDTO {
   @IsString()
   @Matches(/^\d{6}$/, { message: "OTP must be exactly 6 digits" })
   otpCode?: string; // OTP for AES identity verification
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => SignatureFieldValueDTO)
+  fieldValues?: SignatureFieldValueDTO[];
 }
 
 export class RejectDocumentDTO {

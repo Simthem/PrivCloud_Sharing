@@ -213,6 +213,59 @@ export class ConfigService extends EventEmitter {
         condition: (value: number) => value >= 0 && value <= 9,
         message: "Zip compression level must be between 0 and 9",
       },
+      {
+        key: "altcha.algorithm",
+        condition: (value: string) =>
+          ["PBKDF2/SHA-256", "PBKDF2/SHA-384", "PBKDF2/SHA-512"].includes(
+            value,
+          ),
+        message:
+          "ALTCHA algorithm must be PBKDF2/SHA-256, PBKDF2/SHA-384 or PBKDF2/SHA-512",
+      },
+      {
+        key: "altcha.cost",
+        condition: (value: number) => value >= 1000 && value <= 250000,
+        message: "ALTCHA cost must be between 1000 and 250000",
+      },
+      {
+        key: "altcha.effort",
+        condition: (value: number) => value >= 1 && value <= 10000,
+        message: "ALTCHA effort must be between 1 and 10000",
+      },
+      {
+        key: "altcha.expiresInSeconds",
+        condition: (value: number) => value >= 60 && value <= 3600,
+        message:
+          "ALTCHA challenge expiration must be between 60 and 3600 seconds",
+      },
+      {
+        key: "altcha.type",
+        condition: (value: string) =>
+          ["native", "checkbox", "switch"].includes(value),
+        message: "ALTCHA type must be native, checkbox or switch",
+      },
+      {
+        key: "altcha.codeChallengeDisplay",
+        condition: (value: string) =>
+          ["standard", "overlay", "bottomsheet"].includes(value),
+        message:
+          "ALTCHA code challenge display must be standard, overlay or bottomsheet",
+      },
+      {
+        key: "altcha.display",
+        condition: (value: string) =>
+          ["standard", "bar", "floating", "overlay", "invisible"].includes(
+            value,
+          ),
+        message:
+          "ALTCHA display must be standard, bar, floating, overlay or invisible",
+      },
+      {
+        key: "altcha.auto",
+        condition: (value: string) =>
+          ["off", "onfocus", "onload", "onsubmit"].includes(value),
+        message: "ALTCHA auto mode must be off, onfocus, onload or onsubmit",
+      },
       // TODO add validation for timespan type
     ];
 

@@ -497,16 +497,56 @@ export default {
   "admin.config.legal.privacy-policy-text.description": "Tekst mis kuvatakse privaatsuspoliitikas. Toetab Markdowni. Jäta tühjaks, et lingida välisele privaatsuspoliitika lehele.",
   "admin.config.legal.privacy-policy-url": "Privaatsuspoliitika URL",
   "admin.config.legal.privacy-policy-url.description": "Kui sul on juba privaatsuspoliitika leht saad selle siia linkida selle asemel, et kasutada tekstivälja.",
-  "admin.config.category.hcaptcha": "hCaptcha",
-  "admin.config.hcaptcha.enabled": "Enable hCaptcha",
-  "admin.config.hcaptcha.enabled.description":
-    "Protect sign in, sign up, and password reset forms with hCaptcha to prevent bot abuse.",
-  "admin.config.hcaptcha.site-key": "Site key",
-  "admin.config.hcaptcha.site-key.description":
-    "The public site key from your hCaptcha dashboard.",
-  "admin.config.hcaptcha.secret-key": "Secret key",
-  "admin.config.hcaptcha.secret-key.description":
-    "The secret key from your hCaptcha dashboard used for server-side verification.",
+  "admin.config.category.altcha": "ALTCHA",
+  "admin.config.altcha.enabled": "Enable ALTCHA",
+  "admin.config.altcha.enabled.description":
+    "Protect sign in, sign up, password reset, anonymous upload, and share access with a self-hosted proof-of-work challenge.",
+  "admin.config.altcha.language": "Language",
+  "admin.config.altcha.language.description":
+    "Widget language loaded in the browser. fr-fr is the recommended default for this SaaS.",
+  "admin.config.altcha.theme": "Theme",
+  "admin.config.altcha.theme.description":
+    "Widget visual theme. Lime is selected by default to match the application palette.",
+  "admin.config.altcha.random-effort": "Random effort",
+  "admin.config.altcha.random-effort.description":
+    "Randomize the challenge target around the configured effort so automated clients cannot assume a fixed workload.",
+  "admin.config.altcha.mock-challenge": "Mock challenge",
+  "admin.config.altcha.mock-challenge.description":
+    "Enable simulated verification in the admin preview only. Public forms always use real server challenges.",
+  "admin.config.altcha.algorithm": "Algorithm",
+  "admin.config.altcha.algorithm.description":
+    "PBKDF2/SHA-256 is recommended: it is bundled, broadly compatible, and faster than SHA-384 or SHA-512 for this use case.",
+  "admin.config.altcha.cost": "Cost",
+  "admin.config.altcha.cost.description":
+    "PBKDF2 cost per attempt. 5000 is the recommended default; tune user friction mostly with effort.",
+  "admin.config.altcha.effort": "Effort",
+  "admin.config.altcha.effort.description":
+    "Average number of counters the browser must test. 250 is a good default; increase gradually if you need more resistance.",
+  "admin.config.altcha.expires-in-seconds": "Challenge expiration",
+  "admin.config.altcha.expires-in-seconds.description":
+    "Challenge validity in seconds. Short lifetimes limit token reuse windows.",
+  "admin.config.altcha.hmac-key": "HMAC key",
+  "admin.config.altcha.hmac-key.description":
+    "Server-side secret used to sign and verify challenges. A strong key is generated automatically; rotate only when needed.",
+  "admin.config.altcha.type": "Interaction type",
+  "admin.config.altcha.type.description":
+    "Widget interaction control: checkbox, native checkbox, or switch.",
+  "admin.config.altcha.code-challenge-display": "Code challenge display",
+  "admin.config.altcha.code-challenge-display.description":
+    "Layout used if a code challenge is ever returned by the server.",
+  "admin.config.altcha.display": "Display",
+  "admin.config.altcha.display.description":
+    "Widget layout mode.",
+  "admin.config.altcha.auto": "Auto verification",
+  "admin.config.altcha.auto.description":
+    "When the widget starts verification automatically.",
+  "admin.config.altcha.preview.title": "Live preview",
+  "admin.config.altcha.preview.description":
+    "Preview the current visual settings and run real or simulated verification according to the mock option.",
+  "admin.config.altcha.preview.verify": "Verify",
+  "admin.config.altcha.preview.reset": "Reset",
+  "admin.config.altcha.preview.verified": "Verified",
+  "admin.config.altcha.preview.unverified": "Unverified",
   // 404
   "404.description": "Ups, seda lehte ei eksisteeri.",
   "404.button.home": "Viia mind tagasi avalehele",

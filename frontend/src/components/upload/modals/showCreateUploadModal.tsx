@@ -2,7 +2,6 @@ import {
   Accordion,
   Alert,
   Button,
-  Center,
   Checkbox,
   Grid,
   Group,
@@ -14,7 +13,6 @@ import {
   Text,
   Textarea,
   TextInput,
-  useMantineTheme,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { yupResolver } from "mantine-form-yup-resolver";
@@ -23,10 +21,12 @@ import dayjs from "../../../utils/dayjs";
 import { ManipulateType } from "dayjs";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { TbAlertCircle } from "react-icons/tb";
-import HCaptcha from "@hcaptcha/react-hcaptcha";
 import { FormattedMessage } from "react-intl";
 import { useQuery } from "@tanstack/react-query";
 import * as yup from "yup";
+import AltchaCaptcha from "../../captcha/AltchaCaptcha";
+import type { AltchaWidgetHandle } from "../../captcha/AltchaWidget";
+import { useAltchaSettings } from "../../../hooks/altcha.hook";
 import useTranslate, {
   translateOutsideContext,
 } from "../../../hooks/useTranslate.hook";
@@ -53,7 +53,7 @@ const showCreateUploadModal = (
     configuredMaxExpirationDays: number;
     shareIdLength: number;
     simplified: boolean;
-    captchaSiteKey?: string;
+    captchaEnabled?: boolean;
     preselectedTeamFolderId?: string;
   },
   files: FileUpload[],
@@ -134,7 +134,7 @@ const CreateUploadModalBody = ({
     anonymousMaxExpiration: Timespan;
     configuredMaxExpirationDays: number;
     shareIdLength: number;
-    captchaSiteKey?: string;
+    captchaEnabled?: boolean;
     preselectedTeamFolderId?: string;
   };
   pastRecipients?: string[];
@@ -142,19 +142,29 @@ const CreateUploadModalBody = ({
   const modals = useModals();
   const config = useConfig();
   const t = useTranslate();
-  const theme = useMantineTheme();
+  const altcha = useAltchaSettings();
 
-  const captchaRef = useRef<HCaptcha>(null);
+  const captchaRef = useRef<AltchaWidgetHandle>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const showCaptcha = !options.isUserSignedIn && !!options.captchaSiteKey;
+  const showCaptcha = !options.isUserSignedIn && !!options.captchaEnabled;
 
   const handleCaptchaExpire = () => setCaptchaToken(null);
-  const handleCaptchaError = (error: any) => {
-    console.warn("[hCaptcha Error]", error);
-    // Attempt to reset the captcha on error (e.g., WebGL context lost on Safari)
-    if (captchaRef.current?.resetCaptcha) {
-      captchaRef.current.resetCaptcha();
+  const handleCaptchaError = () => {
+    setCaptchaToken(null);
+    captchaRef.current?.reset();
+  };
+
+  const resolveCaptchaToken = async () => {
+    if (!showCaptcha) return undefined;
+    if (captchaToken) return captchaToken;
+
+    const result = await captchaRef.current?.verify();
+    if (result?.payload) {
+      setCaptchaToken(result.payload);
+      return result.payload;
     }
+
+    return undefined;
   };
 
   const generatedLink = generateShareId(options.shareIdLength);
@@ -372,6 +382,9 @@ const CreateUploadModalBody = ({
         return;
       }
 
+      const token = await resolveCaptchaToken();
+      if (showCaptcha && !token) return;
+
       uploadCallback(
         {
           id: values.link,
@@ -384,7 +397,7 @@ const CreateUploadModalBody = ({
             maxViews: values.maxViews || undefined,
           },
           shareE2EKeyViaEmail: values.shareE2EKeyViaEmail,
-          ...(captchaToken && { captchaToken }),
+          ...(token && { captchaToken: token }),
           ...(values.senderName && { senderName: values.senderName }),
           ...(values.senderEmail && { senderEmail: values.senderEmail }),
           notifyOnDownload: values.notifyOnDownload,
@@ -750,21 +763,17 @@ const CreateUploadModalBody = ({
             })}
           />
           {showCaptcha && (
-            <Center>
-              <HCaptcha
-                ref={captchaRef}
-                sitekey={options.captchaSiteKey!}
-                onVerify={setCaptchaToken}
-                onExpire={handleCaptchaExpire}
-                onError={handleCaptchaError}
-                theme={theme.other.colorScheme}
-              />
-            </Center>
+            <AltchaCaptcha
+              widgetRef={captchaRef}
+              onVerify={setCaptchaToken}
+              onExpire={handleCaptchaExpire}
+              onError={handleCaptchaError}
+            />
           )}
           <Button
             type="submit"
             data-autofocus
-            disabled={showCaptcha && !captchaToken}
+            disabled={showCaptcha && altcha.shouldWaitForToken && !captchaToken}
           >
             <FormattedMessage id="common.button.share" />
           </Button>
@@ -791,24 +800,34 @@ const SimplifiedCreateUploadModalModal = ({
     anonymousMaxExpiration: Timespan;
     configuredMaxExpirationDays: number;
     shareIdLength: number;
-    captchaSiteKey?: string;
+    captchaEnabled?: boolean;
   };
 }) => {
   const modals = useModals();
   const t = useTranslate();
-  const theme = useMantineTheme();
+  const altcha = useAltchaSettings();
 
-  const captchaRef = useRef<HCaptcha>(null);
+  const captchaRef = useRef<AltchaWidgetHandle>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const showCaptcha = !options.isUserSignedIn && !!options.captchaSiteKey;
+  const showCaptcha = !options.isUserSignedIn && !!options.captchaEnabled;
 
   const handleCaptchaExpire = () => setCaptchaToken(null);
-  const handleCaptchaError = (error: any) => {
-    console.warn("[hCaptcha Error]", error);
-    // Attempt to reset the captcha on error (e.g., WebGL context lost on Safari)
-    if (captchaRef.current?.resetCaptcha) {
-      captchaRef.current.resetCaptcha();
+  const handleCaptchaError = () => {
+    setCaptchaToken(null);
+    captchaRef.current?.reset();
+  };
+
+  const resolveCaptchaToken = async () => {
+    if (!showCaptcha) return undefined;
+    if (captchaToken) return captchaToken;
+
+    const result = await captchaRef.current?.verify();
+    if (result?.payload) {
+      setCaptchaToken(result.payload);
+      return result.payload;
     }
+
+    return undefined;
   };
 
   const [showNotSignedInAlert, setShowNotSignedInAlert] = useState(true);
@@ -857,6 +876,9 @@ const SimplifiedCreateUploadModalModal = ({
       expiration = "never";
     }
 
+    const token = await resolveCaptchaToken();
+    if (showCaptcha && !token) return;
+
     uploadCallback(
       {
         id: link,
@@ -868,7 +890,7 @@ const SimplifiedCreateUploadModalModal = ({
           password: undefined,
           maxViews: undefined,
         },
-        ...(captchaToken && { captchaToken }),
+        ...(token && { captchaToken: token }),
       },
       files,
     );
@@ -907,21 +929,17 @@ const SimplifiedCreateUploadModalModal = ({
             />
           </Stack>
           {showCaptcha && (
-            <Center>
-              <HCaptcha
-                ref={captchaRef}
-                sitekey={options.captchaSiteKey!}
-                onVerify={setCaptchaToken}
-                onExpire={handleCaptchaExpire}
-                onError={handleCaptchaError}
-                theme={theme.other.colorScheme}
-              />
-            </Center>
+            <AltchaCaptcha
+              widgetRef={captchaRef}
+              onVerify={setCaptchaToken}
+              onExpire={handleCaptchaExpire}
+              onError={handleCaptchaError}
+            />
           )}
           <Button
             type="submit"
             data-autofocus
-            disabled={showCaptcha && !captchaToken}
+            disabled={showCaptcha && altcha.shouldWaitForToken && !captchaToken}
           >
             <FormattedMessage id="common.button.share" />
           </Button>

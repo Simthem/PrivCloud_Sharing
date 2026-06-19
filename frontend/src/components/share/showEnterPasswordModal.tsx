@@ -1,19 +1,18 @@
-import { Button, Center, PasswordInput, Stack, Text, useMantineTheme } from "@mantine/core";
+import { Button, PasswordInput, Stack, Text } from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import { useRef, useState } from "react";
 import { FormattedMessage } from "react-intl";
-import HCaptcha from "@hcaptcha/react-hcaptcha";
+import AltchaCaptcha from "../captcha/AltchaCaptcha";
+import type { AltchaWidgetHandle } from "../captcha/AltchaWidget";
+import { useAltchaSettings } from "../../hooks/altcha.hook";
 import useTranslate, {
   translateOutsideContext,
 } from "../../hooks/useTranslate.hook";
 
 const showEnterPasswordModal = (
   modals: ReturnType<typeof useModals>,
-  submitCallback: (
-    _password: string,
-    _captchaToken?: string,
-  ) => Promise<void>,
-  captchaSiteKey?: string,
+  submitCallback: (_password: string, _captchaToken?: string) => Promise<void>,
+  captchaEnabled?: boolean,
 ) => {
   const t = translateOutsideContext();
   return modals.openModal({
@@ -22,37 +21,43 @@ const showEnterPasswordModal = (
     closeOnEscape: false,
     title: t("share.modal.password.title"),
     children: (
-      <Body submitCallback={submitCallback} captchaSiteKey={captchaSiteKey} />
+      <Body submitCallback={submitCallback} captchaEnabled={captchaEnabled} />
     ),
   });
 };
 
 const Body = ({
   submitCallback,
-  captchaSiteKey,
+  captchaEnabled,
 }: {
-  submitCallback: (
-    _password: string,
-    _captchaToken?: string,
-  ) => Promise<void>;
-  captchaSiteKey?: string;
+  submitCallback: (_password: string, _captchaToken?: string) => Promise<void>;
+  captchaEnabled?: boolean;
 }) => {
   const [password, setPassword] = useState("");
   const [passwordWrong, setPasswordWrong] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const captchaRef = useRef<HCaptcha>(null);
+  const captchaRef = useRef<AltchaWidgetHandle>(null);
+  const altcha = useAltchaSettings();
   const t = useTranslate();
-  const theme = useMantineTheme();
 
-  const captchaEnabled = !!captchaSiteKey;
-
+  const resetCaptcha = () => {
+    setCaptchaToken(null);
+    captchaRef.current?.reset();
+  };
   const handleCaptchaExpire = () => setCaptchaToken(null);
-  const handleCaptchaError = (error: any) => {
-    console.warn("[hCaptcha Error]", error);
-    // Attempt to reset the captcha on error (e.g., WebGL context lost on Safari)
-    if (captchaRef.current?.resetCaptcha) {
-      captchaRef.current.resetCaptcha();
+  const handleCaptchaError = resetCaptcha;
+
+  const resolveCaptchaToken = async () => {
+    if (!captchaEnabled) return undefined;
+    if (captchaToken) return captchaToken;
+
+    const result = await captchaRef.current?.verify();
+    if (result?.payload) {
+      setCaptchaToken(result.payload);
+      return result.payload;
     }
+
+    return undefined;
   };
 
   return (
@@ -62,9 +67,22 @@ const Body = ({
       </Text>
 
       <form
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
-          submitCallback(password, captchaToken || undefined);
+          try {
+            const token = await resolveCaptchaToken();
+            if (captchaEnabled && !token) return;
+
+            await submitCallback(password, token);
+          } catch (error) {
+            if (
+              (error as { response?: { data?: { error?: string } } })?.response
+                ?.data?.error === "share_password_required"
+            ) {
+              setPasswordWrong(true);
+            }
+            resetCaptcha();
+          }
         }}
       >
         <Stack>
@@ -77,20 +95,18 @@ const Body = ({
             value={password}
           />
           {captchaEnabled && (
-            <Center>
-              <HCaptcha
-                ref={captchaRef}
-                sitekey={captchaSiteKey!}
-                onVerify={setCaptchaToken}
-                onExpire={handleCaptchaExpire}
-                onError={handleCaptchaError}
-                theme={theme.other.colorScheme}
-              />
-            </Center>
+            <AltchaCaptcha
+              widgetRef={captchaRef}
+              onVerify={setCaptchaToken}
+              onExpire={handleCaptchaExpire}
+              onError={handleCaptchaError}
+            />
           )}
           <Button
             type="submit"
-            disabled={captchaEnabled && !captchaToken}
+            disabled={
+              captchaEnabled && altcha.shouldWaitForToken && !captchaToken
+            }
           >
             <FormattedMessage id="common.button.submit" />
           </Button>

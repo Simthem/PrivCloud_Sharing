@@ -7,13 +7,15 @@ import { User } from "@prisma/client";
 import { Request } from "express";
 import { ConfigService } from "src/config/config.service";
 import { PrismaService } from "src/prisma/prisma.service";
+import { TeamShareAccessService } from "src/share/team-share-access.service";
 import { JwtGuard } from "../../auth/guard/jwt.guard";
 
 @Injectable()
 export class ShareOwnerGuard extends JwtGuard {
   constructor(
-    configService: ConfigService,
+    private configService: ConfigService,
     private prisma: PrismaService,
+    private teamShareAccess: TeamShareAccessService,
   ) {
     super(configService);
   }
@@ -37,14 +39,25 @@ export class ShareOwnerGuard extends JwtGuard {
     await super.canActivate(context);
     const user = request.user as User;
 
-    // If the user is an admin, allow access
-    if (user?.isAdmin) return true;
+    const allowPlatformAdmin = this.configService.get(
+      "share.allowAdminAccessAllShares",
+    );
+
+    // If the user is an admin, allow access only when the global share
+    // inspection setting is enabled.
+    if (user?.isAdmin && allowPlatformAdmin) return true;
 
     // If it's a anonymous share, allow access
     if (!share.creatorId) return true;
 
     // If not signed in, deny access
     if (!user) return false;
+
+    if (share.teamFolderId) {
+      await this.teamShareAccess.assertCanManageShare(shareId, user, {
+        allowPlatformAdmin,
+      });
+    }
 
     // If the user is the creator of the share, allow access
     if (share.creatorId == user.id) return true;

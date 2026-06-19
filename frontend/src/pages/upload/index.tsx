@@ -946,10 +946,7 @@ const Upload = ({
         configuredMaxExpirationDays: configuredMaxExpirationDays?.maxDays ?? 0,
         shareIdLength: config.get("share.shareIdLength"),
         simplified,
-        captchaSiteKey:
-          !user && config.get("hcaptcha.enabled")
-            ? config.get("hcaptcha.siteKey")
-            : undefined,
+        captchaEnabled: !user && config.get("altcha.enabled"),
         preselectedTeamFolderId: qTeamFolderId,
       },
       files,

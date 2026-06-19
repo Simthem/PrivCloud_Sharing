@@ -18,6 +18,7 @@ import { useEffect, useState } from "react";
 import { TbInfoCircle } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import Meta from "../../../components/Meta";
+import AltchaPreview from "../../../components/admin/configuration/AltchaPreview";
 import AdminConfigInput from "../../../components/admin/configuration/AdminConfigInput";
 import ConfigurationHeader from "../../../components/admin/configuration/ConfigurationHeader";
 import ConfigurationNavBar from "../../../components/admin/configuration/ConfigurationNavBar";
@@ -83,18 +84,27 @@ export default function AppShellDemo() {
       configVariable.value = sanitizeUrl(configVariable.value);
     }
 
-    const index = updatedConfigVariables.findIndex(
-      (item) => item.key === configVariable.key,
+    setConfigVariables((currentConfigVariables) =>
+      currentConfigVariables?.map((item) =>
+        item.key === configVariable.key
+          ? { ...item, value: String(configVariable.value) }
+          : item,
+      ),
     );
 
-    if (index > -1) {
-      updatedConfigVariables[index] = {
-        ...updatedConfigVariables[index],
-        ...configVariable,
-      };
-    } else {
-      setUpdatedConfigVariables([...updatedConfigVariables, configVariable]);
-    }
+    setUpdatedConfigVariables((currentUpdatedConfigVariables) => {
+      const index = currentUpdatedConfigVariables.findIndex(
+        (item) => item.key === configVariable.key,
+      );
+
+      if (index > -1) {
+        return currentUpdatedConfigVariables.map((item, itemIndex) =>
+          itemIndex === index ? { ...item, ...configVariable } : item,
+        );
+      }
+
+      return [...currentUpdatedConfigVariables, configVariable];
+    });
   };
 
   const sanitizeUrl = (url: string): string => {
@@ -125,7 +135,11 @@ export default function AppShellDemo() {
                 : theme.colors.gray[0],
           },
         }}
-        navbar={{ width: { sm: 200, lg: 300 }, breakpoint: "sm", collapsed: { mobile: !isMobileNavBarOpened } }}
+        navbar={{
+          width: { sm: 200, lg: 300 },
+          breakpoint: "sm",
+          collapsed: { mobile: !isMobileNavBarOpened },
+        }}
         header={{ height: 60 }}
       >
         <AppShell.Header>
@@ -142,94 +156,99 @@ export default function AppShellDemo() {
           />
         </AppShell.Navbar>
         <AppShell.Main>
-        <Container size="lg" mt="md" pb="xl">
-          {!configVariables ? (
-            <CenterLoader />
-          ) : (
-            <>
-              <Stack>
-                {!isEditingAllowed() && (
-                  <Alert
-                    mb={"lg"}
-                    variant="light"
-                    color="primary"
-                    title={t("admin.config.config-file-warning.title")}
-                    icon={<TbInfoCircle />}
-                  >
-                    <FormattedMessage id="admin.config.config-file-warning.description" />
-                  </Alert>
-                )}
-                <Title mb="md" order={3}>
-                  {t("admin.config.category." + categoryId.toLowerCase())}
-                </Title>
-                {configVariables.map((configVariable) => (
-                  <Group key={configVariable.key} justify="space-between">
-                    <Stack
-                      style={{ maxWidth: isMobile ? "100%" : "40%" }}
-                      gap={0}
+          <Container size="lg" mt="md" pb="xl">
+            {!configVariables ? (
+              <CenterLoader />
+            ) : (
+              <>
+                <Stack>
+                  {!isEditingAllowed() && (
+                    <Alert
+                      mb={"lg"}
+                      variant="light"
+                      color="primary"
+                      title={t("admin.config.config-file-warning.title")}
+                      icon={<TbInfoCircle />}
                     >
-                      <Title order={6}>
-                        <FormattedMessage
-                          id={`admin.config.${camelToKebab(
-                            configVariable.key,
-                          )}`}
-                        />
-                        {configVariable.experimental && (
-                          <Badge
-                            color="yellow"
-                            size="sm"
-                            variant="outline"
-                            style={{ marginLeft: "5px" }}
-                          >
-                            Beta
-                          </Badge>
-                        )}
-                      </Title>
-
-                      <Text
-                        style={{
-                          whiteSpace: "pre-line",
-                        }}
-                        c="dimmed"
-                        size="sm"
-                        mb="xs"
+                      <FormattedMessage id="admin.config.config-file-warning.description" />
+                    </Alert>
+                  )}
+                  <Title mb="md" order={3}>
+                    {t("admin.config.category." + categoryId.toLowerCase())}
+                  </Title>
+                  {configVariables.map((configVariable) => (
+                    <Group key={configVariable.key} justify="space-between">
+                      <Stack
+                        style={{ maxWidth: isMobile ? "100%" : "40%" }}
+                        gap={0}
                       >
-                        <FormattedMessage
-                          id={`admin.config.${camelToKebab(
-                            configVariable.key,
-                          )}.description`}
-                          values={{ br: <br /> }}
+                        <Title order={6}>
+                          <FormattedMessage
+                            id={`admin.config.${camelToKebab(
+                              configVariable.key,
+                            )}`}
+                          />
+                          {configVariable.experimental && (
+                            <Badge
+                              color="yellow"
+                              size="sm"
+                              variant="outline"
+                              style={{ marginLeft: "5px" }}
+                            >
+                              Beta
+                            </Badge>
+                          )}
+                        </Title>
+
+                        <Text
+                          style={{
+                            whiteSpace: "pre-line",
+                          }}
+                          c="dimmed"
+                          size="sm"
+                          mb="xs"
+                        >
+                          <FormattedMessage
+                            id={`admin.config.${camelToKebab(
+                              configVariable.key,
+                            )}.description`}
+                            values={{ br: <br /> }}
+                          />
+                        </Text>
+                      </Stack>
+                      <Stack></Stack>
+                      <Box style={{ width: isMobile ? "100%" : "50%" }}>
+                        <AdminConfigInput
+                          key={configVariable.key}
+                          configVariable={configVariable}
+                          updateConfigVariable={updateConfigVariable}
                         />
-                      </Text>
-                    </Stack>
-                    <Stack></Stack>
-                    <Box style={{ width: isMobile ? "100%" : "50%" }}>
-                      <AdminConfigInput
-                        key={configVariable.key}
-                        configVariable={configVariable}
-                        updateConfigVariable={updateConfigVariable}
-                      />
-                    </Box>
-                  </Group>
-                ))}
-                {categoryId == "general" && (
-                  <LogoConfigInput logo={logo} setLogo={setLogo} />
-                )}
-              </Stack>
-              <Group mt="lg" justify="right">
-                {categoryId == "smtp" && (
-                  <TestEmailButton
-                    configVariablesChanged={updatedConfigVariables.length != 0}
-                    saveConfigVariables={saveConfigVariables}
-                  />
-                )}
-                <Button onClick={saveConfigVariables}>
-                  <FormattedMessage id="common.button.save" />
-                </Button>
-              </Group>
-            </>
-          )}
-        </Container>
+                      </Box>
+                    </Group>
+                  ))}
+                  {categoryId == "general" && (
+                    <LogoConfigInput logo={logo} setLogo={setLogo} />
+                  )}
+                  {categoryId == "altcha" && (
+                    <AltchaPreview configVariables={configVariables} />
+                  )}
+                </Stack>
+                <Group mt="lg" justify="right">
+                  {categoryId == "smtp" && (
+                    <TestEmailButton
+                      configVariablesChanged={
+                        updatedConfigVariables.length != 0
+                      }
+                      saveConfigVariables={saveConfigVariables}
+                    />
+                  )}
+                  <Button onClick={saveConfigVariables}>
+                    <FormattedMessage id="common.button.save" />
+                  </Button>
+                </Group>
+              </>
+            )}
+          </Container>
         </AppShell.Main>
       </AppShell>
     </>

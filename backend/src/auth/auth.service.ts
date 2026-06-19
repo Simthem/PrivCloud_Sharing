@@ -545,12 +545,9 @@ export class AuthService {
         secure: isSecure,
         maxAge,
       });
-      // Non-httpOnly marker so the client can detect an active session
-      // even after the short-lived access_token cookie has expired.
-      // httpOnly: false - intentional. Contains no sensitive data (value: "1").
       response.cookie("logged_in", "1", {
         path: "/",
-        httpOnly: false,
+        httpOnly: true,
         sameSite: "strict",
         secure: isSecure,
         maxAge,

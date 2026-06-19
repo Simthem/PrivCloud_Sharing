@@ -9,19 +9,19 @@ import {
   Text,
   TextInput,
   Title,
-  useMantineTheme,
 } from "@mantine/core";
 import { createStyles } from "@mantine/emotion";
 import { useForm } from "@mantine/form";
 import { yupResolver } from "mantine-form-yup-resolver";
-import HCaptcha from "@hcaptcha/react-hcaptcha";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useRef, useState } from "react";
 import { TbArrowLeft } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
-import useConfig from "../../../hooks/config.hook";
+import AltchaCaptcha from "../../../components/captcha/AltchaCaptcha";
+import type { AltchaWidgetHandle } from "../../../components/captcha/AltchaWidget";
+import { useAltchaSettings } from "../../../hooks/altcha.hook";
 import useTranslate from "../../../hooks/useTranslate.hook";
 import authService from "../../../services/auth.service";
 import toast from "../../../utils/toast.util";
@@ -49,22 +49,32 @@ const useStyles = createStyles((theme) => ({
 
 const ResetPassword = () => {
   const { classes } = useStyles();
-  const config = useConfig();
+  const altcha = useAltchaSettings();
   const router = useRouter();
   const t = useTranslate();
-  const theme = useMantineTheme();
 
-  const captchaEnabled = config.get("hcaptcha.enabled");
-  const captchaSiteKey = config.get("hcaptcha.siteKey");
-  const captchaRef = useRef<HCaptcha>(null);
+  const captchaEnabled = altcha.enabled;
   const [captchaToken, setCaptchaToken] = useState<string | undefined>();
+  const captchaRef = useRef<AltchaWidgetHandle>(null);
+
+  const resetCaptcha = () => {
+    setCaptchaToken(undefined);
+    captchaRef.current?.reset();
+  };
   const handleCaptchaExpire = () => setCaptchaToken(undefined);
-  const handleCaptchaError = (error: any) => {
-    console.warn("[hCaptcha Error]", error);
-    // Attempt to reset the captcha on error (e.g., WebGL context lost on Safari)
-    if (captchaRef.current?.resetCaptcha) {
-      captchaRef.current.resetCaptcha();
+  const handleCaptchaError = resetCaptcha;
+
+  const resolveCaptchaToken = async () => {
+    if (!captchaEnabled) return undefined;
+    if (captchaToken) return captchaToken;
+
+    const result = await captchaRef.current?.verify();
+    if (result?.payload) {
+      setCaptchaToken(result.payload);
+      return result.payload;
     }
+
+    return undefined;
   };
 
   const form = useForm({
@@ -92,15 +102,21 @@ const ResetPassword = () => {
 
       <Paper withBorder shadow="md" p={30} radius="md" mt="xl">
         <form
-          onSubmit={form.onSubmit((values) =>
-            authService
-              .requestResetPassword(values.email, captchaToken)
+          onSubmit={form.onSubmit(async (values) => {
+            const token = await resolveCaptchaToken();
+            if (captchaEnabled && !token) return;
+
+            await authService
+              .requestResetPassword(values.email, token)
               .then(() => {
                 toast.success(t("resetPassword.notify.success"));
                 router.push("/auth/signIn");
               })
-              .catch(toast.axiosError),
-          )}
+              .catch((error) => {
+                resetCaptcha();
+                toast.axiosError(error);
+              });
+          })}
         >
           <TextInput
             label={t("signup.input.email")}
@@ -122,19 +138,23 @@ const ResetPassword = () => {
                 </Box>
               </Center>
             </Anchor>
-            <Button type="submit" className={classes.control} disabled={captchaEnabled && !captchaToken}>
+            <Button
+              type="submit"
+              className={classes.control}
+              disabled={
+                captchaEnabled && altcha.shouldWaitForToken && !captchaToken
+              }
+            >
               <FormattedMessage id="resetPassword.text.resetPassword" />
             </Button>
           </Group>
-          {captchaEnabled && captchaSiteKey && (
+          {captchaEnabled && (
             <Group justify="center" mt="md">
-              <HCaptcha
-                sitekey={captchaSiteKey}
+              <AltchaCaptcha
                 onVerify={setCaptchaToken}
                 onExpire={handleCaptchaExpire}
                 onError={handleCaptchaError}
-                ref={captchaRef}
-                theme={theme.other.colorScheme}
+                widgetRef={captchaRef}
               />
             </Group>
           )}

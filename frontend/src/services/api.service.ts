@@ -353,16 +353,11 @@ api.interceptors.response.use(
         if (Date.now() - _uploadEndedAt < UPLOAD_COOLDOWN_MS) {
           return Promise.reject(error);
         }
-        // Only redirect to sign-in when the session is genuinely dead:
-        // backend returned 401 (refresh token invalid/expired) or the
-        // logged_in cookie is gone.  For transient failures (SafeLine
-        // 468, network glitch at mobile wake-up) let the error
-        // propagate -- the periodic refresh in _app.tsx will recover
-        // once the issue resolves.
-        const isSessionDead =
-          refreshError?.response?.status === 401 ||
-          !document.cookie.includes("logged_in");
-        if (isSessionDead) {
+        // Only redirect to sign-in when the backend confirms the
+        // refresh token is invalid/expired. Transient failures
+        // (SafeLine 468, network wake-up glitches) should propagate
+        // so the periodic refresh in _app.tsx can recover later.
+        if (refreshError?.response?.status === 401) {
           window.location.href = "/auth/signIn";
           return new Promise(() => {});
         }

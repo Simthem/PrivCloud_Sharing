@@ -1,3 +1,38 @@
+## [1.23.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.2...v1.23.3) (2026-06-19)
+
+### Security
+
+- **backend -- team share access enforcement:** team-hosted shares now
+  require an authenticated active team member on share metadata, share
+  creation, token creation, direct file download, archive download and owner
+  mutation paths; folder/file deny rules, download permissions, inactive 
+  memberships, explicit `NONE` folder access and current WRITE/ADMIN management
+  permissions are enforced before share-token or captcha flows.
+- **captcha -- hCaptcha replaced with self-hosted ALTCHA:** anonymous auth,
+  password reset, upload and share-token flows now use configurable ALTCHA
+  challenges with admin-managed preview, PBKDF2 challenge settings, replay
+  protection and server-generated HMAC secrets.
+- **docker -- Caddy CVE sweep:** updated source-built Caddy to `v2.11.4` in both
+  Dockerfiles, covering `CVE-2026-52845`, `CVE-2026-52844` and `CVE-2026-52846`.
+- **backend -- Nodemailer advisory patched:** upgraded Nodemailer to `9.0.1` for
+  `GHSA-p6gq-j5cr-w38f`.
+- **frontend -- dependency audit patched:** refreshed the lockfile to
+  `dompurify@3.4.11` and `undici@7.28.0`, clearing the current public frontend npm
+  audit findings.
+- **share links -- indexing and referrer hardening:** share routes are marked `noindex,
+  nofollow, noarchive`, use `no-referrer` and private no-store cache headers, and
+  robots.txt blocks both short and canonical share URL forms.
+
+### Bug Fixes
+
+- **admin -- ALTCHA configuration controls:** render constrained select fields for
+  ALTCHA algorithm, language, theme, interaction type, challenge-code display, widget
+  display and auto-verification modes instead of free-form text inputs.
+
+### Maintenance
+
+- Bumped root, backend and frontend package metadata and lockfiles to `1.23.3`.
+
 ## [1.23.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.1...v1.23.2) (2026-06-17)
 
 ### Security

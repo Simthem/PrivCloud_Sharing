@@ -8,15 +8,16 @@ import {
   Text,
   TextInput,
   Title,
-  useMantineTheme,
 } from "@mantine/core";
 import { useForm, yupResolver } from "@mantine/form";
-import HCaptcha from "@hcaptcha/react-hcaptcha";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useRef, useState } from "react";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
+import AltchaCaptcha from "../captcha/AltchaCaptcha";
+import type { AltchaWidgetHandle } from "../captcha/AltchaWidget";
+import { useAltchaSettings } from "../../hooks/altcha.hook";
 import useConfig from "../../hooks/config.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import useUser from "../../hooks/user.hook";
@@ -28,21 +29,19 @@ const SignUpForm = () => {
   const router = useRouter();
   const t = useTranslate();
   const { refreshUser } = useUser();
-  const theme = useMantineTheme();
+  const altcha = useAltchaSettings();
 
-  const captchaEnabled = config.get("hcaptcha.enabled");
-  const captchaSiteKey = config.get("hcaptcha.siteKey");
-  const captchaRef = useRef<HCaptcha>(null);
+  const captchaEnabled = altcha.enabled;
   const [captchaToken, setCaptchaToken] = useState<string | undefined>();
+  const captchaRef = useRef<AltchaWidgetHandle>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const handleCaptchaExpire = () => setCaptchaToken(undefined);
-  const handleCaptchaError = (error: any) => {
-    console.warn("[hCaptcha Error]", error);
-    // Attempt to reset the captcha on error (e.g., WebGL context lost on Safari)
-    if (captchaRef.current?.resetCaptcha) {
-      captchaRef.current.resetCaptcha();
-    }
+
+  const resetCaptcha = () => {
+    setCaptchaToken(undefined);
+    captchaRef.current?.reset();
   };
+  const handleCaptchaExpire = () => setCaptchaToken(undefined);
+  const handleCaptchaError = resetCaptcha;
 
   const validationSchema = yup.object().shape({
     email: yup.string().email(t("common.error.invalid-email")).required(),
@@ -65,10 +64,28 @@ const SignUpForm = () => {
     validate: yupResolver(validationSchema),
   });
 
-  const signUp = async (email: string, username: string, password: string) => {
+  const resolveCaptchaToken = async () => {
+    if (!captchaEnabled) return undefined;
+    if (captchaToken) return captchaToken;
+
+    const result = await captchaRef.current?.verify();
+    if (result?.payload) {
+      setCaptchaToken(result.payload);
+      return result.payload;
+    }
+
+    return undefined;
+  };
+
+  const signUp = async (
+    email: string,
+    username: string,
+    password: string,
+    captchaPayload?: string,
+  ) => {
     setIsLoading(true);
     await authService
-      .signUp(email.trim(), username.trim(), password.trim(), captchaToken)
+      .signUp(email.trim(), username.trim(), password.trim(), captchaPayload)
       .then(async () => {
         const user = await refreshUser();
         if (user?.isAdmin) {
@@ -77,7 +94,10 @@ const SignUpForm = () => {
           router.replace("/account");
         }
       })
-      .catch(toast.axiosError)
+      .catch((error) => {
+        resetCaptcha();
+        toast.axiosError(error);
+      })
       .finally(() => setIsLoading(false));
   };
 
@@ -97,9 +117,12 @@ const SignUpForm = () => {
       )}
       <Paper withBorder shadow="md" p={30} mt={30} radius="md">
         <form
-          onSubmit={form.onSubmit((values) =>
-            signUp(values.email, values.username, values.password),
-          )}
+          onSubmit={form.onSubmit(async (values) => {
+            const token = await resolveCaptchaToken();
+            if (captchaEnabled && !token) return;
+
+            await signUp(values.email, values.username, values.password, token);
+          })}
         >
           <TextInput
             label={t("signup.input.username")}
@@ -118,18 +141,24 @@ const SignUpForm = () => {
             mt="md"
             {...form.getInputProps("password")}
           />
-          <Button fullWidth mt="xl" type="submit" loading={isLoading} disabled={captchaEnabled && !captchaToken}>
+          <Button
+            fullWidth
+            mt="xl"
+            type="submit"
+            loading={isLoading}
+            disabled={
+              captchaEnabled && altcha.shouldWaitForToken && !captchaToken
+            }
+          >
             <FormattedMessage id="signup.button.submit" />
           </Button>
-          {captchaEnabled && captchaSiteKey && (
+          {captchaEnabled && (
             <Group justify="center" mt="md">
-              <HCaptcha
-                sitekey={captchaSiteKey}
+              <AltchaCaptcha
                 onVerify={setCaptchaToken}
                 onExpire={handleCaptchaExpire}
                 onError={handleCaptchaError}
-                ref={captchaRef}
-                theme={theme.other.colorScheme}
+                widgetRef={captchaRef}
               />
             </Group>
           )}

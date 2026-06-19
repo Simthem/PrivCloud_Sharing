@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Get,
   HttpCode,
   Patch,
   Post,
@@ -25,7 +26,7 @@ import { ResetPasswordDTO } from "./dto/resetPassword.dto";
 
 import { UpdatePasswordDTO } from "./dto/updatePassword.dto";
 import { VerifyTotpDTO } from "./dto/verifyTotp.dto";
-import { HCaptchaGuard } from "./guard/hcaptcha.guard";
+import { AltchaGuard } from "src/altcha/altcha.guard";
 import { JwtGuard } from "./guard/jwt.guard";
 
 @Controller("auth")
@@ -43,7 +44,7 @@ export class AuthController {
       ttl: 5 * 60,
     },
   })
-  @UseGuards(HCaptchaGuard)
+  @UseGuards(AltchaGuard)
   async signUp(
     @Body() dto: AuthRegisterDTO,
     @Req() { ip }: Request,
@@ -71,6 +72,7 @@ export class AuthController {
       ttl: 5 * 60,
     },
   })
+  @UseGuards(AltchaGuard)
   async signIn(
     @Body() dto: AuthSignInDTO,
     @Req() { ip }: Request,
@@ -124,7 +126,7 @@ export class AuthController {
       ttl: 5 * 60,
     },
   })
-  @UseGuards(HCaptchaGuard)
+  @UseGuards(AltchaGuard)
   @HttpCode(202)
   async requestResetPassword(@Body("email") email: string) {
     // SECURITY: Email moved from URL param to body to avoid logging in access logs
@@ -181,6 +183,12 @@ export class AuthController {
     return {};
   }
 
+  @Get("session")
+  @HttpCode(200)
+  sessionState(@Req() request: Request) {
+    return { active: !!request.cookies.logged_in };
+  }
+
   @Post("signOut")
   async signOut(
     @Req() request: Request,
@@ -205,11 +213,9 @@ export class AuthController {
       maxAge: -1,
       secure: isSecure,
     });
-    // httpOnly: false - intentional. This is a non-sensitive session indicator (value: "")
-    // readable by JS to detect logout without exposing tokens.
     response.cookie("logged_in", "", {
       path: "/",
-      httpOnly: false,
+      httpOnly: true,
       sameSite: "lax",
       maxAge: -1,
       secure: isSecure,

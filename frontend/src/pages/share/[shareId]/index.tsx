@@ -20,7 +20,13 @@ import shareService from "../../../services/share.service";
 import { Share as ShareType } from "../../../types/share.type";
 import toast from "../../../utils/toast.util";
 import { byteToHumanSizeString } from "../../../utils/fileSize.util";
-import { extractKeyFromHash, getUserKey, unwrapReverseShareKey, importKeyFromBase64, exportKeyToBase64 } from "../../../utils/crypto.util";
+import {
+  extractKeyFromHash,
+  getUserKey,
+  unwrapReverseShareKey,
+  importKeyFromBase64,
+  exportKeyToBase64,
+} from "../../../utils/crypto.util";
 import teamService from "../../../services/team.service";
 import { AxiosError } from "axios";
 
@@ -48,12 +54,19 @@ const Share = ({ shareId }: { shareId: string }) => {
 
   const t = useTranslate();
 
-  const captchaEnabled = config.get("hcaptcha.enabled");
-  const captchaSiteKey = config.get("hcaptcha.siteKey");
+  const captchaEnabled = config.get("altcha.enabled");
 
-  // ── E2E : résolution de la clé de déchiffrement ──
+  // -- E2E : résolution de la clé de déchiffrement --
   // Priorité : #key= dans l'URL > K_rs unwrappée (reverse share) > K_master (share normal)
   const [e2eKey, setE2eKey] = useState<string | null>(null);
+  const [keyVersion, setKeyVersion] = useState(0);
+
+  // Listen for key being stored (e.g. from E2EKeyPrompt in _app.tsx)
+  useEffect(() => {
+    const handler = () => setKeyVersion((v) => v + 1);
+    window.addEventListener("e2e-key-stored", handler);
+    return () => window.removeEventListener("e2e-key-stored", handler);
+  }, []);
 
   // Phase 1 : clé depuis le fragment d'URL (disponible immédiatement)
   useEffect(() => {
@@ -64,10 +77,10 @@ const Share = ({ shareId }: { shareId: string }) => {
   }, [shareId]);
 
   // Phase 2 : une fois le share chargé, résoudre la clé si manquante
-  // - Reverse share E2E → unwrap K_rs via backend endpoint
-  // - Team share E2E    → unwrap K_team via team-key endpoint
-  // - Share E2E normal  → K_master depuis localStorage
-  // - Erreur (non-owner, non-auth) → laisser e2eKey null → alerte "clé manquante"
+  // - Reverse share E2E -> unwrap K_rs via backend endpoint
+  // - Team share E2E    -> unwrap K_team via team-key endpoint
+  // - Share E2E normal  -> K_master depuis localStorage
+  // - Erreur (non-owner, non-auth) -> laisser e2eKey null -> alerte "clé manquante"
   useEffect(() => {
     if (e2eKey || !share?.isE2EEncrypted) return;
 
@@ -83,15 +96,18 @@ const Share = ({ shareId }: { shareId: string }) => {
           const { wrappedTeamKey } = await teamService.getTeamKey(share.teamId);
           if (cancelled || !wrappedTeamKey) return;
           const masterKey = await importKeyFromBase64(userKeyB64);
-          const teamKey = await unwrapReverseShareKey(wrappedTeamKey, masterKey);
+          const teamKey = await unwrapReverseShareKey(
+            wrappedTeamKey,
+            masterKey,
+          );
           const teamKeyB64 = await exportKeyToBase64(teamKey);
           if (!cancelled) setE2eKey(teamKeyB64);
           return;
         }
 
         // Endpoint retourne 200 dans tous les cas sauf 403 :
-        //   { encryptedReverseShareKey: null }   → pas un reverse share → K_master
-        //   { encryptedReverseShareKey: "..." }  → reverse share → unwrap K_rs
+        //   { encryptedReverseShareKey: null }   -> pas un reverse share -> K_master
+        //   { encryptedReverseShareKey: "..." }  -> reverse share -> unwrap K_rs
         const encrypted = await shareService.getEncryptedE2eKey(shareId);
         if (cancelled) return;
 
@@ -102,19 +118,21 @@ const Share = ({ shareId }: { shareId: string }) => {
           const rsKeyB64 = await exportKeyToBase64(rsKey);
           if (!cancelled) setE2eKey(rsKeyB64);
         } else {
-          // Pas un reverse share, pas un team share → K_master
+          // Pas un reverse share, pas un team share -> K_master
           if (!cancelled) setE2eKey(userKeyB64);
         }
       } catch (err) {
         // 403 = reverse share mais pas le propriétaire, ou erreur réseau/déchiffrement.
         // NE PAS fallback sur K_master (ce serait la mauvaise clé).
-        // Laisser e2eKey null → l'alerte "clé manquante" s'affichera.
+        // Laisser e2eKey null -> l'alerte "clé manquante" s'affichera.
         console.error("[E2E] Failed to resolve share key:", err);
       }
     })();
 
-    return () => { cancelled = true; };
-  }, [share?.isE2EEncrypted, share?.teamId, e2eKey, shareId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [share?.isE2EEncrypted, share?.teamId, e2eKey, shareId, keyVersion]);
 
   const isE2EMissingKey = share?.isE2EEncrypted && !e2eKey;
 
@@ -135,14 +153,13 @@ const Share = ({ shareId }: { shareId: string }) => {
             "go-home",
           );
         } else if (error == "share_password_required") {
-          showEnterPasswordModal(
-            modals,
-            getShareToken,
-            captchaEnabled && captchaSiteKey ? captchaSiteKey : undefined,
-          );
+          if (!password) {
+            showEnterPasswordModal(modals, getShareToken, captchaEnabled);
+          }
         } else {
           toast.axiosError(e);
         }
+        throw e;
       });
   };
 
@@ -173,16 +190,21 @@ const Share = ({ shareId }: { shareId: string }) => {
       // Fallback: any 403 that is not a known specific code is most likely a
       // password-protection error (e.g. compiled backend without custom code).
       (errorStatus === 403 &&
-        !["private_share", "share_token_required", "share_max_views_exceeded"].includes(
-          errorData?.error,
-        ))
+        ![
+          "private_share",
+          "team_share_auth_required",
+          "team_share_access_denied",
+          "share_token_required",
+          "share_max_views_exceeded",
+        ].includes(errorData?.error))
     ) {
-      showEnterPasswordModal(
-        modals,
-        getShareToken,
-        captchaEnabled && captchaSiteKey ? captchaSiteKey : undefined,
-      );
-    } else if (errorData.error == "private_share") {
+      showEnterPasswordModal(modals, getShareToken, captchaEnabled);
+    } else if (
+      errorStatus === 401 ||
+      errorData.error == "private_share" ||
+      errorData.error == "team_share_auth_required" ||
+      errorData.error == "team_share_access_denied"
+    ) {
       showErrorModal(
         modals,
         t("share.error.access-denied.title"),
@@ -190,10 +212,10 @@ const Share = ({ shareId }: { shareId: string }) => {
         "go-home",
       );
     } else if (errorData.error == "share_token_required") {
-      if (captchaEnabled && captchaSiteKey) {
-        showCaptchaModal(modals, captchaSiteKey, getShareToken);
+      if (captchaEnabled) {
+        showCaptchaModal(modals, getShareToken);
       } else {
-        getShareToken();
+        getShareToken().catch(() => undefined);
       }
     } else {
       showErrorModal(
@@ -203,7 +225,7 @@ const Share = ({ shareId }: { shareId: string }) => {
         "go-home",
       );
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [error]);
 
   return (
@@ -211,11 +233,14 @@ const Share = ({ shareId }: { shareId: string }) => {
       <Meta
         title={t("share.title", { shareId: share?.name || shareId })}
         description={t("share.description")}
+        noIndex
       />
 
       <Group justify="space-between" mb="lg">
         <Box style={{ maxWidth: "70%" }}>
-          <Title order={1} fz="h3">{share?.name || share?.id}</Title>
+          <Title order={1} fz="h3">
+            {share?.name || share?.id}
+          </Title>
           <Text size="sm">{share?.description}</Text>
           {share?.files?.length > 0 && (
             <Text size="sm" c="dimmed" mt={5}>
@@ -285,18 +310,21 @@ const Share = ({ shareId }: { shareId: string }) => {
       {user &&
         (share?.creator?.id === user.id ||
           share?.reverseShare?.creatorId === user.id) && (
-        <>
-          <Title order={5} mt="xl" mb="sm">
-            <FormattedMessage id="share.creator-preview" defaultMessage="File overview" />
-          </Title>
-          <FileCardGrid
-            files={share.files || []}
-            share={share}
-            isLoading={isLoading}
-            e2eKey={e2eKey}
-          />
-        </>
-      )}
+          <>
+            <Title order={5} mt="xl" mb="sm">
+              <FormattedMessage
+                id="share.creator-preview"
+                defaultMessage="File overview"
+              />
+            </Title>
+            <FileCardGrid
+              files={share.files || []}
+              share={share}
+              isLoading={isLoading}
+              e2eKey={e2eKey}
+            />
+          </>
+        )}
     </>
   );
 };

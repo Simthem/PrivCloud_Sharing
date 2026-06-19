@@ -173,7 +173,7 @@ export class ShareService {
       const membership = folder.team.members.find(
         (m) => m.userId === user.id,
       );
-      if (!membership) {
+      if (!membership || !membership.isActive) {
         throw new ForbiddenException(
           "You are not a member of this team",
         );
@@ -187,7 +187,7 @@ export class ShareService {
       if (
         memberRole !== "OWNER" &&
         memberRole !== "ADMIN" &&
-        (!accessRule || accessRule.permission === "READ")
+        (!accessRule || !["WRITE", "ADMIN"].includes(accessRule.permission))
       ) {
         throw new ForbiddenException(
           "You do not have write access to this team folder",

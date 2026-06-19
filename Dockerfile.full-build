@@ -18,7 +18,7 @@
 FROM golang:1.26.4-alpine AS caddy-builder
 # CVE-2026-27171 : zlib 1.3.1-r2 -> 1.3.2-r0 disponible dans Alpine
 RUN apk upgrade --no-cache && apk add --no-cache git
-RUN git clone --depth 1 --branch v2.11.3 \
+RUN git clone --depth 1 --branch v2.11.4 \
       https://github.com/caddyserver/caddy.git /caddy
 WORKDIR /caddy
 # Forcer la mise à jour des dépendances vulnérables

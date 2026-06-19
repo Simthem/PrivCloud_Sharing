@@ -52,6 +52,7 @@ export interface SigningPageData {
     posY: number;
     width: number;
     height: number;
+    label?: string | null;
     required: boolean;
   }[];
   pdfUrl: string;
@@ -203,6 +204,7 @@ const signDocument = async (
     signatureData: string;
     signatureType: string;
     otpCode?: string;
+    fieldValues?: { fieldId: string; value: string }[];
   },
 ): Promise<void> => {
   await api.post(`signing/sign/${token}/sign`, data);

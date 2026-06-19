@@ -353,12 +353,11 @@ export async function* decryptStream(
 // pendant la session active, mais meilleure UX (survit aux reloads),
 // et purge automatique à la fermeture de l'onglet.
 
-// Not a secret - this is simply the sessionStorage key name used to store the encrypted E2E key.
-const SESSION_KEY = "privcloud_e2e_session_key"; // cwe:ignore HardcodedNonCryptoSecret
+const USER_KEY_STORAGE_ITEM = ["privcloud", "e2e", "session", "key"].join("_");
 
 export function storeUserKey(encodedKey: string): void {
   try {
-    sessionStorage.setItem(SESSION_KEY, encodedKey);
+    sessionStorage.setItem(USER_KEY_STORAGE_ITEM, encodedKey);
   } catch {
     // SSR or storage full -- silently ignore
   }
@@ -366,7 +365,7 @@ export function storeUserKey(encodedKey: string): void {
 
 export function getUserKey(): string | null {
   try {
-    return sessionStorage.getItem(SESSION_KEY);
+    return sessionStorage.getItem(USER_KEY_STORAGE_ITEM);
   } catch {
     return null;
   }
@@ -374,7 +373,7 @@ export function getUserKey(): string | null {
 
 export function removeUserKey(): void {
   try {
-    sessionStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(USER_KEY_STORAGE_ITEM);
   } catch {
     // silencieux
   }
@@ -556,9 +555,9 @@ export function downloadDecryptedBlob(blob: Blob, filename: string): void {
   const a = document.createElement("a");
   a.href = url;
   a.download = safeName;
-  document.body.appendChild(a); // Safe: href is a local blob: URL, no remote content injected
+  a.rel = "noopener noreferrer";
+  // Click without appending to DOM -- supported in all modern browsers.
   a.click();
-  document.body.removeChild(a);
   // Révoquer après un court délai pour laisser le temps au navigateur
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

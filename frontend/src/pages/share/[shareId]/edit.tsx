@@ -73,7 +73,7 @@ const Share = ({ shareId }: { shareId: string }) => {
 
   return (
     <>
-      <Meta title={t("share.edit.title", { shareId })} />
+      <Meta title={t("share.edit.title", { shareId })} noIndex />
       <EditableUpload
         shareId={shareId}
         files={share?.files || []}

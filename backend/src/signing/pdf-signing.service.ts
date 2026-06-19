@@ -379,16 +379,31 @@ export class PdfSigningService {
       addApprovalWatermark: boolean;
       addApprovalMention?: boolean;
       page?: number; // specific page, or last page by default
+      signatureField?: {
+        page: number;
+        posX: number;
+        posY: number;
+        width: number;
+        height: number;
+      };
     } = { addApprovalWatermark: true },
   ): Promise<Buffer> {
     const { PDFDocument, rgb, StandardFonts, degrees } = await import("pdf-lib");
 
     const pdfDoc = await PDFDocument.load(pdfBuffer);
-    const pages = pdfDoc.getPages();
+    let pages = pdfDoc.getPages();
+    const signaturePageIdx = options.signatureField?.page
+      ? options.signatureField.page - 1
+      : options.page ?? pages.length - 1;
+    while (pages.length <= signaturePageIdx) {
+      pdfDoc.addPage();
+      pages = pdfDoc.getPages();
+    }
     const firstPage = pages[0];
-    const targetPage = pages[options.page ?? pages.length - 1];
+    const targetPage = pages[signaturePageIdx];
 
     const { width, height } = firstPage.getSize();
+    const { width: targetWidth, height: targetHeight } = targetPage.getSize();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
@@ -417,15 +432,91 @@ export class PdfSigningService {
     const approvalText = `Lu et approuvé le ${dateStr}`;
     const nameText = signerInfo.name;
 
-    // Position in bottom-right area
-    const sigX = width - 250;
-    const sigY = 120;
+    const signatureBoxWidth = Math.min(
+      Math.max(options.signatureField?.width || 240, 120),
+      targetWidth,
+    );
+    const signatureBoxHeight = Math.min(
+      Math.max(options.signatureField?.height || (addMention ? 90 : 70), 50),
+      targetHeight,
+    );
+    const sigX = options.signatureField
+      ? Math.min(Math.max(options.signatureField.posX || 0, 0), targetWidth - signatureBoxWidth)
+      : targetWidth - 250;
+    const sigY = options.signatureField
+      ? Math.min(Math.max(options.signatureField.posY || 0, 0), targetHeight - signatureBoxHeight)
+      : 120;
+    const paddingX = 8;
+    const paddingY = 8;
+    let signatureImage: any = null;
+    let signatureImageWidth = 0;
+    let signatureImageHeight = 0;
+    const signatureMaxWidth = Math.max(20, signatureBoxWidth - paddingX * 2);
+
+    if (signerInfo.signatureImage) {
+      signatureImage = await pdfDoc.embedPng(signerInfo.signatureImage);
+      const sigDims = signatureImage.scale(0.5);
+      signatureImageWidth = Math.min(sigDims.width, signatureMaxWidth, 180);
+      signatureImageHeight = Math.min(
+        sigDims.height,
+        Math.max(28, signatureBoxHeight - (addMention ? 42 : 26)),
+        40,
+      );
+    }
+
+    const signatureTextWidth = signerInfo.signatureText
+      ? Math.min(font.widthOfTextAtSize(signerInfo.signatureText, 14), signatureMaxWidth)
+      : 0;
+    const approvalWidth = addMention
+      ? Math.min(font.widthOfTextAtSize(approvalText, 9), signatureMaxWidth)
+      : 0;
+    const nameWidth = Math.min(fontBold.widthOfTextAtSize(nameText, 10), signatureMaxWidth);
+    const visualSignatureHeight = signatureImage
+      ? signatureImageHeight
+      : signerInfo.signatureText
+        ? 18
+        : 24;
+
+    const contentWidth = Math.min(
+      signatureBoxWidth,
+      Math.max(80, approvalWidth, nameWidth, signatureImageWidth, signatureTextWidth) + paddingX * 2,
+    );
+    const contentHeight = Math.min(
+      signatureBoxHeight,
+      Math.max(
+        44,
+        paddingY * 2 + (addMention ? 13 : 0) + 14 + 6 + visualSignatureHeight,
+      ),
+    );
+    const contentPosition = this.placeContentWithinBox({
+      boxX: sigX,
+      boxY: sigY,
+      boxWidth: signatureBoxWidth,
+      boxHeight: signatureBoxHeight,
+      contentWidth,
+      contentHeight,
+      pageWidth: targetWidth,
+      pageHeight: targetHeight,
+    });
+    const innerX = contentPosition.x + paddingX;
+    const imageY = contentPosition.y + paddingY;
+
+    targetPage.drawRectangle({
+      x: contentPosition.x,
+      y: contentPosition.y,
+      width: contentWidth,
+      height: contentHeight,
+      color: rgb(1, 1, 1),
+      opacity: 1,
+      borderColor: rgb(0.75, 0.75, 0.75),
+      borderWidth: 0.8,
+    });
 
     if (addMention) {
       // "Lu et approuvé le ..."
       targetPage.drawText(approvalText, {
-        x: sigX,
-        y: sigY + 60,
+        x: innerX,
+        y: contentPosition.y + contentHeight - paddingY - 9,
         size: 9,
         font,
         color: rgb(0, 0, 0),
@@ -434,28 +525,25 @@ export class PdfSigningService {
 
     // Signer name above signature
     targetPage.drawText(nameText, {
-      x: sigX,
-      y: sigY + 45,
+      x: innerX,
+      y: contentPosition.y + contentHeight - paddingY - (addMention ? 26 : 12),
       size: 10,
       font: fontBold,
       color: rgb(0, 0, 0),
     });
 
-    // Embed signature image if provided
-    if (signerInfo.signatureImage) {
-      const sigImage = await pdfDoc.embedPng(signerInfo.signatureImage);
-      const sigDims = sigImage.scale(0.5);
-      targetPage.drawImage(sigImage, {
-        x: sigX,
-        y: sigY,
-        width: Math.min(sigDims.width, 180),
-        height: Math.min(sigDims.height, 40),
+    if (signatureImage) {
+      targetPage.drawImage(signatureImage, {
+        x: innerX,
+        y: imageY,
+        width: signatureImageWidth,
+        height: signatureImageHeight,
       });
     } else if (signerInfo.signatureText) {
       // Text-based signature (italic style)
       targetPage.drawText(signerInfo.signatureText, {
-        x: sigX,
-        y: sigY + 10,
+        x: innerX,
+        y: imageY + 10,
         size: 14,
         font,
         color: rgb(0.1, 0.1, 0.5),
@@ -463,6 +551,180 @@ export class PdfSigningService {
     }
 
     return Buffer.from(await pdfDoc.save());
+  }
+
+  async addSignatureFieldValues(
+    pdfBuffer: Buffer,
+    fields: Array<{
+      id: string;
+      type: string;
+      page: number;
+      posX: number;
+      posY: number;
+      width: number;
+      height: number;
+      label?: string | null;
+      fieldValues: Array<{
+        value: string;
+        recipient: {
+          name: string;
+          email: string;
+        };
+      }>;
+    }>,
+  ): Promise<Buffer> {
+    const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
+    const pdfDoc = await PDFDocument.load(pdfBuffer);
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+    let pages = pdfDoc.getPages();
+    const maxPage = Math.max(1, ...fields.map((field) => field.page || 1));
+    while (pages.length < maxPage) {
+      pdfDoc.addPage();
+      pages = pdfDoc.getPages();
+    }
+
+    for (const field of fields) {
+      if (field.type === "SIGNATURE" || field.type === "INITIALS") continue;
+      for (const fieldValue of field.fieldValues) {
+        const page = pages[Math.max(0, field.page - 1)];
+        const { width: pageWidth, height: pageHeight } = page.getSize();
+        const boxWidth = Math.min(Math.max(field.width || 200, 80), pageWidth);
+        const boxHeight = Math.min(Math.max(field.height || 42, 24), pageHeight);
+        const title =
+          field.type === "APPROVAL"
+            ? "Required mention"
+            : field.type === "DATE"
+              ? "Date"
+              : field.label || "Text";
+        const x = Math.min(Math.max(field.posX || 0, 0), pageWidth - boxWidth);
+        const y = Math.min(Math.max(field.posY || 0, 0), pageHeight - boxHeight);
+        const paddingX = 6;
+        const paddingY = 6;
+        const titleSize = 7;
+        const valueSize = field.type === "APPROVAL" ? 9 : 8;
+        const lineHeight = valueSize + 3;
+        const value = fieldValue.value.trim();
+        const lines = this.wrapPdfText(value, Math.max(20, boxWidth - paddingX * 2), valueSize);
+        const visibleLines = lines.slice(
+          0,
+          Math.max(1, Math.floor((boxHeight - paddingY * 2 - 14) / lineHeight)),
+        );
+        const textWidth = Math.max(
+          fontBold.widthOfTextAtSize(title, titleSize),
+          ...visibleLines.map((line) => font.widthOfTextAtSize(line, valueSize)),
+          40,
+        );
+        const contentWidth = Math.min(boxWidth, textWidth + paddingX * 2);
+        const contentHeight = Math.min(
+          boxHeight,
+          Math.max(24, paddingY * 2 + 10 + 4 + visibleLines.length * lineHeight),
+        );
+        const contentPosition = this.placeContentWithinBox({
+          boxX: x,
+          boxY: y,
+          boxWidth,
+          boxHeight,
+          contentWidth,
+          contentHeight,
+          pageWidth,
+          pageHeight,
+        });
+
+        page.drawRectangle({
+          x: contentPosition.x,
+          y: contentPosition.y,
+          width: contentWidth,
+          height: contentHeight,
+          color: rgb(1, 1, 1),
+          opacity: 0.94,
+          borderColor: rgb(0.55, 0.55, 0.55),
+          borderWidth: 0.6,
+        });
+
+        page.drawText(title, {
+          x: contentPosition.x + paddingX,
+          y: contentPosition.y + contentHeight - paddingY - 7,
+          size: titleSize,
+          font: fontBold,
+          color: rgb(0.32, 0.32, 0.32),
+        });
+
+        let textY = contentPosition.y + contentHeight - paddingY - 21;
+        for (const line of visibleLines) {
+          page.drawText(line, {
+            x: contentPosition.x + paddingX,
+            y: textY,
+            size: valueSize,
+            font,
+            color: rgb(0.05, 0.05, 0.05),
+          });
+          textY -= lineHeight;
+        }
+      }
+    }
+
+    return Buffer.from(await pdfDoc.save());
+  }
+
+  private placeContentWithinBox(args: {
+    boxX: number;
+    boxY: number;
+    boxWidth: number;
+    boxHeight: number;
+    contentWidth: number;
+    contentHeight: number;
+    pageWidth: number;
+    pageHeight: number;
+  }): { x: number; y: number } {
+    const horizontalCenter = args.boxX + args.boxWidth / 2;
+    const verticalCenter = args.boxY + args.boxHeight / 2;
+    const rawX =
+      horizontalCenter > args.pageWidth * 0.62
+        ? args.boxX + args.boxWidth - args.contentWidth
+        : horizontalCenter < args.pageWidth * 0.38
+          ? args.boxX
+          : args.boxX + (args.boxWidth - args.contentWidth) / 2;
+    const rawY =
+      verticalCenter > args.pageHeight * 0.62
+        ? args.boxY + args.boxHeight - args.contentHeight
+        : verticalCenter < args.pageHeight * 0.38
+          ? args.boxY
+          : args.boxY + (args.boxHeight - args.contentHeight) / 2;
+
+    return {
+      x: Math.min(Math.max(rawX, 0), args.pageWidth - args.contentWidth),
+      y: Math.min(Math.max(rawY, 0), args.pageHeight - args.contentHeight),
+    };
+  }
+
+  private wrapPdfText(text: string, maxWidth: number, fontSize: number): string[] {
+    const averageCharWidth = fontSize * 0.52;
+    const maxChars = Math.max(8, Math.floor(maxWidth / averageCharWidth));
+    const words = text.replace(/\s+/g, " ").trim().split(" ");
+    const lines: string[] = [];
+    let current = "";
+
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (candidate.length <= maxChars) {
+        current = candidate;
+        continue;
+      }
+      if (current) lines.push(current);
+      if (word.length <= maxChars) {
+        current = word;
+      } else {
+        for (let index = 0; index < word.length; index += maxChars) {
+          lines.push(word.slice(index, index + maxChars));
+        }
+        current = "";
+      }
+    }
+
+    if (current) lines.push(current);
+    return lines.length ? lines : [""];
   }
 
   /**

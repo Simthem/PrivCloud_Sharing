@@ -14,6 +14,10 @@
     "sourceMap": true,
     "outDir": "./dist",
     "paths": {
+      "altcha-lib": ["./node_modules/altcha-lib/dist/cjs/v2/index.d.ts"],
+      "altcha-lib/algorithms/*": [
+        "./node_modules/altcha-lib/dist/cjs/v2/algorithms/*.d.ts"
+      ],
       "src/*": ["./src/*"]
     },
     "incremental": true,

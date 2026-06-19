@@ -20,7 +20,7 @@ ARG NODE_BUILDER_IMAGE=simthem/privcloud-sharing:node-builder-cache
 # GHSA-wwhq-w58m-w29c (MEDIUM - CVE-2026-30852 fix bypass) - status: affected, no fix yet.
 FROM golang:1.26.4-alpine AS caddy-builder
 RUN apk upgrade --no-cache && apk add --no-cache git
-RUN git clone --depth 1 --branch v2.11.3 \
+RUN git clone --depth 1 --branch v2.11.4 \
       https://github.com/caddyserver/caddy.git /caddy
 WORKDIR /caddy
 # Force patched vulnerable dependencies.

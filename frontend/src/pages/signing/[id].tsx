@@ -207,6 +207,26 @@ const SigningDetailPage = () => {
       const pdfDoc = await PDFDocument.load(decryptedBuf);
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      const textFields = (sigData.fields || []).filter(
+        (field: any) =>
+          !["SIGNATURE", "INITIALS"].includes(field.type) &&
+          field.fieldValues?.length,
+      );
+      const signatureFields = (sigData.fields || []).filter(
+        (field: any) => field.type === "SIGNATURE",
+      );
+      const maxFieldPageIdx = [...textFields, ...signatureFields].reduce(
+        (max: number, field: any) => Math.max(max, (field.page ?? 1) - 1),
+        -1,
+      );
+      if (maxFieldPageIdx >= pdfDoc.getPageCount()) {
+        const [w, h] = pdfDoc.getPageCount() > 0
+          ? [pdfDoc.getPage(0).getSize().width, pdfDoc.getPage(0).getSize().height]
+          : [595, 842];
+        for (let i = pdfDoc.getPageCount(); i <= maxFieldPageIdx; i++) {
+          pdfDoc.addPage([w, h]);
+        }
+      }
       const pages = pdfDoc.getPages();
       const firstPage = pages[0];
       const lastPage = pages[pages.length - 1];
@@ -250,26 +270,161 @@ const SigningDetailPage = () => {
         }
       }
 
-      // For each signer, embed their signature (bottom-right area)
-      const { width: lastW } = lastPage.getSize();
+      const wrapPdfText = (text: string, maxWidth: number, fontSize: number) => {
+        const words = text.replace(/\s+/g, " ").trim().split(" ");
+        const lines: string[] = [];
+        let current = "";
+        for (const word of words) {
+          const candidate = current ? `${current} ${word}` : word;
+          if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
+            current = candidate;
+            continue;
+          }
+          if (current) lines.push(current);
+          current = word;
+        }
+        if (current) lines.push(current);
+        return lines.length > 0 ? lines : [text.trim()];
+      };
+      const placeContentWithinBox = (args: {
+        boxX: number;
+        boxY: number;
+        boxWidth: number;
+        boxHeight: number;
+        contentWidth: number;
+        contentHeight: number;
+        pageWidth: number;
+        pageHeight: number;
+      }) => {
+        const horizontalCenter = args.boxX + args.boxWidth / 2;
+        const verticalCenter = args.boxY + args.boxHeight / 2;
+        const rawX =
+          horizontalCenter > args.pageWidth * 0.62
+            ? args.boxX + args.boxWidth - args.contentWidth
+            : horizontalCenter < args.pageWidth * 0.38
+              ? args.boxX
+              : args.boxX + (args.boxWidth - args.contentWidth) / 2;
+        const rawY =
+          verticalCenter > args.pageHeight * 0.62
+            ? args.boxY + args.boxHeight - args.contentHeight
+            : verticalCenter < args.pageHeight * 0.38
+              ? args.boxY
+              : args.boxY + (args.boxHeight - args.contentHeight) / 2;
+
+        return {
+          x: Math.min(Math.max(rawX, 0), args.pageWidth - args.contentWidth),
+          y: Math.min(Math.max(rawY, 0), args.pageHeight - args.contentHeight),
+        };
+      };
+
+      // Draw filled text/approval/date fields before signatures.
+      for (const field of textFields) {
+        const page = pages[Math.max(0, (field.page ?? 1) - 1)];
+        if (!page) continue;
+        const { width: pageWidth, height: pageHeight } = page.getSize();
+        const boxWidth = Math.min(Math.max(field.width || 200, 80), pageWidth);
+        const boxHeight = Math.min(Math.max(field.height || 42, 24), pageHeight);
+        const x = Math.min(Math.max(field.posX || 0, 0), pageWidth - boxWidth);
+        const y = Math.min(Math.max(field.posY || 0, 0), pageHeight - boxHeight);
+        const title =
+          field.type === "APPROVAL"
+            ? "Required mention"
+            : field.type === "DATE"
+              ? "Date"
+              : field.label || "Text";
+
+        for (const fieldValue of field.fieldValues || []) {
+          const paddingX = 6;
+          const paddingY = 6;
+          const titleSize = 7;
+          const valueSize = field.type === "APPROVAL" ? 9 : 8;
+          const lineHeight = valueSize + 3;
+          const lines = wrapPdfText(
+            String(fieldValue.value || ""),
+            Math.max(20, boxWidth - paddingX * 2),
+            valueSize,
+          );
+          const visibleLines = lines.slice(
+            0,
+            Math.max(1, Math.floor((boxHeight - paddingY * 2 - 14) / lineHeight)),
+          );
+          const textWidth = Math.max(
+            fontBold.widthOfTextAtSize(title, titleSize),
+            ...visibleLines.map((line) => font.widthOfTextAtSize(line, valueSize)),
+            40,
+          );
+          const contentWidth = Math.min(boxWidth, textWidth + paddingX * 2);
+          const contentHeight = Math.min(
+            boxHeight,
+            Math.max(24, paddingY * 2 + 10 + 4 + visibleLines.length * lineHeight),
+          );
+          const contentPosition = placeContentWithinBox({
+            boxX: x,
+            boxY: y,
+            boxWidth,
+            boxHeight,
+            contentWidth,
+            contentHeight,
+            pageWidth,
+            pageHeight,
+          });
+
+          page.drawRectangle({
+            x: contentPosition.x,
+            y: contentPosition.y,
+            width: contentWidth,
+            height: contentHeight,
+            color: rgb(1, 1, 1),
+            opacity: 0.94,
+            borderColor: rgb(0.55, 0.55, 0.55),
+            borderWidth: 0.6,
+          });
+          page.drawText(title, {
+            x: contentPosition.x + paddingX,
+            y: contentPosition.y + contentHeight - paddingY - 7,
+            size: titleSize,
+            font: fontBold,
+            color: rgb(0.32, 0.32, 0.32),
+          });
+          let textY = contentPosition.y + contentHeight - paddingY - 21;
+          for (const line of visibleLines) {
+            page.drawText(line, {
+              x: contentPosition.x + paddingX,
+              y: textY,
+              size: valueSize,
+              font,
+              color: rgb(0.05, 0.05, 0.05),
+            });
+            textY -= lineHeight;
+          }
+        }
+      }
+
       let yOffset = 120;
       for (const sig of sigData.signers || []) {
         if (!sig.signatureData) continue;
 
-        if (addMention) {
-          // "Lu et approuvé" mention
-          const dateStr = new Date(sig.signedAt).toLocaleDateString("fr-FR", {
-            day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Paris",
-          });
-          lastPage.drawText(`Lu et approuvé le ${dateStr}`, {
-            x: lastW - 250, y: yOffset + 60, size: 9, font, color: rgb(0, 0, 0),
-          });
-        }
-        lastPage.drawText(sig.name, {
-          x: lastW - 250, y: yOffset + 45, size: 10, font: fontBold, color: rgb(0, 0, 0),
-        });
-
-        // Embed signature image (PNG base64)
+        const signatureField =
+          signatureFields.find((field: any) => field.assignedRecipientId === sig.id) ||
+          signatureFields.find((field: any) => !field.assignedRecipientId);
+        const targetPage = signatureField
+          ? pages[Math.max(0, (signatureField.page ?? 1) - 1)]
+          : lastPage;
+        const { width: pageWidth, height: pageHeight } = targetPage.getSize();
+        const boxWidth = signatureField
+          ? Math.min(Math.max(signatureField.width || 240, 120), pageWidth)
+          : 240;
+        const boxHeight = signatureField
+          ? Math.min(Math.max(signatureField.height || (addMention ? 90 : 70), 50), pageHeight)
+          : addMention ? 90 : 70;
+        const boxX = signatureField
+          ? Math.min(Math.max(signatureField.posX || 0, 0), pageWidth - boxWidth)
+          : pageWidth - 250;
+        const boxY = signatureField
+          ? Math.min(Math.max(signatureField.posY || 0, 0), pageHeight - boxHeight)
+          : yOffset;
+        const paddingX = 8;
+        const paddingY = 8;
         const sigBytes = Uint8Array.from(
           atob(sig.signatureData.replace(/^data:[^;]+;base64,/, "")),
           (c) => c.charCodeAt(0),
@@ -280,16 +435,82 @@ const SigningDetailPage = () => {
         } catch {
           sigImage = await pdfDoc.embedJpg(sigBytes);
         }
-
         const sigDims = sigImage.scale(0.5);
-        lastPage.drawImage(sigImage, {
-          x: lastW - 250,
-          y: yOffset,
-          width: Math.min(sigDims.width, 180),
-          height: Math.min(sigDims.height, 40),
+        const maxSignatureWidth = Math.max(20, boxWidth - paddingX * 2);
+        const imageWidth = Math.min(sigDims.width, maxSignatureWidth, 180);
+        const imageHeight = Math.min(
+          sigDims.height,
+          Math.max(28, boxHeight - (addMention ? 42 : 26)),
+          40,
+        );
+        const dateStr = new Date(sig.signedAt).toLocaleDateString("fr-FR", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+          timeZone: "Europe/Paris",
+        });
+        const approvalText = `Lu et approuvé le ${dateStr}`;
+        const approvalWidth = addMention
+          ? Math.min(font.widthOfTextAtSize(approvalText, 9), maxSignatureWidth)
+          : 0;
+        const nameWidth = Math.min(fontBold.widthOfTextAtSize(sig.name, 10), maxSignatureWidth);
+        const contentWidth = Math.min(
+          boxWidth,
+          Math.max(80, approvalWidth, nameWidth, imageWidth) + paddingX * 2,
+        );
+        const contentHeight = Math.min(
+          boxHeight,
+          Math.max(44, paddingY * 2 + (addMention ? 13 : 0) + 14 + 6 + imageHeight),
+        );
+        const contentPosition = placeContentWithinBox({
+          boxX,
+          boxY,
+          boxWidth,
+          boxHeight,
+          contentWidth,
+          contentHeight,
+          pageWidth,
+          pageHeight,
+        });
+        const innerX = contentPosition.x + paddingX;
+        const imageY = contentPosition.y + paddingY;
+
+        targetPage.drawRectangle({
+          x: contentPosition.x,
+          y: contentPosition.y,
+          width: contentWidth,
+          height: contentHeight,
+          color: rgb(1, 1, 1),
+          opacity: 1,
+          borderColor: rgb(0.7, 0.7, 0.7),
+          borderWidth: 0.8,
         });
 
-        yOffset += 80;
+        if (addMention) {
+          targetPage.drawText(approvalText, {
+            x: innerX,
+            y: contentPosition.y + contentHeight - paddingY - 9,
+            size: 9,
+            font,
+            color: rgb(0, 0, 0),
+          });
+        }
+        targetPage.drawText(sig.name, {
+          x: innerX,
+          y: contentPosition.y + contentHeight - paddingY - (addMention ? 26 : 12),
+          size: 10,
+          font: fontBold,
+          color: rgb(0, 0, 0),
+        });
+
+        targetPage.drawImage(sigImage, {
+          x: innerX,
+          y: imageY,
+          width: imageWidth,
+          height: imageHeight,
+        });
+
+        if (!signatureField) yOffset += 80;
       }
 
       // 5. Save PDF with visual signatures

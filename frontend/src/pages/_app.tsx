@@ -1,5 +1,6 @@
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
+import "altcha/altcha.css";
 
 import {
   Container,
@@ -122,7 +123,7 @@ function App({ Component, pageProps }: AppProps) {
   // the user) and the "warm" scenario (access_token just expired while
   // the page was open or the iframe was in the background).
   const recoverSession = async () => {
-    if (!getCookie("logged_in")) return;
+    if (!(await authService.hasActiveSession())) return;
     try {
       await authService.refreshAccessToken();
       const u = await userService.getCurrentUser();
@@ -214,12 +215,10 @@ function App({ Component, pageProps }: AppProps) {
 
       // User still set but access_token likely expired after sleep.
       // Proactively refresh so the next API call won't 401.
-      if (getCookie("logged_in")) {
-        try {
-          await authService.refreshAccessToken();
-        } catch {
-          // refresh_token dead -- let the interval handle cleanup
-        }
+      try {
+        await authService.refreshAccessToken();
+      } catch {
+        // refresh_token dead -- let the interval handle cleanup
       }
     };
     document.addEventListener("visibilitychange", onVisible);
@@ -233,17 +232,9 @@ function App({ Component, pageProps }: AppProps) {
   //    session is dead -- clear the user and let the next navigation
   //    or visibility-change trigger a recovery attempt.
   //
-  // 2. user is NULL but logged_in cookie exists: the React state lost
-  //    the user (e.g. SSR didn't hydrate it, or a transient error
-  //    cleared it) while the backend session is still valid.  Try to
-  //    recover every tick so the UI catches up automatically without
-  //    the user having to click anything.
+  // 2. user is NULL after SSR: retry occasionally only when the backend
+  //    still sees a refresh-token session.
   useEffect(() => {
-    const hasSession = !!getCookie("logged_in");
-
-    // Nothing to maintain or recover.
-    if (!user && !hasSession) return;
-
     let consecutiveFailures = 0;
 
     const interval = setInterval(async () => {
@@ -253,7 +244,8 @@ function App({ Component, pageProps }: AppProps) {
       // that crashes the page (iframe top-navigation or reload).
       if (isUploadActive()) return;
 
-      if (!user && getCookie("logged_in")) {
+      if (!user) {
+        if (!(await authService.hasActiveSession())) return;
         // Recovery path -- try to restore React user state.
         await recoverSession();
         return;

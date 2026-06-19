@@ -28,7 +28,7 @@ module.exports = {
     // CSP is enforced at the upstream nginx reverse proxy level
     // (share.conf). Do NOT duplicate it here -- browsers enforce the
     // intersection of multiple CSP headers (most restrictive wins),
-    // which can silently break hCaptcha or other third-party scripts.
+    // which can silently break third-party scripts.
     return [
       {
         source: "/(.*)",
@@ -51,6 +51,14 @@ module.exports = {
           { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
         ],
       },
+      ...["/s/:path*", "/share/:path*"].map((source) => ({
+        source,
+        headers: [
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Cache-Control", value: "private, no-store" },
+        ],
+      })),
     ];
   },
 };

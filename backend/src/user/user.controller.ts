@@ -104,7 +104,7 @@ export class UserController {
     });
     response.cookie("logged_in", "", {
       path: "/",
-      httpOnly: false,
+      httpOnly: true,
       sameSite: "strict",
       maxAge: -1,
       secure: isSecure,

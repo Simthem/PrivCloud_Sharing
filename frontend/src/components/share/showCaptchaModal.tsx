@@ -1,17 +1,15 @@
-import { Button, Center, Stack, Text, useMantineTheme } from "@mantine/core";
+import { Button, Stack, Text } from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import { useRef, useState } from "react";
-import HCaptcha from "@hcaptcha/react-hcaptcha";
 import { FormattedMessage } from "react-intl";
+import AltchaCaptcha from "../captcha/AltchaCaptcha";
+import type { AltchaWidgetHandle } from "../captcha/AltchaWidget";
+import { useAltchaSettings } from "../../hooks/altcha.hook";
 import { translateOutsideContext } from "../../hooks/useTranslate.hook";
 
 const showCaptchaModal = (
   modals: ReturnType<typeof useModals>,
-  siteKey: string,
-  submitCallback: (
-    _password?: string,
-    _captchaToken?: string,
-  ) => Promise<void>,
+  submitCallback: (_password?: string, _captchaToken?: string) => Promise<void>,
 ) => {
   const t = translateOutsideContext();
   return modals.openModal({
@@ -19,35 +17,39 @@ const showCaptchaModal = (
     withCloseButton: false,
     closeOnEscape: false,
     title: t("share.modal.captcha.title"),
-    children: <Body siteKey={siteKey} submitCallback={submitCallback} />,
+    children: <Body submitCallback={submitCallback} />,
   });
 };
 
 const Body = ({
-  siteKey,
   submitCallback,
 }: {
-  siteKey: string;
-  submitCallback: (
-    _password?: string,
-    _captchaToken?: string,
-  ) => Promise<void>;
+  submitCallback: (_password?: string, _captchaToken?: string) => Promise<void>;
 }) => {
-  const captchaRef = useRef<HCaptcha>(null);
+  const captchaRef = useRef<AltchaWidgetHandle>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const theme = useMantineTheme();
+  const altcha = useAltchaSettings();
 
   const handleCaptchaExpire = () => {
     setCaptchaToken(null);
   };
 
-  const handleCaptchaError = (error: any) => {
-    console.warn("[hCaptcha Error]", error);
-    // Attempt to reset the captcha on error (e.g., WebGL context lost on Safari)
-    if (captchaRef.current?.resetCaptcha) {
-      captchaRef.current.resetCaptcha();
+  const handleCaptchaError = () => {
+    setCaptchaToken(null);
+    captchaRef.current?.reset();
+  };
+
+  const resolveCaptchaToken = async () => {
+    if (captchaToken) return captchaToken;
+
+    const result = await captchaRef.current?.verify();
+    if (result?.payload) {
+      setCaptchaToken(result.payload);
+      return result.payload;
     }
+
+    return undefined;
   };
 
   return (
@@ -56,27 +58,26 @@ const Body = ({
         <FormattedMessage id="share.modal.captcha.description" />
       </Text>
 
-      <Center>
-        <HCaptcha
-          ref={captchaRef}
-          sitekey={siteKey}
-          onVerify={setCaptchaToken}
-          onExpire={handleCaptchaExpire}
-          onError={handleCaptchaError}
-          theme={theme.other.colorScheme}
-        />
-      </Center>
+      <AltchaCaptcha
+        widgetRef={captchaRef}
+        onVerify={setCaptchaToken}
+        onExpire={handleCaptchaExpire}
+        onError={handleCaptchaError}
+      />
 
       <Button
-        disabled={!captchaToken}
+        disabled={altcha.shouldWaitForToken && !captchaToken}
         loading={isSubmitting}
         onClick={async () => {
           setIsSubmitting(true);
           try {
-            await submitCallback(undefined, captchaToken || undefined);
+            const token = await resolveCaptchaToken();
+            if (!token) return;
+
+            await submitCallback(undefined, token);
           } catch {
-            // Reset captcha on failure so user can retry
-            captchaRef.current?.resetCaptcha();
+            // Reset captcha on failure so user can retry.
+            captchaRef.current?.reset();
             setCaptchaToken(null);
           } finally {
             setIsSubmitting(false);

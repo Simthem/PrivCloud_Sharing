@@ -614,22 +614,77 @@ export const configVariables = {
       obscured: true,
     },
   },
-  hcaptcha: {
+  altcha: {
     enabled: {
       type: "boolean",
       defaultValue: "false",
       secret: false,
     },
-    siteKey: {
+    language: {
       type: "string",
-      defaultValue: "",
+      defaultValue: "fr-fr",
       secret: false,
     },
-    secretKey: {
+    theme: {
       type: "string",
-      defaultValue: "",
+      defaultValue: "lime",
+      secret: false,
+    },
+    randomEffort: {
+      type: "boolean",
+      defaultValue: "true",
+      secret: false,
+    },
+    mockChallenge: {
+      type: "boolean",
+      defaultValue: "true",
+      secret: false,
+    },
+    algorithm: {
+      type: "string",
+      defaultValue: "PBKDF2/SHA-256",
+      secret: false,
+    },
+    cost: {
+      type: "number",
+      defaultValue: "5000",
+      secret: false,
+    },
+    effort: {
+      type: "number",
+      defaultValue: "250",
+      secret: false,
+    },
+    expiresInSeconds: {
+      type: "number",
+      defaultValue: "600",
+      secret: false,
+    },
+    hmacKey: {
+      type: "string",
+      value: crypto.randomBytes(64).toString("base64url"),
       secret: true,
       obscured: true,
+    },
+    type: {
+      type: "string",
+      defaultValue: "checkbox",
+      secret: false,
+    },
+    codeChallengeDisplay: {
+      type: "string",
+      defaultValue: "standard",
+      secret: false,
+    },
+    display: {
+      type: "string",
+      defaultValue: "standard",
+      secret: false,
+    },
+    auto: {
+      type: "string",
+      defaultValue: "onload",
+      secret: false,
     },
   },
   signing: {

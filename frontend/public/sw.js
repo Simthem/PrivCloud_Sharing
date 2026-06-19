@@ -17,6 +17,16 @@ var APP_SHELL = [
   "/img/favicon.ico",
 ];
 
+function sameOriginPath(value) {
+  try {
+    var url = new URL(value || "/", self.location.origin);
+    if (url.origin !== self.location.origin) return "/";
+    return url.pathname + url.search + url.hash;
+  } catch (e) {
+    return "/";
+  }
+}
+
 // -- Install: cache app shell --
 self.addEventListener("install", function (event) {
   event.waitUntil(
@@ -120,17 +130,6 @@ self.addEventListener("fetch", function (event) {
   }
 });
 
-// -- Message handler for background upload continuation --
-self.addEventListener("message", function (event) {
-  // Reject messages from any origin other than this app
-  if (event.origin && event.origin !== self.location.origin) return;
-  if (event.data && event.data.type === "UPLOAD_KEEPALIVE") {
-    // Acknowledge the keepalive -- the SW staying active keeps
-    // the browser from killing the upload tab/process.
-    event.source.postMessage({ type: "UPLOAD_KEEPALIVE_ACK" });
-  }
-});
-
 // -- Push notification handler --
 self.addEventListener("push", function (event) {
   if (!event.data) return;
@@ -145,7 +144,7 @@ self.addEventListener("push", function (event) {
     body: payload.body || "",
     icon: "/img/logo.png",
     badge: "/img/logo.png",
-    data: { url: payload.url || "/" },
+    data: { url: sameOriginPath(payload.url) },
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
@@ -153,9 +152,7 @@ self.addEventListener("push", function (event) {
 // -- Notification click: open the app at the relevant page --
 self.addEventListener("notificationclick", function (event) {
   event.notification.close();
-  var url = event.notification.data && event.notification.data.url
-    ? event.notification.data.url
-    : "/";
+  var url = sameOriginPath(event.notification.data && event.notification.data.url);
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (clientList) {
       for (var i = 0; i < clientList.length; i++) {

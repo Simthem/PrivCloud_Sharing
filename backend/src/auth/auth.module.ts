@@ -1,10 +1,10 @@
 import { forwardRef, Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
+import { AltchaModule } from "src/altcha/altcha.module";
 import { EmailModule } from "src/email/email.module";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { AuthTotpService } from "./authTotp.service";
-import { HCaptchaGuard } from "./guard/hcaptcha.guard";
 import { JwtStrategy } from "./strategy/jwt.strategy";
 import { LdapService } from "./ldap.service";
 import { UserModule } from "../user/user.module";
@@ -15,12 +15,13 @@ import { OAuthModule } from "../oauth/oauth.module";
     JwtModule.register({
       global: true,
     }),
+    AltchaModule,
     EmailModule,
     forwardRef(() => OAuthModule),
     UserModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthTotpService, JwtStrategy, LdapService, HCaptchaGuard],
+  providers: [AuthService, AuthTotpService, JwtStrategy, LdapService],
   exports: [AuthService, AuthTotpService],
 })
 export class AuthModule {}

@@ -29,6 +29,7 @@ import {
 import useTranslate from "../../hooks/useTranslate.hook";
 import {
   downloadWebDavViaProxy,
+  isLocalOrPrivateWebDavTarget,
   listWebDavViaProxy,
   WebDavCredentials,
   WebDavEntry,
@@ -337,21 +338,27 @@ const WebDavImportModal = ({
     setError("");
     try {
       let result;
-      // Strategy: bridge -> server proxy -> direct (each fallback on failure)
+      const requiresBridge = isLocalOrPrivateWebDavTarget(
+        url || credentials.endpoint,
+      );
+      let bridgeError: unknown;
       let bridgeOk = false;
-      if (useBridge && hasBridgeToken()) {
+      const bridgeTokenAvailable = hasBridgeToken();
+      if (bridgeTokenAvailable) {
         try {
           result = await listWebDavDirectoryViaBridge(credentials, url);
           bridgeOk = true;
           void getBridgeHealth().then((health) => {
             if (health) setBridgeHealth(health);
           });
-        } catch {
-          // Bridge failed (PNA block on Android, timeout, etc.) - continue to proxy
+        } catch (e) {
+          bridgeError = e;
         }
       }
       if (!bridgeOk) {
-        // Server-side proxy: works on ALL platforms (no CORS/PNA)
+        if (requiresBridge || bridgeTokenAvailable) {
+          throw bridgeError || new Error("bridge.error.localNetworkRequired");
+        }
         result = await listWebDavViaProxy(credentials, url);
       }
       if (!url) {
@@ -427,16 +434,22 @@ const WebDavImportModal = ({
         for (let i = 0; i < selectedEntries.length; i++) {
           const entry = selectedEntries[i];
           let file: File | undefined;
-          // Try bridge first
-          if (useBridge && hasBridgeToken()) {
+          let bridgeError: unknown;
+          const requiresBridge = isLocalOrPrivateWebDavTarget(
+            entry.href || credentials.endpoint,
+          );
+          const bridgeTokenAvailable = hasBridgeToken();
+          if (bridgeTokenAvailable) {
             try {
               file = await downloadWebDavFileViaBridge(credentials, entry);
-            } catch {
-              // Bridge failed - fall through to proxy
+            } catch (e) {
+              bridgeError = e;
             }
           }
-          // Proxy fallback (guaranteed to work on all platforms)
           if (!file) {
+            if (requiresBridge || bridgeTokenAvailable) {
+              throw bridgeError || new Error("bridge.error.localNetworkRequired");
+            }
             file = await downloadWebDavViaProxy(credentials, entry);
           }
           imported.push(asUploadFile(file));

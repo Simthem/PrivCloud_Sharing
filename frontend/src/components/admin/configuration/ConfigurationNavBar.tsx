@@ -1,11 +1,4 @@
-import {
-  Box,
-  Button,
-  Group,
-  Stack,
-  Text,
-  ThemeIcon,
-} from "@mantine/core";
+import { Box, Button, Group, Stack, Text, ThemeIcon } from "@mantine/core";
 import { createStyles } from "@mantine/emotion";
 import Link from "next/link";
 import { Dispatch, SetStateAction } from "react";
@@ -34,7 +27,7 @@ const categories = [
   { name: "S3", icon: <TbBucket /> },
   { name: "Legal", icon: <TbScale /> },
   { name: "Cache", icon: <TbServerBolt /> },
-  { name: "Hcaptcha", icon: <TbShieldCheck /> },
+  { name: "Altcha", icon: <TbShieldCheck /> },
   { name: "PushNotifications", id: "pushNotifications", icon: <TbBell /> },
 ];
 
@@ -59,10 +52,7 @@ const ConfigurationNavBar = ({
 }) => {
   const { classes } = useStyles();
   return (
-    <Box
-      component="nav"
-      p="md"
-    >
+    <Box component="nav" p="md">
       <Box>
         <Text size="xs" c="dimmed" mb="sm">
           <FormattedMessage id="admin.config.title" />
@@ -101,7 +91,13 @@ const ConfigurationNavBar = ({
           ))}
         </Stack>
       </Box>
-      <Button mt="xl" variant="light" component={Link} href="/admin" hiddenFrom="sm">
+      <Button
+        mt="xl"
+        variant="light"
+        component={Link}
+        href="/admin"
+        hiddenFrom="sm"
+      >
         <FormattedMessage id="common.button.go-back" />
       </Button>
     </Box>

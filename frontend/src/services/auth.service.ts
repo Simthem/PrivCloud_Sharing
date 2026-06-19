@@ -80,6 +80,15 @@ const refreshAccessToken = async () => {
   return refreshAccessTokenPromise;
 };
 
+const hasActiveSession = async (): Promise<boolean> => {
+  try {
+    const { data } = await api.get("/auth/session");
+    return data?.active === true;
+  } catch {
+    return false;
+  }
+};
+
 const requestResetPassword = async (email: string, captchaToken?: string) => {
   await api.post("/auth/resetPassword/request", { email, ...(captchaToken && { captchaToken }) });
 };
@@ -131,6 +140,7 @@ export default {
   signUp,
   signOut,
   refreshAccessToken,
+  hasActiveSession,
   updatePassword,
   requestResetPassword,
   resetPassword,

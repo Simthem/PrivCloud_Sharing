@@ -12,6 +12,7 @@ import { ShareSecurityGuard } from "src/share/guard/shareSecurity.guard";
 import { ShareService } from "src/share/share.service";
 import { ConfigService } from "src/config/config.service";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
+import { TeamShareAccessService } from "src/share/team-share-access.service";
 
 @Injectable()
 export class FileSecurityGuard extends ShareSecurityGuard {
@@ -19,8 +20,9 @@ export class FileSecurityGuard extends ShareSecurityGuard {
     private _shareService: ShareService,
     private _prisma: PrismaService,
     private _config: ConfigService,
+    private _teamShareAccess: TeamShareAccessService,
   ) {
-    super(_shareService, _prisma, _config);
+    super(_shareService, _prisma, _config, _teamShareAccess);
   }
 
   /**
@@ -51,16 +53,42 @@ export class FileSecurityGuard extends ShareSecurityGuard {
       include: { security: true, reverseShare: true },
     });
 
+    if (
+      !share ||
+      (moment().isAfter(share.expiration) &&
+        !moment(share.expiration).isSame(0))
+    ) {
+      throw new NotFoundException("File not found");
+    }
+
+    if (share.teamFolderId) {
+      await this.softAuthenticate(context);
+      const user = request.user as User | undefined;
+      const allowPlatformAdmin = this._config.get(
+        "share.allowAdminAccessAllShares",
+      );
+      const fileId =
+        typeof request.params.fileId === "string"
+          ? request.params.fileId
+          : undefined;
+
+      if (fileId) {
+        await this._teamShareAccess.assertCanAccessFile(
+          shareId,
+          fileId,
+          user,
+          { allowPlatformAdmin },
+        );
+      } else {
+        await this._teamShareAccess.assertCanAccessShare(shareId, user, {
+          allowPlatformAdmin,
+          requireDownload: true,
+        });
+      }
+    }
+
     // If there is no share token the user requests a file directly
     if (!shareToken) {
-      if (
-        !share ||
-        (moment().isAfter(share.expiration) &&
-          !moment(share.expiration).isSame(0))
-      ) {
-        throw new NotFoundException("File not found");
-      }
-
       // If admin access is enabled and user is admin, allow access
       if (this._config.get("share.allowAdminAccessAllShares")) {
         await this.softAuthenticate(context);

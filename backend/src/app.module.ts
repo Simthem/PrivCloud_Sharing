@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { ScheduleModule } from "@nestjs/schedule";
+import { AltchaModule } from "./altcha/altcha.module";
 import { AuthModule } from "./auth/auth.module";
 
 import { APP_GUARD } from "@nestjs/core";
@@ -28,6 +29,7 @@ import { WebDavModule } from "./webdav/webdav.module";
 @Module({
   imports: [
     ConfigModule,
+    AltchaModule,
     AuthModule,
     ShareModule,
     FileModule,

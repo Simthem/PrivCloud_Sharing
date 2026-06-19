@@ -11,6 +11,7 @@ import { ShareService } from "src/share/share.service";
 import { ConfigService } from "src/config/config.service";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
 import { User } from "@prisma/client";
+import { TeamShareAccessService } from "../team-share-access.service";
 
 @Injectable()
 export class ShareSecurityGuard extends JwtGuard {
@@ -18,6 +19,7 @@ export class ShareSecurityGuard extends JwtGuard {
     private shareService: ShareService,
     private prisma: PrismaService,
     private configService: ConfigService,
+    private teamShareAccessService: TeamShareAccessService,
   ) {
     super(configService);
   }
@@ -56,6 +58,29 @@ export class ShareSecurityGuard extends JwtGuard {
     const isRsCreator =
       share.reverseShare && user && share.reverseShare.creatorId === user.id;
     const isShareCreator = user && share.creatorId === user.id;
+
+    if (share.teamFolderId) {
+      const allowPlatformAdmin = this.configService.get(
+        "share.allowAdminAccessAllShares",
+      );
+      const fileId =
+        typeof request.params.fileId === "string"
+          ? request.params.fileId
+          : undefined;
+
+      if (fileId) {
+        await this.teamShareAccessService.assertCanAccessFile(
+          shareId,
+          fileId,
+          user,
+          { allowPlatformAdmin },
+        );
+      } else {
+        await this.teamShareAccessService.assertCanAccessShare(shareId, user, {
+          allowPlatformAdmin,
+        });
+      }
+    }
 
     // Password check is ALWAYS enforced - even for RS creator and share
     // creator. The password protects the content; ownership alone does

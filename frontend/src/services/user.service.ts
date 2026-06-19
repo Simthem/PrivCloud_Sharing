@@ -6,7 +6,6 @@ import {
 } from "../types/user.type";
 import api from "./api.service";
 import authService from "./auth.service";
-import { getCookie } from "cookies-next";
 
 const list = async () => {
   return (await api.get("/users")).data;
@@ -35,10 +34,6 @@ const removeCurrentUser = async () => {
 const getCurrentUser = async (): Promise<CurrentUser | null> => {
   try {
     await authService.refreshAccessToken();
-    // If there is still no session after refresh, the user is not
-    // authenticated - skip the network call to avoid a pointless 401.
-    // access_token is httpOnly -- use logged_in as the non-httpOnly sentinel.
-    if (!getCookie("logged_in")) return null;
     return (await api.get("users/me")).data;
   } catch {
     return null;

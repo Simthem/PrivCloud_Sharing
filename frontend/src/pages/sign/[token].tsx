@@ -54,6 +54,7 @@ const SignPage = () => {
   const [otpVerified, setOtpVerified] = useState(false);
   const [signatureImage, setSignatureImage] = useState<string | null>(null);
   const [signatureType, setSignatureType] = useState<"DRAW" | "TYPE" | "UPLOAD">("DRAW");
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [downloadingSignedPdf, setDownloadingSignedPdf] = useState(false);
@@ -77,17 +78,59 @@ const SignPage = () => {
     data: signingData,
     isLoading,
     error,
+    refetch: refetchSigningData,
   } = useQuery({
     queryKey: ["signing.page", tokenStr],
     queryFn: () => signingService.getSigningPage(tokenStr),
     enabled: !!tokenStr,
   });
 
+  const fillableFields =
+    signingData?.fields?.filter((field) =>
+      ["TEXT", "APPROVAL", "DATE"].includes(field.type),
+    ) || [];
+
+  const normalizeFieldText = (value: string) =>
+    value.trim().replace(/\s+/g, " ").toLocaleLowerCase("fr-FR");
+
+  const fieldIsComplete = (field: (typeof fillableFields)[number]) => {
+    const value = (fieldValues[field.id] || "").trim();
+    if (field.required && !value) return false;
+    if (
+      field.type === "APPROVAL" &&
+      field.label &&
+      normalizeFieldText(value) !== normalizeFieldText(field.label)
+    ) {
+      return false;
+    }
+    return true;
+  };
+
+  const allRequiredFieldsComplete = fillableFields.every(fieldIsComplete);
+
   useEffect(() => {
     if (!signingData?.recipient?.otpVerified) return;
     setOtpVerified(true);
     setStep((current) => (current < 2 ? 2 : current));
   }, [signingData?.recipient?.otpVerified]);
+
+  useEffect(() => {
+    if (!signingData?.fields?.length) return;
+    setFieldValues((current) => {
+      const next = { ...current };
+      for (const field of signingData.fields) {
+        if (field.type === "DATE" && !next[field.id]) {
+          next[field.id] = new Date().toLocaleDateString("fr-FR", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+            timeZone: "Europe/Paris",
+          });
+        }
+      }
+      return next;
+    });
+  }, [signingData?.fields]);
 
   // E2E: fetch encrypted preview, decrypt client-side, create blob URL
   useEffect(() => {
@@ -152,9 +195,10 @@ const SignPage = () => {
   // Verify OTP mutation
   const verifyOtpMutation = useMutation({
     mutationFn: () => signingService.verifyOtp(tokenStr, otpCode),
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       if (data.verified) {
         setOtpVerified(true);
+        await refetchSigningData();
         setStep(2);
         toast.success("Identité vérifiée avec succès");
       } else {
@@ -166,17 +210,39 @@ const SignPage = () => {
 
   // Sign mutation
   const signMutation = useMutation({
-    mutationFn: () =>
-      signingService.signDocument(tokenStr, {
+    mutationFn: () => {
+      const fieldsToSubmit = fillableFields
+        .map((field) => ({
+          fieldId: field.id,
+          value: (fieldValues[field.id] || "").trim(),
+        }))
+        .filter((field) => field.value.length > 0);
+
+      return signingService.signDocument(tokenStr, {
         signatureData: signatureImage || "",
         signatureType,
-      }),
+        fieldValues: fieldsToSubmit,
+      });
+    },
     onSuccess: () => {
       toast.success("Document signé avec succès !");
       setStep(3);
     },
     onError: () => toast.error("Erreur lors de la signature du document"),
   });
+
+  const handleSign = () => {
+    const invalidField = fillableFields.find((field) => !fieldIsComplete(field));
+    if (invalidField) {
+      toast.error(
+        invalidField.type === "APPROVAL"
+          ? "La mention obligatoire doit être recopiée exactement."
+          : "Veuillez compléter tous les champs obligatoires.",
+      );
+      return;
+    }
+    signMutation.mutate();
+  };
 
   // Reject mutation
   const rejectMutation = useMutation({
@@ -216,7 +282,7 @@ const SignPage = () => {
     );
   }
 
-  const { document: sigDoc, recipient, fields: _fields } = signingData;
+  const { document: sigDoc, recipient } = signingData;
 
   // Already completed
   if (recipient.status === "SIGNED") {
@@ -510,6 +576,58 @@ const SignPage = () => {
                 Dessinez, saisissez ou importez votre signature ci-dessous.
               </Text>
 
+              {fillableFields.length > 0 && (
+                <Paper withBorder p="md">
+                  <Stack gap="sm">
+                    <div>
+                      <Text fw={600}>Mentions et champs à compléter</Text>
+                      <Text size="xs" c="dimmed">
+                        Ces informations seront ajoutées au PDF signé.
+                      </Text>
+                    </div>
+                    {fillableFields.map((field) => {
+                      const exactMentionRequired = field.type === "APPROVAL" && field.label;
+                      return (
+                        <Textarea
+                          key={field.id}
+                          label={
+                            field.type === "APPROVAL"
+                              ? "Mention obligatoire"
+                              : field.type === "DATE"
+                                ? "Date"
+                                : field.label || "Champ texte"
+                          }
+                          description={
+                            exactMentionRequired
+                              ? `Recopiez exactement : ${field.label}`
+                              : field.label || undefined
+                          }
+                          required={field.required}
+                          autosize
+                          minRows={field.type === "APPROVAL" ? 2 : 1}
+                          readOnly={field.type === "DATE"}
+                          value={fieldValues[field.id] || ""}
+                          onChange={(event) =>
+                            setFieldValues((current) => ({
+                              ...current,
+                              [field.id]: event.currentTarget.value,
+                            }))
+                          }
+                          error={
+                            field.type === "APPROVAL" &&
+                            field.label &&
+                            (fieldValues[field.id] || "").trim() &&
+                            !fieldIsComplete(field)
+                              ? "La mention ne correspond pas au texte attendu."
+                              : undefined
+                          }
+                        />
+                      );
+                    })}
+                  </Stack>
+                </Paper>
+              )}
+
               <Box style={{ width: "100%", overflow: "hidden" }}>
                 <Center>
                   <SignaturePad
@@ -541,9 +659,9 @@ const SignPage = () => {
                   size={isMobile ? "md" : "lg"}
                   color="green"
                   leftSection={<TbPencil size={20} />}
-                  onClick={() => signMutation.mutate()}
+                  onClick={handleSign}
                   loading={signMutation.isPending}
-                  disabled={!signatureImage}
+                  disabled={!signatureImage || !allRequiredFieldsComplete}
                 >
                   Signer le document
                 </Button>

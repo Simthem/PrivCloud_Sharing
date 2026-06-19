@@ -199,6 +199,7 @@ export class SigningE2EService {
         recipients: {
           where: { role: "SIGNER", status: "SIGNED" },
           select: {
+            id: true,
             name: true,
             email: true,
             signedAt: true,
@@ -208,7 +209,15 @@ export class SigningE2EService {
           },
           orderBy: { order: "asc" },
         },
-        fields: true,
+        fields: {
+          include: {
+            fieldValues: {
+              include: {
+                recipient: { select: { name: true, email: true } },
+              },
+            },
+          },
+        },
       },
     });
 

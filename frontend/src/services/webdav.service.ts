@@ -45,6 +45,59 @@ function normalizeEndpoint(endpoint: string): string {
   return url.href;
 }
 
+export function isLocalOrPrivateWebDavTarget(value?: string): boolean {
+  if (!value) return false;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+
+  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (
+    host === "localhost" ||
+    host.endsWith(".local") ||
+    (!host.includes(".") && !host.includes(":"))
+  )
+    return true;
+
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (ipv4) {
+    const [, aRaw, bRaw, cRaw, dRaw] = ipv4;
+    const octets = [aRaw, bRaw, cRaw, dRaw].map(Number);
+    if (octets.some((part) => part < 0 || part > 255)) return true;
+    const [a, b, c] = octets;
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 0) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      (a === 198 && b === 51 && c === 100) ||
+      (a === 203 && b === 0 && c === 113) ||
+      a >= 224
+    );
+  }
+
+  return (
+    host === "::" ||
+    host === "::1" ||
+    host.startsWith("fc") ||
+    host.startsWith("fd") ||
+    host.startsWith("fe8") ||
+    host.startsWith("fe9") ||
+    host.startsWith("fea") ||
+    host.startsWith("feb") ||
+    host.startsWith("2001:db8") ||
+    host.startsWith("ff")
+  );
+}
+
 function asDirectoryUrl(url: string): string {
   return url.endsWith("/") ? url : `${url}/`;
 }
@@ -225,6 +278,9 @@ export async function listWebDavViaProxy(
   } catch {
     throw new Error(`webdav.error.generic`);
   }
+  if (data.error === "bridge_required") {
+    throw new Error("bridge.error.localNetworkRequired");
+  }
   if (data.error === "auth") throw new Error("webdav.error.auth");
   if (data.error) throw new Error(`HTTP ${data.status || "error"}`);
   return {
@@ -254,6 +310,17 @@ export async function downloadWebDavViaProxy(
     }),
     signal,
   });
+
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    const data = await response
+      .clone()
+      .json()
+      .catch(() => null as { error?: string } | null);
+    if (data?.error === "bridge_required") {
+      throw new Error("bridge.error.localNetworkRequired");
+    }
+  }
 
   if (response.status === 401) throw new Error("webdav.error.auth");
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
