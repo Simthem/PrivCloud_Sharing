@@ -53,6 +53,8 @@ RUN go get golang.org/x/net@v0.55.0 \
     && go get go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp@v1.44.0 \
     && go get go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.20.0 \
     && go get github.com/quic-go/quic-go/http3@v0.59.1 \
+    && go get github.com/go-chi/chi/v5@v5.3.0 \
+    && go get golang.org/x/sys@v0.44.0 \
     && go get github.com/smallstep/certificates@v0.30.2 \
     && go get go.etcd.io/bbolt@cae11e991754 \
     && go mod tidy \
@@ -63,10 +65,17 @@ RUN go get golang.org/x/net@v0.55.0 \
         -replace=go.etcd.io/bbolt=go.etcd.io/bbolt@v1.4.0-beta.0.0.20260331144421-cae11e991754 \
     && go mod download go.etcd.io/bbolt \
     && go mod tidy \
-    && go mod edit -replace=golang.org/x/sys=golang.org/x/sys@v0.44.0 \
+    && go mod edit \
+        -replace=golang.org/x/net=golang.org/x/net@v0.55.0 \
+        -replace=golang.org/x/crypto=golang.org/x/crypto@v0.52.0 \
+        -replace=golang.org/x/sys=golang.org/x/sys@v0.44.0 \
+        -replace=github.com/go-chi/chi/v5=github.com/go-chi/chi/v5@v5.3.0 \
     && go mod tidy \
-    && echo "=== go.mod: security pins ===" && grep -E 'replace|smallstep|bbolt|x/sys' go.mod
-# Build Caddy as a static, stripped binary.
+    && go mod edit -require=github.com/go-chi/chi/v5@v5.3.0 \
+    && echo "=== Security replace pins verification ===" \
+    && grep -E 'replace|x/net|x/crypto|x/sys|go-chi/chi/v5' go.mod \
+    && go list -m github.com/go-chi/chi/v5 | grep 'v5.3.0'
+# Compiler Caddy (binaire statique, stripped, sans symboles de debug)
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/caddy \
     && go clean -cache -modcache
 
