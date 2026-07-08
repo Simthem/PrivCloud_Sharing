@@ -1,7 +1,7 @@
 import { deleteCookie, setCookie } from "cookies-next";
 import { Zip, ZipPassThrough } from "fflate";
 import mime from "mime-types";
-import { FileUploadResponse } from "../types/File.type";
+import { FileMetaData, FileUploadResponse } from "../types/File.type";
 import {
   decryptStream,
   downloadDecryptedBlob,
@@ -10,6 +10,7 @@ import {
 import { completeSafeLineChallenge } from "./api.service";
 import { notifySafeLineChallenge } from "../utils/safeline-notify.util";
 import { translateOutsideContext } from "../hooks/useTranslate.hook";
+import { getSafeZipEntryName } from "../utils/uploadPath.util";
 
 import {
   CreateReverseShare,
@@ -443,7 +444,7 @@ const downloadFileWithProgress = async (
  */
 const downloadAllAsZipE2E = async (
   shareId: string,
-  files: { id: string; name: string; size?: string }[],
+  files: FileMetaData[],
   encodedKey: string,
   onProgress?: (_downloadedBytes: number, _totalBytes: number) => void,
   signal?: AbortSignal,
@@ -528,7 +529,7 @@ const downloadAllAsZipE2E = async (
         : response.body;
 
       // level 0 = store (no compression) -- data is encrypted, incompressible
-      const entry = new ZipPassThrough(file.name);
+      const entry = new ZipPassThrough(getSafeZipEntryName(file));
       zip.add(entry);
 
       for await (const chunk of decryptStream(
@@ -565,6 +566,8 @@ const uploadFile = async (
   file: {
     id?: string;
     name: string;
+    uploadRelativePath?: string;
+    relativePath?: string | null;
   },
   chunkIndex: number,
   totalChunks: number,
@@ -585,8 +588,7 @@ const uploadFile = async (
   //   3. Null-out locals that are no longer needed
 
   let url = `/api/shares/${encodeURIComponent(shareId)}/files?`;
-  url += `name=${encodeURIComponent(file.name)}`;
-  url += `&chunkIndex=${chunkIndex}&totalChunks=${totalChunks}`;
+  url += `chunkIndex=${chunkIndex}&totalChunks=${totalChunks}`;
   if (file.id) url += `&id=${encodeURIComponent(file.id)}`;
 
   const controller = new AbortController();
@@ -596,7 +598,15 @@ const uploadFile = async (
   try {
     response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/octet-stream" },
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-File-Name": encodeURIComponent(file.name),
+        ...((file.uploadRelativePath || file.relativePath) && {
+          "X-File-Relative-Path": encodeURIComponent(
+            file.uploadRelativePath || file.relativePath!,
+          ),
+        }),
+      },
       body: chunk,
       credentials: "include",
       signal: controller.signal,
@@ -821,7 +831,7 @@ const downloadAllAsZip = async (
  */
 const downloadSelectedAsZip = async (
   shareId: string,
-  files: { id: string; name: string; size?: string }[],
+  files: FileMetaData[],
   onProgress?: (_downloadedBytes: number, _totalBytes: number) => void,
   signal?: AbortSignal,
 ) => {
@@ -879,7 +889,7 @@ const downloadSelectedAsZip = async (
       if (!response.body) throw new Error(`No body for ${file.name}`);
 
       const reader = response.body.getReader();
-      const entry = new ZipPassThrough(file.name);
+      const entry = new ZipPassThrough(getSafeZipEntryName(file));
       zip.add(entry);
 
       let done = false;
@@ -921,7 +931,7 @@ const downloadSelectedAsZip = async (
  */
 const downloadSelectedAsZipE2E = async (
   shareId: string,
-  files: { id: string; name: string; size?: string }[],
+  files: FileMetaData[],
   encodedKey: string,
   onProgress?: (_downloadedBytes: number, _totalBytes: number) => void,
   signal?: AbortSignal,
@@ -996,7 +1006,7 @@ const downloadSelectedAsZipE2E = async (
           )
         : response.body;
 
-      const entry = new ZipPassThrough(file.name);
+      const entry = new ZipPassThrough(getSafeZipEntryName(file));
       zip.add(entry);
 
       for await (const chunk of decryptStream(

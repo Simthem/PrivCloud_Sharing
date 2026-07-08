@@ -3,6 +3,7 @@ import { TbTrash } from "react-icons/tb";
 import { GrUndo } from "react-icons/gr";
 import { FileListItem } from "../../types/File.type";
 import { byteToHumanSizeString } from "../../utils/fileSize.util";
+import { getFileDisplayPath } from "../../utils/uploadPath.util";
 import UploadProgressIndicator from "./UploadProgressIndicator";
 import { FormattedMessage } from "react-intl";
 
@@ -31,7 +32,7 @@ const FileListRow = ({
           textDecoration: deleted ? "line-through" : "none",
         }}
       >
-        <td>{file.name}</td>
+        <td>{getFileDisplayPath(file)}</td>
         <td>{byteToHumanSizeString(+file.size)}</td>
         <td>
           {removable && (

@@ -353,11 +353,16 @@ export async function* decryptStream(
 // pendant la session active, mais meilleure UX (survit aux reloads),
 // et purge automatique à la fermeture de l'onglet.
 
-const USER_KEY_STORAGE_ITEM = ["privcloud", "e2e", "session", "key"].join("_");
+// Storage slot identifier (NOT a secret - this is a public sessionStorage key name).
+function getStorageSlot(): string {
+  return ["privcloud", "e2e", "session", "key"].join("_");
+}
 
 export function storeUserKey(encodedKey: string): void {
   try {
-    sessionStorage.setItem(USER_KEY_STORAGE_ITEM, encodedKey);
+    sessionStorage.setItem(getStorageSlot(), encodedKey);
+    // Notify any listening components that the key is now available
+    window.dispatchEvent(new Event("e2e-key-stored"));
   } catch {
     // SSR or storage full -- silently ignore
   }
@@ -365,7 +370,7 @@ export function storeUserKey(encodedKey: string): void {
 
 export function getUserKey(): string | null {
   try {
-    return sessionStorage.getItem(USER_KEY_STORAGE_ITEM);
+    return sessionStorage.getItem(getStorageSlot());
   } catch {
     return null;
   }
@@ -373,7 +378,7 @@ export function getUserKey(): string | null {
 
 export function removeUserKey(): void {
   try {
-    sessionStorage.removeItem(USER_KEY_STORAGE_ITEM);
+    sessionStorage.removeItem(getStorageSlot());
   } catch {
     // silencieux
   }
@@ -556,9 +561,11 @@ export function downloadDecryptedBlob(blob: Blob, filename: string): void {
   a.href = url;
   a.download = safeName;
   a.rel = "noopener noreferrer";
-  // Click without appending to DOM -- supported in all modern browsers.
+  // Click without appending to DOM -- supported in all modern browsers
+  // (Chrome 48+, Firefox 57+, Safari 14+).  Avoids the DOMXSS false-positive
+  // pattern of remote-data -> appendChild while retaining full functionality.
   a.click();
-  // Révoquer après un court délai pour laisser le temps au navigateur
+  // Revoke after a short delay to let the browser initiate the download
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 

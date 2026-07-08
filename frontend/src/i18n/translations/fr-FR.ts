@@ -660,6 +660,7 @@ export default {
   "share.modal.captcha.submit": "Accéder au partage",
   "share.button.download-all": "Télécharger tout",
   "share.button.download-selected": "Télécharger {count, plural, one {# fichier} other {# fichiers}}",
+  "fileTree.items": "{count, plural, one {# élément} other {# éléments}}",
   "share.button.clear-selection": "Désélectionner",
   "share.download.cancel": "Annuler le téléchargement",
   "share.notify.download-all-preparing": "Le partage est en préparation. Réessayez dans quelques minutes.",

@@ -57,19 +57,24 @@ export class FileController {
     query: {
       id: string;
       name?: string;
+      relativePath?: string;
       chunkIndex: string;
       totalChunks: string;
       chunkSize?: string;
     },
     @Headers("x-file-name") headerFileName: string | undefined,
+    @Headers("x-file-relative-path") headerRelativePath: string | undefined,
     @Body() body: Buffer,
     @Param("shareId", SafeIdPipe) shareId: string,
   ) {
     // Prefer X-File-Name header over query param to avoid WAF false positives
     // on filenames that look like command injection (e.g. containing dashes/dots).
     const name = headerFileName
-      ? decodeURIComponent(headerFileName)
+      ? this.decodeHeaderValue(headerFileName, "file name")
       : query.name;
+    const relativePath = headerRelativePath
+      ? this.decodeHeaderValue(headerRelativePath, "file relative path")
+      : query.relativePath;
     const { id, parsedChunkIndex, parsedTotalChunks, parsedChunkSize } =
       this.parseUploadQuery(query);
 
@@ -77,7 +82,7 @@ export class FileController {
     return await this.fileService.create(
       body,
       { index: parsedChunkIndex, total: parsedTotalChunks },
-      { id, name },
+      { id, name, relativePath },
       shareId,
       parsedChunkSize,
     );
@@ -90,12 +95,14 @@ export class FileController {
     query: {
       id: string;
       name?: string;
+      relativePath?: string;
       chunkIndex: string;
       totalChunks: string;
       chunkSize?: string;
     },
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-file-name") headerFileName: string | undefined,
+    @Headers("x-file-relative-path") headerRelativePath: string | undefined,
     @Body() body: Buffer,
     @Param("shareId", SafeIdPipe) shareId: string,
   ) {
@@ -103,23 +110,35 @@ export class FileController {
     await this.bridgeUploadTokenService.validateToken(shareId, token);
 
     const name = headerFileName
-      ? decodeURIComponent(headerFileName)
+      ? this.decodeHeaderValue(headerFileName, "file name")
       : query.name;
+    const relativePath = headerRelativePath
+      ? this.decodeHeaderValue(headerRelativePath, "file relative path")
+      : query.relativePath;
     const { id, parsedChunkIndex, parsedTotalChunks, parsedChunkSize } =
       this.parseUploadQuery(query);
 
     return await this.fileService.create(
       body,
       { index: parsedChunkIndex, total: parsedTotalChunks },
-      { id, name },
+      { id, name, relativePath },
       shareId,
       parsedChunkSize,
     );
   }
 
+  private decodeHeaderValue(value: string, label: string): string {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      throw new BadRequestException(`Invalid ${label} header`);
+    }
+  }
+
   private parseUploadQuery(query: {
     id: string;
     name?: string;
+    relativePath?: string;
     chunkIndex: string;
     totalChunks: string;
     chunkSize?: string;

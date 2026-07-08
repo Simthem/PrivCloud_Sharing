@@ -1,4 +1,12 @@
-import { Button, Group, Progress, Stack, Text, Title, Alert } from "@mantine/core";
+import {
+  Button,
+  Group,
+  Progress,
+  Stack,
+  Text,
+  Title,
+  Alert,
+} from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import { cleanNotifications, showNotification } from "@mantine/notifications";
 import pLimit from "p-limit";
@@ -37,7 +45,10 @@ import {
 } from "../../utils/crypto.util";
 import userService from "../../services/user.service";
 import teamService from "../../services/team.service";
-import { setUploadActive, completeSafeLineChallenge } from "../../services/api.service";
+import {
+  setUploadActive,
+  completeSafeLineChallenge,
+} from "../../services/api.service";
 import { useRouter } from "next/router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -111,7 +122,10 @@ const Upload = ({
   const wakeLock = useWakeLock();
 
   // Pre-selected team folder from query params (from the folder page "Upload" button)
-  const qTeamFolderId = typeof router.query.teamFolderId === "string" ? router.query.teamFolderId : undefined;
+  const qTeamFolderId =
+    typeof router.query.teamFolderId === "string"
+      ? router.query.teamFolderId
+      : undefined;
   const { data: writableFolders } = useQuery({
     queryKey: ["myWritableFolders"],
     queryFn: teamService.getMyWritableFolders,
@@ -125,6 +139,7 @@ const Upload = ({
   const [isUploading, setisUploading] = useState(false);
   const [webDavOpened, setWebDavOpened] = useState(false);
   const uploadAbortRef = useRef<AbortController | null>(null);
+  const completionInFlightRef = useRef(false);
 
   // ---- Browser-setup banner (popups + notifications) ----
   // Dismissible: stored in localStorage with a 30-day snooze so the user
@@ -149,7 +164,9 @@ const Upload = ({
   // "unsupported" covers browsers where the API is absent (e.g. Brave
   // with shields up, older WebViews) - we skip the notification section
   // entirely for these.
-  const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">("unsupported");
+  const [notifPermission, setNotifPermission] = useState<
+    NotificationPermission | "unsupported"
+  >("unsupported");
 
   // Hydrate browser-specific state after mount (avoids SSR mismatch).
   useEffect(() => {
@@ -174,7 +191,9 @@ const Upload = ({
           setPopupsAllowed(value === true);
         }
         // expired -> stays at default (true), will be re-probed below
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
 
     // Notification permission
@@ -203,8 +222,11 @@ const Upload = ({
       if (raw) {
         try {
           const { value, ts } = JSON.parse(raw);
-          if (Date.now() - ts < POPUP_CACHE_DAYS * 86_400_000 && value === true) return; // user already confirmed
-        } catch { /* fall through */ }
+          if (Date.now() - ts < POPUP_CACHE_DAYS * 86_400_000 && value === true)
+            return; // user already confirmed
+        } catch {
+          /* fall through */
+        }
       }
       setPopupsAllowed(false);
       return;
@@ -217,33 +239,50 @@ const Upload = ({
       try {
         const { ts } = JSON.parse(raw);
         if (Date.now() - ts < POPUP_CACHE_DAYS * 86_400_000) return; // still fresh
-      } catch { /* fall through to re-probe */ }
+      } catch {
+        /* fall through to re-probe */
+      }
     }
     try {
-      const probe = window.open("about:blank", "_blank", "width=1,height=1,left=-9999,top=-9999");
+      const probe = window.open(
+        "about:blank",
+        "_blank",
+        "width=1,height=1,left=-9999,top=-9999",
+      );
       if (probe) {
         probe.close();
         setPopupsAllowed(true);
-        localStorage.setItem(POPUP_CACHE_KEY, JSON.stringify({ value: true, ts: Date.now() }));
+        localStorage.setItem(
+          POPUP_CACHE_KEY,
+          JSON.stringify({ value: true, ts: Date.now() }),
+        );
       } else {
         setPopupsAllowed(false);
-        localStorage.setItem(POPUP_CACHE_KEY, JSON.stringify({ value: false, ts: Date.now() }));
+        localStorage.setItem(
+          POPUP_CACHE_KEY,
+          JSON.stringify({ value: false, ts: Date.now() }),
+        );
       }
     } catch {
       setPopupsAllowed(false);
-      localStorage.setItem(POPUP_CACHE_KEY, JSON.stringify({ value: false, ts: Date.now() }));
+      localStorage.setItem(
+        POPUP_CACHE_KEY,
+        JSON.stringify({ value: false, ts: Date.now() }),
+      );
     }
   }, [user, router.pathname]);
 
   const notifActionable = notifPermission === "default";
   // "denied" is permanent in most browsers (no re-prompt possible) - we
   // also hide the section to avoid frustrating the user with a dead button.
-  const notifHidden = notifPermission === "unsupported" || notifPermission === "denied";
+  const notifHidden =
+    notifPermission === "unsupported" || notifPermission === "denied";
   const showNotifPrompt = notifActionable && !notifHidden;
 
   // Show the banner for authenticated users when there is something
   // actionable (popups blocked OR notifications promptable), unless dismissed.
-  const showBrowserSetup = !!user && !bannerDismissed && (!popupsAllowed || showNotifPrompt);
+  const showBrowserSetup =
+    !!user && !bannerDismissed && (!popupsAllowed || showNotifPrompt);
 
   const handleDismissBanner = useCallback(() => {
     localStorage.setItem(DISMISS_KEY, String(Date.now()));
@@ -262,11 +301,18 @@ const Upload = ({
 
   const handleTestPopup = useCallback(() => {
     try {
-      const win = window.open("about:blank", "_blank", "width=1,height=1,left=-9999,top=-9999");
+      const win = window.open(
+        "about:blank",
+        "_blank",
+        "width=1,height=1,left=-9999,top=-9999",
+      );
       if (win) {
         win.close();
         setPopupsAllowed(true);
-        localStorage.setItem(POPUP_CACHE_KEY, JSON.stringify({ value: true, ts: Date.now() }));
+        localStorage.setItem(
+          POPUP_CACHE_KEY,
+          JSON.stringify({ value: true, ts: Date.now() }),
+        );
       } else {
         toast.error(t("upload.browser-setup.popup-still-blocked"));
       }
@@ -297,7 +343,7 @@ const Upload = ({
         { autoClose: false },
       );
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Reset the API-layer upload guard if this component unmounts (e.g.
@@ -352,9 +398,13 @@ const Upload = ({
   // Reverse-share pages pass maxShareSize as prop; otherwise use configured limit
   // 0 means unlimited (no configured limit)
   const rawEffectiveMaxShareSize =
-    maxShareSize ?? configuredMaxShareSize?.maxSize ?? parseInt(config.get("share.maxSize"));
+    maxShareSize ??
+    configuredMaxShareSize?.maxSize ??
+    parseInt(config.get("share.maxSize"));
   const effectiveMaxShareSize =
-    rawEffectiveMaxShareSize === 0 ? Number.MAX_SAFE_INTEGER : rawEffectiveMaxShareSize;
+    rawEffectiveMaxShareSize === 0
+      ? Number.MAX_SAFE_INTEGER
+      : rawEffectiveMaxShareSize;
 
   const autoOpenCreateUploadModal = config.get("share.autoOpenShareModal");
   const canUseWebDav = !!user && !isReverseShare;
@@ -367,6 +417,8 @@ const Upload = ({
   const uploadFiles = async (share: CreateShare, files: FileUpload[]) => {
     setisUploading(true);
     setUploadActive(true);
+    completionInFlightRef.current = false;
+    e2eKeyEncoded = null;
     shouldShareE2EKeyViaEmail = !!share.shareE2EKeyViaEmail;
 
     // Request browser notification permission (requires user gesture).
@@ -423,10 +475,15 @@ const Upload = ({
             (wf) => wf.folder.id === share.teamFolderId,
           );
           if (match) {
-            const { wrappedTeamKey } = await teamService.getTeamKey(match.teamId);
+            const { wrappedTeamKey } = await teamService.getTeamKey(
+              match.teamId,
+            );
             if (wrappedTeamKey) {
               const masterKey = await importKeyFromBase64(userKeyB64);
-              cryptoKey = await unwrapReverseShareKey(wrappedTeamKey, masterKey);
+              cryptoKey = await unwrapReverseShareKey(
+                wrappedTeamKey,
+                masterKey,
+              );
               e2eKeyEncoded = await exportKeyToBase64(cryptoKey);
               share.isE2EEncrypted = true;
             } else {
@@ -445,14 +502,17 @@ const Upload = ({
         // would produce files encrypted with K_user that other team
         // members cannot decrypt (OperationError on their side).
         // Instead, upload without encryption and warn the user.
-        console.warn("[E2E] Team key unwrap failed - uploading without encryption:", e);
+        console.warn(
+          "[E2E] Team key unwrap failed - uploading without encryption:",
+          e,
+        );
         cryptoKey = null;
         e2eKeyEncoded = null;
         share.isE2EEncrypted = false;
         toast.error(
           "Impossible de déverrouiller la clé de chiffrement de l'équipe. " +
-          "L'envoi se poursuit sans chiffrement E2E. " +
-          "Demandez à un administrateur de l'équipe de resynchroniser votre clé.",
+            "L'envoi se poursuit sans chiffrement E2E. " +
+            "Demandez à un administrateur de l'équipe de resynchroniser votre clé.",
         );
       }
     } else if (user) {
@@ -489,6 +549,7 @@ const Upload = ({
       webLockReleaseRef.current = null;
       wakeLock.release();
       e2eKeyEncoded = null;
+      completionInFlightRef.current = false;
       return;
     }
 
@@ -519,6 +580,7 @@ const Upload = ({
         webLockReleaseRef.current = null;
         wakeLock.release();
         e2eKeyEncoded = null;
+        completionInFlightRef.current = false;
         return;
       }
     }
@@ -598,7 +660,8 @@ const Upload = ({
     };
 
     const fileAttempts = new Map<number, number>();
-    const retryQueue: Array<{ file: (typeof files)[0]; fileIndex: number }> = [];
+    const retryQueue: Array<{ file: (typeof files)[0]; fileIndex: number }> =
+      [];
     const bridgeBatches = new Map<
       string,
       Array<{ file: (typeof files)[0]; fileIndex: number }>
@@ -645,8 +708,9 @@ const Upload = ({
       try {
         if (isBridgeWebDavUploadFile(file)) {
           const source = file.privcloudBridgeSource!;
-          const batch =
-            bridgeBatches.get(bridgeBatchKey(file)) ?? [{ file, fileIndex }];
+          const batch = bridgeBatches.get(bridgeBatchKey(file)) ?? [
+            { file, fileIndex },
+          ];
           const batchIndexes = new Set(batch.map(({ fileIndex }) => fileIndex));
           setFiles((prev) =>
             prev.map((f, callbackIndex) => {
@@ -745,6 +809,7 @@ const Upload = ({
               }
             },
             abortCtrl.signal,
+            file.uploadRelativePath,
           );
         }
         setFileProgress(100);
@@ -752,8 +817,9 @@ const Upload = ({
       } catch (e: any) {
         if (e?.cancelled) return "failed";
         if (isBridgeWebDavUploadFile(file)) {
-          const batch =
-            bridgeBatches.get(bridgeBatchKey(file)) ?? [{ file, fileIndex }];
+          const batch = bridgeBatches.get(bridgeBatchKey(file)) ?? [
+            { file, fileIndex },
+          ];
           const batchIndexes = new Set(batch.map(({ fileIndex }) => fileIndex));
           setFiles((prev) =>
             prev.map((f, callbackIndex) => {
@@ -914,7 +980,10 @@ const Upload = ({
         webLockReleaseRef.current = null;
         setFiles((prev) =>
           prev.map((f) => {
-            if (f.uploadingProgress !== undefined && f.uploadingProgress < 100) {
+            if (
+              f.uploadingProgress !== undefined &&
+              f.uploadingProgress < 100
+            ) {
               f.uploadingProgress = -1;
             }
             return f;
@@ -922,7 +991,10 @@ const Upload = ({
         );
         e2eKeyEncoded = null;
         shouldShareE2EKeyViaEmail = false;
-        toast.success(t("upload.cancel.done", { defaultMessage: "Envoi annulé" }));
+        completionInFlightRef.current = false;
+        toast.success(
+          t("upload.cancel.done", { defaultMessage: "Envoi annulé" }),
+        );
       },
     });
   };
@@ -976,12 +1048,9 @@ const Upload = ({
 
     if (fileErrorCount > 0) {
       if (!errorToastShown) {
-        toast.info(
-          t("upload.notify.count-failed", { count: fileErrorCount }),
-          {
-            autoClose: false,
-          },
-        );
+        toast.info(t("upload.notify.count-failed", { count: fileErrorCount }), {
+          autoClose: false,
+        });
       }
       errorToastShown = true;
     } else {
@@ -995,6 +1064,9 @@ const Upload = ({
       files.every((file) => file.uploadingProgress >= 100) &&
       fileErrorCount == 0
     ) {
+      if (completionInFlightRef.current || !createdShare?.id) return;
+      completionInFlightRef.current = true;
+
       // For reverse shares the backend always needs K_rs so the reverse share
       // creator can receive a working link.  For classic shares, the key is
       // only included when the uploader opted in via the checkbox.
@@ -1002,12 +1074,17 @@ const Upload = ({
       // we always include it when recipients are configured.
       const isReverseShareUpload = router.pathname !== "/upload";
       const isAnonymousUpload = !user;
+      const completedShareId = createdShare.id;
+      const completedShareKey = e2eKeyEncoded;
       const e2eKeyForComplete =
-        ((shouldShareE2EKeyViaEmail || isReverseShareUpload || isAnonymousUpload) && e2eKeyEncoded)
-          ? e2eKeyEncoded
+        (shouldShareE2EKeyViaEmail ||
+          isReverseShareUpload ||
+          isAnonymousUpload) &&
+        completedShareKey
+          ? completedShareKey
           : undefined;
       shareService
-        .completeShare(createdShare.id, e2eKeyForComplete)
+        .completeShare(completedShareId, e2eKeyForComplete)
         .then((share) => {
           if (keepaliveRef.current) {
             clearInterval(keepaliveRef.current);
@@ -1018,7 +1095,7 @@ const Upload = ({
           setUploadActive(false);
           webLockReleaseRef.current?.();
           webLockReleaseRef.current = null;
-          showCompletedUploadModal(modals, share, e2eKeyEncoded);
+          showCompletedUploadModal(modals, share, completedShareKey);
           queryClient.invalidateQueries({
             queryKey: ["share.pastRecipients"],
           });
@@ -1026,7 +1103,10 @@ const Upload = ({
           e2eKeyEncoded = null;
           shouldShareE2EKeyViaEmail = false;
         })
-        .catch(() => toast.error(t("upload.notify.generic-error")));
+        .catch(() => {
+          completionInFlightRef.current = false;
+          toast.error(t("upload.notify.generic-error"));
+        });
     }
 
     // All files finished but some (or all) failed -- reset upload state
@@ -1056,14 +1136,26 @@ const Upload = ({
       if (createdShare?.id) {
         shareService.remove(createdShare.id).catch(() => {});
       }
+      completionInFlightRef.current = false;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [files]);
 
   return (
     <>
       <Meta title={t("upload.title")} noIndex />
-      <Title order={1} visually-hidden style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap" }}>
+      <Title
+        order={1}
+        visually-hidden
+        style={{
+          position: "absolute",
+          width: 1,
+          height: 1,
+          overflow: "hidden",
+          clip: "rect(0,0,0,0)",
+          whiteSpace: "nowrap",
+        }}
+      >
         {t("upload.title")}
       </Title>
       {showBrowserSetup && (
@@ -1123,14 +1215,14 @@ const Upload = ({
           title={t("upload.team-folder.hint.title")}
         >
           {targetFolderInfo
-            ? t("upload.team-folder.hint", { folderName: targetFolderInfo.folder.name, teamName: targetFolderInfo.teamName })
+            ? t("upload.team-folder.hint", {
+                folderName: targetFolderInfo.folder.name,
+                teamName: targetFolderInfo.teamName,
+              })
             : t("upload.team-folder.hint.unknown")}
         </Alert>
       )}
-      <Group
-        justify={name ? "space-between" : "flex-end"}
-        mb={20}
-      >
+      <Group justify={name ? "space-between" : "flex-end"} mb={20}>
         {name && <Title order={3}>{name}</Title>}
         <Group gap="xs">
           {canUseWebDav && (
@@ -1171,140 +1263,181 @@ const Upload = ({
         isUploading={isUploading}
       />
       {/* Quota Gauge - visible after files are added, before sharing */}
-      {files.length > 0 && !isUploading && (() => {
-        const totalFilesSize = files.reduce((sum, f) => sum + f.size, 0);
-        const quotaUsedPct = effectiveMaxShareSize > 0
-          ? Math.min(Math.round((totalFilesSize / effectiveMaxShareSize) * 100), 100)
-          : 0;
-        const isOverQuota = totalFilesSize > effectiveMaxShareSize;
-        const formatSize = (bytes: number) => {
-          if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(2)} GB`;
-          if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
-          if (bytes >= 1000) return `${(bytes / 1000).toFixed(0)} KB`;
-          return `${bytes} B`;
-        };
-        return (
-          <Stack gap={4} mt="sm" mb="xs">
-            <Group justify="space-between" align="center">
-              <Group gap="xs">
-                <TbCloudUpload size={16} />
-                <Text size="sm" fw={500}>
-                  <FormattedMessage id="upload.quota.label" defaultMessage="Quota d'envoi" />
+      {files.length > 0 &&
+        !isUploading &&
+        (() => {
+          const totalFilesSize = files.reduce((sum, f) => sum + f.size, 0);
+          const quotaUsedPct =
+            effectiveMaxShareSize > 0
+              ? Math.min(
+                  Math.round((totalFilesSize / effectiveMaxShareSize) * 100),
+                  100,
+                )
+              : 0;
+          const isOverQuota = totalFilesSize > effectiveMaxShareSize;
+          const formatSize = (bytes: number) => {
+            if (bytes >= 1_000_000_000)
+              return `${(bytes / 1_000_000_000).toFixed(2)} GB`;
+            if (bytes >= 1_000_000)
+              return `${(bytes / 1_000_000).toFixed(1)} MB`;
+            if (bytes >= 1000) return `${(bytes / 1000).toFixed(0)} KB`;
+            return `${bytes} B`;
+          };
+          return (
+            <Stack gap={4} mt="sm" mb="xs">
+              <Group justify="space-between" align="center">
+                <Group gap="xs">
+                  <TbCloudUpload size={16} />
+                  <Text size="sm" fw={500}>
+                    <FormattedMessage
+                      id="upload.quota.label"
+                      defaultMessage="Quota d'envoi"
+                    />
+                  </Text>
+                </Group>
+                <Text
+                  size="sm"
+                  c={isOverQuota ? "red" : "dimmed"}
+                  fw={isOverQuota ? 600 : 400}
+                >
+                  {formatSize(totalFilesSize)} /{" "}
+                  {formatSize(effectiveMaxShareSize)}
                 </Text>
               </Group>
-              <Text size="sm" c={isOverQuota ? "red" : "dimmed"} fw={isOverQuota ? 600 : 400}>
-                {formatSize(totalFilesSize)} / {formatSize(effectiveMaxShareSize)}
-              </Text>
-            </Group>
-            <Progress
-              value={quotaUsedPct}
-              size="md"
-              radius="xl"
-              color={isOverQuota ? "red" : quotaUsedPct > 80 ? "yellow" : "blue"}
-            />
-            {isOverQuota && (
-              <Text size="xs" c="red" ta="center">
-                <FormattedMessage
-                  id="upload.quota.exceeded"
-                  defaultMessage="La taille totale des fichiers dépasse la limite configurée. Retirez des fichiers ou demandez à l'administrateur de l'instance de l'augmenter."
-                />
-              </Text>
-            )}
-          </Stack>
-        );
-      })()}
-      {isUploading && files.length > 0 && (() => {
-        const totalSize = files.reduce((sum, f) => sum + f.size, 0);
-        const uploadedSize = files.reduce((sum, f) => {
-          const pct = Math.max(0, f.uploadingProgress ?? 0);
-          return sum + (f.size * Math.min(pct, 100)) / 100;
-        }, 0);
-        const globalPct = totalSize > 0 ? Math.min(Math.round((uploadedSize / totalSize) * 100), 100) : 0;
-        const done = files.filter((f) => f.uploadingProgress >= 100).length;
-        const failed = files.filter((f) => f.uploadingProgress === -1).length;
-        const fmtSz = (b: number) => {
-          if (b >= 1_000_000_000) return `${(b / 1_000_000_000).toFixed(2)} GB`;
-          if (b >= 1_000_000) return `${(b / 1_000_000).toFixed(1)} MB`;
-          if (b >= 1000) return `${(b / 1000).toFixed(0)} KB`;
-          return `${b} B`;
-        };
-        const sizeLabel = `${fmtSz(uploadedSize)} / ${fmtSz(totalSize)}`;
-        return (
-          <Stack gap={4} mt="sm" mb="xs">
-            <Group justify="space-between">
-              <Text size="sm" fw={500}>
-                <FormattedMessage
-                  id="upload.progress.global"
-                  defaultMessage="Upload: {done}/{total} files"
-                  values={{ done: done + failed, total: files.length }}
-                />
-              </Text>
-              <Group gap="xs">
-                <Text size="sm" c="dimmed">{globalPct}%</Text>
-                <Button
-                  size="compact-sm"
-                  color="red"
-                  variant="subtle"
-                  onClick={cancelUpload}
-                >
+              <Progress
+                value={quotaUsedPct}
+                size="md"
+                radius="xl"
+                color={
+                  isOverQuota ? "red" : quotaUsedPct > 80 ? "yellow" : "blue"
+                }
+              />
+              {isOverQuota && (
+                <Text size="xs" c="red" ta="center">
                   <FormattedMessage
-                    id="upload.cancel.button"
-                    defaultMessage="Annuler"
+                    id="upload.quota.exceeded"
+                    defaultMessage="La taille totale des fichiers dépasse la limite configurée. Retirez des fichiers ou demandez à l'administrateur de l'instance de l'augmenter."
                   />
-                </Button>
+                </Text>
+              )}
+            </Stack>
+          );
+        })()}
+      {isUploading &&
+        files.length > 0 &&
+        (() => {
+          const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+          const uploadedSize = files.reduce((sum, f) => {
+            const pct = Math.max(0, f.uploadingProgress ?? 0);
+            return sum + (f.size * Math.min(pct, 100)) / 100;
+          }, 0);
+          const globalPct =
+            totalSize > 0
+              ? Math.min(Math.round((uploadedSize / totalSize) * 100), 100)
+              : 0;
+          const done = files.filter((f) => f.uploadingProgress >= 100).length;
+          const failed = files.filter((f) => f.uploadingProgress === -1).length;
+          const fmtSz = (b: number) => {
+            if (b >= 1_000_000_000)
+              return `${(b / 1_000_000_000).toFixed(2)} GB`;
+            if (b >= 1_000_000) return `${(b / 1_000_000).toFixed(1)} MB`;
+            if (b >= 1000) return `${(b / 1000).toFixed(0)} KB`;
+            return `${b} B`;
+          };
+          const sizeLabel = `${fmtSz(uploadedSize)} / ${fmtSz(totalSize)}`;
+          return (
+            <Stack gap={4} mt="sm" mb="xs">
+              <Group justify="space-between">
+                <Text size="sm" fw={500}>
+                  <FormattedMessage
+                    id="upload.progress.global"
+                    defaultMessage="Upload: {done}/{total} files"
+                    values={{ done: done + failed, total: files.length }}
+                  />
+                </Text>
+                <Group gap="xs">
+                  <Text size="sm" c="dimmed">
+                    {globalPct}%
+                  </Text>
+                  <Button
+                    size="compact-sm"
+                    color="red"
+                    variant="subtle"
+                    onClick={cancelUpload}
+                  >
+                    <FormattedMessage
+                      id="upload.cancel.button"
+                      defaultMessage="Annuler"
+                    />
+                  </Button>
+                </Group>
               </Group>
-            </Group>
-            {/* Progress bar with contrast-inverted size label */}
-            <div style={{ position: "relative", width: "100%", height: 10, borderRadius: 10, overflow: "hidden" }}>
-              <Progress.Root size={10} style={{ position: "absolute", inset: 0 }}>
-                <Progress.Section
-                  value={globalPct}
-                  animated={globalPct < 100}
-                  color={globalPct >= 100 ? "green" : "yellow"}
-                />
-              </Progress.Root>
-              {/* White text on unfilled background */}
-              <span
+              {/* Progress bar with contrast-inverted size label */}
+              <div
                 style={{
-                  position: "absolute",
-                  inset: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: "#fff",
-                  pointerEvents: "none",
-                  whiteSpace: "nowrap",
+                  position: "relative",
+                  width: "100%",
+                  height: 10,
+                  borderRadius: 10,
+                  overflow: "hidden",
                 }}
               >
-                {sizeLabel}
-              </span>
-              {/* Dark text clipped to filled area */}
-              <span
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: "#1a1b1e",
-                  pointerEvents: "none",
-                  whiteSpace: "nowrap",
-                  clipPath: `inset(0 ${100 - globalPct}% 0 0)`,
-                  transition: "clip-path 0.4s ease",
-                }}
-              >
-                {sizeLabel}
-              </span>
-            </div>
-          </Stack>
-        );
-      })()}
+                <Progress.Root
+                  size={10}
+                  style={{ position: "absolute", inset: 0 }}
+                >
+                  <Progress.Section
+                    value={globalPct}
+                    animated={globalPct < 100}
+                    color={globalPct >= 100 ? "green" : "yellow"}
+                  />
+                </Progress.Root>
+                {/* White text on unfilled background */}
+                <span
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: "#fff",
+                    pointerEvents: "none",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {sizeLabel}
+                </span>
+                {/* Dark text clipped to filled area */}
+                <span
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: "#1a1b1e",
+                    pointerEvents: "none",
+                    whiteSpace: "nowrap",
+                    clipPath: `inset(0 ${100 - globalPct}% 0 0)`,
+                    transition: "clip-path 0.4s ease",
+                  }}
+                >
+                  {sizeLabel}
+                </span>
+              </div>
+            </Stack>
+          );
+        })()}
       {files.length > 0 && (
-        <FileList<FileUpload> files={files} setFiles={setFiles} isUploading={isUploading} />
+        <FileList<FileUpload>
+          files={files}
+          setFiles={setFiles}
+          isUploading={isUploading}
+        />
       )}
     </>
   );

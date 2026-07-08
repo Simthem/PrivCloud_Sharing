@@ -13,6 +13,7 @@ const showFilePreviewModal = (
   return modals.openModal({
     size: "xl",
     title: file.name,
+    styles: { body: { maxHeight: "calc(85vh - 80px)", overflow: "hidden" } },
     children: (
       <FilePreview
         shareId={shareId}

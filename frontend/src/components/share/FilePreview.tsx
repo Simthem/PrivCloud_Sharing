@@ -258,7 +258,11 @@ const VideoPreview = () => {
 
   return (
     <video width="100%" controls>
-      <source src={src} type={videoMime} onError={() => setIsNotSupported(true)} />
+      <source
+        src={src}
+        type={videoMime}
+        onError={() => setIsNotSupported(true)}
+      />
     </video>
   );
 };
@@ -358,7 +362,7 @@ const TextPreview = () => {
 
   if (isPlainText) {
     return (
-      <ScrollArea style={{ maxHeight: "70vh" }}>
+      <ScrollArea styles={{ root: { maxHeight: "70vh", overflow: "auto" } }}>
         <pre
           style={{
             backgroundColor:
@@ -382,7 +386,11 @@ const TextPreview = () => {
     );
   }
 
-  return <Markdown options={options}>{text}</Markdown>;
+  return (
+    <ScrollArea styles={{ root: { maxHeight: "70vh", overflow: "auto" } }}>
+      <Markdown options={options}>{text}</Markdown>
+    </ScrollArea>
+  );
 };
 
 const CodePreview = () => {
@@ -424,7 +432,7 @@ const CodePreview = () => {
     );
 
   return (
-    <ScrollArea style={{ maxHeight: "70vh" }}>
+    <ScrollArea styles={{ root: { maxHeight: "70vh", overflow: "auto" } }}>
       <pre
         style={{
           backgroundColor:
@@ -439,7 +447,7 @@ const CodePreview = () => {
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
           fontFamily:
-            "\"Fira Code\", \"Cascadia Code\", \"JetBrains Mono\", Consolas, Monaco, monospace",
+            '"Fira Code", "Cascadia Code", "JetBrains Mono", Consolas, Monaco, monospace',
           margin: 0,
           overflow: "auto",
         }}

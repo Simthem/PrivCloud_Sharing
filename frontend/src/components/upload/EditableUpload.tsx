@@ -134,6 +134,7 @@ const EditableUpload = ({
               setFileProgress(((chunkIndex + 1) / totalChunks) * 100);
             },
             abortCtrl.signal,
+            file.uploadRelativePath,
           );
         } catch (e: any) {
           if (e?.cancelled) return; // user cancelled

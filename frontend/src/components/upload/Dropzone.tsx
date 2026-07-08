@@ -7,7 +7,9 @@ import { TbCloudUpload } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import useTranslate from "../../hooks/useTranslate.hook";
 import { FileUpload } from "../../types/File.type";
+import { getFilesFromDropEvent } from "../../utils/dropzoneFiles.util";
 import { byteToHumanSizeString } from "../../utils/fileSize.util";
+import { attachUploadRelativePath } from "../../utils/uploadPath.util";
 import toast from "../../utils/toast.util";
 
 const useStyles = createStyles((theme) => ({
@@ -59,6 +61,7 @@ const Dropzone = ({
         }}
         disabled={isUploading}
         openRef={openRef as ForwardedRef<() => void>}
+        getFilesFromEvent={getFilesFromDropEvent}
         onDrop={(files: any[]) => {
           const fileSizeSum = files.reduce((n, { size }) => n + size, 0);
           const isUnlimited = maxShareSize >= Number.MAX_SAFE_INTEGER;
@@ -72,7 +75,7 @@ const Dropzone = ({
           } else {
             files = files.map((newFile) => {
               newFile.uploadingProgress = 0;
-              return newFile;
+              return attachUploadRelativePath(newFile);
             });
             onFilesChanged(files);
           }

@@ -10,7 +10,7 @@ import useTranslate, {
 import { CompletedShare } from "../../../types/share.type";
 import CopyTextField from "../CopyTextField";
 import useConfig from "../../../hooks/config.hook";
-import { buildKeyFragment } from "../../../utils/crypto.util";
+import { buildKeyFragment, getUserKey } from "../../../utils/crypto.util";
 
 const showCompletedUploadModal = (
   modals: ReturnType<typeof useModals>,
@@ -41,27 +41,32 @@ const Body = ({
   const isReverseShare = !!router.query["reverseShareToken"];
 
   const config = useConfig();
-  const keyFragment = e2eKeyEncoded ? buildKeyFragment(e2eKeyEncoded) : "";
+  const resolvedE2EKey =
+    e2eKeyEncoded ||
+    (share.isE2EEncrypted && !share.teamFolderId && !isReverseShare
+      ? getUserKey()
+      : null);
+  const keyFragment = resolvedE2EKey ? buildKeyFragment(resolvedE2EKey) : "";
   const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
 
   return (
     <Stack align="stretch">
-      <ThemeIcon color="green" variant="light" size="xl" radius="xl" style={{ alignSelf: "center" }}>
+      <ThemeIcon
+        color="green"
+        variant="light"
+        size="xl"
+        radius="xl"
+        style={{ alignSelf: "center" }}
+      >
         <TbCircleCheck size={24} />
       </ThemeIcon>
       <CopyTextField link={link} />
       {share.notifyReverseShareCreator === true && (
-        <Text
-          size="sm"
-          c="dimmed"
-        >
+        <Text size="sm" c="dimmed">
           {t("upload.modal.completed.notified-reverse-share-creator")}
         </Text>
       )}
-      <Text
-        size="xs"
-        c="dimmed"
-      >
+      <Text size="xs" c="dimmed">
         {/* If our share.expiration is timestamp 0, show a different message */}
         {dayjs(share.expiration).unix() === 0
           ? t("upload.modal.completed.never-expires")

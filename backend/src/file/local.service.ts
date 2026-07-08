@@ -73,7 +73,7 @@ export class LocalFileService {
   async create(
     data: Buffer,
     chunk: { index: number; total: number },
-    file: { id?: string; name: string },
+    file: { id?: string; name: string; relativePath?: string },
     shareId: string,
     clientChunkSize?: number,
     share?: any,
@@ -200,6 +200,7 @@ export class LocalFileService {
         data: {
           id: file.id,
           name: file.name,
+          relativePath: file.relativePath,
           size: fileSize.toString(),
           share: { connect: { id: shareId } },
         },

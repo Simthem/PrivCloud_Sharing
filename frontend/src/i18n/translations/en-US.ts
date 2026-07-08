@@ -761,6 +761,7 @@ export default {
 
   "share.button.download-all": "Download all",
   "share.button.download-selected": "Download {count, plural, one {# file} other {# files}}",
+  "fileTree.items": "{count, plural, one {# item} other {# items}}",
   "share.button.clear-selection": "Clear selection",
   "share.download.cancel": "Cancel download",
   "share.notify.download-all-preparing":

@@ -11,6 +11,10 @@ import { S3FileService } from "./s3.service";
 import { ConfigService } from "src/config/config.service";
 import { Readable } from "stream";
 import { PrismaService } from "../prisma/prisma.service";
+import {
+  assertSafeFileName,
+  normalizeUploadRelativePath,
+} from "./file-path.util";
 
 @Injectable()
 export class FileService {
@@ -54,20 +58,18 @@ export class FileService {
     file: {
       id?: string;
       name: string;
+      relativePath?: string;
     },
     shareId: string,
     clientChunkSize?: number,
   ) {
-    // Sanitize filename: strip path separators, null bytes, ".." sequences,
-    // and enforce a reasonable length limit (CWE-23, CWE-73 mitigation).
-    const hasUnsafeFileName =
-      file.name.includes("\0") ||
-      file.name.includes("..") ||
-      file.name.includes("/") ||
-      file.name.includes("\\");
-    if (!file.name || file.name.length > 255 || hasUnsafeFileName) {
-      throw new BadRequestException("Invalid file name");
-    }
+    // Validate display filename and optional logical folder path. Physical
+    // storage still uses file.id only.
+    file.name = assertSafeFileName(file.name);
+    file.relativePath = normalizeUploadRelativePath(
+      file.relativePath,
+      file.name,
+    );
 
     // Fetch the share with related data for all common validations
     const share = await this.prisma.share.findUnique({
@@ -356,6 +358,7 @@ export interface File {
     mimeType: string | false;
     name: string;
     shareId: string;
+    relativePath?: string | null;
   };
   file: Readable;
 }

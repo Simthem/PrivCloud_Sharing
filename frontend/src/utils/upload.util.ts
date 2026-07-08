@@ -162,6 +162,7 @@ function runWorkerBatch(
   endChunk: number,
   fileId: string | undefined,
   fileName: string,
+  relativePath: string | undefined,
   onProgress: (
     _chunkIndex: number,
     _totalChunks: number,
@@ -427,6 +428,7 @@ function runWorkerBatch(
       endChunk,
       fileId,
       fileName,
+      relativePath,
     });
   });
 }
@@ -449,6 +451,7 @@ export async function uploadFileViaWorker(
     _fileId: string,
   ) => void,
   signal?: AbortSignal,
+  relativePath?: string,
 ): Promise<string> {
   let cryptoKeyRaw: ArrayBuffer | null = null;
   if (isE2E && cryptoKey) {
@@ -470,6 +473,7 @@ export async function uploadFileViaWorker(
     totalChunks,
     fileId,
     file instanceof File ? file.name : "blob",
+    relativePath,
     onProgress,
     signal,
   );

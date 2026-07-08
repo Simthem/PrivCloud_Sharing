@@ -27,6 +27,7 @@ import { ConfigService } from "src/config/config.service";
 import * as crypto from "crypto";
 import * as mime from "mime-types";
 import { File } from "./file.service";
+import { getArchiveEntryName } from "./file-path.util";
 import { Readable, PassThrough } from "stream";
 import { validate as isValidUUID } from "uuid";
 import archiver from "archiver";
@@ -305,7 +306,7 @@ export class S3FileService {
   async create(
     data: Buffer,
     chunk: { index: number; total: number },
-    file: { id?: string; name: string },
+    file: { id?: string; name: string; relativePath?: string },
     shareId: string,
     _clientChunkSize?: number,
     _share?: any,
@@ -504,6 +505,7 @@ export class S3FileService {
         data: {
           id: file.id,
           name: file.name,
+          relativePath: file.relativePath,
           size: fileSize.toString(),
           share: { connect: { id: shareId } },
         },
@@ -672,6 +674,9 @@ export class S3FileService {
         id: fileId,
         size,
         name: fileName,
+        relativePath:
+          (fileRecord as { relativePath?: string | null }).relativePath ??
+          null,
         shareId: shareId,
         createdAt: response.LastModified || new Date(),
         mimeType,
@@ -814,16 +819,12 @@ export class S3FileService {
     const bucketName = this.config.get("s3.bucketName");
     const compressionLevel = this.config.get("share.zipCompressionLevel");
 
-    const prefix = `${this.getS3Path()}${shareId}/`;
+    const files = await this.prisma.file.findMany({
+      where: { shareId },
+      orderBy: { name: "asc" },
+    });
 
-    const listResponse = await s3Instance.send(
-      new ListObjectsV2Command({
-        Bucket: bucketName,
-        Prefix: prefix,
-      }),
-    );
-
-    if (!listResponse.Contents || listResponse.Contents.length === 0) {
+    if (files.length === 0) {
       throw new NotFoundException(`No files found for share ${shareId}`);
     }
 
@@ -835,24 +836,24 @@ export class S3FileService {
       this.logger.error("Archive error", err);
     });
 
-    const fileKeys = listResponse.Contents.filter(
-      (object) => object.Key && object.Key !== prefix,
-    ).map((object) => object.Key as string);
-
-    if (fileKeys.length === 0) {
-      throw new NotFoundException(
-        `No valid files found for share ${shareId}`,
-      );
-    }
-
     const processNextFile = async (index: number) => {
-      if (index >= fileKeys.length) {
+      if (index >= files.length) {
         archive.finalize();
         return;
       }
 
-      const key = fileKeys[index];
-      const fileName = key.replace(prefix, "");
+      const fileRecord = files[index];
+      const key = `${this.getS3Path()}${shareId}/${fileRecord.id}`;
+      let fileName: string;
+      try {
+        fileName = getArchiveEntryName(fileRecord);
+      } catch {
+        this.logger.warn(
+          `Skipping file with unsafe archive path: shareId=${shareId} fileId=${fileRecord.id}`,
+        );
+        processNextFile(index + 1);
+        return;
+      }
 
       try {
         const response = await s3Instance.send(

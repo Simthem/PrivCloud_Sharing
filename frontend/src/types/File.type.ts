@@ -9,14 +9,20 @@ export type BridgeWebDavSource = {
 
 export type FileUpload = File & {
   uploadingProgress: number;
+  uploadRelativePath?: string;
   privcloudBridgeSource?: BridgeWebDavSource;
 };
 
-export type FileUploadResponse = { id: string; name: string };
+export type FileUploadResponse = {
+  id: string;
+  name: string;
+  relativePath?: string | null;
+};
 
 export type FileMetaData = {
   id: string;
   name: string;
+  relativePath?: string | null;
   size: string;
 };
 

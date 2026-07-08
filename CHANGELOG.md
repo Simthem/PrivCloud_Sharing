@@ -1,3 +1,58 @@
+## [1.23.5](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.4...v1.23.5) (2026-07-08)
+
+### Features
+
+- **folder uploads -- preserved relative paths:** folder drag-and-drop now keeps
+  logical relative paths from the browser through upload, storage metadata,
+  share/team displays and archive downloads while physical storage remains keyed
+  by file id.
+- **share and team views -- collapsible folder trees:** share file lists, share
+  card grids and team-folder workspaces now display uploaded folder structures
+  with expandable folders on desktop and mobile, including item counts and
+  path-aware sorting.
+
+### Bug Fixes
+
+- **encryption -- completed E2E links keep their key fragment:** upload
+  completion now captures the active E2E key before resetting upload state, uses
+  the same tab-scoped session key storage/event behavior as the private build,
+  and falls back to the local key when rendering the completed-share link.
+- **uploads -- idempotent share completion:** duplicate completion calls now
+  return the existing completed share instead of failing with
+  `Share already completed`, and the frontend prevents concurrent completion
+  requests.
+- **uploads -- private worker parity:** the public upload worker now matches the
+  private parallel worker path, including main-thread token refresh, SafeLine
+  retry/recovery messages, relative-path headers and the same AES-GCM chunk
+  body format.
+- **teams -- encrypted team shares stay out of personal shares:** team-folder
+  shares are no longer listed in `/account/shares`, avoiding encrypted preview
+  paths that do not have access to the team key.
+- **previews -- scrollable text and markdown modal:** file previews now keep
+  long plain-text, code and markdown content scrollable within the modal instead
+  of overflowing the viewport.
+- **push notifications -- refreshed branding icons:** service-worker push
+  notifications now load regenerated PWA icon files with a cache-busting URL so
+  desktop and mobile devices stop reusing stale pre-upload branding.
+
+### Security
+
+- **uploads -- safe path metadata validation:** backend and frontend path helpers
+  validate file names and relative-path segments, reject traversal/control
+  characters and ensure ZIP entry names cannot escape their logical folder tree.
+- **uploads -- filename metadata moved to headers:** chunk uploads now send file
+  names and relative paths through encoded headers, reducing WAF false positives
+  from query strings while preserving bridge upload compatibility.
+
+### Maintenance
+
+- Bumped root, backend and frontend package metadata and lockfiles to `1.23.5`.
+- Updated the source-built Node.js version in the full-build Dockerfile to
+  `v24.17.0`.
+- Expanded `.gitignore` coverage for generated npm caches, Python caches,
+  copied lockfiles, temporary commit notes and generated mobile integration
+  artifacts.
+
 ## [1.23.4](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.3...v1.23.4) (2026-06-19)
 
 ### Bug Fixes

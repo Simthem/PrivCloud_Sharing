@@ -1483,7 +1483,13 @@ export class TeamService {
         expiration: true,
         isE2EEncrypted: true,
         files: {
-          select: { id: true, name: true, size: true, createdAt: true },
+          select: {
+            id: true,
+            name: true,
+            relativePath: true,
+            size: true,
+            createdAt: true,
+          },
         },
         creator: { select: { id: true, username: true, email: true } },
       },

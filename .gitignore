@@ -1,5 +1,12 @@
 # dependencies
-node_modules
+node_modules/
+**/node_modules/
+.npm/
+**/.npm/
+.npx/
+**/.npx/
+npm-cache/
+**/npm-cache/
 .pnp
 .pnp.js
 
@@ -13,6 +20,7 @@ yarn.lock
 # build
 build/
 dist/
+.build/
 
 # misc
 .DS_Store
@@ -31,6 +39,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# generated/python caches
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
 # typescript
 *.tsbuildinfo
 
@@ -41,8 +54,24 @@ yarn-error.log*
 /docs/.docusaurus
 /docs/.cache-loader
 /config.yaml*_orig
+/frontend/public/img/*_orig
+*package-lock copy.json
 Dockerfile.cache
 COMMIT_*
+commit_*
 frontend/public/img/*_orig
 
 *_old
+*_orig
+
+# Android Companion beta source is committed; generated Gradle output is not.
+/integrations/android-share-target/.gradle/
+/integrations/android-share-target/build/
+/integrations/android-share-target/app/build/
+/integrations/ios-share-extension/
+/integrations/mobile-pwa/
+/frontend/public/install/beta/privcloud-android-share-target-*
+!/frontend/public/install/beta/privcloud-android-share-target-*-debug.apk
+!/frontend/public/install/beta/privcloud-android-companion-*-debug.apk
+/frontend/public/install/beta/privcloud-ios-share-extension-*
+/frontend/public/install/beta/privcloud-mobile-pwa-share-target-*

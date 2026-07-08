@@ -2,7 +2,11 @@
 // Provides offline shell caching, network-first API strategy,
 // and background upload continuation.
 
-var CACHE_NAME = "privcloud-v6";
+var CACHE_NAME = "privcloud-v7";
+
+function freshAsset(path) {
+  return path + "?push-icon-cache-bust=" + Date.now();
+}
 
 // App shell resources cached on install for offline access.
 // Only public/unauthenticated routes belong here -- auth-required
@@ -83,6 +87,11 @@ self.addEventListener("fetch", function (event) {
     return;
   }
 
+  // Push notification icons must always reflect the current uploaded logo.
+  if (url.searchParams.has("push-icon-cache-bust")) {
+    return;
+  }
+
   // For navigation requests and app shell: network-first with cache fallback
   if (event.request.mode === "navigate") {
     event.respondWith(
@@ -142,8 +151,8 @@ self.addEventListener("push", function (event) {
   var title = payload.title || "PrivCloud";
   var options = {
     body: payload.body || "",
-    icon: "/img/logo.png",
-    badge: "/img/logo.png",
+    icon: freshAsset("/img/icons/icon-192x192.png"),
+    badge: freshAsset("/img/icons/icon-72x72.png"),
     data: { url: sameOriginPath(payload.url) },
   };
   event.waitUntil(self.registration.showNotification(title, options));

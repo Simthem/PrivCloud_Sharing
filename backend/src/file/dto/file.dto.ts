@@ -9,6 +9,9 @@ export class FileDTO {
   name: string;
 
   @Expose()
+  relativePath?: string;
+
+  @Expose()
   size: string;
 
   share: ShareDTO;

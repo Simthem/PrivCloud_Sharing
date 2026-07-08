@@ -22,6 +22,7 @@ import { PushService } from "src/push/push.service";
 import { ReverseShareService } from "src/reverseShare/reverseShare.service";
 import { parseRelativeDateToAbsolute } from "src/utils/date.util";
 import { SHARE_DIRECTORY } from "../constants";
+import { getArchiveEntryName } from "../file/file-path.util";
 import { CreateShareDTO } from "./dto/createShare.dto";
 
 @Injectable()
@@ -79,7 +80,8 @@ export class ShareService {
     } else {
       const parsedExpiration = parseRelativeDateToAbsolute(share.expiration);
       const expiresNever = moment(0).toDate() == parsedExpiration;
-      const isPermanentRS = reverseShare && moment(reverseShare.shareExpiration).unix() === 0;
+      const isPermanentRS =
+        reverseShare && moment(reverseShare.shareExpiration).unix() === 0;
 
       // Enforce stricter limits for anonymous (unauthenticated) shares
       if (!user) {
@@ -122,7 +124,6 @@ export class ShareService {
       } else {
         expirationDate = parsedExpiration;
       }
-
     }
 
     // [UX/Security] Defense-in-depth: when the share is created via a
@@ -170,13 +171,9 @@ export class ShareService {
         throw new NotFoundException("Team folder not found");
       }
       // Check user is a member of the team that owns this folder
-      const membership = folder.team.members.find(
-        (m) => m.userId === user.id,
-      );
+      const membership = folder.team.members.find((m) => m.userId === user.id);
       if (!membership || !membership.isActive) {
-        throw new ForbiddenException(
-          "You are not a member of this team",
-        );
+        throw new ForbiddenException("You are not a member of this team");
       }
       // Check the member has at least WRITE access to the folder
       const accessRule = folder.accessRules.find(
@@ -245,16 +242,20 @@ export class ShareService {
       });
       if (folder) {
         this.logger.log(`Logging UPLOAD for team ${folder.teamId}`);
-        this.prisma.teamAccessLog.create({
-          data: {
-            teamId: folder.teamId,
-            action: "UPLOAD",
-            actorEmail: user.email,
-            actorName: user.username || undefined,
-            fileName: share.id,
-            folderId: teamFolderConnect.id,
-          },
-        }).catch(err => this.logger.error(`Failed to log UPLOAD: ${err.message}`));
+        this.prisma.teamAccessLog
+          .create({
+            data: {
+              teamId: folder.teamId,
+              action: "UPLOAD",
+              actorEmail: user.email,
+              actorName: user.username || undefined,
+              fileName: share.id,
+              folderId: teamFolderConnect.id,
+            },
+          })
+          .catch((err) =>
+            this.logger.error(`Failed to log UPLOAD: ${err.message}`),
+          );
       }
     }
 
@@ -287,7 +288,9 @@ export class ShareService {
     const archive = archiver("zip", {
       zlib: { level: this.config.get("share.zipCompressionLevel") },
     });
-    const writeStream = fs.createWriteStream(path.join(sharePath, "archive.zip"));
+    const writeStream = fs.createWriteStream(
+      path.join(sharePath, "archive.zip"),
+    );
 
     for (const file of files) {
       const filePath = path.resolve(sharePath, file.id);
@@ -295,8 +298,17 @@ export class ShareService {
         this.logger.warn(`Skipping suspicious file id: ${file.id}`);
         continue;
       }
+      let archiveName: string;
+      try {
+        archiveName = getArchiveEntryName(file);
+      } catch {
+        this.logger.warn(
+          `Skipping file with unsafe archive path: shareId=${shareId} fileId=${file.id}`,
+        );
+        continue;
+      }
       archive.append(fs.createReadStream(filePath), {
-        name: file.name,
+        name: archiveName,
       });
     }
 
@@ -325,9 +337,20 @@ export class ShareService {
       throw new NotFoundException("Share not found");
     }
 
-    if (await this.isShareCompleted(id)) {
-      this.logger.warn(`Share already completed: shareId=${id}`);
-      throw new BadRequestException("Share already completed");
+    const notifyReverseShareCreator = share.reverseShare
+      ? this.config.get("smtp.enabled") &&
+        share.reverseShare.sendEmailNotification
+      : undefined;
+    const completedShareResponse = (completedShare: Share) => ({
+      ...completedShare,
+      notifyReverseShareCreator,
+    });
+
+    if (share.uploadLocked) {
+      this.logger.debug(
+        `Share already completed, returning existing share: shareId=${id}`,
+      );
+      return completedShareResponse(share);
     }
 
     if (share.files.length === 0) {
@@ -337,9 +360,28 @@ export class ShareService {
       );
     }
 
-    // Asynchronously create a zip of all files
-    // Skip ZIP for E2E encrypted shares (server can't read encrypted content)
-    if (share.files.length > 1 && !share.isE2EEncrypted) {
+    const completionClaim = await this.prisma.share.updateMany({
+      where: { id, uploadLocked: false },
+      data: { uploadLocked: true },
+    });
+    if (completionClaim.count === 0) {
+      const completedShare = await this.prisma.share.findUnique({
+        where: { id },
+      });
+      if (!completedShare) {
+        throw new NotFoundException("Share not found");
+      }
+      this.logger.debug(`Share completion already claimed: shareId=${id}`);
+      return completedShareResponse(completedShare);
+    }
+
+    const shouldCreateZip =
+      share.files.length > 1 || share.files.some((file) => !!file.relativePath);
+
+    // Asynchronously create a zip of all files.
+    // Skip ZIP for E2E encrypted shares (server can't read encrypted content).
+    // A one-file folder upload still needs a ZIP to preserve its parent path.
+    if (shouldCreateZip && !share.isE2EEncrypted) {
       this.logger.debug(
         `Scheduling zip creation: shareId=${id} fileCount=${share.files.length}`,
       );
@@ -395,12 +437,6 @@ export class ShareService {
         `Skipping recipient emails: shareId=${id} recipients=${recipientCount} smtpEnabled=${this.config.get("smtp.enabled")}`,
       );
     }
-
-    // Optionally notify reverse share creator
-    const notifyReverseShareCreator = share.reverseShare
-      ? this.config.get("smtp.enabled") &&
-        share.reverseShare.sendEmailNotification
-      : undefined;
 
     if (notifyReverseShareCreator) {
       try {
@@ -471,19 +507,17 @@ export class ShareService {
       }
     }
 
-    // Lock uploads
-    const updatedShare = await this.prisma.share.update({
+    const updatedShare = await this.prisma.share.findUnique({
       where: { id },
-      data: { uploadLocked: true },
     });
+    if (!updatedShare) {
+      throw new NotFoundException("Share not found");
+    }
     this.logger.debug(
       `Share completed: shareId=${id} files=${share.files.length} recipients=${recipientCount} uploadLocked=true`,
     );
 
-    return {
-      ...updatedShare,
-      notifyReverseShareCreator,
-    };
+    return completedShareResponse(updatedShare);
   }
 
   async revertComplete(id: string) {
@@ -543,6 +577,10 @@ export class ShareService {
     const shares = await this.prisma.share.findMany({
       where: {
         creator: { id: userId },
+        // Team-folder shares are managed from the team workspace. Keeping them
+        // out of /account/shares avoids opening encrypted team files through
+        // the personal-share path, where the team key is not available.
+        teamFolderId: null,
         uploadLocked: true,
         // We want to grab any shares that are not expired or have their expiration date set to "never" (unix 0)
         OR: [
@@ -626,8 +664,7 @@ export class ShareService {
       },
     });
 
-    if (!share)
-      throw new NotFoundException("Share not found");
+    if (!share) throw new NotFoundException("Share not found");
 
     if (share.removedReason)
       throw new NotFoundException(share.removedReason, "share_removed");
@@ -669,10 +706,7 @@ export class ShareService {
 
     if (!share) return null; // Share was deleted - caller handles null gracefully
 
-    if (
-      !share.reverseShare ||
-      !share.reverseShare.encryptedReverseShareKey
-    ) {
+    if (!share.reverseShare || !share.reverseShare.encryptedReverseShareKey) {
       return null;
     }
 
@@ -726,15 +760,19 @@ export class ShareService {
       });
       if (folder) {
         this.logger.log(`Logging SHARE_DELETE for team ${folder.teamId}`);
-        this.prisma.teamAccessLog.create({
-          data: {
-            teamId: folder.teamId,
-            action: "SHARE_DELETE",
-            actorEmail: share.creatorId ? "owner" : "admin",
-            fileName: share.name || shareId,
-            folderId: share.teamFolderId,
-          },
-        }).catch(err => this.logger.error(`Failed to log SHARE_DELETE: ${err.message}`));
+        this.prisma.teamAccessLog
+          .create({
+            data: {
+              teamId: folder.teamId,
+              action: "SHARE_DELETE",
+              actorEmail: share.creatorId ? "owner" : "admin",
+              fileName: share.name || shareId,
+              folderId: share.teamFolderId,
+            },
+          })
+          .catch((err) =>
+            this.logger.error(`Failed to log SHARE_DELETE: ${err.message}`),
+          );
       }
     }
 

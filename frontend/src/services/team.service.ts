@@ -305,7 +305,13 @@ const getFolderShares = async (
     createdAt: string;
     expiration?: string;
     isE2EEncrypted: boolean;
-    files: { id: string; name: string; size: string; createdAt: string }[];
+    files: {
+      id: string;
+      name: string;
+      relativePath?: string | null;
+      size: string;
+      createdAt: string;
+    }[];
     creator?: { id: string; username: string; email: string };
   }[];
   myAccess?: { permission: string; canDownload: boolean; canDelete: boolean; canRequestSignature: boolean; canShareE2E: boolean } | null;
