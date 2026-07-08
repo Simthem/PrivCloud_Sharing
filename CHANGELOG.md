@@ -43,6 +43,13 @@
 - **uploads -- filename metadata moved to headers:** chunk uploads now send file
   names and relative paths through encoded headers, reducing WAF false positives
   from query strings while preserving bridge upload compatibility.
+- **backend dependencies -- Snyk high findings remediated:** upgraded
+  `archiver` to `^8.0.0`, pinned transitive `fast-uri` to `3.1.3`
+  (`SNYK-JS-FASTURI-17675102`) and pinned `brace-expansion` to `5.0.7`
+  (`SNYK-JS-BRACEEXPANSION-17706650`) via npm overrides and lockfile refresh.
+- **docker and docker full-build -- npm bundled brace-expansion hardened:**
+  updated the internal npm tarball patch step to force
+  `brace-expansion@5.0.7` (previously `5.0.6`) in both Docker build variants.
 
 ### Maintenance
 
