@@ -5,15 +5,10 @@
     "build": "nest build",
     "postinstall": "[ -f prisma/schema.prisma ] && prisma generate || true",
     "dev": "cross-env NODE_ENV=development nest start --watch",
-    "prod": "node dist/src/main",
-    "migrate:deploy": "prisma migrate deploy",
-    "db:seed": "prisma db seed",
-    "db:migrate-and-seed": "prisma migrate deploy && prisma db seed",
+    "prod": "prisma migrate deploy && prisma db seed && node dist/src/main",
     "lint": "eslint src/",
     "format": "prettier --end-of-line=auto --write 'src/**/*.ts'",
-    "test": "npm run test:unit",
-    "test:unit": "NODE_PATH=. node -r ts-node/register test/unit-runner.ts",
-    "test:system": "prisma migrate reset -f && nest start & wait-on http://localhost:8080/api/configs && npx --yes newman@6.2.2 run ./test/newman-system-tests.json"
+    "test:system": "prisma migrate reset -f && nest start & wait-on http://localhost:8080/api/configs && newman run ./test/newman-system-tests.json"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.787.0",
@@ -27,6 +22,7 @@
     "@nestjs/schedule": "^6.1.1",
     "@nestjs/swagger": "^11.4.5",
     "@nestjs/throttler": "^6.4.0",
+    "@prisma/adapter-better-sqlite3": "^7.8.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@signpdf/placeholder-pdf-lib": "^3.3.0",
@@ -153,6 +149,7 @@
     "sharp@0.34.5": true,
     "@nestjs/core@11.1.19": true,
     "@prisma/engines@7.8.0": true,
-    "@scarf/scarf@1.4.0": true
+    "@scarf/scarf@1.4.0": true,
+    "better-sqlite3@12.11.1": true
   }
 }
