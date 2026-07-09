@@ -1,3 +1,12 @@
+## [1.23.6](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.5...v1.23.6) (2026-07-09)
+
+### Security
+
+- **backend dependencies -- Snyk high findings remediated:** upgraded
+  js-yaml to 4.2.0, body-parser to 2.3.0, hono to 4.12.27 and swagger
+  to 11.4.5 (CVE-2036-12590 - CVE-2026-59869 - CVE-2026-59895 - 
+  CVE-2026-59896 - CVE-2026-59897)
+
 ## [1.23.5](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.4...v1.23.5) (2026-07-08)
 
 ### Features
