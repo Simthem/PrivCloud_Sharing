@@ -58,14 +58,20 @@ export class VerifyOtpDTO {
   otpCode: string;
 }
 
-export class SignE2EPdfDTO {
+export class PrepareE2ECertificateDTO {
   @IsString()
-  @MinLength(100) // a valid PDF in base64 is at minimum a few hundred chars
-  @MaxLength(200_000_000) // ~150 MB decoded - generous for large PDFs
-  @Matches(/^[A-Za-z0-9+/\n\r]+=*$/, {
-    message: "plaintextPdf must be valid base64",
+  @Matches(/^[a-fA-F0-9]{64}$/, {
+    message: "documentHash must be a SHA-256 hexadecimal digest",
   })
-  plaintextPdf: string;
+  documentHash: string;
+}
+
+export class SignE2EDigestDTO {
+  @IsString()
+  @Matches(/^[a-fA-F0-9]{64}$/, {
+    message: "digest must be a SHA-256 hexadecimal digest",
+  })
+  digest: string;
 }
 
 export class FinalizeE2EDTO {

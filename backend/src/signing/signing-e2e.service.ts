@@ -4,12 +4,12 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import * as crypto from "crypto";
 import { PrismaService } from "src/prisma/prisma.service";
 import { EmailService } from "src/email/email.service";
 import { FileService } from "src/file/file.service";
 import { ConfigService } from "src/config/config.service";
 import { PdfSigningService } from "./pdf-signing.service";
+import { deliverSigningCompletionEmails } from "./signing-mail.util";
 
 @Injectable()
 export class SigningE2EService {
@@ -23,21 +23,20 @@ export class SigningE2EService {
     private pdfSigningService: PdfSigningService,
   ) {}
 
-  /**
-   * E2E Step 1: Apply certificate page + cryptographic PAdES signature.
-   * The client sends the decrypted PDF (with visual signatures already applied).
-   * We add the eIDAS certificate page, apply PAdES crypto signature, and
-   * return the signed PDF (in clear) so the client can re-encrypt it.
-   * The PDF is NOT stored - only returned.
-   */
-  async signE2EPdf(documentId: string, userId: string, plaintextPdfBuffer: Buffer): Promise<Buffer> {
+  /** Generate only the certificate page. The clear source PDF remains client-side. */
+  async generateE2ECertificatePage(
+    documentId: string,
+    userId: string,
+    documentHash: string,
+  ): Promise<Buffer> {
     const doc = await this.prisma.signatureDocument.findFirst({
       where: { id: documentId, creatorId: userId },
       include: { recipients: { where: { role: "SIGNER" } } },
     });
 
     if (!doc) throw new NotFoundException("Document not found");
-    if (!doc.isE2EEncrypted) throw new BadRequestException("Not an E2E document");
+    if (!doc.isE2EEncrypted)
+      throw new BadRequestException("Not an E2E document");
     if (doc.status !== "AWAITING_FINALIZATION") {
       throw new BadRequestException(
         `Document status is "${doc.status}", expected "AWAITING_FINALIZATION"`,
@@ -48,16 +47,6 @@ export class SigningE2EService {
     if (!allSigned) {
       throw new BadRequestException("Not all signers have signed yet");
     }
-
-    this.logger.log(`E2E signE2EPdf: applying certificate page + PAdES for ${documentId}`);
-
-    let pdfBuffer = plaintextPdfBuffer;
-
-    // Generate and append certificate page
-    const documentHash = crypto
-      .createHash("sha256")
-      .update(pdfBuffer)
-      .digest("hex");
 
     const certPage = await this.pdfSigningService.generateCertificatePage({
       documentId: doc.id,
@@ -74,36 +63,66 @@ export class SigningE2EService {
       signatureLevel: doc.signatureLevel,
     });
 
-    const { PDFDocument } = await import("pdf-lib");
-    const mainDoc = await PDFDocument.load(pdfBuffer);
-    const certDoc = await PDFDocument.load(certPage);
-    const [certPageCopy] = await mainDoc.copyPages(certDoc, [0]);
-    mainDoc.addPage(certPageCopy);
-    pdfBuffer = Buffer.from(await mainDoc.save());
-
-    // Apply cryptographic PAdES signature
-    pdfBuffer = await this.pdfSigningService.signPdf(pdfBuffer, {
-      name: "PrivCloud Sharing",
-      email: "signing@privcloud.eu",
-      reason: "Signature électronique eIDAS (E2E) - Tous les signataires ont signé",
-    });
-
-    this.logger.log(`E2E signE2EPdf: PDF signed (${pdfBuffer.length} bytes) for ${documentId}`);
-    return pdfBuffer;
+    this.logger.log(
+      `E2E certificate page generated without source PDF for ${documentId}`,
+    );
+    return certPage;
   }
 
-  /**
-   * E2E Step 2: Store the re-encrypted signed PDF and mark COMPLETED.
-   * The client re-encrypts the PAdES-signed PDF and sends it here for storage.
-   */
-  async storeE2EFinal(documentId: string, userId: string, encryptedPdfBuffer: Buffer) {
+  /** Sign only the SHA-256 digest of the client-prepared PDF ByteRange. */
+  async signE2EDigest(
+    documentId: string,
+    userId: string,
+    digest: Buffer,
+  ): Promise<Buffer> {
     const doc = await this.prisma.signatureDocument.findFirst({
       where: { id: documentId, creatorId: userId },
       include: { recipients: { where: { role: "SIGNER" } } },
     });
 
     if (!doc) throw new NotFoundException("Document not found");
-    if (!doc.isE2EEncrypted) throw new BadRequestException("Not an E2E document");
+    if (!doc.isE2EEncrypted)
+      throw new BadRequestException("Not an E2E document");
+    if (doc.status !== "AWAITING_FINALIZATION") {
+      throw new BadRequestException(
+        `Document status is "${doc.status}", expected "AWAITING_FINALIZATION"`,
+      );
+    }
+    if (!doc.recipients.every((recipient) => recipient.status === "SIGNED")) {
+      throw new BadRequestException("Not all signers have signed yet");
+    }
+
+    const cms = await this.pdfSigningService.signDigest(digest);
+    await this.createAuditEvent(
+      documentId,
+      "PADES_DIGEST_SIGNED",
+      userId,
+      undefined,
+      undefined,
+      JSON.stringify({ algorithm: "SHA-256", digest: digest.toString("hex") }),
+    );
+
+    this.logger.log(`E2E detached PAdES CMS created for ${documentId}`);
+    return cms;
+  }
+
+  /**
+   * E2E Step 2: Store the re-encrypted signed PDF and mark COMPLETED.
+   * The client re-encrypts the PAdES-signed PDF and sends it here for storage.
+   */
+  async storeE2EFinal(
+    documentId: string,
+    userId: string,
+    encryptedPdfBuffer: Buffer,
+  ) {
+    const doc = await this.prisma.signatureDocument.findFirst({
+      where: { id: documentId, creatorId: userId },
+      include: { recipients: { where: { role: "SIGNER" } } },
+    });
+
+    if (!doc) throw new NotFoundException("Document not found");
+    if (!doc.isE2EEncrypted)
+      throw new BadRequestException("Not an E2E document");
     if (doc.status !== "AWAITING_FINALIZATION") {
       throw new BadRequestException(
         `Document status is "${doc.status}", expected "AWAITING_FINALIZATION"`,
@@ -113,6 +132,16 @@ export class SigningE2EService {
     const allSigned = doc.recipients.every((r) => r.status === "SIGNED");
     if (!allSigned) {
       throw new BadRequestException("Not all signers have signed yet");
+    }
+
+    const padesSignature = await this.prisma.signatureAuditEvent.findFirst({
+      where: { documentId, eventType: "PADES_DIGEST_SIGNED" },
+      select: { id: true },
+    });
+    if (!padesSignature) {
+      throw new BadRequestException(
+        "PAdES digest signature is required before finalization",
+      );
     }
 
     // Store the re-encrypted signed PDF
@@ -128,59 +157,48 @@ export class SigningE2EService {
 
     // Log team activity
     if (doc.teamId) {
-      this.logger.log(`Logging SIGNATURE_COMPLETE (E2E) for team ${doc.teamId}`);
-      this.prisma.teamAccessLog.create({
-        data: {
-          teamId: doc.teamId,
-          action: "SIGNATURE_COMPLETE",
-          actorEmail: "system",
-          actorName: "Finalisation E2E client",
-          fileName: doc.fileName,
-        },
-      }).catch(err => this.logger.error(`Failed to log SIGNATURE_COMPLETE (E2E): ${err.message}`));
-    }
-
-    // Notify all parties
-    const allRecipients = await this.prisma.signatureRecipient.findMany({
-      where: { documentId },
-    });
-
-    const baseUrl = await this.configService.get("general.appUrl");
-    const documentUrl = `${baseUrl}/signing/${documentId}`;
-    const signersList = allRecipients
-      .filter(r => r.role === "SIGNER")
-      .map(r => `  • ${r.name} (${r.email}) - signé le ${r.signedAt ? new Date(r.signedAt).toLocaleDateString("fr-FR") : "N/A"}`)
-      .join("\n");
-
-    for (const r of allRecipients) {
-      const hasAccount = r.userId != null;
-      await this.emailService.sendMail(
-        r.email,
-        `Document signé - ${doc.fileName}`,
-        `Bonjour ${r.name},\n\n` +
-          `Le document "${doc.fileName}" a été signé par tous les signataires et la signature cryptographique PAdES a été appliquée.\n\n` +
-          `Signataires :\n${signersList}\n\n` +
-          (hasAccount
-            ? `Vous pouvez consulter et télécharger le document signé depuis votre espace :\n${documentUrl}\n\n` +
-              `Ce document apparaît également dans votre rubrique "Documents reçus" de l'onglet Signature.\n\n`
-            : `Si vous avez un compte PrivCloud Sharing, connectez-vous pour retrouver ce document dans vos "Documents reçus".\n\n`) +
-          `-- \nPrivCloud Sharing - Signature Électronique`,
+      this.logger.log(
+        `Logging SIGNATURE_COMPLETE (E2E) for team ${doc.teamId}`,
       );
+      this.prisma.teamAccessLog
+        .create({
+          data: {
+            teamId: doc.teamId,
+            action: "SIGNATURE_COMPLETE",
+            actorEmail: "system",
+            actorName: "Finalisation E2E client",
+            fileName: doc.fileName,
+          },
+        })
+        .catch((err) =>
+          this.logger.error(
+            `Failed to log SIGNATURE_COMPLETE (E2E): ${err.message}`,
+          ),
+        );
     }
 
-    // Notify creator
-    const creator = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (creator) {
-      await this.emailService.sendMail(
-        creator.email,
-        `Document finalisé - ${doc.fileName}`,
-        `Bonjour ${creator.username || ""},\n\n` +
-          `Votre document "${doc.fileName}" a été signé par tous les signataires et finalisé avec succès.\n\n` +
-          `Signataires :\n${signersList}\n\n` +
-          `La signature cryptographique PAdES a été appliquée.\n\n` +
-          `Consultez et téléchargez le document signé ici :\n${documentUrl}\n\n` +
-          (doc.teamId ? `Ce document est également visible dans l'espace de votre équipe.\n\n` : "") +
-          `-- \nPrivCloud Sharing - Signature Électronique`,
+    try {
+      const [allRecipients, creator, baseUrl] = await Promise.all([
+        this.prisma.signatureRecipient.findMany({ where: { documentId } }),
+        this.prisma.user.findUnique({ where: { id: doc.creatorId } }),
+        Promise.resolve(this.configService.get("general.appUrl")),
+      ]);
+      await deliverSigningCompletionEmails({
+        fileName: doc.fileName,
+        documentUrl: `${baseUrl}/signing/${documentId}`,
+        teamId: doc.teamId,
+        creator,
+        recipients: allRecipients,
+        sendMail: (email, subject, body) =>
+          this.emailService.sendMail(email, subject, body),
+        onFailure: (email, error: any) =>
+          this.logger.error(
+            `E2E completion email failed for ${documentId} to ${email}: ${error?.message || error}`,
+          ),
+      });
+    } catch (notificationError: any) {
+      this.logger.error(
+        `Failed to prepare E2E completion emails for ${documentId}: ${notificationError?.message || notificationError}`,
       );
     }
 
@@ -232,6 +250,8 @@ export class SigningE2EService {
       addApprovalField: doc.addApprovalField,
       addApprovalMention: doc.addApprovalMention,
       addInitials: doc.addInitials,
+      signaturePage: doc.signaturePage,
+      watermarkPage: doc.watermarkPage,
       signatureLevel: doc.signatureLevel,
       signers: doc.recipients,
       fields: doc.fields,

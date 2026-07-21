@@ -50,6 +50,7 @@ const AcceptInvitePage = () => {
     mutationFn: async () => {
       // If the URL fragment contains a team key, wrap it with user's master key
       let wrappedTeamKey: string | undefined;
+      let keyVersion: number | undefined;
       try {
         const teamKeyB64 = extractTeamKeyFromHash();
         const userKeyB64 = getUserKey();
@@ -57,11 +58,16 @@ const AcceptInvitePage = () => {
           const teamKey = await importKeyFromBase64(teamKeyB64);
           const masterKey = await importKeyFromBase64(userKeyB64);
           wrappedTeamKey = await wrapReverseShareKey(teamKey, masterKey);
+          const parsedVersion = Number.parseInt(
+            new URLSearchParams(window.location.hash.slice(1)).get("version") || "",
+            10,
+          );
+          if (Number.isFinite(parsedVersion)) keyVersion = parsedVersion;
         }
       } catch (e) {
         console.warn("[E2E] Failed to wrap team key during invite accept:", e);
       }
-      return teamService.acceptInvitation(tokenStr, wrappedTeamKey);
+      return teamService.acceptInvitation(tokenStr, wrappedTeamKey, keyVersion);
     },
     onSuccess: async (data) => {
       // If no wrappedTeamKey was sent but encryptedTeamKey exists in invitation,

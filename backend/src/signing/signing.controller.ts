@@ -7,6 +7,7 @@ import {
   Ip,
   Param,
   Post,
+  Query,
   Headers,
   UseGuards,
   Res,
@@ -21,7 +22,14 @@ import { SigningOtpService } from "./signing-otp.service";
 import { SigningDownloadService } from "./signing-download.service";
 import { SigningE2EService } from "./signing-e2e.service";
 import { CreateSignatureRequestDTO } from "./dto/createSignatureRequest.dto";
-import { SignDocumentDTO, RejectDocumentDTO, VerifyOtpDTO, SignE2EPdfDTO, FinalizeE2EDTO } from "./dto/signDocument.dto";
+import {
+  SignDocumentDTO,
+  RejectDocumentDTO,
+  VerifyOtpDTO,
+  PrepareE2ECertificateDTO,
+  SignE2EDigestDTO,
+  FinalizeE2EDTO,
+} from "./dto/signDocument.dto";
 
 @Controller("signing")
 export class SigningController {
@@ -85,10 +93,15 @@ export class SigningController {
   @UseGuards(JwtGuard)
   async getTeamDocuments(
     @Param("teamId") teamId: string,
+    @Query("page") page: string | undefined,
+    @Query("limit") limit: string | undefined,
     @GetUser() user: User,
   ) {
     if (!user?.id) throw new BadRequestException("Authentication required");
-    return this.signingService.getTeamDocuments(teamId, user.id);
+    return this.signingService.getTeamDocuments(teamId, user.id, {
+      page: page ? Number.parseInt(page, 10) : undefined,
+      limit: limit ? Number.parseInt(limit, 10) : undefined,
+    });
   }
 
   /**
@@ -197,28 +210,41 @@ export class SigningController {
     return this.signingE2EService.getSignaturesForFinalization(id, user.id);
   }
 
-  /**
-   * E2E Step 1: Apply certificate page + cryptographic PAdES signature.
-   * Client sends the decrypted PDF (with visual signatures). Backend signs it
-   * and returns the signed PDF in base64 (NOT stored).
-   */
-  @Post("documents/:id/sign-e2e")
+  /** Generate the certificate page without receiving the clear source PDF. */
+  @Post("documents/:id/e2e-certificate-page")
   @UseGuards(JwtGuard)
   @Throttle({ default: { limit: 5, ttl: 3600 } })
-  async signE2EPdf(
+  async generateE2ECertificatePage(
     @Param("id") id: string,
     @GetUser() user: User,
-    @Body() dto: SignE2EPdfDTO,
+    @Body() dto: PrepareE2ECertificateDTO,
+  ) {
+    if (!user?.id) throw new BadRequestException("Authentication required");
+    const certificatePage = await this.signingE2EService.generateE2ECertificatePage(
+      id,
+      user.id,
+      dto.documentHash.toLowerCase(),
+    );
+    return { certificatePage: certificatePage.toString("base64") };
+  }
+
+  /** Sign the SHA-256 digest of a client-prepared PDF ByteRange. */
+  @Post("documents/:id/sign-e2e-digest")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 5, ttl: 3600 } })
+  async signE2EDigest(
+    @Param("id") id: string,
+    @GetUser() user: User,
+    @Body() dto: SignE2EDigestDTO,
   ) {
     if (!user?.id) throw new BadRequestException("Authentication required");
 
-    const pdfBuffer = Buffer.from(dto.plaintextPdf, "base64");
-    if (pdfBuffer.length < 4 || pdfBuffer.slice(0, 4).toString() !== "%PDF") {
-      throw new BadRequestException("Invalid PDF data");
-    }
-
-    const signedPdf = await this.signingE2EService.signE2EPdf(id, user.id, pdfBuffer);
-    return { signedPdf: signedPdf.toString("base64") };
+    const cms = await this.signingE2EService.signE2EDigest(
+      id,
+      user.id,
+      Buffer.from(dto.digest, "hex"),
+    );
+    return { cms: cms.toString("base64") };
   }
 
   /**

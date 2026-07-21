@@ -70,7 +70,7 @@ PrivCloud_Sharing consists of a frontend and a backend.
 The backend is built with [NestJS 11](https://nestjs.com) and uses TypeScript.
 
 - **ORM**: Prisma 6 with SQLite
-- **Runtime**: Node 24 (Debian Trixie slim in Docker)
+- **Runtime**: Node 24 in a shell-less distroless Debian 13 image
 
 #### Setup
 
@@ -107,13 +107,18 @@ At the moment we only have system tests for the backend. To run these tests, run
 
 The production Docker image uses a multi-stage build:
 
-1. **caddy-builder** - Compiles Caddy from source (Go Alpine) with patched modules
-2. **gosu-builder** - Compiles gosu from source (Go 1.26.1 Alpine, static binary)
-3. **base** - Node 24 Debian Bookworm slim with build tools (build stages only)
+1. **caddy-builder** - Compiles Caddy from source with Go 1.26.5 and patched modules
+2. **runtime-init-builder** - Compiles the static UID/GID and volume initialization helper
+3. **base** - Provides Node 24 and build tools to build-only stages
 4. **frontend-deps** / **frontend-builder** - Installs dependencies and builds the Next.js standalone output
 5. **backend-deps** / **backend-builder** - Installs dependencies, generates Prisma client, builds NestJS, and prunes dev dependencies
 6. **caddyfile-patcher** - Patches Caddyfiles (localhost-127.0.0.1) in a build-only stage
-7. **runner** - Debian Trixie (13) slim with Node.js copied from base, Caddy + gosu static binaries, aggressive hardening
+7. **runtime-layout** - Collects only the C++ libraries required by Node native addons
+8. **runner** - Uses the pinned shell-less distroless Debian 13 base with Node, Caddy, patched OpenSSL and the static runtime initializer
+
+The final image contains no package manager, shell, PAM, systemd, util-linux,
+shadow or gosu. `runtime-init` prepares mounted directories and permanently
+drops from root to `PUID:PGID` before starting the Node process supervisor.
 
 Proxy environment variables are **not hardcoded** in the image. If you need a proxy at build time, pass `--build-arg HTTP_PROXY=...` and `--build-arg HTTPS_PROXY=...`. At runtime, set them in `docker-compose.yaml` (see the commented examples).
 

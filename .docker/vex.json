@@ -1,12 +1,29 @@
 {
   "@context": "https://openvex.dev/ns/v0.2.0",
-  "@id": "https://github.com/stonith404/pingvin-share/vex/2026-04-15-pgx-cve-2026-33815",
+  "@id": "https://github.com/Simthem/PrivCloud_Sharing/vex/2026-07-21",
   "author": "simthem <privcloud-sharing maintainer>",
   "role": "maintainer",
-  "timestamp": "2026-04-24T00:00:00Z",
-  "version": 2,
+  "timestamp": "2026-07-21T12:00:00Z",
+  "version": 3,
   "tooling": "manual review",
   "statements": [
+    {
+      "vulnerability": {
+        "name": "GO-2026-5932",
+        "description": "golang.org/x/crypto/openpgp is unmaintained and unsafe by design"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/golang.org/x/crypto@v0.54.0"
+        },
+        {
+          "@id": "pkg:golang/golang.org/x/crypto@0.54.0"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The Caddy build verifies with go list -deps that golang.org/x/crypto/openpgp is not part of the compiled dependency graph. Trivy reports the parent x/crypto module metadata, not reachable openpgp code."
+    },
     {
       "vulnerability": {
         "@id": "https://nvd.nist.gov/vuln/detail/CVE-2026-33815",

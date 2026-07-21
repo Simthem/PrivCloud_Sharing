@@ -3,7 +3,7 @@
 # ---------------------------
 # CVE-2026-27141: caddy:2-alpine embarque golang.org/x/net v0.50.0 (vuln).
 # On clone les sources Caddy, on force golang.org/x/net >= v0.51.0, puis on compile.
-# Go 1.26.4 : corrige CVE-2026-42504, CVE-2026-27145, CVE-2026-42507,
+# Go 1.26.5 : corrige CVE-2026-42504, CVE-2026-27145, CVE-2026-42507,
 # CVE-2026-27142, CVE-2026-25679, CVE-2026-27139
 # + CVE-2026-32280 (HIGH), CVE-2026-32282 (HIGH), CVE-2026-32281 (MEDIUM),
 # + CVE-2026-32288 (MEDIUM), CVE-2026-32289 (MEDIUM), CVE-2026-32283 (UNKNOWN),
@@ -11,11 +11,12 @@
 # + CVE-2026-33811 (HIGH), CVE-2026-33814 (HIGH), CVE-2026-39820 (HIGH),
 # + CVE-2026-39836 (HIGH), CVE-2026-42499 (HIGH), CVE-2026-39823 (MEDIUM),
 # + CVE-2026-39825 (MEDIUM), CVE-2026-39826 (MEDIUM) -- tous fixés en 1.26.3.
+# + CVE-2026-39822 et CVE-2026-42505 -- corrigés par Go 1.26.5.
 # Caddy 2.11.3 requis pour fixer CVE-2026-30851 (HIGH), CVE-2026-30852 (MEDIUM),
 # CVE-2026-45135 (HIGH - FastCGI splitPos), CVE-2026-45692 (MEDIUM - Admin /config bypass),
 # GHSA-gx7w-56w6-g48x (MEDIUM - PKI path matching bypass).
 # GHSA-wwhq-w58m-w29c (MEDIUM - CVE-2026-30852 fix bypass) - status: affected, no fix yet.
-FROM golang:1.26.4-alpine AS caddy-builder
+FROM golang:1.26.5-alpine AS caddy-builder
 # CVE-2026-27171 : zlib 1.3.1-r2 -> 1.3.2-r0 disponible dans Alpine
 RUN apk upgrade --no-cache && apk add --no-cache git
 RUN git clone --depth 1 --branch v2.11.4 \
@@ -37,13 +38,16 @@ WORKDIR /caddy
 # SNYK-GOLANG-GITHUBCOMYUINGOLDMARKRENDERERHTML-15838406 (MEDIUM) : goldmark XSS < 1.7.17
 # SNYK-GOLANG-GOLANGORGXCRYPTOSSH* (CRITICAL x7 + HIGH x2 + MEDIUM x4) : golang.org/x/crypto/ssh{,/agent} < 0.52.0
 # SNYK-GOLANG-GOLANGORGXNETHTML* (CRITICAL x1 + MEDIUM x5) : golang.org/x/net/html < 0.55.0
+# CVE-2026-46600 : golang.org/x/net < 0.56.0
+# CVE-2026-56852 : golang.org/x/text < 0.39.0
 # go mod tidy runs FIRST, then we re-pin smallstep + bbolt AFTER to prevent transitive downgrade
-# IMPORTANT: 'replace' directives are used (not 'require' bumps) for x/net, x/crypto, x/sys.
+# IMPORTANT: 'replace' directives are used (not 'require' bumps) for x/net, x/text, x/crypto, x/sys.
 # Unlike 'go get' or 'go mod edit -require', replace directives survive 'go mod tidy' because
 # tidy never removes them. MVS would downgrade pinned require versions back to the minimum
 # needed by the dep graph; replace directives bypass MVS entirely.
-RUN go get golang.org/x/net@v0.55.0 \
-    && go get golang.org/x/crypto@v0.52.0 \
+RUN go get golang.org/x/net@v0.57.0 \
+    && go get golang.org/x/text@v0.40.0 \
+    && go get golang.org/x/crypto@v0.54.0 \
     && go get github.com/yuin/goldmark@v1.7.17 \
     && go get google.golang.org/grpc@v1.79.3 \
     && go get github.com/go-jose/go-jose/v3@v3.0.5 \
@@ -55,7 +59,8 @@ RUN go get golang.org/x/net@v0.55.0 \
     && go get go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp@v1.44.0 \
     && go get go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.20.0 \
     && go get github.com/quic-go/quic-go/http3@v0.59.1 \
-    && go get golang.org/x/sys@v0.44.0 \
+    && go get github.com/go-chi/chi/v5@v5.3.0 \
+    && go get golang.org/x/sys@v0.47.0 \
     && go get github.com/smallstep/certificates@v0.30.2 \
     && go get go.etcd.io/bbolt@cae11e991754 \
     && go mod tidy \
@@ -67,35 +72,33 @@ RUN go get golang.org/x/net@v0.55.0 \
     && go mod download go.etcd.io/bbolt \
     && go mod tidy \
     && go mod edit \
-        -replace=golang.org/x/net=golang.org/x/net@v0.55.0 \
-        -replace=golang.org/x/crypto=golang.org/x/crypto@v0.52.0 \
-        -replace=golang.org/x/sys=golang.org/x/sys@v0.44.0 \
+        -replace=golang.org/x/net=golang.org/x/net@v0.57.0 \
+        -replace=golang.org/x/text=golang.org/x/text@v0.40.0 \
+        -replace=golang.org/x/crypto=golang.org/x/crypto@v0.54.0 \
+        -replace=golang.org/x/sys=golang.org/x/sys@v0.47.0 \
+        -replace=github.com/go-chi/chi/v5=github.com/go-chi/chi/v5@v5.3.0 \
     && go mod tidy \
+    && go mod edit -require=github.com/go-chi/chi/v5@v5.3.0 \
     && echo "=== Security replace pins verification ===" \
-    && grep -E 'replace|x/net|x/crypto|x/sys' go.mod
+    && grep -E 'replace|x/net|x/text|x/crypto|x/sys|go-chi/chi/v5' go.mod \
+    && go list -m golang.org/x/net | grep 'v0.57.0' \
+    && go list -m golang.org/x/text | grep 'v0.40.0' \
+    && go list -m golang.org/x/crypto | grep 'v0.54.0' \
+    && go list -m github.com/go-chi/chi/v5 | grep 'v5.3.0' \
+    && ! go list -deps ./cmd/caddy | grep -qx 'golang.org/x/crypto/openpgp'
 # Compiler Caddy (binaire statique, stripped, sans symboles de debug)
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/caddy \
     && go clean -cache -modcache
 
 # ---------------------------
-# Stage 0b: Build gosu from source (Go 1.26.4)
+# Stage 0b: Build the minimal runtime init
 # ---------------------------
-# Le gosu packagé par Debian (apt) est compilé avec Go 1.19.8, ce qui injecte
-# 54 CVEs Go stdlib dans l'image finale (4 CRITICAL, 20 HIGH, 28 MEDIUM, 2 LOW).
-# Compilation de gosu depuis les sources avec Go 1.26.4 : binaire statique,
-# zéro dépendance système, zéro CVE Go stdlib.
-FROM golang:1.26.4-alpine AS gosu-builder
-# CVE-2026-27171 : zlib 1.3.1-r2 -> 1.3.2-r0 disponible dans Alpine
-RUN apk upgrade --no-cache && apk add --no-cache git
-RUN git clone --depth 1 https://github.com/tianon/gosu.git /gosu
-WORKDIR /gosu
-# Force golang.org/x/sys >= 0.44.0 so Scout does not report CVE-2026-39824
-# from gosu's transitive module metadata.
-RUN go mod edit -replace=golang.org/x/sys=golang.org/x/sys@v0.44.0 \
-    && go get golang.org/x/sys@v0.44.0 \
-    && go mod tidy \
-    && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /go/bin/gosu . \
-    && go version -m /go/bin/gosu | grep 'golang.org/x/sys.*v0.44.0'
+# This static helper prepares mounted directories, drops from root to PUID:PGID
+# and execs Node without requiring a shell, passwd database, PAM or gosu.
+FROM golang:1.26.5-alpine AS runtime-init-builder
+WORKDIR /src
+COPY scripts/docker/runtime-init.go .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /runtime-init ./runtime-init.go
 
 # ---------------------------
 # Stage 0c: Build OpenSSL from patched branch
@@ -199,9 +202,9 @@ COPY --from=node-source-builder /node-artifact/node /node-artifact/node
 # Debian bénéficie de backports sécurité plus rapides et n'utilise pas busybox.
 # Impact taille : +20 MB base (~76 vs ~56 MB), négligeable sur l'image finale.
 #
-# checkov:skip=CKV_DOCKER_3:USER non utilisé - le container doit démarrer root
-# pour que create-user.sh puisse chown les volumes avant de drop les privilèges
-# via gosu (voir commentaire dans le stage runner ci-dessous).
+# checkov:skip=CKV_DOCKER_3:le stage de build ne produit pas l'utilisateur final.
+# Le runtime distroless démarre avec les seules capacités CHOWN/SETUID/SETGID,
+# puis runtime-init abandonne root avant d'exécuter Node.
 FROM node:24-slim AS base
 
 ARG HTTP_PROXY
@@ -357,171 +360,36 @@ RUN sed -i 's|http://localhost:|http://127.0.0.1:|g' \
     /opt/app/reverse-proxy/Caddyfile.trust-proxy
 
 # ---------------------------
-# Stage 6: Final runner image - Debian Trixie (13) slim
+# Stage 6: Assemble the C++ runtime required by Node and native addons
 # ---------------------------
-# Debian Bookworm (12) via node:24-slim souffrait de ~86 CVEs (Trivy) /
-# ~12 CVEs (Scout) dans ses paquets système vieillissants :
-#   - glibc 2.36    -> CVE-2026-0861 (HIGH), CVE-2025-15281/CVE-2026-0915 (MEDIUM)
-#   - zlib 1.2.13   -> CVE-2023-45853 (CRITICAL), CVE-2026-27171 (MEDIUM)
-#   - ncurses 6.4   -> CVE-2025-69720 (CRITICAL)
-#   - systemd 252   -> CVE-2026-4105 (MEDIUM), 4 LOW
-#   - util-linux 2.38 -> ~21 LOW (bsdutils, libmount, libuuid...)
-#   - libpam 1.5.2  -> CVE-2024-10041 (MEDIUM × 4 packages)
-#   - gpgv 2.2.40   -> CVE-2025-30258/CVE-2025-68972 (MEDIUM)
-#
-# Debian Trixie (13), stable depuis mi-2025, apporte des versions
-# nettement plus récentes qui corrigent la majorité de ces CVEs :
-#   glibc 2.40+, zlib 1.3.1+, ncurses 6.5+, systemd 256+,
-#   util-linux 2.40+, libpam 1.5.3+, gnupg 2.4+
-#
-# Le binaire Node.js est copié depuis le stage base (node:24-slim, Bookworm).
-# Compatibilité garantie : glibc rétro-compatible (2.36->2.40),
-# libstdc++ aussi (gcc-12->gcc-14), libssl.so.3 stable en OpenSSL 3.x.
-# Caddy et gosu sont des binaires 100% statiques, zéro dépendance système.
-#
-# trivy:ignore:DS002
-# kics-scan ignore-line - USER omis intentionnellement : create-user.sh crée l'user au runtime
-# puis drop_privileges via gosu
-# checkov:skip=CKV_DOCKER_3:USER non utilisé - le container doit démarrer root
-# pour que create-user.sh puisse chown les volumes avant de drop les privilèges via gosu.
-# cis-skip:CIS-4.1 - USER omis : create-user.sh + gosu drop les privilèges au runtime
-FROM debian:trixie-slim AS runner
+FROM debian:trixie-slim AS runtime-layout
+RUN set -eu; \
+    mkdir -p \
+        /runtime/usr/lib/x86_64-linux-gnu \
+        /runtime/home/privcloud-sharing/.config/caddy \
+        /runtime/home/privcloud-sharing/.local/share/caddy \
+        /runtime/opt/app/backend/data; \
+    cp -L /usr/lib/x86_64-linux-gnu/libstdc++.so.6 \
+        /runtime/usr/lib/x86_64-linux-gnu/libstdc++.so.6; \
+    cp -L /lib/x86_64-linux-gnu/libgcc_s.so.1 \
+        /runtime/usr/lib/x86_64-linux-gnu/libgcc_s.so.1; \
+    chown -R 1000:1000 \
+        /runtime/home/privcloud-sharing \
+        /runtime/opt/app/backend/data
 
-# NODE_ENV=docker is required by PrivCloud_Sharing: it controls paths,
-# backend port (8080) and the behavior of create-user.sh / entrypoint.sh.
+# ---------------------------
+# Stage 7: Shell-less distroless runtime
+# ---------------------------
+FROM gcr.io/distroless/base-nossl-debian13:latest@sha256:d3316ffea710b15ecd5ff0ca1d8b2b440225a7926c2e426403641ab60cea0b9b AS runner
+
 ENV NODE_ENV=docker
+ENV HOME=/home/privcloud-sharing
 
-# Proxy build-args : nécessaires pour apt-get (le stage runner est indépendant
-# de base, il n'hérite pas de ses ARG). Positionnés comme ENV temporairement
-# pour que apt-get puisse télécharger via Squid, puis écrasés à vide après
-# l'installation pour ne pas les embarquer dans l'image publiée.
-ARG HTTP_PROXY
-ARG HTTPS_PROXY
-ARG NO_PROXY=localhost,127.0.0.1,::1
-ENV HTTP_PROXY=${HTTP_PROXY}
-ENV HTTPS_PROXY=${HTTPS_PROXY}
-ENV http_proxy=${HTTP_PROXY}
-ENV https_proxy=${HTTPS_PROXY}
-ENV NO_PROXY=${NO_PROXY}
-
-# ======================================================================
-# INSTALLATION MINIMALE : uniquement ce qui est strictement nécessaire
-# au runtime de Node.js + create-user.sh + entrypoint.sh.
-# ======================================================================
-# ca-certificates  -> TLS pour les connexions HTTPS sortantes
-# libstdc++6       -> C++ runtime requis par Node.js
-# libssl3t64       -> OpenSSL 3.x partagé (Node.js link contre libssl.so.3)
-#                    (renommé libssl3 -> libssl3t64 dans Trixie pour time64)
-# ======================================================================
-# Déjà fournis par trixie-slim (Essential/Required) :
-#   libc6 (glibc 2.40+), libgcc-s1, zlib1g (1.3.1+), coreutils,
-#   findutils, dash (sh), login (nologin), sed, grep
-# passwd (groupadd, useradd) : installé si absent de minbase.
-# ======================================================================
-# APT_CACHE_BUST : changer cette valeur (ex: date du jour) pour forcer
-# Docker à invalider le cache apt et récupérer les derniers security fixes.
-# Usage : docker build --build-arg APT_CACHE_BUST=$(date +%Y%m%d) ...
-ARG APT_CACHE_BUST=1
-# checkov:skip=CKV_DOCKER_9:apt-get is the only package manager on Debian -
-# required to install runtime dependencies (ca-certificates, libstdc++6, libssl3t64).
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends \
-        ca-certificates libstdc++6 libssl3t64 && \
-    # passwd fournit groupadd/useradd pour create-user.sh
-    dpkg -l passwd 2>/dev/null | grep -q '^ii' || \
-        apt-get install -y --no-install-recommends passwd && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# CVE-2026-2673 (HIGH): overwrite Debian's OpenSSL 3.5.5 shared libraries
-# with OpenSSL 3.6.2 built from the openssl-3.6 branch (commit 2157c9d8).
-# Official 3.6.2 tag pending -- branch contains the identical fix code.
+COPY --from=runtime-layout /runtime/ /
 COPY --from=openssl-builder /usr/local/openssl/lib/libssl.so.3 /usr/lib/x86_64-linux-gnu/libssl.so.3
 COPY --from=openssl-builder /usr/local/openssl/lib/libcrypto.so.3 /usr/lib/x86_64-linux-gnu/libcrypto.so.3
-RUN ldconfig
-
-# Pas de variables proxy dans l'image publiée.
-# Les utilisateurs qui ont besoin d'un proxy au runtime peuvent
-# les définir dans docker-compose.yaml.
-ENV HTTP_PROXY=
-ENV HTTPS_PROXY=
-ENV http_proxy=
-ENV https_proxy=
-ENV NO_PROXY=
-
-# --- Node.js runtime (compiled from source with shared OpenSSL 3.6.2) ---
-# Links dynamically against libssl.so.3 / libcrypto.so.3 (our 3.6.2 build)
-# instead of embedding vulnerable OpenSSL 3.5.5 statically.
 COPY --from=node-builder /node-artifact/node /usr/local/bin/node
-# npm/npx intentionally absent from the published runtime image.
-# entrypoint.sh calls prisma directly through backend/node_modules/.bin and
-# then starts Node, which removes npm's bundled dependency tree from prod
-# scans (pacote, @npmcli/query, postcss-selector-parser, etc.).
-
-# gosu compilé depuis les sources avec Go 1.26.4 (binaire statique).
-COPY --from=gosu-builder /go/bin/gosu /usr/local/bin/gosu
-RUN chmod +x /usr/local/bin/gosu
-
-# ======================================================================
-# DURCISSEMENT AGRESSIF POST-INSTALL :
-# Supprimer tous les paquets non nécessaires au runtime.
-# Après cette étape, apt/dpkg ne seront plus utilisables.
-# ======================================================================
-# bash + ncurses     -> dash suffit (#!/bin/sh)
-# tar                -> non nécessaire au runtime
-# e2fsprogs, mount   -> outils filesystem non nécessaires
-# util-linux stack   -> bsdutils, util-linux(-extra), sysvinit-utils
-#                       -> libère libsystemd0, libudev1, libblkid1, libmount1
-# perl-base          -> seulement utilisé par dpkg
-# gpgv, gnutls chain -> seulement utilisés par apt (libgcrypt, libtasn1, etc.)
-# apt, dpkg          -> plus d'installations au runtime
-# ======================================================================
-# checkov:skip=CKV_DOCKER_9:apt-get is the only package manager on Debian -
-# used here solely to purge unnecessary packages before removing apt itself.
-RUN \
-    # Phase 1 : purge propre via apt (gère les dépendances)
-    apt-get update && \
-    apt-get purge -y --allow-remove-essential \
-        e2fsprogs logsave mount 2>/dev/null || true && \
-    apt-get autoremove -y --purge && \
-    apt-get clean && \
-    # Phase 2 : force-remove des paquets Essential non nécessaires
-    # bash + ncurses (élimine aussi libreadline si présent)
-    dpkg --purge --force-remove-essential --force-depends \
-        bash libncursesw6 libtinfo6 ncurses-base ncurses-bin 2>/dev/null || true && \
-    # bash t64 variants (Trixie transition)
-    dpkg --purge --force-remove-essential --force-depends \
-        libncursesw6t64 libtinfo6t64 2>/dev/null || true && \
-    # tar
-    dpkg --purge --force-remove-essential --force-depends tar 2>/dev/null || true && \
-    # util-linux stack -> libère les libs systemd/blkid/mount/smartcols
-    dpkg --purge --force-remove-essential --force-depends \
-        bsdutils util-linux util-linux-extra sysvinit-utils 2>/dev/null || true && \
-    # Try both traditional and t64 naming (Trixie transition)
-    dpkg --purge --force-depends \
-        libsystemd0 libsystemd0t64 \
-        libudev1 libudev1t64 \
-        libblkid1 libblkid1t64 \
-        libmount1 libmount1t64 \
-        libsmartcols1 libsmartcols1t64 2>/dev/null || true && \
-    # perl-base (dépendance de dpkg uniquement)
-    dpkg --purge --force-remove-essential --force-depends perl-base 2>/dev/null || true && \
-    # apt + gpgv + chaîne crypto (gnutls, gcrypt, tasn1, p11-kit, nettle)
-    # Include both traditional and t64 names
-    dpkg --purge --force-remove-essential --force-depends \
-        apt libapt-pkg6.0 libapt-pkg6.0t64 \
-        gpgv libgnutls30 libgnutls30t64 \
-        libgcrypt20 libgcrypt20t64 \
-        libtasn1-6 libtasn1-6t64 \
-        libhogweed6 libhogweed6t64 \
-        libnettle8 libnettle8t64 \
-        libp11-kit0 libp11-kit0t64 \
-        libffi8 libffi8t64 2>/dev/null || true && \
-    # dpkg lui-même (dernier à partir)
-    dpkg --purge --force-remove-essential --force-depends dpkg 2>/dev/null || true && \
-    # Nettoyage final : supprimer toutes les traces des package managers
-    rm -rf /var/lib/apt /var/cache/apt /etc/apt /var/lib/dpkg \
-           /tmp/* /root/.npm /root/.cache /root/.config /var/log
+COPY --from=runtime-init-builder /runtime-init /usr/local/bin/runtime-init
 
 
 # --- Frontend ---
@@ -540,8 +408,8 @@ COPY --chown=1000:1000 ./bridge/install ./public/install/companion/install
 COPY --chown=1000:1000 ./bridge/src/privcloud-bridge.mjs ./public/install/companion/privcloud-companion.mjs
 COPY --chown=1000:1000 ./bridge/package.json ./public/install/companion/package.json
 COPY --chown=1000:1000 ./bridge/README.md ./public/install/companion/README.md
-# Images par défaut copiées dans /tmp/img - create-user.sh les déplace
-# vers public/img avec les bonnes permissions au démarrage
+# runtime-init copies missing defaults as the final owner without overwriting
+# mounted custom images.
 COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/public/img /tmp/img
 
 # --- Backend ---
@@ -589,29 +457,12 @@ COPY --from=caddy-builder /usr/bin/caddy /usr/bin/caddy
 # --- Reverse proxy : Caddyfiles pré-patchés (sed dans le stage caddyfile-patcher) ---
 WORKDIR /opt/app
 COPY --chown=1000:1000 --from=caddyfile-patcher /opt/app/reverse-proxy /opt/app/reverse-proxy
-COPY --chown=1000:1000 ./scripts/docker ./scripts/docker
-
-# Ownership applicatif défini via COPY --chown=1000:1000 (build-time, zero-cost).
-# Les répertoires créés par WORKDIR restent root:root - on les chown (non-récursif).
-# /opt/app/backend/data : pré-créé pour Prisma SQLite (prisma migrate deploy
-# crée le fichier .db ici, mais ne peut pas mkdir si le parent est root).
-# Caddy home dirs: prevent cosmetic "permission denied" errors at startup
-# (config autosave + TLS storage lock). Created with build-time UID since
-# the runtime user does not exist yet.
-RUN mkdir -p /home/privcloud-sharing/.config/caddy \
-             /home/privcloud-sharing/.local/share/caddy \
-             /opt/app/backend/data && \
-    chown 1000:1000 /opt/app /opt/app/frontend /opt/app/backend \
-                    /opt/app/backend/data && \
-    chown -R 1000:1000 /home/privcloud-sharing
+COPY --chown=1000:1000 ./scripts/docker/entrypoint.mjs ./scripts/docker/entrypoint.mjs
 
 EXPOSE 3000
 
-# Healthcheck via Node.js fetch API - curl n'est plus disponible dans le runner.
-HEALTHCHECK --interval=10s --timeout=3s CMD sh -c \
-    'P=${BACKEND_PORT:-8080}; U="http://localhost:3000/api/health"; \
-    [ "$CADDY_DISABLED" = "true" ] && U="http://localhost:$P/api/health"; \
-    node -e "fetch(process.argv[1]).then(r=>r.ok||process.exit(1)).catch(()=>process.exit(1))" "$U"'
+HEALTHCHECK --interval=10s --timeout=3s CMD ["node", "-e", "const p=process.env.BACKEND_PORT||'8080';const u=process.env.CADDY_DISABLED==='true'?`http://127.0.0.1:${p}/api/health`:'http://127.0.0.1:3000/api/health';fetch(u).then(r=>r.ok||process.exit(1)).catch(()=>process.exit(1))"]
 
-ENTRYPOINT ["sh", "./scripts/docker/create-user.sh"]
-CMD ["sh", "./scripts/docker/entrypoint.sh"]
+USER 0
+ENTRYPOINT ["/usr/local/bin/runtime-init"]
+CMD ["node", "./scripts/docker/entrypoint.mjs"]

@@ -3,9 +3,9 @@
  *
  * A SINGLE Worker instance handles the entire upload [0, totalChunks).
  * Chunk 0 is sent sequentially to initialize the S3 multipart session.
- * Chunks 1..N are dispatched with a sliding window of MAX_PARALLEL (2)
- * concurrent requests, so the client sends chunk N+1 while chunk N is
- * still in transit to S3 on the backend.
+ * Chunk 0 negotiates the storage transport. S3-backed chunks 1..N are
+ * streamed through the backend with an adaptive sliding window; local
+ * storage stays sequential because it appends chunks in order.
  *
  * Backend safety net: a global semaphore in s3.service.ts caps total
  * in-flight UploadPart calls across all users (default 4, tunable with
@@ -14,11 +14,8 @@
  * with exponential backoff.
  *
  * Memory safety without recycling:
- * - E2E chunks capped at 25 MB: peak BackingStore = ~75 MB per chunk
- *   (plainBuf + ciphertext + combined, all null'd before next iteration).
- * - Natural GC yield: await fetch() suspends the Worker for ~0.4 s at
- *   500 Mbps.  V8's concurrent GC reclaims 75 MB in < 50 ms during that
- *   wait.  No explicit sleep() needed.
+ * - Large transport chunks contain independent 1 MB AES-GCM records.
+ * - The lane count is still bounded according to device memory.
  * - No controller.abort() on success: avoids stale AbortEvent dispatch.
  *
  * Protocol (main <-> worker):
@@ -95,6 +92,7 @@ async function runBatch(opts) {
   var chunkSize = opts.chunkSize;
   var totalChunks = opts.totalChunks;
   var isE2E = opts.isE2E;
+  var cryptoChunkSize = opts.cryptoChunkSize || chunkSize;
   var fileName = opts.fileName;
   var relativePath = opts.relativePath;
   var startChunk = opts.startChunk || 0;
@@ -148,39 +146,77 @@ async function runBatch(opts) {
   var MIN_CHUNK_INTERVAL_MS = opts.chunkSize >= 50000000 ? 0 : 50;
   var lastSendTime = 0;
 
-  // --- Chunk body preparation (extracted for overlap) ---
-  // Prepares a single chunk: slices the file and optionally encrypts.
+  // A transport chunk stays large for network/S3 efficiency, while E2E data
+  // is encoded as smaller independently authenticated AES-GCM records. This
+  // lets a slow recipient decrypt after a few MB without multiplying HTTP
+  // requests or S3 multipart parts.
   async function prepareChunkBody(idx) {
     var from = idx * chunkSize;
     var to = Math.min(from + chunkSize, file.size);
     if (isE2E && cryptoKey) {
-      var rawSlice = file.slice(from, to);
-      var plainBuf = await rawSlice.arrayBuffer();
-      rawSlice = null;
-      var iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
-      var ciphertext = await crypto.subtle.encrypt(
-        { name: "AES-GCM", iv: iv },
-        cryptoKey,
-        plainBuf
-      );
-      plainBuf = null;
-      // Uint8Array instead of Blob to avoid Chrome ERR_BLOB_OUT_OF_MEMORY
-      var combined = new Uint8Array(iv.byteLength + ciphertext.byteLength);
-      combined.set(iv, 0);
-      combined.set(new Uint8Array(ciphertext), iv.byteLength);
-      ciphertext = null;
-      iv = null;
+      var plainLength = to - from;
+      var recordCount = Math.ceil(plainLength / cryptoChunkSize);
+      var combined = new Uint8Array(plainLength + recordCount * 28);
+
+      // Two records per batch hide Blob/WebCrypto call latency while keeping
+      // peak memory close to the sequential path. Output offsets are stable,
+      // so parallel encryption cannot reorder records.
+      var cryptoParallel = hardwareConcurrency >= 4 ? 2 : 1;
+      for (var recordIndex = 0; recordIndex < recordCount; recordIndex += cryptoParallel) {
+        var tasks = [];
+        var batchEnd = Math.min(recordIndex + cryptoParallel, recordCount);
+        for (var current = recordIndex; current < batchEnd; current++) {
+          tasks.push((async function (currentRecord) {
+            var recordOffset = currentRecord * cryptoChunkSize;
+            var recordEnd = Math.min(recordOffset + cryptoChunkSize, plainLength);
+            var plainBuf = await file
+              .slice(from + recordOffset, from + recordEnd)
+              .arrayBuffer();
+            var iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+            var ciphertext = await crypto.subtle.encrypt(
+              { name: "AES-GCM", iv: iv },
+              cryptoKey,
+              plainBuf
+            );
+            var outputOffset = recordOffset + currentRecord * 28;
+            combined.set(iv, outputOffset);
+            combined.set(new Uint8Array(ciphertext), outputOffset + IV_LENGTH);
+          })(current));
+        }
+        await Promise.all(tasks);
+      }
       return combined;
     } else {
       return file.slice(from, to);
     }
   }
-  // ---- Parallel chunk dispatch ----
-  // Chunk 0 is sent sequentially (creates the S3 multipart session).
-  // Chunks 1..N are sent with a sliding window of MAX_PARALLEL in flight.
-  // The backend's global semaphore (4 slots) bounds S3 memory usage;
-  // the frontend caps per-file concurrency here.
+  // ---- Adaptive chunk dispatch ----
+  // Chunk 0 negotiates the transport with the backend. A legacy backend
+  // keeps the buffered two-lane behavior. S3 streaming can safely use more
+  // lanes, while local append-only storage explicitly returns one lane.
+  var uploadTransport = "stream";
   var MAX_PARALLEL = 2;
+  var deviceMemoryGb = self.navigator && self.navigator.deviceMemory
+    ? self.navigator.deviceMemory
+    : 0;
+  var hardwareConcurrency = self.navigator && self.navigator.hardwareConcurrency
+    ? self.navigator.hardwareConcurrency
+    : 2;
+  var browserParallelCap = isE2E
+    ? (deviceMemoryGb >= 8 || (!deviceMemoryGb && hardwareConcurrency >= 8)
+      ? 3
+      : (deviceMemoryGb >= 4 || hardwareConcurrency >= 4 ? 3 : 2))
+    : 4;
+  // Files around 1 TB require ~100 MB S3 transport chunks to stay below the
+  // multipart part-count ceiling. Keep the aggregate encrypted buffers bounded
+  // on the client while two large lanes are still enough to fill a 1 Gbps link.
+  if (isE2E && chunkSize >= 100000000) {
+    browserParallelCap = Math.min(
+      browserParallelCap,
+      deviceMemoryGb > 0 && deviceMemoryGb < 8 ? 1 : 2,
+    );
+  }
+  var serverParallelCap = 2;
 
   // ---- Token refresh dedup ----
   // Only one refresh runs at a time; parallel chunks reuse the result.
@@ -279,6 +315,7 @@ async function runBatch(opts) {
       var url = "/api/shares/" + encodeURIComponent(shareId) + "/files?";
       url += "chunkIndex=" + chunkIndex + "&totalChunks=" + totalChunks;
       url += "&chunkSize=" + chunkSize;
+      if (isE2E) url += "&encryptionChunkSize=" + cryptoChunkSize;
       if (fileId) url += "&id=" + encodeURIComponent(fileId);
 
       // Rate-limit guard
@@ -297,13 +334,17 @@ async function runBatch(opts) {
 
       try {
         var headers = {
-          "Content-Type": "application/octet-stream",
+          "Content-Type": uploadTransport === "stream"
+            ? "application/vnd.privcloud.chunk"
+            : "application/octet-stream",
           "X-File-Name": encodeURIComponent(fileName),
         };
         if (relativePath) {
           headers["X-File-Relative-Path"] = encodeURIComponent(relativePath);
         }
 
+        var bodyBytes = typeof body.size === "number" ? body.size : body.byteLength;
+        var transferStartedAt = performance.now();
         var response = await fetch(url, {
           method: "POST",
           headers: headers,
@@ -326,8 +367,24 @@ async function runBatch(opts) {
           }
           response = null;
 
+          // A legacy backend or an upstream WAF may reject the negotiated
+          // media type. Retry the same chunk on the buffered compatibility
+          // path so blue/green rollouts do not interrupt active uploads.
+          var contentLengthRejected = httpStatus === 400 && respData &&
+            typeof respData.message === "string" &&
+            respData.message.indexOf("Content-Length") !== -1;
+          if (uploadTransport === "stream" &&
+            (httpStatus === 415 || contentLengthRejected)) {
+            uploadTransport = "buffered";
+            MAX_PARALLEL = Math.min(MAX_PARALLEL, 2);
+            continue;
+          }
+
           // 429 -> server busy (S3 upload slots full), retry with backoff
           if (httpStatus === 429) {
+            // Back off the shared window immediately. Repeatedly resubmitting
+            // the same number of lanes only prolongs backend contention.
+            MAX_PARALLEL = Math.max(1, MAX_PARALLEL - 1);
             localRetries++;
             if (localRetries >= MAX_RETRIES) {
               self.postMessage({ type: "error", message: "Server busy after " + MAX_RETRIES + " retries", status: 429, data: null });
@@ -609,7 +666,23 @@ async function runBatch(opts) {
 
         // ---- Success ----
         var jsonResult = await response.json();
+        var transferSeconds = Math.max(
+          (performance.now() - transferStartedAt) / 1000,
+          0.001
+        );
+        var observedBps = bodyBytes / transferSeconds;
         response = null;
+
+        // The first chunk provides the initial estimate. Real chunks then
+        // refine it passively: increase one lane at a time only when the
+        // observed aggregate rate can use it. Slow links stay at one lane.
+        var aggregateBps = observedBps * MAX_PARALLEL;
+        if (chunkIndex > startChunk &&
+          uploadTransport === "stream" &&
+          MAX_PARALLEL < serverParallelCap &&
+          aggregateBps >= 30_000_000) {
+          MAX_PARALLEL++;
+        }
 
         fileId = jsonResult.id;
         localRetries = 0;
@@ -632,7 +705,12 @@ async function runBatch(opts) {
           totalChunks: totalChunks,
           fileId: fileId,
         });
-        return { ok: true };
+        return {
+          ok: true,
+          uploadTransport: jsonResult.uploadTransport,
+          uploadConcurrency: jsonResult.uploadConcurrency,
+          observedBps: observedBps,
+        };
       } catch (e) {
         clearTimeout(timer);
         body = null;
@@ -683,6 +761,22 @@ async function runBatch(opts) {
   // ---- Phase 1: chunk 0 sequential (initializes S3 multipart session) ----
   var result0 = await sendSingleChunk(startChunk);
   if (!result0.ok) return;
+
+  if (result0.uploadTransport === "stream") {
+    uploadTransport = "stream";
+  }
+  var serverParallel = Number(result0.uploadConcurrency);
+  if (Number.isFinite(serverParallel) && serverParallel >= 1) {
+    serverParallelCap = Math.min(Math.floor(serverParallel), browserParallelCap);
+    var firstBps = Number(result0.observedBps) || 0;
+    MAX_PARALLEL = firstBps >= 30_000_000
+      ? serverParallelCap
+      : firstBps >= 10_000_000
+        ? Math.min(3, serverParallelCap)
+        : firstBps >= 2_000_000
+          ? Math.min(2, serverParallelCap)
+          : 1;
+  }
 
   // ---- Phase 2: remaining chunks with sliding window ----
   var nextIdx = startChunk + 1;

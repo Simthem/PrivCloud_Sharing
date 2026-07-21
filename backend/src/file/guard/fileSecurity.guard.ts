@@ -61,6 +61,14 @@ export class FileSecurityGuard extends ShareSecurityGuard {
       throw new NotFoundException("File not found");
     }
 
+    // The controller can reuse the share already loaded for authorization.
+    // This avoids another database round-trip before opening the file stream.
+    (
+      request as Request & {
+        authorizedShare?: typeof share;
+      }
+    ).authorizedShare = share;
+
     if (share.teamFolderId) {
       await this.softAuthenticate(context);
       const user = request.user as User | undefined;
@@ -73,12 +81,9 @@ export class FileSecurityGuard extends ShareSecurityGuard {
           : undefined;
 
       if (fileId) {
-        await this._teamShareAccess.assertCanAccessFile(
-          shareId,
-          fileId,
-          user,
-          { allowPlatformAdmin },
-        );
+        await this._teamShareAccess.assertCanAccessFile(shareId, fileId, user, {
+          allowPlatformAdmin,
+        });
       } else {
         await this._teamShareAccess.assertCanAccessShare(shareId, user, {
           allowPlatformAdmin,

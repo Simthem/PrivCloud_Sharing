@@ -6,10 +6,11 @@ import { EmailModule } from "src/email/email.module";
 import { ConfigModule } from "src/config/config.module";
 import { FileModule } from "src/file/file.module";
 import { TeamNotificationModule } from "src/teamNotification/teamNotification.module";
+import { TeamAuditService } from "./team-audit.service";
 @Module({
   imports: [PrismaModule, EmailModule, ConfigModule, FileModule, TeamNotificationModule],
   controllers: [TeamController],
-  providers: [TeamService],
-  exports: [TeamService],
+  providers: [TeamService, TeamAuditService],
+  exports: [TeamService, TeamAuditService],
 })
 export class TeamModule {}

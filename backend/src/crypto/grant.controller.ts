@@ -278,7 +278,14 @@ export class AccessGrantController {
   async getTeamShares(
     @GetUser() user: User,
     @Param("teamId", SafeIdPipe) teamId: string,
+    @Query("receivedPage") receivedPage?: string,
+    @Query("sentPage") sentPage?: string,
+    @Query("limit") limit?: string,
   ) {
-    return this.grantService.getTeamShares(user.id, teamId);
+    return this.grantService.getTeamShares(user.id, teamId, {
+      receivedPage: receivedPage ? Number.parseInt(receivedPage, 10) : undefined,
+      sentPage: sentPage ? Number.parseInt(sentPage, 10) : undefined,
+      limit: limit ? Number.parseInt(limit, 10) : undefined,
+    });
   }
 }

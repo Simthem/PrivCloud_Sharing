@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnsupportedMediaTypeException,
 } from "@nestjs/common";
 import { LocalFileService } from "./local.service";
 import { S3FileService } from "./s3.service";
@@ -20,8 +21,9 @@ import {
 export class FileService {
   private readonly logger = new Logger(FileService.name);
 
-  // Tracks files currently being re-encrypted to prevent concurrent operations
-  private readonly reencryptingFiles = new Set<string>();
+  // Tracks the client session per file. The same session may restart at chunk
+  // zero after a broken upload, while a second tab remains blocked.
+  private readonly reencryptingFiles = new Map<string, string>();
 
   // Cache configured limits per share to avoid DB round-trips on every chunk.
   // Key: shareId, Value: { limit, ts }
@@ -62,6 +64,58 @@ export class FileService {
     },
     shareId: string,
     clientChunkSize?: number,
+    encryptionChunkSize?: number,
+  ) {
+    return this.createInternal(
+      data,
+      data.length,
+      false,
+      chunk,
+      file,
+      shareId,
+      clientChunkSize,
+      encryptionChunkSize,
+    );
+  }
+
+  async createStream(
+    data: Readable,
+    contentLength: number,
+    chunk: { index: number; total: number },
+    file: {
+      id?: string;
+      name: string;
+      relativePath?: string;
+    },
+    shareId: string,
+    clientChunkSize?: number,
+    encryptionChunkSize?: number,
+  ) {
+    return this.createInternal(
+      data,
+      contentLength,
+      true,
+      chunk,
+      file,
+      shareId,
+      clientChunkSize,
+      encryptionChunkSize,
+    );
+  }
+
+  private async createInternal(
+    data: Buffer | Readable,
+    chunkBytes: number,
+    streaming: boolean,
+    chunk: { index: number; total: number },
+    file: {
+      id?: string;
+      name: string;
+      relativePath?: string;
+    },
+    shareId: string,
+    clientChunkSize?: number,
+    encryptionChunkSize?: number,
   ) {
     // Validate display filename and optional logical folder path. Physical
     // storage still uses file.id only.
@@ -89,9 +143,11 @@ export class FileService {
       throw new BadRequestException("Share is already completed");
     }
 
-    const chunkBytes = Buffer.isBuffer(data)
-      ? data.length
-      : Buffer.byteLength(data, "base64");
+    const effectiveEncryptionChunkSize = share.isE2EEncrypted
+      ? (encryptionChunkSize ??
+        clientChunkSize ??
+        this.configService.get("share.chunkSize"))
+      : undefined;
 
     // When uploading via a reverse share, the configured limit owner is the
     // reverse share creator, not the possibly anonymous share creator.
@@ -126,22 +182,51 @@ export class FileService {
       );
     }
 
-    const storageService = this.getStorageService();
-    const result = await storageService.create(
-      data,
-      chunk,
-      file,
-      shareId,
-      clientChunkSize,
-      share,
-    );
+    const storageService = this.getStorageService(share.storageProvider);
+    const isS3 = storageService === this.s3FileService;
+    if (streaming && !isS3) {
+      throw new UnsupportedMediaTypeException(
+        "Streaming chunks are only available for S3-backed shares",
+      );
+    }
+
+    const result = isS3
+      ? await this.s3FileService.create(
+          data,
+          chunk,
+          file,
+          shareId,
+          clientChunkSize,
+          share,
+          effectiveLimit,
+          chunkBytes,
+          effectiveEncryptionChunkSize,
+        )
+      : await this.localFileService.create(
+          data as Buffer,
+          chunk,
+          file,
+          shareId,
+          clientChunkSize,
+          share,
+          effectiveLimit,
+          effectiveEncryptionChunkSize,
+        );
 
     // Invalidate configured limit cache when upload is complete.
     if (chunk.index === chunk.total - 1) {
       this.configuredLimitCache.delete(shareId);
     }
 
-    return result;
+    return {
+      ...result,
+      uploadTransport: isS3 ? "stream" : "buffered",
+      uploadConcurrency: isS3
+        ? this.s3FileService.getRecommendedUploadConcurrency(
+            !!share.isE2EEncrypted,
+          )
+        : 1,
+    };
   }
 
   /**
@@ -181,10 +266,12 @@ export class FileService {
    * Validates share ownership and E2E flag but skips uploadLocked and quota.
    */
   async replaceFileContent(
-    data: string,
+    data: Buffer,
     chunk: { index: number; total: number },
     fileId: string,
     shareId: string,
+    encryptionChunkSize?: number,
+    reencryptSessionId = "legacy",
   ) {
     const share = await this.prisma.share.findUnique({
       where: { id: shareId },
@@ -207,14 +294,15 @@ export class FileService {
     }
 
     // Prevent concurrent re-encryption of the same file
+    const activeSession = this.reencryptingFiles.get(fileId);
     if (chunk.index === 0) {
-      if (this.reencryptingFiles.has(fileId)) {
-        throw new BadRequestException(
-          "Re-encryption already in progress for this file",
+      if (activeSession && activeSession !== reencryptSessionId) {
+        this.logger.warn(
+          `Replacing stale re-encryption session: fileId=${fileId}`,
         );
       }
-      this.reencryptingFiles.add(fileId);
-    } else if (!this.reencryptingFiles.has(fileId)) {
+      this.reencryptingFiles.set(fileId, reencryptSessionId);
+    } else if (activeSession !== reencryptSessionId) {
       throw new BadRequestException(
         "No re-encryption session found for this file",
       );
@@ -222,13 +310,28 @@ export class FileService {
 
     try {
       const storageService = this.getStorageService(share.storageProvider);
-      await storageService.replace(data, chunk, fileId, shareId);
+      if (storageService === this.s3FileService) {
+        await this.s3FileService.replace(
+          data,
+          chunk,
+          fileId,
+          shareId,
+          encryptionChunkSize,
+        );
+      } else {
+        await this.localFileService.replace(
+          data,
+          chunk,
+          fileId,
+          shareId,
+          encryptionChunkSize,
+        );
+      }
     } catch (error) {
-      // Release lock immediately on ANY error so the client can retry
-      // from chunk 0 without being blocked by a stale lock.
-      this.reencryptingFiles.delete(fileId);
+      // Keep the session so a transient network/S3 failure can retry the same
+      // chunk. A deliberate restart at chunk zero replaces a stale session.
       this.logger.error(
-        `replaceFileContent failed: shareId=${shareId} fileId=${fileId} chunk=${chunk.index}/${chunk.total}`,
+        `replaceFileContent failed (session retained): shareId=${shareId} fileId=${fileId} chunk=${chunk.index}/${chunk.total}`,
         error instanceof Error ? error.stack : error,
       );
       throw error;
@@ -236,7 +339,9 @@ export class FileService {
 
     // Release lock on successful last chunk
     if (chunk.index === chunk.total - 1) {
-      this.reencryptingFiles.delete(fileId);
+      if (this.reencryptingFiles.get(fileId) === reencryptSessionId) {
+        this.reencryptingFiles.delete(fileId);
+      }
     }
   }
 
@@ -244,12 +349,21 @@ export class FileService {
     shareId: string,
     fileId: string,
     range?: { start: number; end: number },
+    storageProvider?: string,
   ): Promise<File> {
-    const share = await this.prisma.share.findFirst({
-      where: { id: shareId },
-    });
-    const storageService = this.getStorageService(share.storageProvider);
+    const storageService = storageProvider
+      ? this.getStorageService(storageProvider)
+      : await this.getShareStorageService(shareId);
     return storageService.get(shareId, fileId, range);
+  }
+
+  private async getShareStorageService(shareId: string) {
+    const share = await this.prisma.share.findUnique({
+      where: { id: shareId },
+      select: { storageProvider: true },
+    });
+    if (!share) throw new NotFoundException("Share not found");
+    return this.getStorageService(share.storageProvider);
   }
 
   async remove(shareId: string, fileId: string) {
@@ -320,7 +434,9 @@ export class FileService {
     const baseDir = path.resolve(dataDir);
     const filePath = path.resolve(dataDir, key);
     if (!filePath.startsWith(baseDir + path.sep)) {
-      throw new BadRequestException("Invalid storage key - path traversal detected");
+      throw new BadRequestException(
+        "Invalid storage key - path traversal detected",
+      );
     }
     return fs.readFile(filePath);
   }
@@ -343,7 +459,9 @@ export class FileService {
     const baseDir = path.resolve(dataDir);
     const filePath = path.resolve(dataDir, key);
     if (!filePath.startsWith(baseDir + path.sep)) {
-      throw new BadRequestException("Invalid storage key - path traversal detected");
+      throw new BadRequestException(
+        "Invalid storage key - path traversal detected",
+      );
     }
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, data);
@@ -359,6 +477,7 @@ export interface File {
     name: string;
     shareId: string;
     relativePath?: string | null;
+    encryptionChunkSize?: number | null;
   };
   file: Readable;
 }

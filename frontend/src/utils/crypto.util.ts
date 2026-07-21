@@ -74,8 +74,8 @@ export async function decryptFile(
   key: CryptoKey,
 ): Promise<ArrayBuffer> {
   const data = new Uint8Array(encrypted);
-  const iv = data.slice(0, IV_LENGTH);
-  const ciphertext = data.slice(IV_LENGTH);
+  const iv = data.subarray(0, IV_LENGTH);
+  const ciphertext = data.subarray(IV_LENGTH);
 
   return crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
 }
@@ -111,10 +111,10 @@ export async function decryptFileAuto(
   }
 
   // Tailles candidates : config d'abord, puis TOUS les multiples de 1 MB
-  // entre 5 MB et 200 MB (couvre les tailles adaptatives arbitraires des
-  // uploads existants et les futurs uploads quantifies a 5 MB).
+  // entre 1 MB et 200 MB (inclut les petits records crypto des nouveaux
+  // uploads et les tailles adaptatives historiques).
   const candidates: number[] = [plaintextChunkSize];
-  for (let mb = 5; mb <= 200; mb++) {
+  for (let mb = 1; mb <= 200; mb++) {
     candidates.push(mb * 1_000_000);
   }
   // Dédupliquer et ne garder que les tailles pertinentes
@@ -182,8 +182,9 @@ async function decryptPerChunk(
 /**
  * Async generator that reads an encrypted ReadableStream, auto-detects the
  * encryption chunk size, then yields decrypted Uint8Array chunks one at a
- * time.  Peak memory: ~1 encrypted chunk + 1 decrypted chunk (5-200 MB
- * depending on upload settings) instead of the entire file.
+ * time. Peak memory stays bounded to a few encrypted/decrypted records (1 MB
+ * for new uploads; legacy records can be larger). Network read-ahead runs
+ * while WebCrypto and disk writes process the previous record.
  *
  * Usage:
  *   for await (const plainChunk of decryptStream(body, key, cfg, totalLen)) {
@@ -195,146 +196,433 @@ export async function* decryptStream(
   key: CryptoKey,
   configChunkSize: number,
   totalEncryptedSize: number,
+  chunkSizeIsExact = false,
+  onChunkSizeResolved?: (_chunkSize: number) => void,
 ): AsyncGenerator<Uint8Array> {
   const reader = encryptedStream.getReader();
   try {
+    // --- Pre-allocated buffer ------------------------------------------------
+    // The old approach concatenated buf + fragment on EVERY reader.read(),
+    // which is O(n²) per encrypted chunk: for a 10 MB chunk with 64 KB
+    // network fragments, ~780 MB of memcpy per chunk.  On a 43 GB file
+    // that's 3+ TB of unnecessary copies.
+    //
+    // New approach: pre-allocate a buffer ≥ one encrypted chunk, append
+    // fragments with a simple .set() at the fill position (O(fragment)),
+    // and shift the remainder with .copyWithin() after each decrypt.
+    // Total copy per chunk ≈ chunkSize (unavoidable for WebCrypto) +
+    // a small remainder shift -- roughly 78× less than before.
+    const initialCap = Math.min(
+      configChunkSize + ENCRYPTION_OVERHEAD + 65536,
+      totalEncryptedSize + 1,
+    );
+    let buf = new Uint8Array(initialCap);
+    let bufLen = 0;
 
-  // --- Pre-allocated buffer ------------------------------------------------
-  // The old approach concatenated buf + fragment on EVERY reader.read(),
-  // which is O(n²) per encrypted chunk: for a 10 MB chunk with 64 KB
-  // network fragments, ~780 MB of memcpy per chunk.  On a 43 GB file
-  // that's 3+ TB of unnecessary copies.
-  //
-  // New approach: pre-allocate a buffer ≥ one encrypted chunk, append
-  // fragments with a simple .set() at the fill position (O(fragment)),
-  // and shift the remainder with .copyWithin() after each decrypt.
-  // Total copy per chunk ≈ chunkSize (unavoidable for WebCrypto) +
-  // a small remainder shift -- roughly 78× less than before.
-  const initialCap = Math.min(
-    configChunkSize + ENCRYPTION_OVERHEAD + 65536,
-    totalEncryptedSize + 1,
-  );
-  let buf = new Uint8Array(initialCap);
-  let bufLen = 0;
+    /** Append a network fragment to the pre-allocated buffer. */
+    const append = (data: Uint8Array) => {
+      const need = bufLen + data.length;
+      if (need > buf.length) {
+        const newCap = Math.max(buf.length * 2, need);
+        const grown = new Uint8Array(newCap);
+        if (bufLen > 0) grown.set(buf.subarray(0, bufLen));
+        buf = grown;
+      }
+      buf.set(data, bufLen);
+      bufLen += data.length;
+    };
 
-  /** Append a network fragment to the pre-allocated buffer. */
-  const append = (data: Uint8Array) => {
-    const need = bufLen + data.length;
-    if (need > buf.length) {
-      const newCap = Math.max(buf.length * 2, need);
-      const grown = new Uint8Array(newCap);
-      if (bufLen > 0) grown.set(buf.subarray(0, bufLen));
-      buf = grown;
+    /** Discard the first n bytes (shifts remainder with copyWithin). */
+    const consume = (n: number) => {
+      if (n >= bufLen) {
+        bufLen = 0;
+        return;
+      }
+      buf.copyWithin(0, n, bufLen);
+      bufLen -= n;
+    };
+
+    /** Return a standalone ArrayBuffer copy suitable for WebCrypto. */
+    const bufSlice = (start: number, end: number): ArrayBuffer => {
+      return buf.slice(start, end).buffer;
+    };
+
+    /** Read from the stream until we have at least minBytes buffered. */
+    const fillBuffer = async (minBytes: number): Promise<boolean> => {
+      while (bufLen < minBytes) {
+        const { done, value } = await reader.read();
+        if (done) return false;
+        append(value);
+      }
+      return true;
+    };
+
+    // --- Phase 1: resolve crypto record size ---
+    let detectedPlainSize = chunkSizeIsExact ? configChunkSize : -1;
+    if (!Number.isSafeInteger(configChunkSize) || configChunkSize <= 0) {
+      throw new Error("Invalid E2E encryption chunk size");
     }
-    buf.set(data, bufLen);
-    bufLen += data.length;
-  }
 
-  /** Discard the first n bytes (shifts remainder with copyWithin). */
-  const consume = (n: number) => {
-    if (n >= bufLen) { bufLen = 0; return; }
-    buf.copyWithin(0, n, bufLen);
-    bufLen -= n;
-  }
+    if (!chunkSizeIsExact) {
+      // Legacy files do not carry their record size. Preserve single-block
+      // compatibility, then probe plausible historical sizes.
+      if (totalEncryptedSize <= 200_000_000 + ENCRYPTION_OVERHEAD) {
+        await fillBuffer(totalEncryptedSize);
+        try {
+          const decrypted = await decryptFile(bufSlice(0, bufLen), key);
+          onChunkSizeResolved?.(decrypted.byteLength);
+          yield new Uint8Array(decrypted);
+          return;
+        } catch {
+          // Not single-block -- continue with multi-record detection.
+        }
+      }
 
-  /** Return a standalone ArrayBuffer copy suitable for WebCrypto. */
-  const bufSlice = (start: number, end: number): ArrayBuffer => {
-    return buf.slice(start, end).buffer;
-  }
+      const seen = new Set<number>();
+      const candidates: number[] = [];
+      for (const c of [
+        configChunkSize,
+        ...Array.from({ length: 200 }, (_, i) => (i + 1) * 1_000_000),
+      ]) {
+        if (!seen.has(c) && c + ENCRYPTION_OVERHEAD <= totalEncryptedSize) {
+          seen.add(c);
+          candidates.push(c);
+        }
+      }
 
-  /** Read from the stream until we have at least minBytes buffered. */
-  const fillBuffer = async (minBytes: number): Promise<boolean> => {
-    while (bufLen < minBytes) {
-      const { done, value } = await reader.read();
-      if (done) return false;
-      append(value);
+      for (const tryPlain of candidates) {
+        const tryEnc = tryPlain + ENCRYPTION_OVERHEAD;
+        const gotEnough = await fillBuffer(tryEnc);
+        if (!gotEnough && bufLen < tryEnc) continue;
+        try {
+          await decryptFile(bufSlice(0, tryEnc), key);
+          detectedPlainSize = tryPlain;
+          break;
+        } catch {
+          continue;
+        }
+      }
     }
-    return true;
-  }
 
-  // --- Phase 1: detect chunk size ---
-
-  // Small files (<=200 MB): try single-block first
-  if (totalEncryptedSize <= 200_000_000 + ENCRYPTION_OVERHEAD) {
-    await fillBuffer(totalEncryptedSize);
-    try {
-      const decrypted = await decryptFile(bufSlice(0, bufLen), key);
-      yield new Uint8Array(decrypted);
-      return;
-    } catch {
-      // Not single-block -- continue with multi-chunk detection
+    if (detectedPlainSize === -1) {
+      throw new Error("E2E decryption failed: no matching chunk size found");
     }
-  }
+    onChunkSizeResolved?.(detectedPlainSize);
 
-  // Build candidate list: config size first, then 5..200 MB in 1 MB steps
-  const seen = new Set<number>();
-  const candidates: number[] = [];
-  for (const c of [
-    configChunkSize,
-    ...Array.from({ length: 196 }, (_, i) => (i + 5) * 1_000_000),
-  ]) {
-    if (!seen.has(c) && c + ENCRYPTION_OVERHEAD <= totalEncryptedSize) {
-      seen.add(c);
-      candidates.push(c);
-    }
-  }
+    // --- Phase 2: stream-decrypt chunk by chunk ---
+    const encChunkSize = detectedPlainSize + ENCRYPTION_OVERHEAD;
+    // New uploads use 1 MB records. A small ordered crypto pipeline reduces
+    // per-record WebCrypto latency without increasing memory for legacy files
+    // whose records can be as large as 200 MB.
+    const decryptPipelineDepth = detectedPlainSize <= 2_000_000 ? 3 : 1;
+    const pendingDecrypts: Array<Promise<Uint8Array>> = [];
 
-  let detectedPlainSize = -1;
-  for (const tryPlain of candidates) {
-    const tryEnc = tryPlain + ENCRYPTION_OVERHEAD;
-    const gotEnough = await fillBuffer(tryEnc);
-    if (!gotEnough && bufLen < tryEnc) continue;
-    try {
-      await decryptFile(bufSlice(0, tryEnc), key);
-      detectedPlainSize = tryPlain;
-      break;
-    } catch {
-      continue;
-    }
-  }
+    let pendingFill: Promise<boolean> | null = null;
+    while (true) {
+      if (bufLen < encChunkSize) {
+        const gotEnough = await (pendingFill ?? fillBuffer(encChunkSize));
+        pendingFill = null;
+        if (!gotEnough && bufLen < encChunkSize) break;
+      }
 
-  if (detectedPlainSize === -1) {
-    throw new Error("E2E decryption failed: no matching chunk size found");
-  }
-
-  // --- Phase 2: stream-decrypt chunk by chunk ---
-  const encChunkSize = detectedPlainSize + ENCRYPTION_OVERHEAD;
-
-  // Process full chunks already buffered from detection phase
-  while (bufLen >= encChunkSize) {
-    const decrypted = await decryptFile(bufSlice(0, encChunkSize), key);
-    consume(encChunkSize);
-    yield new Uint8Array(decrypted);
-  }
-
-  // Continue reading from the stream
-  let streamDone = false;
-  while (!streamDone) {
-    const { done, value } = await reader.read();
-    if (done) {
-      streamDone = true;
-      break;
-    }
-    append(value);
-
-    while (bufLen >= encChunkSize) {
-      const decrypted = await decryptFile(bufSlice(0, encChunkSize), key);
+      const encryptedChunk = bufSlice(0, encChunkSize);
       consume(encChunkSize);
-      yield new Uint8Array(decrypted);
+
+      // Start receiving the next record before decrypting/yielding this one.
+      // Fetch backpressure still bounds memory to roughly two records.
+      pendingFill = fillBuffer(encChunkSize);
+      pendingDecrypts.push(
+        decryptFile(encryptedChunk, key).then(
+          (decrypted) => new Uint8Array(decrypted),
+        ),
+      );
+      if (pendingDecrypts.length >= decryptPipelineDepth) {
+        yield await pendingDecrypts.shift()!;
+      }
     }
-  }
 
-  // Final partial chunk (last chunk of the file, smaller than encChunkSize)
-  if (bufLen > ENCRYPTION_OVERHEAD) {
-    const decrypted = await decryptFile(bufSlice(0, bufLen), key);
-    yield new Uint8Array(decrypted);
-  }
+    if (pendingFill) await pendingFill;
 
+    // Final partial chunk (last chunk of the file, smaller than encChunkSize)
+    if (bufLen > ENCRYPTION_OVERHEAD) {
+      pendingDecrypts.push(
+        decryptFile(bufSlice(0, bufLen), key).then(
+          (decrypted) => new Uint8Array(decrypted),
+        ),
+      );
+    }
+
+    for (const decrypted of pendingDecrypts) {
+      yield await decrypted;
+    }
   } finally {
     // Release the stream reader to avoid connection leaks (TCP RST)
-    try { await reader.cancel(); } catch { /* stream already closed */ }
-    try { reader.releaseLock(); } catch { /* already released */ }
+    try {
+      await reader.cancel();
+    } catch {
+      /* stream already closed */
+    }
+    try {
+      reader.releaseLock();
+    } catch {
+      /* already released */
+    }
   }
+}
+
+export function getDecryptedStreamSize(
+  totalEncryptedSize: number,
+  plaintextChunkSize: number,
+): number {
+  if (
+    !Number.isSafeInteger(totalEncryptedSize) ||
+    totalEncryptedSize <= ENCRYPTION_OVERHEAD ||
+    !Number.isSafeInteger(plaintextChunkSize) ||
+    plaintextChunkSize <= 0
+  ) {
+    throw new Error("Invalid encrypted stream size");
+  }
+
+  const encryptedChunkSize = plaintextChunkSize + ENCRYPTION_OVERHEAD;
+  const fullChunks = Math.floor(totalEncryptedSize / encryptedChunkSize);
+  const remainder = totalEncryptedSize % encryptedChunkSize;
+  if (remainder > 0 && remainder <= ENCRYPTION_OVERHEAD) {
+    throw new Error("Truncated encrypted stream");
+  }
+
+  return (
+    fullChunks * plaintextChunkSize +
+    (remainder > 0 ? remainder - ENCRYPTION_OVERHEAD : 0)
+  );
+}
+
+export interface ReencryptStreamOptions {
+  encryptedStream: ReadableStream<Uint8Array>;
+  oldKey: CryptoKey;
+  newKey: CryptoKey;
+  sourceChunkSize: number;
+  sourceChunkSizeIsExact?: boolean;
+  totalEncryptedSize: number;
+  /** Plaintext bytes grouped into one HTTP/S3 multipart request. */
+  targetChunkSize: number;
+  /** Plaintext bytes authenticated by each independent AES-GCM record. */
+  targetRecordSize?: number;
+  maxChunks?: number;
+  maxTargetChunkSize?: number;
+  chunkSizeQuantum?: number;
+  signal?: AbortSignal;
+  uploadChunk: (
+    _encryptedChunk: ArrayBuffer,
+    _chunkIndex: number,
+    _totalChunks: number,
+    _plaintextChunkSize: number,
+  ) => Promise<void>;
+}
+
+export function computeReencryptChunkSize(
+  totalPlaintextSize: number,
+  minimumChunkSize: number,
+  maximumChunkSize: number,
+  maxChunks: number,
+  quantum = 1,
+): number {
+  if (
+    !Number.isSafeInteger(totalPlaintextSize) ||
+    totalPlaintextSize <= 0 ||
+    !Number.isSafeInteger(minimumChunkSize) ||
+    minimumChunkSize <= 0 ||
+    !Number.isSafeInteger(maximumChunkSize) ||
+    maximumChunkSize < minimumChunkSize ||
+    !Number.isSafeInteger(maxChunks) ||
+    maxChunks <= 0 ||
+    !Number.isSafeInteger(quantum) ||
+    quantum <= 0
+  ) {
+    throw new Error("Invalid re-encryption sizing parameters");
+  }
+
+  const required = Math.ceil(totalPlaintextSize / maxChunks);
+  const effective = Math.max(
+    minimumChunkSize,
+    Math.ceil(required / quantum) * quantum,
+  );
+  if (effective > maximumChunkSize) {
+    throw new Error("File is too large for multipart re-encryption");
+  }
+  return effective;
+}
+
+/**
+ * Re-encrypt a stream with bounded memory. Download/decryption of the next
+ * plaintext block overlaps the previous upload while uploads remain ordered.
+ */
+export async function reencryptStream({
+  encryptedStream,
+  oldKey,
+  newKey,
+  sourceChunkSize,
+  sourceChunkSizeIsExact = false,
+  totalEncryptedSize,
+  targetChunkSize,
+  targetRecordSize = targetChunkSize,
+  maxChunks = Number.MAX_SAFE_INTEGER,
+  maxTargetChunkSize = targetChunkSize,
+  chunkSizeQuantum = 1,
+  signal,
+  uploadChunk,
+}: ReencryptStreamOptions): Promise<{ bytes: number; chunks: number }> {
+  if (
+    !Number.isSafeInteger(targetChunkSize) ||
+    targetChunkSize <= 0 ||
+    !Number.isSafeInteger(targetRecordSize) ||
+    targetRecordSize <= 0 ||
+    targetRecordSize > targetChunkSize
+  ) {
+    throw new Error("Invalid re-encryption chunk size");
+  }
+
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+  };
+  let resolvedSourceChunkSize = 0;
+  const decrypted = decryptStream(
+    encryptedStream,
+    oldKey,
+    sourceChunkSize,
+    totalEncryptedSize,
+    sourceChunkSizeIsExact,
+    (resolved) => {
+      resolvedSourceChunkSize = resolved;
+    },
+  );
+
+  // Starting the iterator resolves legacy record sizing and yields the first
+  // record without materializing the remainder of the file.
+  const first = await decrypted.next();
+  if (first.done || resolvedSourceChunkSize <= 0) {
+    throw new Error("Encrypted stream has no content");
+  }
+
+  const expectedBytes = getDecryptedStreamSize(
+    totalEncryptedSize,
+    resolvedSourceChunkSize,
+  );
+  const effectiveTargetChunkSize = computeReencryptChunkSize(
+    expectedBytes,
+    targetChunkSize,
+    maxTargetChunkSize,
+    maxChunks,
+    chunkSizeQuantum,
+  );
+  const recordsPerTransportChunk = Math.max(
+    1,
+    Math.floor(effectiveTargetChunkSize / targetRecordSize),
+  );
+  const totalRecords = Math.ceil(expectedBytes / targetRecordSize);
+  const totalChunks = Math.ceil(totalRecords / recordsPerTransportChunk);
+  if (totalChunks > maxChunks) {
+    throw new Error("File is too large for multipart re-encryption");
+  }
+
+  // Crypto records stay small and independently authenticated. Multiple
+  // records are packed into one HTTP/S3 part to avoid thousands of fetch()
+  // request bodies during large rotations.
+  const recordBuffer = new Uint8Array(targetRecordSize);
+  let recordLength = 0;
+  const transportCapacity =
+    recordsPerTransportChunk * (targetRecordSize + ENCRYPTION_OVERHEAD);
+  let transportBuffer = new Uint8Array(transportCapacity);
+  let transportLength = 0;
+  let transportRecords = 0;
+  let processedBytes = 0;
+  let chunkIndex = 0;
+  let pendingUpload: Promise<{ error?: unknown }> | null = null;
+
+  const waitForPendingUpload = async () => {
+    if (!pendingUpload) return;
+    const result = await pendingUpload;
+    pendingUpload = null;
+    if (result.error) throw result.error;
+  };
+
+  const flushTransport = async () => {
+    if (transportLength === 0) return;
+    throwIfAborted();
+    await waitForPendingUpload();
+    const encrypted =
+      transportLength === transportBuffer.length
+        ? transportBuffer.buffer
+        : transportBuffer.slice(0, transportLength).buffer;
+    const currentIndex = chunkIndex++;
+    pendingUpload = uploadChunk(
+      encrypted,
+      currentIndex,
+      totalChunks,
+      targetRecordSize,
+    ).then(
+      () => ({}),
+      (error) => ({ error }),
+    );
+    transportBuffer = new Uint8Array(transportCapacity);
+    transportLength = 0;
+    transportRecords = 0;
+  };
+
+  const flushRecord = async () => {
+    if (recordLength === 0) return;
+    throwIfAborted();
+    const plaintext =
+      recordLength === recordBuffer.length
+        ? recordBuffer.buffer
+        : recordBuffer.slice(0, recordLength).buffer;
+    const encrypted = new Uint8Array(await encryptFile(plaintext, newKey));
+    transportBuffer.set(encrypted, transportLength);
+    transportLength += encrypted.length;
+    transportRecords++;
+    recordLength = 0;
+    if (transportRecords === recordsPerTransportChunk) {
+      await flushTransport();
+    }
+  };
+
+  const append = async (part: Uint8Array) => {
+    let sourceOffset = 0;
+    while (sourceOffset < part.length) {
+      throwIfAborted();
+      const copyLength = Math.min(
+        targetRecordSize - recordLength,
+        part.length - sourceOffset,
+      );
+      recordBuffer.set(
+        part.subarray(sourceOffset, sourceOffset + copyLength),
+        recordLength,
+      );
+      recordLength += copyLength;
+      processedBytes += copyLength;
+      sourceOffset += copyLength;
+      if (recordLength === targetRecordSize) await flushRecord();
+    }
+  };
+
+  try {
+    await append(first.value);
+    for await (const part of decrypted) await append(part);
+    await flushRecord();
+    await flushTransport();
+    await waitForPendingUpload();
+  } catch (error) {
+    try {
+      await decrypted.return(undefined);
+    } catch {
+      /* stream already closed */
+    }
+    throw error;
+  }
+
+  if (processedBytes !== expectedBytes || chunkIndex !== totalChunks) {
+    throw new Error("Re-encrypted stream size mismatch");
+  }
+  return { bytes: processedBytes, chunks: chunkIndex };
 }
 
 // ----- Stockage de la clé utilisateur (sessionStorage) ----------------------
@@ -459,8 +747,10 @@ export function storeShareKey(shareId: string, encodedKey: string): void {
 
 export function getStoredShareKey(shareId: string): string | null {
   try {
-    return localStorage.getItem(`${STORAGE_PREFIX}${shareId}`)
-      ?? localStorage.getItem(`${LEGACY_STORAGE_PREFIX}${shareId}`);
+    return (
+      localStorage.getItem(`${STORAGE_PREFIX}${shareId}`) ??
+      localStorage.getItem(`${LEGACY_STORAGE_PREFIX}${shareId}`)
+    );
   } catch {
     return null;
   }
@@ -603,8 +893,8 @@ const PASSKEY_STORAGE_KEY = "privcloud_passkey_wrapped_key";
 
 export interface PasskeyWrappedKey {
   credentialId: string; // base64url
-  wrappedKey: string;   // base64url - AES-KW(encodedKey) chiffré par PRF
-  salt: string;         // base64url - sel fixe lié à ce credential (32 octets)
+  wrappedKey: string; // base64url - AES-KW(encodedKey) chiffré par PRF
+  salt: string; // base64url - sel fixe lié à ce credential (32 octets)
 }
 
 /**
@@ -622,9 +912,14 @@ export async function isPasskeyPrfAvailable(): Promise<boolean> {
   if (typeof window === "undefined") return false;
   if (!window.PublicKeyCredential) return false;
   // Try getClientCapabilities() first (WebAuthn Level 3+) for a more precise check
-  if (typeof (window.PublicKeyCredential as any).getClientCapabilities === "function") {
+  if (
+    typeof (window.PublicKeyCredential as any).getClientCapabilities ===
+    "function"
+  ) {
     try {
-      const caps = await (window.PublicKeyCredential as any).getClientCapabilities();
+      const caps = await (
+        window.PublicKeyCredential as any
+      ).getClientCapabilities();
       if (caps && typeof caps["extension:prf"] === "boolean") {
         return caps["extension:prf"];
       }
@@ -632,9 +927,14 @@ export async function isPasskeyPrfAvailable(): Promise<boolean> {
       // Fallback to legacy check below
     }
   }
-  if (typeof window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== "function") return false;
+  if (
+    typeof window.PublicKeyCredential
+      .isUserVerifyingPlatformAuthenticatorAvailable !== "function"
+  )
+    return false;
   try {
-    const available = await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    const available =
+      await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
     return available;
   } catch {
     return false;
@@ -684,8 +984,8 @@ export async function saveKeyWithPasskey(
           displayName: userEmail,
         },
         pubKeyCredParams: [
-          { type: "public-key", alg: -7 },   // ES256 (ECDSA P-256)
-          { type: "public-key", alg: -257 },  // RS256 (RSA-PKCS1v15)
+          { type: "public-key", alg: -7 }, // ES256 (ECDSA P-256)
+          { type: "public-key", alg: -257 }, // RS256 (RSA-PKCS1v15)
         ],
         authenticatorSelection: {
           authenticatorAttachment: "platform",
@@ -706,7 +1006,9 @@ export async function saveKeyWithPasskey(
   }
 
   // Vérifier que l'authenticateur a bien retourné le PRF output
-  const ext = credential.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } };
+  const ext = credential.getClientExtensionResults() as {
+    prf?: { results?: { first?: ArrayBuffer } };
+  };
   const prfOutput = ext.prf?.results?.first;
   if (!prfOutput) {
     // L'authenticateur ne supporte pas l'extension PRF
@@ -726,7 +1028,12 @@ export async function saveKeyWithPasskey(
   const e2eKey = await importKeyFromBase64(encodedKey);
 
   // Wrapper avec AES-KW (RFC 3394)
-  const wrappedKeyBuffer = await crypto.subtle.wrapKey("raw", e2eKey, prfKey, "AES-KW");
+  const wrappedKeyBuffer = await crypto.subtle.wrapKey(
+    "raw",
+    e2eKey,
+    prfKey,
+    "AES-KW",
+  );
 
   // Persister en localStorage (cache local) + retourner pour sync serveur
   const stored: PasskeyWrappedKey = {
@@ -808,7 +1115,6 @@ export async function loadKeyWithPasskey(
 async function tryUnwrapWithCredential(
   stored: PasskeyWrappedKey,
 ): Promise<string | null> {
-
   const credentialId = base64UrlToArrayBuffer(stored.credentialId);
   const salt = base64UrlToArrayBuffer(stored.salt);
   const challenge = crypto.getRandomValues(new Uint8Array(32));
@@ -818,9 +1124,7 @@ async function tryUnwrapWithCredential(
     const raw = await navigator.credentials.get({
       publicKey: {
         challenge,
-        allowCredentials: [
-          { type: "public-key", id: credentialId },
-        ],
+        allowCredentials: [{ type: "public-key", id: credentialId }],
         userVerification: "required",
         extensions: {
           prf: {
@@ -835,7 +1139,9 @@ async function tryUnwrapWithCredential(
     return null;
   }
 
-  const ext = assertion.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } };
+  const ext = assertion.getClientExtensionResults() as {
+    prf?: { results?: { first?: ArrayBuffer } };
+  };
   const prfOutput = ext.prf?.results?.first;
   if (!prfOutput) return null;
 

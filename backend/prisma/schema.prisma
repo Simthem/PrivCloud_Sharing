@@ -32,32 +32,32 @@ model User {
   resetPasswordToken ResetPasswordToken?
 
   // E2E encryption: SHA-256 hex hash of the user's AES-256 key (never the key itself)
-  encryptionKeyHash  String?
+  encryptionKeyHash String?
 
-  oAuthUsers OAuthUser[]
-  pushSubscriptions PushSubscription[]
-  subscription Subscription?
+  oAuthUsers         OAuthUser[]
+  pushSubscriptions  PushSubscription[]
+  subscription       Subscription?
   bridgeUploadTokens BridgeUploadToken[]
 
   // Passkey-wrapped E2E keys for multi-device sync
   wrappedKeys WrappedKey[]
 
   // PDF Signing: documents created by this user
-  signatureDocuments SignatureDocument[]
+  signatureDocuments  SignatureDocument[]
   // PDF Signing: signing actions performed by this user
   signatureRecipients SignatureRecipient[]
 
   // Teams: memberships
   teamMemberships TeamMember[]
   // Teams: owned teams
-  ownedTeams Team[]
+  ownedTeams      Team[]
 
   // E2EE Identity layer (X25519 + Ed25519 key pairs)
-  identityKeys UserIdentityKey[]
+  identityKeys      UserIdentityKey[]
   // E2EE Access grants received (encrypted DEKs)
-  accessGrants AccessGrant[]
+  accessGrants      AccessGrant[]
   // E2EE Post-quantum keys (ML-KEM)
-  pqKeys UserPQKey[]
+  pqKeys            UserPQKey[]
   // Team notifications
   teamNotifications TeamNotification[]
 
@@ -67,8 +67,8 @@ model User {
 }
 
 model WrappedKey {
-  id           String   @id @default(uuid())
-  createdAt    DateTime @default(now())
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
 
   // WebAuthn credential ID (base64url)
   credentialId String
@@ -105,7 +105,7 @@ model RefreshToken {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  oauthIDToken  String? // prefixed with the ID of the issuing OAuth provider, separated by a colon
+  oauthIDToken String? // prefixed with the ID of the issuing OAuth provider, separated by a colon
 }
 
 model LoginToken {
@@ -139,11 +139,11 @@ model OAuthUser {
 }
 
 model TotpBackupCode {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
 
-  codeHash  String
-  usedAt    DateTime?
+  codeHash String
+  usedAt   DateTime?
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -164,8 +164,8 @@ model Share {
   senderName  String?
   senderEmail String?
 
-  notifyOnDownload         Boolean   @default(false)
-  lastDownloadNotifSentAt  DateTime?
+  notifyOnDownload        Boolean   @default(false)
+  lastDownloadNotifSentAt DateTime?
 
   creatorId String?
   creator   User?   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
@@ -173,13 +173,13 @@ model Share {
   reverseShareId String?
   reverseShare   ReverseShare? @relation(fields: [reverseShareId], references: [id], onDelete: Cascade)
 
-  security   ShareSecurity?
-  recipients ShareRecipient[]
-  files      File[]
+  security           ShareSecurity?
+  recipients         ShareRecipient[]
+  files              File[]
   bridgeUploadTokens BridgeUploadToken[]
-  downloadEvents DownloadEvent[]
-  storageProvider String @default("LOCAL")
-  isE2EEncrypted  Boolean @default(false)
+  downloadEvents     DownloadEvent[]
+  storageProvider    String              @default("LOCAL")
+  isE2EEncrypted     Boolean             @default(false)
 
   // E2EE access grants for this share.
   accessGrants AccessGrant[]
@@ -187,6 +187,9 @@ model Share {
   // Optional: share linked to a team folder
   teamFolderId String?
   teamFolder   TeamFolder? @relation(fields: [teamFolderId], references: [id], onDelete: SetNull)
+
+  @@index([teamFolderId, uploadLocked, createdAt])
+  @@index([creatorId, teamFolderId, uploadLocked])
 }
 
 model ReverseShare {
@@ -224,16 +227,21 @@ model File {
   id        String   @id @default(uuid())
   createdAt DateTime @default(now())
 
-  name         String
-  relativePath String?
-  size         String
+  name                String
+  relativePath        String?
+  size                String
+  // Plaintext bytes per independently authenticated AES-GCM record.
+  // Nullable keeps legacy E2E files compatible with chunk auto-detection.
+  encryptionChunkSize Int?
 
   shareId String
   share   Share  @relation(fields: [shareId], references: [id], onDelete: Cascade)
 
-  accessRules FileAccess[]
+  accessRules  FileAccess[]
   // E2EE access grants for this file.
   accessGrants AccessGrant[]
+
+  @@index([shareId])
 }
 
 model BridgeUploadToken {
@@ -321,15 +329,17 @@ model SignatureDocument {
   updatedAt DateTime @updatedAt
 
   // Original PDF file name
-  fileName String
+  fileName           String
   // Backward-compatible display title for existing deployments.
-  title String
+  title              String
   // Legacy storage key kept for databases created before originalFileKey.
-  fileKey String
+  fileKey            String
   // Storage path/key for the original PDF
-  originalFileKey String
+  originalFileKey    String
   // Storage path/key for the signed PDF (set after all signatures complete)
-  signedFileKey String?
+  signedFileKey      String?
+  // Storage path/key for the certificate page PDF
+  certificatePageKey String?
 
   // Document status: DRAFT | PENDING | COMPLETED | CANCELLED | EXPIRED
   status String @default("DRAFT")
@@ -343,6 +353,9 @@ model SignatureDocument {
   // Expiration for signing (after which the request is void)
   expiresAt DateTime?
 
+  // Completion timestamp
+  completedAt DateTime?
+
   // Whether to add "Bon pour Accord" diagonal watermark field
   addApprovalField Boolean @default(true)
 
@@ -352,14 +365,20 @@ model SignatureDocument {
   // Whether to add signers' initials at the bottom of every page
   addInitials Boolean @default(false)
 
+  // Page number (1-based) for signature placement (null = page 1)
+  signaturePage Int?
+
+  // Page number (1-based) for watermark placement (null = same as signaturePage)
+  watermarkPage Int?
+
   // Whether the original PDF is E2E encrypted (client-side finalization required)
   isE2EEncrypted Boolean @default(false)
 
   // Creator / requester
   // Legacy owner alias kept for databases created before creatorId.
-  ownerId String
+  ownerId   String
   creatorId String
-  creator   User @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  creator   User   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
 
   // Link to the original share (PDF must come from a share)
   shareId String?
@@ -371,7 +390,12 @@ model SignatureDocument {
 
   // Team context (optional - for team-scoped documents)
   teamId String?
-  team   Team?  @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  team   Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  // Set when the source file/share is detected as deleted.
+  fileDeletedAt DateTime?
+
+  @@index([teamId, createdAt])
 }
 
 // A person required to sign a document
@@ -411,8 +435,8 @@ model SignatureRecipient {
   // Identity verification for AES: OTP sent to email
   otpHash     String?
   otpSentAt   DateTime?
-  otpVerified Boolean @default(false)
-  otpFailures Int     @default(0)
+  otpVerified Boolean   @default(false)
+  otpFailures Int       @default(0)
 
   // IP address and user-agent at signing time (for audit)
   signingIp        String?
@@ -420,7 +444,7 @@ model SignatureRecipient {
 
   // Linked user (if the recipient is a registered user)
   userId String?
-  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   documentId String
   document   SignatureDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -556,26 +580,37 @@ model Team {
   isActive Boolean @default(true)
 
   // Limits (0 = unlimited)
-  maxMembers       Int    @default(0)
-  maxShareSize     BigInt @default(0)
+  maxMembers        Int    @default(0)
+  maxShareSize      BigInt @default(0)
   totalStorageLimit BigInt @default(0)
-  storageUsed      BigInt @default(0)
+  storageUsed       BigInt @default(0)
 
   // Owner
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
-  members          TeamMember[]
-  sharedFolders    TeamFolder[]
-  accessLogs       TeamAccessLog[]
-  invitations      TeamInvitation[]
+  members            TeamMember[]
+  sharedFolders      TeamFolder[]
+  accessLogs         TeamAccessLog[]
+  invitations        TeamInvitation[]
   signatureDocuments SignatureDocument[]
-  guestLinks       TeamGuestLink[]
+  guestLinks         TeamGuestLink[]
+  auditReports       TeamAuditReport[]
+  keyRotations       TeamKeyRotation[]
   // Team notification feed.
-  notifications    TeamNotification[]
+  notifications      TeamNotification[]
 
-  // Notification frequency for access reports: DAILY | WEEKLY | MONTHLY
-  reportFrequency String @default("WEEKLY")
+  // Automatic compliance report policy.
+  reportEnabled   Boolean @default(true)
+  // Kept compatible with existing DAILY values; the UI offers WEEKLY | MONTHLY.
+  reportFrequency String  @default("WEEKLY")
+
+  // E2EE team-key rotation policy. The server only orchestrates ciphertext.
+  keyVersion                Int       @default(1)
+  keyRotatedAt              DateTime?
+  keyRotationIntervalDays   Int       @default(90)
+  keyRotationReminderDays   Int       @default(7)
+  lastKeyRotationReminderAt DateTime?
 }
 
 model TeamMember {
@@ -597,7 +632,9 @@ model TeamMember {
 
   // E2E: K_team wrapped by this member's K_user (base64url).
   // The server never sees K_team in plaintext.
-  wrappedTeamKey String?
+  wrappedTeamKey   String?
+  teamKeyVersion   Int       @default(0)
+  teamKeyUpdatedAt DateTime?
 
   // Per-member feature access (controlled by OWNER/ADMIN)
   canViewActivity   Boolean @default(false)
@@ -639,12 +676,14 @@ model TeamFolder {
   teamId String
   team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  accessRules  TeamFolderAccess[]
-  files        TeamFile[]
-  accessLogs   TeamAccessLog[]
-  guestLinks   TeamGuestLink[]
-  shares       Share[]
+  accessRules   TeamFolderAccess[]
+  files         TeamFile[]
+  accessLogs    TeamAccessLog[]
+  guestLinks    TeamGuestLink[]
+  shares        Share[]
   notifications TeamNotification[]
+
+  @@index([teamId, parentId])
 }
 
 model TeamFolderAccess {
@@ -655,10 +694,10 @@ model TeamFolderAccess {
   permission String @default("READ")
 
   // Per-member granular overrides (derived from permission level)
-  canDownload Boolean @default(true)
-  canDelete   Boolean @default(true)
+  canDownload         Boolean @default(true)
+  canDelete           Boolean @default(true)
   canRequestSignature Boolean @default(false)
-  canShareE2E Boolean @default(false)
+  canShareE2E         Boolean @default(false)
 
   memberId String
   member   TeamMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -674,15 +713,15 @@ model FileAccess {
   createdAt DateTime @default(now())
 
   // Permission level: READ | WRITE | ADMIN
-  permission String @default("READ")
+  permission          String  @default("READ")
   canRequestSignature Boolean @default(false)
-  canShareE2E Boolean @default(false)
+  canShareE2E         Boolean @default(false)
 
   memberId String
   member   TeamMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   fileId String
-  file   File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  file   File   @relation(fields: [fileId], references: [id], onDelete: Cascade)
 
   @@unique([memberId, fileId])
 }
@@ -716,9 +755,9 @@ model TeamFile {
   folderId String
   folder   TeamFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
 
-  accessLogs TeamAccessLog[]
+  accessLogs    TeamAccessLog[]
   // E2EE access grants for this team file.
-  accessGrants AccessGrant[]
+  accessGrants  AccessGrant[]
   // Notifications related to this file.
   notifications TeamNotification[]
 }
@@ -739,8 +778,12 @@ model TeamAccessLog {
   userAgent String?
 
   // Affected resource
-  fileName String?
-  fileSize BigInt?
+  fileName   String?
+  fileSize   BigInt?
+  targetType String?
+  targetId   String?
+  // Structured JSON context. It must never contain E2EE key material.
+  metadata   String?
 
   teamId String
   team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
@@ -750,6 +793,60 @@ model TeamAccessLog {
 
   fileId String?
   file   TeamFile? @relation(fields: [fileId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, createdAt])
+  @@index([teamId, action, createdAt])
+}
+
+// Immutable snapshot of an automatic or manually requested Team audit report.
+model TeamAuditReport {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  frequency   String
+  periodStart DateTime
+  periodEnd   DateTime
+  status      String   @default("GENERATED") // GENERATED | SENT | FAILED
+
+  // JSON summary only; no file contents or E2EE secrets.
+  summary         String
+  recipientEmails String
+  sentAt          DateTime?
+  error           String?
+
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, frequency, periodStart, periodEnd])
+  @@index([teamId, createdAt])
+}
+
+// A resumable client-side Team key rotation. Only wrapped key material is stored.
+model TeamKeyRotation {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fromVersion Int
+  toVersion   Int
+  status      String @default("PREPARING") // PREPARING | REENCRYPTING | PAUSED | COMPLETED | CANCELLED
+  reason      String @default("MANUAL") // MANUAL | POLICY
+
+  startedById         String
+  initiatorWrappedKey String
+  totalFiles          Int       @default(0)
+  processedFiles      Int       @default(0)
+  failedFiles         Int       @default(0)
+  // JSON array of File IDs already re-encrypted, used to resume safely.
+  completedFileIds    String    @default("[]")
+  errorMessage        String?
+  completedAt         DateTime?
+
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, status])
+  @@index([teamId, createdAt])
 }
 
 model TeamInvitation {
@@ -784,21 +881,21 @@ model TeamGuestLink {
   id    String @id @default(uuid())
   token String @unique @default(uuid())
 
-  label      String?
-  permission String  @default("READ") // READ | WRITE
+  label        String?
+  permission   String  @default("READ") // READ | WRITE
   passwordHash String?
 
   maxDownloads  Int?
-  downloadCount Int @default(0)
+  downloadCount Int  @default(0)
 
   expiresAt DateTime?
-  isActive  Boolean @default(true)
+  isActive  Boolean   @default(true)
 
-  folderId    String
-  folder      TeamFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  folderId String
+  folder   TeamFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
 
-  teamId      String
-  team        Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   createdById String
   createdBy   TeamMember @relation(fields: [createdById], references: [id], onDelete: Cascade)
@@ -840,7 +937,7 @@ model UserIdentityKey {
   version Int @default(1)
 
   userId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, keyType, version])
   @@index([userId, keyType, isActive])
@@ -857,31 +954,33 @@ model AccessGrant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  encryptedFileKey String
+  encryptedFileKey   String
   ephemeralPublicKey String
-  nonce String
-  algorithm String @default("x25519-aes256gcm")
-  dekVersion Int @default(1)
-  status String @default("ACTIVE")
-  revokedAt DateTime?
+  nonce              String
+  algorithm          String    @default("x25519-aes256gcm")
+  dekVersion         Int       @default(1)
+  status             String    @default("ACTIVE")
+  revokedAt          DateTime?
 
   // User who created the grant.
   grantorId String
 
   // Recipient user.
   userId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   fileId String?
-  file   File? @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  file   File?   @relation(fields: [fileId], references: [id], onDelete: Cascade)
 
   teamFileId String?
   teamFile   TeamFile? @relation(fields: [teamFileId], references: [id], onDelete: Cascade)
 
   shareId String?
-  share   Share? @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  share   Share?  @relation(fields: [shareId], references: [id], onDelete: Cascade)
 
   @@index([userId, status])
+  @@index([userId, status, createdAt])
+  @@index([grantorId, status, createdAt])
   @@index([fileId, status])
   @@index([teamFileId, status])
   @@index([shareId, status])
@@ -896,15 +995,15 @@ model EnrollmentToken {
   id        String   @id @default(uuid())
   createdAt DateTime @default(now())
 
-  token String @unique
-  purpose String
-  metadata String?
-  status String @default("PENDING")
-  usedAt   DateTime?
-  usedById String?
+  token     String    @unique
+  purpose   String
+  metadata  String?
+  status    String    @default("PENDING")
+  usedAt    DateTime?
+  usedById  String?
   expiresAt DateTime
   creatorId String
-  teamId String?
+  teamId    String?
 
   @@index([token])
   @@index([teamId, status])
@@ -918,17 +1017,17 @@ model TeamNotification {
   id        String   @id @default(uuid())
   createdAt DateTime @default(now())
 
-  type String
-  title String
-  metadata String?
+  type              String
+  title             String
+  metadata          String?
   encryptedMetadata String?
-  isRead Boolean @default(false)
+  isRead            Boolean @default(false)
 
   userId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   teamId String
-  team   Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   teamFileId String?
   teamFile   TeamFile? @relation(fields: [teamFileId], references: [id], onDelete: SetNull)
@@ -951,14 +1050,14 @@ model UserPQKey {
   id        String   @id @default(uuid())
   createdAt DateTime @default(now())
 
-  variant String @default("ML-KEM-768")
-  publicKey String
+  variant             String  @default("ML-KEM-768")
+  publicKey           String
   encryptedPrivateKey String
-  version Int @default(1)
-  isActive Boolean @default(true)
+  version             Int     @default(1)
+  isActive            Boolean @default(true)
 
   userId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, version])
   @@index([userId, isActive])

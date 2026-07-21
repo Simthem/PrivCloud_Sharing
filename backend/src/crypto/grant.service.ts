@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "src/prisma/prisma.service";
 import { CreateAccessGrantDTO, BulkCreateGrantsDTO } from "./dto/crypto.dto";
 
@@ -81,6 +82,13 @@ export class AccessGrantService {
         },
       });
 
+      void this.logTeamGrantEvent(
+        grantorId,
+        dto,
+        "E2E_SHARE",
+        updated.id,
+      );
+
       return { id: updated.id, action: "updated", dekVersion: updated.dekVersion };
     }
 
@@ -105,6 +113,8 @@ export class AccessGrantService {
       `Grant created: ${grant.id} for user ${dto.recipientUserId} ` +
         `(file=${dto.fileId || dto.teamFileId || "share:" + dto.shareId})`,
     );
+
+    void this.logTeamGrantEvent(grantorId, dto, "E2E_SHARE", grant.id);
 
     return { id: grant.id, action: "created", dekVersion: grant.dekVersion };
   }
@@ -282,8 +292,98 @@ export class AccessGrantService {
       data: { status: "REVOKED", revokedAt: new Date() },
     });
 
+    void this.logTeamGrantEvent(
+      revokerId,
+      {
+        recipientUserId: grant.userId,
+        fileId: grant.fileId || undefined,
+        teamFileId: grant.teamFileId || undefined,
+        shareId: grant.shareId || undefined,
+      },
+      "E2E_GRANT_REVOKED",
+      grant.id,
+    );
+
     this.logger.log(`Grant revoked: ${grantId} by ${revokerId}`);
     return { id: grantId, status: "REVOKED" };
+  }
+
+  private async logTeamGrantEvent(
+    actorId: string,
+    target: {
+      recipientUserId: string;
+      fileId?: string;
+      teamFileId?: string;
+      shareId?: string;
+    },
+    action: string,
+    grantId: string,
+  ) {
+    try {
+      let teamId: string | null = null;
+      let folderId: string | null = null;
+      let fileName: string | null = null;
+
+      if (target.teamFileId) {
+        const file = await this.prisma.teamFile.findUnique({
+          where: { id: target.teamFileId },
+          select: {
+            name: true,
+            folderId: true,
+            folder: { select: { teamId: true } },
+          },
+        });
+        teamId = file?.folder.teamId || null;
+        folderId = file?.folderId || null;
+        fileName = file?.name || null;
+      } else if (target.fileId) {
+        const file = await this.prisma.file.findUnique({
+          where: { id: target.fileId },
+          select: {
+            name: true,
+            share: { select: { teamFolderId: true, teamFolder: { select: { teamId: true } } } },
+          },
+        });
+        teamId = file?.share.teamFolder?.teamId || null;
+        folderId = file?.share.teamFolderId || null;
+        fileName = file?.name || null;
+      } else if (target.shareId) {
+        const share = await this.prisma.share.findUnique({
+          where: { id: target.shareId },
+          select: {
+            name: true,
+            teamFolderId: true,
+            teamFolder: { select: { teamId: true } },
+          },
+        });
+        teamId = share?.teamFolder?.teamId || null;
+        folderId = share?.teamFolderId || null;
+        fileName = share?.name || null;
+      }
+
+      if (!teamId) return;
+      const actor = await this.prisma.user.findUnique({
+        where: { id: actorId },
+        select: { email: true, username: true },
+      });
+      await this.prisma.teamAccessLog.create({
+        data: {
+          teamId,
+          action,
+          actorEmail: actor?.email || actorId,
+          actorName: actor?.username,
+          folderId,
+          fileName,
+          targetType: "ACCESS_GRANT",
+          targetId: grantId,
+          metadata: JSON.stringify({ recipientUserId: target.recipientUserId }),
+        },
+      });
+    } catch (error) {
+      this.logger.error?.(
+        `Failed to write Team grant audit event: ${(error as Error).message}`,
+      );
+    }
   }
 
   /**
@@ -356,21 +456,45 @@ export class AccessGrantService {
    * scoped to team files within a specific team.
    * Supports both teamFileId-based grants AND fileId-based grants (via Share → teamFolder).
    */
-  async getTeamShares(userId: string, teamId: string) {
+  async getTeamShares(
+    userId: string,
+    teamId: string,
+    options: { receivedPage?: number; sentPage?: number; limit?: number } = {},
+  ) {
     await this.ensureActiveTeamMembership(userId, teamId);
+
+    const receivedPage = Number.isFinite(options.receivedPage) && (options.receivedPage || 0) > 0
+      ? Math.floor(options.receivedPage as number)
+      : 1;
+    const sentPage = Number.isFinite(options.sentPage) && (options.sentPage || 0) > 0
+      ? Math.floor(options.sentPage as number)
+      : 1;
+    const limit = Number.isFinite(options.limit) && (options.limit || 0) > 0
+      ? Math.min(Math.floor(options.limit as number), 100)
+      : 25;
+
+    const receivedWhere: Prisma.AccessGrantWhereInput = {
+      userId,
+      status: "ACTIVE",
+      OR: [
+        { teamFile: { folder: { teamId } } },
+        { file: { share: { teamFolder: { teamId } } } },
+      ],
+    };
+    const sentWhere: Prisma.AccessGrantWhereInput = {
+      grantorId: userId,
+      status: "ACTIVE",
+      OR: [
+        { teamFile: { folder: { teamId } } },
+        { file: { share: { teamFolder: { teamId } } } },
+      ],
+    };
 
     // Received: grants where I'm the recipient, in this team
     // Case 1: via teamFile.folder.teamId
     // Case 2: via file.share.teamFolder.teamId
-    const received = await this.prisma.accessGrant.findMany({
-      where: {
-        userId,
-        status: "ACTIVE",
-        OR: [
-          { teamFile: { folder: { teamId } } },
-          { file: { share: { teamFolder: { teamId } } } },
-        ],
-      },
+    const receivedQuery = this.prisma.accessGrant.findMany({
+      where: receivedWhere,
       select: {
         id: true,
         createdAt: true,
@@ -403,18 +527,13 @@ export class AccessGrantService {
         },
       },
       orderBy: { createdAt: "desc" },
+      skip: (receivedPage - 1) * limit,
+      take: limit,
     });
 
     // Sent: grants where I'm the grantor, in this team
-    const sent = await this.prisma.accessGrant.findMany({
-      where: {
-        grantorId: userId,
-        status: "ACTIVE",
-        OR: [
-          { teamFile: { folder: { teamId } } },
-          { file: { share: { teamFolder: { teamId } } } },
-        ],
-      },
+    const sentQuery = this.prisma.accessGrant.findMany({
+      where: sentWhere,
       select: {
         id: true,
         createdAt: true,
@@ -447,7 +566,16 @@ export class AccessGrantService {
         },
       },
       orderBy: { createdAt: "desc" },
+      skip: (sentPage - 1) * limit,
+      take: limit,
     });
+
+    const [received, sent, receivedTotal, sentTotal] = await Promise.all([
+      receivedQuery,
+      sentQuery,
+      this.prisma.accessGrant.count({ where: receivedWhere }),
+      this.prisma.accessGrant.count({ where: sentWhere }),
+    ]);
 
     // Resolve user names for display
     const grantorIds = [...new Set(received.map((g) => g.grantorId))];
@@ -498,6 +626,20 @@ export class AccessGrantService {
         recipient: userMap[g.userId] || { username: "Inconnu", email: "" },
         fileInfo: normalizeGrant(g),
       })),
+      pagination: {
+        received: {
+          page: receivedPage,
+          limit,
+          total: receivedTotal,
+          totalPages: Math.ceil(receivedTotal / limit),
+        },
+        sent: {
+          page: sentPage,
+          limit,
+          total: sentTotal,
+          totalPages: Math.ceil(sentTotal / limit),
+        },
+      },
     };
   }
 

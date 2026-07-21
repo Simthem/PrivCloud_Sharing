@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import { useState, useEffect } from "react";
+import "@mantine/core/styles/Timeline.css";
 import {
   ActionIcon,
   Alert,
@@ -28,17 +29,26 @@ import {
   TbDownload,
   TbFileDescription,
   TbFileOff,
+  TbArrowLeft,
   TbLink,
   TbLock,
   TbMail,
+  TbQrcode,
   TbShieldCheck,
   TbX,
 } from "react-icons/tb";
 import { useIntl } from "react-intl";
+import { useModals } from "@mantine/modals";
 import Meta from "../../components/Meta";
 import signingService from "../../services/signing.service";
 import shareService from "../../services/share.service";
 import teamService from "../../services/team.service";
+import {
+  embedPadesCms,
+  preparePadesPdf,
+  sha256Hex,
+} from "../../services/pades-client.service";
+import showQrCodeModal from "../../components/core/showQrCodeModal";
 import toast from "../../utils/toast.util";
 import useUser from "../../hooks/user.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
@@ -76,6 +86,7 @@ const statusKeyMap: Record<string, string> = {
 const SigningDetailPage = () => {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const modals = useModals();
   const { user } = useUser();
   const docId = router.query.id as string;
   const isMobile = useMediaQuery("(max-width: 680px)");
@@ -125,8 +136,8 @@ const SigningDetailPage = () => {
   const typedDoc = doc as any;
 
   // Resolve E2E key when document is E2E encrypted
-  // Path 1: team folder → unwrap team key
-  // Path 2: non-team share → resolve via share's e2e-key endpoint (K_master or unwrap reverse share key)
+  // Path 1: team folder -> unwrap team key
+  // Path 2: non-team share -> resolve via share's e2e-key endpoint (K_master or unwrap reverse share key)
   useEffect(() => {
     if (!typedDoc?.isE2EEncrypted) return;
     if (e2eKeyB64) return; // already resolved
@@ -140,14 +151,14 @@ const SigningDetailPage = () => {
         const masterKey = await importKeyFromBase64(userKeyB64);
 
         if (typedDoc.teamId) {
-          // Path 1: Team folder → derive from team key
+          // Path 1: Team folder -> derive from team key
           const { wrappedTeamKey } = await teamService.getTeamKey(typedDoc.teamId);
           if (!wrappedTeamKey) return;
           const teamKey = await unwrapReverseShareKey(wrappedTeamKey, masterKey);
           const keyB64 = await exportKeyToBase64(teamKey);
           setE2eKeyB64(keyB64);
         } else if (typedDoc.shareId) {
-          // Path 2: Non-team share → use master key or unwrap reverse share key
+          // Path 2: Non-team share -> use master key or unwrap reverse share key
           const encryptedKey = await shareService.getEncryptedE2eKey(typedDoc.shareId);
           if (encryptedKey) {
             // Reverse share: unwrap the share key with master key
@@ -185,9 +196,9 @@ const SigningDetailPage = () => {
   // E2E finalization:
   //   1. Decrypt original PDF
   //   2. Apply visual signatures (pdf-lib)
-  //   3. Send plain PDF to backend for certificate page + PAdES crypto signature
-  //   4. Re-encrypt the PAdES-signed result
-  //   5. Upload encrypted PDF for storage
+  //   3. Append the certificate page and prepare the PAdES ByteRange client-side
+  //   4. Send only the SHA-256 digest and embed the returned CMS client-side
+  //   5. Re-encrypt before uploading the final PDF
   const handleFinalizeE2E = async () => {
     if (!e2eKeyB64 || !docId) return;
     setFinalizing(true);
@@ -215,28 +226,38 @@ const SigningDetailPage = () => {
       const signatureFields = (sigData.fields || []).filter(
         (field: any) => field.type === "SIGNATURE",
       );
+
+      // Resolve target pages (1-based from backend, default page 1)
+      const sigPageIdx = (sigData.signaturePage ?? 1) - 1;
+      const wmPageIdx = sigData.addApprovalField
+        ? (sigData.watermarkPage ?? sigData.signaturePage ?? 1) - 1
+        : sigPageIdx;
       const maxFieldPageIdx = [...textFields, ...signatureFields].reduce(
         (max: number, field: any) => Math.max(max, (field.page ?? 1) - 1),
         -1,
       );
-      if (maxFieldPageIdx >= pdfDoc.getPageCount()) {
+
+      // Add blank pages if needed
+      const maxPageIdx = Math.max(sigPageIdx, wmPageIdx, maxFieldPageIdx);
+      const pagesToAdd = maxPageIdx + 1 - pdfDoc.getPageCount();
+      if (pagesToAdd > 0) {
         const [w, h] = pdfDoc.getPageCount() > 0
           ? [pdfDoc.getPage(0).getSize().width, pdfDoc.getPage(0).getSize().height]
           : [595, 842];
-        for (let i = pdfDoc.getPageCount(); i <= maxFieldPageIdx; i++) {
+        for (let i = 0; i < pagesToAdd; i++) {
           pdfDoc.addPage([w, h]);
         }
       }
-      const pages = pdfDoc.getPages();
-      const firstPage = pages[0];
-      const lastPage = pages[pages.length - 1];
-      const { width, height } = firstPage.getSize();
+      const allPages = pdfDoc.getPages();
+      const sigPage = allPages[sigPageIdx];
+      const wmPage = sigData.addApprovalField ? allPages[wmPageIdx] : undefined;
 
-      // Add "Bon pour Accord" diagonal watermark on FIRST page if enabled
-      if (sigData.addApprovalField) {
-        firstPage.drawText("Bon pour Accord", {
-          x: width * 0.12,
-          y: height * 0.38,
+      // Add "Bon pour Accord" diagonal watermark on target page if enabled
+      if (sigData.addApprovalField && wmPage) {
+        const { width: wmWidth, height: wmHeight } = wmPage.getSize();
+        wmPage.drawText("Bon pour Accord", {
+          x: wmWidth * 0.12,
+          y: wmHeight * 0.38,
           size: 60,
           font: fontBold,
           color: rgb(0.5, 0.75, 0.5),
@@ -258,7 +279,7 @@ const SigningDetailPage = () => {
               .join("")
           )
           .join(" / ");
-        for (const page of pages) {
+        for (const page of allPages) {
           const { width: pw } = page.getSize();
           page.drawText(initialsText, {
             x: pw - 60,
@@ -319,7 +340,7 @@ const SigningDetailPage = () => {
 
       // Draw filled text/approval/date fields before signatures.
       for (const field of textFields) {
-        const page = pages[Math.max(0, (field.page ?? 1) - 1)];
+        const page = allPages[Math.max(0, (field.page ?? 1) - 1)];
         if (!page) continue;
         const { width: pageWidth, height: pageHeight } = page.getSize();
         const boxWidth = Math.min(Math.max(field.width || 200, 80), pageWidth);
@@ -328,10 +349,10 @@ const SigningDetailPage = () => {
         const y = Math.min(Math.max(field.posY || 0, 0), pageHeight - boxHeight);
         const title =
           field.type === "APPROVAL"
-            ? "Required mention"
+            ? "Mention manuscrite"
             : field.type === "DATE"
               ? "Date"
-              : field.label || "Text";
+              : field.label || "Texte";
 
         for (const fieldValue of field.fieldValues || []) {
           const paddingX = 6;
@@ -408,20 +429,20 @@ const SigningDetailPage = () => {
           signatureFields.find((field: any) => field.assignedRecipientId === sig.id) ||
           signatureFields.find((field: any) => !field.assignedRecipientId);
         const targetPage = signatureField
-          ? pages[Math.max(0, (signatureField.page ?? 1) - 1)]
-          : lastPage;
-        const { width: pageWidth, height: pageHeight } = targetPage.getSize();
+          ? allPages[Math.max(0, (signatureField.page ?? 1) - 1)]
+          : sigPage;
+        const { width: sigW, height: sigH } = targetPage.getSize();
         const boxWidth = signatureField
-          ? Math.min(Math.max(signatureField.width || 240, 120), pageWidth)
+          ? Math.min(Math.max(signatureField.width || 240, 120), sigW)
           : 240;
         const boxHeight = signatureField
-          ? Math.min(Math.max(signatureField.height || (addMention ? 90 : 70), 50), pageHeight)
+          ? Math.min(Math.max(signatureField.height || (addMention ? 90 : 70), 50), sigH)
           : addMention ? 90 : 70;
         const boxX = signatureField
-          ? Math.min(Math.max(signatureField.posX || 0, 0), pageWidth - boxWidth)
-          : pageWidth - 250;
+          ? Math.min(Math.max(signatureField.posX || 0, 0), sigW - boxWidth)
+          : sigW - 250;
         const boxY = signatureField
-          ? Math.min(Math.max(signatureField.posY || 0, 0), pageHeight - boxHeight)
+          ? Math.min(Math.max(signatureField.posY || 0, 0), sigH - boxHeight)
           : yOffset;
         const paddingX = 8;
         const paddingY = 8;
@@ -469,8 +490,8 @@ const SigningDetailPage = () => {
           boxHeight,
           contentWidth,
           contentHeight,
-          pageWidth,
-          pageHeight,
+          pageWidth: sigW,
+          pageHeight: sigH,
         });
         const innerX = contentPosition.x + paddingX;
         const imageY = contentPosition.y + paddingY;
@@ -516,16 +537,26 @@ const SigningDetailPage = () => {
       // 5. Save PDF with visual signatures
       const visuallySignedPdf = await pdfDoc.save();
 
-      // 6. Send to backend for certificate page + PAdES cryptographic signature
-      const padesSignedPdf = await signingService.signE2EPdf(
+      // 6. Ask the backend for the standalone certificate page using only a hash
+      const visualPdfHash = await sha256Hex(visuallySignedPdf);
+      const certificatePage = await signingService.getE2ECertificatePage(
         docId,
-        visuallySignedPdf.buffer as ArrayBuffer,
+        visualPdfHash,
       );
 
-      // 7. Re-encrypt the PAdES-signed PDF
-      const reEncrypted = await encryptFile(padesSignedPdf, cryptoKey);
+      // 7. Prepare ByteRange locally, sign only its digest, then embed the CMS locally
+      const preparedPdf = await preparePadesPdf(visuallySignedPdf, certificatePage);
+      const cms = await signingService.signE2EDigest(docId, preparedPdf.digest);
+      const padesSignedPdf = embedPadesCms(preparedPdf.bytes, cms);
 
-      // 8. Upload encrypted final PDF for storage
+      // 8. Re-encrypt the PAdES-signed PDF before any file upload
+      const padesSignedBuffer = padesSignedPdf.buffer.slice(
+        padesSignedPdf.byteOffset,
+        padesSignedPdf.byteOffset + padesSignedPdf.byteLength,
+      ) as ArrayBuffer;
+      const reEncrypted = await encryptFile(padesSignedBuffer, cryptoKey);
+
+      // 9. Upload encrypted final PDF for storage
       await signingService.finalizeE2E(docId, reEncrypted);
 
       queryClient.invalidateQueries({ queryKey: ["signing.document", docId] });
@@ -579,7 +610,7 @@ const SigningDetailPage = () => {
 
   if (isLoading) {
     return (
-      <Container size="md" mt="xl" px={0}>
+      <Container size="md" px={0}>
         <Box ta="center" py="xl"><Loader /></Box>
       </Container>
     );
@@ -587,7 +618,7 @@ const SigningDetailPage = () => {
 
   if (!doc) {
     return (
-      <Container size="md" mt="xl" px={0}>
+      <Container size="md" px={0}>
         <Alert color="red">{t("signing.detail.not-found")}</Alert>
       </Container>
     );
@@ -600,8 +631,13 @@ const SigningDetailPage = () => {
   return (
     <>
       <Meta title={`${t("signing.title")} - ${typedDoc.fileName || typedDoc.title || t("signing.document")}`} />
-      <Container size="md" mt="xl" px={0}>
-        <Button variant="subtle" mb="md" onClick={() => router.push("/signing")}>
+      <Container size="md" px={0}>
+        <Button
+          variant="subtle"
+          mb="md"
+          leftSection={<TbArrowLeft size={16} />}
+          onClick={() => router.push("/signing")}
+        >
           {t("signing.detail.back")}
         </Button>
 
@@ -738,14 +774,16 @@ const SigningDetailPage = () => {
           )}
         </Group>
 
-        {/* Signing links */}
-        {(isPending || isAwaitingFinalization) && typedDoc.recipients?.some((r: any) => r.signingToken && r.role !== "CC") && (
+        {/* Signing links - always shown to the document creator so they can re-send them */}
+        {typedDoc.recipients?.some((r: any) => r.signingToken && r.role !== "CC") && (
           <Paper withBorder p="md" mb="lg">
             <Text fw={600} mb="sm">
               <Group gap="xs"><TbLink size={16} /> {t("signing.detail.signing-links")}</Group>
             </Text>
             <Text size="xs" c="dimmed" mb="md">
-              {t("signing.detail.signing-links.desc")}
+              {typedDoc.status === "COMPLETED"
+                ? t("signing.detail.signing-links.completed-desc")
+                : t("signing.detail.signing-links.desc")}
             </Text>
             <Stack gap="xs">
               {typedDoc.recipients
@@ -798,14 +836,26 @@ const SigningDetailPage = () => {
                           minWidth: isMobile ? "100%" : 0,
                         }}
                         rightSectionPointerEvents="all"
+                        rightSectionWidth={68}
                         rightSection={
-                          <CopyButton value={signingUrl}>
-                            {({ copied, copy }) => (
-                              <ActionIcon color={copied ? "green" : "blue"} variant="subtle" onClick={copy} size="md">
-                                {copied ? <TbCheck size={16} /> : <TbCopy size={16} />}
-                              </ActionIcon>
-                            )}
-                          </CopyButton>
+                          <Group gap={2} wrap="nowrap">
+                            <CopyButton value={signingUrl}>
+                              {({ copied, copy }) => (
+                                <ActionIcon color={copied ? "green" : "blue"} variant="subtle" onClick={copy} size="md">
+                                  {copied ? <TbCheck size={16} /> : <TbCopy size={16} />}
+                                </ActionIcon>
+                              )}
+                            </CopyButton>
+                            <ActionIcon
+                              color="grape"
+                              variant="subtle"
+                              size="md"
+                              onClick={() => showQrCodeModal(modals, signingUrl)}
+                              title={t("common.button.showQrCode")}
+                            >
+                              <TbQrcode size={16} />
+                            </ActionIcon>
+                          </Group>
                         }
                       />
                     </Group>

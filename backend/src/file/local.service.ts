@@ -77,6 +77,8 @@ export class LocalFileService {
     shareId: string,
     clientChunkSize?: number,
     share?: any,
+    callerEffectiveLimit?: number,
+    encryptionChunkSize?: number,
   ) {
     const originalFileId = file.id;
     if (!file.id) {
@@ -115,7 +117,7 @@ export class LocalFileService {
     const limitOwnerId =
       share.reverseShare?.creatorId ?? share.creatorId ?? undefined;
 
-    const [diskFileSize, space, effectiveLimit] = await Promise.all([
+    const [diskFileSize, space, localLimit] = await Promise.all([
       // 1. Disk file size for chunk index validation
       fs.stat(tmpChunkPath).then((s) => s.size).catch(() => 0),
       // 2. Available disk space
@@ -123,6 +125,7 @@ export class LocalFileService {
       // 3. Configured limit (cached per share for 60s)
       this.getCachedConfiguredLimit(shareId, limitOwnerId, share.reverseShare),
     ]);
+    const effectiveLimit = callerEffectiveLimit ?? localLimit;
 
     // If the sent chunk index and the expected chunk index doesn't match throw an error
     const configChunkSize = this.config.get("share.chunkSize");
@@ -135,9 +138,12 @@ export class LocalFileService {
       clientChunkSize <= MAX_UPLOAD_CHUNK_BYTES
         ? clientChunkSize
         : configChunkSize;
-    // Each E2E encrypted chunk adds 28 bytes of overhead (12 IV + 16 GCM tag).
+    const cryptoRecordSize = encryptionChunkSize ?? chunkSize;
+    const recordsPerTransportChunk = Math.ceil(chunkSize / cryptoRecordSize);
+    // A transport chunk can contain several independently authenticated
+    // AES-GCM records. Account for every 12-byte IV + 16-byte tag.
     const effectiveChunkSize = share.isE2EEncrypted
-      ? chunkSize + 28
+      ? chunkSize + recordsPerTransportChunk * 28
       : chunkSize;
     const expectedChunkIndex = Math.ceil(diskFileSize / effectiveChunkSize);
 
@@ -202,6 +208,7 @@ export class LocalFileService {
           name: file.name,
           relativePath: file.relativePath,
           size: fileSize.toString(),
+          encryptionChunkSize: share.isE2EEncrypted ? cryptoRecordSize : null,
           share: { connect: { id: shareId } },
         },
       });
@@ -250,10 +257,11 @@ export class LocalFileService {
    * Skips uploadLocked / quota checks and does NOT create a DB record.
    */
   async replace(
-    data: string,
+    data: Buffer,
     chunk: { index: number; total: number },
     fileId: string,
     shareId: string,
+    encryptionChunkSize?: number,
   ) {
     if (!isValidUUID(fileId)) {
       throw new BadRequestException("Invalid file ID format");
@@ -267,7 +275,7 @@ export class LocalFileService {
       try { await fs.unlink(tmpPath); } catch { /* no stale file */ }
     }
 
-    const buffer = Buffer.from(data, "base64");
+    const buffer = data;
 
     await fs.appendFile(tmpPath, buffer);
 
@@ -280,10 +288,16 @@ export class LocalFileService {
       await fs.rename(tmpPath, finalPath);
       const fileSize = (await fs.stat(finalPath)).size;
       // Update file size in DB (may differ slightly due to chunk alignment)
-      await this.prisma.file.update({
-        where: { id: fileId },
-        data: { size: fileSize.toString() },
+      const updated = await this.prisma.file.updateMany({
+        where: { id: fileId, shareId },
+        data: {
+          size: fileSize.toString(),
+          encryptionChunkSize: encryptionChunkSize ?? null,
+        },
       });
+      if (updated.count !== 1) {
+        throw new NotFoundException("File not found in this share");
+      }
       this.logger.debug(
         `Reencrypt complete: shareId=${shareId} fileId=${fileId} newSize=${fileSize}`,
       );

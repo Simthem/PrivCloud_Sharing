@@ -5,6 +5,8 @@ import moment from "moment";
 import { FileService } from "src/file/file.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { ReverseShareService } from "src/reverseShare/reverseShare.service";
+import { TeamAuditService } from "src/team/team-audit.service";
+import { TeamService } from "src/team/team.service";
 import { SHARE_DIRECTORY } from "../constants";
 
 @Injectable()
@@ -15,6 +17,8 @@ export class JobsService {
     private prisma: PrismaService,
     private reverseShareService: ReverseShareService,
     private fileService: FileService,
+    private teamAuditService: TeamAuditService,
+    private teamService: TeamService,
   ) {}
 
   @Cron("0 * * * *")
@@ -158,6 +162,24 @@ export class JobsService {
       this.logger.error(
         `Failed to cleanup stale S3 multipart uploads: ${(e as Error).message}`,
       );
+    }
+  }
+
+  /** Send due Team compliance reports every morning (deduplicated in DB). */
+  @Cron("15 7 * * *", { timeZone: "Europe/Paris" })
+  async sendTeamAuditReports() {
+    const result = await this.teamAuditService.dispatchScheduledReports();
+    if (result.sent > 0) {
+      this.logger.log(`Sent ${result.sent} automatic Team audit report(s)`);
+    }
+  }
+
+  /** Remind Team admins shortly before an assisted key rotation becomes due. */
+  @Cron("30 7 * * *", { timeZone: "Europe/Paris" })
+  async sendTeamKeyRotationReminders() {
+    const result = await this.teamService.sendKeyRotationReminders();
+    if (result.sent > 0) {
+      this.logger.log(`Sent ${result.sent} Team key-rotation reminder(s)`);
     }
   }
 }

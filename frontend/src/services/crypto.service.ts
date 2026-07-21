@@ -1174,8 +1174,20 @@ export interface TeamShareEntry {
 export interface TeamSharesResponse {
   received: TeamShareEntry[];
   sent: TeamShareEntry[];
+  pagination: {
+    received: { page: number; limit: number; total: number; totalPages: number };
+    sent: { page: number; limit: number; total: number; totalPages: number };
+  };
 }
 
-export async function getTeamShares(teamId: string): Promise<TeamSharesResponse> {
-  return (await api.get(`crypto/grants/team/${teamId}/shares`)).data;
+export async function getTeamShares(
+  teamId: string,
+  options: { receivedPage?: number; sentPage?: number; limit?: number } = {},
+): Promise<TeamSharesResponse> {
+  const params = new URLSearchParams();
+  if (options.receivedPage) params.set("receivedPage", String(options.receivedPage));
+  if (options.sentPage) params.set("sentPage", String(options.sentPage));
+  if (options.limit) params.set("limit", String(options.limit));
+  const query = params.toString();
+  return (await api.get(`crypto/grants/team/${teamId}/shares${query ? `?${query}` : ""}`)).data;
 }

@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-backend",
-  "version": "1.23.5",
+  "version": "1.23.7",
   "scripts": {
     "build": "nest build",
     "postinstall": "[ -f prisma/schema.prisma ] && prisma generate || true",
@@ -8,6 +8,8 @@
     "prod": "prisma migrate deploy && prisma db seed && node dist/src/main",
     "lint": "eslint src/",
     "format": "prettier --end-of-line=auto --write 'src/**/*.ts'",
+    "test": "npm run test:unit",
+    "test:unit": "NODE_PATH=. node -r ts-node/register test/unit-runner.ts",
     "test:system": "prisma migrate reset -f && nest start & wait-on http://localhost:8080/api/configs && newman run ./test/newman-system-tests.json"
   },
   "dependencies": {
@@ -91,9 +93,9 @@
     "hono": "4.12.27",
     "@hono/node-server": ">=1.19.13",
     "fast-xml-builder": ">=1.1.7",
-    "fast-uri": "3.1.3",
+    "fast-uri": "3.1.4",
     "ip-address": ">=10.1.1",
-    "axios": "1.16.0",
+    "axios": "1.18.1",
     "fast-xml-parser": "5.7.2",
     "effect": "^3.20.0",
     "glob": "^13.0.6",
@@ -144,12 +146,12 @@
     "uuid": "$uuid"
   },
   "allowScripts": {
-    "prisma@7.8.0": true,
     "argon2@0.41.1": true,
     "sharp@0.34.5": true,
     "@nestjs/core@11.1.19": true,
-    "@prisma/engines@7.8.0": true,
     "@scarf/scarf@1.4.0": true,
-    "better-sqlite3@12.11.1": true
+    "better-sqlite3@12.11.1": true,
+    "prisma@7.9.0": true,
+    "@prisma/engines@7.9.0": true
   }
 }

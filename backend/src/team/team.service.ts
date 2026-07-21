@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -12,6 +13,7 @@ import { EmailService } from "src/email/email.service";
 import { ConfigService } from "src/config/config.service";
 import { FileService } from "src/file/file.service";
 import { TeamNotificationService } from "src/teamNotification/teamNotification.service";
+import { NEVER_EXPIRES_CUTOFF_DATE } from "src/utils/date.util";
 import {
   CreateTeamDTO,
   UpdateTeamDTO,
@@ -21,6 +23,8 @@ import {
   SetFileAccessDTO,
   BulkDeleteFilesDTO,
   CreateGuestLinkDTO,
+  StartTeamKeyRotationDTO,
+  UpdateTeamKeyRotationProgressDTO,
 } from "./dto/team.dto";
 
 const parseConfiguredLimit = (
@@ -201,8 +205,6 @@ export class TeamService {
           include: { user: { select: { id: true, username: true, email: true } } },
           where: { isActive: true },
         },
-        sharedFolders: { where: { parentId: null } },
-        _count: { select: { accessLogs: true } },
       },
     });
 
@@ -211,7 +213,17 @@ export class TeamService {
     // Add hasTeamKey boolean to each member (non-sensitive: just whether their key is set)
     serialized.members = serialized.members.map((m: any) => {
       const raw = team.members.find((rm: any) => rm.id === m.id);
-      return { ...m, hasTeamKey: !!raw?.wrappedTeamKey };
+      const keyStatus = raw?.wrappedTeamKey && raw.teamKeyVersion === team.keyVersion
+        ? "CURRENT"
+        : raw?.teamKeyVersion > 0
+          ? "PENDING"
+          : "MISSING";
+      return {
+        ...m,
+        hasTeamKey: keyStatus === "CURRENT",
+        teamKeyVersion: raw?.teamKeyVersion || 0,
+        keyStatus,
+      };
     });
     return serialized;
   }
@@ -354,6 +366,20 @@ export class TeamService {
         name: dto.name,
         description: dto.description,
         reportFrequency: dto.reportFrequency,
+        reportEnabled: dto.reportEnabled,
+        keyRotationIntervalDays: dto.keyRotationIntervalDays,
+      },
+    });
+
+    const actor = await this.prisma.user.findUnique({ where: { id: userId } });
+    await this.logAccess(teamId, "TEAM_SETTINGS_CHANGE", actor?.email || userId, {
+      actorName: actor?.username,
+      targetType: "TEAM",
+      targetId: teamId,
+      metadata: {
+        reportEnabled: dto.reportEnabled,
+        reportFrequency: dto.reportFrequency,
+        keyRotationIntervalDays: dto.keyRotationIntervalDays,
       },
     });
 
@@ -517,7 +543,12 @@ export class TeamService {
     return { invited: true, email, invitationToken: invitation.token };
   }
 
-  async acceptInvitation(token: string, userId: string, wrappedTeamKey?: string) {
+  async acceptInvitation(
+    token: string,
+    userId: string,
+    wrappedTeamKey?: string,
+    keyVersion?: number,
+  ) {
     if (wrappedTeamKey) {
       this.validateWrappedTeamKey(wrappedTeamKey, "wrappedTeamKey");
     }
@@ -537,6 +568,24 @@ export class TeamService {
         data: { status: "EXPIRED" },
       });
       throw new BadRequestException("This invitation has expired");
+    }
+    if (
+      wrappedTeamKey &&
+      invitation.team.keyVersion > 1 &&
+      keyVersion == null
+    ) {
+      throw new ConflictException(
+        "This secure invitation predates the current Team key. Ask an administrator for a new link.",
+      );
+    }
+    if (
+      wrappedTeamKey &&
+      keyVersion != null &&
+      keyVersion !== invitation.team.keyVersion
+    ) {
+      throw new ConflictException(
+        "The invitation contains an outdated Team key. Ask an administrator for a new secure link.",
+      );
     }
 
     // Verify the accepting user's email matches (case-insensitive: invitation
@@ -560,11 +609,19 @@ export class TeamService {
         role: invitation.role,
         isActive: true,
         wrappedTeamKey: wrappedTeamKey || null,
+        teamKeyVersion: wrappedTeamKey ? invitation.team.keyVersion : 0,
+        teamKeyUpdatedAt: wrappedTeamKey ? new Date() : null,
       },
       update: {
         role: invitation.role,
         isActive: true,
         ...(wrappedTeamKey ? { wrappedTeamKey } : {}),
+        ...(wrappedTeamKey
+          ? {
+              teamKeyVersion: invitation.team.keyVersion,
+              teamKeyUpdatedAt: new Date(),
+            }
+          : {}),
       },
     });
 
@@ -600,10 +657,23 @@ export class TeamService {
     if (!member || !member.isActive) {
       throw new ForbiddenException("Not a team member");
     }
-    return { wrappedTeamKey: member.wrappedTeamKey || null };
+    const team = await this.prisma.team.findUnique({
+      where: { id: teamId },
+      select: { keyVersion: true },
+    });
+    return {
+      wrappedTeamKey: member.wrappedTeamKey || null,
+      keyVersion: team?.keyVersion || 1,
+      memberKeyVersion: member.teamKeyVersion,
+    };
   }
 
-  async setTeamKey(teamId: string, userId: string, wrappedTeamKey: string) {
+  async setTeamKey(
+    teamId: string,
+    userId: string,
+    wrappedTeamKey: string,
+    keyVersion?: number,
+  ) {
     this.validateWrappedTeamKey(wrappedTeamKey, "wrappedTeamKey");
     const member = await this.prisma.teamMember.findUnique({
       where: { userId_teamId: { userId, teamId } },
@@ -611,11 +681,37 @@ export class TeamService {
     if (!member || !member.isActive) {
       throw new ForbiddenException("Not a team member");
     }
+    const team = await this.prisma.team.findUnique({
+      where: { id: teamId },
+      select: { keyVersion: true },
+    });
+    if (!team) throw new NotFoundException("Team not found");
+    if (team.keyVersion > 1 && keyVersion == null) {
+      throw new ConflictException(
+        "A key version is required after the Team key has been rotated",
+      );
+    }
+    if (keyVersion != null && keyVersion !== team.keyVersion) {
+      throw new ConflictException(
+        `This key targets version ${keyVersion}, but the Team currently uses version ${team.keyVersion}`,
+      );
+    }
     await this.prisma.teamMember.update({
       where: { id: member.id },
-      data: { wrappedTeamKey },
+      data: {
+        wrappedTeamKey,
+        teamKeyVersion: team.keyVersion,
+        teamKeyUpdatedAt: new Date(),
+      },
     });
-    return { success: true };
+    const actor = await this.prisma.user.findUnique({ where: { id: userId } });
+    await this.logAccess(teamId, "KEY_DISTRIBUTED", actor?.email || userId, {
+      actorName: actor?.username,
+      targetType: "TEAM_MEMBER",
+      targetId: member.id,
+      metadata: { keyVersion: team.keyVersion },
+    });
+    return { success: true, keyVersion: team.keyVersion };
   }
 
   /**
@@ -813,7 +909,11 @@ export class TeamService {
       );
     }
 
-    // Atomically: null out everyone else's wrappedTeamKey + set caller's new one
+    const team = await this.prisma.team.findUnique({ where: { id: teamId } });
+    if (!team) throw new NotFoundException("Team not found");
+    const nextVersion = team.keyVersion + 1;
+
+    // Legacy one-shot rotation endpoint. New clients use the resumable workflow.
     await this.prisma.$transaction([
       this.prisma.teamMember.updateMany({
         where: { teamId, userId: { not: userId }, isActive: true },
@@ -821,7 +921,19 @@ export class TeamService {
       }),
       this.prisma.teamMember.update({
         where: { id: callerMember.id },
-        data: { wrappedTeamKey: newWrappedTeamKey },
+        data: {
+          wrappedTeamKey: newWrappedTeamKey,
+          teamKeyVersion: nextVersion,
+          teamKeyUpdatedAt: new Date(),
+        },
+      }),
+      this.prisma.team.update({
+        where: { id: teamId },
+        data: {
+          keyVersion: nextVersion,
+          keyRotatedAt: new Date(),
+          lastKeyRotationReminderAt: null,
+        },
       }),
     ]);
 
@@ -832,6 +944,341 @@ export class TeamService {
     });
 
     return { success: true };
+  }
+
+  async getKeyRotationStatus(teamId: string, userId: string) {
+    const member = await this.assertTeamMembership(teamId, userId);
+    const team = await this.prisma.team.findUnique({
+      where: { id: teamId },
+      include: {
+        keyRotations: {
+          where: { status: { in: ["PREPARING", "REENCRYPTING", "PAUSED"] } },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
+      },
+    });
+    if (!team) throw new NotFoundException("Team not found");
+
+    const baseDate = team.keyRotatedAt || team.createdAt;
+    const nextDueAt = new Date(
+      baseDate.getTime() + team.keyRotationIntervalDays * 86_400_000,
+    );
+    const reminderAt = new Date(
+      nextDueAt.getTime() - team.keyRotationReminderDays * 86_400_000,
+    );
+    const active = team.keyRotations[0] || null;
+
+    return {
+      policy: {
+        intervalDays: team.keyRotationIntervalDays,
+        reminderDays: team.keyRotationReminderDays,
+        currentVersion: team.keyVersion,
+        lastRotatedAt: team.keyRotatedAt,
+        nextDueAt,
+        reminderAt,
+        isDue: new Date() >= nextDueAt,
+        reminderActive: new Date() >= reminderAt,
+      },
+      canOrchestrate:
+        ["OWNER", "ADMIN"].includes(member.role) &&
+        !!member.wrappedTeamKey &&
+        member.teamKeyVersion === team.keyVersion,
+      activeRotation: active
+        ? {
+            id: active.id,
+            fromVersion: active.fromVersion,
+            toVersion: active.toVersion,
+            status: active.status,
+            reason: active.reason,
+            startedById: active.startedById,
+            totalFiles: active.totalFiles,
+            processedFiles: active.processedFiles,
+            failedFiles: active.failedFiles,
+            completedFileIds: this.parseCompletedFileIds(active.completedFileIds),
+            errorMessage: active.errorMessage,
+            createdAt: active.createdAt,
+            pendingWrappedTeamKey:
+              active.startedById === userId ? active.initiatorWrappedKey : null,
+            canResume: active.startedById === userId,
+          }
+        : null,
+    };
+  }
+
+  async startTeamKeyRotation(
+    teamId: string,
+    userId: string,
+    dto: StartTeamKeyRotationDTO,
+  ) {
+    this.validateWrappedTeamKey(dto.newWrappedTeamKey, "newWrappedTeamKey");
+    await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
+
+    const team = await this.prisma.team.findUnique({ where: { id: teamId } });
+    const member = await this.prisma.teamMember.findUnique({
+      where: { userId_teamId: { userId, teamId } },
+    });
+    if (!team || !member) throw new NotFoundException("Team not found");
+    if (
+      !member.wrappedTeamKey ||
+      member.teamKeyVersion !== team.keyVersion
+    ) {
+      throw new ForbiddenException(
+        "A current Team key is required to start the rotation",
+      );
+    }
+
+    const active = await this.prisma.teamKeyRotation.findFirst({
+      where: {
+        teamId,
+        status: { in: ["PREPARING", "REENCRYPTING", "PAUSED"] },
+      },
+    });
+    if (active) {
+      throw new ConflictException("A Team key rotation is already in progress");
+    }
+
+    const shares = await this.prisma.share.findMany({
+      where: {
+        teamFolder: { teamId },
+        isE2EEncrypted: true,
+        uploadLocked: true,
+      },
+      select: { files: { select: { id: true } } },
+    });
+    const totalFiles = shares.reduce((count, share) => count + share.files.length, 0);
+
+    const rotation = await this.prisma.teamKeyRotation.create({
+      data: {
+        teamId,
+        fromVersion: team.keyVersion,
+        toVersion: team.keyVersion + 1,
+        status: "PREPARING",
+        reason: dto.reason || "MANUAL",
+        startedById: userId,
+        initiatorWrappedKey: dto.newWrappedTeamKey,
+        totalFiles,
+      },
+    });
+
+    return {
+      ...rotation,
+      completedFileIds: [],
+      pendingWrappedTeamKey: rotation.initiatorWrappedKey,
+      canResume: true,
+    };
+  }
+
+  async updateTeamKeyRotationProgress(
+    teamId: string,
+    rotationId: string,
+    userId: string,
+    dto: UpdateTeamKeyRotationProgressDTO,
+  ) {
+    await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
+    const rotation = await this.prisma.teamKeyRotation.findFirst({
+      where: { id: rotationId, teamId },
+    });
+    if (!rotation) throw new NotFoundException("Key rotation not found");
+    if (rotation.startedById !== userId) {
+      throw new ForbiddenException("Only the rotation initiator can resume it");
+    }
+    if (!["PREPARING", "REENCRYPTING", "PAUSED"].includes(rotation.status)) {
+      throw new ConflictException("This rotation is no longer active");
+    }
+
+    const completed = new Set(this.parseCompletedFileIds(rotation.completedFileIds));
+    if (dto.completedFileId && !completed.has(dto.completedFileId)) {
+      const file = await this.prisma.file.findFirst({
+        where: {
+          id: dto.completedFileId,
+          share: { teamFolder: { teamId }, isE2EEncrypted: true },
+        },
+        select: { id: true },
+      });
+      if (!file) {
+        throw new BadRequestException("Completed file does not belong to this Team rotation");
+      }
+      completed.add(file.id);
+    }
+
+    const updated = await this.prisma.teamKeyRotation.update({
+      where: { id: rotation.id },
+      data: {
+        completedFileIds: JSON.stringify([...completed]),
+        processedFiles: completed.size,
+        failedFiles: dto.failedFiles,
+        status: dto.status || "REENCRYPTING",
+        errorMessage: dto.errorMessage,
+      },
+    });
+    return {
+      ...updated,
+      completedFileIds: [...completed],
+      pendingWrappedTeamKey: updated.initiatorWrappedKey,
+      canResume: true,
+    };
+  }
+
+  async completeTeamKeyRotation(
+    teamId: string,
+    rotationId: string,
+    userId: string,
+  ) {
+    await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
+    const rotation = await this.prisma.teamKeyRotation.findFirst({
+      where: { id: rotationId, teamId },
+    });
+    if (!rotation) throw new NotFoundException("Key rotation not found");
+    if (rotation.startedById !== userId) {
+      throw new ForbiddenException("Only the rotation initiator can complete it");
+    }
+    if (!["PREPARING", "REENCRYPTING", "PAUSED"].includes(rotation.status)) {
+      throw new ConflictException("This rotation is no longer active");
+    }
+    if (rotation.failedFiles > 0 || rotation.processedFiles < rotation.totalFiles) {
+      throw new ConflictException(
+        `Rotation incomplete: ${rotation.processedFiles}/${rotation.totalFiles} files, ${rotation.failedFiles} failure(s)`,
+      );
+    }
+
+    const callerMember = await this.prisma.teamMember.findUnique({
+      where: { userId_teamId: { userId, teamId } },
+    });
+    if (!callerMember) throw new NotFoundException("Team member not found");
+    const now = new Date();
+
+    await this.prisma.$transaction([
+      this.prisma.teamMember.updateMany({
+        where: { teamId, userId: { not: userId }, isActive: true },
+        data: { wrappedTeamKey: null },
+      }),
+      this.prisma.teamMember.update({
+        where: { id: callerMember.id },
+        data: {
+          wrappedTeamKey: rotation.initiatorWrappedKey,
+          teamKeyVersion: rotation.toVersion,
+          teamKeyUpdatedAt: now,
+        },
+      }),
+      this.prisma.team.update({
+        where: { id: teamId },
+        data: {
+          keyVersion: rotation.toVersion,
+          keyRotatedAt: now,
+          lastKeyRotationReminderAt: null,
+        },
+      }),
+      this.prisma.teamKeyRotation.update({
+        where: { id: rotation.id },
+        data: { status: "COMPLETED", completedAt: now, failedFiles: 0 },
+      }),
+    ]);
+
+    const actor = await this.prisma.user.findUnique({ where: { id: userId } });
+    await this.logAccess(teamId, "KEY_ROTATED", actor?.email || userId, {
+      actorName: actor?.username,
+      targetType: "TEAM_KEY",
+      targetId: rotation.id,
+      metadata: {
+        fromVersion: rotation.fromVersion,
+        toVersion: rotation.toVersion,
+        files: rotation.totalFiles,
+        reason: rotation.reason,
+      },
+    });
+    return { success: true, keyVersion: rotation.toVersion };
+  }
+
+  async cancelTeamKeyRotation(
+    teamId: string,
+    rotationId: string,
+    userId: string,
+  ) {
+    await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
+    const rotation = await this.prisma.teamKeyRotation.findFirst({
+      where: { id: rotationId, teamId },
+    });
+    if (!rotation) throw new NotFoundException("Key rotation not found");
+    if (rotation.startedById !== userId) {
+      throw new ForbiddenException("Only the rotation initiator can cancel it");
+    }
+    if (rotation.processedFiles > 0) {
+      throw new ConflictException(
+        "A rotation that already changed files must be resumed, not cancelled",
+      );
+    }
+    await this.prisma.teamKeyRotation.update({
+      where: { id: rotation.id },
+      data: { status: "CANCELLED", completedAt: new Date() },
+    });
+    return { cancelled: true };
+  }
+
+  async sendKeyRotationReminders(now = new Date()) {
+    const teams = await this.prisma.team.findMany({
+      where: { isActive: true },
+      include: {
+        members: {
+          where: { isActive: true, role: { in: ["OWNER", "ADMIN"] } },
+          include: { user: { select: { email: true } } },
+        },
+        keyRotations: {
+          where: { status: { in: ["PREPARING", "REENCRYPTING", "PAUSED"] } },
+          take: 1,
+        },
+      },
+    });
+    let sent = 0;
+    for (const team of teams) {
+      if (team.keyRotations.length > 0) continue;
+      const base = team.keyRotatedAt || team.createdAt;
+      const dueAt = new Date(
+        base.getTime() + team.keyRotationIntervalDays * 86_400_000,
+      );
+      const remindAt = new Date(
+        dueAt.getTime() - team.keyRotationReminderDays * 86_400_000,
+      );
+      if (now < remindAt || (team.lastKeyRotationReminderAt && team.lastKeyRotationReminderAt >= remindAt)) {
+        continue;
+      }
+      let delivered = false;
+      for (const member of team.members) {
+        try {
+          await this.emailService.sendMail(
+            member.user.email,
+            `[${team.name}] Rotation de clé E2E ${now >= dueAt ? "requise" : "à prévoir"}`,
+            `La clé E2E de l'équipe ${team.name} doit être renouvelée au plus tard le ${dueAt.toLocaleDateString("fr-FR")}.
+
+Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pour lancer la rotation assistée. Le serveur n'accède jamais à la clé en clair.`,
+          );
+          delivered = true;
+          sent++;
+        } catch (error) {
+          this.logger.error(
+            `Key rotation reminder failed for ${member.user.email}: ${(error as Error).message}`,
+          );
+        }
+      }
+      if (delivered) {
+        await this.prisma.team.update({
+          where: { id: team.id },
+          data: { lastKeyRotationReminderAt: now },
+        });
+      }
+    }
+    return { sent };
+  }
+
+  private parseCompletedFileIds(value: string): string[] {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed)
+        ? parsed.filter((item) => typeof item === "string")
+        : [];
+    } catch {
+      return [];
+    }
   }
 
   async removeMember(teamId: string, memberId: string, userId: string) {
@@ -1106,6 +1553,14 @@ export class TeamService {
       data,
     });
 
+    const actor = await this.prisma.user.findUnique({ where: { id: userId } });
+    await this.logAccess(teamId, "PERMISSIONS_CHANGE", actor?.email || userId, {
+      actorName: actor?.username,
+      targetType: "TEAM_MEMBER",
+      targetId: memberId,
+      metadata: data,
+    });
+
     this.logger.log(
       `PERMISSIONS_CHANGED: Member ${memberId} permissions updated in team ${teamId} by user ${userId}: ${JSON.stringify(data)}`,
     );
@@ -1198,7 +1653,15 @@ export class TeamService {
       { folderId: folder.id },
     ).catch(err => this.logger.error(`Failed to notify team on folder create: ${err.message}`));
 
-    return folder;
+    return {
+      id: folder.id,
+      name: folder.name,
+      description: folder.description,
+      parentId: folder.parentId,
+      color: folder.color,
+      createdAt: folder.createdAt,
+      updatedAt: folder.updatedAt,
+    };
   }
 
   async getFolders(teamId: string, userId: string, parentId?: string) {
@@ -1217,7 +1680,17 @@ export class TeamService {
         },
         orderBy: { name: "asc" },
       });
-      return folders.map((f) => ({ ...f, myPermission: "ADMIN" as string }));
+      return folders.map((folder) => ({
+        id: folder.id,
+        name: folder.name,
+        description: folder.description,
+        parentId: folder.parentId,
+        color: folder.color,
+        createdAt: folder.createdAt,
+        updatedAt: folder.updatedAt,
+        _count: folder._count,
+        myPermission: "ADMIN" as string,
+      }));
     }
 
     // Members see folders that either:
@@ -1245,13 +1718,20 @@ export class TeamService {
     return allFolders
       .filter((f) => {
         const rule = f.accessRules[0];
-        return !rule || rule.permission !== "NONE";
+        return !rule || !["NONE", "DENY"].includes(rule.permission);
       })
-      .map(({ accessRules, ...rest }) => ({
-        ...rest,
-        myPermission: accessRules[0]?.permission || "READ",
-        canRequestSignature: accessRules[0]?.canRequestSignature ?? false,
-        canShareE2E: accessRules[0]?.canShareE2E ?? false,
+      .map((folder) => ({
+        id: folder.id,
+        name: folder.name,
+        description: folder.description,
+        parentId: folder.parentId,
+        color: folder.color,
+        createdAt: folder.createdAt,
+        updatedAt: folder.updatedAt,
+        _count: folder._count,
+        myPermission: folder.accessRules[0]?.permission || "READ",
+        canRequestSignature: folder.accessRules[0]?.canRequestSignature ?? false,
+        canShareE2E: folder.accessRules[0]?.canShareE2E ?? false,
       }));
   }
 
@@ -1438,6 +1918,7 @@ export class TeamService {
 
     const folder = await this.prisma.teamFolder.findFirst({
       where: { id: folderId, teamId },
+      include: { _count: { select: { accessRules: true } } },
     });
     if (!folder) throw new NotFoundException("Folder not found");
 
@@ -1448,7 +1929,10 @@ export class TeamService {
       const access = await this.prisma.teamFolderAccess.findUnique({
         where: { memberId_folderId: { memberId: member.id, folderId } },
       });
-      if (access && access.permission === "NONE") {
+      if (
+        (access && ["NONE", "DENY"].includes(access.permission)) ||
+        (!access && folder._count.accessRules > 0)
+      ) {
         throw new ForbiddenException("You do not have access to this folder");
       }
       if (access) {
@@ -1499,6 +1983,7 @@ export class TeamService {
     // Load file-level access rules for the current member.
     // These override folder-level permissions on a per-file basis.
     const myFileAccess: Record<string, { permission: string; canRequestSignature: boolean; canShareE2E: boolean }> = {};
+    const deniedFileIds = new Set<string>();
     if (!isAdmin) {
       const allFileIds = shares.flatMap((s) => s.files.map((f) => f.id));
       if (allFileIds.length > 0) {
@@ -1507,6 +1992,10 @@ export class TeamService {
           select: { fileId: true, permission: true, canRequestSignature: true, canShareE2E: true },
         });
         for (const r of fileRules) {
+          if (["NONE", "DENY"].includes(r.permission)) {
+            deniedFileIds.add(r.fileId);
+            continue;
+          }
           myFileAccess[r.fileId] = {
             permission: r.permission,
             canRequestSignature: r.canRequestSignature,
@@ -1516,7 +2005,27 @@ export class TeamService {
       }
     }
 
-    return { folder, shares, myAccess, myFileAccess };
+    const visibleShares = shares
+      .map((share) => ({
+        ...share,
+        files: share.files.filter((file) => !deniedFileIds.has(file.id)),
+      }))
+      .filter((share) => share.files.length > 0);
+
+    return {
+      folder: {
+        id: folder.id,
+        name: folder.name,
+        description: folder.description,
+        parentId: folder.parentId,
+        color: folder.color,
+        createdAt: folder.createdAt,
+        updatedAt: folder.updatedAt,
+      },
+      shares: visibleShares,
+      myAccess,
+      myFileAccess,
+    };
   }
 
   // =========================================================================
@@ -1777,6 +2286,174 @@ export class TeamService {
   // METRICS & ACCESS LOGS
   // =========================================================================
 
+  /**
+   * Return only metadata already visible to this Team member. Matching and
+   * ranking remain entirely client-side so no E2EE content index is created.
+   */
+  async getClientSearchIndex(teamId: string, userId: string) {
+    const member = await this.assertTeamMembership(teamId, userId);
+    const isAdmin = member.role === "OWNER" || member.role === "ADMIN";
+
+    const foldersWithRules = await this.prisma.teamFolder.findMany({
+      where: { teamId },
+      include: {
+        accessRules: {
+          where: { memberId: member.id },
+          select: { permission: true },
+        },
+        _count: { select: { accessRules: true } },
+      },
+      orderBy: { name: "asc" },
+    });
+    const visibleFolders = foldersWithRules.filter((folder) => {
+      if (isAdmin) return true;
+      const rule = folder.accessRules[0];
+      return rule
+        ? !["NONE", "DENY"].includes(rule.permission)
+        : folder._count.accessRules === 0;
+    });
+    const folderIds = visibleFolders.map((folder) => folder.id);
+
+    const shares = folderIds.length === 0
+      ? []
+      : await this.prisma.share.findMany({
+          where: {
+            teamFolderId: { in: folderIds },
+            uploadLocked: true,
+            OR: [
+              { expiration: { gt: new Date() } },
+              { expiration: { lt: NEVER_EXPIRES_CUTOFF_DATE } },
+            ],
+          },
+          select: {
+            id: true,
+            name: true,
+            expiration: true,
+            isE2EEncrypted: true,
+            teamFolderId: true,
+            creator: { select: { id: true, username: true, email: true } },
+            files: {
+              select: {
+                id: true,
+                name: true,
+                relativePath: true,
+                size: true,
+                createdAt: true,
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        });
+
+    const allFileIds = shares.flatMap((share) =>
+      share.files.map((file) => file.id),
+    );
+    const deniedFileIds = new Set<string>();
+    if (!isAdmin && allFileIds.length > 0) {
+      const fileRules = await this.prisma.fileAccess.findMany({
+        where: { memberId: member.id, fileId: { in: allFileIds } },
+        select: { fileId: true, permission: true },
+      });
+      for (const rule of fileRules) {
+        if (["NONE", "DENY"].includes(rule.permission)) {
+          deniedFileIds.add(rule.fileId);
+        }
+      }
+    }
+
+    const canViewSignatures = isAdmin || member.canViewSignatures;
+    const canViewActivity = isAdmin || member.canViewActivity;
+    const [signatures, activity] = await Promise.all([
+      canViewSignatures
+        ? this.prisma.signatureDocument.findMany({
+            where: { teamId },
+            select: {
+              id: true,
+              fileId: true,
+              fileName: true,
+              title: true,
+              status: true,
+              createdAt: true,
+              creator: { select: { username: true, email: true } },
+            },
+            orderBy: { createdAt: "desc" },
+          })
+        : Promise.resolve([]),
+      canViewActivity
+        ? this.prisma.teamAccessLog.findMany({
+            where: { teamId },
+            select: {
+              id: true,
+              action: true,
+              actorEmail: true,
+              actorName: true,
+              fileName: true,
+              folderId: true,
+              createdAt: true,
+            },
+            orderBy: { createdAt: "desc" },
+            take: 100,
+          })
+        : Promise.resolve([]),
+    ]);
+    const signatureByFile = new Map(
+      signatures
+        .filter((document) => !!document.fileId)
+        .map((document) => [document.fileId as string, document]),
+    );
+    const folderNameById = new Map(
+      visibleFolders.map((folder) => [folder.id, folder.name]),
+    );
+
+    return {
+      generatedAt: new Date(),
+      mode: "CLIENT_SIDE_METADATA",
+      folders: visibleFolders.map((folder) => ({
+        id: folder.id,
+        name: folder.name,
+        description: folder.description,
+        parentId: folder.parentId,
+        createdAt: folder.createdAt,
+      })),
+      files: shares.flatMap((share) =>
+        share.files
+          .filter((file) => !deniedFileIds.has(file.id))
+          .map((file) => {
+            const signature = signatureByFile.get(file.id);
+            return {
+              id: file.id,
+              shareId: share.id,
+              shareName: share.name,
+              folderId: share.teamFolderId,
+              folderName: share.teamFolderId
+                ? folderNameById.get(share.teamFolderId) || null
+                : null,
+              name: file.name,
+              relativePath: file.relativePath,
+              size: file.size,
+              createdAt: file.createdAt,
+              expiresAt: share.expiration,
+              author: share.creator,
+              isE2EEncrypted: share.isE2EEncrypted,
+              signature: signature
+                ? { id: signature.id, status: signature.status }
+                : null,
+            };
+          }),
+      ),
+      signatures: signatures.map((document) => ({
+        id: document.id,
+        fileId: document.fileId,
+        name: document.fileName || document.title,
+        status: document.status,
+        createdAt: document.createdAt,
+        author: document.creator,
+      })),
+      activity,
+      capabilities: { canViewActivity, canViewSignatures },
+    };
+  }
+
   async getMetrics(teamId: string, userId: string) {
     await this.assertTeamMembership(teamId, userId);
 
@@ -1880,6 +2557,8 @@ export class TeamService {
       },
       storage: {
         used: totalStorage,
+        folderUsed: totalStorage,
+        externalUsed: 0,
         limit: storageLimit,
         percentage: storageLimit > 0 ? Math.round((totalStorage / storageLimit) * 100) : 0,
       },
@@ -1963,6 +2642,9 @@ export class TeamService {
       fileSize?: bigint;
       folderId?: string;
       fileId?: string;
+      targetType?: string;
+      targetId?: string;
+      metadata?: Record<string, unknown>;
     } = {},
   ) {
     await this.prisma.teamAccessLog.create({
@@ -1977,6 +2659,9 @@ export class TeamService {
         fileSize: options.fileSize,
         folderId: options.folderId,
         fileId: options.fileId,
+        targetType: options.targetType,
+        targetId: options.targetId,
+        metadata: options.metadata ? JSON.stringify(options.metadata) : undefined,
       },
     });
   }
@@ -2021,10 +2706,17 @@ export class TeamService {
 
     // Log activity
     const creatorUser = await this.prisma.user.findUnique({ where: { id: userId } });
-    void this.logAccess(teamId, "SHARE", creatorUser?.email || "unknown", {
+    void this.logAccess(teamId, "GUEST_LINK_CREATE", creatorUser?.email || "unknown", {
       actorName: creatorUser?.username,
       fileName: folder.name,
       folderId,
+      targetType: "GUEST_LINK",
+      targetId: link.id,
+      metadata: {
+        permission: link.permission,
+        expiresAt: link.expiresAt?.toISOString() || null,
+        maxDownloads: link.maxDownloads,
+      },
     });
 
     return {
@@ -2084,6 +2776,8 @@ export class TeamService {
       actorName: actor?.username,
       folderId: link.folderId,
       fileName: link.label || linkId,
+      targetType: "GUEST_LINK",
+      targetId: linkId,
     });
 
     return { revoked: true };

@@ -136,30 +136,28 @@ const getSignaturesForFinalization = async (id: string): Promise<any> => {
   return (await api.get(`signing/documents/${id}/signatures`)).data;
 };
 
-/**
- * E2E Step 1: Send decrypted PDF (with visual signatures) to backend.
- * Backend applies certificate page + PAdES cryptographic signature.
- * Returns the signed PDF as base64 (NOT stored yet).
- */
-const signE2EPdf = async (id: string, plaintextPdfBuffer: ArrayBuffer): Promise<ArrayBuffer> => {
-  const bytes = new Uint8Array(plaintextPdfBuffer);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  const base64 = btoa(binary);
+const decodeBase64 = (value: string): Uint8Array => {
+  const binary = atob(value);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+};
 
-  const res = (await api.post(`signing/documents/${id}/sign-e2e`, {
-    plaintextPdf: base64,
+/** Request only the server-generated audit certificate page. */
+const getE2ECertificatePage = async (
+  id: string,
+  documentHash: string,
+): Promise<Uint8Array> => {
+  const res = (await api.post(`signing/documents/${id}/e2e-certificate-page`, {
+    documentHash,
   })).data;
+  return decodeBase64(res.certificatePage);
+};
 
-  // Decode the signed PDF from base64
-  const signedBinary = atob(res.signedPdf);
-  const signedBytes = new Uint8Array(signedBinary.length);
-  for (let i = 0; i < signedBinary.length; i++) {
-    signedBytes[i] = signedBinary.charCodeAt(i);
-  }
-  return signedBytes.buffer as ArrayBuffer;
+/** Send only the PDF ByteRange SHA-256 digest and receive its detached CMS. */
+const signE2EDigest = async (id: string, digest: string): Promise<Uint8Array> => {
+  const res = (await api.post(`signing/documents/${id}/sign-e2e-digest`, {
+    digest,
+  })).data;
+  return decodeBase64(res.cms);
 };
 
 /**
@@ -245,8 +243,20 @@ const downloadOriginal = async (documentId: string): Promise<ArrayBuffer> => {
   return response.data;
 };
 
-const getTeamDocuments = async (teamId: string): Promise<SignatureRequest[]> => {
-  const response = await api.get(`signing/team/${teamId}`);
+export interface PaginatedTeamSignatures {
+  documents: (SignatureRequest & { fileDeleted?: boolean })[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
+}
+
+const getTeamDocuments = async (
+  teamId: string,
+  options: { page?: number; limit?: number } = {},
+): Promise<PaginatedTeamSignatures> => {
+  const params = new URLSearchParams();
+  if (options.page) params.set("page", String(options.page));
+  if (options.limit) params.set("limit", String(options.limit));
+  const query = params.toString();
+  const response = await api.get(`signing/team/${teamId}${query ? `?${query}` : ""}`);
   return response.data;
 };
 
@@ -270,7 +280,8 @@ const signingService = {
   downloadOriginal,
   getAuditTrail,
   getSignaturesForFinalization,
-  signE2EPdf,
+  getE2ECertificatePage,
+  signE2EDigest,
   finalizeE2E,
   retryFinalize,
   getSigningPage,

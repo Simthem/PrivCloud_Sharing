@@ -50,6 +50,49 @@ export class UpdateTeamDTO {
   @IsString()
   @IsIn(["DAILY", "WEEKLY", "MONTHLY"])
   reportFrequency?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  reportEnabled?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsIn([30, 60, 90, 180, 365])
+  keyRotationIntervalDays?: number;
+}
+
+export class StartTeamKeyRotationDTO {
+  @IsString()
+  @MaxLength(8192)
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  newWrappedTeamKey: string;
+
+  @IsOptional()
+  @IsIn(["MANUAL", "POLICY"])
+  reason?: string;
+}
+
+export class UpdateTeamKeyRotationProgressDTO {
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  completedFileId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  failedFiles?: number;
+
+  @IsOptional()
+  @IsIn(["REENCRYPTING", "PAUSED"])
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  errorMessage?: string;
 }
 
 export class InviteMemberDTO {

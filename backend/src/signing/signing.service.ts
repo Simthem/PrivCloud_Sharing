@@ -17,6 +17,7 @@ import {
 } from "./dto/createSignatureRequest.dto";
 import { SignDocumentDTO } from "./dto/signDocument.dto";
 import { User } from "@prisma/client";
+import { deliverSigningCompletionEmails } from "./signing-mail.util";
 
 @Injectable()
 export class SigningService {
@@ -34,14 +35,12 @@ export class SigningService {
    * Create a signature request for a PDF file within a share.
    * Sends email notifications to all recipients.
    */
-  async createSignatureRequest(
-    dto: CreateSignatureRequestDTO,
-    user: User,
-  ) {
+  async createSignatureRequest(dto: CreateSignatureRequestDTO, user: User) {
     let share: any;
     let file: any;
 
     if (dto.teamId) {
+      // --- Team context: verify membership + share belongs to team folder ---
       const membership = await this.prisma.teamMember.findFirst({
         where: { teamId: dto.teamId, userId: user.id, isActive: true },
       });
@@ -51,6 +50,7 @@ export class SigningService {
         );
       }
 
+      // Find the share within any team folder of this team
       share = await this.prisma.share.findFirst({
         where: {
           id: dto.shareId,
@@ -64,6 +64,9 @@ export class SigningService {
         );
       }
 
+      // SECURITY: Only OWNER/ADMIN or members with explicit canRequestSignature
+      // permission on the EXACT folder containing this share are allowed.
+      // Also accept per-file FileAccess overrides (canRequestSignature).
       if (membership.role !== "OWNER" && membership.role !== "ADMIN") {
         const folderAccess = await this.prisma.teamFolderAccess.findFirst({
           where: {
@@ -72,6 +75,7 @@ export class SigningService {
             canRequestSignature: true,
           },
         });
+        // Also check per-file override (FileAccess overrides folder-level rules)
         const fileAccess = dto.fileId
           ? await this.prisma.fileAccess.findFirst({
               where: {
@@ -93,6 +97,7 @@ export class SigningService {
         throw new NotFoundException("File not found in this share");
       }
     } else {
+      // --- Personal context: share must belong to user ---
       share = await this.prisma.share.findFirst({
         where: { id: dto.shareId, creatorId: user.id },
         include: { files: true },
@@ -114,6 +119,14 @@ export class SigningService {
       );
     }
 
+    if (dto.addApprovalField === false && dto.watermarkPage !== undefined) {
+      throw new BadRequestException(
+        "Watermark page cannot be set when the approval watermark is disabled",
+      );
+    }
+
+    const addApprovalField = dto.addApprovalField ?? true;
+
     this.validateSignatureFields(dto);
 
     // Create the signature document
@@ -127,9 +140,11 @@ export class SigningService {
         message: dto.message,
         signatureLevel: dto.signatureLevel || SignatureLevel.AES,
         expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
-        addApprovalField: dto.addApprovalField ?? true,
+        addApprovalField,
         addApprovalMention: dto.addApprovalMention ?? true,
         addInitials: dto.addInitials ?? false,
+        signaturePage: dto.signaturePage ?? null,
+        watermarkPage: addApprovalField ? (dto.watermarkPage ?? null) : null,
         isE2EEncrypted: dto.isE2EEncrypted ?? false,
         ownerId: user.id,
         creatorId: user.id,
@@ -157,7 +172,8 @@ export class SigningService {
         data: dto.fields.map((f, idx) => ({
           documentId: document.id,
           assignedRecipientId: f.assignedRecipientEmail
-            ? recipientByEmail.get(f.assignedRecipientEmail.toLowerCase()) || null
+            ? recipientByEmail.get(f.assignedRecipientEmail.toLowerCase()) ||
+              null
             : null,
           type: f.type,
           page: f.page ?? 1,
@@ -188,16 +204,20 @@ export class SigningService {
     // Log team activity if this signature is for a team
     if (dto.teamId) {
       this.logger.log(`Logging SIGNATURE_REQUEST for team ${dto.teamId}`);
-      this.prisma.teamAccessLog.create({
-        data: {
-          teamId: dto.teamId,
-          action: "SIGNATURE_REQUEST",
-          actorEmail: user.email,
-          actorName: user.username || undefined,
-          fileName: file.name,
-          folderId: share.teamFolderId || undefined,
-        },
-      }).catch(err => this.logger.error(`Failed to log SIGNATURE_REQUEST: ${err.message}`));
+      this.prisma.teamAccessLog
+        .create({
+          data: {
+            teamId: dto.teamId,
+            action: "SIGNATURE_REQUEST",
+            actorEmail: user.email,
+            actorName: user.username || undefined,
+            fileName: file.name,
+            folderId: share.teamFolderId || undefined,
+          },
+        })
+        .catch((err) =>
+          this.logger.error(`Failed to log SIGNATURE_REQUEST: ${err.message}`),
+        );
     }
 
     // Send emails to recipients (in order)
@@ -221,7 +241,11 @@ export class SigningService {
     if (shouldEmailE2EKey && dto.e2eKey) {
       const keyRecipients = document.recipients.filter((r) => r.role !== "CC");
       for (const recipient of keyRecipients) {
-        const sent = await this.sendE2EKeyEmail(document, recipient, dto.e2eKey);
+        const sent = await this.sendE2EKeyEmail(
+          document,
+          recipient,
+          dto.e2eKey,
+        );
         if (!sent) emailDeliveryFailures++;
       }
     }
@@ -252,6 +276,13 @@ export class SigningService {
             status: true,
             signedAt: true,
             order: true,
+          },
+        },
+        creator: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
           },
         },
       },
@@ -304,7 +335,11 @@ export class SigningService {
    * Get all signature documents for a team.
    * Only accessible by team members (verified by the caller).
    */
-  async getTeamDocuments(teamId: string, userId: string) {
+  async getTeamDocuments(
+    teamId: string,
+    userId: string,
+    options: { page?: number; limit?: number } = {},
+  ) {
     // Verify user is a member of the team
     const membership = await this.prisma.teamMember.findFirst({
       where: { teamId, userId, isActive: true },
@@ -316,35 +351,60 @@ export class SigningService {
     // Only OWNER/ADMIN or members with canViewSignatures can list all team documents
     const isAdmin = membership.role === "OWNER" || membership.role === "ADMIN";
     if (!isAdmin && !membership.canViewSignatures) {
-      throw new ForbiddenException("You do not have permission to view signatures");
+      throw new ForbiddenException(
+        "You do not have permission to view signatures",
+      );
     }
 
-    const docs = await this.prisma.signatureDocument.findMany({
-      where: { teamId },
-      include: {
-        recipients: {
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            role: true,
-            status: true,
-            signedAt: true,
-            order: true,
-          },
-        },
-        creator: {
-          select: {
-            id: true,
-            username: true,
-            email: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    const page =
+      Number.isFinite(options.page) && (options.page || 0) > 0
+        ? Math.floor(options.page as number)
+        : 1;
+    const limit =
+      Number.isFinite(options.limit) && (options.limit || 0) > 0
+        ? Math.min(Math.floor(options.limit as number), 100)
+        : 50;
+    const where = { teamId };
 
-    return this.enrichWithFileDeleted(docs);
+    const [docs, total] = await Promise.all([
+      this.prisma.signatureDocument.findMany({
+        where,
+        include: {
+          recipients: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              role: true,
+              status: true,
+              signedAt: true,
+              order: true,
+            },
+          },
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.signatureDocument.count({ where }),
+    ]);
+
+    return {
+      documents: await this.enrichWithFileDeleted(docs),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   /**
@@ -366,6 +426,23 @@ export class SigningService {
           ...(user?.email
             ? [{ recipients: { some: { email: user.email } } }]
             : []),
+          // Team members (OWNER/ADMIN or canViewSignatures) can access team documents
+          {
+            teamId: { not: null },
+            team: {
+              members: {
+                some: {
+                  userId,
+                  isActive: true,
+                  OR: [
+                    { role: "OWNER" },
+                    { role: "ADMIN" },
+                    { canViewSignatures: true },
+                  ],
+                },
+              },
+            },
+          },
         ],
       },
       include: {
@@ -405,7 +482,10 @@ export class SigningService {
       where: { signingToken },
       include: {
         document: {
-          include: { fields: true, creator: { select: { username: true, email: true } } },
+          include: {
+            fields: true,
+            creator: { select: { username: true, email: true } },
+          },
         },
       },
     });
@@ -415,7 +495,9 @@ export class SigningService {
     }
 
     if (recipient.document.status === "CANCELLED") {
-      throw new BadRequestException("This signature request has been cancelled");
+      throw new BadRequestException(
+        "This signature request has been cancelled",
+      );
     }
 
     // Already signed - return data with flag instead of throwing
@@ -461,13 +543,14 @@ export class SigningService {
         status: recipient.status,
         otpVerified: recipient.otpVerified,
       },
-      fields: alreadySigned || !recipient.otpVerified
-        ? []
-        : recipient.document.fields.filter(
-            (f) =>
-              !f.assignedRecipientId ||
-              f.assignedRecipientId === recipient.id,
-          ),
+      fields:
+        alreadySigned || !recipient.otpVerified
+          ? []
+          : recipient.document.fields.filter(
+              (f) =>
+                !f.assignedRecipientId ||
+                f.assignedRecipientId === recipient.id,
+            ),
       requiresOtp: !alreadySigned && !recipient.otpVerified,
     };
   }
@@ -491,20 +574,22 @@ export class SigningService {
 
     if (!recipient) throw new NotFoundException("Invalid signing link");
 
-    if (recipient.status === "SIGNED") {
-      throw new BadRequestException("Already signed");
-    }
-
+    // SECURITY: Refuse if document is not PENDING
     if (recipient.document.status !== "PENDING") {
-      throw new BadRequestException(
+      throw new ForbiddenException(
         `Document is ${recipient.document.status.toLowerCase()}, cannot sign`,
       );
     }
 
-    if (recipient.document.expiresAt && recipient.document.expiresAt < new Date()) {
+    // SECURITY: Refuse if document has expired
+    if (
+      recipient.document.expiresAt &&
+      recipient.document.expiresAt < new Date()
+    ) {
       throw new ForbiddenException("This signing request has expired");
     }
 
+    // SECURITY: Only allow signing from PENDING or VIEWED status
     if (recipient.status !== "PENDING" && recipient.status !== "VIEWED") {
       throw new ForbiddenException(
         `You have already ${recipient.status.toLowerCase()} this document`,
@@ -537,9 +622,9 @@ export class SigningService {
     );
 
     const signedAt = new Date();
-    await this.prisma.$transaction(async (tx) => {
-      await tx.signatureRecipient.update({
-        where: { id: recipient.id },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.signatureRecipient.updateMany({
+        where: { id: recipient.id, status: { in: ["PENDING", "VIEWED"] } },
         data: {
           status: "SIGNED",
           signedAt,
@@ -550,12 +635,18 @@ export class SigningService {
         },
       });
 
-      if (fieldValueRows.length > 0) {
+      if (result.count > 0 && fieldValueRows.length > 0) {
         await tx.signatureFieldValue.createMany({
           data: fieldValueRows,
         });
       }
+
+      return result;
     });
+
+    if (updated.count === 0) {
+      throw new ForbiddenException("Document state changed concurrently");
+    }
 
     // Audit event
     await this.createAuditEvent(
@@ -574,15 +665,19 @@ export class SigningService {
     });
     if (doc?.teamId) {
       this.logger.log(`Logging SIGNATURE_SIGNED for team ${doc.teamId}`);
-      this.prisma.teamAccessLog.create({
-        data: {
-          teamId: doc.teamId,
-          action: "SIGNATURE_SIGNED",
-          actorEmail: recipient.email,
-          actorName: recipient.name || undefined,
-          fileName: doc.fileName,
-        },
-      }).catch(err => this.logger.error(`Failed to log SIGNATURE_SIGNED: ${err.message}`));
+      this.prisma.teamAccessLog
+        .create({
+          data: {
+            teamId: doc.teamId,
+            action: "SIGNATURE_SIGNED",
+            actorEmail: recipient.email,
+            actorName: recipient.name || undefined,
+            fileName: doc.fileName,
+          },
+        })
+        .catch((err) =>
+          this.logger.error(`Failed to log SIGNATURE_SIGNED: ${err.message}`),
+        );
     }
 
     // Check if all signers have signed
@@ -591,16 +686,9 @@ export class SigningService {
     });
 
     const allSigned = allRecipients.every((r) => r.status === "SIGNED");
-    const signedCount = allRecipients.filter((r) => r.status === "SIGNED").length;
-
-    // Notify document owner of this signature
-    void this.notifyCreatorOfSignature(
-      recipient.document,
-      recipient.name,
-      recipient.email,
-      signedCount,
-      allRecipients.length,
-    );
+    const signedCount = allRecipients.filter(
+      (r) => r.status === "SIGNED",
+    ).length;
 
     if (allSigned) {
       if (recipient.document.isE2EEncrypted) {
@@ -617,11 +705,28 @@ export class SigningService {
           undefined,
           "Awaiting client-side E2E finalization",
         );
+        // The owner must return to the app to finalize an E2E document, so
+        // make the 2/2 notification reliable after persisting the state.
+        await this.notifyCreatorOfSignature(
+          recipient.document,
+          recipient.name,
+          recipient.email,
+          signedCount,
+          allRecipients.length,
+        );
       } else {
         // Non-E2E: finalize server-side as before
         await this.finalizeDocument(recipient.documentId);
       }
     } else {
+      // Notify the owner of intermediate progress without delaying signing.
+      void this.notifyCreatorOfSignature(
+        recipient.document,
+        recipient.name,
+        recipient.email,
+        signedCount,
+        allRecipients.length,
+      );
       // Notify next signer(s) in order
       const nextOrder = Math.min(
         ...allRecipients
@@ -669,8 +774,10 @@ export class SigningService {
           `Suivez l'avancement ici :\n${baseUrl}/signing/${document.id}\n\n` +
           `-- \nPrivCloud Sharing - Signature Électronique`,
       );
-    } catch {
-      // Non-blocking
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to notify signature creator for ${document.id}: ${error?.message || error}`,
+      );
     }
   }
 
@@ -690,20 +797,19 @@ export class SigningService {
 
     if (!recipient) throw new NotFoundException("Invalid signing link");
 
+    // SECURITY: Refuse action if document is not PENDING
     if (recipient.document.status !== "PENDING") {
       throw new ForbiddenException(
         "This document is no longer pending and cannot be rejected",
       );
     }
 
-    if (recipient.document.expiresAt && recipient.document.expiresAt < new Date()) {
+    // SECURITY: Refuse action if document has expired
+    if (
+      recipient.document.expiresAt &&
+      recipient.document.expiresAt < new Date()
+    ) {
       throw new ForbiddenException("This signing request has expired");
-    }
-
-    if (recipient.status !== "PENDING" && recipient.status !== "VIEWED") {
-      throw new ForbiddenException(
-        `You have already ${recipient.status.toLowerCase()} this document`,
-      );
     }
 
     // SECURITY: the token opens the public flow, but email OTP unlocks actions.
@@ -713,8 +819,16 @@ export class SigningService {
       );
     }
 
-    await this.prisma.signatureRecipient.update({
-      where: { id: recipient.id },
+    // SECURITY: Refuse action if recipient already finalized (signed/rejected)
+    if (recipient.status !== "PENDING" && recipient.status !== "VIEWED") {
+      throw new ForbiddenException(
+        `You have already ${recipient.status.toLowerCase()} this document`,
+      );
+    }
+
+    // Use conditional update to prevent race conditions
+    const updated = await this.prisma.signatureRecipient.updateMany({
+      where: { id: recipient.id, status: { in: ["PENDING", "VIEWED"] } },
       data: {
         status: "REJECTED",
         rejectionReason: reason,
@@ -723,10 +837,14 @@ export class SigningService {
       },
     });
 
+    if (updated.count === 0) {
+      throw new ForbiddenException("Document state changed concurrently");
+    }
+
     // Mark document as cancelled if a required signer rejects
     if (recipient.role === "SIGNER") {
-      await this.prisma.signatureDocument.update({
-        where: { id: recipient.documentId },
+      await this.prisma.signatureDocument.updateMany({
+        where: { id: recipient.documentId, status: "PENDING" },
         data: { status: "CANCELLED" },
       });
     }
@@ -753,16 +871,22 @@ export class SigningService {
 
     // Log team activity
     if (recipient.document.teamId) {
-      this.logger.log(`Logging SIGNATURE_REJECTED for team ${recipient.document.teamId}`);
-      this.prisma.teamAccessLog.create({
-        data: {
-          teamId: recipient.document.teamId,
-          action: "SIGNATURE_REJECTED",
-          actorEmail: recipient.email,
-          actorName: recipient.name || undefined,
-          fileName: recipient.document.fileName,
-        },
-      }).catch(err => this.logger.error(`Failed to log SIGNATURE_REJECTED: ${err.message}`));
+      this.logger.log(
+        `Logging SIGNATURE_REJECTED for team ${recipient.document.teamId}`,
+      );
+      this.prisma.teamAccessLog
+        .create({
+          data: {
+            teamId: recipient.document.teamId,
+            action: "SIGNATURE_REJECTED",
+            actorEmail: recipient.email,
+            actorName: recipient.name || undefined,
+            fileName: recipient.document.fileName,
+          },
+        })
+        .catch((err) =>
+          this.logger.error(`Failed to log SIGNATURE_REJECTED: ${err.message}`),
+        );
     }
 
     return { status: "REJECTED" };
@@ -793,15 +917,19 @@ export class SigningService {
     if (doc.teamId) {
       const user = await this.prisma.user.findUnique({ where: { id: userId } });
       this.logger.log(`Logging SIGNATURE_CANCEL for team ${doc.teamId}`);
-      this.prisma.teamAccessLog.create({
-        data: {
-          teamId: doc.teamId,
-          action: "SIGNATURE_CANCEL",
-          actorEmail: user?.email || "unknown",
-          actorName: user?.username || undefined,
-          fileName: doc.fileName,
-        },
-      }).catch(err => this.logger.error(`Failed to log SIGNATURE_CANCEL: ${err.message}`));
+      this.prisma.teamAccessLog
+        .create({
+          data: {
+            teamId: doc.teamId,
+            action: "SIGNATURE_CANCEL",
+            actorEmail: user?.email || "unknown",
+            actorName: user?.username || undefined,
+            fileName: doc.fileName,
+          },
+        })
+        .catch((err) =>
+          this.logger.error(`Failed to log SIGNATURE_CANCEL: ${err.message}`),
+        );
     }
 
     // Notify pending recipients
@@ -922,11 +1050,14 @@ export class SigningService {
 
     for (const submitted of submittedValues) {
       if (!fillableFieldIds.has(submitted.fieldId)) {
-        throw new ForbiddenException("Cannot fill a field assigned to another signer");
+        throw new ForbiddenException(
+          "Cannot fill a field assigned to another signer",
+        );
       }
     }
 
-    const rows: Array<{ fieldId: string; recipientId: string; value: string }> = [];
+    const rows: Array<{ fieldId: string; recipientId: string; value: string }> =
+      [];
     for (const field of fillableFields) {
       if (field.type === "SIGNATURE" || field.type === "INITIALS") continue;
 
@@ -1016,7 +1147,10 @@ export class SigningService {
       // Apply each signer's signature to the PDF after text fields so it stays visible.
       for (const recipient of doc.recipients) {
         const signatureImage = recipient.signatureData
-          ? Buffer.from(recipient.signatureData.replace(/^data:image\/\w+;base64,/, ""), "base64")
+          ? Buffer.from(
+              recipient.signatureData.replace(/^data:image\/\w+;base64,/, ""),
+              "base64",
+            )
           : undefined;
         const signatureField =
           doc.fields.find(
@@ -1025,9 +1159,7 @@ export class SigningService {
               field.assignedRecipientId === recipient.id,
           ) ||
           doc.fields.find(
-            (field) =>
-              field.type === "SIGNATURE" &&
-              !field.assignedRecipientId,
+            (field) => field.type === "SIGNATURE" && !field.assignedRecipientId,
           );
 
         pdfBuffer = await this.pdfSigningService.addApprovalFieldAndSignature(
@@ -1035,16 +1167,21 @@ export class SigningService {
           {
             name: recipient.name,
             signatureImage:
-              recipient.signatureType === "DRAW" || recipient.signatureType === "UPLOAD"
+              recipient.signatureType === "DRAW" ||
+              recipient.signatureType === "UPLOAD"
                 ? signatureImage
                 : undefined,
             signatureText:
-              recipient.signatureType === "TYPE" ? recipient.signatureData : undefined,
+              recipient.signatureType === "TYPE"
+                ? recipient.signatureData
+                : undefined,
             signedDate: recipient.signedAt!,
           },
           {
             addApprovalWatermark: doc.addApprovalField,
             addApprovalMention: doc.addApprovalMention,
+            signaturePage: doc.signaturePage ?? undefined,
+            watermarkPage: doc.watermarkPage ?? undefined,
             signatureField: signatureField
               ? {
                   page: signatureField.page,
@@ -1096,11 +1233,27 @@ export class SigningService {
       pdfBuffer = Buffer.from(await mainDoc.save());
 
       // Apply cryptographic signature (PAdES)
-      pdfBuffer = await this.pdfSigningService.signPdf(pdfBuffer, {
-        name: "PrivCloud Sharing",
-        email: "signing@privcloud.eu",
-        reason: "Signature électronique eIDAS - Tous les signataires ont signé",
-      });
+      const appUrl = this.configService.get("general.appUrl") as string;
+      const signingDomain = new URL(appUrl).hostname;
+      try {
+        pdfBuffer = await this.pdfSigningService.signPdf(pdfBuffer, {
+          name: "PrivCloud Sharing",
+          email: `signing@${signingDomain}`,
+          reason:
+            "Signature électronique eIDAS - Tous les signataires ont signé",
+        });
+      } catch (signingError: any) {
+        // SECURITY: Fail-closed - mark document as SIGNING_FAILED, do NOT mark COMPLETED
+        this.logger.error(
+          `Signing failed for document ${documentId}: ${signingError?.message}`,
+        );
+        await this.prisma.signatureDocument.update({
+          where: { id: documentId },
+          data: { status: "SIGNING_FAILED" },
+        });
+        await this.createAuditEvent(documentId, "SIGNING_FAILED", "system");
+        throw signingError;
+      }
 
       // Store the signed PDF
       const signedKey = `signed/${documentId}/${doc.fileName}`;
@@ -1117,60 +1270,45 @@ export class SigningService {
       // Log team activity if this is a team document
       if (doc.teamId) {
         this.logger.log(`Logging SIGNATURE_COMPLETE for team ${doc.teamId}`);
-        this.prisma.teamAccessLog.create({
-          data: {
-            teamId: doc.teamId,
-            action: "SIGNATURE_COMPLETE",
-            actorEmail: "system",
-            actorName: "Signature automatique",
-            fileName: doc.fileName,
-          },
-        }).catch(err => this.logger.error(`Failed to log SIGNATURE_COMPLETE: ${err.message}`));
+        this.prisma.teamAccessLog
+          .create({
+            data: {
+              teamId: doc.teamId,
+              action: "SIGNATURE_COMPLETE",
+              actorEmail: "system",
+              actorName: "Signature automatique",
+              fileName: doc.fileName,
+            },
+          })
+          .catch((err) =>
+            this.logger.error(
+              `Failed to log SIGNATURE_COMPLETE: ${err.message}`,
+            ),
+          );
       }
 
-      // Notify all parties
-      const allRecipients = await this.prisma.signatureRecipient.findMany({
-        where: { documentId },
-      });
-
-      const baseUrl = await this.configService.get("general.appUrl");
-      const documentUrl = `${baseUrl}/signing/${documentId}`;
-      const signersList = allRecipients
-        .filter(r => r.role === "SIGNER")
-        .map(r => `  • ${r.name} (${r.email}) - signé le ${r.signedAt ? new Date(r.signedAt).toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "Europe/Paris" }) : "N/A"}`)
-        .join("\n");
-
-      for (const r of allRecipients) {
-        const hasAccount = r.userId != null;
-        await this.emailService.sendMail(
-          r.email,
-          `Document signé - ${doc.fileName}`,
-          `Bonjour ${r.name},\n\n` +
-            `Le document "${doc.fileName}" a été signé par tous les signataires et la signature cryptographique PAdES a été appliquée.\n\n` +
-            `Signataires :\n${signersList}\n\n` +
-            (hasAccount
-              ? `Vous pouvez consulter et télécharger le document signé depuis votre espace :\n${documentUrl}\n\n` +
-                `Ce document apparaît également dans votre rubrique "Documents reçus" de l'onglet Signature.\n\n`
-              : `Si vous avez un compte PrivCloud Sharing, connectez-vous pour retrouver ce document dans vos "Documents reçus".\n\n`) +
-            `-- \nPrivCloud Sharing - Signature Électronique`,
-        );
-      }
-
-      // Notify the document owner/creator
-      const creator = await this.prisma.user.findUnique({
-        where: { id: doc.creatorId },
-      });
-      if (creator?.email) {
-        await this.emailService.sendMail(
-          creator.email,
-          `Document signé par tous les signataires - ${doc.fileName}`,
-          `Bonjour ${creator.username || ""},\n\n` +
-            `Le document "${doc.fileName}" a été signé par l'ensemble des signataires.\n\n` +
-            `Signataires :\n${signersList}\n\n` +
-            `Vous pouvez consulter et télécharger le document signé ici :\n` +
-            `${documentUrl}\n\n` +
-            (doc.teamId ? `Ce document est également visible dans l'espace de votre équipe.\n\n` : "") +
-            `-- \nPrivCloud Sharing - Signature Électronique`,
+      try {
+        const [allRecipients, creator, baseUrl] = await Promise.all([
+          this.prisma.signatureRecipient.findMany({ where: { documentId } }),
+          this.prisma.user.findUnique({ where: { id: doc.creatorId } }),
+          Promise.resolve(this.configService.get("general.appUrl")),
+        ]);
+        await deliverSigningCompletionEmails({
+          fileName: doc.fileName,
+          documentUrl: `${baseUrl}/signing/${documentId}`,
+          teamId: doc.teamId,
+          creator,
+          recipients: allRecipients,
+          sendMail: (email, subject, body) =>
+            this.emailService.sendMail(email, subject, body),
+          onFailure: (email, error: any) =>
+            this.logger.error(
+              `Completion email failed for ${documentId} to ${email}: ${error?.message || error}`,
+            ),
+        });
+      } catch (notificationError: any) {
+        this.logger.error(
+          `Failed to prepare completion emails for ${documentId}: ${notificationError?.message || notificationError}`,
         );
       }
 
@@ -1180,11 +1318,24 @@ export class SigningService {
         `Failed to finalize document ${documentId}: ${error?.message}`,
       );
 
-      // Mark as AWAITING_FINALIZATION so it's visible in the UI as needing attention
-      await this.prisma.signatureDocument.update({
-        where: { id: documentId },
-        data: { status: "AWAITING_FINALIZATION" },
-      }).catch(() => {});
+      // SECURITY: Fail-closed - only overwrite status if it's NOT already
+      // SIGNING_FAILED (set by the inner PAdES catch). A crypto failure
+      // must stay marked as such and never be softened.
+      const currentDoc = await this.prisma.signatureDocument
+        .findUnique({
+          where: { id: documentId },
+          select: { status: true },
+        })
+        .catch(() => null);
+
+      if (currentDoc?.status !== "SIGNING_FAILED") {
+        await this.prisma.signatureDocument
+          .update({
+            where: { id: documentId },
+            data: { status: "AWAITING_FINALIZATION" },
+          })
+          .catch(() => {});
+      }
 
       await this.createAuditEvent(
         documentId,
@@ -1197,21 +1348,27 @@ export class SigningService {
 
       // Notify creator of the failure
       if (doc?.creatorId) {
-        const creator = await this.prisma.user.findUnique({
-          where: { id: doc.creatorId },
-        }).catch(() => null);
+        const creator = await this.prisma.user
+          .findUnique({
+            where: { id: doc.creatorId },
+          })
+          .catch(() => null);
         if (creator?.email) {
-          const baseUrl = await this.configService.get("general.appUrl").catch(() => "");
-          await this.emailService.sendMail(
-            creator.email,
-            `Erreur de finalisation - ${doc.fileName}`,
-            `Bonjour ${creator.username || ""},\n\n` +
-              `La finalisation automatique du document "${doc.fileName}" a échoué.\n` +
-              `Toutes les signatures ont été collectées mais le document n'a pas pu être finalisé.\n\n` +
-              `Vous pouvez réessayer en vous rendant sur :\n${baseUrl}/signing/${documentId}\n\n` +
-              `Si le problème persiste, contactez le support.\n\n` +
-              `-- \nPrivCloud Sharing - Signature Électronique`,
-          ).catch(() => {});
+          const baseUrl = await this.configService
+            .get("general.appUrl")
+            .catch(() => "");
+          await this.emailService
+            .sendMail(
+              creator.email,
+              `Erreur de finalisation - ${doc.fileName}`,
+              `Bonjour ${creator.username || ""},\n\n` +
+                `La finalisation automatique du document "${doc.fileName}" a échoué.\n` +
+                `Toutes les signatures ont été collectées mais le document n'a pas pu être finalisé.\n\n` +
+                `Vous pouvez réessayer en vous rendant sur :\n${baseUrl}/signing/${documentId}\n\n` +
+                `Si le problème persiste, contactez le support.\n\n` +
+                `-- \nPrivCloud Sharing - Signature Électronique`,
+            )
+            .catch(() => {});
         }
       }
     }
@@ -1236,7 +1393,9 @@ export class SigningService {
       `Bonjour ${recipient.name},\n\n` +
       (isReminder ? "Ceci est un rappel. " : "") +
       `Vous avez reçu une demande de signature électronique pour le document "${document.fileName}".\n\n` +
-      (document.message ? `Message de l'expéditeur :\n${document.message}\n\n` : "") +
+      (document.message
+        ? `Message de l'expéditeur :\n${document.message}\n\n`
+        : "") +
       `Pour signer ce document, cliquez sur le lien ci-dessous :\n${signingUrl}\n\n` +
       `Ce lien est personnel et sécurisé. Ne le partagez pas.\n\n` +
       `Niveau de signature : ${document.signatureLevel === "QES" ? "Qualifiée (QES)" : "Avancée (AES)"}\n\n` +
@@ -1367,14 +1526,32 @@ export class SigningService {
     const existingShareIds = new Set(existingShares.map((s) => s.id));
     const existingFileIds = new Set(existingFiles.map((f) => f.id));
 
-    return docs.map((doc) => {
+    const results: (T & { fileDeleted: boolean })[] = [];
+    const idsToMarkDeleted: string[] = [];
+
+    for (const doc of docs) {
       const docFileId = (doc as { fileId?: string | null }).fileId;
       const shareGone =
         doc.shareId == null || !existingShareIds.has(doc.shareId);
-      const fileGone =
-        docFileId != null && !existingFileIds.has(docFileId);
-      return { ...doc, fileDeleted: shareGone || fileGone };
-    });
+      const fileGone = docFileId != null && !existingFileIds.has(docFileId);
+      const fileDeleted = shareGone || fileGone;
+
+      results.push({ ...doc, fileDeleted });
+
+      // Persist fileDeletedAt on first detection
+      if (fileDeleted && !(doc as any).fileDeletedAt) {
+        idsToMarkDeleted.push((doc as any).id);
+      }
+    }
+
+    if (idsToMarkDeleted.length > 0) {
+      await this.prisma.signatureDocument.updateMany({
+        where: { id: { in: idsToMarkDeleted }, fileDeletedAt: null },
+        data: { fileDeletedAt: new Date() },
+      });
+    }
+
+    return results;
   }
 
   /**

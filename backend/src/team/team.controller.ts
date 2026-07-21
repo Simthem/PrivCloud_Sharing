@@ -17,6 +17,7 @@ import { AdministratorGuard } from "src/auth/guard/isAdmin.guard";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { User } from "@prisma/client";
 import { TeamService } from "./team.service";
+import { TeamAuditService } from "./team-audit.service";
 import {
   CreateTeamDTO,
   UpdateTeamDTO,
@@ -31,11 +32,16 @@ import {
   AdminSetRoleDTO,
   AdminSetMaxMembersDTO,
   CreateGuestLinkDTO,
+  StartTeamKeyRotationDTO,
+  UpdateTeamKeyRotationProgressDTO,
 } from "./dto/team.dto";
 
 @Controller("teams")
 export class TeamController {
-  constructor(private teamService: TeamService) {}
+  constructor(
+    private teamService: TeamService,
+    private teamAuditService: TeamAuditService,
+  ) {}
 
   // =========================================================================
   // TEAM CRUD
@@ -249,10 +255,15 @@ export class TeamController {
   @UseGuards(JwtGuard)
   acceptInvitation(
     @Param("token") token: string,
-    @Body() body: { wrappedTeamKey?: string },
+    @Body() body: { wrappedTeamKey?: string; keyVersion?: number },
     @GetUser() user: User,
   ) {
-    return this.teamService.acceptInvitation(token, user.id, body.wrappedTeamKey);
+    return this.teamService.acceptInvitation(
+      token,
+      user.id,
+      body.wrappedTeamKey,
+      body.keyVersion,
+    );
   }
 
   // =========================================================================
@@ -269,10 +280,15 @@ export class TeamController {
   @UseGuards(JwtGuard)
   setTeamKey(
     @Param("teamId") teamId: string,
-    @Body() body: { wrappedTeamKey: string },
+    @Body() body: { wrappedTeamKey: string; keyVersion?: number },
     @GetUser() user: User,
   ) {
-    return this.teamService.setTeamKey(teamId, user.id, body.wrappedTeamKey);
+    return this.teamService.setTeamKey(
+      teamId,
+      user.id,
+      body.wrappedTeamKey,
+      body.keyVersion,
+    );
   }
 
   @Get(":teamId/shares")
@@ -290,6 +306,63 @@ export class TeamController {
     @GetUser() user: User,
   ) {
     return this.teamService.rotateTeamKey(teamId, user.id, body.newWrappedTeamKey);
+  }
+
+  @Get(":teamId/key-rotation")
+  @UseGuards(JwtGuard)
+  getKeyRotationStatus(
+    @Param("teamId") teamId: string,
+    @GetUser() user: User,
+  ) {
+    return this.teamService.getKeyRotationStatus(teamId, user.id);
+  }
+
+  @Post(":teamId/key-rotation/start")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 5, ttl: 3600 } })
+  startKeyRotation(
+    @Param("teamId") teamId: string,
+    @Body() dto: StartTeamKeyRotationDTO,
+    @GetUser() user: User,
+  ) {
+    return this.teamService.startTeamKeyRotation(teamId, user.id, dto);
+  }
+
+  @Patch(":teamId/key-rotation/:rotationId/progress")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 2000, ttl: 3600 } })
+  updateKeyRotationProgress(
+    @Param("teamId") teamId: string,
+    @Param("rotationId") rotationId: string,
+    @Body() dto: UpdateTeamKeyRotationProgressDTO,
+    @GetUser() user: User,
+  ) {
+    return this.teamService.updateTeamKeyRotationProgress(
+      teamId,
+      rotationId,
+      user.id,
+      dto,
+    );
+  }
+
+  @Post(":teamId/key-rotation/:rotationId/complete")
+  @UseGuards(JwtGuard)
+  completeKeyRotation(
+    @Param("teamId") teamId: string,
+    @Param("rotationId") rotationId: string,
+    @GetUser() user: User,
+  ) {
+    return this.teamService.completeTeamKeyRotation(teamId, rotationId, user.id);
+  }
+
+  @Delete(":teamId/key-rotation/:rotationId")
+  @UseGuards(JwtGuard)
+  cancelKeyRotation(
+    @Param("teamId") teamId: string,
+    @Param("rotationId") rotationId: string,
+    @GetUser() user: User,
+  ) {
+    return this.teamService.cancelTeamKeyRotation(teamId, rotationId, user.id);
   }
 
   @Delete(":teamId/members/:memberId")
@@ -530,5 +603,24 @@ export class TeamController {
       limit: limit ? parseInt(limit, 10) : undefined,
       action: action || undefined,
     });
+  }
+
+  @Get(":teamId/audit-reports")
+  @UseGuards(JwtGuard)
+  listAuditReports(@Param("teamId") teamId: string, @GetUser() user: User) {
+    return this.teamAuditService.listReports(teamId, user.id);
+  }
+
+  @Post(":teamId/audit-reports/send-now")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 3, ttl: 3600 } })
+  sendAuditReportNow(@Param("teamId") teamId: string, @GetUser() user: User) {
+    return this.teamAuditService.sendNow(teamId, user.id);
+  }
+
+  @Get(":teamId/search-index")
+  @UseGuards(JwtGuard)
+  getSearchIndex(@Param("teamId") teamId: string, @GetUser() user: User) {
+    return this.teamService.getClientSearchIndex(teamId, user.id);
   }
 }

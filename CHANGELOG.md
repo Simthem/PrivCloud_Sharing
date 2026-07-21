@@ -1,3 +1,80 @@
+## [1.23.7](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.6...v1.23.7) (2026-07-21)
+
+### Features
+
+- **teams -- complete open-source workspace:** exposed Team dashboards,
+  permission-aware folders and files, bulk operations, client-side metadata
+  search, automatic audit reports and assisted E2E key rotation to every
+  authenticated user without subscription or plan gates.
+- **teams -- encrypted member sharing:** Team members with the corresponding
+  folder or file permission can share E2E-encrypted files with other members;
+  recipient metadata is encrypted in the browser and delivered through the
+  encrypted Team notification feed.
+- **signing -- E2E-compatible PAdES workflow:** restored electronic signature
+  requests, recipient signing and browser-side finalization for encrypted PDFs,
+  including detached digest signing, certificate pages and audit history,
+  without commercial-plan conditions.
+- **encrypted transfers -- resilient large-file paths:** added persisted,
+  resumable re-encryption sessions, explicit encryption-record metadata and
+  bounded streaming download/upload helpers for Team key rotation and previews.
+
+### Security
+
+- **container runtime -- shell-less distroless image:** replaced the Debian
+  Trixie slim runner in both Docker build variants with a digest-pinned
+  `base-nossl-debian13` image containing only Node, Caddy, patched OpenSSL and
+  the native libraries required by application addons; package managers,
+  shells, PAM, systemd, util-linux, shadow and gosu are absent from the final
+  image.
+- **container toolchain -- Go 1.26.5:** rebuilt Caddy and the static runtime
+  initializer with Go 1.26.5, removing the Go standard-library findings fixed
+  in that release, including `CVE-2026-39822` and `CVE-2026-42505`.
+- **docker -- Caddy Go dependency hardening:** rebuilt source-based Caddy in
+  both Dockerfiles with `golang.org/x/net@v0.57.0`,
+  `golang.org/x/text@v0.40.0`, `golang.org/x/crypto@v0.54.0` and
+  `golang.org/x/sys@v0.47.0`, with build assertions preventing transitive
+  downgrades and verifying that OpenPGP is absent from the compiled graph.
+- **frontend/backend -- Axios advisory remediation:** upgraded direct and
+  transitive Axios resolutions from `1.16.0` to `1.18.1`, addressing the
+  inherited-proxy, prototype-pollution and request-size enforcement advisories.
+- **backend/docs -- fast-uri advisory remediation:** pinned npm overrides and
+  lockfiles to `fast-uri@3.1.4`, removing the Snyk high-severity Prisma/AJV
+  interpretation-conflict path.
+- **frontend/docs -- build dependency audit cleanup:** resolved
+  `brace-expansion@5.0.7` for modern consumers while retaining the patched
+  CommonJS-compatible `1.1.16` branch required by ESLint's `minimatch@3`, and
+  pinned `js-yaml@4.3.0` plus the remaining fixed documentation paths.
+- **container scanning -- verified OpenPGP VEX:** merged a scanner-compatible
+  `not_affected` statement for the unreachable Caddy OpenPGP advisory while
+  retaining the existing reviewed public pgx statement.
+
+### Bug Fixes
+
+- **container restart -- Caddy volume ownership:** replaced the shell/gosu
+  startup chain with a restart-safe static initializer that does not recurse
+  into already-correct private Caddy lock directories and safely handles
+  concurrent blue/green default-image initialization after a Docker daemon
+  restart.
+- **container startup -- SQLite migration parity:** moved the public database
+  diagnostics, migration reconciliation and seed flow into the Node supervisor
+  so the open-source SQLite runtime keeps its existing upgrade behavior without
+  relying on `/bin/sh`.
+- **SQLite upgrades -- interrupted parity migration recovery:** removed duplicate
+  signing-page column additions from the public parity migration and added an
+  idempotent, column-level repair for databases left in Prisma `P3009`, without
+  deleting tables or application data.
+
+### Maintenance
+
+- **documentation -- Docusaurus 3.10.1:** upgraded every Docusaurus package,
+  migrated the deprecated broken-Markdown-link hook and corrected the upgrade
+  guide's stand-alone installation anchor.
+- **tests -- public unit runner:** added a single backend unit command covering
+  re-encryption retries, signing mail, Team audit windows and restart-safe
+  SQLite migration recovery.
+- Bumped root, backend, frontend and documentation package metadata and
+  lockfiles to `1.23.7`.
+
 ## [1.23.6](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.5...v1.23.6) (2026-07-09)
 
 ### Security

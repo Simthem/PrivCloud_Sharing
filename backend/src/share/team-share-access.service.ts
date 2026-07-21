@@ -30,6 +30,7 @@ export class TeamShareAccessService {
       where: { id: shareId },
       select: {
         id: true,
+        isE2EEncrypted: true,
         teamFolderId: true,
         teamFolder: { select: { id: true, teamId: true } },
         files: { select: { id: true } },
@@ -49,6 +50,11 @@ export class TeamShareAccessService {
       share.teamFolder.teamId,
       user,
       options.allowPlatformAdmin,
+    );
+    await this.assertNoConflictingKeyRotation(
+      share.teamFolder.teamId,
+      share.isE2EEncrypted,
+      user,
     );
     if (!membership) return;
 
@@ -113,6 +119,7 @@ export class TeamShareAccessService {
         share: {
           select: {
             id: true,
+            isE2EEncrypted: true,
             teamFolderId: true,
             teamFolder: { select: { id: true, teamId: true } },
           },
@@ -134,6 +141,11 @@ export class TeamShareAccessService {
       share.teamFolder.teamId,
       user,
       options.allowPlatformAdmin,
+    );
+    await this.assertNoConflictingKeyRotation(
+      share.teamFolder.teamId,
+      share.isE2EEncrypted,
+      user,
     );
     if (!membership) return;
 
@@ -278,5 +290,27 @@ export class TeamShareAccessService {
     }
 
     return membership;
+  }
+
+  private async assertNoConflictingKeyRotation(
+    teamId: string,
+    isE2EEncrypted: boolean,
+    user: User | undefined,
+  ) {
+    if (!isE2EEncrypted || !user) return;
+
+    const rotation = await this.prisma.teamKeyRotation.findFirst({
+      where: {
+        teamId,
+        status: { in: ["PREPARING", "REENCRYPTING", "PAUSED"] },
+      },
+      select: { startedById: true },
+    });
+    if (rotation && rotation.startedById !== user.id) {
+      throw new ForbiddenException(
+        "This Team share is temporarily unavailable during key rotation",
+        "team_key_rotation_in_progress",
+      );
+    }
   }
 }

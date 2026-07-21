@@ -5,14 +5,17 @@ export interface Team {
   name: string;
   slug: string;
   description?: string;
-  plan?: string;
-  status?: string;
   maxMembers: number;
   maxShareSize: number;
   totalStorageLimit: number;
   storageUsed: number;
   members?: TeamMember[];
   sharedFolders?: TeamFolder[];
+  reportEnabled: boolean;
+  reportFrequency: string;
+  keyVersion: number;
+  keyRotatedAt?: string | null;
+  keyRotationIntervalDays: number;
   createdAt: string;
 }
 
@@ -23,6 +26,8 @@ export interface TeamMember {
   isActive: boolean;
   joinedAt: string;
   hasTeamKey?: boolean;
+  teamKeyVersion?: number;
+  keyStatus?: "CURRENT" | "PENDING" | "MISSING";
   canViewActivity?: boolean;
   canViewSignatures?: boolean;
   pushNotifMode?: string;
@@ -48,6 +53,8 @@ export interface TeamMetrics {
   };
   storage: {
     used: number;
+    folderUsed: number;
+    externalUsed: number;
     limit: number;
     percentage: number;
   };
@@ -57,6 +64,7 @@ export interface TeamMetrics {
     downloads: number;
     uploads: number;
     signatures: number;
+    dailyBreakdown: Array<{ action: string; _count: { id: number } }>;
     topDownloaders: { email: string; count: number }[];
   };
   limits: {
@@ -76,6 +84,59 @@ export interface AccessLog {
   createdAt: string;
   folder?: { name: string };
   file?: { name: string };
+}
+
+export interface TeamAuditReport {
+  id: string;
+  frequency: string;
+  periodStart: string;
+  periodEnd: string;
+  status: "GENERATED" | "SENT" | "FAILED";
+  sentAt?: string | null;
+  error?: string | null;
+  recipientEmails: string[];
+  summary: null | {
+    totals: Record<string, number>;
+    anomalies: Array<{ code: string; severity: string; description: string }>;
+    keyHealth: { current: number; pending: number; missing: number };
+  };
+}
+
+export interface TeamSearchIndex {
+  generatedAt: string;
+  mode: "CLIENT_SIDE_METADATA";
+  folders: Array<{
+    id: string;
+    name: string;
+    description?: string | null;
+    parentId?: string | null;
+    createdAt: string;
+  }>;
+  files: Array<{
+    id: string;
+    shareId: string;
+    shareName?: string | null;
+    folderId: string;
+    folderName?: string | null;
+    name: string;
+    relativePath?: string | null;
+    size: string;
+    createdAt: string;
+    expiresAt: string;
+    author?: { id: string; username: string; email: string } | null;
+    isE2EEncrypted: boolean;
+    signature?: { id: string; status: string } | null;
+  }>;
+  signatures: Array<{
+    id: string;
+    fileId?: string | null;
+    name: string;
+    status: string;
+    createdAt: string;
+    author?: { username: string; email: string } | null;
+  }>;
+  activity: AccessLog[];
+  capabilities: { canViewActivity: boolean; canViewSignatures: boolean };
 }
 
 // ============================================================
@@ -121,7 +182,13 @@ const getTeam = async (teamId: string): Promise<Team> => {
 
 const updateTeam = async (
   teamId: string,
-  data: { name?: string; description?: string; reportFrequency?: string },
+  data: {
+    name?: string;
+    description?: string;
+    reportFrequency?: string;
+    reportEnabled?: boolean;
+    keyRotationIntervalDays?: number;
+  },
 ): Promise<Team> => {
   return (await api.patch(`teams/${teamId}`, data)).data;
 };
@@ -144,21 +211,27 @@ const inviteMember = async (
 const acceptInvitation = async (
   token: string,
   wrappedTeamKey?: string,
+  keyVersion?: number,
 ): Promise<{ teamId: string; teamName: string; encryptedTeamKey: string | null }> => {
-  return (await api.post(`teams/invite/${token}/accept`, { wrappedTeamKey })).data;
+  return (await api.post(`teams/invite/${token}/accept`, { wrappedTeamKey, keyVersion })).data;
 };
 
 const getTeamKey = async (
   teamId: string,
-): Promise<{ wrappedTeamKey: string | null }> => {
+): Promise<{
+  wrappedTeamKey: string | null;
+  keyVersion: number;
+  memberKeyVersion: number;
+}> => {
   return (await api.get(`teams/${teamId}/team-key`)).data;
 };
 
 const setTeamKey = async (
   teamId: string,
   wrappedTeamKey: string,
+  keyVersion?: number,
 ): Promise<void> => {
-  await api.put(`teams/${teamId}/team-key`, { wrappedTeamKey });
+  await api.put(`teams/${teamId}/team-key`, { wrappedTeamKey, keyVersion });
 };
 
 export interface TeamShare {
@@ -176,6 +249,69 @@ const rotateTeamKey = async (
   newWrappedTeamKey: string,
 ): Promise<void> => {
   await api.post(`teams/${teamId}/rotate-team-key`, { newWrappedTeamKey });
+};
+
+export interface TeamKeyRotationStatus {
+  policy: {
+    intervalDays: number;
+    reminderDays: number;
+    currentVersion: number;
+    lastRotatedAt: string | null;
+    nextDueAt: string;
+    reminderAt: string;
+    isDue: boolean;
+    reminderActive: boolean;
+  };
+  canOrchestrate: boolean;
+  activeRotation: null | {
+    id: string;
+    fromVersion: number;
+    toVersion: number;
+    status: "PREPARING" | "REENCRYPTING" | "PAUSED";
+    reason: "MANUAL" | "POLICY";
+    startedById: string;
+    totalFiles: number;
+    processedFiles: number;
+    failedFiles: number;
+    completedFileIds: string[];
+    errorMessage: string | null;
+    createdAt: string;
+    pendingWrappedTeamKey: string | null;
+    canResume: boolean;
+  };
+}
+
+const getKeyRotationStatus = async (
+  teamId: string,
+): Promise<TeamKeyRotationStatus> =>
+  (await api.get(`teams/${teamId}/key-rotation`)).data;
+
+const startKeyRotation = async (
+  teamId: string,
+  data: { newWrappedTeamKey: string; reason: "MANUAL" | "POLICY" },
+): Promise<NonNullable<TeamKeyRotationStatus["activeRotation"]>> =>
+  (await api.post(`teams/${teamId}/key-rotation/start`, data)).data;
+
+const updateKeyRotationProgress = async (
+  teamId: string,
+  rotationId: string,
+  data: {
+    completedFileId?: string;
+    failedFiles?: number;
+    status?: "REENCRYPTING" | "PAUSED";
+    errorMessage?: string;
+  },
+): Promise<NonNullable<TeamKeyRotationStatus["activeRotation"]>> =>
+  (await api.patch(`teams/${teamId}/key-rotation/${rotationId}/progress`, data)).data;
+
+const completeKeyRotation = async (
+  teamId: string,
+  rotationId: string,
+): Promise<{ success: boolean; keyVersion: number }> =>
+  (await api.post(`teams/${teamId}/key-rotation/${rotationId}/complete`)).data;
+
+const cancelKeyRotation = async (teamId: string, rotationId: string) => {
+  await api.delete(`teams/${teamId}/key-rotation/${rotationId}`);
 };
 
 const removeMember = async (
@@ -385,6 +521,15 @@ const getAccessLogs = async (
   return (await api.get(`teams/${teamId}/logs${qs ? `?${qs}` : ""}`)).data;
 };
 
+const getAuditReports = async (teamId: string): Promise<TeamAuditReport[]> =>
+  (await api.get(`teams/${teamId}/audit-reports`)).data;
+
+const sendAuditReportNow = async (teamId: string): Promise<TeamAuditReport> =>
+  (await api.post(`teams/${teamId}/audit-reports/send-now`)).data;
+
+const getSearchIndex = async (teamId: string): Promise<TeamSearchIndex> =>
+  (await api.get(`teams/${teamId}/search-index`)).data;
+
 /** Returns all team folders the user can write to (for share upload flow) */
 const getMyWritableFolders = async (): Promise<
   { teamId: string; teamName: string; folder: TeamFolder }[]
@@ -457,7 +602,15 @@ const teamService = {
   getMyWritableFolders,
   getTeamShares,
   rotateTeamKey,
+  getKeyRotationStatus,
+  startKeyRotation,
+  updateKeyRotationProgress,
+  completeKeyRotation,
+  cancelKeyRotation,
   getSignableFiles,
+  getAuditReports,
+  sendAuditReportNow,
+  getSearchIndex,
 };
 
 export default teamService;

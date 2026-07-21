@@ -6,7 +6,7 @@ id: upgrading
 
 ### Upgrade to a new version
 
-As Pingvin Share is in early stage, see the release notes for breaking changes before upgrading.
+As PrivCloud_Sharing is in an early stage, see the release notes for breaking changes before upgrading.
 
 #### Docker
 
@@ -23,13 +23,15 @@ docker compose up -d
 #### Stand-alone
 
 1. Stop the running app
-   ```bash
-   pm2 stop pingvin-share-backend pingvin-share-frontend
-   ```
-2. Repeat the steps from the [installation guide](#stand-alone-installation) except the `git clone` step.
 
    ```bash
-   cd pingvin-share
+   pm2 stop privcloud-sharing-backend privcloud-sharing-frontend
+   ```
+
+2. Repeat the steps from the [installation guide](./installation#stand-alone-installation) except the `git clone` step.
+
+   ```bash
+   cd PrivCloud_Sharing
 
    # Checkout the latest version
    git fetch --tags && git checkout $(git describe --tags `git rev-list --tags --max-count=1`)
@@ -38,12 +40,17 @@ docker compose up -d
    cd backend
    npm install
    npm run build
-   pm2 restart pingvin-share-backend
+   pm2 restart privcloud-sharing-backend
 
    # Start the frontend
    cd ../frontend
    npm install
    npm run build
-   pm2 restart pingvin-share-frontend
+   pm2 restart privcloud-sharing-frontend
    ```
-Note that environment variables are not picked up when using pm2 restart, if you actually want to change configs, you need to run ````pm2 --update-env restart````
+
+Environment variables are not refreshed by a regular `pm2 restart`. If their values changed, restart both processes with:
+
+```bash
+pm2 restart privcloud-sharing-backend privcloud-sharing-frontend --update-env
+```

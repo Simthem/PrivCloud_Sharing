@@ -140,6 +140,20 @@ export class CreateSignatureRequestDTO {
   @IsOptional()
   addInitials?: boolean;
 
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(9999)
+  @Type(() => Number)
+  signaturePage?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(9999)
+  @Type(() => Number)
+  watermarkPage?: number;
+
   @IsBoolean()
   @IsOptional()
   isE2EEncrypted?: boolean;

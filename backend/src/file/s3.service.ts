@@ -28,13 +28,17 @@ import * as crypto from "crypto";
 import * as mime from "mime-types";
 import { File } from "./file.service";
 import { getArchiveEntryName } from "./file-path.util";
-import { Readable, PassThrough } from "stream";
+import { Readable } from "stream";
 import { validate as isValidUUID } from "uuid";
 import archiver from "archiver";
+
+const S3_MIN_MULTIPART_PART_BYTES = 5 * 1024 * 1024;
 
 @Injectable()
 export class S3FileService {
   private readonly logger = new Logger(S3FileService.name);
+  private s3Client?: S3Client;
+  private s3ClientCacheKey?: string;
 
   private multipartUploads: Record<
     string,
@@ -52,7 +56,7 @@ export class S3FileService {
   // as chunks keep arriving.
   // Set to 60 min (was 30 min): the client-side retry logic can spend
   // up to ~38 min retrying a single chunk (20 transient retries with
-  // exponential backoff + 3 recovery cycles).  A 30-min TTL could clean
+  // exponential backoff + 3 recovery cycles). A 30-min TTL could clean
   // up the session while the client is still retrying, causing a
   // "session not found" error that kills the upload permanently.
   private static readonly MULTIPART_TTL_MS = 60 * 60 * 1000;
@@ -66,13 +70,38 @@ export class S3FileService {
     1,
     parseInt(process.env.S3_MAX_CONCURRENT_UPLOADS || "4", 10) || 4,
   );
+  private static readonly UPLOAD_SLOT_TIMEOUT_MS = Math.min(
+    280_000,
+    Math.max(
+      1_000,
+      parseInt(process.env.S3_UPLOAD_SLOT_TIMEOUT_MS || "240000", 10) ||
+        240_000,
+    ),
+  );
   private s3ActiveUploads = 0;
   private readonly s3UploadQueue: Array<{
     resolve: (acquired: boolean) => void;
     timer: ReturnType<typeof setTimeout>;
   }> = [];
 
-  private async acquireUploadSlot(timeoutMs = 60_000): Promise<boolean> {
+  getRecommendedUploadConcurrency(_isE2EEncrypted: boolean): number {
+    const configured = Math.max(
+      1,
+      parseInt(process.env.S3_CLIENT_UPLOAD_CONCURRENCY || "4", 10) || 4,
+    );
+    // Three E2E lanes is the last profile measured as stable at high speed.
+    // The fourth global slot remains available for another request/user.
+    const browserMemoryCap = _isE2EEncrypted ? 3 : 4;
+    return Math.min(
+      configured,
+      browserMemoryCap,
+      S3FileService.MAX_S3_CONCURRENT,
+    );
+  }
+
+  private async acquireUploadSlot(
+    timeoutMs = S3FileService.UPLOAD_SLOT_TIMEOUT_MS,
+  ): Promise<boolean> {
     if (this.s3ActiveUploads < S3FileService.MAX_S3_CONCURRENT) {
       this.s3ActiveUploads++;
       return true;
@@ -304,12 +333,15 @@ export class S3FileService {
   }
 
   async create(
-    data: Buffer,
+    data: Buffer | Readable,
     chunk: { index: number; total: number },
     file: { id?: string; name: string; relativePath?: string },
     shareId: string,
     _clientChunkSize?: number,
     _share?: any,
+    effectiveLimit?: number,
+    contentLength?: number,
+    encryptionChunkSize?: number,
   ) {
     const originalFileId = file.id;
     if (!file.id) {
@@ -323,8 +355,19 @@ export class S3FileService {
       );
       throw new BadRequestException("Invalid file ID format");
     }
-    // data is already a Buffer from Express raw body parser.
-    const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, "base64");
+    const uploadLength =
+      contentLength ?? (Buffer.isBuffer(data) ? data.length : 0);
+    if (!Number.isSafeInteger(uploadLength) || uploadLength < 0) {
+      throw new BadRequestException("Invalid upload content length");
+    }
+    if (
+      chunk.index < chunk.total - 1 &&
+      uploadLength < S3_MIN_MULTIPART_PART_BYTES
+    ) {
+      throw new BadRequestException(
+        `S3 multipart chunk must be at least ${S3_MIN_MULTIPART_PART_BYTES} bytes`,
+      );
+    }
     // Use fileId as the S3 object key -- never the user-supplied filename.
     // This prevents overwrites when two files share the same name and
     // eliminates path-traversal risks from crafted filenames.
@@ -392,7 +435,8 @@ export class S3FileService {
             Key: key,
             PartNumber: partNumber,
             UploadId: uploadId,
-            Body: buffer,
+            Body: data,
+            ContentLength: uploadLength,
           }),
         );
       } finally {
@@ -501,14 +545,43 @@ export class S3FileService {
     if (allPartsComplete) {
       const fileSize: number = await this.getFileSize(shareId, file.id);
 
-      await this.prisma.file.create({
-        data: {
-          id: file.id,
-          name: file.name,
-          relativePath: file.relativePath,
-          size: fileSize.toString(),
-          share: { connect: { id: shareId } },
-        },
+      await this.prisma.$transaction(async (tx) => {
+        if (effectiveLimit !== undefined) {
+          const freshShare = await tx.share.findUnique({
+            where: { id: shareId },
+            select: { files: { select: { size: true } } },
+          });
+          const currentSize = (freshShare?.files ?? []).reduce(
+            (total, currentFile) => total + parseInt(currentFile.size),
+            0,
+          );
+          if (currentSize + fileSize > effectiveLimit) {
+            await this.getS3Instance()
+              .send(
+                new DeleteObjectCommand({
+                  Bucket: this.config.get("s3.bucketName"),
+                  Key: `${this.getS3Path()}${shareId}/${file.id}`,
+                }),
+              )
+              .catch(() => {});
+            throw new HttpException(
+              "Max share size exceeded",
+              HttpStatus.PAYLOAD_TOO_LARGE,
+            );
+          }
+        }
+        await tx.file.create({
+          data: {
+            id: file.id,
+            name: file.name,
+            relativePath: file.relativePath,
+            size: fileSize.toString(),
+            encryptionChunkSize: _share?.isE2EEncrypted
+              ? encryptionChunkSize
+              : null,
+            share: { connect: { id: shareId } },
+          },
+        });
       });
       this.logger.debug(
         `File uploaded: shareId=${shareId} fileId=${file.id} fileName="${file.name}" size=${fileSize} mimeType=${mime.contentType(file.name.split(".").pop() ?? "") || false}`,
@@ -524,16 +597,17 @@ export class S3FileService {
    * S3 object and does NOT create a DB record.
    */
   async replace(
-    data: string,
+    data: Buffer,
     chunk: { index: number; total: number },
     fileId: string,
     shareId: string,
+    encryptionChunkSize?: number,
   ) {
     if (!isValidUUID(fileId)) {
       throw new BadRequestException("Invalid file ID format");
     }
 
-    const buffer = Buffer.from(data, "base64");
+    const buffer = data;
     const key = `${this.getS3Path()}${shareId}/${fileId}`;
     const bucketName = this.config.get("s3.bucketName");
     const s3Instance = this.getS3Instance();
@@ -541,6 +615,23 @@ export class S3FileService {
 
     try {
       if (chunk.index === 0) {
+        const staleUpload = this.multipartUploads[reencryptKey];
+        if (staleUpload) {
+          try {
+            await s3Instance.send(
+              new AbortMultipartUploadCommand({
+                Bucket: bucketName,
+                Key: key,
+                UploadId: staleUpload.uploadId,
+              }),
+            );
+          } catch (abortError) {
+            this.logger.warn(
+              `Could not abort stale re-encryption upload: shareId=${shareId} fileId=${fileId}: ${(abortError as Error)?.message}`,
+            );
+          }
+          delete this.multipartUploads[reencryptKey];
+        }
         const multipartInitResponse = await s3Instance.send(
           new CreateMultipartUploadCommand({ Bucket: bucketName, Key: key }),
         );
@@ -557,15 +648,28 @@ export class S3FileService {
       multipartUpload.lastActivity = Date.now();
 
       const partNumber = chunk.index + 1;
-      const uploadPartResponse = await s3Instance.send(
-        new UploadPartCommand({
-          Bucket: bucketName,
-          Key: key,
-          PartNumber: partNumber,
-          UploadId: multipartUpload.uploadId,
-          Body: buffer,
-        }),
-      );
+      const acquired = await this.acquireUploadSlot();
+      if (!acquired) {
+        throw new HttpException(
+          "Server busy, retry later",
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+
+      let uploadPartResponse: UploadPartCommandOutput;
+      try {
+        uploadPartResponse = await s3Instance.send(
+          new UploadPartCommand({
+            Bucket: bucketName,
+            Key: key,
+            PartNumber: partNumber,
+            UploadId: multipartUpload.uploadId,
+            Body: buffer,
+          }),
+        );
+      } finally {
+        this.releaseUploadSlot();
+      }
 
       // Deduplicate: if a chunk was retried after a network failure that
       // occurred *after* the backend had already pushed the part (e.g.
@@ -587,50 +691,58 @@ export class S3FileService {
         });
       }
 
-      if (chunk.index === chunk.total - 1) {
+      if (multipartUpload.parts.length === chunk.total) {
+        const sortedParts = [...multipartUpload.parts].sort(
+          (a, b) => a.PartNumber - b.PartNumber,
+        );
         await s3Instance.send(
           new CompleteMultipartUploadCommand({
             Bucket: bucketName,
             Key: key,
             UploadId: multipartUpload.uploadId,
-            MultipartUpload: { Parts: multipartUpload.parts },
+            MultipartUpload: { Parts: sortedParts },
           }),
         );
         delete this.multipartUploads[reencryptKey];
 
         const fileSize = await this.getFileSize(shareId, fileId);
-        await this.prisma.file.update({
-          where: { id: fileId },
-          data: { size: fileSize.toString() },
+        const updated = await this.prisma.file.updateMany({
+          where: { id: fileId, shareId },
+          data: {
+            size: fileSize.toString(),
+            encryptionChunkSize: encryptionChunkSize ?? null,
+          },
         });
+        if (updated.count !== 1) {
+          throw new NotFoundException("File not found in this share");
+        }
         this.logger.debug(
           `File re-encrypted: shareId=${shareId} fileId=${fileId} size=${fileSize}`,
         );
       }
     } catch (error) {
-      const multipartUpload = this.multipartUploads[reencryptKey];
-      if (multipartUpload) {
-        try {
-          await s3Instance.send(
-            new AbortMultipartUploadCommand({
-              Bucket: bucketName,
-              Key: key,
-              UploadId: multipartUpload.uploadId,
-            }),
-          );
-        } catch (abortError) {
-          this.logger.error(
-            `Error aborting multipart upload: shareId=${shareId} fileId=${fileId}`,
-            abortError instanceof Error ? abortError.stack : abortError,
-          );
-        }
+      // Preserve uploaded parts so the client can retry the same PartNumber.
+      // Chunk zero explicitly aborts/replaces a stale multipart session when a
+      // full-file restart is required; the periodic cleanup handles abandoned
+      // sessions.
+      if (error instanceof HttpException) throw error;
+      if (this.isS3UploadGone(error)) {
         delete this.multipartUploads[reencryptKey];
+        this.logger.warn(
+          `S3 re-encryption session gone: shareId=${shareId} fileId=${fileId} chunk=${chunk.index}/${chunk.total}`,
+        );
+        throw new InternalServerErrorException(
+          "Multipart upload session not found.",
+        );
       }
       this.logger.error(
-        `S3 re-encryption failed: shareId=${shareId} fileId=${fileId} chunk=${chunk.index}/${chunk.total}`,
+        `Transient S3 re-encryption error (multipart retained): shareId=${shareId} fileId=${fileId} chunk=${chunk.index}/${chunk.total}`,
         error instanceof Error ? error.stack : error,
       );
-      throw new Error("Multipart re-encryption upload failed.");
+      throw new HttpException(
+        "S3 re-encryption temporarily unavailable, retry this chunk",
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
     }
   }
 
@@ -660,14 +772,7 @@ export class S3FileService {
       `File downloaded: shareId=${shareId} fileId=${fileId} fileName="${fileName}" size=${size} mimeType=${mimeType}`,
     );
 
-    // Pipe S3 body through a PassThrough with a large highWaterMark
-    // (1 MB) so Node.js pre-fetches data from MinIO aggressively
-    // instead of using the default 16 KB watermark.  This reduces the
-    // number of read() calls by ~64x and keeps the downstream proxy
-    // chain (Caddy / Nginx) fed with data continuously.
     const bodyStream = response.Body as Readable;
-    const fast = new PassThrough({ highWaterMark: 1024 * 1024 });
-    bodyStream.pipe(fast);
 
     return {
       metaData: {
@@ -675,13 +780,18 @@ export class S3FileService {
         size,
         name: fileName,
         relativePath:
-          (fileRecord as { relativePath?: string | null }).relativePath ??
-          null,
+          (fileRecord as { relativePath?: string | null }).relativePath ?? null,
+        encryptionChunkSize:
+          (
+            fileRecord as {
+              encryptionChunkSize?: number | null;
+            }
+          ).encryptionChunkSize ?? null,
         shareId: shareId,
         createdAt: response.LastModified || new Date(),
         mimeType,
       },
-      file: fast,
+      file: bodyStream,
     } as File;
   }
 
@@ -796,22 +906,40 @@ export class S3FileService {
   getS3Instance(): S3Client {
     const checksumCalculation =
       this.config.get("s3.useChecksum") === true ? null : "WHEN_REQUIRED";
+    const endpoint = (this.config.get("s3.endpoint") ?? "").trim();
+    const region = (this.config.get("s3.region") ?? "").trim() || "us-east-1";
+    const accessKeyId = this.config.get("s3.key");
+    const secretAccessKey = this.config.get("s3.secret");
+    const cacheKey = JSON.stringify([
+      endpoint,
+      region,
+      accessKeyId,
+      secretAccessKey,
+      checksumCalculation,
+    ]);
+
+    if (this.s3Client && this.s3ClientCacheKey === cacheKey) {
+      return this.s3Client;
+    }
+    this.s3Client?.destroy();
 
     // Proxy support: global-agent (loaded via NODE_OPTIONS) patches
     // http.request() / https.request() at the module level.
     // AWS SDK v3 NodeHttpHandler calls these patched functions internally,
     // so HTTP_PROXY / HTTPS_PROXY env vars are honored automatically.
-    return new S3Client({
-      endpoint: this.config.get("s3.endpoint"),
-      region: this.config.get("s3.region"),
+    this.s3Client = new S3Client({
+      endpoint: endpoint || undefined,
+      region,
       credentials: {
-        accessKeyId: this.config.get("s3.key"),
-        secretAccessKey: this.config.get("s3.secret"),
+        accessKeyId,
+        secretAccessKey,
       },
       forcePathStyle: true,
       requestChecksumCalculation: checksumCalculation,
       responseChecksumValidation: checksumCalculation,
     });
+    this.s3ClientCacheKey = cacheKey;
+    return this.s3Client;
   }
 
   async getZip(shareId: string): Promise<Readable> {

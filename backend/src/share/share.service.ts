@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   InternalServerErrorException,
   Injectable,
@@ -169,6 +170,20 @@ export class ShareService {
       });
       if (!folder) {
         throw new NotFoundException("Team folder not found");
+      }
+      if (share.isE2EEncrypted) {
+        const activeRotation = await this.prisma.teamKeyRotation.findFirst({
+          where: {
+            teamId: folder.teamId,
+            status: { in: ["PREPARING", "REENCRYPTING", "PAUSED"] },
+          },
+          select: { id: true },
+        });
+        if (activeRotation) {
+          throw new ConflictException(
+            "Team E2E uploads are temporarily paused while key rotation is in progress",
+          );
+        }
       }
       // Check user is a member of the team that owns this folder
       const membership = folder.team.members.find((m) => m.userId === user.id);

@@ -57,6 +57,7 @@ export class ShareOwnerGuard extends JwtGuard {
       await this.teamShareAccess.assertCanManageShare(shareId, user, {
         allowPlatformAdmin,
       });
+      return true;
     }
 
     // If the user is the creator of the share, allow access

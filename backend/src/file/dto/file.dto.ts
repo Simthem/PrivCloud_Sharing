@@ -14,6 +14,9 @@ export class FileDTO {
   @Expose()
   size: string;
 
+  @Expose()
+  encryptionChunkSize?: number;
+
   share: ShareDTO;
 
   from(partial: Partial<FileDTO>) {

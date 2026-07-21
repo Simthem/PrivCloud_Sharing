@@ -1,7 +1,12 @@
 import moment from "moment";
 
+export const NEVER_EXPIRES_DATE = new Date(0);
+export const NEVER_EXPIRES_CUTOFF_DATE = new Date(
+  "1970-01-02T00:00:00.000Z",
+);
+
 export function parseRelativeDateToAbsolute(relativeDate: string) {
-  if (relativeDate == "never") return moment(0).toDate();
+  if (relativeDate == "never") return NEVER_EXPIRES_DATE;
 
   return moment()
     .add(

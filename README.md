@@ -93,8 +93,8 @@ overrides. Current hardening includes:
 
 - OpenSSL 3.6.2 build path for CVE-2026-2673.
 - Caddy built from source with patched Go dependencies.
-- Go 1.26.4 builder stages.
-- `golang.org/x/sys@v0.44.0` for CVE-2026-39824 scanner findings.
+- Go 1.26.5 builder stages.
+- `golang.org/x/sys@v0.47.0` for CVE-2026-39824 scanner findings.
 - Backend `brace-expansion>=5.0.6` for CVE-2026-45149.
 - Backend and docs `qs>=6.15.2` for the Dependabot `qs#67` advisory.
 - Pinned overrides for vulnerable transitive packages used by backend,
@@ -116,6 +116,16 @@ docker compose up -d
 By default the compose example binds the application to
 `127.0.0.1:3000`. Put a reverse proxy such as Caddy, Nginx or Traefik in front
 of it for public HTTPS traffic.
+
+Compose persists its SQLite database in the repository-level
+`./data/pingvin-share.db`. A plain `npx prisma migrate deploy` launched from
+`backend/` targets the separate development database at
+`backend/data/pingvin-share.db`. To migrate the Compose database explicitly,
+use the unambiguous root command:
+
+```bash
+npm run db:compose:migrate
+```
 
 ### Local Development Build
 

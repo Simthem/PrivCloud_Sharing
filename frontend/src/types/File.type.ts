@@ -17,6 +17,7 @@ export type FileUploadResponse = {
   id: string;
   name: string;
   relativePath?: string | null;
+  encryptionChunkSize?: number | null;
 };
 
 export type FileMetaData = {
@@ -24,6 +25,7 @@ export type FileMetaData = {
   name: string;
   relativePath?: string | null;
   size: string;
+  encryptionChunkSize?: number | null;
 };
 
 export type FileListItem = FileUpload | (FileMetaData & { deleted?: boolean });

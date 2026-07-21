@@ -3,13 +3,14 @@ import { createElement } from "react";
 import { completeSafeLineChallenge } from "../services/api.service";
 import { notifySafeLineChallenge } from "./safeline-notify.util";
 import { translateOutsideContext } from "../hooks/useTranslate.hook";
+import {
+  computeEffectiveChunkSize,
+  E2E_CRYPTO_RECORD_SIZE,
+} from "./uploadPerformance.util";
+
+export { computeAdaptiveChunkSize } from "./uploadPerformance.util";
 
 // --- Adaptive chunk sizing ---
-const ADAPTIVE_MIN_CHUNK = 5_000_000;   //   5 MB floor
-const ADAPTIVE_MAX_CHUNK = 50_000_000;  //  50 MB ceiling
-// S3 multipart hard limit: 10,000 parts per upload.
-// We cap at 9,500 to leave headroom for retries of the same part number.
-const MAX_S3_PARTS = 9_500;
 // 200 MB chunks caused 500 errors on large uploads when SafeLine WAF or
 // Nginx had body-size / timeout limits below 200 MB, causing the proxy to
 // drop the request before NestJS received it (non-JSON 500 body), triggering
@@ -20,17 +21,15 @@ const MAX_S3_PARTS = 9_500;
 //   - Per-chunk server overhead is the same; throughput slightly lower but
 //     upload reliability is dramatically improved for clients on fast links
 //     who previously hit proxy limits at 100-160 MB chunks.
-// The backend bodyParser floor is 200 MB (main.ts rawLimit), so 50 MB chunks
-// are accepted without any backend change.
-//
-// RAM requirement: Express buffers the full raw body per request.
-// At 200 MB × 3 concurrent uploads ≈ 600 MB body parser buffers.
-// Ensure the VM has ≥ 4 GB RAM and Node is launched with
-// --max-old-space-size=3072 (or higher) to avoid OOM.
-const TARGET_CHUNK_SECONDS = 3; // aim for ~3 s per chunk
-const PROBE_SMALL = 2_000_000; // 2 MB  -- phase 1 (fast networks have high overhead-to-data ratio)
-const PROBE_LARGE = 32_000_000; // 32 MB -- phase 2 (accurate on fast+high-latency links)
+// S3 uploads start in streaming mode; local storage asks the worker to fall
+// back to buffered transport. The probe is deliberately tiny and bounded.
+const PROBE_SMALL = 256_000;
+const PROBE_LARGE = 8_000_000;
 const PROBE_FAST_THRESHOLD = 10_000_000; // 10 MB/s -- trigger phase 2
+const PROBE_CACHE_MS = 10 * 60 * 1000;
+const PROBE_CACHE_KEY = "privcloud-upload-bandwidth-v1";
+
+let bandwidthCache: { value: number; expiresAt: number } | null = null;
 
 const WORKER_CACHE_KEY = Math.random().toString(36).slice(2);
 
@@ -38,8 +37,10 @@ const WORKER_CACHE_KEY = Math.random().toString(36).slice(2);
  * POST a zero-filled payload to /api/probe and return bytes/sec.
  * Returns 0 on error so the caller falls back to the config default.
  */
-async function runProbe(size: number): Promise<number> {
+async function runProbe(size: number, timeoutMs: number): Promise<number> {
   const payload = new Uint8Array(size);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   const start = performance.now();
   try {
     const resp = await fetch("/api/probe", {
@@ -47,92 +48,122 @@ async function runProbe(size: number): Promise<number> {
       headers: { "Content-Type": "application/octet-stream" },
       body: payload,
       credentials: "include",
+      signal: controller.signal,
     });
+    if (!resp.ok) return 0;
     resp.body?.cancel();
   } catch {
     return 0;
+  } finally {
+    clearTimeout(timer);
   }
   const elapsed = (performance.now() - start) / 1000;
   if (elapsed <= 0) return 0;
   return size / elapsed;
 }
 
+function getSlowConnectionEstimate(): number | null {
+  try {
+    const connection = (
+      navigator as Navigator & {
+        connection?: {
+          downlink?: number;
+          effectiveType?: string;
+          saveData?: boolean;
+        };
+      }
+    ).connection;
+    if (!connection) return null;
+    const isConstrained =
+      connection.saveData ||
+      ["slow-2g", "2g", "3g"].includes(connection.effectiveType || "");
+    if (!isConstrained) return null;
+    return connection.downlink && connection.downlink > 0
+      ? connection.downlink * 125_000
+      : 500_000;
+  } catch {
+    return null;
+  }
+}
+
+function cacheBandwidth(value: number, now: number): number {
+  bandwidthCache = { value, expiresAt: now + PROBE_CACHE_MS };
+  try {
+    sessionStorage.setItem(PROBE_CACHE_KEY, JSON.stringify(bandwidthCache));
+  } catch {
+    // In-memory cache still avoids repeated probes for this page lifetime.
+  }
+  return value;
+}
+
 /**
- * Measure upload bandwidth with a two-phase probe:
- *  1) Small 2 MB probe -- fast and sufficient for slow connections.
- *  2) If phase 1 suggests > 30 MB/s, a second 16 MB probe gives a
- *     much more accurate measurement on fast links where the fixed
- *     overhead (TLS, latency) dominates the tiny transfer time.
+ * Measure upload bandwidth with a bounded two-phase probe. Results are
+ * cached because the actual upload then refines concurrency passively.
  *
  * Returns bytes/sec. Falls back to 0 on error (caller uses config default).
  */
 export async function measureBandwidth(): Promise<number> {
-  const bw1 = await runProbe(PROBE_SMALL);
+  const now = Date.now();
+  if (bandwidthCache && bandwidthCache.expiresAt > now) {
+    return bandwidthCache.value;
+  }
+  try {
+    const stored = sessionStorage.getItem(PROBE_CACHE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored) as {
+        value?: number;
+        expiresAt?: number;
+      };
+      if (
+        typeof parsed.value === "number" &&
+        typeof parsed.expiresAt === "number" &&
+        parsed.expiresAt > now
+      ) {
+        bandwidthCache = {
+          value: parsed.value,
+          expiresAt: parsed.expiresAt,
+        };
+        return parsed.value;
+      }
+    }
+  } catch {
+    // sessionStorage can be unavailable in hardened/private contexts.
+  }
+
+  // On an already-known constrained link, the browser's coarse estimate is
+  // enough for the conservative 5 MB S3 floor and avoids delaying startup.
+  const constrainedEstimate = getSlowConnectionEstimate();
+  if (constrainedEstimate !== null) {
+    return cacheBandwidth(constrainedEstimate, now);
+  }
+
+  const bw1 = await runProbe(PROBE_SMALL, 1_200);
   if (bw1 <= 0) return 0;
-  if (bw1 < PROBE_FAST_THRESHOLD) return bw1;
-  // Fast link detected -- run a larger probe for accuracy
-  const bw2 = await runProbe(PROBE_LARGE);
-  return bw2 > 0 ? bw2 : bw1;
-}
-
-/**
- * Derive optimal chunk size from measured bandwidth.
- * Clamped to [ADAPTIVE_MIN_CHUNK, ADAPTIVE_MAX_CHUNK].
- * Returns 0 if probe failed (caller should use config default).
- */
-const CHUNK_QUANT = 5_000_000; // quantize to 5 MB steps for reliable decryption
-
-export function computeAdaptiveChunkSize(bandwidthBps: number): number {
-  if (bandwidthBps <= 0) return 0;
-  const raw = bandwidthBps * TARGET_CHUNK_SECONDS;
-  const clamped = Math.min(
-    ADAPTIVE_MAX_CHUNK,
-    Math.max(ADAPTIVE_MIN_CHUNK, raw),
-  );
-  // Round to nearest CHUNK_QUANT so decryptFileAuto can find it
-  return Math.round(clamped / CHUNK_QUANT) * CHUNK_QUANT;
+  const measured =
+    bw1 < PROBE_FAST_THRESHOLD
+      ? bw1
+      : (await runProbe(PROBE_LARGE, 2_500)) || bw1;
+  return cacheBandwidth(measured, now);
 }
 
 /**
  * Measure bandwidth and return the effective chunk size.
- * The result is always capped at ADAPTIVE_MAX_CHUNK (200 MB).
- * Each E2E chunk allocates 3 × chunkSize in C++ BackingStores
- * (plainBuf + ciphertext + combined).  At 200 MB that is 600 MB peak,
- * which is within Chrome's per-Worker V8 heap limit on 64-bit systems.
- * SIGILL risk is absent: we use a single Worker with no recycling.
- * GC yield: 200 MB takes ~3.6 s at 55 MB/s; V8 GC clears 600 MB in
- * ~150 ms - well within the network-I/O window.
+ * Normal transfers are capped at 50 MB. Files large enough to exceed the S3
+ * multipart part limit can use up to the authenticated backend cap (200 MB).
+ * E2E transport chunks are encrypted as independent 1 MB records, avoiding
+ * monolithic 50 MB WebCrypto allocations while keeping efficient S3 parts.
  * For slow connections the adaptive probe shrinks below the admin default.
  */
 export async function getAdaptiveChunkSize(
   baseChunkSize: number,
   fileSize?: number,
+  measuredBandwidthBps?: number,
 ): Promise<number> {
-  // Always cap at ADAPTIVE_MAX_CHUNK regardless of the admin-configured value.
-  // If the probe fails we still enforce the cap to prevent OOM/SIGTRAP on
-  // large uploads (the admin may have set a value > 50 MB which is unsafe).
-  const hardCapped = Math.min(baseChunkSize, ADAPTIVE_MAX_CHUNK);
-  const bandwidth = await measureBandwidth();
-  const adaptive = computeAdaptiveChunkSize(bandwidth);
-  let result = adaptive <= 0 ? hardCapped : adaptive;
-
-  // --- S3 multipart safety floor ---
-  // AWS S3 limits uploads to 10,000 parts.  For very large files, we MUST
-  // use a chunk size large enough to stay under that limit, regardless of
-  // bandwidth.  This is the #1 reason uploads of 160+ GB fail silently.
-  // Formula: minChunkForFile = ceil(fileSize / MAX_S3_PARTS)
-  // Example: 250 GB / 9500 = ~26.3 MB minimum.
-  //          1 TB  / 9500 = ~105 MB minimum.
-  if (fileSize && fileSize > 0) {
-    const s3Floor = Math.ceil(fileSize / MAX_S3_PARTS);
-    if (s3Floor > result) {
-      // Quantize to CHUNK_QUANT for E2E decryption compatibility
-      result = Math.ceil(s3Floor / CHUNK_QUANT) * CHUNK_QUANT;
-    }
-  }
-
-  // Final safety: never go below ADAPTIVE_MIN_CHUNK, never above MAX
-  return Math.min(ADAPTIVE_MAX_CHUNK, Math.max(ADAPTIVE_MIN_CHUNK, result));
+  const bandwidth =
+    measuredBandwidthBps === undefined
+      ? await measureBandwidth()
+      : measuredBandwidthBps;
+  return computeEffectiveChunkSize(baseChunkSize, bandwidth, fileSize);
 }
 
 // --- Single-Worker upload (no batch recycling) ---
@@ -141,10 +172,8 @@ export async function getAdaptiveChunkSize(
 // still queued on the ThreadPool when the new Worker started allocating,
 // and they accessed a partially-destroyed V8 heap -> UD2 -> SIGILL.
 // Fix: one Worker handles the full upload [0, totalChunks).
-// Memory safety: peak BackingStore = 3 × chunkSize (≤ 600 MB at 200 MB chunks).
-// GC yield: await fetch() suspends the Worker for the full network transit
-// (~3.6 s at 200 MB / 55 MB/s), giving V8 concurrent GC ~3.4 s to reclaim
-// 600 MB of BackingStores.  V8 GC runs at ~4 GB/s → needs ~150 ms.  Safe.
+// Crypto is record-based, so WebCrypto allocations remain small even when
+// the transport chunk sent to S3 is large.
 
 /**
  * Run the upload [startChunk, endChunk) in a single persistent Worker.
@@ -158,6 +187,7 @@ function runWorkerBatch(
   totalChunks: number,
   isE2E: boolean,
   cryptoKeyRaw: ArrayBuffer | null,
+  cryptoChunkSize: number,
   startChunk: number,
   endChunk: number,
   fileId: string | undefined,
@@ -211,12 +241,15 @@ function runWorkerBatch(
         };
         let result: "done" | "failed" | "retry" = "retry";
         for (let i = 0; i < 3 && result === "retry"; i++) {
-          if (i > 0) await new Promise((r) => setTimeout(r, 5000 * Math.pow(2, i - 1)));
+          if (i > 0)
+            await new Promise((r) => setTimeout(r, 5000 * Math.pow(2, i - 1)));
           result = await attempt();
         }
         // Release the slot ~100 ms after completion so rapid callers
         // reuse the result instead of firing a duplicate request.
-        setTimeout(() => { refreshInFlight = null; }, 100);
+        setTimeout(() => {
+          refreshInFlight = null;
+        }, 100);
         return result === "done";
       })();
       refreshInFlight = p;
@@ -424,6 +457,7 @@ function runWorkerBatch(
       totalChunks,
       isE2E,
       cryptoKeyRaw,
+      cryptoChunkSize,
       startChunk,
       endChunk,
       fileId,
@@ -469,6 +503,7 @@ export async function uploadFileViaWorker(
     totalChunks,
     isE2E,
     cryptoKeyRaw,
+    isE2E ? Math.min(E2E_CRYPTO_RECORD_SIZE, chunkSize) : chunkSize,
     0,
     totalChunks,
     fileId,
