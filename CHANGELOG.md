@@ -37,6 +37,9 @@
 - **frontend/backend -- Axios advisory remediation:** upgraded direct and
   transitive Axios resolutions from `1.16.0` to `1.18.1`, addressing the
   inherited-proxy, prototype-pollution and request-size enforcement advisories.
+- **image processing -- patched Sharp/libvips stack:** upgraded backend and
+  frontend Sharp resolutions to `0.35.3`/libvips `8.18.3`, including Next's
+  optional optimizer path, to remediate `GHSA-f88m-g3jw-g9cj`.
 - **backend/docs -- fast-uri advisory remediation:** pinned npm overrides and
   lockfiles to `fast-uri@3.1.4`, removing the Snyk high-severity Prisma/AJV
   interpretation-conflict path.
@@ -47,9 +50,24 @@
 - **container scanning -- verified OpenPGP VEX:** merged a scanner-compatible
   `not_affected` statement for the unreachable Caddy OpenPGP advisory while
   retaining the existing reviewed public pgx statement.
+- **container runtime -- fixed executable boundary:** restricted the privileged
+  ownership initializer to the absolute Node binary and the packaged supervisor
+  entrypoint, so Docker command arguments can no longer select an executable,
+  script or Node option.
+- **frontend workers -- authenticated result channel:** constrained
+  re-encryption results to trusted events from the exact dedicated Worker,
+  verified the Worker-specific empty origin and rejected malformed payloads
+  before resolving upload state.
+- **Companion -- strict loopback transport:** removed the non-loopback HTTP
+  escape hatch, restricted bind addresses and connected peers to literal
+  loopback addresses, and documented why locally self-signed TLS would not
+  provide browser trust for this loopback-only channel.
 
 ### Bug Fixes
 
+- **archive creation -- Archiver 8 runtime compatibility:** replaced the
+  removed default factory with the `ZipArchive` named class for local and S3
+  share downloads, with a real ZIP-generation regression test.
 - **container restart -- Caddy volume ownership:** replaced the shell/gosu
   startup chain with a restart-safe static initializer that does not recurse
   into already-correct private Caddy lock directories and safely handles

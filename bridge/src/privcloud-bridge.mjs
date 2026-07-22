@@ -52,15 +52,30 @@ const NATIVE_ALLOWED_ORIGINS = new Set(
 );
 
 function assertLoopbackBindHost(host) {
-  const normalized = String(host || "").replace(/^\[|\]$/g, "").toLowerCase();
-  const isLoopback =
-    normalized === "localhost" ||
-    normalized === "127.0.0.1" ||
-    normalized === "::1";
-  if (!isLoopback && process.env.PRIVCLOUD_BRIDGE_ALLOW_NON_LOOPBACK !== "1") {
+  const normalized = String(host || "")
+    .replace(/^\[|\]$/g, "")
+    .toLowerCase();
+  if (normalized !== "127.0.0.1" && normalized !== "::1") {
     throw new Error(
-      "Refusing to start the HTTP bridge on a non-loopback interface. Set PRIVCLOUD_BRIDGE_ALLOW_NON_LOOPBACK=1 only for a trusted local network.",
+      "PRIVCLOUD_BRIDGE_HOST must be the literal loopback address 127.0.0.1 or ::1.",
     );
+  }
+}
+
+function isLoopbackPeer(address) {
+  const normalized = String(address || "").toLowerCase();
+  return (
+    normalized === "127.0.0.1" ||
+    normalized === "::1" ||
+    normalized === "::ffff:127.0.0.1"
+  );
+}
+
+function assertLoopbackPeer(req) {
+  if (!isLoopbackPeer(req.socket?.remoteAddress)) {
+    const err = new Error("Bridge requests must originate from loopback");
+    err.statusCode = 403;
+    throw err;
   }
 }
 
@@ -218,7 +233,10 @@ function publicErrorFrom(err) {
   const rawCode = String(
     err?.code || (statusCode >= 500 ? "internal_error" : "bad_request"),
   );
-  const code = Object.prototype.hasOwnProperty.call(PUBLIC_ERROR_MESSAGES, rawCode)
+  const code = Object.prototype.hasOwnProperty.call(
+    PUBLIC_ERROR_MESSAGES,
+    rawCode,
+  )
     ? rawCode
     : statusCode >= 500
       ? "internal_error"
@@ -1385,6 +1403,7 @@ async function handleCancelJob(req, res, jobId) {
 }
 
 async function route(req, res) {
+  assertLoopbackPeer(req);
   setCommonHeaders(req, res);
   if (req.method === "OPTIONS") {
     res.writeHead(204);
@@ -1455,10 +1474,11 @@ if (process.argv.includes("--native-messaging")) {
   assertLoopbackBindHost(HOST);
   setInterval(cleanupPairings, 30_000).unref();
 
-  // snyk:ignore CleartextTransmission - Bridge listens on localhost only (127.0.0.1).
-  // HTTPS would require a self-signed certificate, adding complexity for no security
-  // benefit since traffic never leaves the local machine. Origin validation (CORS)
-  // ensures only the authorized PrivCloud tab can communicate with the bridge.
+  // This endpoint is deliberately HTTP on a literal loopback address. Browser
+  // trust stores reject ad-hoc localhost certificates, so self-signed TLS would
+  // break the web integration without authenticating the Companion. The bind
+  // and every accepted peer are both restricted to loopback; exact Origin
+  // validation and bearer authentication protect application operations.
   const server = createLoopbackHttpServer((req, res) => {
     route(req, res).catch((err) => sendError(res, err));
   });

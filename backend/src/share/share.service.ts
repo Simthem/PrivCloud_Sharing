@@ -9,7 +9,6 @@ import {
 } from "@nestjs/common";
 import { JwtService, JwtSignOptions } from "@nestjs/jwt";
 import { Prisma, Share, User } from "@prisma/client";
-import archiver from "archiver";
 import * as argon from "argon2";
 import * as fs from "fs";
 import * as path from "path";
@@ -24,6 +23,7 @@ import { ReverseShareService } from "src/reverseShare/reverseShare.service";
 import { parseRelativeDateToAbsolute } from "src/utils/date.util";
 import { SHARE_DIRECTORY } from "../constants";
 import { getArchiveEntryName } from "../file/file-path.util";
+import { createZipArchive } from "../utils/archive.util";
 import { CreateShareDTO } from "./dto/createShare.dto";
 
 @Injectable()
@@ -300,7 +300,7 @@ export class ShareService {
     }
 
     const files = await this.prisma.file.findMany({ where: { shareId } });
-    const archive = archiver("zip", {
+    const archive = createZipArchive({
       zlib: { level: this.config.get("share.zipCompressionLevel") },
     });
     const writeStream = fs.createWriteStream(

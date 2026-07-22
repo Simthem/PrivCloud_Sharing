@@ -58,7 +58,7 @@
     "qrcode-svg": "^1.1.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "sharp": "^0.34.1",
+    "sharp": "0.35.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3",
     "uuid": "^14.0.0",
@@ -143,11 +143,12 @@
     "postman-runtime": {
       "jose": ">=4.15.5"
     },
-    "uuid": "$uuid"
+    "uuid": "$uuid",
+    "sharp": "$sharp"
   },
   "allowScripts": {
     "argon2@0.41.1": true,
-    "sharp@0.34.5": true,
+    "sharp@0.35.3": true,
     "@nestjs/core@11.1.19": true,
     "@scarf/scarf@1.4.0": true,
     "better-sqlite3@12.11.1": true,

@@ -20,11 +20,13 @@ interface WorkerResult {
 
 interface PendingUpload {
   resolve: () => void;
-  reject: (_error: Error & {
-    status?: number;
-    data?: unknown;
-    chunk?: ArrayBuffer;
-  }) => void;
+  reject: (
+    _error: Error & {
+      status?: number;
+      data?: unknown;
+      chunk?: ArrayBuffer;
+    },
+  ) => void;
   signal?: AbortSignal;
   abortHandler?: () => void;
 }
@@ -32,6 +34,24 @@ interface PendingUpload {
 let worker: Worker | null = null;
 let nextRequestId = 1;
 const pendingUploads = new Map<number, PendingUpload>();
+
+const isWorkerResult = (value: unknown): value is WorkerResult => {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<WorkerResult>;
+  return (
+    candidate.type === "result" &&
+    Number.isSafeInteger(candidate.requestId) &&
+    Number(candidate.requestId) > 0 &&
+    typeof candidate.ok === "boolean" &&
+    (candidate.status === undefined ||
+      (Number.isInteger(candidate.status) &&
+        candidate.status >= 0 &&
+        candidate.status <= 599)) &&
+    (candidate.message === undefined ||
+      typeof candidate.message === "string") &&
+    (candidate.chunk === undefined || candidate.chunk instanceof ArrayBuffer)
+  );
+};
 
 const rejectPendingUploads = (message: string) => {
   for (const pending of pendingUploads.values()) {
@@ -49,10 +69,26 @@ const getWorker = (): Worker => {
     throw new Error("Web Worker is unavailable for key rotation");
   }
 
-  worker = new Worker("/reencrypt-worker.js?v=20260714-1");
-  worker.addEventListener("message", (event: MessageEvent<WorkerResult>) => {
+  const activeWorker = new Worker("/reencrypt-worker.js?v=20260714-1", {
+    name: "privcloud-reencrypt-upload",
+  });
+  worker = activeWorker;
+  activeWorker.addEventListener("message", (event: MessageEvent<unknown>) => {
+    // Dedicated Worker messages use an empty MessageEvent.origin by standard.
+    // Binding the listener to the exact Worker object, requiring a trusted
+    // browser event and validating the full payload prevents window or custom
+    // MessageEvent data from entering the upload state machine.
+    if (
+      event.origin !== "" ||
+      !event.isTrusted ||
+      event.currentTarget !== activeWorker ||
+      event.target !== activeWorker ||
+      !isWorkerResult(event.data)
+    ) {
+      return;
+    }
+
     const result = event.data;
-    if (result.type !== "result") return;
     const pending = pendingUploads.get(result.requestId);
     if (!pending) return;
 
@@ -75,12 +111,12 @@ const getWorker = (): Worker => {
     error.chunk = result.chunk;
     pending.reject(error);
   });
-  worker.addEventListener("error", () => {
+  activeWorker.addEventListener("error", () => {
     rejectPendingUploads("Key rotation worker crashed");
-    worker?.terminate();
-    worker = null;
+    activeWorker.terminate();
+    if (worker === activeWorker) worker = null;
   });
-  return worker;
+  return activeWorker;
 };
 
 /** Upload one encrypted transport chunk outside the renderer isolate. */

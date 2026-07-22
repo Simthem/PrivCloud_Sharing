@@ -6,13 +6,32 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"syscall"
 )
 
-const maxRuntimeID = 2147483647
+const (
+	maxRuntimeID          = 2147483647
+	runtimeNodePath       = "/usr/local/bin/node"
+	runtimeEntrypointPath = "/opt/app/scripts/docker/entrypoint.mjs"
+)
+
+func validateRuntimeCommand(arguments []string) error {
+	if len(arguments) != 3 {
+		return fmt.Errorf("runtime-init only accepts: node %s", runtimeEntrypointPath)
+	}
+
+	if arguments[1] != "node" && arguments[1] != runtimeNodePath {
+		return fmt.Errorf("refusing unsupported runtime executable %q", arguments[1])
+	}
+
+	entrypoint := filepath.Clean(arguments[2])
+	if entrypoint != "scripts/docker/entrypoint.mjs" && entrypoint != runtimeEntrypointPath {
+		return fmt.Errorf("refusing unsupported runtime entrypoint %q", arguments[2])
+	}
+	return nil
+}
 
 func parseRuntimeID(name string, fallback int) (int, error) {
 	raw := os.Getenv(name)
@@ -138,8 +157,8 @@ func ensureTreeOwnership(path string, uid, gid int) error {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "No command provided")
+	if err := validateRuntimeCommand(os.Args); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(64)
 	}
 
@@ -195,12 +214,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	command, err := exec.LookPath(os.Args[1])
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(127)
-	}
-	if err := syscall.Exec(command, os.Args[1:], os.Environ()); err != nil {
+	// The executable and argv are intentionally fixed. Runtime behavior is
+	// configured through validated environment variables in entrypoint.mjs;
+	// Docker CLI arguments never become an executable or Node option.
+	if err := syscall.Exec(
+		runtimeNodePath,
+		[]string{"node", runtimeEntrypointPath},
+		os.Environ(),
+	); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(126)
 	}

@@ -41,6 +41,14 @@ npm run start:native
 By default Companion listens on `http://127.0.0.1:47631` and allows local
 development origins plus `https://share.example.com`.
 
+The HTTP listener is intentionally restricted to the literal loopback
+addresses `127.0.0.1` or `::1`; non-loopback binds and peers are rejected.
+Companion additionally requires an exact allowed web origin and bearer
+authentication for operational endpoints. A self-signed localhost certificate
+is not used because browsers cannot authenticate it without a separately
+installed trust root. Native Messaging remains available when a browser-managed
+authenticated transport is preferred.
+
 Useful environment variables:
 
 ```bash

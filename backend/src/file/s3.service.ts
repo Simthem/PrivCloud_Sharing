@@ -30,7 +30,7 @@ import { File } from "./file.service";
 import { getArchiveEntryName } from "./file-path.util";
 import { Readable } from "stream";
 import { validate as isValidUUID } from "uuid";
-import archiver from "archiver";
+import { createZipArchive } from "../utils/archive.util";
 
 const S3_MIN_MULTIPART_PART_BYTES = 5 * 1024 * 1024;
 
@@ -956,7 +956,7 @@ export class S3FileService {
       throw new NotFoundException(`No files found for share ${shareId}`);
     }
 
-    const archive = archiver("zip", {
+    const archive = createZipArchive({
       zlib: { level: parseInt(compressionLevel) },
     });
 

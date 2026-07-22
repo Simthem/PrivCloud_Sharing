@@ -8,6 +8,31 @@ import (
 	"testing"
 )
 
+func TestValidateRuntimeCommand(t *testing.T) {
+	accepted := [][]string{
+		{"runtime-init", "node", "./scripts/docker/entrypoint.mjs"},
+		{"runtime-init", runtimeNodePath, runtimeEntrypointPath},
+	}
+	for _, arguments := range accepted {
+		if err := validateRuntimeCommand(arguments); err != nil {
+			t.Fatalf("expected command to be accepted: %v", err)
+		}
+	}
+
+	rejected := [][]string{
+		{"runtime-init"},
+		{"runtime-init", "/bin/sh", "-c"},
+		{"runtime-init", "node", "-e"},
+		{"runtime-init", "node", "../attacker.mjs"},
+		{"runtime-init", "node", "./scripts/docker/entrypoint.mjs", "extra"},
+	}
+	for _, arguments := range rejected {
+		if err := validateRuntimeCommand(arguments); err == nil {
+			t.Fatalf("expected command to be rejected: %#v", arguments)
+		}
+	}
+}
+
 func TestCopyMissingConcurrent(t *testing.T) {
 	source := t.TempDir()
 	destination := t.TempDir()
