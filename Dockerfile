@@ -24,8 +24,17 @@ RUN apk upgrade --no-cache && apk add --no-cache git
 RUN git clone --depth 1 --branch v2.11.4 \
       https://github.com/caddyserver/caddy.git /caddy
 WORKDIR /caddy
+# Backport the two source changes from upstream Caddy commit b2693fb so the
+# v2.11.4 tag compiles against cel-go 0.29.x. Assertions make this fail closed
+# if the pinned Caddy source no longer matches the reviewed patch.
+RUN test "$(grep -Fc '[]interpreter.Interpretable{reqAttr}' modules/caddyhttp/celmatcher.go)" = "2" \
+    && sed -i 's/\[\]interpreter\.Interpretable{reqAttr}/[]interpreter.InterpretableV2{reqAttr}/g' \
+        modules/caddyhttp/celmatcher.go \
+    && test "$(grep -Fc '[]interpreter.InterpretableV2{reqAttr}' modules/caddyhttp/celmatcher.go)" = "2" \
+    && ! grep -Fq '[]interpreter.Interpretable{reqAttr}' modules/caddyhttp/celmatcher.go
 # Force patched vulnerable dependencies.
 # CVE-2026-33186 (CVSS 9.1, CRITICAL) : google.golang.org/grpc < 1.79.3
+# GHSA-hrxh-6v49-42gf (CVSS 8.8, HIGH) : google.golang.org/grpc < 1.82.1
 # GHSA-q4r8-xm5f-56gw (CRITICAL) + CVE-2026-30836 (CVSS 7.8, HIGH) : github.com/smallstep/certificates < 0.30.2
 # CVE-2026-34986 (CVSS 8.7, HIGH) : github.com/go-jose/go-jose v3 < 3.0.5, v4 < 4.1.4
 # CVE-2026-33816 (CVSS 8.7, HIGH) : github.com/jackc/pgx/v5 < 5.9.0
@@ -42,12 +51,14 @@ WORKDIR /caddy
 # SNYK-GOLANG-GOLANGORGXCRYPTOSSH* (HIGH x5 + MEDIUM x7) : golang.org/x/crypto/ssh{,/agent} < 0.52.0
 # CVE-2026-46600 : golang.org/x/net < 0.56.0
 # CVE-2026-56852 : golang.org/x/text < 0.39.0
+# GHSA-gcjh-h69q-9w9g : github.com/google/cel-go <= 0.28.1
+# Use v0.29.2 to match upstream Caddy commit b2693fb.
 # go mod tidy runs FIRST, then we re-pin smallstep + bbolt AFTER to prevent transitive downgrade
 RUN go get golang.org/x/net@v0.57.0 \
     && go get golang.org/x/text@v0.40.0 \
     && go get golang.org/x/crypto@v0.54.0 \
     && go get github.com/yuin/goldmark@v1.7.17 \
-    && go get google.golang.org/grpc@v1.79.3 \
+    && go get google.golang.org/grpc@v1.82.1 \
     && go get github.com/go-jose/go-jose/v3@v3.0.5 \
     && go get github.com/go-jose/go-jose/v4@v4.1.4 \
     && go get github.com/jackc/pgx/v5@v5.9.2 \
@@ -77,15 +88,22 @@ RUN go get golang.org/x/net@v0.57.0 \
         -replace=github.com/go-chi/chi/v5=github.com/go-chi/chi/v5@v5.3.0 \
     && go mod tidy \
     && go mod edit -require=github.com/go-chi/chi/v5@v5.3.0 \
+    && go get google.golang.org/grpc@v1.82.1 \
+    && go get github.com/google/cel-go@v0.29.2 \
+    && go mod tidy \
     && echo "=== Security replace pins verification ===" \
     && grep -E 'replace|x/net|x/text|x/crypto|x/sys|go-chi/chi/v5' go.mod \
     && go list -m golang.org/x/net | grep 'v0.57.0' \
     && go list -m golang.org/x/text | grep 'v0.40.0' \
     && go list -m golang.org/x/crypto | grep 'v0.54.0' \
     && go list -m github.com/go-chi/chi/v5 | grep 'v5.3.0' \
+    && test "$(go list -m -f '{{.Version}}' google.golang.org/grpc)" = "v1.82.1" \
+    && test "$(go list -m -f '{{.Version}}' github.com/google/cel-go)" = "v0.29.2" \
     && ! go list -deps ./cmd/caddy | grep -qx 'golang.org/x/crypto/openpgp'
 # Compiler Caddy (binaire statique, stripped, sans symboles de debug)
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/caddy \
+    && go version -m /usr/bin/caddy | grep -Eq \
+        'dep[[:space:]]+google[.]golang[.]org/grpc[[:space:]]+v1[.]82[.]1' \
     && go clean -cache -modcache
 
 # ---------------------------
@@ -99,13 +117,14 @@ COPY scripts/docker/runtime-init.go .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /runtime-init ./runtime-init.go
 
 # ---------------------------
-# Stage 0c: Build OpenSSL from patched branch
+# Stage 0c: Reuse the OpenSSL 3.6.4 branch snapshot
 # ---------------------------
 # CVE-2026-2673 (HIGH): affects OpenSSL 3.5.0-3.5.5 AND 3.6.0-3.6.1.
-# Debian Trixie ships 3.5.5 (vulnerable). The fix is merged in the
-# openssl-3.6 branch (commit 2157c9d8) but 3.6.2 is not tagged yet.
-# VERSION.dat already reads PATCH=2 -- we only strip PRE_RELEASE_TAG=dev
-# so the binary identifies as 3.6.2 (the code IS post-fix).
+# The fix is included since OpenSSL 3.6.2. The reviewed cache currently comes
+# from the openssl-3.6 development branch and identifies as 3.6.4 after its
+# pre-release tag is removed. This is a branch snapshot, not a tagged 3.6.4
+# release; the assertion below prevents a mutable cache tag from changing the
+# advertised OpenSSL version silently.
 # ABI-compatible: libssl.so.3 / libcrypto.so.3 soname unchanged across 3.x.
 #
 # CACHE MODE: using a pre-built OpenSSL builder image.
@@ -114,15 +133,28 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /runtime-init ./runtime
 #   FROM debian:trixie-slim AS openssl-builder
 # and restore the full build instructions.
 FROM ${OPENSSL_BUILDER_IMAGE} AS openssl-builder
+# CVE-2026-34743: use Debian's patched Trixie xz/liblzma backport and fail the
+# build if the cache image cannot provide the exact reviewed package version.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        xz-utils=5.8.1-1+deb13u1 \
+        liblzma5=5.8.1-1+deb13u1 && \
+    test "$(dpkg-query -W -f='${Version}' xz-utils)" = "5.8.1-1+deb13u1" && \
+    test "$(dpkg-query -W -f='${Version}' liblzma5)" = "5.8.1-1+deb13u1" && \
+    OPENSSL_VERSION="$(LD_LIBRARY_PATH=/usr/local/openssl/lib /usr/local/openssl/bin/openssl version)" && \
+    echo "$OPENSSL_VERSION" && \
+    printf '%s\n' "$OPENSSL_VERSION" | grep -q '^OpenSSL 3[.]6[.]4 ' && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------
-# Stage 0d: Build Node.js from source with OpenSSL 3.6.2
+# Stage 0d: Reuse Node.js with the OpenSSL 3.6.4 runtime snapshot
 # ---------------------------
 # CVE-2026-2673 (HIGH): Node 24 embeds OpenSSL 3.5.5 statically.
-# Replacing .so files on the host does NOT fix the binary scan detection.
-# We compile Node.js from source with --shared-openssl pointing to our
-# OpenSSL 3.6.2 libs, so the node binary links dynamically against the
-# patched OpenSSL instead of embedding the vulnerable version.
+# This cache contains a dynamically linked Node binary. Its
+# process.versions.openssl value describes the headers used to compile that
+# cache (currently 3.5.6); the effective libraries are the asserted 3.6.4
+# snapshot copied below. ldd checks prevent an accidental fallback to the
+# cache image's system libssl/libcrypto.
 #
 # CACHE MODE: using a pre-built Node.js builder image.
 # To rebuild from source: see original stage in git history.
@@ -130,6 +162,23 @@ FROM ${OPENSSL_BUILDER_IMAGE} AS openssl-builder
 #   FROM debian:trixie-slim AS node-builder
 # and restore the full build instructions (--shared-openssl, --without-npm, etc.).
 FROM ${NODE_BUILDER_IMAGE} AS node-builder
+COPY --from=openssl-builder /usr/local/openssl /usr/local/openssl
+# CVE-2026-34743: keep the exported Node builder cache on the same patched
+# xz-utils/liblzma5 pair as the OpenSSL builder cache.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        xz-utils=5.8.1-1+deb13u1 \
+        liblzma5=5.8.1-1+deb13u1 && \
+    test "$(dpkg-query -W -f='${Version}' xz-utils)" = "5.8.1-1+deb13u1" && \
+    test "$(dpkg-query -W -f='${Version}' liblzma5)" = "5.8.1-1+deb13u1" && \
+    OPENSSL_VERSION="$(LD_LIBRARY_PATH=/usr/local/openssl/lib /usr/local/openssl/bin/openssl version)" && \
+    echo "$OPENSSL_VERSION" && \
+    printf '%s\n' "$OPENSSL_VERSION" | grep -q '^OpenSSL 3[.]6[.]4 ' && \
+    NODE_LINKS="$(LD_LIBRARY_PATH=/usr/local/openssl/lib ldd /node-artifact/node)" && \
+    echo "$NODE_LINKS" && \
+    printf '%s\n' "$NODE_LINKS" | grep -q '/usr/local/openssl/lib/libssl[.]so[.]3' && \
+    printf '%s\n' "$NODE_LINKS" | grep -q '/usr/local/openssl/lib/libcrypto[.]so[.]3' && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------
 # Stage 1: Base  (Debian Bookworm slim)
@@ -188,16 +237,17 @@ RUN apt-get update && \
     rm -rf "$PICO_DIR" && \
     mkdir -p "$PICO_DIR" && \
     curl -sL "$PICO_URL" | tar xz -C "$PICO_DIR" --strip-components=1 && \
-    # CVE-2026-33750 (MEDIUM) + CVE-2026-45149 (MEDIUM) : npm -> minimatch -> brace-expansion.
+    # CVE-2026-33750 / CVE-2026-45149 + CVE-2026-14257 /
+    # GHSA-mh99-v99m-4gvg : npm -> minimatch -> brace-expansion < 5.0.8.
     # On force une version corrigée via tarball.
-    BRACE_URL=$(npm view brace-expansion@5.0.7 dist.tarball) && \
+    BRACE_URL=$(npm view brace-expansion@5.0.8 dist.tarball) && \
     find /usr/local/lib/node_modules/npm -path '*/node_modules/brace-expansion' -type d -prune -exec rm -rf {} + && \
     BRACE_DIR=/usr/local/lib/node_modules/npm/node_modules/brace-expansion && \
     mkdir -p "$BRACE_DIR" && \
     curl -sL "$BRACE_URL" | tar xz -C "$BRACE_DIR" --strip-components=1 && \
-    node -e "const fs=require('fs'); const lock='/usr/local/lib/node_modules/npm/package-lock.json'; if (fs.existsSync(lock)) { const data=JSON.parse(fs.readFileSync(lock,'utf8')); const patch=(pkg)=>{ if (!pkg) return; pkg.version='5.0.7'; pkg.resolved='https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.7.tgz'; pkg.integrity='sha512-7oFy703dxfY3/NLxC1fh2SUCQ0H9rmAY+5EpDVfXjUTTs+HEwR2nYaqLv+GWcTsumwxPfiz6CzCNkwXwBUwqCA=='; }; if (data.packages) for (const [name,pkg] of Object.entries(data.packages)) if (name.endsWith('node_modules/brace-expansion')) patch(pkg); if (data.dependencies && data.dependencies['brace-expansion']) patch(data.dependencies['brace-expansion']); fs.writeFileSync(lock, JSON.stringify(data,null,2)+'\n'); }" && \
+    node -e "const fs=require('fs'); const lock='/usr/local/lib/node_modules/npm/package-lock.json'; if (fs.existsSync(lock)) { const data=JSON.parse(fs.readFileSync(lock,'utf8')); const patch=(pkg)=>{ if (!pkg) return; pkg.version='5.0.8'; pkg.resolved='https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.8.tgz'; pkg.integrity='sha512-JZyDyq3D4AUifKTPOB7DELf6XsB3WdPuNxCtob1vFXPsSXhdAiHBWJ/tJ8HAc9aH84BK+5JFZLNkJKx3G9kzQg=='; }; if (data.packages) for (const [name,pkg] of Object.entries(data.packages)) if (name.endsWith('node_modules/brace-expansion')) patch(pkg); if (data.dependencies && data.dependencies['brace-expansion']) patch(data.dependencies['brace-expansion']); fs.writeFileSync(lock, JSON.stringify(data,null,2)+'\n'); }" && \
     find /usr/local/lib/node_modules/npm -path '*/node_modules/brace-expansion/package.json' \
-    -exec node -e "const fs=require('fs'); const p=process.argv[1]; const v=JSON.parse(fs.readFileSync(p,'utf8')).version; if (v !== '5.0.7') { console.error(p + ': ' + v); process.exit(1); }" {} \;
+      -exec node -e "const fs=require('fs'); const p=process.argv[1]; const v=JSON.parse(fs.readFileSync(p,'utf8')).version; if (v !== '5.0.8') { console.error(p + ': ' + v); process.exit(1); }" {} \;
 
 # ---------------------------
 # Stage 1b: Frontend dependencies

@@ -1,3 +1,51 @@
+## [1.23.8](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.7...v1.23.8) (2026-07-27)
+
+### Security
+
+- **Caddy -- patched CEL evaluation dependency:** retained Caddy `2.11.4`
+  while backporting its upstream `InterpretableV2` compatibility change and
+  pinning `github.com/google/cel-go@v0.29.2`, with source-shape and resolved
+  module assertions for `GHSA-gcjh-h69q-9w9g`.
+- **Caddy -- gRPC dependency hardening:** repinned
+  `google.golang.org/grpc@v1.82.1` after all OpenTelemetry operations and
+  asserted both the resolved module and compiled binary metadata for
+  `GHSA-hrxh-6v49-42gf`.
+- **npm and archive tooling -- bounded brace expansion:** upgraded modern
+  application and bundled npm paths to `brace-expansion@5.0.8`, including
+  Docker tarball metadata and integrity assertions, for
+  `CVE-2026-14257` / `GHSA-mh99-v99m-4gvg`.
+- **frontend lint stack -- ESLint 10 migration:** upgraded to ESLint `10.8.0`,
+  removed the unused legacy `eslint-config-next` dependency graph and made the
+  React Hooks plugin explicit. The only enabled React security rule remains
+  available through a focused local `react/no-danger` implementation, removing
+  all `minimatch@3` and legacy `brace-expansion` copies from CI.
+- **YAML parsing -- js-yaml 5 remediation:** pinned frontend, backend and
+  documentation dependency graphs to `js-yaml@5.2.2`, with builds and Swagger
+  integration validated across the breaking major-version boundary.
+- **Prisma tooling -- Valibot exceptional-path fix:** pinned backend tooling to
+  `valibot@1.4.2` while retaining Prisma 7, avoiding npm's disruptive Prisma 6
+  downgrade recommendation.
+- **routing dependencies -- HTTP/2 DDoS fix:** pinned the Prisma development
+  path to `find-my-way@9.7.0`, removing the vulnerable `<=9.6.0` resolution.
+- **Next.js and CSS processing -- current high-severity fixes:** upgraded Next
+  and its ESLint plugin to `16.2.12` and enforced `postcss>=8.5.22` across the
+  frontend, backend and documentation graphs.
+- **builder images -- patched xz/liblzma:** pinned `xz-utils` and `liblzma5`
+  to Debian Trixie's `5.8.1-1+deb13u1` security backport in the cached and
+  full-build OpenSSL/Node stages, with exact-version assertions for
+  `CVE-2026-34743`.
+- **builder images -- explicit OpenSSL snapshot identity:** aligned active
+  documentation with the actual `3.6.4` development-branch snapshot used by
+  cached and full builds, and added artifact plus Node linkage assertions so a
+  moving cache tag or branch cannot change its advertised version silently.
+
+### Maintenance
+
+- Bumped root, backend, frontend and documentation package metadata and
+  lockfiles to `1.23.8`.
+- Regenerated all npm lockfiles; root, frontend, backend and documentation
+  audits report zero known vulnerabilities.
+
 ## [1.23.7](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.6...v1.23.7) (2026-07-21)
 
 ### Features

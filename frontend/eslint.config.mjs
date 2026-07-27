@@ -1,13 +1,50 @@
 import { dirname } from "path";
 import { fileURLToPath } from "url";
 import nextPlugin from "@next/eslint-plugin-next";
-import reactPlugin from "eslint-plugin-react";
 import reactHooksPlugin from "eslint-plugin-react-hooks";
 import tsParser from "@typescript-eslint/parser";
 import eslintConfigPrettier from "eslint-config-prettier";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// The legacy eslint-plugin-react package still depends on minimatch 3 and its
+// vulnerable brace-expansion chain. This focused replacement preserves the
+// only enabled React rule without pulling that dependency graph into CI.
+const reactSecurityPlugin = {
+  rules: {
+    "no-danger": {
+      meta: {
+        type: "problem",
+        schema: [],
+        messages: {
+          dangerousProp: "Dangerous property '{{name}}' found",
+        },
+      },
+      create(context) {
+        return {
+          JSXAttribute(node) {
+            const element = node.parent?.name;
+            const isDomElement =
+              element?.type === "JSXIdentifier" && /^[a-z]/.test(element.name);
+
+            if (
+              isDomElement &&
+              node.name?.type === "JSXIdentifier" &&
+              node.name.name === "dangerouslySetInnerHTML"
+            ) {
+              context.report({
+                node,
+                messageId: "dangerousProp",
+                data: { name: node.name.name },
+              });
+            }
+          },
+        };
+      },
+    },
+  },
+};
 
 export default [
   {
@@ -75,7 +112,7 @@ export default [
     },
     plugins: {
       "@next/next": nextPlugin,
-      "react": reactPlugin,
+      react: reactSecurityPlugin,
       "react-hooks": reactHooksPlugin,
     },
     rules: {
@@ -92,8 +129,6 @@ export default [
       // (structured data for SEO) or trusted static server content.
       // Each site must be audited and suppressed inline where verified safe.
       "react/no-danger": "warn",
-      "react/no-unescaped-entities": "off",
-      "react/no-unknown-property": "off",
     },
   },
   eslintConfigPrettier,

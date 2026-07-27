@@ -91,7 +91,9 @@ app cookies. WebDAV credentials are kept in memory for the active job.
 The Docker build and package manifests include targeted security pins and
 overrides. Current hardening includes:
 
-- OpenSSL 3.6.2 build path for CVE-2026-2673.
+- OpenSSL 3.6.4 branch-snapshot runtime, with exact artifact checks, dynamic
+  Node linkage validation in cache mode and compile-time validation in full
+  source mode, for CVE-2026-2673.
 - Caddy built from source with patched Go dependencies.
 - Go 1.26.5 builder stages.
 - `golang.org/x/sys@v0.47.0` for CVE-2026-39824 scanner findings.

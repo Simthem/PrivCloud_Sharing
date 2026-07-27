@@ -1,6 +1,6 @@
 {
   "name": "pingvindocs",
-  "version": "1.23.7",
+  "version": "1.23.8",
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
@@ -52,6 +52,7 @@
     "lodash": ">=4.18.1",
     "uuid": ">=14.0.0",
     "fast-uri": "3.1.4",
+    "postcss": ">=8.5.22",
     "@babel/plugin-transform-modules-systemjs": ">=7.29.4",
     "http-proxy-middleware": "^3.0.6",
     "webpack": "5.105.0",
@@ -60,8 +61,8 @@
     "body-parser": ">=1.20.6",
     "shell-quote": "^1.10.0",
     "websocket-driver": ">=0.7.5",
-    "brace-expansion": ">=5.0.7",
-    "js-yaml": "4.3.0"
+    "brace-expansion": "5.0.8",
+    "js-yaml": "5.2.2"
   },
   "allowScripts": {
     "core-js@3.49.0": true,

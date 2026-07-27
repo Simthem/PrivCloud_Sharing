@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-frontend",
-  "version": "1.23.7",
+  "version": "1.23.8",
   "scripts": {
     "dev": "next dev",
     "prebuild": "sh scripts/strip-legacy-polyfills.sh",
@@ -34,11 +34,11 @@
     "mantine-form-yup-resolver": "^2.0.0",
     "markdown-to-jsx": "^7.5.0",
     "mime-types": "^2.1.35",
-    "next": "16.2.6",
+    "next": "16.2.12",
     "next-http-proxy-middleware": "^1.2.6",
     "p-limit": "^6.1.0",
     "pdf-lib": "^1.17.1",
-    "postcss": ">=8.5.10",
+    "postcss": ">=8.5.22",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -48,7 +48,7 @@
     "yup": "^1.4.0"
   },
   "devDependencies": {
-    "@next/eslint-plugin-next": "^16.2.6",
+    "@next/eslint-plugin-next": "16.2.12",
     "@tanstack/react-query-devtools": "^5.83.0",
     "@types/mime-types": "^2.1.4",
     "@types/node": "^25.8.0",
@@ -56,22 +56,25 @@
     "@types/react-dom": "18.3.0",
     "@typescript-eslint/parser": "^8.60.0",
     "axios": "1.18.1",
-    "eslint": "^9.39.4",
-    "eslint-config-next": "^16.2.6",
-    "eslint-config-prettier": "^9.1.0",
-    "postcss": ">=8.5.10",
+    "eslint": "^10.8.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "postcss": ">=8.5.22",
     "prettier": "^3.3.3",
     "typescript": "^5.6.2"
   },
   "overrides": {
-    "postcss": ">=8.5.10",
+    "postcss": ">=8.5.22",
     "serialize-javascript": "^7.0.3",
     "tar": "^7.5.10",
     "diff": "^8.0.3",
-    "js-yaml": "4.3.0",
+    "js-yaml": "5.2.2",
+    "minimatch@^10.0.0": {
+      "brace-expansion": "5.0.8"
+    },
     "picomatch": ">=4.0.4",
     "axios": "1.18.1",
-    "next": "16.2.6",
+    "next": "16.2.12",
     "sharp": "$sharp"
   },
   "browserslist": [
