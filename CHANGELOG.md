@@ -1,4 +1,4 @@
-## Unreleased
+## [1.24.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.0...v1.24.1) (2026-08-25)
 
 ### Bug Fixes
 
@@ -14,7 +14,24 @@
 - **SQLite -- absolute datasource consistency:** normalize absolute `file:`
   URLs to filesystem paths for both the seed and the runtime adapter, ensuring
   that migrations, configuration seeding and Nest always open the same
-  database when `DATABASE_URL` is absolute.
+  database when `DATABASE_URL` is absolute. The production seed remains
+  self-contained because container images intentionally omit backend source
+  files after compilation.
+- **Docker -- release image restored to a buildable architecture set:** the
+  runtime layout stage assumed the `x86_64-linux-gnu` multiarch triplet, which
+  aborted every non-amd64 leg of the release build. The triplet is now derived
+  at build time, and the patched OpenSSL pair is placed through the same stage
+  because `COPY` cannot resolve it. Publication is pinned to `linux/amd64`:
+  the pinned OpenSSL and Node builder caches exist for amd64 only, so an arm64
+  tag shipped x86_64 binaries inside an arm64 image and could never start.
+  `Dockerfile.full-build`, which rebuilds both from source, is now
+  architecture-agnostic.
+- **release -- Companion version tied to the release:** the Companion
+  advertises its version from a source constant that the release bump left
+  behind, so packaging refused to produce an artifact. The version parity
+  guard now covers that constant, and the packaging tests read the released
+  version from the manifests instead of pinning a literal that has to be
+  edited by hand at every bump.
 
 ### Maintenance
 
