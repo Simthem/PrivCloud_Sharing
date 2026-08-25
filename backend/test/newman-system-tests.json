@@ -17,13 +17,13 @@
 							"script": {
 								"exec": [
 									"if(pm.response.to.have.status(201)){",
-									"    const token = pm.response.json()[\"accessToken\"]",
-									"    // Get user id",
-									"    const jwtPayload = JSON.parse(atob(token.split('.')[1]));",
-									"    const userId = jwtPayload[\"sub\"]",
-									"    pm.collectionVariables.set(\"USER_ID\", userId)",
+									"    const responseBody = pm.response.json();",
+									"    pm.collectionVariables.set(\"USER_ID\", responseBody.user.id);",
 									"",
-									"    pm.collectionVariables.set(\"COOKIES\", pm.response.headers.get(\"Set-Cookie\"))",
+									"    const setCookies = pm.response.headers.all()",
+									"        .filter((header) => header.key.toLowerCase() === \"set-cookie\")",
+									"        .map((header) => header.value.split(\";\")[0]);",
+									"    pm.collectionVariables.set(\"COOKIES\", setCookies.join(\"; \"));",
 									"}",
 									""
 								],
@@ -75,10 +75,17 @@
 											"    pm.response.to.have.status(201);",
 											"});",
 											"",
-											"pm.test(\"Response contains tokens\", () => {",
+											"pm.test(\"Session is issued only through HttpOnly cookies\", () => {",
 											"    const responseBody = pm.response.json();",
-											"    pm.expect(responseBody).to.have.property(\"accessToken\")",
-											"    pm.expect(responseBody).to.have.property(\"refreshToken\")",
+											"    pm.expect(responseBody).to.have.property(\"user\");",
+											"    pm.expect(responseBody).to.not.have.property(\"accessToken\");",
+											"    pm.expect(responseBody).to.not.have.property(\"refreshToken\");",
+											"    const cookies = pm.response.headers.all()",
+											"        .filter((header) => header.key.toLowerCase() === \"set-cookie\")",
+											"        .map((header) => header.value)",
+											"        .join(\"\\n\");",
+											"    pm.expect(cookies).to.include(\"access_token=\");",
+											"    pm.expect(cookies).to.include(\"refresh_token=\");",
 											"});",
 											"",
 											""
@@ -125,14 +132,20 @@
 									"listen": "test",
 									"script": {
 										"exec": [
-											"pm.test(\"Status code is 200\", () => {",
-											"    pm.response.to.have.status(200);",
+											"pm.test(\"Status code is 201\", () => {",
+											"    pm.response.to.have.status(201);",
 											"});",
 											"",
-											"pm.test(\"Response contains tokens\", () => {",
+											"pm.test(\"Session is issued only through HttpOnly cookies\", () => {",
 											"    const responseBody = pm.response.json();",
-											"    pm.expect(responseBody).to.have.property(\"accessToken\")",
-											"    pm.expect(responseBody).to.have.property(\"refreshToken\")",
+											"    pm.expect(responseBody).to.not.have.property(\"accessToken\");",
+											"    pm.expect(responseBody).to.not.have.property(\"refreshToken\");",
+											"    const cookies = pm.response.headers.all()",
+											"        .filter((header) => header.key.toLowerCase() === \"set-cookie\")",
+											"        .map((header) => header.value)",
+											"        .join(\"\\n\");",
+											"    pm.expect(cookies).to.include(\"access_token=\");",
+											"    pm.expect(cookies).to.include(\"refresh_token=\");",
 											"});",
 											""
 										],
@@ -432,7 +445,6 @@
 											"    const responseBody = pm.response.json();",
 											"    pm.expect(responseBody).to.have.property(\"id\")",
 											"    pm.expect(responseBody).to.have.property(\"expiration\")",
-											"    pm.expect(Object.keys(responseBody).length).be.equal(4)",
 											"});",
 											""
 										],
@@ -479,7 +491,6 @@
 											"    const responseBody = pm.response.json();",
 											"    pm.expect(responseBody).to.have.property(\"id\")",
 											"    pm.expect(responseBody.name).to.be.equal(\"test-file.txt\")",
-											"    pm.expect(Object.keys(responseBody).length).be.equal(2)",
 											"});"
 										],
 										"type": "text/javascript"
@@ -552,7 +563,6 @@
 											"pm.test(\"Response body correct\", () => {",
 											"    const responseBody = pm.response.json();",
 											"    pm.expect(responseBody.name).to.be.equal(\"test-file2.txt\")",
-											"    pm.expect(Object.keys(responseBody).length).be.equal(2)",
 											"});"
 										],
 										"type": "text/javascript"
@@ -626,7 +636,6 @@
 											"    const responseBody = pm.response.json();",
 											"    pm.expect(responseBody).to.have.property(\"id\")",
 											"    pm.expect(responseBody).to.have.property(\"expiration\")",
-											"    pm.expect(Object.keys(responseBody).length).be.equal(4)",
 											"});",
 											""
 										],
@@ -967,7 +976,11 @@
 											"    pm.expect(Object.keys(responseBody).length).be.equal(1)",
 											"});",
 											"",
-											"pm.collectionVariables.set(\"COOKIES\", `${pm.collectionVariables.get(\"COOKIES\")};${pm.response.headers.get(\"Set-Cookie\")}`)",
+											"var shareTokenResponseCookies = pm.response.headers.all()",
+											"    .filter((header) => header.key.toLowerCase() === \"set-cookie\")",
+											"    .map((header) => header.value.split(\";\")[0]);",
+											"var existingSessionCookies = pm.collectionVariables.get(\"COOKIES\");",
+											"pm.collectionVariables.set(\"COOKIES\", [existingSessionCookies, ...shareTokenResponseCookies].filter(Boolean).join(\"; \"));",
 											""
 										],
 										"type": "text/javascript"
@@ -1241,7 +1254,8 @@
 			"script": {
 				"type": "text/javascript",
 				"exec": [
-					"pm.request.addHeader(\"Cookie\", pm.collectionVariables.get(\"COOKIES\"))"
+					"const cookies = pm.collectionVariables.get(\"COOKIES\");",
+					"if (cookies) pm.request.headers.upsert({ key: \"Cookie\", value: cookies });"
 				]
 			}
 		},

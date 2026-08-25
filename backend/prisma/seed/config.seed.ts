@@ -768,12 +768,14 @@ function resolveDbUrl(url: string): string {
   if (!url.startsWith("file:")) return url;
   const raw = url.slice(5);
   const filePath = raw.split("?")[0];
-  if (path.isAbsolute(filePath)) return url;
+  if (path.isAbsolute(filePath)) return filePath;
   const schemaDir = path.join(process.cwd(), "prisma");
   return path.resolve(schemaDir, filePath);
 }
 
-const dbUrl = process.env.DATABASE_URL || "file:../data/pingvin-share.db?connection_limit=1";
+const dbUrl =
+  process.env.DATABASE_URL ||
+  "file:../data/pingvin-share.db?connection_limit=1";
 const resolvedDbPath = resolveDbUrl(dbUrl);
 console.log(`[seed] DB path: ${resolvedDbPath}  (cwd: ${process.cwd()})`);
 const adapter = new PrismaBetterSqlite3({

@@ -1,3 +1,28 @@
+## Unreleased
+
+### Bug Fixes
+
+- **CI -- deterministic backend system tests:** replaced the shell background
+  pipeline with an isolated runner that creates a temporary SQLite database,
+  deploys migrations, seeds every runtime configuration value and bounds Nest
+  readiness before executing Newman. The runner now fails immediately when the
+  backend exits and always stops the server and removes its temporary data.
+- **system tests -- public authentication contract:** aligned Newman with the
+  browser-only HttpOnly cookie session, current transfer response metadata and
+  share-token cookies so the complete 25-request scenario exercises the actual
+  open-source API instead of the removed bearer-token response channel.
+- **SQLite -- absolute datasource consistency:** normalize absolute `file:`
+  URLs to filesystem paths for both the seed and the runtime adapter, ensuring
+  that migrations, configuration seeding and Nest always open the same
+  database when `DATABASE_URL` is absolute.
+
+### Maintenance
+
+- Updated the backend system-test workflow to Node.js 24, lockfile-backed
+  `npm ci` and the hermetic runner, and added an OSS regression guard proving
+  that GitHub Actions can publish container images only to GHCR, never Docker
+  Hub.
+
 ## [1.24.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.8...v1.24.0) (2026-08-25)
 
 ### Features

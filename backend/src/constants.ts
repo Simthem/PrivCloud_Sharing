@@ -24,7 +24,7 @@ export function resolveDbUrl(url: string): string {
   if (!url.startsWith("file:")) return url;
   const raw = url.slice(5);
   const filePath = raw.split("?")[0];
-  if (path.isAbsolute(filePath)) return url;
+  if (path.isAbsolute(filePath)) return filePath;
   const schemaDir = path.join(process.cwd(), "prisma");
   const absolutePath = path.resolve(schemaDir, filePath);
   return absolutePath;

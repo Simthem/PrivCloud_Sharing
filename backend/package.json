@@ -11,7 +11,7 @@
     "format": "prettier --end-of-line=auto --write 'src/**/*.ts'",
     "test": "npm run test:unit",
     "test:unit": "NODE_PATH=. node -r ts-node/register test/unit-runner.ts",
-    "test:system": "prisma migrate reset -f && nest start & wait-on http://localhost:8080/api/configs && newman run ./test/newman-system-tests.json"
+    "test:system": "node test/run-system-tests.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.787.0",

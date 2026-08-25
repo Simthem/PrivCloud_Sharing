@@ -94,9 +94,7 @@ test("the public tree contains no native Android application surface", async () 
   }
   assert.equal(
     backendFiles.some((file) =>
-      /(?:^|[\/])(?:realtime|nativeOAuth|nativeOrigins)(?:[.\/]|$)/i.test(
-        file,
-      ),
+      /(?:^|[\/])(?:realtime|nativeOAuth|nativeOrigins)(?:[.\/]|$)/i.test(file),
     ),
     false,
   );
@@ -209,6 +207,34 @@ test("ignored private artifacts cannot leak into an OSS container", async () => 
   assert.match(dockerIgnore, /frontend\/public\/install\/beta\//);
   assert.match(gitIgnore, /frontend\/public\/install\/beta\//);
   assert.doesNotMatch(proxy, /\/install\/beta/);
+});
+
+test("GitHub Actions publishes container images only to GHCR", async () => {
+  const workflowPaths = await allFiles(".github/workflows");
+  const publishingWorkflows = [];
+  for (const workflowPath of workflowPaths) {
+    const workflow = await read(workflowPath);
+    assert.doesNotMatch(workflow, /DOCKER_(?:USERNAME|PASSWORD)/);
+    assert.doesNotMatch(workflow, /(?:docker\.io|registry-1\.docker\.io)/i);
+    if (
+      /docker\/build-push-action|docker push|buildx build[^\n]*--push/.test(
+        workflow,
+      )
+    ) {
+      publishingWorkflows.push(workflowPath);
+    }
+  }
+  assert.deepEqual(publishingWorkflows, [
+    ".github/workflows/build-docker-image.yml",
+  ]);
+
+  const buildWorkflow = await read(".github/workflows/build-docker-image.yml");
+  assert.match(buildWorkflow, /REGISTRY:\s*ghcr\.io/);
+  assert.match(
+    buildWorkflow,
+    /images:\s*\$\{\{ env\.REGISTRY \}\}\/\$\{\{ env\.IMAGE_NAME \}\}/,
+  );
+  assert.match(buildWorkflow, /registry:\s*\$\{\{ env\.REGISTRY \}\}/);
 });
 
 test("all release packages stay on the same version", async () => {

@@ -12,12 +12,12 @@ jobs:
   system-tests:
     timeout-minutes: 15
     runs-on: ubuntu-latest
-    container: node:22
+    container: node:24
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install Dependencies
         working-directory: ./backend
-        run: npm install
+        run: npm ci
       - name: Run Server and Test with Newman
         working-directory: ./backend
         run: npm run test:system
