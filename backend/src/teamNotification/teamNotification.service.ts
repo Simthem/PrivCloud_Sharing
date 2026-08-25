@@ -47,7 +47,11 @@ export class TeamNotificationService {
         actorId: params.actorId,
         teamFileId: params.teamFileId,
         folderId: params.folderId,
-        metadata: params.encryptedMetadata ? null : (params.metadata ? JSON.stringify(params.metadata) : null),
+        metadata: params.encryptedMetadata
+          ? null
+          : params.metadata
+            ? JSON.stringify(params.metadata)
+            : null,
         encryptedMetadata: params.encryptedMetadata || null,
       },
     });
@@ -68,7 +72,9 @@ export class TeamNotificationService {
         url,
       })
       .catch((err) => {
-        this.logger.debug(`Push send failed for ${params.userId}: ${err.message}`);
+        this.logger.debug(
+          `Push send failed for ${params.userId}: ${err.message}`,
+        );
       });
 
     return notification;
@@ -100,7 +106,12 @@ export class TeamNotificationService {
         userId: { notIn: [actorId, ...(opts?.excludeUserIds || [])] },
       },
       include: opts?.folderId
-        ? { folderAccess: { where: { folderId: opts.folderId }, select: { id: true } } }
+        ? {
+            folderAccess: {
+              where: { folderId: opts.folderId },
+              select: { id: true },
+            },
+          }
         : undefined,
     });
 
@@ -114,7 +125,8 @@ export class TeamNotificationService {
     if (eligibleMembers.length === 0) return [];
 
     // Determine if this is a "direct share" type (for SHARES_ONLY filtering)
-    const isDirectShareType = type === "FILE_SHARED" || type === "GRANT_RECEIVED";
+    const isDirectShareType =
+      type === "FILE_SHARED" || type === "GRANT_RECEIVED";
 
     // Filter out members whose pushNotifMode is SHARES_ONLY for non-share events.
     // This applies to BOTH DB records and push (user chose not to be notified at all).
@@ -141,7 +153,11 @@ export class TeamNotificationService {
 
     // Build navigation URL once (same for all recipients)
     const url = this.buildNavigationUrl({
-      type, title, teamId, userId: "", actorId,
+      type,
+      title,
+      teamId,
+      userId: "",
+      actorId,
       teamFileId: opts?.teamFileId,
       folderId: opts?.folderId,
       metadata: opts?.metadata,
@@ -149,17 +165,21 @@ export class TeamNotificationService {
 
     // Send push notifications in parallel (all notifiable members already filtered)
     const pushBody = this.buildPushBody({
-      type, title, teamId, userId: "", actorId, metadata: opts?.metadata,
+      type,
+      title,
+      teamId,
+      userId: "",
+      actorId,
+      metadata: opts?.metadata,
     });
 
-    const pushPromises = notifiableMembers
-      .map((m) =>
-        this.pushService
-          .sendToUser(m.userId, { title, body: pushBody, url })
-          .catch((err) => {
-            this.logger.debug(`Push failed for ${m.userId}: ${err.message}`);
-          }),
-      );
+    const pushPromises = notifiableMembers.map((m) =>
+      this.pushService
+        .sendToUser(m.userId, { title, body: pushBody, url })
+        .catch((err) => {
+          this.logger.debug(`Push failed for ${m.userId}: ${err.message}`);
+        }),
+    );
 
     // Fire all pushes in parallel (non-blocking for the caller)
     Promise.all(pushPromises).catch(() => {});
@@ -173,7 +193,12 @@ export class TeamNotificationService {
    */
   async getNotifications(
     userId: string,
-    opts?: { teamId?: string; unreadOnly?: boolean; limit?: number; offset?: number },
+    opts?: {
+      teamId?: string;
+      unreadOnly?: boolean;
+      limit?: number;
+      offset?: number;
+    },
   ) {
     const where: any = { userId };
     if (opts?.teamId) where.teamId = opts.teamId;
@@ -200,7 +225,11 @@ export class TeamNotificationService {
       unreadCount: opts?.unreadOnly
         ? total
         : await this.prisma.teamNotification.count({
-            where: { userId, isRead: false, ...(opts?.teamId ? { teamId: opts.teamId } : {}) },
+            where: {
+              userId,
+              isRead: false,
+              ...(opts?.teamId ? { teamId: opts.teamId } : {}),
+            },
           }),
     };
   }

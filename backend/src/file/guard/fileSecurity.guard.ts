@@ -72,21 +72,15 @@ export class FileSecurityGuard extends ShareSecurityGuard {
     if (share.teamFolderId) {
       await this.softAuthenticate(context);
       const user = request.user as User | undefined;
-      const allowPlatformAdmin = this._config.get(
-        "share.allowAdminAccessAllShares",
-      );
       const fileId =
         typeof request.params.fileId === "string"
           ? request.params.fileId
           : undefined;
 
       if (fileId) {
-        await this._teamShareAccess.assertCanAccessFile(shareId, fileId, user, {
-          allowPlatformAdmin,
-        });
+        await this._teamShareAccess.assertCanAccessFile(shareId, fileId, user);
       } else {
         await this._teamShareAccess.assertCanAccessShare(shareId, user, {
-          allowPlatformAdmin,
           requireDownload: true,
         });
       }
@@ -94,16 +88,6 @@ export class FileSecurityGuard extends ShareSecurityGuard {
 
     // If there is no share token the user requests a file directly
     if (!shareToken) {
-      // If admin access is enabled and user is admin, allow access
-      if (this._config.get("share.allowAdminAccessAllShares")) {
-        await this.softAuthenticate(context);
-        const user = request.user as User | undefined;
-        if (user?.isAdmin) {
-          await this._shareService.increaseViewCount(share);
-          return true;
-        }
-      }
-
       if (share.security?.password)
         throw new ForbiddenException("This share is password protected");
 

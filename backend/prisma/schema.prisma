@@ -32,11 +32,11 @@ model User {
   resetPasswordToken ResetPasswordToken?
 
   // E2E encryption: SHA-256 hex hash of the user's AES-256 key (never the key itself)
-  encryptionKeyHash String?
+  encryptionKeyHash           String?
+  e2eAutoGenerationDisabledAt DateTime?
 
   oAuthUsers         OAuthUser[]
   pushSubscriptions  PushSubscription[]
-  subscription       Subscription?
   bridgeUploadTokens BridgeUploadToken[]
 
   // Passkey-wrapped E2E keys for multi-device sync
@@ -81,18 +81,6 @@ model WrappedKey {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, credentialId])
-}
-
-model Subscription {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  plan   String @default("TEAM") // All users get full access
-  status String @default("active")
-
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model RefreshToken {
@@ -150,11 +138,17 @@ model TotpBackupCode {
 }
 
 model Share {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
+  id                     String    @id @default(uuid())
+  // Opaque administration reference. The public Share.id is a capability URL
+  // and must never be disclosed by the administration inventory.
+  adminAuditId           String    @unique @default(uuid())
+  createdAt              DateTime  @default(now())
+  uploadLastActivityAt   DateTime?
+  uploadCleanupStartedAt DateTime?
 
   name          String?
   uploadLocked  Boolean  @default(false)
+  hasBeenCompleted Boolean @default(false)
   isZipReady    Boolean  @default(false)
   views         Int      @default(0)
   expiration    DateTime
@@ -188,8 +182,12 @@ model Share {
   teamFolderId String?
   teamFolder   TeamFolder? @relation(fields: [teamFolderId], references: [id], onDelete: SetNull)
 
+  // SHA-256 ownership proof for anonymous upload cancellation.
+  anonymousSessionToken String?
+
   @@index([teamFolderId, uploadLocked, createdAt])
   @@index([creatorId, teamFolderId, uploadLocked])
+  @@index([uploadLocked, hasBeenCompleted, uploadCleanupStartedAt, uploadLastActivityAt], map: "Share_unfinished_upload_cleanup_idx")
 }
 
 model ReverseShare {
@@ -221,6 +219,8 @@ model ShareRecipient {
 
   shareId String
   share   Share  @relation(fields: [shareId], references: [id], onDelete: Cascade)
+
+  @@unique([shareId, email])
 }
 
 model File {

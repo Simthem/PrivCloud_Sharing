@@ -6,7 +6,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { Readable } from "node:stream";
 
-const VERSION = "0.1.2";
+const VERSION = "1.24.0";
 const NATIVE_HOST_NAME = "fr.privcloud.companion";
 const HOST = process.env.PRIVCLOUD_BRIDGE_HOST || "127.0.0.1";
 const PORT = Number(process.env.PRIVCLOUD_BRIDGE_PORT || "47631");
@@ -312,6 +312,16 @@ function basicAuth(username, password) {
   return `Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`;
 }
 
+async function discardResponseBody(response) {
+  const body = response?.body;
+  if (!body || body.locked) return;
+  try {
+    await body.cancel();
+  } catch {
+    // A failed cleanup must never terminate the long-running Companion.
+  }
+}
+
 function normalizeWebDavUrl(value, allowHttp = false) {
   if (typeof value !== "string" || value.trim().length === 0) {
     const err = new Error("endpoint is required");
@@ -359,10 +369,10 @@ function resolveWebDavHref(endpoint, href) {
   return target;
 }
 
-function normalizePrivCloudBaseUrl(value, origin) {
+function normalizePrivCloudBaseUrl(value) {
   let url;
   try {
-    url = new URL(String(value || origin || ""));
+    url = new URL(String(value || ""));
   } catch {
     const err = new Error("Invalid PrivCloud base URL");
     err.statusCode = 400;
@@ -378,13 +388,13 @@ function normalizePrivCloudBaseUrl(value, origin) {
     throw err;
   }
 
-  if (origin) {
-    const pageOrigin = new URL(origin);
-    if (pageOrigin.origin !== url.origin) {
-      const err = new Error("PrivCloud API URL must match the web app origin");
-      err.statusCode = 400;
-      throw err;
-    }
+  // The outbound API target comes from the administrator-controlled Bridge
+  // allowlist, never from an HTTP Origin header. This keeps a forged local
+  // request from turning the Companion into an SSRF proxy.
+  if (!ALLOWED_ORIGINS.has(url.origin)) {
+    const err = new Error("PrivCloud API URL is not in the Bridge allowlist");
+    err.statusCode = 400;
+    throw err;
   }
 
   url.pathname = "/";
@@ -542,21 +552,21 @@ async function webDavFetch({
     signal,
   });
   if (response.status === 401 || response.status === 403) {
-    response.body?.cancel();
+    await discardResponseBody(response);
     const err = new Error("WebDAV authentication rejected");
     err.statusCode = 401;
     err.code = "webdav_auth_rejected";
     throw err;
   }
   if (response.status >= 300 && response.status < 400) {
-    response.body?.cancel();
+    await discardResponseBody(response);
     const err = new Error("WebDAV redirect refused");
     err.statusCode = 400;
     err.code = "webdav_redirect_refused";
     throw err;
   }
   if (!response.ok && response.status !== 207) {
-    response.body?.cancel();
+    await discardResponseBody(response);
     const err = new Error(`WebDAV request failed with HTTP ${response.status}`);
     err.statusCode = 502;
     err.code = "webdav_upstream_error";
@@ -664,6 +674,7 @@ function buildBridgeUploadUrl(
   chunkIndex,
   totalChunks,
   chunkSize,
+  encryptionChunkSize,
 ) {
   const url = new URL(
     `/api/shares/${encodeURIComponent(shareId)}/files/bridge`,
@@ -672,6 +683,9 @@ function buildBridgeUploadUrl(
   url.searchParams.set("chunkIndex", String(chunkIndex));
   url.searchParams.set("totalChunks", String(totalChunks));
   url.searchParams.set("chunkSize", String(chunkSize));
+  if (encryptionChunkSize) {
+    url.searchParams.set("encryptionChunkSize", String(encryptionChunkSize));
+  }
   if (fileId) url.searchParams.set("id", fileId);
   return url;
 }
@@ -685,6 +699,7 @@ async function uploadPrivCloudChunk({
   chunkIndex,
   totalChunks,
   chunkSize,
+  encryptionChunkSize,
   body,
   job,
 }) {
@@ -700,6 +715,7 @@ async function uploadPrivCloudChunk({
       chunkIndex,
       totalChunks,
       chunkSize,
+      encryptionChunkSize,
     );
 
     let response;
@@ -732,7 +748,6 @@ async function uploadPrivCloudChunk({
 
     const status = response.status;
     const data = await response.json().catch(() => null);
-    response.body?.cancel();
 
     if (
       (retryableStatuses.has(status) || status >= 500) &&
@@ -845,6 +860,9 @@ async function runWebDavUploadJob(job, payload) {
           chunkIndex,
           totalChunks,
           chunkSize: payload.chunkSize,
+          encryptionChunkSize: payload.encryptionKey
+            ? payload.chunkSize
+            : undefined,
           body: uploadBody,
           job,
         });
@@ -932,6 +950,7 @@ function bridgeHealthPayload() {
       directBrowserImport: true,
       managedEncryptedUpload: true,
       localTokenAuthorization: true,
+      openSourceLocalAuthorization: true,
       nativeMessaging: true,
       browserExtension: true,
       mailAssistants: true,
@@ -1250,7 +1269,7 @@ async function handleWebDavDownload(req, res) {
   Readable.fromWeb(response.body).pipe(res);
 }
 
-function createWebDavUploadJob(body, origin) {
+function createWebDavUploadJob(body, _origin) {
   cleanupJobs();
   const activeJobs = Array.from(jobs.values()).filter(
     (job) => !["completed", "failed", "cancelled"].includes(job.state),
@@ -1262,7 +1281,7 @@ function createWebDavUploadJob(body, origin) {
     throw err;
   }
 
-  const appBaseUrl = normalizePrivCloudBaseUrl(body.appBaseUrl, origin);
+  const appBaseUrl = normalizePrivCloudBaseUrl(body.appBaseUrl);
   const shareId = String(body.shareId || "");
   if (!/^[A-Za-z0-9_-]{3,120}$/.test(shareId)) {
     const err = new Error("Invalid share id");

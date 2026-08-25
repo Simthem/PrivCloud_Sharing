@@ -1,16 +1,17 @@
-import { Group, Space, Text, Title } from "@mantine/core";
+import { Alert, Group, Space, Text, Title } from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import { useEffect, useState } from "react";
 import { FormattedMessage } from "react-intl";
+import { TbShieldLock } from "react-icons/tb";
 import Meta from "../../components/Meta";
 import ManageShareTable from "../../components/admin/shares/ManageShareTable";
 import useTranslate from "../../hooks/useTranslate.hook";
 import shareService from "../../services/share.service";
-import { MyShare } from "../../types/share.type";
+import { AdminShare } from "../../types/share.type";
 import toast from "../../utils/toast.util";
 
 const Shares = () => {
-  const [shares, setShares] = useState<MyShare[]>([]);
+  const [shares, setShares] = useState<AdminShare[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const modals = useModals();
@@ -24,10 +25,10 @@ const Shares = () => {
     });
   };
 
-  const deleteShare = (share: MyShare) => {
+  const deleteShare = (share: AdminShare) => {
     modals.openConfirmModal({
       title: t("admin.shares.edit.delete.title", {
-        id: share.id,
+        id: share.reference,
       }),
       children: (
         <Text size="sm">
@@ -41,8 +42,14 @@ const Shares = () => {
       confirmProps: { color: "red" },
       onConfirm: async () => {
         shareService
-          .remove(share.id)
-          .then(() => setShares(shares.filter((v) => v.id != share.id)))
+          .removeFromAdminInventory(share.reference)
+          .then(() =>
+            setShares((current) =>
+              current.filter(
+                ({ reference }) => reference !== share.reference,
+              ),
+            ),
+          )
           .catch(toast.axiosError);
       },
     });
@@ -60,6 +67,16 @@ const Shares = () => {
           <FormattedMessage id="admin.shares.title" />
         </Title>
       </Group>
+
+      <Alert
+        color="teal"
+        variant="light"
+        icon={<TbShieldLock size={20} />}
+        title={t("admin.shares.privacy.title")}
+        mb="lg"
+      >
+        <FormattedMessage id="admin.shares.privacy.description" />
+      </Alert>
 
       <ManageShareTable
         shares={shares}

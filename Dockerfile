@@ -19,7 +19,7 @@ ARG NODE_BUILDER_IMAGE=simthem/privcloud-sharing:node-builder-cache
 # CVE-2026-45135 (HIGH - FastCGI splitPos), CVE-2026-45692 (MEDIUM - Admin /config bypass),
 # GHSA-gx7w-56w6-g48x (MEDIUM - PKI path matching bypass).
 # GHSA-wwhq-w58m-w29c (MEDIUM - CVE-2026-30852 fix bypass) - status: affected, no fix yet.
-FROM golang:1.26.5-alpine AS caddy-builder
+FROM golang:1.26.6-alpine AS caddy-builder
 RUN apk upgrade --no-cache && apk add --no-cache git
 RUN git clone --depth 1 --branch v2.11.4 \
       https://github.com/caddyserver/caddy.git /caddy
@@ -52,8 +52,16 @@ RUN test "$(grep -Fc '[]interpreter.Interpretable{reqAttr}' modules/caddyhttp/ce
 # CVE-2026-46600 : golang.org/x/net < 0.56.0
 # CVE-2026-56852 : golang.org/x/text < 0.39.0
 # GHSA-gcjh-h69q-9w9g : github.com/google/cel-go <= 0.28.1
-# Use v0.29.2 to match upstream Caddy commit b2693fb.
 # go mod tidy runs FIRST, then we re-pin smallstep + bbolt AFTER to prevent transitive downgrade
+# IMPORTANT: 'replace' directives are used (not 'require' bumps) for x/net, x/text, x/crypto, x/sys.
+# Unlike 'go get' or 'go mod edit -require', replace directives survive 'go mod tidy' because
+# tidy never removes them. MVS would downgrade pinned require versions back to the minimum
+# needed by the dep graph; replace directives bypass MVS entirely.
+# grpc is also re-pinned after all OpenTelemetry operations: those operations
+# can otherwise replace the initial security pin with a still-vulnerable version.
+# GHSA-gcjh-h69q-9w9g: Docker Scout marks cel-go < 0.30.0 as affected. Pin the
+# reviewed v0.30.0 release, which contains the sentinel-field fix, and verify
+# the compiled binary below so a transitive downgrade fails the image build.
 RUN go get golang.org/x/net@v0.57.0 \
     && go get golang.org/x/text@v0.40.0 \
     && go get golang.org/x/crypto@v0.54.0 \
@@ -89,7 +97,8 @@ RUN go get golang.org/x/net@v0.57.0 \
     && go mod tidy \
     && go mod edit -require=github.com/go-chi/chi/v5@v5.3.0 \
     && go get google.golang.org/grpc@v1.82.1 \
-    && go get github.com/google/cel-go@v0.29.2 \
+    && go get github.com/google/cel-go@v0.30.0 \
+    && go get github.com/klauspost/compress@v1.18.7 \
     && go mod tidy \
     && echo "=== Security replace pins verification ===" \
     && grep -E 'replace|x/net|x/text|x/crypto|x/sys|go-chi/chi/v5' go.mod \
@@ -98,7 +107,8 @@ RUN go get golang.org/x/net@v0.57.0 \
     && go list -m golang.org/x/crypto | grep 'v0.54.0' \
     && go list -m github.com/go-chi/chi/v5 | grep 'v5.3.0' \
     && test "$(go list -m -f '{{.Version}}' google.golang.org/grpc)" = "v1.82.1" \
-    && test "$(go list -m -f '{{.Version}}' github.com/google/cel-go)" = "v0.29.2" \
+    && test "$(go list -m -f '{{.Version}}' github.com/google/cel-go)" = "v0.30.0" \
+    && test "$(go list -m -f '{{.Version}}' github.com/klauspost/compress)" = "v1.18.7" \
     && ! go list -deps ./cmd/caddy | grep -qx 'golang.org/x/crypto/openpgp'
 # Compiler Caddy (binaire statique, stripped, sans symboles de debug)
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/caddy \
@@ -111,7 +121,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/ca
 # ---------------------------
 # This static helper prepares mounted directories, drops from root to PUID:PGID
 # and execs Node without requiring a shell, passwd database, PAM or gosu.
-FROM golang:1.26.5-alpine AS runtime-init-builder
+FROM golang:1.26.6-alpine AS runtime-init-builder
 WORKDIR /src
 COPY scripts/docker/runtime-init.go .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /runtime-init ./runtime-init.go
@@ -256,8 +266,7 @@ FROM base AS frontend-deps
 WORKDIR /opt/app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 
-RUN npm install && \
-    npm install global-agent@3.0.0 --no-save
+RUN npm ci
 
 # ---------------------------
 # Stage 2: Frontend build
@@ -265,6 +274,7 @@ RUN npm install && \
 FROM base AS frontend-builder
 WORKDIR /opt/app/frontend
 COPY --from=frontend-deps /opt/app/frontend/node_modules ./node_modules
+COPY global-agent-bootstrap.js ./global-agent-bootstrap.js
 COPY frontend/ ./
 
 # CVE-2026-33671 (HIGH) / CVE-2026-33672 (MEDIUM) - picomatch < 4.0.4
@@ -277,8 +287,8 @@ RUN echo 'module.exports=require("picomatch");' > node_modules/next/dist/compile
     require('fs').writeFileSync('node_modules/next/dist/compiled/picomatch/package.json', \
     JSON.stringify({name:'picomatch',version:v,main:'index.js',license:'MIT'}))"
 
-# Précharger global-agent
-ENV NODE_OPTIONS="--require ./node_modules/global-agent/bootstrap"
+# Normalize proxy settings before global-agent reads them.
+ENV NODE_OPTIONS="--require ./global-agent-bootstrap.js"
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN npm run build
@@ -309,6 +319,13 @@ RUN set -e; \
     find .next/standalone -name 'package.json' -path '*/picomatch/*' \
         -exec sh -c 'echo "$1: $(node -e "console.log(JSON.parse(require(\"fs\").readFileSync(\"$1\",\"utf8\")).version)")"' _ {} \;
 
+# Snyk scans the standalone tree independently from the source node_modules.
+# Fail the image build if tracing ever copies a vulnerable PostCSS package into
+# that tree, instead of allowing a stale or nested copy to reach the image.
+RUN set -e; \
+    find .next/standalone -type f -name package.json \
+      -exec node -e 'const fs=require("fs"); for (const p of process.argv.slice(1)) { const j=JSON.parse(fs.readFileSync(p,"utf8")); if (j.name !== "postcss") continue; const m=/^(\d+)\.(\d+)\.(\d+)/.exec(j.version); if (!m) throw new Error("Invalid PostCSS version in "+p+": "+j.version); const v=m.slice(1).map(Number); if (v[0] < 8 || (v[0] === 8 && v[1] < 5) || (v[0] === 8 && v[1] === 5 && v[2] < 23)) throw new Error("Vulnerable PostCSS in "+p+": "+j.version); }' {} +
+
 # ---------------------------
 # Stage 3: Backend dependencies
 # ---------------------------
@@ -318,8 +335,7 @@ FROM base AS backend-deps
 WORKDIR /opt/app/backend
 COPY backend/package.json backend/package-lock.json ./
 
-RUN npm install && \
-    npm install global-agent@3.0.0 undici@latest --no-save
+RUN npm ci
 
 # ---------------------------
 # Stage 4: Backend build
@@ -336,18 +352,11 @@ RUN npx prisma generate
 RUN npm run build && npm prune --omit=dev
 
 # ---------------------------
-# Stage 5b: Caddyfile patching (build-only)
+# Stage 5b: Caddyfile staging (build-only)
 # ---------------------------
-# Ce stage intermédiaire patch les Caddyfiles avec sed (disponible dans base).
-# On évite ainsi toute dépendance à sed dans le runner après durcissement.
 FROM base AS caddyfile-patcher
 WORKDIR /opt/app
 COPY ./reverse-proxy /opt/app/reverse-proxy
-# Certains systèmes résolvent « localhost » en ::1 (IPv6) avant 127.0.0.1 (IPv4).
-# NestJS n'écoute qu'en IPv4 -> Caddy obtient "connection refused" sur [::1]:8080.
-RUN sed -i 's|http://localhost:|http://127.0.0.1:|g' \
-    /opt/app/reverse-proxy/Caddyfile \
-    /opt/app/reverse-proxy/Caddyfile.trust-proxy
 
 # ---------------------------
 # Stage 6: Assemble only the two C++ runtime libraries required by Node
@@ -422,17 +431,17 @@ COPY --chown=1000:1000 --from=backend-builder /opt/app/backend/dist ./dist
 COPY --chown=1000:1000 --from=backend-builder /opt/app/backend/prisma ./prisma
 COPY --chown=1000:1000 --from=backend-builder /opt/app/backend/package.json ./
 COPY --chown=1000:1000 --from=backend-builder /opt/app/backend/tsconfig.json ./
+COPY --chown=1000:1000 ./global-agent-bootstrap.js ./global-agent-bootstrap.js
 # Prisma 7 : prisma.config.ts requis au runtime pour prisma migrate deploy & db seed.
 # Le CLI Prisma charge nativement les fichiers .ts via jiti (pas besoin de ts-node).
 COPY --chown=1000:1000 --from=backend-builder /opt/app/backend/prisma.config.ts ./
 
-# global-agent : indispensable au RUNTIME (Node.js n'honore pas HTTP_PROXY nativement).
-# Installé via --no-save dans backend-deps, supprimé par le prune -> on le copie.
+# global-agent : indispensable au RUNTIME pour préserver la politique de proxy
+# explicite. Le paquet est verrouillé dans backend/package-lock.json.
 COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/global-agent ./node_modules/global-agent
 # undici : requis pour configurer le ProxyAgent du fetch() natif Node.js.
-# Installé via --no-save dans backend-deps (même pattern que global-agent).
+# Le paquet est également verrouillé dans backend/package-lock.json.
 # Sans ce paquet, les appels OAuth OIDC (Google) ignorent le proxy HTTP -> timeout.
-COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/undici ./node_modules/undici
 COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/boolean ./node_modules/boolean
 COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/roarr ./node_modules/roarr
 COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/serialize-error ./node_modules/serialize-error
@@ -457,7 +466,7 @@ COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/type-fe
 # --- Caddy : recompilé depuis les sources (golang.org/x/net patché) ---
 COPY --from=caddy-builder /usr/bin/caddy /usr/bin/caddy
 
-# --- Reverse proxy : Caddyfiles pré-patchés (sed dans le stage caddyfile-patcher) ---
+# --- Reverse proxy: validated Caddyfiles staged above ---
 WORKDIR /opt/app
 COPY --chown=1000:1000 --from=caddyfile-patcher /opt/app/reverse-proxy /opt/app/reverse-proxy
 COPY --chown=1000:1000 ./scripts/docker/entrypoint.mjs ./scripts/docker/entrypoint.mjs

@@ -25,6 +25,7 @@ import { LdapService } from "./ldap.service";
 
 @Injectable()
 export class AuthService {
+  private signUpQueue: Promise<void> = Promise.resolve();
   private readonly refreshReplayGraceMs = 15_000;
   private readonly rotatedRefreshTokens = new Map<
     string,
@@ -43,18 +44,32 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   async signUp(dto: AuthRegisterDTO, ip: string, isAdmin?: boolean) {
-    const isFirstUser = (await this.prisma.user.count()) == 0;
-
     const hash = dto.password ? await argon.hash(dto.password) : null;
     try {
-      const user = await this.prisma.user.create({
-        data: {
-          email: dto.email,
-          username: dto.username,
-          password: hash,
-          isAdmin: isAdmin ?? isFirstUser,
-        },
+      let releaseQueue!: () => void;
+      const previousSignUp = this.signUpQueue;
+      this.signUpQueue = new Promise<void>((resolve) => {
+        releaseQueue = resolve;
       });
+      await previousSignUp;
+
+      let user: User;
+      try {
+        // The public distribution uses SQLite and a single backend process.
+        // Serialize bootstrap registrations in-process so only one request can
+        // observe an empty user table and receive administrator privileges.
+        const isFirstUser = (await this.prisma.user.count()) === 0;
+        user = await this.prisma.user.create({
+          data: {
+            email: dto.email,
+            username: dto.username,
+            password: hash,
+            isAdmin: isAdmin ?? isFirstUser,
+          },
+        });
+      } finally {
+        releaseQueue();
+      }
 
       const { refreshToken, refreshTokenId } = await this.createRefreshToken(
         user.id,
@@ -74,6 +89,7 @@ export class AuthService {
           );
         }
       }
+      throw e;
     }
   }
 
@@ -293,6 +309,7 @@ export class AuthService {
       {
         expiresIn: "15min",
         secret: this.config.get("internal.jwtSecret"),
+        algorithm: "HS256",
       },
     );
   }
@@ -302,6 +319,7 @@ export class AuthService {
     try {
       const payload = this.jwtService.verify(accessToken, {
         secret: this.config.get("internal.jwtSecret"),
+        algorithms: ["HS256"],
       }) as { refreshTokenId?: string };
       refreshTokenId = payload.refreshTokenId;
     } catch {
@@ -313,6 +331,7 @@ export class AuthService {
         const payload = this.jwtService.verify(accessToken, {
           secret: this.config.get("internal.jwtSecret"),
           ignoreExpiration: true,
+          algorithms: ["HS256"],
         }) as { refreshTokenId?: string };
         refreshTokenId = payload.refreshTokenId;
       } catch {

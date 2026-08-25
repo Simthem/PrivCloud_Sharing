@@ -12,7 +12,7 @@ import { cleanNotifications, showNotification } from "@mantine/notifications";
 import pLimit from "p-limit";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { FormattedMessage } from "react-intl";
-import { TbInfoCircle, TbFolder } from "react-icons/tb";
+import { TbInfoCircle, TbFolder, TbKey } from "react-icons/tb";
 import { TbCloudDownload, TbCloudUpload } from "react-icons/tb";
 import Meta from "../../components/Meta";
 import Dropzone from "../../components/upload/Dropzone";
@@ -25,6 +25,7 @@ import useConfirmLeave from "../../hooks/confirm-leave.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import useUser from "../../hooks/user.hook";
 import useWakeLock from "../../hooks/useWakeLock.hook";
+import configService from "../../services/config.service";
 import shareService from "../../services/share.service";
 import {
   startBridgeWebDavUploadJob,
@@ -40,9 +41,12 @@ import {
   computeKeyHash,
   getUserKey,
   storeUserKey,
+  isUserKeyBackupRequired,
+  markUserKeyBackupRequired,
   extractKeyFromHash,
   unwrapReverseShareKey,
 } from "../../utils/crypto.util";
+import { resolvePersonalE2EKeyAction } from "../../utils/e2eUploadPolicy.util";
 import userService from "../../services/user.service";
 import teamService from "../../services/team.service";
 import {
@@ -53,8 +57,16 @@ import { useRouter } from "next/router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getAdaptiveChunkSize,
+  prewarmUploadBandwidth,
   uploadFileViaWorker,
 } from "../../utils/upload.util";
+import {
+  clampUploadChunkSizeLimit,
+  getRuntimeUploadChunkConfigKey,
+  getUploadChunkProfile,
+  getUploadChunkSizeLimit,
+  getUploadSchedulingProfile,
+} from "../../utils/uploadPerformance.util";
 import { requestNotificationPermission } from "../../utils/safeline-notify.util";
 
 // pLimit is created per-upload to avoid stale slot accumulation across
@@ -138,8 +150,24 @@ const Upload = ({
   const [files, setFiles] = useState<FileUpload[]>([]);
   const [isUploading, setisUploading] = useState(false);
   const [webDavOpened, setWebDavOpened] = useState(false);
+  const [hasLocalE2EKey, setHasLocalE2EKey] = useState(false);
+  const [localE2EKeyResolved, setLocalE2EKeyResolved] = useState(false);
   const uploadAbortRef = useRef<AbortController | null>(null);
-  const completionInFlightRef = useRef(false);
+  const completingShareRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const syncLocalKey = () => {
+      setHasLocalE2EKey(!!getUserKey());
+      setLocalE2EKeyResolved(true);
+    };
+    syncLocalKey();
+    window.addEventListener("e2e-key-stored", syncLocalKey);
+    window.addEventListener("e2e-key-removed", syncLocalKey);
+    return () => {
+      window.removeEventListener("e2e-key-stored", syncLocalKey);
+      window.removeEventListener("e2e-key-removed", syncLocalKey);
+    };
+  }, []);
 
   // ---- Browser-setup banner (popups + notifications) ----
   // Dismissible: stored in localStorage with a 30-day snooze so the user
@@ -356,6 +384,12 @@ const Upload = ({
     };
   }, []);
 
+  // Hide probe latency behind normal page interaction. Only the tiny phase
+  // runs on entry; file selection starts the representative phase.
+  useEffect(() => {
+    prewarmUploadBandwidth();
+  }, []);
+
   const enableRecipientRetrieval =
     !isReverseShare &&
     config.get("email.enableShareEmailRecipients") &&
@@ -375,36 +409,10 @@ const Upload = ({
   const chunkSize = useRef(parseInt(config.get("share.chunkSize")));
   const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Fetch configured upload limit (optional instance policy)
-  const { data: configuredMaxShareSize } = useQuery({
-    queryKey: ["uploadLimit", user?.id],
-    queryFn: async () => ({ maxSize: 0, usedSize: 0 }), // 0 = no configured limit
-    // Reverse-share upload must always use reverseShare.maxShareSize,
-    // never the current client's configured/anonymous cap.
-    enabled: !isReverseShare,
-    refetchInterval: Infinity,
-    refetchOnWindowFocus: false,
-  });
-
-  // Fetch configured expiration limit (unlimited by default)
-  const { data: configuredMaxExpirationDays } = useQuery({
-    queryKey: ["expirationLimit", user?.id],
-    queryFn: async () => ({ maxDays: 0 }),
-    enabled: !isReverseShare,
-    refetchInterval: Infinity,
-    refetchOnWindowFocus: false,
-  });
-
-  // Reverse-share pages pass maxShareSize as prop; otherwise use configured limit
-  // 0 means unlimited (no configured limit)
-  const rawEffectiveMaxShareSize =
-    maxShareSize ??
-    configuredMaxShareSize?.maxSize ??
-    parseInt(config.get("share.maxSize"));
+  // Reverse-share pages pass their configured limit; normal uploads use the
+  // self-hosted instance limit.
   const effectiveMaxShareSize =
-    rawEffectiveMaxShareSize === 0
-      ? Number.MAX_SAFE_INTEGER
-      : rawEffectiveMaxShareSize;
+    maxShareSize ?? parseInt(config.get("share.maxSize"));
 
   const autoOpenCreateUploadModal = config.get("share.autoOpenShareModal");
   const canUseWebDav = !!user && !isReverseShare;
@@ -415,16 +423,133 @@ const Upload = ({
   const webLockReleaseRef = useRef<(() => void) | null>(null);
 
   const uploadFiles = async (share: CreateShare, files: FileUpload[]) => {
+    const uploadChunkProfile = {
+      isAuthenticated: !!user,
+    };
+    const runtimeUploadProfile = getUploadChunkProfile(uploadChunkProfile);
+    const runtimeUploadProfileKey =
+      getRuntimeUploadChunkConfigKey(runtimeUploadProfile);
+    // Resolve the active color's runtime cap while crypto/share preparation is
+    // running. This also refreshes tabs that stayed open across a deployment.
+    const runtimeMaxChunkSizePromise = configService
+      .getRuntimeUploadMaxChunkSize(runtimeUploadProfile)
+      .catch(
+        () =>
+          config.get(runtimeUploadProfileKey) ??
+          config.get("runtime.uploadMaxChunkBytes"),
+      );
+
+    // Notification permission must be requested synchronously from the modal's
+    // confirmation gesture, before key resolution introduces an await.
+    requestNotificationPermission();
+
+    // Resolve every mandatory key before creating a share or starting any
+    // upload-side resource. Reverse-share and Team uploads are fail-closed:
+    // losing their key must never silently downgrade the files to plaintext.
+    let cryptoKey: CryptoKey | null = null;
+    const storedKey = user ? getUserKey() : null;
+    e2eKeyEncoded = null;
+    shouldShareE2EKeyViaEmail = false;
+
+    try {
+      if (isReverseShare) {
+        if (isE2EEncrypted) {
+          const rsKeyEncoded = extractKeyFromHash();
+          if (!rsKeyEncoded) {
+            throw new Error("Reverse-share E2E key is missing");
+          }
+          cryptoKey = await importKeyFromBase64(rsKeyEncoded);
+          e2eKeyEncoded = rsKeyEncoded;
+          share.isE2EEncrypted = true;
+        } else {
+          share.isE2EEncrypted = false;
+        }
+      } else if (user && share.teamFolderId) {
+        if (user.e2eAutoGenerationDisabled) {
+          throw new Error("PERSONAL_E2E_REACTIVATION_REQUIRED");
+        }
+        const userKeyB64 = getUserKey();
+        if (!userKeyB64) {
+          throw new Error("Personal E2E key is missing for Team upload");
+        }
+
+        const writableFolders = await teamService.getMyWritableFolders();
+        const match = writableFolders.find(
+          (wf) => wf.folder.id === share.teamFolderId,
+        );
+        if (!match) {
+          throw new Error("Team folder is unavailable");
+        }
+
+        const { wrappedTeamKey } = await teamService.getTeamKey(match.teamId);
+        if (!wrappedTeamKey) {
+          throw new Error("Team E2E key is missing");
+        }
+
+        const masterKey = await importKeyFromBase64(userKeyB64);
+        cryptoKey = await unwrapReverseShareKey(wrappedTeamKey, masterKey);
+        e2eKeyEncoded = await exportKeyToBase64(cryptoKey);
+        share.isE2EEncrypted = true;
+      } else if (user) {
+        const keyAction = resolvePersonalE2EKeyAction(
+          !!storedKey,
+          !!user.hasEncryptionKey,
+          !!user.e2eAutoGenerationDisabled,
+        );
+        if (keyAction === "upload-without-e2e") {
+          cryptoKey = null;
+          e2eKeyEncoded = null;
+          share.isE2EEncrypted = false;
+        } else if (keyAction === "use-local-key" && storedKey) {
+          cryptoKey = await importKeyFromBase64(storedKey);
+          e2eKeyEncoded = storedKey;
+        } else if (keyAction === "generate-first-key") {
+          cryptoKey = await generateEncryptionKey();
+          e2eKeyEncoded = await exportKeyToBase64(cryptoKey);
+          storeUserKey(e2eKeyEncoded);
+          if (getUserKey() !== e2eKeyEncoded) {
+            throw new Error("PERSONAL_E2E_KEY_STORAGE_UNAVAILABLE");
+          }
+          markUserKeyBackupRequired();
+          const hash = await computeKeyHash(cryptoKey, user.id);
+          await userService.setEncryptionKeyHash(hash);
+        } else {
+          throw new Error("PERSONAL_E2E_KEY_RESTORE_REQUIRED");
+        }
+        if (keyAction !== "upload-without-e2e") {
+          share.isE2EEncrypted = true;
+        }
+      } else {
+        // Anonymous classic shares have no durable or fragment-based key
+        // exchange, so they remain explicitly non-E2E.
+        share.isE2EEncrypted = false;
+      }
+      if (share.isE2EEncrypted && !cryptoKey) {
+        throw new Error("E2E upload key resolution returned no key");
+      }
+    } catch (error) {
+      console.warn("[E2E] Upload key resolution failed:", error);
+      toast.error(
+        error instanceof Error &&
+          error.message === "PERSONAL_E2E_KEY_RESTORE_REQUIRED"
+          ? t("upload.e2e.restore-required")
+          : error instanceof Error &&
+              error.message === "PERSONAL_E2E_KEY_STORAGE_UNAVAILABLE"
+            ? t("upload.e2e.storage-required")
+            : error instanceof Error &&
+                error.message === "PERSONAL_E2E_REACTIVATION_REQUIRED"
+              ? t("upload.e2e.team-opt-out-required")
+              : user && share.teamFolderId
+                ? t("team.dashboard.e2e.keyUnavailable")
+                : t("share.edit.notify.e2e-key-missing"),
+      );
+      e2eKeyEncoded = null;
+      return;
+    }
+
     setisUploading(true);
     setUploadActive(true);
-    completionInFlightRef.current = false;
-    e2eKeyEncoded = null;
     shouldShareE2EKeyViaEmail = !!share.shareE2EKeyViaEmail;
-
-    // Request browser notification permission (requires user gesture).
-    // If granted, SafeLine 468 challenges will fire an OS-level popup
-    // and audio beep even when this tab is in the background.
-    requestNotificationPermission();
 
     const abortCtrl = new AbortController();
     uploadAbortRef.current = abortCtrl;
@@ -449,95 +574,6 @@ const Upload = ({
     // thread alive for hours which triggered UD2 / IMMEDIATE_CRASH in
     // Chrome's SW lifetime manager
 
-    // --- E2E: read or create the encryption key ---
-    let cryptoKey: CryptoKey | null = null;
-    let storedKey = user ? getUserKey() : null;
-
-    if (isReverseShare && isE2EEncrypted) {
-      // Reverse share E2E : lire K_rs depuis le fragment d'URL
-      const rsKeyEncoded = extractKeyFromHash();
-      if (rsKeyEncoded) {
-        cryptoKey = await importKeyFromBase64(rsKeyEncoded);
-        e2eKeyEncoded = rsKeyEncoded;
-        share.isE2EEncrypted = true;
-      } else {
-        // Missing fragment key: upload without encryption.
-        e2eKeyEncoded = null;
-      }
-    } else if (user && share.teamFolderId) {
-      // Team folder upload: use K_team instead of K_user
-      try {
-        const userKeyB64 = getUserKey();
-        if (userKeyB64) {
-          // Find which team this folder belongs to
-          const writableFolders = await teamService.getMyWritableFolders();
-          const match = writableFolders.find(
-            (wf) => wf.folder.id === share.teamFolderId,
-          );
-          if (match) {
-            const { wrappedTeamKey } = await teamService.getTeamKey(
-              match.teamId,
-            );
-            if (wrappedTeamKey) {
-              const masterKey = await importKeyFromBase64(userKeyB64);
-              cryptoKey = await unwrapReverseShareKey(
-                wrappedTeamKey,
-                masterKey,
-              );
-              e2eKeyEncoded = await exportKeyToBase64(cryptoKey);
-              share.isE2EEncrypted = true;
-            } else {
-              // No team key set yet - team E2E not configured.
-              // DO NOT fallback to user key: it would create files that
-              // other team members cannot decrypt.  Upload unencrypted.
-              cryptoKey = null;
-              e2eKeyEncoded = null;
-              share.isE2EEncrypted = false;
-            }
-          }
-        }
-      } catch (e) {
-        // Team key unwrap failed (user key was regenerated, localStorage
-        // cleared, or new device).  DO NOT fallback to user key - that
-        // would produce files encrypted with K_user that other team
-        // members cannot decrypt (OperationError on their side).
-        // Instead, upload without encryption and warn the user.
-        console.warn(
-          "[E2E] Team key unwrap failed - uploading without encryption:",
-          e,
-        );
-        cryptoKey = null;
-        e2eKeyEncoded = null;
-        share.isE2EEncrypted = false;
-        toast.error(
-          "Impossible de déverrouiller la clé de chiffrement de l'équipe. " +
-            "L'envoi se poursuit sans chiffrement E2E. " +
-            "Demandez à un administrateur de l'équipe de resynchroniser votre clé.",
-        );
-      }
-    } else if (user) {
-      if (storedKey) {
-        // Existing key: reuse it.
-        cryptoKey = await importKeyFromBase64(storedKey);
-        e2eKeyEncoded = storedKey;
-      } else {
-        // First use: generate, store and register the hash.
-        cryptoKey = await generateEncryptionKey();
-        e2eKeyEncoded = await exportKeyToBase64(cryptoKey);
-        storeUserKey(e2eKeyEncoded);
-        const hash = await computeKeyHash(cryptoKey, user!.id);
-        await userService.setEncryptionKeyHash(hash);
-      }
-      share.isE2EEncrypted = true;
-    } else {
-      // Anonymous upload (no reverse share): no E2E encryption --
-      // there is no account to store the key and no URL fragment
-      // mechanism for anonymous classic shares.
-      cryptoKey = null;
-      e2eKeyEncoded = null;
-      share.isE2EEncrypted = false;
-    }
-
     try {
       const isReverseShare = router.pathname != "/upload";
       createdShare = await shareService.create(share, isReverseShare);
@@ -549,20 +585,25 @@ const Upload = ({
       webLockReleaseRef.current = null;
       wakeLock.release();
       e2eKeyEncoded = null;
-      completionInFlightRef.current = false;
       return;
     }
 
-    // The owner key is stored locally by storeUserKey above.
+    // Stocker la clé localement pour le propriétaire (déjà fait dans storeUserKey ci-dessus)
 
     // --- Adaptive chunk sizing ---
-    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
     // Pass the largest individual file size so chunk sizing guarantees
     // we never exceed S3's 10,000-part limit for any single file.
     const maxFileSize = Math.max(...files.map((f) => f.size));
+    const runtimeMaxChunkSize = await runtimeMaxChunkSizePromise;
+    const maxUploadChunkSize = clampUploadChunkSizeLimit(
+      getUploadChunkSizeLimit(uploadChunkProfile),
+      runtimeMaxChunkSize,
+    );
     const effectiveChunkSize = await getAdaptiveChunkSize(
       chunkSize.current,
       maxFileSize,
+      undefined,
+      maxUploadChunkSize,
     );
     let bridgeUploadToken: { token: string; expiresAt: string } | null = null;
     if (files.some(isBridgeWebDavUploadFile)) {
@@ -573,27 +614,40 @@ const Upload = ({
         );
       } catch (e) {
         toast.axiosError(e);
-        await shareService.remove(createdShare.id).catch(() => undefined);
+        await shareService
+          .remove(createdShare.id)
+          .catch(() => undefined);
         setisUploading(false);
         setUploadActive(false);
         webLockReleaseRef.current?.();
         webLockReleaseRef.current = null;
         wakeLock.release();
         e2eKeyEncoded = null;
-        completionInFlightRef.current = false;
         return;
       }
     }
 
-    const isLargeUpload = totalSize > 2_000_000_000;
-    // Allow 2 concurrent files even for large uploads when there are
-    // multiple files -- keeps the connection pipeline busy while one
-    // chunk finishes and the next starts.  Single-file uploads stay
-    // at 1 (no benefit from concurrency with sequential chunks).
-    const concurrency = isLargeUpload
-      ? Math.min(2, files.length)
-      : DEFAULT_CONCURRENCY;
-    const uploadLimit = pLimit(concurrency);
+    // Start only as many file Workers as the local hardware can sustain. The
+    // backend continuously assigns and rebalances their network windows.
+    // Bridge jobs own a separate scheduler, so mixed batches remain serial.
+    const localFilesForScheduling = files.filter(
+      (file) => !isBridgeWebDavUploadFile(file),
+    );
+    const hasBridgeUpload = localFilesForScheduling.length !== files.length;
+    const uploadSchedulingProfile = getUploadSchedulingProfile(
+      localFilesForScheduling.map((file) => file.size),
+      effectiveChunkSize,
+      DEFAULT_CONCURRENCY,
+      hasBridgeUpload,
+    );
+    console.info(
+      `[upload] scheduler -> mode=${uploadSchedulingProfile.mode} ` +
+        `localFiles=${localFilesForScheduling.length} ` +
+        `fileConcurrency=${uploadSchedulingProfile.fileConcurrency} ` +
+        `lanePolicy=server-adaptive ` +
+        `protocolSafetyCap=${uploadSchedulingProfile.maxParallelLanes}`,
+    );
+    const uploadLimit = pLimit(uploadSchedulingProfile.fileConcurrency);
 
     // Proactive SafeLine keepalive: periodically GET the main page
     // to keep the WAF session cookie alive during long uploads.
@@ -606,7 +660,27 @@ const Upload = ({
     // via iframe (no popup needed = no user gesture needed = 100% silent).
     // This makes the challenge invisible to the user in most cases.
     let safelineKeepaliveResolving = false;
+    let uploadHeartbeatInFlight = false;
+    let lastUploadHeartbeatAt = 0;
     keepaliveRef.current = setInterval(async () => {
+      const now = Date.now();
+      if (
+        createdShare?.id &&
+        !uploadHeartbeatInFlight &&
+        now - lastUploadHeartbeatAt >= 2 * 60_000
+      ) {
+        uploadHeartbeatInFlight = true;
+        shareService
+          .keepUploadAlive(createdShare.id)
+          .then(() => {
+            lastUploadHeartbeatAt = Date.now();
+          })
+          .catch(() => {})
+          .finally(() => {
+            uploadHeartbeatInFlight = false;
+          });
+      }
+
       if (safelineKeepaliveResolving) return; // already resolving
       try {
         const r = await fetch("/?_sl=" + Date.now(), {
@@ -652,10 +726,15 @@ const Upload = ({
 
     const isRetryableError = (err: any): boolean => {
       if (err?.cancelled) return false;
-      if (err?.quota) return false;
+      if (err?.sizeLimit) return false;
       if (err?.status === 413) return false;
       if (err?.status === 403 && err?.data?.error) return false;
-      if (err?.message && /crypto|key import/i.test(err.message)) return false;
+      if (
+        err?.message &&
+        /crypto|key import|encryption key|e2e.*key/i.test(err.message)
+      ) {
+        return false;
+      }
       return true;
     };
 
@@ -686,11 +765,6 @@ const Upload = ({
       const attempt = fileAttempts.get(fileIndex) ?? 0;
       fileAttempts.set(fileIndex, attempt + 1);
 
-      let chunks = Math.ceil(file.size / effectiveChunkSize);
-      if (chunks == 0) chunks++;
-      const progressInterval = Math.max(1, Math.floor(chunks / 200));
-      let completedChunks = 0;
-
       const setFileProgress = (progress: number) => {
         setFiles((prev) =>
           prev.map((f, callbackIndex) => {
@@ -702,8 +776,7 @@ const Upload = ({
         );
       };
 
-      if (attempt > 0) completedChunks = 0;
-      setFileProgress(1);
+      setFileProgress(0);
 
       try {
         if (isBridgeWebDavUploadFile(file)) {
@@ -715,7 +788,7 @@ const Upload = ({
           setFiles((prev) =>
             prev.map((f, callbackIndex) => {
               if (batchIndexes.has(callbackIndex)) {
-                f.uploadingProgress = 1;
+                f.uploadingProgress = 0;
               }
               return f;
             }),
@@ -763,7 +836,7 @@ const Upload = ({
                 const failed = remote?.state === "failed";
                 let progress = Math.min(
                   99,
-                  Math.max(1, (uploaded / total) * 100),
+                  Math.max(0, (uploaded / total) * 100),
                 );
                 if (currentJob.state === "completed" || completed) {
                   progress = 100;
@@ -796,20 +869,17 @@ const Upload = ({
             file,
             createdShare.id,
             effectiveChunkSize,
-            chunks,
             share.isE2EEncrypted ?? false,
             cryptoKey,
-            (chunkIndex, totalChunks, _fileId) => {
-              completedChunks++;
-              if (
-                completedChunks % progressInterval === 0 ||
-                completedChunks === totalChunks
-              ) {
-                setFileProgress((completedChunks / totalChunks) * 100);
-              }
+            (_chunkIndex, _totalChunks, _fileId, uploadedBytes) => {
+              setFileProgress(
+                Math.min(100, (uploadedBytes / Math.max(file.size, 1)) * 100),
+              );
             },
             abortCtrl.signal,
             file.uploadRelativePath,
+            uploadSchedulingProfile.maxParallelLanes,
+            uploadSchedulingProfile.fileConcurrency,
           );
         }
         setFileProgress(100);
@@ -839,8 +909,8 @@ const Upload = ({
           return "failed";
         }
         if (!isRetryableError(e) || attempt >= MAX_FILE_RETRIES) {
-          if (e?.quota) {
-            toast.error(e.message || "Upload failed (quota limit)");
+          if (e?.sizeLimit) {
+            toast.error(e.message || "Upload failed (size limit)");
           } else if (e?.status === 413) {
             toast.error(e?.data?.message || "Upload failed (size limit)");
           } else if (e?.status === 403) {
@@ -860,23 +930,40 @@ const Upload = ({
     };
 
     // Phase 1: initial pass - all files through pLimit
-    const fileUploadPromises = files
-      .map((file, fileIndex) => {
+    const scheduledFiles = files
+      .map((file, fileIndex) => ({ file, fileIndex }))
+      .filter(({ file, fileIndex }) => {
         if (
           isBridgeWebDavUploadFile(file) &&
           bridgeBatchLeaders.get(bridgeBatchKey(file)) !== fileIndex
         ) {
-          return null;
+          return false;
         }
-        return uploadLimit(async () => {
-          if (abortCtrl.signal.aborted) return;
-          const result = await uploadSingleFile(file, fileIndex);
-          if (result === "retryable") {
-            retryQueue.push({ file, fileIndex });
-          }
-        });
-      })
-      .filter((promise): promise is Promise<void> => !!promise);
+        return true;
+      });
+    if (uploadSchedulingProfile.mode === "server-managed") {
+      scheduledFiles.sort((left, right) => {
+        const leftIsMultipart =
+          !isBridgeWebDavUploadFile(left.file) &&
+          left.file.size > effectiveChunkSize;
+        const rightIsMultipart =
+          !isBridgeWebDavUploadFile(right.file) &&
+          right.file.size > effectiveChunkSize;
+        if (leftIsMultipart !== rightIsMultipart) {
+          return leftIsMultipart ? -1 : 1;
+        }
+        return left.fileIndex - right.fileIndex;
+      });
+    }
+    const fileUploadPromises = scheduledFiles.map(({ file, fileIndex }) =>
+      uploadLimit(async () => {
+        if (abortCtrl.signal.aborted) return;
+        const result = await uploadSingleFile(file, fileIndex);
+        if (result === "retryable") {
+          retryQueue.push({ file, fileIndex });
+        }
+      }),
+    );
 
     await Promise.all(fileUploadPromises).catch(() => {});
 
@@ -965,7 +1052,9 @@ const Upload = ({
 
         // 2. Delete the incomplete share (best-effort)
         if (createdShare?.id) {
-          shareService.remove(createdShare.id).catch(() => {});
+          shareService
+            .remove(createdShare.id)
+            .catch(() => {});
         }
 
         // 3. Reset state
@@ -991,7 +1080,6 @@ const Upload = ({
         );
         e2eKeyEncoded = null;
         shouldShareE2EKeyViaEmail = false;
-        completionInFlightRef.current = false;
         toast.success(
           t("upload.cancel.done", { defaultMessage: "Envoi annulé" }),
         );
@@ -1012,10 +1100,11 @@ const Upload = ({
         enableE2EKeyEmailSharing: config.get("email.enableE2EKeyEmailSharing"),
         // Show the "share E2E key via email" checkbox only when the user
         // already has an E2E key set up (server hash recorded or key in RAM).
-        userHasE2E: !!user?.hasEncryptionKey || !!getUserKey(),
+        userHasE2E:
+          !user?.e2eAutoGenerationDisabled &&
+          (!!user?.hasEncryptionKey || !!getUserKey()),
         maxExpiration: config.get("share.maxExpiration"),
         anonymousMaxExpiration: config.get("share.anonymousMaxExpiration"),
-        configuredMaxExpirationDays: configuredMaxExpirationDays?.maxDays ?? 0,
         shareIdLength: config.get("share.shareIdLength"),
         simplified,
         captchaEnabled: !user && config.get("altcha.enabled"),
@@ -1028,6 +1117,10 @@ const Upload = ({
   };
 
   const handleDropzoneFilesChanged = (files: FileUpload[]) => {
+    // Start the cached probe as soon as file selection completes. It runs
+    // while the user fills in the share modal, so upload startup normally
+    // consumes the result instead of displaying several seconds of inactivity.
+    if (files.length > 0) prewarmUploadBandwidth(true);
     if (autoOpenCreateUploadModal) {
       setFiles(files);
       showCreateUploadModalCallback(files);
@@ -1037,6 +1130,7 @@ const Upload = ({
   };
 
   const handleWebDavFilesImported = (importedFiles: FileUpload[]) => {
+    if (importedFiles.length > 0) prewarmUploadBandwidth(true);
     setFiles((currentFiles) => [...currentFiles, ...importedFiles]);
   };
 
@@ -1062,29 +1156,22 @@ const Upload = ({
     if (
       files.length > 0 &&
       files.every((file) => file.uploadingProgress >= 100) &&
-      fileErrorCount == 0
+      fileErrorCount == 0 &&
+      createdShare?.id &&
+      completingShareRef.current !== createdShare.id
     ) {
-      if (completionInFlightRef.current || !createdShare?.id) return;
-      completionInFlightRef.current = true;
-
       // For reverse shares the backend always needs K_rs so the reverse share
       // creator can receive a working link.  For classic shares, the key is
       // only included when the uploader opted in via the checkbox.
-      // For anonymous shares the key is ephemeral (no localStorage), so
-      // we always include it when recipients are configured.
       const isReverseShareUpload = router.pathname !== "/upload";
-      const isAnonymousUpload = !user;
-      const completedShareId = createdShare.id;
-      const completedShareKey = e2eKeyEncoded;
       const e2eKeyForComplete =
-        (shouldShareE2EKeyViaEmail ||
-          isReverseShareUpload ||
-          isAnonymousUpload) &&
-        completedShareKey
-          ? completedShareKey
+        (shouldShareE2EKeyViaEmail || isReverseShareUpload) && e2eKeyEncoded
+          ? e2eKeyEncoded
           : undefined;
+      const completingShareId = createdShare.id;
+      completingShareRef.current = completingShareId;
       shareService
-        .completeShare(completedShareId, e2eKeyForComplete)
+        .completeShare(completingShareId, e2eKeyForComplete)
         .then((share) => {
           if (keepaliveRef.current) {
             clearInterval(keepaliveRef.current);
@@ -1095,16 +1182,24 @@ const Upload = ({
           setUploadActive(false);
           webLockReleaseRef.current?.();
           webLockReleaseRef.current = null;
-          showCompletedUploadModal(modals, share, completedShareKey);
+          showCompletedUploadModal(
+            modals,
+            share,
+            e2eKeyEncoded,
+            isUserKeyBackupRequired(),
+          );
           queryClient.invalidateQueries({
             queryKey: ["share.pastRecipients"],
           });
           setFiles([]);
+          completingShareRef.current = null;
           e2eKeyEncoded = null;
           shouldShareE2EKeyViaEmail = false;
         })
         .catch(() => {
-          completionInFlightRef.current = false;
+          if (completingShareRef.current === completingShareId) {
+            completingShareRef.current = null;
+          }
           toast.error(t("upload.notify.generic-error"));
         });
     }
@@ -1114,7 +1209,7 @@ const Upload = ({
     // Also delete the incomplete share to clean up any S3 objects that were
     // already committed for the files that did succeed (partial multi-file
     // upload failure). Without this, those S3 objects are orphaned until the
-    // deleteUnfinishedShares cron runs (up to 30 h later).
+    // inactivity cleanup catches any leftovers within one hour.
     const allFilesDone =
       files.length > 0 &&
       isUploading &&
@@ -1134,9 +1229,10 @@ const Upload = ({
       // Best-effort cleanup: delete the incomplete share (S3 prefix purge +
       // DB record). Ignore errors - the cron will catch any leftovers.
       if (createdShare?.id) {
-        shareService.remove(createdShare.id).catch(() => {});
+        shareService
+          .remove(createdShare.id)
+          .catch(() => {});
       }
-      completionInFlightRef.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [files]);
@@ -1222,6 +1318,57 @@ const Upload = ({
             : t("upload.team-folder.hint.unknown")}
         </Alert>
       )}
+      {!!user &&
+        !isReverseShare &&
+        localE2EKeyResolved &&
+        (user.e2eAutoGenerationDisabled || !hasLocalE2EKey) && (
+          <Alert
+            variant="light"
+            color="yellow"
+            py={5}
+            px="sm"
+            mb="xs"
+            icon={<TbKey size={15} />}
+          >
+            <Group justify="space-between" gap="xs" wrap="wrap">
+              <Text size="xs" style={{ flex: 1 }}>
+                <FormattedMessage
+                  id={
+                    qTeamFolderId && user.e2eAutoGenerationDisabled
+                      ? "upload.e2e.team-opt-out-required"
+                      : qTeamFolderId
+                        ? "upload.e2e.team-key-required"
+                        : user.e2eAutoGenerationDisabled
+                          ? "upload.e2e.opt-out-warning"
+                          : user.hasEncryptionKey
+                            ? "upload.e2e.restore-warning"
+                            : "upload.e2e.first-key-warning"
+                  }
+                />
+              </Text>
+              {(qTeamFolderId ||
+                user.e2eAutoGenerationDisabled ||
+                user.hasEncryptionKey) && (
+                <Button
+                  size="compact-xs"
+                  variant="light"
+                  color="yellow"
+                  onClick={() =>
+                    void router.push("/account#e2e-encryption-settings")
+                  }
+                >
+                  <FormattedMessage
+                    id={
+                      user.e2eAutoGenerationDisabled
+                        ? "upload.e2e.reactivate"
+                        : "upload.e2e.configure"
+                    }
+                  />
+                </Button>
+              )}
+            </Group>
+          </Alert>
+        )}
       <Group justify={name ? "space-between" : "flex-end"} mb={20}>
         {name && <Title order={3}>{name}</Title>}
         <Group gap="xs">
@@ -1262,19 +1409,19 @@ const Upload = ({
         onFilesChanged={handleDropzoneFilesChanged}
         isUploading={isUploading}
       />
-      {/* Quota Gauge - visible after files are added, before sharing */}
+      {/* Configured size gauge - visible after files are added, before sharing */}
       {files.length > 0 &&
         !isUploading &&
         (() => {
           const totalFilesSize = files.reduce((sum, f) => sum + f.size, 0);
-          const quotaUsedPct =
+          const limitUsedPct =
             effectiveMaxShareSize > 0
               ? Math.min(
                   Math.round((totalFilesSize / effectiveMaxShareSize) * 100),
                   100,
                 )
               : 0;
-          const isOverQuota = totalFilesSize > effectiveMaxShareSize;
+          const isOverLimit = totalFilesSize > effectiveMaxShareSize;
           const formatSize = (bytes: number) => {
             if (bytes >= 1_000_000_000)
               return `${(bytes / 1_000_000_000).toFixed(2)} GB`;
@@ -1290,32 +1437,32 @@ const Upload = ({
                   <TbCloudUpload size={16} />
                   <Text size="sm" fw={500}>
                     <FormattedMessage
-                      id="upload.quota.label"
-                      defaultMessage="Quota d'envoi"
+                      id="upload.size-limit.label"
+                      defaultMessage="Limite d'envoi configurée"
                     />
                   </Text>
                 </Group>
                 <Text
                   size="sm"
-                  c={isOverQuota ? "red" : "dimmed"}
-                  fw={isOverQuota ? 600 : 400}
+                  c={isOverLimit ? "red" : "dimmed"}
+                  fw={isOverLimit ? 600 : 400}
                 >
                   {formatSize(totalFilesSize)} /{" "}
                   {formatSize(effectiveMaxShareSize)}
                 </Text>
               </Group>
               <Progress
-                value={quotaUsedPct}
+                value={limitUsedPct}
                 size="md"
                 radius="xl"
                 color={
-                  isOverQuota ? "red" : quotaUsedPct > 80 ? "yellow" : "blue"
+                  isOverLimit ? "red" : limitUsedPct > 80 ? "yellow" : "blue"
                 }
               />
-              {isOverQuota && (
+              {isOverLimit && (
                 <Text size="xs" c="red" ta="center">
                   <FormattedMessage
-                    id="upload.quota.exceeded"
+                    id="upload.size-limit.exceeded"
                     defaultMessage="La taille totale des fichiers dépasse la limite configurée. Retirez des fichiers ou demandez à l'administrateur de l'instance de l'augmenter."
                   />
                 </Text>

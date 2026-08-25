@@ -5,7 +5,7 @@ import { AltchaModule } from "./altcha/altcha.module";
 import { AuthModule } from "./auth/auth.module";
 
 import { APP_GUARD } from "@nestjs/core";
-import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import { minutes, ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { AppCacheModule } from "./cache/cache.module";
 import { AppController } from "./app.controller";
 import { ClamScanModule } from "./clamscan/clamscan.module";
@@ -17,6 +17,7 @@ import { FileModule } from "./file/file.module";
 import { JobsModule } from "./jobs/jobs.module";
 import { OAuthModule } from "./oauth/oauth.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { HttpRequestLike, isProbeRequest } from "./probe/probe-validation.util";
 import { PushModule } from "./push/push.module";
 import { ReverseShareModule } from "./reverseShare/reverseShare.module";
 import { ShareModule } from "./share/share.module";
@@ -40,8 +41,16 @@ import { WebDavModule } from "./webdav/webdav.module";
     DownloadNotificationModule,
     ThrottlerModule.forRoot([
       {
-        ttl: 60,
-        limit: 100,
+        name: "default",
+        ttl: minutes(1),
+        limit: 300,
+      },
+      {
+        name: "probe",
+        ttl: minutes(1),
+        limit: 30,
+        skipIf: (context) =>
+          !isProbeRequest(context.switchToHttp().getRequest<HttpRequestLike>()),
       },
     ]),
     ScheduleModule.forRoot(),

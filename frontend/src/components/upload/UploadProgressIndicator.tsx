@@ -1,3 +1,4 @@
+import "@mantine/core/styles/RingProgress.css";
 import { Group, Loader, RingProgress, Text, useMantineTheme } from "@mantine/core";
 import { TbCircleCheck } from "react-icons/tb";
 
@@ -26,7 +27,7 @@ const UploadProgressIndicator = ({ progress }: { progress: number }) => {
       </Group>
     );
   } else {
-    return <Loader color="red" size={19} />;
+    return <Loader color={theme.primaryColor} size={19} />;
   }
 };
 

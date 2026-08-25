@@ -1,3 +1,4 @@
+import "@mantine/core/styles/Tabs.css";
 import {
   Alert,
   Badge,
@@ -21,7 +22,7 @@ import {
 import { useForm } from "@mantine/form";
 import { yupResolver } from "mantine-form-yup-resolver";
 import { useModals } from "@mantine/modals";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   TbAuth2Fa,
   TbCopy,
@@ -58,6 +59,8 @@ import {
   getUserKey,
   storeUserKey,
   removeUserKey,
+  clearUserKeyBackupRequired,
+  isUserKeyBackupRequired,
   isPasskeyPrfAvailable,
   saveKeyWithPasskey,
   loadKeyWithPasskey,
@@ -71,7 +74,11 @@ import teamService from "../../services/team.service";
 import { combineShards } from "../../utils/sskr.util";
 
 // ---- E2E Encryption Section ----------------------------------------------------------------
-const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
+const E2EEncryptionSection = ({
+  refreshUser,
+}: {
+  refreshUser: () => Promise<unknown>;
+}) => {
   const modals = useModals();
   const intl = useIntl();
   const { user } = useUser();
@@ -83,6 +90,38 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
   const [importError, setImportError] = useState("");
   const [importing, setImporting] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [highlightE2ESection, setHighlightE2ESection] = useState(false);
+  const [backupReminderVisible, setBackupReminderVisible] = useState(false);
+  const sectionRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+    const focusSection = () => {
+      if (window.location.hash !== "#e2e-encryption-settings") return;
+      setBackupReminderVisible(isUserKeyBackupRequired());
+      setHighlightE2ESection(true);
+      window.requestAnimationFrame(() => {
+        sectionRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+      if (highlightTimer) clearTimeout(highlightTimer);
+      highlightTimer = setTimeout(() => setHighlightE2ESection(false), 8000);
+    };
+
+    focusSection();
+    window.addEventListener("hashchange", focusSection);
+    return () => {
+      window.removeEventListener("hashchange", focusSection);
+      if (highlightTimer) clearTimeout(highlightTimer);
+    };
+  }, []);
+
+  const markKeyBackedUp = () => {
+    clearUserKeyBackupRequired();
+    setBackupReminderVisible(false);
+  };
 
   // SSKR
   const [showSSKR, setShowSSKR] = useState(false);
@@ -111,13 +150,21 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
     isPasskeyPrfAvailable().then(setPasskeyPrfSupported);
   }, []);
 
-  // Sync localStorage key into component state
+  // Sync the per-tab sessionStorage key into component state.
   useEffect(() => {
     setLocalKey(getUserKey());
   }, []);
 
+  // A key deleted in another request/tab must not remain presented as active.
+  useEffect(() => {
+    if (!user?.e2eAutoGenerationDisabled) return;
+    removeUserKey();
+    setLocalKey(null);
+  }, [user?.e2eAutoGenerationDisabled]);
+
   const hasServerKey = !!user?.hasEncryptionKey;
   const hasLocalKey = !!localKey;
+  const autoGenerationDisabled = !!user?.e2eAutoGenerationDisabled;
 
   // --- Generate a new key ---------------------------------------------------------------
   const handleGenerate = async () => {
@@ -133,19 +180,25 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
         setOldKeyForReencrypt(previousKey);
         setNewKeyForReencrypt(encoded);
         // Store new key + hash immediately (so the server-side hash matches)
-        await userService.setEncryptionKeyHash(hash);
+        await userService.setEncryptionKeyHash(hash, {
+          explicitE2ESetup: true,
+        });
         storeUserKey(encoded);
         setLocalKey(encoded);
         setShowReencrypt(true);
       } else {
         // First-time generation: no re-encryption needed
-        await userService.setEncryptionKeyHash(hash);
+        await userService.setEncryptionKeyHash(hash, {
+          explicitE2ESetup: true,
+        });
         storeUserKey(encoded);
         setLocalKey(encoded);
         setSskrKey(encoded);
         setShowSSKR(true);
-        refreshUser();
-        toast.success(intl.formatMessage({ id: "account.e2e.toast.generated" }));
+        await refreshUser();
+        toast.success(
+          intl.formatMessage({ id: "account.e2e.toast.generated" }),
+        );
         // Proposer le coffre-fort système si WebAuthn PRF disponible
         const prfAvailable = await isPasskeyPrfAvailable();
         if (prfAvailable) {
@@ -153,7 +206,10 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
         }
       }
     } catch (e: any) {
-      toast.error(e?.message ?? intl.formatMessage({ id: "account.e2e.toast.generateError" }));
+      toast.error(
+        e?.message ??
+          intl.formatMessage({ id: "account.e2e.toast.generateError" }),
+      );
     } finally {
       setGenerating(false);
     }
@@ -170,7 +226,12 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
 
   const handleReencryptError = (err: string) => {
     setShowReencrypt(false);
-    toast.error(intl.formatMessage({ id: "account.e2e.toast.reencryptError" }, { error: err }));
+    toast.error(
+      intl.formatMessage(
+        { id: "account.e2e.toast.reencryptError" },
+        { error: err },
+      ),
+    );
     refreshUser();
   };
 
@@ -189,7 +250,9 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
     setRecoverError("");
     const filled = shardValues.filter((s) => s.trim().length > 0);
     if (filled.length < 2) {
-      setRecoverError(intl.formatMessage({ id: "account.e2e.recover.minShards" }));
+      setRecoverError(
+        intl.formatMessage({ id: "account.e2e.recover.minShards" }),
+      );
       return;
     }
     setRecoveringShards(true);
@@ -207,14 +270,19 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
           );
           return;
         }
-        await userService.setEncryptionKeyHash(hash);
+        await userService.setEncryptionKeyHash(hash, {
+          explicitE2ESetup: true,
+        });
       }
       storeUserKey(encodedKey);
       setLocalKey(encodedKey);
+      markKeyBackedUp();
       setShowRecover(false);
       toast.success(intl.formatMessage({ id: "account.e2e.toast.recovered" }));
     } catch (e: any) {
-      setRecoverError(e?.message ?? intl.formatMessage({ id: "account.e2e.recover.error" }));
+      setRecoverError(
+        e?.message ?? intl.formatMessage({ id: "account.e2e.recover.error" }),
+      );
     } finally {
       setRecoveringShards(false);
     }
@@ -230,7 +298,9 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
         </Text>
       ),
       labels: {
-        confirm: intl.formatMessage({ id: "account.e2e.confirm.regenerate.confirm" }),
+        confirm: intl.formatMessage({
+          id: "account.e2e.confirm.regenerate.confirm",
+        }),
         cancel: intl.formatMessage({ id: "common.button.cancel" }),
       },
       confirmProps: { color: "red" },
@@ -246,7 +316,9 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
     // the decoded bytes and producing a different SHA-256 hash.
     const sanitized = importValue.replace(/[^A-Za-z0-9_-]/g, "");
     if (!sanitized) {
-      setImportError(intl.formatMessage({ id: "account.e2e.import.emptyError" }));
+      setImportError(
+        intl.formatMessage({ id: "account.e2e.import.emptyError" }),
+      );
       return;
     }
     setImporting(true);
@@ -273,14 +345,20 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
           return;
         }
         // Migration: remplacer le hash legacy par HMAC-SHA256
-        await userService.setEncryptionKeyHash(hash);
+        await userService.setEncryptionKeyHash(hash, {
+          explicitE2ESetup: true,
+        });
       }
       storeUserKey(sanitized);
       setLocalKey(sanitized);
+      markKeyBackedUp();
       setImportValue("");
       toast.success(intl.formatMessage({ id: "account.e2e.toast.imported" }));
     } catch (e: any) {
-      setImportError(e?.message ?? intl.formatMessage({ id: "account.e2e.import.invalidError" }));
+      setImportError(
+        e?.message ??
+          intl.formatMessage({ id: "account.e2e.import.invalidError" }),
+      );
     } finally {
       setImporting(false);
     }
@@ -301,7 +379,9 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
         </Text>
       ),
       labels: {
-        confirm: intl.formatMessage({ id: "account.e2e.confirm.revoke.confirm" }),
+        confirm: intl.formatMessage({
+          id: "account.e2e.confirm.revoke.confirm",
+        }),
         cancel: intl.formatMessage({ id: "common.button.cancel" }),
       },
       confirmProps: { color: "red" },
@@ -313,10 +393,15 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
           setPasskeyWrappedExists(false);
           setShowPasskeyOffer(false);
           setLocalKey(null);
-          refreshUser();
-          toast.success(intl.formatMessage({ id: "account.e2e.toast.revoked" }));
+          await refreshUser();
+          toast.success(
+            intl.formatMessage({ id: "account.e2e.toast.revoked" }),
+          );
         } catch (e: any) {
-          toast.error(e?.message ?? intl.formatMessage({ id: "account.e2e.toast.revokeError" }));
+          toast.error(
+            e?.message ??
+              intl.formatMessage({ id: "account.e2e.toast.revokeError" }),
+          );
         }
       },
     });
@@ -327,7 +412,11 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
     if (!localKey || !user) return;
     setSavingPasskey(true);
     try {
-      const wrappedData = await saveKeyWithPasskey(localKey, user.id, user.email);
+      const wrappedData = await saveKeyWithPasskey(
+        localKey,
+        user.id,
+        user.email,
+      );
       if (wrappedData) {
         // Sync wrapped key to server for multi-device access
         await userService.setWrappedKey(wrappedData).catch(() => {
@@ -335,9 +424,14 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
         });
         setShowPasskeyOffer(false);
         setPasskeyWrappedExists(true);
-        toast.success(intl.formatMessage({ id: "account.e2e.passkey.save.success" }));
+        markKeyBackedUp();
+        toast.success(
+          intl.formatMessage({ id: "account.e2e.passkey.save.success" }),
+        );
       } else {
-        toast.error(intl.formatMessage({ id: "account.e2e.passkey.unsupported" }));
+        toast.error(
+          intl.formatMessage({ id: "account.e2e.passkey.unsupported" }),
+        );
       }
     } catch {
       toast.error(intl.formatMessage({ id: "account.e2e.passkey.save.error" }));
@@ -353,19 +447,26 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
       const serverKeys = await userService.listWrappedKeys().catch(() => []);
       const encodedKey = await loadKeyWithPasskey(serverKeys);
       if (!encodedKey) {
-        toast.error(intl.formatMessage({ id: "account.e2e.passkey.load.error" }));
+        toast.error(
+          intl.formatMessage({ id: "account.e2e.passkey.load.error" }),
+        );
         return;
       }
       // Vérifier que la clé restaurée correspond bien au hash serveur
       const hash = await computeKeyHashFromEncoded(encodedKey, user!.id);
       const valid = await userService.verifyEncryptionKey(hash);
       if (!valid) {
-        toast.error(intl.formatMessage({ id: "account.e2e.import.mismatchError" }));
+        toast.error(
+          intl.formatMessage({ id: "account.e2e.import.mismatchError" }),
+        );
         return;
       }
       storeUserKey(encodedKey);
       setLocalKey(encodedKey);
-      toast.success(intl.formatMessage({ id: "account.e2e.passkey.load.success" }));
+      markKeyBackedUp();
+      toast.success(
+        intl.formatMessage({ id: "account.e2e.passkey.load.success" }),
+      );
     } catch {
       toast.error(intl.formatMessage({ id: "account.e2e.passkey.load.error" }));
     } finally {
@@ -379,7 +480,25 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
     : null;
 
   return (
-    <Paper withBorder p="xl" mt="lg">
+    <Paper
+      id="e2e-encryption-settings"
+      ref={sectionRef}
+      withBorder
+      p="xl"
+      mt="lg"
+      style={{
+        scrollMarginTop: 96,
+        transition:
+          "border-color 250ms ease, box-shadow 250ms ease, background-color 250ms ease",
+        ...(highlightE2ESection
+          ? {
+              borderColor: "var(--mantine-color-yellow-6)",
+              boxShadow: "0 0 0 3px var(--mantine-color-yellow-light)",
+              backgroundColor: "var(--mantine-color-yellow-light)",
+            }
+          : {}),
+      }}
+    >
       <Group mb="xs" gap="xs">
         <TbShieldLock size={20} />
         <Title order={5}>
@@ -390,6 +509,17 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
       <Text size="sm" c="dimmed" mb="md">
         <FormattedMessage id="account.e2e.description" />
       </Text>
+
+      {backupReminderVisible && hasLocalKey && (
+        <Alert color="yellow" icon={<TbKey size={18} />} mb="md">
+          <Text size="sm" fw={600}>
+            <FormattedMessage id="account.e2e.backupReminder.title" />
+          </Text>
+          <Text size="xs">
+            <FormattedMessage id="account.e2e.backupReminder.body" />
+          </Text>
+        </Alert>
+      )}
 
       {/* --- Key exists locally ---------------------------------------------------- */}
       {hasLocalKey && localKey && (
@@ -412,7 +542,13 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
             >
               {revealKey ? localKey : maskedKey}
             </Code>
-            <Tooltip label={intl.formatMessage({ id: revealKey ? "account.e2e.key.hide" : "account.e2e.key.reveal" })}>
+            <Tooltip
+              label={intl.formatMessage({
+                id: revealKey
+                  ? "account.e2e.key.hide"
+                  : "account.e2e.key.reveal",
+              })}
+            >
               <Button
                 variant="subtle"
                 size="xs"
@@ -422,7 +558,13 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
                 {revealKey ? <TbEyeOff size={16} /> : <TbEye size={16} />}
               </Button>
             </Tooltip>
-            <Tooltip label={intl.formatMessage({ id: copiedKey ? "account.e2e.key.copied" : "account.e2e.key.copy" })}>
+            <Tooltip
+              label={intl.formatMessage({
+                id: copiedKey
+                  ? "account.e2e.key.copied"
+                  : "account.e2e.key.copy",
+              })}
+            >
               <Button
                 variant="subtle"
                 size="xs"
@@ -430,6 +572,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
                 onClick={async () => {
                   const ok = await copyToClipboard(localKey);
                   if (ok) {
+                    markKeyBackedUp();
                     setCopiedKey(true);
                     setTimeout(() => setCopiedKey(false), 1500);
                   }
@@ -476,54 +619,55 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
 
           {/* --- Coffre-fort système via WebAuthn PRF --- */}
           {/* Affiché uniquement si le navigateur supporte WebAuthn PRF */}
-          {passkeyPrfSupported && (showPasskeyOffer ? (
-            <Alert
-              mt="sm"
-              icon={<TbFingerprint size={18} />}
-              title={intl.formatMessage({ id: "account.e2e.passkey.offer" })}
-              color="blue"
-              withCloseButton
-              onClose={() => setShowPasskeyOffer(false)}
-            >
-              <Text size="xs" mb="sm">
-                <FormattedMessage id="account.e2e.passkey.offer.description" />
-              </Text>
-              <Group gap="xs">
+          {passkeyPrfSupported &&
+            (showPasskeyOffer ? (
+              <Alert
+                mt="sm"
+                icon={<TbFingerprint size={18} />}
+                title={intl.formatMessage({ id: "account.e2e.passkey.offer" })}
+                color="blue"
+                withCloseButton
+                onClose={() => setShowPasskeyOffer(false)}
+              >
+                <Text size="xs" mb="sm">
+                  <FormattedMessage id="account.e2e.passkey.offer.description" />
+                </Text>
+                <Group gap="xs">
+                  <Button
+                    size="xs"
+                    leftSection={<TbFingerprint size={14} />}
+                    loading={savingPasskey}
+                    onClick={handleSavePasskey}
+                  >
+                    <FormattedMessage id="account.e2e.passkey.save" />
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="subtle"
+                    color="gray"
+                    onClick={() => setShowPasskeyOffer(false)}
+                  >
+                    <FormattedMessage id="account.e2e.passkey.skip" />
+                  </Button>
+                </Group>
+              </Alert>
+            ) : (
+              <Group justify="right" mt="xs">
                 <Button
+                  variant="subtle"
                   size="xs"
+                  color={passkeyWrappedExists ? "teal" : "blue"}
                   leftSection={<TbFingerprint size={14} />}
                   loading={savingPasskey}
-                  onClick={handleSavePasskey}
+                  onClick={passkeyWrappedExists ? undefined : handleSavePasskey}
+                  disabled={passkeyWrappedExists}
                 >
-                  <FormattedMessage id="account.e2e.passkey.save" />
-                </Button>
-                <Button
-                  size="xs"
-                  variant="subtle"
-                  color="gray"
-                  onClick={() => setShowPasskeyOffer(false)}
-                >
-                  <FormattedMessage id="account.e2e.passkey.skip" />
+                  {passkeyWrappedExists
+                    ? intl.formatMessage({ id: "account.e2e.passkey.saved" })
+                    : intl.formatMessage({ id: "account.e2e.passkey.save" })}
                 </Button>
               </Group>
-            </Alert>
-          ) : (
-            <Group justify="right" mt="xs">
-              <Button
-                variant="subtle"
-                size="xs"
-                color={passkeyWrappedExists ? "teal" : "blue"}
-                leftSection={<TbFingerprint size={14} />}
-                loading={savingPasskey}
-                onClick={passkeyWrappedExists ? undefined : handleSavePasskey}
-                disabled={passkeyWrappedExists}
-              >
-                {passkeyWrappedExists
-                  ? intl.formatMessage({ id: "account.e2e.passkey.saved" })
-                  : intl.formatMessage({ id: "account.e2e.passkey.save" })}
-              </Button>
-            </Group>
-          ))}
+            ))}
         </Stack>
       )}
 
@@ -548,25 +692,36 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
             </Button>
           )}
 
-          <form onSubmit={(e) => { e.preventDefault(); handleImport(); }}>
-          <Group align="flex-end" gap="xs">
-            <PasswordInput
-              style={{ flex: 1 }}
-              label={intl.formatMessage({ id: "account.e2e.import.label" })}
-              placeholder={intl.formatMessage({ id: "account.e2e.import.placeholder" })}
-              value={importValue}
-              onChange={(e) => {
-                setImportValue(e.currentTarget.value);
-                setImportError("");
-              }}
-              error={importError}
-            />
-            <Button type="submit" loading={importing} size="sm">
-              <FormattedMessage id="account.e2e.import.submit" />
-            </Button>
-          </Group>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleImport();
+            }}
+          >
+            <Group align="flex-end" gap="xs">
+              <PasswordInput
+                style={{ flex: 1 }}
+                label={intl.formatMessage({ id: "account.e2e.import.label" })}
+                placeholder={intl.formatMessage({
+                  id: "account.e2e.import.placeholder",
+                })}
+                value={importValue}
+                onChange={(e) => {
+                  setImportValue(e.currentTarget.value);
+                  setImportError("");
+                }}
+                error={importError}
+              />
+              <Button type="submit" loading={importing} size="sm">
+                <FormattedMessage id="account.e2e.import.submit" />
+              </Button>
+            </Group>
           </form>
-          <Divider label={intl.formatMessage({ id: "e2ePrompt.divider.or" })} labelPosition="center" my="xs" />
+          <Divider
+            label={intl.formatMessage({ id: "e2ePrompt.divider.or" })}
+            labelPosition="center"
+            my="xs"
+          />
 
           <Button
             variant="subtle"
@@ -581,7 +736,9 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
           {showRecover && (
             <Stack gap="xs">
               <NumberInput
-                label={intl.formatMessage({ id: "e2ePrompt.recover.shardCount" })}
+                label={intl.formatMessage({
+                  id: "e2ePrompt.recover.shardCount",
+                })}
                 value={shardCount}
                 onChange={updateShardCount}
                 min={2}
@@ -591,7 +748,10 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
               {Array.from({ length: shardCount }, (_, i) => (
                 <PasswordInput
                   key={i}
-                  label={intl.formatMessage({ id: "e2ePrompt.recover.shard" }, { n: i + 1 })}
+                  label={intl.formatMessage(
+                    { id: "e2ePrompt.recover.shard" },
+                    { n: i + 1 },
+                  )}
                   placeholder="sskr:..."
                   value={shardValues[i] ?? ""}
                   onChange={(e) => {
@@ -638,7 +798,13 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
       {!hasServerKey && !hasLocalKey && (
         <Stack gap="xs">
           <Text size="sm">
-            <FormattedMessage id="account.e2e.noKey" />
+            <FormattedMessage
+              id={
+                autoGenerationDisabled
+                  ? "account.e2e.noKeyOptOut"
+                  : "account.e2e.noKey"
+              }
+            />
           </Text>
           <Group justify="right">
             <Button
@@ -646,7 +812,13 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
               onClick={handleGenerate}
               loading={generating}
             >
-              <FormattedMessage id="account.e2e.button.generate" />
+              <FormattedMessage
+                id={
+                  autoGenerationDisabled
+                    ? "account.e2e.button.reactivate"
+                    : "account.e2e.button.generate"
+                }
+              />
             </Button>
           </Group>
         </Stack>
@@ -655,6 +827,7 @@ const E2EEncryptionSection = ({ refreshUser }: { refreshUser: () => void }) => {
       <SSKRGenerateModal
         opened={showSSKR}
         onClose={() => setShowSSKR(false)}
+        onComplete={markKeyBackedUp}
         encodedKey={sskrKey ?? ""}
       />
 
@@ -785,7 +958,7 @@ const Account = () => {
   return (
     <>
       <Meta title={t("account.title")} />
-      <Container size="lg" className="account-settings">
+      <Container size="lg" px={0} className="account-settings">
         <Title order={3} mb="xs">
           <FormattedMessage id="account.title" />
         </Title>
@@ -1065,7 +1238,9 @@ const Account = () => {
             value={user?.notificationMode ?? "DIGEST"}
             onChange={async (value) => {
               try {
-                await userService.updateCurrentUser({ notificationMode: value });
+                await userService.updateCurrentUser({
+                  notificationMode: value,
+                });
                 await refreshUser();
                 toast.success(t("common.success"));
               } catch {

@@ -1,3 +1,4 @@
+import "@mantine/core/styles/AppShell.css";
 import {
   Alert,
   AppShell,

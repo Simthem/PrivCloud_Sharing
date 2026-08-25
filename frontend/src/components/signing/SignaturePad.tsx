@@ -1,3 +1,4 @@
+import "@mantine/core/styles/SegmentedControl.css";
 import { useRef, useState, useCallback } from "react";
 import {
   ActionIcon,

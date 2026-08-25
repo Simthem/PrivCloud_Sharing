@@ -1,5 +1,14 @@
 import { Expose, plainToClass } from "class-transformer";
-import { IsEmail, IsIn, IsOptional, Length, Matches, MinLength } from "class-validator";
+import {
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  MaxLength,
+  MinLength,
+} from "class-validator";
 
 export class UserDTO {
   @Expose()
@@ -14,12 +23,15 @@ export class UserDTO {
 
   @Expose()
   @IsEmail()
+  @MaxLength(254)
   email: string;
 
   @Expose()
   hasPassword: boolean;
 
+  @IsString()
   @MinLength(8)
+  @MaxLength(1024)
   password: string;
 
   @Expose()
@@ -37,25 +49,29 @@ export class UserDTO {
   hasEncryptionKey: boolean;
 
   @Expose()
+  e2eAutoGenerationDisabled: boolean;
+
+  @Expose()
   @IsOptional()
   @IsIn(["INSTANT", "DIGEST", "WEEKLY"])
   notificationMode: string;
 
   encryptionKeyHash?: string;
 
+  e2eAutoGenerationDisabledAt?: Date;
+
   @Expose()
   createdAt: Date;
-
-  // Populated by controller when listing users (admin)
-  plan?: string;
-  planStatus?: string;
 
   from(partial: Partial<UserDTO>) {
     const result = plainToClass(UserDTO, partial, {
       excludeExtraneousValues: true,
     });
     result.isLdap = partial.ldapDN?.length > 0;
-    result.hasEncryptionKey = !!(partial as Record<string, unknown>).encryptionKeyHash;
+    result.hasEncryptionKey = !!(partial as Record<string, unknown>)
+      .encryptionKeyHash;
+    result.e2eAutoGenerationDisabled = !!(partial as Record<string, unknown>)
+      .e2eAutoGenerationDisabledAt;
     return result;
   }
 

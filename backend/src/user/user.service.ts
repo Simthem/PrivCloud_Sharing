@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+} from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import * as argon from "argon2";
 import * as crypto from "crypto";
@@ -24,9 +29,7 @@ export class UserSevice {
   ) {}
 
   async list() {
-    return await this.prisma.user.findMany({
-      include: { subscription: true },
-    });
+    return await this.prisma.user.findMany();
   }
 
   async get(id: string) {
@@ -53,15 +56,6 @@ export class UserSevice {
         data: {
           ...userData,
           password: hash,
-        },
-      });
-
-      // Keep the compatibility subscription row enabled for the full feature set.
-      await this.prisma.subscription.create({
-        data: {
-          userId: user.id,
-          plan: "TEAM",
-          status: "active",
         },
       });
 
@@ -130,17 +124,45 @@ export class UserSevice {
 
   // ─── E2E Encryption Key Management ──────────────────────────────
 
-  async setEncryptionKeyHash(userId: string, keyHash: string) {
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: { encryptionKeyHash: keyHash },
+  async setEncryptionKeyHash(
+    userId: string,
+    keyHash: string,
+    options: { explicitE2ESetup?: boolean } = {},
+  ) {
+    const data = {
+      encryptionKeyHash: keyHash,
+      e2eAutoGenerationDisabledAt: null,
+    };
+
+    if (options.explicitE2ESetup) {
+      return this.prisma.user.update({ where: { id: userId }, data });
+    }
+
+    // First-use generation is compare-and-set: a concurrent tab must never
+    // overwrite a key that was registered after it loaded the user profile.
+    const { count } = await this.prisma.user.updateMany({
+      where: {
+        id: userId,
+        encryptionKeyHash: null,
+        e2eAutoGenerationDisabledAt: null,
+      },
+      data,
     });
+    if (count !== 1) {
+      throw new ConflictException(
+        "E2E key state changed. Reload before configuring encryption.",
+      );
+    }
+    return data;
   }
 
   async removeEncryptionKeyHash(userId: string) {
     return this.prisma.user.update({
       where: { id: userId },
-      data: { encryptionKeyHash: null },
+      data: {
+        encryptionKeyHash: null,
+        e2eAutoGenerationDisabledAt: new Date(),
+      },
     });
   }
 
@@ -175,6 +197,29 @@ export class UserSevice {
   async removeAllWrappedKeys(userId: string) {
     return this.prisma.wrappedKey.deleteMany({
       where: { userId },
+    });
+  }
+
+  /** Remove Team key material sealed under a revoked personal key. */
+  async removeTeamKeyMaterial(userId: string) {
+    await this.prisma.teamMember.updateMany({
+      where: { userId, wrappedTeamKey: { not: null } },
+      data: {
+        wrappedTeamKey: null,
+        teamKeyVersion: 0,
+        teamKeyUpdatedAt: null,
+      },
+    });
+    await this.prisma.teamKeyRotation.updateMany({
+      where: {
+        startedById: userId,
+        status: { in: ["PREPARING", "REENCRYPTING", "PAUSED"] },
+      },
+      data: {
+        status: "CANCELLED",
+        completedAt: new Date(),
+        errorMessage: "Abandoned: the initiator revoked their personal key",
+      },
     });
   }
 

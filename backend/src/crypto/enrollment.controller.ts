@@ -7,7 +7,7 @@ import {
   Post,
   UseGuards,
 } from "@nestjs/common";
-import { Throttle } from "@nestjs/throttler";
+import { hours, minutes, Throttle } from "@nestjs/throttler";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { User } from "@prisma/client";
@@ -23,7 +23,7 @@ export class EnrollmentTokenController {
    */
   @Post("tokens")
   @UseGuards(JwtGuard)
-  @Throttle({ default: { ttl: 3600, limit: 20 } })
+  @Throttle({ default: { ttl: hours(1), limit: 20 } })
   async createToken(
     @GetUser() user: User,
     @Body() dto: CreateEnrollmentTokenDTO,
@@ -36,7 +36,7 @@ export class EnrollmentTokenController {
    */
   @Post("consume")
   @UseGuards(JwtGuard)
-  @Throttle({ default: { ttl: 60, limit: 5 } })
+  @Throttle({ default: { ttl: minutes(1), limit: 5 } })
   async consumeToken(
     @GetUser() user: User,
     @Body() dto: ConsumeEnrollmentTokenDTO,

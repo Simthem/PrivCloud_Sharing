@@ -279,6 +279,44 @@ export function buildTheme(paletteName?: string, colorScheme: MantineColorScheme
           };
         },
       },
+      Notification: {
+        defaultProps: {
+          withBorder: true,
+          radius: "md",
+        },
+        styles: (theme: any) => ({
+          root: {
+            background: isDark
+              ? "linear-gradient(135deg, rgba(20, 21, 23, 0.99), rgba(28, 30, 35, 0.99))"
+              : "linear-gradient(135deg, rgba(255, 255, 255, 0.99), rgba(248, 249, 250, 0.99))",
+            borderColor: isDark
+              ? "rgba(255, 255, 255, 0.16)"
+              : "rgba(15, 23, 42, 0.14)",
+            boxShadow: isDark
+              ? "0 18px 48px rgba(0, 0, 0, 0.48), 0 0 0 1px rgba(255, 255, 255, 0.04)"
+              : "0 18px 42px rgba(15, 23, 42, 0.16), 0 0 0 1px rgba(15, 23, 42, 0.04)",
+            backdropFilter: "blur(14px) saturate(1.15)",
+            WebkitBackdropFilter: "blur(14px) saturate(1.15)",
+          },
+          title: {
+            color: isDark ? theme.white : theme.black,
+            fontWeight: 700,
+          },
+          description: {
+            color: isDark ? theme.colors.dark[0] : theme.colors.gray[8],
+            lineHeight: 1.45,
+            overflowWrap: "anywhere",
+          },
+          closeButton: {
+            color: isDark ? theme.colors.dark[1] : theme.colors.gray[7],
+            "&:hover": {
+              backgroundColor: isDark
+                ? "rgba(255, 255, 255, 0.08)"
+                : "rgba(15, 23, 42, 0.06)",
+            },
+          },
+        }),
+      },
       Switch: {
         styles: (theme: any) => {
           const c = theme.primaryColor;

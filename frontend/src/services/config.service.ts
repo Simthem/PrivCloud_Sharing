@@ -2,9 +2,30 @@ import axios from "axios";
 import Config, { AdminConfig, UpdateConfig } from "../types/config.type";
 import api from "./api.service";
 import { stringToTimespan } from "../utils/date.util";
+import {
+  getRuntimeUploadChunkConfigKey,
+  UploadChunkProfileName,
+} from "../utils/uploadPerformance.util";
 
 const list = async (): Promise<Config[]> => {
   return (await api.get("/configs")).data;
+};
+
+const getRuntimeUploadMaxChunkSize = async (
+  profile: UploadChunkProfileName,
+): Promise<number | null> => {
+  const configVariables = await list();
+  const hardLimit = get("runtime.uploadMaxChunkBytes", configVariables);
+  const profileLimit = get(
+    getRuntimeUploadChunkConfigKey(profile),
+    configVariables,
+  );
+  if (Number.isFinite(hardLimit) && Number.isFinite(profileLimit)) {
+    return Math.min(hardLimit, profileLimit);
+  }
+  if (Number.isFinite(profileLimit)) return profileLimit;
+  if (Number.isFinite(hardLimit)) return hardLimit;
+  return null;
 };
 
 const getByCategory = async (category: string): Promise<AdminConfig[]> => {
@@ -63,6 +84,7 @@ const changeLogo = async (file: File) => {
 };
 export default {
   list,
+  getRuntimeUploadMaxChunkSize,
   getByCategory,
   updateMany,
   get,

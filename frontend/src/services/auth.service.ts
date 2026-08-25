@@ -1,7 +1,5 @@
-import api from "./api.service";
+import api, { refreshTokenOnce } from "./api.service";
 import { removeUserKey } from "../utils/crypto.util";
-
-let refreshAccessTokenPromise: Promise<void> | null = null;
 
 function isSafeLogoutRedirect(value: unknown): value is string {
   if (typeof value !== "string" || !URL.canParse(value)) return false;
@@ -51,7 +49,7 @@ const signOut = async () => {
 
     // If there's an OAuth provider logout URL, use it
     if (isSafeLogoutRedirect(response.data?.redirectURI)) {
-      window.location.href = response.data.redirectURI;
+      window.location.assign(response.data.redirectURI);
       return;
     }
   } catch (e) {
@@ -63,24 +61,17 @@ const signOut = async () => {
   await new Promise((resolve) => setTimeout(resolve, 100));
 
   // Redirect to home instead of reload to avoid "team not found" on protected pages
-  window.location.href = "/";
+  window.location.assign(new URL("/", window.location.origin).toString());
 };
 
 const refreshAccessToken = async () => {
-  if (!refreshAccessTokenPromise) {
-    refreshAccessTokenPromise = api
-      .post("/auth/token")
-      .then(() => {})
-      .catch((e) => {
-        console.info("Refresh token invalid or expired");
-        throw e;
-      })
-      .finally(() => {
-        refreshAccessTokenPromise = null;
-      });
+  // Delegate to the shared single-flight refresher so this call never races
+  // the axios interceptor or the upload keepalive on the token rotation.
+  const result = await refreshTokenOnce();
+  if (!result.ok) {
+    console.info("Refresh token invalid or expired");
+    throw new Error("token_refresh_failed");
   }
-
-  return refreshAccessTokenPromise;
 };
 
 const hasActiveSession = async (): Promise<boolean> => {

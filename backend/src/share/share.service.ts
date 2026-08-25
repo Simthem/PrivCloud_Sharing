@@ -10,6 +10,7 @@ import {
 import { JwtService, JwtSignOptions } from "@nestjs/jwt";
 import { Prisma, Share, User } from "@prisma/client";
 import * as argon from "argon2";
+import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import moment from "moment";
@@ -25,6 +26,8 @@ import { SHARE_DIRECTORY } from "../constants";
 import { getArchiveEntryName } from "../file/file-path.util";
 import { createZipArchive } from "../utils/archive.util";
 import { CreateShareDTO } from "./dto/createShare.dto";
+import { normalizeShareRecipients } from "./share-recipient.util";
+import { touchShareUploadActivity } from "./upload-activity.util";
 
 @Injectable()
 export class ShareService {
@@ -152,6 +155,11 @@ export class ShareService {
       }
     }
 
+    // The first free-form recipient entry can produce both a native change
+    // event and a component selection event in some browsers. Never persist
+    // duplicate addresses even if a client submits them deliberately.
+    share.recipients = normalizeShareRecipients(share.recipients);
+
     // --- Team folder assignment: verify membership & folder access ---
     let teamFolderConnect: { id: string } | undefined;
     if (share.teamFolderId) {
@@ -211,13 +219,6 @@ export class ShareService {
       teamFolderConnect = { id: share.teamFolderId };
     }
 
-    fs.mkdirSync(`${SHARE_DIRECTORY}/${share.id}`, {
-      recursive: true,
-    });
-    this.logger.debug(
-      `Ensured share directory: shareId=${share.id} path=${SHARE_DIRECTORY}/${share.id}`,
-    );
-
     const storageProvider = this.configService.get("s3.enabled")
       ? "S3"
       : "LOCAL";
@@ -227,22 +228,45 @@ export class ShareService {
 
     const { teamFolderId: _tfId, ...shareData } = share;
 
-    const shareTuple = await this.prisma.share.create({
-      data: {
-        ...shareData,
-        expiration: expirationDate,
-        creator: { connect: user ? { id: user.id } : undefined },
-        security: { create: share.security },
-        recipients: {
-          create: share.recipients
-            ? share.recipients.map((email) => ({ email }))
-            : [],
-        },
-        storageProvider: this.configService.get("s3.enabled") ? "S3" : "LOCAL",
-        ...(teamFolderConnect && {
-          teamFolder: { connect: teamFolderConnect },
-        }),
-      },
+    const shareTuple = await this.prisma.$transaction(async (tx) => {
+        fs.mkdirSync(`${SHARE_DIRECTORY}/${share.id}`, {
+          recursive: true,
+        });
+        this.logger.debug(
+          `Ensured share directory: shareId=${share.id} path=${SHARE_DIRECTORY}/${share.id}`,
+        );
+
+        const createdShare = await tx.share.create({
+          data: {
+            ...shareData,
+            expiration: expirationDate,
+            uploadLastActivityAt: new Date(),
+            creator: { connect: user ? { id: user.id } : undefined },
+            security: { create: share.security },
+            recipients: {
+              create: share.recipients
+                ? share.recipients.map((email) => ({ email }))
+                : [],
+            },
+            storageProvider,
+            ...(teamFolderConnect && {
+              teamFolder: { connect: teamFolderConnect },
+            }),
+          },
+        });
+
+        if (reverseShare) {
+          await tx.reverseShare.update({
+            where: { token: reverseShareToken },
+            data: {
+              shares: {
+                connect: { id: createdShare.id },
+              },
+            },
+          });
+        }
+
+        return createdShare;
     });
 
     this.logger.debug(
@@ -272,18 +296,6 @@ export class ShareService {
             this.logger.error(`Failed to log UPLOAD: ${err.message}`),
           );
       }
-    }
-
-    if (reverseShare) {
-      // Assign share to reverse share token
-      await this.prisma.reverseShare.update({
-        where: { token: reverseShareToken },
-        data: {
-          shares: {
-            connect: { id: shareTuple.id },
-          },
-        },
-      });
     }
 
     return shareTuple;
@@ -362,11 +374,10 @@ export class ShareService {
     });
 
     if (share.uploadLocked) {
-      this.logger.debug(
-        `Share already completed, returning existing share: shareId=${id}`,
-      );
-      return completedShareResponse(share);
+      this.logger.warn(`Share already completed: shareId=${id}`);
+      throw new BadRequestException("Share already completed");
     }
+    await touchShareUploadActivity(this.prisma, share);
 
     if (share.files.length === 0) {
       this.logger.warn(`Attempt to complete without files: shareId=${id}`);
@@ -375,19 +386,34 @@ export class ShareService {
       );
     }
 
-    const completionClaim = await this.prisma.share.updateMany({
-      where: { id, uploadLocked: false },
-      data: { uploadLocked: true },
-    });
-    if (completionClaim.count === 0) {
-      const completedShare = await this.prisma.share.findUnique({
-        where: { id },
+    // Claim completion before email, push and archive side effects. The
+    // compare-and-set makes concurrent browser effects idempotent.
+    const updatedShare = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.share.updateMany({
+        where: { id, uploadLocked: false },
+        data: { uploadLocked: true, hasBeenCompleted: true },
       });
-      if (!completedShare) {
-        throw new NotFoundException("Share not found");
+      if (claimed.count !== 1) return null;
+
+      if (
+        share.reverseShare &&
+        share.reverseShare.shareExpiration.getTime() !== 0
+      ) {
+        const decremented = await tx.reverseShare.updateMany({
+          where: { token: reverseShareToken, remainingUses: { gt: 0 } },
+          data: { remainingUses: { decrement: 1 } },
+        });
+        if (decremented.count === 0) {
+          throw new ForbiddenException("Reverse share has no remaining uses");
+        }
       }
-      this.logger.debug(`Share completion already claimed: shareId=${id}`);
-      return completedShareResponse(completedShare);
+
+      return tx.share.findUniqueOrThrow({ where: { id } });
+    });
+
+    if (!updatedShare) {
+      this.logger.warn(`Share already completed concurrently: shareId=${id}`);
+      throw new BadRequestException("Share already completed");
     }
 
     const shouldCreateZip =
@@ -416,7 +442,10 @@ export class ShareService {
     }
 
     // Send email for each recipient
-    const recipientCount = share.recipients.length;
+    const recipientEmails = normalizeShareRecipients(
+      share.recipients.map((recipient) => recipient.email),
+    );
+    const recipientCount = recipientEmails.length;
     // Only include the E2E key in the email if the global admin setting allows it
     const e2eKeyForEmail =
       e2eKey && this.config.get("email.enableE2EKeyEmailSharing")
@@ -426,10 +455,10 @@ export class ShareService {
       this.logger.debug(
         `Sending recipient emails: shareId=${id} recipients=${recipientCount} e2eKeyInEmail=${!!e2eKeyForEmail}`,
       );
-      for (const recipient of share.recipients) {
+      for (const recipientEmail of recipientEmails) {
         try {
           await this.emailService.sendMailToShareRecipients(
-            recipient.email,
+            recipientEmail,
             share.id,
             share.creator,
             share.name,
@@ -438,12 +467,12 @@ export class ShareService {
             e2eKeyForEmail,
           );
           this.logger.debug(
-            `Recipient email sent: shareId=${id} recipient=${recipient.email}`,
+            `Recipient email sent: shareId=${id} recipient=${recipientEmail}`,
           );
         } catch (err) {
           // Log and continue sending to others
           this.logger.error(
-            `Recipient email failed: shareId=${id} recipient=${recipient.email} error=${(err as Error).message}`,
+            `Recipient email failed: shareId=${id} recipient=${recipientEmail} error=${(err as Error).message}`,
           );
         }
       }
@@ -501,33 +530,6 @@ export class ShareService {
       this.logger.debug(`Skipping malware scan (E2E encrypted): shareId=${id}`);
     }
 
-    // Decrement reverse share remaining uses if applicable
-    // Personal links (epoch 0 = never expires) have unlimited uses
-    if (share.reverseShare) {
-      const isPersonal = share.reverseShare.shareExpiration.getTime() === 0;
-      if (!isPersonal) {
-        try {
-          await this.prisma.reverseShare.update({
-            where: { token: reverseShareToken },
-            data: { remainingUses: { decrement: 1 } },
-          });
-          this.logger.debug(
-            `Reverse share remainingUses decremented: shareId=${id}`,
-          );
-        } catch (err) {
-          this.logger.error(
-            `Failed to decrement reverse share uses: shareId=${id} error=${(err as Error).message}`,
-          );
-        }
-      }
-    }
-
-    const updatedShare = await this.prisma.share.findUnique({
-      where: { id },
-    });
-    if (!updatedShare) {
-      throw new NotFoundException("Share not found");
-    }
     this.logger.debug(
       `Share completed: shareId=${id} files=${share.files.length} recipients=${recipientCount} uploadLocked=true`,
     );
@@ -542,28 +544,50 @@ export class ShareService {
       data: {
         uploadLocked: false,
         isZipReady: false,
-        // Reset createdAt so the deleteUnfinishedShares cron job
-        // (which deletes shares with uploadLocked=false older than 24h)
-        // won't remove this share while it is being edited.
-        createdAt: new Date(),
+        // Protect an actively edited share from inactivity cleanup.
+        uploadLastActivityAt: new Date(),
       },
     });
   }
 
-  async getShares() {
+  async getAdminShares() {
     const shares = await this.prisma.share.findMany({
       orderBy: {
         expiration: "desc",
       },
-      include: { files: true, creator: true },
+      select: {
+        adminAuditId: true,
+        createdAt: true,
+        expiration: true,
+        uploadLocked: true,
+        isE2EEncrypted: true,
+        views: true,
+        creator: { select: { username: true } },
+        files: { select: { size: true } },
+      },
     });
 
-    return shares.map((share) => {
-      return {
-        ...share,
-        size: share.files.reduce((acc, file) => acc + parseInt(file.size), 0),
-      };
+    return shares.map((share) => ({
+      reference: share.adminAuditId,
+      creator: share.creator,
+      createdAt: share.createdAt,
+      expiration: share.expiration,
+      views: share.views,
+      isE2EEncrypted: share.isE2EEncrypted,
+      status: share.uploadLocked ? ("READY" as const) : ("UPLOADING" as const),
+      fileCount: share.files.length,
+      size: share.files.reduce((acc, file) => acc + parseInt(file.size), 0),
+    }));
+  }
+
+  async removeByAdminReference(reference: string) {
+    const share = await this.prisma.share.findUnique({
+      where: { adminAuditId: reference },
+      select: { id: true },
     });
+    if (!share) throw new NotFoundException("Share not found");
+
+    await this.remove(share.id, true);
   }
 
   async getStoredRecipientsByUser(userId: string, query?: string) {
@@ -620,6 +644,40 @@ export class ShareService {
         },
       };
     });
+  }
+
+  async setAnonymousSessionToken(shareId: string, tokenHash: string) {
+    await this.prisma.share.update({
+      where: { id: shareId },
+      data: { anonymousSessionToken: tokenHash },
+    });
+  }
+
+  async keepUploadAlive(shareId: string) {
+    const share = await this.prisma.share.findUnique({
+      where: { id: shareId },
+      select: {
+        id: true,
+        uploadLocked: true,
+        uploadLastActivityAt: true,
+        uploadCleanupStartedAt: true,
+      },
+    });
+    if (!share) throw new NotFoundException("Share not found");
+    await touchShareUploadActivity(this.prisma, share);
+  }
+
+  verifyAnonymousSessionToken(
+    share: { anonymousSessionToken?: string | null },
+    rawToken: string,
+  ): boolean {
+    if (!share.anonymousSessionToken || !rawToken) return false;
+    const actual = crypto.createHash("sha256").update(rawToken).digest();
+    const expected = Buffer.from(share.anonymousSessionToken, "hex");
+    return (
+      actual.length === expected.length &&
+      crypto.timingSafeEqual(actual, expected)
+    );
   }
 
   async get(id: string): Promise<unknown> {
@@ -731,12 +789,18 @@ export class ShareService {
     };
   }
 
-  async remove(shareId: string, isDeleterAdmin = false) {
+  async remove(
+    shareId: string,
+    isDeleterAdmin = false,
+    reverseShareToken?: string,
+    anonymousSessionToken?: string,
+  ) {
     this.logger.debug(
       `Removing share: shareId=${shareId} isDeleterAdmin=${isDeleterAdmin}`,
     );
     const share = await this.prisma.share.findUnique({
       where: { id: shareId },
+      include: { reverseShare: { select: { token: true } } },
     });
 
     if (!share) {
@@ -744,12 +808,24 @@ export class ShareService {
       throw new NotFoundException("Share not found");
     }
 
-    // Anonymous shares can only be deleted by admins
+    // Defense in depth for anonymous cancellations. ShareOwnerGuard performs
+    // the first authorization check; the service independently verifies that
+    // the supplied proof belongs to this exact share.
     if (!share.creatorId && !isDeleterAdmin) {
-      this.logger.warn(
-        `Forbidden remove for anonymous share: shareId=${shareId}`,
-      );
-      throw new ForbiddenException("Anonymous shares can't be deleted");
+      const ownsViaReverseShare =
+        !!reverseShareToken &&
+        !!share.reverseShare?.token &&
+        reverseShareToken === share.reverseShare.token;
+      const ownsViaAnonymousSession =
+        !!anonymousSessionToken &&
+        this.verifyAnonymousSessionToken(share, anonymousSessionToken);
+
+      if (!ownsViaReverseShare && !ownsViaAnonymousSession) {
+        this.logger.warn(
+          `Forbidden remove for anonymous share: shareId=${shareId}`,
+        );
+        throw new ForbiddenException("Anonymous share ownership not proven");
+      }
     }
 
     // Delete files first; if it fails, abort DB deletion
@@ -765,7 +841,6 @@ export class ShareService {
       );
     }
 
-    // Only if files deletion succeeded, remove DB record
     await this.prisma.share.delete({ where: { id: shareId } });
 
     // Log team activity if this share belonged to a team folder
@@ -862,6 +937,7 @@ export class ShareService {
 
     const tokenOptions: JwtSignOptions = {
       secret: this.config.get("internal.jwtSecret"),
+      algorithm: "HS256",
     };
 
     if (!moment(expiration).isSame(0)) {
@@ -879,6 +955,7 @@ export class ShareService {
     try {
       const claims = this.jwtService.verify(token, {
         secret: this.config.get("internal.jwtSecret"),
+        algorithms: ["HS256"],
         // Ignore expiration if expiration is 0
         ignoreExpiration: moment(expiration).isSame(0),
       });

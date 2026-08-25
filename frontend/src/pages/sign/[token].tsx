@@ -2,6 +2,7 @@ import { useRouter } from "next/router";
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useIntl } from "react-intl";
+import "@mantine/core/styles/Stepper.css";
 import {
   Alert,
   Badge,

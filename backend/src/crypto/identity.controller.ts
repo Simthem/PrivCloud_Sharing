@@ -7,7 +7,7 @@ import {
   Put,
   UseGuards,
 } from "@nestjs/common";
-import { Throttle } from "@nestjs/throttler";
+import { hours, minutes, Throttle } from "@nestjs/throttler";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { User } from "@prisma/client";
@@ -28,7 +28,7 @@ export class CryptoIdentityController {
    */
   @Post("keys")
   @UseGuards(JwtGuard)
-  @Throttle({ default: { ttl: 3600, limit: 10 } })
+  @Throttle({ default: { ttl: hours(1), limit: 10 } })
   async registerKey(@GetUser() user: User, @Body() dto: RegisterIdentityKeyDTO) {
     return this.identityService.registerKey(user.id, dto);
   }
@@ -58,7 +58,7 @@ export class CryptoIdentityController {
    */
   @Post("keys/batch")
   @UseGuards(JwtGuard)
-  @Throttle({ default: { ttl: 60, limit: 30 } })
+  @Throttle({ default: { ttl: minutes(1), limit: 30 } })
   async getPublicKeysForUsers(@Body() body: { userIds: string[] }) {
     return this.identityService.getPublicKeysForUsers(body.userIds);
   }
@@ -69,7 +69,7 @@ export class CryptoIdentityController {
    */
   @Put("keys/rotate")
   @UseGuards(JwtGuard)
-  @Throttle({ default: { ttl: 3600, limit: 5 } })
+  @Throttle({ default: { ttl: hours(1), limit: 5 } })
   async rotateKey(@GetUser() user: User, @Body() dto: RotateIdentityKeyDTO) {
     return this.identityService.rotateKey(user.id, dto);
   }
@@ -80,7 +80,7 @@ export class CryptoIdentityController {
    */
   @Post("pq-keys")
   @UseGuards(JwtGuard)
-  @Throttle({ default: { ttl: 3600, limit: 5 } })
+  @Throttle({ default: { ttl: hours(1), limit: 5 } })
   async registerPQKey(@GetUser() user: User, @Body() dto: RegisterPQKeyDTO) {
     return this.identityService.registerPQKey(user.id, dto);
   }

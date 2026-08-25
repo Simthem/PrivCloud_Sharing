@@ -14,7 +14,7 @@ import {
 } from "@nestjs/common";
 import { Response } from "express";
 import { User } from "@prisma/client";
-import { Throttle } from "@nestjs/throttler";
+import { minutes, Throttle } from "@nestjs/throttler";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
 import { SigningService } from "./signing.service";
@@ -323,7 +323,7 @@ export class SigningController {
    * Request OTP for identity verification (AES level).
    */
   @Post("sign/:token/otp/send")
-  @Throttle({ default: { limit: 3, ttl: 60 } })
+  @Throttle({ default: { limit: 3, ttl: minutes(1) } })
   async sendOtp(
     @Param("token") token: string,
     @Res({ passthrough: true }) res: Response,
@@ -336,7 +336,7 @@ export class SigningController {
    * Verify OTP code.
    */
   @Post("sign/:token/otp/verify")
-  @Throttle({ default: { limit: 5, ttl: 60 } })
+  @Throttle({ default: { limit: 5, ttl: minutes(1) } })
   async verifyOtp(
     @Param("token") token: string,
     @Body() dto: VerifyOtpDTO,
@@ -350,7 +350,7 @@ export class SigningController {
    * Sign the document.
    */
   @Post("sign/:token/sign")
-  @Throttle({ default: { limit: 5, ttl: 60 } })
+  @Throttle({ default: { limit: 5, ttl: minutes(1) } })
   async signDocument(
     @Param("token") token: string,
     @Body() dto: SignDocumentDTO,
@@ -371,7 +371,7 @@ export class SigningController {
    * Reject the document.
    */
   @Post("sign/:token/reject")
-  @Throttle({ default: { limit: 5, ttl: 60 } })
+  @Throttle({ default: { limit: 5, ttl: minutes(1) } })
   async rejectDocument(
     @Param("token") token: string,
     @Body() dto: RejectDocumentDTO,

@@ -19,6 +19,7 @@ const showFilePreviewModal = (
         shareId={shareId}
         fileId={file.id}
         mimeType={mimeType}
+        fileSizeBytes={Number(file.size)}
         e2eKey={e2eKey}
       />
     ),

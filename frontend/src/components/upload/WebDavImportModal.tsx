@@ -28,7 +28,9 @@ import {
 } from "react-icons/tb";
 import useTranslate from "../../hooks/useTranslate.hook";
 import {
+  downloadWebDavViaProxy,
   isLocalOrPrivateWebDavTarget,
+  listWebDavViaProxy,
   WebDavCredentials,
   WebDavEntry,
 } from "../../services/webdav.service";
@@ -36,8 +38,10 @@ import {
   authorizeBridge,
   BridgeHealth,
   downloadWebDavFileViaBridge,
+  forgetBridgeToken,
   getBridgeHealth,
   hasBridgeToken,
+  isOpenSourceBridgeCompatible,
   listWebDavDirectoryViaBridge,
 } from "../../services/privcloudBridge.service";
 import { BridgeWebDavSource, FileUpload } from "../../types/File.type";
@@ -74,7 +78,9 @@ function errorToMessage(error: unknown, t: ReturnType<typeof useTranslate>) {
   if (message.includes("Too many active Bridge jobs")) {
     return t("bridge.error.tooManyJobs");
   }
-  if (message.includes("Private or reserved WebDAV addresses are not allowed")) {
+  if (
+    message.includes("Private or reserved WebDAV addresses are not allowed")
+  ) {
     return t("bridge.error.companionUpdateRequiredVpn");
   }
   if (error instanceof TypeError) return t("bridge.error.localNetworkBlocked");
@@ -128,7 +134,9 @@ function readStoredWebDavSession(): StoredWebDavSession | null {
   }
 }
 
-function writeStoredWebDavSession(session: Omit<StoredWebDavSession, "savedAt">) {
+function writeStoredWebDavSession(
+  session: Omit<StoredWebDavSession, "savedAt">,
+) {
   if (typeof window === "undefined") return;
   try {
     window.sessionStorage.setItem(
@@ -197,6 +205,7 @@ const WebDavImportModal = ({
   const [bridgeHealth, setBridgeHealth] = useState<BridgeHealth | null>(null);
   const [useBridge, setUseBridge] = useState(false);
   const [pairingBusy, setPairingBusy] = useState(false);
+  const [bridgeProbeComplete, setBridgeProbeComplete] = useState(false);
   const [sessionRestored, setSessionRestored] = useState(false);
 
   // Prevents auto-load from firing more than once per modal opening
@@ -226,10 +235,12 @@ const WebDavImportModal = ({
     (sum, entry) => sum + entry.size,
     0,
   );
-  const bridgeEnabled = useBridge && hasBridgeToken();
+  const bridgeTokenConfigured = useBridge && hasBridgeToken();
+  const bridgeEnabled =
+    bridgeTokenConfigured && isOpenSourceBridgeCompatible(bridgeHealth);
   const bridgeManagedImport =
     bridgeEnabled && !!bridgeHealth?.capabilities.managedEncryptedUpload;
-  const quotaExceeded =
+  const sizeLimitExceeded =
     maxShareSize < Number.MAX_SAFE_INTEGER &&
     existingFilesSize + selectedSize > maxShareSize;
   const manyDirectFiles =
@@ -238,9 +249,7 @@ const WebDavImportModal = ({
     (entry) => !bridgeManagedImport && entry.size > LARGE_IMPORT_WARNING_BYTES,
   );
   const canImport =
-    selectedEntries.length > 0 &&
-    !quotaExceeded &&
-    !importing;
+    selectedEntries.length > 0 && !sizeLimitExceeded && !importing;
 
   const resetSession = () => {
     setEntries([]);
@@ -270,7 +279,13 @@ const WebDavImportModal = ({
       clearStoredWebDavSession();
       return;
     }
-    writeStoredWebDavSession({ endpoint, username, password, currentUrl, history });
+    writeStoredWebDavSession({
+      endpoint,
+      username,
+      password,
+      currentUrl,
+      history,
+    });
   }, [endpoint, username, password, currentUrl, history, sessionRestored]);
 
   // Reset the auto-load flag every time the modal closes.
@@ -299,9 +314,9 @@ const WebDavImportModal = ({
       return;
     autoLoadFiredRef.current = true;
     loadDirectory(currentUrl);
-  // loadDirectory changes on every render; it is intentionally excluded so the
-  // effect only runs on the state transitions listed below.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // loadDirectory changes on every render; it is intentionally excluded so the
+    // effect only runs on the state transitions listed below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened, sessionRestored, currentUrl, endpoint, username, password]);
 
   const handleClose = () => {
@@ -328,18 +343,19 @@ const WebDavImportModal = ({
       if (!health?.capabilities.webdav) {
         throw new Error("bridge.status.unavailable");
       }
-      if (!health.capabilities.localTokenAuthorization && !hasBridgeToken()) {
-        throw new Error("bridge.error.updateRequired");
+      if (!isOpenSourceBridgeCompatible(health)) {
+        forgetBridgeToken();
+        setUseBridge(false);
+        throw new Error("bridge.error.openSourceUpdateRequired");
       }
-      if (health.capabilities.localTokenAuthorization) {
-        await authorizeBridge();
-      }
+      await authorizeBridge();
       setUseBridge(true);
       setBridgeHealth(await getBridgeHealth());
       toast.success(t("bridge.toast.paired"));
     } catch (e) {
       setError(errorToMessage(e, t));
     } finally {
+      setBridgeProbeComplete(true);
       setPairingBusy(false);
     }
   };
@@ -353,25 +369,31 @@ const WebDavImportModal = ({
         url || credentials.endpoint,
       );
       let bridgeError: unknown;
-      let bridgeOk = false;
-      const bridgeTokenAvailable = hasBridgeToken();
-      if (!bridgeTokenAvailable) {
-        throw new Error("bridge.error.companionRequired");
+      if (useBridge && hasBridgeToken()) {
+        const health = await getBridgeHealth();
+        setBridgeHealth(health);
+        setBridgeProbeComplete(true);
+
+        if (health && !isOpenSourceBridgeCompatible(health)) {
+          forgetBridgeToken();
+          setUseBridge(false);
+          if (requiresBridge) {
+            throw new Error("bridge.error.openSourceUpdateRequired");
+          }
+        } else if (health) {
+          try {
+            result = await listWebDavDirectoryViaBridge(credentials, url);
+          } catch (e) {
+            bridgeError = e;
+          }
+        }
       }
-      try {
-        result = await listWebDavDirectoryViaBridge(credentials, url);
-        bridgeOk = true;
-        void getBridgeHealth().then((health) => {
-          if (health) setBridgeHealth(health);
-        });
-      } catch (e) {
-        bridgeError = e;
-      }
-      if (!bridgeOk) {
+
+      if (!result) {
         if (requiresBridge) {
           throw bridgeError || new Error("bridge.error.localNetworkRequired");
         }
-        throw bridgeError || new Error("bridge.error.companionRequired");
+        result = await listWebDavViaProxy(credentials, url);
       }
       if (!url) {
         setHistory([]);
@@ -450,20 +472,20 @@ const WebDavImportModal = ({
           const requiresBridge = isLocalOrPrivateWebDavTarget(
             entry.href || credentials.endpoint,
           );
-          const bridgeTokenAvailable = hasBridgeToken();
-          if (!bridgeTokenAvailable) {
-            throw new Error("bridge.error.companionRequired");
-          }
-          try {
-            file = await downloadWebDavFileViaBridge(credentials, entry);
-          } catch (e) {
-            bridgeError = e;
+          if (bridgeEnabled) {
+            try {
+              file = await downloadWebDavFileViaBridge(credentials, entry);
+            } catch (e) {
+              bridgeError = e;
+            }
           }
           if (!file) {
             if (requiresBridge) {
-              throw bridgeError || new Error("bridge.error.localNetworkRequired");
+              throw (
+                bridgeError || new Error("bridge.error.localNetworkRequired")
+              );
             }
-            throw bridgeError || new Error("bridge.error.companionRequired");
+            file = await downloadWebDavViaProxy(credentials, entry);
           }
           imported.push(asUploadFile(file));
           setImportProgress(
@@ -524,9 +546,16 @@ const WebDavImportModal = ({
                 <Text size="sm">
                   <FormattedMessage
                     id={
-                      bridgeHealth
-                        ? "bridge.status.detected"
-                        : "bridge.status.proxyDefault"
+                      bridgeHealth &&
+                      !isOpenSourceBridgeCompatible(bridgeHealth)
+                        ? "bridge.error.openSourceUpdateRequired"
+                        : bridgeHealth
+                          ? "bridge.status.detected"
+                          : bridgeProbeComplete && bridgeTokenConfigured
+                            ? "bridge.status.unavailable"
+                            : bridgeTokenConfigured
+                              ? "bridge.status.saved"
+                              : "bridge.status.proxyDefault"
                     }
                     values={{ version: bridgeHealth?.version }}
                   />
@@ -612,7 +641,12 @@ const WebDavImportModal = ({
                   <TbRefresh size={16} />
                 </ActionIcon>
               </Tooltip>
-              <Text size="xs" c="dimmed" lineClamp={1} style={{ flex: 1, minWidth: 0 }}>
+              <Text
+                size="xs"
+                c="dimmed"
+                lineClamp={1}
+                style={{ flex: 1, minWidth: 0 }}
+              >
                 {currentUrl}
               </Text>
             </Group>
@@ -645,7 +679,7 @@ const WebDavImportModal = ({
               >
                 <FormattedMessage id="webdav.disconnect" />
               </Button>
-              <Text size="xs" c={quotaExceeded ? "red" : "dimmed"}>
+              <Text size="xs" c={sizeLimitExceeded ? "red" : "dimmed"}>
                 {byteToHumanSizeString(selectedSize)}
               </Text>
             </Group>
@@ -670,7 +704,9 @@ const WebDavImportModal = ({
                   <th>
                     <FormattedMessage id="upload.filelist.name" />
                   </th>
-                  <th style={{ width: 92, textAlign: "right", paddingRight: 8 }}>
+                  <th
+                    style={{ width: 92, textAlign: "right", paddingRight: 8 }}
+                  >
                     <FormattedMessage id="upload.filelist.size" />
                   </th>
                 </tr>
@@ -713,16 +749,29 @@ const WebDavImportModal = ({
                       </td>
                       <td>
                         <Group gap="xs" wrap="nowrap">
-                          {!entry.isDirectory && (
-                            <TbFile size={18} />
-                          )}
-                          <Text size="sm" fw={entry.isDirectory ? 500 : 400} lineClamp={1}>
+                          {!entry.isDirectory && <TbFile size={18} />}
+                          <Text
+                            size="sm"
+                            fw={entry.isDirectory ? 500 : 400}
+                            lineClamp={1}
+                          >
                             {entry.name}
                           </Text>
                         </Group>
                       </td>
-                      <td style={{ width: 92, textAlign: "right", paddingRight: 8 }}>
-                        <Text size="sm" c="dimmed" ta="right" style={{ whiteSpace: "nowrap" }}>
+                      <td
+                        style={{
+                          width: 92,
+                          textAlign: "right",
+                          paddingRight: 8,
+                        }}
+                      >
+                        <Text
+                          size="sm"
+                          c="dimmed"
+                          ta="right"
+                          style={{ whiteSpace: "nowrap" }}
+                        >
                           {entry.isDirectory
                             ? "-"
                             : byteToHumanSizeString(entry.size)}
@@ -736,9 +785,9 @@ const WebDavImportModal = ({
           </ScrollArea>
         )}
 
-        {(quotaExceeded || manyDirectFiles || selectedHasLargeFiles) && (
+        {(sizeLimitExceeded || manyDirectFiles || selectedHasLargeFiles) && (
           <Alert color="yellow" variant="light">
-            {quotaExceeded && (
+            {sizeLimitExceeded && (
               <Text size="sm">{t("webdav.warning.quota")}</Text>
             )}
             {manyDirectFiles && (

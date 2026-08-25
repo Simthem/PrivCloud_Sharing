@@ -10,12 +10,21 @@
 		X-XSS-Protection "1; mode=block"
 		X-Download-Options "noopen"
 		X-Permitted-Cross-Domain-Policies "none"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'self' blob:; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss: http://localhost:47631 http://127.0.0.1:47631; worker-src 'self' blob:; media-src 'self' blob:; manifest-src 'self'"
 		Permissions-Policy "geolocation=(), microphone=(), camera=(), fullscreen=(), payment=()"
 	}
+
+	@safeline_keepalive {
+		path /
+		query _sl=*
+	}
+	respond @safeline_keepalive 204
 
 	# Reverse proxy for /api -- explicit timeouts for large file
 	# downloads and uploads that can run for several minutes.
 	reverse_proxy /api/* http://127.0.0.1:{$BACKEND_PORT:8080} {
+		lb_try_duration 5s
+		lb_try_interval 250ms
 		transport http {
 			response_header_timeout 600s
 			dial_timeout 30s

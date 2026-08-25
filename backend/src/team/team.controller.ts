@@ -291,6 +291,12 @@ export class TeamController {
     );
   }
 
+  @Delete(":teamId/team-key")
+  @UseGuards(JwtGuard)
+  clearTeamKey(@Param("teamId") teamId: string, @GetUser() user: User) {
+    return this.teamService.clearTeamKey(teamId, user.id);
+  }
+
   @Get(":teamId/shares")
   @UseGuards(JwtGuard)
   getTeamShares(@Param("teamId") teamId: string, @GetUser() user: User) {

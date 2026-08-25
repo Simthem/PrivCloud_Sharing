@@ -228,6 +228,12 @@ const Share = ({ shareId }: { shareId: string }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [error]);
 
+  const shouldShowDownloadAll =
+    (share?.files.length ?? 0) > 1 ||
+    !!share?.files.some(
+      (file: { relativePath?: string | null }) => !!file.relativePath,
+    );
+
   return (
     <>
       <Meta
@@ -275,7 +281,7 @@ const Share = ({ shareId }: { shareId: string }) => {
           )}
         </Box>
 
-        {share?.files.length > 1 && !isE2EMissingKey && (
+        {shouldShowDownloadAll && !isE2EMissingKey && (
           <DownloadAllButton
             shareId={shareId}
             isE2EEncrypted={share?.isE2EEncrypted}

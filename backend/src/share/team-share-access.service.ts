@@ -12,7 +12,6 @@ const ALLOW_PERMISSIONS = ["READ", "WRITE", "ADMIN"];
 const MANAGE_PERMISSIONS = ["WRITE", "ADMIN"];
 
 type TeamShareAccessOptions = {
-  allowPlatformAdmin?: boolean;
   forbidDeniedFiles?: boolean;
   requireDownload?: boolean;
 };
@@ -49,15 +48,12 @@ export class TeamShareAccessService {
     const membership = await this.assertTeamMembership(
       share.teamFolder.teamId,
       user,
-      options.allowPlatformAdmin,
     );
     await this.assertNoConflictingKeyRotation(
       share.teamFolder.teamId,
       share.isE2EEncrypted,
       user,
     );
-    if (!membership) return;
-
     const isTeamAdmin =
       membership.role === "OWNER" || membership.role === "ADMIN";
     if (isTeamAdmin) return;
@@ -110,7 +106,6 @@ export class TeamShareAccessService {
     shareId: string,
     fileId: string,
     user: User | undefined,
-    options: Pick<TeamShareAccessOptions, "allowPlatformAdmin"> = {},
   ): Promise<void> {
     const file = await this.prisma.file.findFirst({
       where: { id: fileId, shareId },
@@ -140,15 +135,12 @@ export class TeamShareAccessService {
     const membership = await this.assertTeamMembership(
       share.teamFolder.teamId,
       user,
-      options.allowPlatformAdmin,
     );
     await this.assertNoConflictingKeyRotation(
       share.teamFolder.teamId,
       share.isE2EEncrypted,
       user,
     );
-    if (!membership) return;
-
     const isTeamAdmin =
       membership.role === "OWNER" || membership.role === "ADMIN";
     if (isTeamAdmin) return;
@@ -194,12 +186,12 @@ export class TeamShareAccessService {
   async assertCanManageShare(
     shareId: string,
     user: User | undefined,
-    options: Pick<TeamShareAccessOptions, "allowPlatformAdmin"> = {},
   ): Promise<void> {
     const share = await this.prisma.share.findUnique({
       where: { id: shareId },
       select: {
         id: true,
+        isE2EEncrypted: true,
         teamFolderId: true,
         teamFolder: { select: { id: true, teamId: true } },
         files: { select: { id: true } },
@@ -218,10 +210,12 @@ export class TeamShareAccessService {
     const membership = await this.assertTeamMembership(
       share.teamFolder.teamId,
       user,
-      options.allowPlatformAdmin,
     );
-    if (!membership) return;
-
+    await this.assertNoConflictingKeyRotation(
+      share.teamFolder.teamId,
+      share.isE2EEncrypted,
+      user,
+    );
     const isTeamAdmin =
       membership.role === "OWNER" || membership.role === "ADMIN";
     if (isTeamAdmin) return;
@@ -264,19 +258,13 @@ export class TeamShareAccessService {
     }
   }
 
-  private async assertTeamMembership(
-    teamId: string,
-    user: User | undefined,
-    allowPlatformAdmin = false,
-  ) {
+  private async assertTeamMembership(teamId: string, user: User | undefined) {
     if (!user) {
       throw new UnauthorizedException(
         "Authentication is required for team shares",
         "team_share_auth_required",
       );
     }
-
-    if (allowPlatformAdmin && user.isAdmin) return null;
 
     const membership = await this.prisma.teamMember.findUnique({
       where: { userId_teamId: { userId: user.id, teamId } },

@@ -72,7 +72,7 @@ testCase("retains the file session while retrying a failed S3 chunk", async () =
 testCase("retains S3 multipart parts after a transient part failure", async () => {
   const shareId = "share-1";
   const fileId = "7352aeee-e01b-4dcc-a812-90d9e1647bed";
-  const reencryptKey = `reencrypt:${fileId}`;
+  const reencryptKey = `reencrypt:${shareId}:${fileId}`;
   const multipart = {
     uploadId: "upload-1",
     parts: [{ ETag: "etag-1", PartNumber: 1 }],

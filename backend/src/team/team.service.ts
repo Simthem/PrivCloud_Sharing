@@ -715,6 +715,59 @@ export class TeamService {
   }
 
   /**
+   * Drop the caller's copy of the Team key when it was sealed with a personal
+   * key that no longer exists. Other members' copies remain untouched.
+   */
+  async clearTeamKey(teamId: string, userId: string) {
+    const member = await this.prisma.teamMember.findUnique({
+      where: { userId_teamId: { userId, teamId } },
+    });
+    if (!member || !member.isActive) {
+      throw new ForbiddenException("Not a team member");
+    }
+
+    await this.prisma.teamMember.update({
+      where: { id: member.id },
+      data: {
+        wrappedTeamKey: null,
+        teamKeyVersion: 0,
+        teamKeyUpdatedAt: null,
+      },
+    });
+
+    const orphaned = await this.prisma.teamKeyRotation.findMany({
+      where: {
+        teamId,
+        startedById: userId,
+        status: { in: ["PREPARING", "REENCRYPTING", "PAUSED"] },
+      },
+      select: { id: true, processedFiles: true },
+    });
+    for (const rotation of orphaned) {
+      await this.prisma.teamKeyRotation.update({
+        where: { id: rotation.id },
+        data: {
+          status: "CANCELLED",
+          completedAt: new Date(),
+          errorMessage:
+            "Abandoned: the initiator's personal key is gone" +
+            (rotation.processedFiles > 0
+              ? ` -- ${rotation.processedFiles} file(s) were already re-encrypted with the new key and can no longer be opened`
+              : ""),
+        },
+      });
+    }
+
+    const actor = await this.prisma.user.findUnique({ where: { id: userId } });
+    await this.logAccess(teamId, "KEY_REVOKED", actor?.email || userId, {
+      actorName: actor?.username,
+      targetType: "TEAM_MEMBER",
+      targetId: member.id,
+    });
+    return { success: true };
+  }
+
+  /**
    * List all E2E-encrypted shares within a team's folders (used for key rotation re-encryption).
    * Accessible to OWNER and ADMIN who need to re-encrypt files after a key rotation.
    */
@@ -1849,6 +1902,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
 
     const folder = await this.prisma.teamFolder.findFirst({
       where: { id: folderId, teamId },
+      include: { _count: { select: { accessRules: true } } },
     });
     if (!folder) throw new NotFoundException("Folder not found");
 

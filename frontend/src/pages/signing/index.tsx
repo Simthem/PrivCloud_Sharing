@@ -139,7 +139,7 @@ const SigningIndexPage = () => {
   return (
     <>
       <Meta title={t("signing.title")} />
-      <Container size="lg" mt="xl" px={0}>
+      <Container size="lg" px={0}>
         <Group justify="space-between" mb="lg">
           <Title order={2}>
             <Group gap="xs">

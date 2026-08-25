@@ -1,5 +1,9 @@
 import { jwtDecode } from "jwt-decode";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  buildSignInRedirectPath,
+  isProtectedTeamContextPath,
+} from "./utils/authRedirect.util";
 
 // This middleware redirects based on different conditions:
 // - Authentication state
@@ -27,7 +31,6 @@ export async function proxy(request: NextRequest) {
       "/imprint",
       "/privacy",
       "/integrations",
-      "/install/beta/*",
     ]),
     admin: new Routes(["/admin/*"]),
     account: new Routes(["/account*"]),
@@ -76,6 +79,19 @@ export async function proxy(request: NextRequest) {
     }
   } catch {
     user = null;
+  }
+
+  // Team pages and Team-scoped uploads are never public, even when ordinary
+  // anonymous uploads are enabled. Run this before maintenance/public routing
+  // so authentication is always the first decision for this context.
+  const requestedPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+  if (isProtectedTeamContextPath(requestedPath) && !user && !hasActiveSession) {
+    const signInPath = buildSignInRedirectPath(requestedPath);
+    const url = request.nextUrl.clone();
+    const qIdx = signInPath.indexOf("?");
+    url.pathname = signInPath.substring(0, qIdx);
+    url.search = signInPath.substring(qIdx);
+    return NextResponse.redirect(url);
   }
 
   // Maintenance mode: redirect upload pages to /maintenance
@@ -185,10 +201,7 @@ export async function proxy(request: NextRequest) {
   if (new Routes(["/sign/*"]).contains(route)) {
     const response = NextResponse.next();
     response.headers.set("Cache-Control", "no-store, max-age=0");
-    response.headers.set(
-      "X-Robots-Tag",
-      "noindex, nofollow, noarchive",
-    );
+    response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
     response.headers.set("Referrer-Policy", "no-referrer");
     return response;
   }

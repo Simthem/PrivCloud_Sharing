@@ -19,7 +19,7 @@ const TeamStatusChecker = () => {
   const { data: status } = useQuery({
     queryKey: ["teams.status"],
     queryFn: () => teamService.getTeamStatus(),
-    enabled: !!user && !user.isAdmin, // Don't check for SaaS admins
+    enabled: !!user && !user.isAdmin, // Platform admins are not Team members.
     staleTime: 120_000,
   });
 

@@ -1,3 +1,4 @@
+import "@mantine/core/styles/Accordion.css";
 import {
   Accordion,
   ActionIcon,
@@ -337,7 +338,7 @@ const MyShares = () => {
   };
 
   // -- Copier le lien reverse share avec fragment E2E si applicable --
-  // Cache des clés K_rs déchiffrées : reverseShareId → base64url de K_rs
+  // Cache des clés K_rs déchiffrées : reverseShareId -> base64url de K_rs
   const [rsKeyCache, setRsKeyCache] = useState<Record<string, string>>({});
 
   const unwrapRsKey = useCallback(

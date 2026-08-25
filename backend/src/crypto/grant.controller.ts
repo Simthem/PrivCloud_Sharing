@@ -9,7 +9,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { Throttle } from "@nestjs/throttler";
+import { minutes, Throttle } from "@nestjs/throttler";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { User } from "@prisma/client";
@@ -39,7 +39,7 @@ export class AccessGrantController {
    */
   @Post()
   @UseGuards(JwtGuard)
-  @Throttle({ default: { ttl: 60, limit: 100 } })
+  @Throttle({ default: { ttl: minutes(1), limit: 100 } })
   async createGrant(@GetUser() user: User, @Body() dto: CreateAccessGrantDTO) {
     return this.grantService.createGrant(user.id, dto);
   }
@@ -50,7 +50,7 @@ export class AccessGrantController {
    */
   @Post("bulk")
   @UseGuards(JwtGuard)
-  @Throttle({ default: { ttl: 60, limit: 10 } })
+  @Throttle({ default: { ttl: minutes(1), limit: 10 } })
   async createBulkGrants(@GetUser() user: User, @Body() dto: BulkCreateGrantsDTO) {
     const result = await this.grantService.createBulkGrants(user.id, dto);
 

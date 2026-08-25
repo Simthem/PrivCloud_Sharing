@@ -10,7 +10,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
-import { Throttle } from "@nestjs/throttler";
+import { minutes, Throttle } from "@nestjs/throttler";
 import { User } from "@prisma/client";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
@@ -43,7 +43,7 @@ export class ReverseShareController {
   @Throttle({
     default: {
       limit: 20,
-      ttl: 60,
+      ttl: minutes(1),
     },
   })
   @Get(":reverseShareToken")

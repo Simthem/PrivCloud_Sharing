@@ -78,6 +78,19 @@ export type MyShare = Omit<Share, "hasPassword"> & {
   security: MyShareSecurity;
 };
 
+export type AdminShare = {
+  /** Opaque audit reference; never a public share URL identifier. */
+  reference: string;
+  creator?: { username: string };
+  views: number;
+  createdAt: Date;
+  expiration: Date;
+  size: number;
+  fileCount: number;
+  isE2EEncrypted: boolean;
+  status: "READY" | "UPLOADING";
+};
+
 export type MyReverseShare = {
   id: string;
   name?: string;

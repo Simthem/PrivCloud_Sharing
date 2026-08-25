@@ -4,6 +4,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  Header,
   HttpCode,
   Param,
   Post,
@@ -13,7 +14,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { Throttle } from "@nestjs/throttler";
+import { hours, minutes, Throttle } from "@nestjs/throttler";
 import { User } from "@prisma/client";
 import { Request, Response } from "express";
 import moment from "moment";
@@ -36,6 +37,10 @@ import { ShareService } from "./share.service";
 import { CompletedShareDTO } from "./dto/shareComplete.dto";
 import { ConfigService } from "../config/config.service";
 import { SafeIdPipe } from "./pipe/safeId.pipe";
+import {
+  anonymousShareSessionCookieName,
+  anonymousShareSessionCookiePath,
+} from "./anonymous-share-session.util";
 @Controller("shares")
 export class ShareController {
   constructor(
@@ -46,9 +51,12 @@ export class ShareController {
   ) {}
 
   @Get("all")
+  @Header("Cache-Control", "private, no-store")
   @UseGuards(JwtGuard, AdministratorGuard)
   async getAllShares() {
-    return new AdminShareDTO().fromList(await this.shareService.getShares());
+    return new AdminShareDTO().fromList(
+      await this.shareService.getAdminShares(),
+    );
   }
 
   @Get()
@@ -91,9 +99,9 @@ export class ShareController {
    * The key is encrypted with K_master - the server never sees K_rs in clear.
    *
    * Returns:
-   *  - 200 { encryptedReverseShareKey: null }   → not a reverse share (use K_master)
-   *  - 200 { encryptedReverseShareKey: "..." }  → reverse share key (unwrap with K_master)
-   *  - 403                                       → reverse share but user is not owner
+   *  - 200 { encryptedReverseShareKey: null }   -> not a reverse share (use K_master)
+   *  - 200 { encryptedReverseShareKey: "..." }  -> reverse share key (unwrap with K_master)
+   *  - 403                                       -> reverse share but user is not owner
    */
   @Get(":id/e2e-key")
   @UseGuards(JwtGuard)
@@ -103,12 +111,12 @@ export class ShareController {
   ) {
     const result = await this.shareService.getEncryptedReverseShareKey(id);
 
-    // Not a reverse share or no encrypted key stored → client should use K_master
+    // Not a reverse share or no encrypted key stored -> client should use K_master
     if (!result) {
       return { encryptedReverseShareKey: null };
     }
 
-    // Reverse share exists but user is not authenticated or not the owner → 403
+    // Reverse share exists but user is not authenticated or not the owner -> 403
     if (!user || result.creatorId !== user.id) {
       throw new ForbiddenException("Not the reverse share owner");
     }
@@ -121,18 +129,36 @@ export class ShareController {
   async create(
     @Body() body: CreateShareDTO,
     @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
     @GetUser() user: User,
   ) {
     const { reverse_share_token } = request.cookies;
     // Strip captchaToken - it was consumed by AltchaGuard and must not reach Prisma.
     const { captchaToken: _, ...shareData } = body;
-    return new ShareDTO().from(
-      await this.shareService.create(
-        shareData as CreateShareDTO,
-        user,
-        reverse_share_token,
-      ),
+    const share = await this.shareService.create(
+      shareData as CreateShareDTO,
+      user,
+      reverse_share_token,
     );
+
+    if (!share.creatorId) {
+      const crypto = await import("crypto");
+      const sessionToken = crypto.randomBytes(32).toString("base64url");
+      const tokenHash = crypto
+        .createHash("sha256")
+        .update(sessionToken)
+        .digest("hex");
+      await this.shareService.setAnonymousSessionToken(share.id, tokenHash);
+      response.cookie(anonymousShareSessionCookieName(share.id), sessionToken, {
+        path: anonymousShareSessionCookiePath(share.id),
+        httpOnly: true,
+        secure: this.config.get("general.secureCookies"),
+        sameSite: "strict",
+        maxAge: 24 * 60 * 60 * 1000,
+      });
+    }
+
+    return new ShareDTO().from(share);
   }
 
   @Post(":id/complete")
@@ -149,8 +175,16 @@ export class ShareController {
     );
   }
 
+  @Post(":id/upload-heartbeat")
+  @HttpCode(204)
+  @Throttle({ default: { limit: 60, ttl: hours(1) } })
+  @UseGuards(CreateShareGuard, ShareOwnerGuard)
+  async keepUploadAlive(@Param("id", SafeIdPipe) id: string) {
+    await this.shareService.keepUploadAlive(id);
+  }
+
   @Post(":id/bridge-upload-token")
-  @Throttle({ default: { limit: 120, ttl: 3600 } })
+  @Throttle({ default: { limit: 120, ttl: hours(1) } })
   @UseGuards(ShareOwnerGuard)
   async createBridgeUploadToken(
     @Param("id", SafeIdPipe) id: string,
@@ -169,15 +203,38 @@ export class ShareController {
 
   @Delete(":id")
   @UseGuards(ShareOwnerGuard)
-  async remove(@Param("id", SafeIdPipe) id: string, @GetUser() user: User) {
-    const isDeleterAdmin = user?.isAdmin === true;
-    await this.shareService.remove(id, isDeleterAdmin);
+  async remove(
+    @Param("id", SafeIdPipe) id: string,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const anonymousCookieName = anonymousShareSessionCookieName(id);
+    await this.shareService.remove(
+      id,
+      false,
+      request.cookies?.reverse_share_token,
+      request.cookies?.[anonymousCookieName],
+    );
+    response.clearCookie(anonymousCookieName, {
+      path: anonymousShareSessionCookiePath(id),
+      secure: this.config.get("general.secureCookies"),
+      sameSite: "strict",
+    });
+  }
+
+  @Delete("admin/:reference")
+  @HttpCode(204)
+  @UseGuards(JwtGuard, AdministratorGuard)
+  async removeFromAdminInventory(
+    @Param("reference", SafeIdPipe) reference: string,
+  ) {
+    await this.shareService.removeByAdminReference(reference);
   }
 
   @Throttle({
     default: {
       limit: 10,
-      ttl: 60,
+      ttl: minutes(1),
     },
   })
   @Get("isShareIdAvailable/:id")
@@ -189,7 +246,7 @@ export class ShareController {
   @Throttle({
     default: {
       limit: 20,
-      ttl: 5 * 60,
+      ttl: minutes(5),
     },
   })
   @UseGuards(ShareTokenSecurity, AltchaGuard)

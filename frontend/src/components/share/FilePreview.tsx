@@ -18,73 +18,45 @@ const Markdown = dynamic(() => import("markdown-to-jsx"), { ssr: false });
 import React, { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { FormattedMessage } from "react-intl";
 import api from "../../services/api.service";
-import { fetchDecryptedFile } from "../../services/share.service";
+import {
+  fetchDecryptedFile,
+  fetchDecryptedFilePrefix,
+} from "../../services/share.service";
+import {
+  isPreviewMimeTypeSupported,
+  isTextBasedMimeType,
+  sniffPreviewMimeType,
+} from "../../utils/filePreview.util";
 
-/**
- * MIME types that are safe to preview as raw text / code.
- * These are non-dangerous structured or code files with
- * application/* MIME types (text/* is already handled).
- */
-const TEXT_SAFE_APPLICATION_TYPES = new Set([
-  "application/json",
-  "application/ld+json",
-  "application/manifest+json",
-  "application/schema+json",
-  "application/vnd.api+json",
-  "application/xml",
-  "application/xhtml+xml",
-  "application/javascript",
-  "application/x-javascript",
-  "application/ecmascript",
-  "application/typescript",
-  "application/x-sh",
-  "application/x-shellscript",
-  "application/x-python",
-  "application/x-perl",
-  "application/x-ruby",
-  "application/x-php",
-  "application/x-httpd-php",
-  "application/sql",
-  "application/graphql",
-  "application/toml",
-  "application/x-toml",
-  "application/yaml",
-  "application/x-yaml",
-  "application/x-latex",
-  "application/x-tex",
-  "application/x-csh",
-]);
-
-/**
- * Returns true when the given MIME type is safe (no XSS / code execution
- * risk when rendered as plain text) and can be previewed in the browser.
- */
-export const isTextBasedMimeType = (mimeType: string): boolean => {
-  if (mimeType.startsWith("text/")) return true;
-  if (TEXT_SAFE_APPLICATION_TYPES.has(mimeType)) return true;
-  // Structured suffixes: application/vnd.foo+json, +xml, +yaml
-  if (/^application\/.*\+(json|xml|yaml)$/.test(mimeType)) return true;
-  return false;
-};
+export { isTextBasedMimeType } from "../../utils/filePreview.util";
 
 // ── Security helpers for text previews ──────────────────────────────
 
 /** Maximum characters of text content to render in preview (1 MiB). */
 const MAX_TEXT_PREVIEW_CHARS = 1024 * 1024;
+const MAX_TEXT_PREVIEW_BYTES = MAX_TEXT_PREVIEW_CHARS;
+const MIME_SNIFF_BYTES = 64 * 1024;
 
-/**
- * Defence-in-depth: guarantee a value is a renderable string.
- * Prevents React error #31 ("Objects are not valid as a React child")
- * when Axios silently auto-parses a JSON response body into an object.
- */
-const ensureString = (value: unknown): string => {
-  if (typeof value === "string") return value;
-  if (value == null) return "";
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
+const fetchPreviewPrefix = async (
+  shareId: string,
+  fileId: string,
+  e2eKey: string | null | undefined,
+  maxBytes: number,
+  signal: AbortSignal,
+): Promise<ArrayBuffer> => {
+  if (e2eKey) {
+    return fetchDecryptedFilePrefix(shareId, fileId, e2eKey, maxBytes, signal);
   }
+
+  const response = await api.get(
+    `/shares/${shareId}/files/${fileId}?download=false`,
+    {
+      responseType: "arraybuffer",
+      headers: { Range: `bytes=0-${maxBytes - 1}` },
+      signal,
+    },
+  );
+  return response.data as ArrayBuffer;
 };
 
 /** Truncate a string if it exceeds the safe preview limit. */
@@ -94,10 +66,13 @@ const truncateForPreview = (s: string): string =>
       "\n\n[… truncated — file too large for preview]"
     : s;
 
+const ensureString = (value: unknown): string =>
+  typeof value === "string" ? value : JSON.stringify(value, null, 2);
+
 /**
  * Normalise vendor video MIME types to standard ones so the browser
  * recognises them in Blob and &lt;source type&gt;.
- * e.g. video/x-m4v → video/mp4  (M4V is just an MP4 container)
+ * e.g. video/x-m4v -> video/mp4  (M4V is just an MP4 container)
  */
 const normalizeVideoMime = (m: string): string => {
   if (m === "video/x-m4v" || m === "video/x-mp4") return "video/mp4";
@@ -109,13 +84,17 @@ const FilePreviewContext = React.createContext<{
   shareId: string;
   fileId: string;
   mimeType: string;
+  fileSizeBytes?: number;
   e2eKey?: string | null;
+  setMimeType: Dispatch<SetStateAction<string>>;
   setIsNotSupported: Dispatch<SetStateAction<boolean>>;
 }>({
   shareId: "",
   fileId: "",
   mimeType: "",
+  fileSizeBytes: undefined,
   e2eKey: null,
+  setMimeType: () => {},
   setIsNotSupported: () => {},
 });
 
@@ -131,17 +110,26 @@ const useDecryptedBlobUrl = (mimeType: string) => {
       setLoading(false);
       return;
     }
+    const controller = new AbortController();
+    let active = true;
     let revoke: string | null = null;
-    fetchDecryptedFile(shareId, fileId, e2eKey)
+    fetchDecryptedFile(shareId, fileId, e2eKey, controller.signal)
       .then((decrypted) => {
+        if (!active) return;
         const blob = new Blob([decrypted], { type: mimeType });
         const url = URL.createObjectURL(blob);
         revoke = url;
         setBlobUrl(url);
       })
-      .catch(() => setIsNotSupported(true))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (active && !controller.signal.aborted) setIsNotSupported(true);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     return () => {
+      active = false;
+      controller.abort();
       if (revoke) URL.revokeObjectURL(revoke);
     };
   }, [shareId, fileId, e2eKey, mimeType, setIsNotSupported]);
@@ -153,22 +141,36 @@ const FilePreview = ({
   shareId,
   fileId,
   mimeType,
+  fileSizeBytes,
   e2eKey,
 }: {
   shareId: string;
   fileId: string;
   mimeType: string;
+  fileSizeBytes?: number;
   e2eKey?: string | null;
 }) => {
   const [isNotSupported, setIsNotSupported] = useState(false);
+  const [resolvedMimeType, setResolvedMimeType] = useState(mimeType);
+
+  useEffect(() => setResolvedMimeType(mimeType), [mimeType]);
+
   if (isNotSupported) return <UnSupportedFile />;
 
   return (
     <Stack>
       <FilePreviewContext.Provider
-        value={{ shareId, fileId, mimeType, e2eKey, setIsNotSupported }}
+        value={{
+          shareId,
+          fileId,
+          mimeType: resolvedMimeType,
+          fileSizeBytes,
+          e2eKey,
+          setMimeType: setResolvedMimeType,
+          setIsNotSupported,
+        }}
       >
-        <FileDecider />
+        {resolvedMimeType ? <FileDecider /> : <FileTypeDetector />}
       </FilePreviewContext.Provider>
       {!e2eKey && (
         <Button
@@ -182,6 +184,59 @@ const FilePreview = ({
         </Button>
       )}
     </Stack>
+  );
+};
+
+const FileTypeDetector = () => {
+  const {
+    shareId,
+    fileId,
+    fileSizeBytes,
+    e2eKey,
+    setMimeType,
+    setIsNotSupported,
+  } = React.useContext(FilePreviewContext);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+
+    fetchPreviewPrefix(
+      shareId,
+      fileId,
+      e2eKey,
+      MIME_SNIFF_BYTES,
+      controller.signal,
+    )
+      .then((prefix) => {
+        if (!active) return;
+        const detected = sniffPreviewMimeType(new Uint8Array(prefix));
+        if (
+          detected &&
+          isPreviewMimeTypeSupported(detected, {
+            fileSizeBytes,
+            isE2EEncrypted: Boolean(e2eKey),
+          })
+        ) {
+          setMimeType(detected);
+        } else {
+          setIsNotSupported(true);
+        }
+      })
+      .catch(() => {
+        if (active && !controller.signal.aborted) setIsNotSupported(true);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [shareId, fileId, fileSizeBytes, e2eKey, setMimeType, setIsNotSupported]);
+
+  return (
+    <Center style={{ minHeight: 200 }}>
+      <Loader />
+    </Center>
   );
 };
 
@@ -304,30 +359,36 @@ const TextPreview = () => {
   const isPlainText = mimeType === "text/plain";
 
   useEffect(() => {
-    if (e2eKey) {
-      fetchDecryptedFile(shareId, fileId, e2eKey)
-        .then((buf) => {
-          const decoded = new TextDecoder().decode(buf);
-          setText(truncateForPreview(decoded));
-        })
-        .catch(() => setText("Impossible de charger l'aperçu."))
-        .finally(() => setLoading(false));
-    } else {
-      // responseType: "text" prevents Axios from auto-parsing JSON files
-      // into objects (which would crash React - error #31).
-      api
-        .get(`/shares/${shareId}/files/${fileId}?download=false`, {
-          responseType: "text",
-        })
-        .then((res) =>
-          setText(
-            truncateForPreview(ensureString(res.data)) ||
-              "Impossible de charger l'aperçu.",
-          ),
-        )
-        .catch(() => setText("Impossible de charger l'aperçu."))
-        .finally(() => setLoading(false));
-    }
+    const controller = new AbortController();
+    let active = true;
+
+    fetchPreviewPrefix(
+      shareId,
+      fileId,
+      e2eKey,
+      MAX_TEXT_PREVIEW_BYTES,
+      controller.signal,
+    )
+      .then((buf) => {
+        if (!active) return;
+        const decoded = new TextDecoder().decode(buf);
+        setText(
+          truncateForPreview(decoded) || "Impossible de charger l'aperçu.",
+        );
+      })
+      .catch(() => {
+        if (active && !controller.signal.aborted) {
+          setText("Impossible de charger l'aperçu.");
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [shareId, fileId, e2eKey]);
 
   if (loading)

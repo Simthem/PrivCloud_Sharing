@@ -36,7 +36,6 @@ For installation specific configuration, you can use environment variables. The 
 | `CONFIG_FILE`    | `../config.yaml`                                   | Path to the configuration file                                                                           |
 | `CLAMAV_HOST`    | `127.0.0.1` or `clamav` when running with Docker   | The IP address of the ClamAV server. See the [ClamAV docs](integrations.md#clamav) for more information. |
 | `CLAMAV_PORT`    | `3310`                                             | The port number of the ClamAV server.                                                                    |
-
 #### Frontend
 
 | Variable  | Default Value           | Description                              |

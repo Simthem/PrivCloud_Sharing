@@ -1,3 +1,5 @@
+import "@mantine/core/styles/Accordion.css";
+import "@mantine/core/styles/Switch.css";
 import {
   Accordion,
   Button,

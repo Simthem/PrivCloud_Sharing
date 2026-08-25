@@ -11,7 +11,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
-import { Throttle } from "@nestjs/throttler";
+import { minutes, Throttle } from "@nestjs/throttler";
 import { User } from "@prisma/client";
 import { Request, Response } from "express";
 import { ConfigService } from "src/config/config.service";
@@ -23,6 +23,7 @@ import { AuthSignInDTO } from "./dto/authSignIn.dto";
 import { AuthSignInTotpDTO } from "./dto/authSignInTotp.dto";
 import { EnableTotpDTO } from "./dto/enableTotp.dto";
 import { ResetPasswordDTO } from "./dto/resetPassword.dto";
+import { ResetPasswordRequestDTO } from "./dto/resetPasswordRequest.dto";
 
 import { UpdatePasswordDTO } from "./dto/updatePassword.dto";
 import { VerifyTotpDTO } from "./dto/verifyTotp.dto";
@@ -37,69 +38,71 @@ export class AuthController {
     private config: ConfigService,
   ) {}
 
+  private issueTokens(
+    response: Response,
+    refreshToken?: string,
+    accessToken?: string,
+  ): Record<string, never> {
+    this.authService.addTokensToResponse(response, refreshToken, accessToken);
+    // The public web client receives session tokens only as HttpOnly cookies.
+    return {};
+  }
+
   @Post("signUp")
   @Throttle({
     default: {
       limit: 10,
-      ttl: 5 * 60,
+      ttl: minutes(5),
     },
   })
   @UseGuards(AltchaGuard)
   async signUp(
     @Body() dto: AuthRegisterDTO,
-    @Req() { ip }: Request,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
     if (!this.config.get("share.allowRegistration"))
       throw new ForbiddenException("Registration is not allowed");
 
-    const result = await this.authService.signUp(dto, ip);
+    const result = await this.authService.signUp(dto, request.ip);
 
-    this.authService.addTokensToResponse(
-      response,
-      result.refreshToken,
-      result.accessToken,
-    );
-
-    // SECURITY: Only return user info; tokens are in HttpOnly cookies
-    return { user: result.user };
+    return {
+      user: result.user,
+      ...this.issueTokens(response, result.refreshToken, result.accessToken),
+    };
   }
 
   @Post("signIn")
   @Throttle({
     default: {
       limit: 10,
-      ttl: 5 * 60,
+      ttl: minutes(5),
     },
   })
   @UseGuards(AltchaGuard)
   async signIn(
     @Body() dto: AuthSignInDTO,
-    @Req() { ip }: Request,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const result = await this.authService.signIn(dto, ip);
+    const result = await this.authService.signIn(dto, request.ip);
 
-    if (result.accessToken && result.refreshToken) {
-      this.authService.addTokensToResponse(
-        response,
-        result.refreshToken,
-        result.accessToken,
-      );
-    }
-
-    // SECURITY: Only return loginToken (for TOTP flow) if present; tokens are in HttpOnly cookies
+    // TOTP flow: no session yet, only a short-lived login token. Nothing to
+    // issue on either channel until the second factor is verified.
     if (result.loginToken) {
       return { loginToken: result.loginToken };
     }
-    return {};
+
+    if (!result.accessToken || !result.refreshToken) return {};
+
+    return this.issueTokens(response, result.refreshToken, result.accessToken);
   }
 
   @Post("signIn/totp")
   @Throttle({
     default: {
       limit: 10,
-      ttl: 5 * 60,
+      ttl: minutes(5),
     },
   })
   @HttpCode(200)
@@ -109,35 +112,28 @@ export class AuthController {
   ) {
     const result = await this.authTotpService.signInTotp(dto);
 
-    this.authService.addTokensToResponse(
-      response,
-      result.refreshToken,
-      result.accessToken,
-    );
-
-    // SECURITY: Tokens are in HttpOnly cookies; no need to expose in body
-    return {};
+    return this.issueTokens(response, result.refreshToken, result.accessToken);
   }
 
   @Post("resetPassword/request")
   @Throttle({
     default: {
       limit: 10,
-      ttl: 5 * 60,
+      ttl: minutes(5),
     },
   })
   @UseGuards(AltchaGuard)
   @HttpCode(202)
-  async requestResetPassword(@Body("email") email: string) {
+  async requestResetPassword(@Body() dto: ResetPasswordRequestDTO) {
     // SECURITY: Email moved from URL param to body to avoid logging in access logs
-    await this.authService.requestResetPassword(email);
+    await this.authService.requestResetPassword(dto.email);
   }
 
   @Post("resetPassword")
   @Throttle({
     default: {
       limit: 10,
-      ttl: 5 * 60,
+      ttl: minutes(5),
     },
   })
   @HttpCode(204)
@@ -158,9 +154,9 @@ export class AuthController {
       dto.oldPassword,
     );
 
-    this.authService.addTokensToResponse(response, result.refreshToken);
-    // SECURITY: Tokens are set in HttpOnly cookies - do not leak in response body
-    return {};
+    // The password change revoked every previous refresh token; hand the
+    // freshly issued one back so the client keeps its session.
+    return this.issueTokens(response, result.refreshToken);
   }
 
   @Post("token")
@@ -169,18 +165,12 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    if (!request.cookies.refresh_token) throw new UnauthorizedException();
+    const refreshToken = request.cookies.refresh_token;
+    if (!refreshToken) throw new UnauthorizedException();
 
-    const result = await this.authService.refreshAccessToken(
-      request.cookies.refresh_token,
-    );
-    this.authService.addTokensToResponse(
-      response,
-      result.refreshToken,
-      result.accessToken,
-    );
-    // SECURITY: Tokens are set in HttpOnly cookies - do not leak in response body
-    return {};
+    const result = await this.authService.refreshAccessToken(refreshToken);
+
+    return this.issueTokens(response, result.refreshToken, result.accessToken);
   }
 
   @Get("session")

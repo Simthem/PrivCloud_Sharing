@@ -646,6 +646,10 @@ function getStorageSlot(): string {
   return ["privcloud", "e2e", "session", "key"].join("_");
 }
 
+function getBackupRequiredStorageSlot(): string {
+  return ["privcloud", "e2e", "backup", "required"].join("_");
+}
+
 export function storeUserKey(encodedKey: string): void {
   try {
     sessionStorage.setItem(getStorageSlot(), encodedKey);
@@ -667,8 +671,36 @@ export function getUserKey(): string | null {
 export function removeUserKey(): void {
   try {
     sessionStorage.removeItem(getStorageSlot());
+    sessionStorage.removeItem(getBackupRequiredStorageSlot());
+    window.dispatchEvent(new Event("e2e-key-removed"));
   } catch {
     // silencieux
+  }
+}
+
+/** Mark an automatically generated personal key as not backed up yet. */
+export function markUserKeyBackupRequired(): void {
+  try {
+    sessionStorage.setItem(getBackupRequiredStorageSlot(), "1");
+  } catch {
+    // SSR or unavailable sessionStorage -- the upload remains encrypted.
+  }
+}
+
+/** Clear the reminder after a concrete backup/recovery action. */
+export function clearUserKeyBackupRequired(): void {
+  try {
+    sessionStorage.removeItem(getBackupRequiredStorageSlot());
+  } catch {
+    // silencieux
+  }
+}
+
+export function isUserKeyBackupRequired(): boolean {
+  try {
+    return sessionStorage.getItem(getBackupRequiredStorageSlot()) === "1";
+  } catch {
+    return false;
   }
 }
 
@@ -843,6 +875,27 @@ export async function unwrapReverseShareKey(
 /**
  * Crée un lien de téléchargement pour un Blob déchiffré.
  */
+export function isStaleTeamKeyError(error: unknown): boolean {
+  const name = (error as { name?: string } | null)?.name;
+  return (
+    name === "OperationError" ||
+    name === "DataError" ||
+    name === "InvalidCharacterError"
+  );
+}
+
+export async function canUnwrapWithMasterKey(
+  encryptedBase64: string,
+  masterKey: CryptoKey,
+): Promise<boolean> {
+  try {
+    await unwrapReverseShareKey(encryptedBase64, masterKey);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function downloadDecryptedBlob(blob: Blob, filename: string): void {
   // Sanitize filename: strip path separators and null bytes to prevent path traversal
   const safeName = filename.replace(/[/\\\0]/g, "_").replace(/^\.\./, "_");

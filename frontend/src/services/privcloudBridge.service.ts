@@ -1,4 +1,4 @@
-import { WebDavCredentials, WebDavEntry } from "./webdav.service";
+import type { WebDavCredentials, WebDavEntry } from "./webdav.service";
 
 const BRIDGE_BASE_URLS = [
   "http://127.0.0.1:47631/v1",
@@ -17,6 +17,7 @@ export type BridgeHealth = {
     directBrowserImport: boolean;
     managedEncryptedUpload: boolean;
     localTokenAuthorization?: boolean;
+    openSourceLocalAuthorization?: boolean;
     nativeMessaging?: boolean;
     browserExtension?: boolean;
     mailAssistants?: boolean;
@@ -74,6 +75,13 @@ export type StartBridgeWebDavUploadJobPayload = {
   >;
 };
 
+export class BridgeUnavailableError extends Error {
+  constructor(cause?: unknown) {
+    super("bridge.error.unavailable", { cause });
+    this.name = "BridgeUnavailableError";
+  }
+}
+
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem(TOKEN_STORAGE_KEY);
@@ -95,10 +103,15 @@ async function bridgeFetch(
   options: { auth?: boolean } = {},
 ) {
   const token = getToken();
-  const preferred =
+  const storedBaseUrl =
     typeof window !== "undefined"
       ? window.localStorage.getItem(BASE_URL_STORAGE_KEY)
       : null;
+  // Never send the local bearer token to a URL read directly from storage.
+  // Only the two hard-coded loopback endpoints are valid Bridge targets.
+  const preferred = BRIDGE_BASE_URLS.includes(storedBaseUrl || "")
+    ? storedBaseUrl
+    : null;
   const bases = [
     ...(preferred ? [preferred] : []),
     ...BRIDGE_BASE_URLS.filter((url) => url !== preferred),
@@ -126,13 +139,16 @@ async function bridgeFetch(
       }
       break;
     } catch (e) {
-      if (baseUrl === bases[bases.length - 1]) throw e;
+      if (init.signal?.aborted) throw e;
+      if (baseUrl === bases[bases.length - 1]) {
+        throw new BridgeUnavailableError(e);
+      }
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
     }
   }
 
-  if (!response) throw new Error("Bridge unavailable");
+  if (!response) throw new BridgeUnavailableError();
 
   if (response.status === 401) {
     clearToken();
@@ -157,7 +173,10 @@ export async function getBridgeHealth(): Promise<BridgeHealth | null> {
   } catch {
     // On mobile (Android/iOS), the PNA preflight may take longer on first
     // contact. Retry once after a short delay before giving up.
-    if (typeof navigator !== "undefined" && /Android|iPhone|iPad/i.test(navigator.userAgent)) {
+    if (
+      typeof navigator !== "undefined" &&
+      /Android|iPhone|iPad/i.test(navigator.userAgent)
+    ) {
       try {
         await new Promise((r) => setTimeout(r, 1200));
         const retry = await bridgeFetch("/health", {}, { auth: false });
@@ -197,11 +216,15 @@ export async function confirmBridgePairing(
 }
 
 export async function authorizeBridge(): Promise<void> {
-  const response = await bridgeFetch("/tokens", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ label: window.location.origin }),
-  }, { auth: false });
+  const response = await bridgeFetch(
+    "/tokens",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: window.location.origin }),
+    },
+    { auth: false },
+  );
   if (response.status === 404) {
     throw new Error("bridge.error.updateRequired");
   }
@@ -329,6 +352,17 @@ export async function waitForBridgeUploadJob(
 
 export function hasBridgeToken(): boolean {
   return !!getToken();
+}
+
+/** Reject older Companion builds that do not implement the OSS contract. */
+export function isOpenSourceBridgeCompatible(
+  health: BridgeHealth | null,
+): boolean {
+  return !!(
+    health?.capabilities.webdav &&
+    health.capabilities.localTokenAuthorization === true &&
+    health.capabilities.openSourceLocalAuthorization === true
+  );
 }
 
 export function forgetBridgeToken() {

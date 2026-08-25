@@ -64,14 +64,7 @@ frontend/public/img/*_orig
 *_old
 *_orig
 
-# Android Companion beta source is committed; generated Gradle output is not.
-/integrations/android-share-target/.gradle/
-/integrations/android-share-target/build/
-/integrations/android-share-target/app/build/
-/integrations/ios-share-extension/
-/integrations/mobile-pwa/
-/frontend/public/install/beta/privcloud-android-share-target-*
-!/frontend/public/install/beta/privcloud-android-share-target-*-debug.apk
-!/frontend/public/install/beta/privcloud-android-companion-*-debug.apk
-/frontend/public/install/beta/privcloud-ios-share-extension-*
-/frontend/public/install/beta/privcloud-mobile-pwa-share-target-*
+# Non-OSS beta artifacts must never be published by this source tree.
+/frontend/public/install/beta/
+/bridge/dist/
+/integrations/dist/

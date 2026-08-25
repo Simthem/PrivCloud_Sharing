@@ -60,9 +60,6 @@ export class ShareSecurityGuard extends JwtGuard {
     const isShareCreator = user && share.creatorId === user.id;
 
     if (share.teamFolderId) {
-      const allowPlatformAdmin = this.configService.get(
-        "share.allowAdminAccessAllShares",
-      );
       const fileId =
         typeof request.params.fileId === "string"
           ? request.params.fileId
@@ -73,12 +70,9 @@ export class ShareSecurityGuard extends JwtGuard {
           shareId,
           fileId,
           user,
-          { allowPlatformAdmin },
         );
       } else {
-        await this.teamShareAccessService.assertCanAccessShare(shareId, user, {
-          allowPlatformAdmin,
-        });
+        await this.teamShareAccessService.assertCanAccessShare(shareId, user);
       }
     }
 
@@ -108,15 +102,6 @@ export class ShareSecurityGuard extends JwtGuard {
           "Share token required",
           "share_token_required",
         );
-    }
-
-    // Admin bypass: allows access to all shares but does NOT skip
-    // password/token protection (handled above).
-    if (
-      user?.isAdmin &&
-      this.configService.get("share.allowAdminAccessAllShares")
-    ) {
-      return true;
     }
 
     // Restrict access to reverse share results.

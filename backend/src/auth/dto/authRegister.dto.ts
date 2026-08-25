@@ -1,5 +1,5 @@
 import { PickType } from "@nestjs/swagger";
-import { IsOptional, IsString } from "class-validator";
+import { IsOptional, IsString, MaxLength } from "class-validator";
 import { UserDTO } from "src/user/dto/user.dto";
 
 export class AuthRegisterDTO extends PickType(UserDTO, [
@@ -9,5 +9,6 @@ export class AuthRegisterDTO extends PickType(UserDTO, [
 ] as const) {
   @IsString()
   @IsOptional()
+  @MaxLength(16_384)
   captchaToken?: string;
 }

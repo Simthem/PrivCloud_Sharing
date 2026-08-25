@@ -40,11 +40,11 @@ installed in the current user's browser profile locations.
 
 ## Release Checklist
 
-1. Build beta artifacts with `scripts/release/build-beta-install-artifacts.sh`.
+1. Generate the Companion with `npm run build:companion` and these helpers with
+   `npm run build:integrations -- --base-url https://your-instance`.
 2. Build production installers that embed the Companion runtime.
 3. Replace browser extension IDs after each store creates the production item.
 4. Run the registration script during install and during app repair/update.
 5. Sign Windows packages with timestamping.
 6. Sign and notarize macOS packages with Apple Developer ID.
 7. Publish SHA-256 checksums and detached signatures alongside downloads.
-

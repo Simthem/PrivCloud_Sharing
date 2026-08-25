@@ -32,7 +32,7 @@ const LanguagePicker = () => {
         const targetLocale = value?.startsWith("en") ? "en" : "fr";
         if (targetLocale !== router.locale) {
           const prefix = targetLocale === "en" ? "/en" : "";
-          window.location.href = `${prefix}${router.asPath}`;
+          void router.push(`${prefix}${router.asPath}`);
         } else {
           location.reload();
         }

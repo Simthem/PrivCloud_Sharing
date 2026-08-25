@@ -106,7 +106,7 @@ export class PdfSigningService {
 
       // Set metadata
       pdfDoc.setProducer("PrivCloud Sharing - Signature Électronique eIDAS PAdES-B-T");
-      pdfDoc.setCreator("PrivCloud Sharing SAAS");
+      pdfDoc.setCreator("PrivCloud Sharing");
 
       // Add the /Sig placeholder - signatureLength is in hex chars (2 per byte)
       // 32768 hex chars = 16384 bytes capacity for CMS + TSA timestamp token

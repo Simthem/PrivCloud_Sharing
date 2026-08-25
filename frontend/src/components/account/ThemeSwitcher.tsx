@@ -1,3 +1,4 @@
+import "@mantine/core/styles/SegmentedControl.css";
 import {
   Box,
   Center,

@@ -57,7 +57,7 @@ export class DownloadNotificationService {
   // --- Resolve effective notification mode ---------------------------------
   private async getNotificationMode(share: Share): Promise<string> {
     if (!share.creatorId) {
-      // Anonymous creator → forced DIGEST
+      // Anonymous creator -> forced DIGEST
       return "DIGEST";
     }
 

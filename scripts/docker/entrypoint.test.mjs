@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -15,9 +15,11 @@ const Database = backendRequire("better-sqlite3");
 const entrypointUrl = pathToFileURL(
   path.resolve(backendDirectory, "..", "scripts", "docker", "entrypoint.mjs"),
 );
-const { publicParitySchemaIsReady, reconcileSqliteMigrations } = await import(
-  `${entrypointUrl.href}?unit-test`
-);
+const {
+  ensureSqliteDatabase,
+  publicParitySchemaIsReady,
+  reconcileSqliteMigrations,
+} = await import(`${entrypointUrl.href}?unit-test`);
 
 function createPartiallyMigratedDatabase(databasePath) {
   const database = new Database(databasePath);
@@ -161,4 +163,27 @@ test("does not re-add consolidated signing page columns", () => {
   );
   assert.doesNotMatch(migration, /ADD COLUMN "signaturePage"/);
   assert.doesNotMatch(migration, /ADD COLUMN "watermarkPage"/);
+});
+
+test("initializes a missing SQLite database before Prisma preflight", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "privcloud-sqlite-init-"));
+  const databasePath = path.join(directory, "nested", "fresh.db");
+
+  try {
+    assert.equal(existsSync(databasePath), false);
+    assert.equal(ensureSqliteDatabase(databasePath), true);
+    assert.equal(existsSync(databasePath), true);
+    assert.equal(ensureSqliteDatabase(databasePath), false);
+
+    const database = new Database(databasePath, { readonly: true });
+    assert.deepEqual(
+      database
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all(),
+      [],
+    );
+    database.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

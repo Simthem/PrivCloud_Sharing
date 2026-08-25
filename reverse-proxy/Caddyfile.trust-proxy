@@ -10,11 +10,20 @@
 		X-XSS-Protection "1; mode=block"
 		X-Download-Options "noopen"
 		X-Permitted-Cross-Domain-Policies "none"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'self' blob:; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss: http://localhost:47631 http://127.0.0.1:47631; worker-src 'self' blob:; media-src 'self' blob:; manifest-src 'self'"
 		Permissions-Policy "geolocation=(), microphone=(), camera=(), fullscreen=(), payment=()"
 	}
 
+	@safeline_keepalive {
+		path /
+		query _sl=*
+	}
+	respond @safeline_keepalive 204
+
 	# Reverse proxy for /api
-	reverse_proxy /api/* http://localhost:{$BACKEND_PORT:8080} {
+	reverse_proxy /api/* http://127.0.0.1:{$BACKEND_PORT:8080} {
+		lb_try_duration 5s
+		lb_try_interval 250ms
 		# Trust only loopback + RFC-1918 private ranges (Docker bridge/overlay
 		# networks and the upstream Nginx reverse proxy on the host).
 		# NEVER use 0.0.0.0/0 - it lets any client spoof X-Forwarded-For.
@@ -30,7 +39,7 @@
 	}
 
 	# Reverse proxy for all other requests
-	reverse_proxy /* http://localhost:{$PORT:3333} {
+	reverse_proxy /* http://127.0.0.1:{$PORT:3333} {
 		trusted_proxies 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
 		header_up -Via
 		header_down -Via

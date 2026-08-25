@@ -144,7 +144,7 @@ export const preparePadesPdf = async (
   const [certPageCopy] = await pdfDoc.copyPages(certDoc, [0]);
   pdfDoc.addPage(certPageCopy);
   pdfDoc.setProducer("PrivCloud Sharing - Signature Électronique eIDAS PAdES-B-T");
-  pdfDoc.setCreator("PrivCloud Sharing SAAS");
+  pdfDoc.setCreator("PrivCloud Sharing");
   addSignaturePlaceholder(pdfDoc);
 
   const bytes = new Uint8Array(await pdfDoc.save({ useObjectStreams: false }));

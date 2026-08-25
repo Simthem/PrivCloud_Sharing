@@ -9,19 +9,27 @@ import Dropzone from "../../components/upload/Dropzone";
 import FileList from "../../components/upload/FileList";
 import useConfig from "../../hooks/config.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
+import useUser from "../../hooks/user.hook";
 import useWakeLock from "../../hooks/useWakeLock.hook";
+import configService from "../../services/config.service";
 import shareService from "../../services/share.service";
 import { FileListItem, FileMetaData, FileUpload } from "../../types/File.type";
 import toast from "../../utils/toast.util";
-import {
-  getUserKey,
-  importKeyFromBase64,
-} from "../../utils/crypto.util";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { getUserKey, importKeyFromBase64 } from "../../utils/crypto.util";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   getAdaptiveChunkSize,
+  measureBandwidthForUpload,
+  prewarmUploadBandwidth,
   uploadFileViaWorker,
 } from "../../utils/upload.util";
+import {
+  clampUploadChunkSizeLimit,
+  getRuntimeUploadChunkConfigKey,
+  getUploadChunkProfile,
+  getUploadChunkSizeLimit,
+  getUploadSchedulingProfile,
+} from "../../utils/uploadPerformance.util";
 
 let errorToastShown = false;
 
@@ -43,6 +51,7 @@ const EditableUpload = ({
   const modals = useModals();
   const queryClient = useQueryClient();
   const wakeLock = useWakeLock();
+  const { user } = useUser();
   const uploadAbortRef = useRef<AbortController | null>(null);
 
   const chunkSize = useRef(parseInt(config.get("share.chunkSize")));
@@ -51,6 +60,10 @@ const EditableUpload = ({
     useState<Array<FileMetaData & { deleted?: boolean }>>(savedFiles);
   const [uploadingFiles, setUploadingFiles] = useState<FileUpload[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+
+  useEffect(() => {
+    prewarmUploadBandwidth();
+  }, []);
 
   const existingAndUploadedFiles: FileListItem[] = useMemo(
     () => [...uploadingFiles, ...existingFiles],
@@ -74,38 +87,102 @@ const EditableUpload = ({
     setExistingFiles(_existingFiles);
   };
 
-  const { data: planMaxShareSize } = useQuery({
-    queryKey: ["uploadLimit"],
-    queryFn: async () => ({ maxSize: 0, usedSize: 0 }), // 0 = no limit
-    refetchInterval: Infinity,
-    refetchOnWindowFocus: false,
-  });
-
-  const rawEffectiveMaxShareSize = maxShareSize ?? planMaxShareSize?.maxSize ?? parseInt(config.get("share.maxSize"));
-  const effectiveMaxShareSize = rawEffectiveMaxShareSize === 0 ? Number.MAX_SAFE_INTEGER : rawEffectiveMaxShareSize;
+  const effectiveMaxShareSize =
+    maxShareSize ?? parseInt(config.get("share.maxSize"));
 
   const uploadFiles = async (files: FileUpload[]) => {
+    const uploadChunkProfile = {
+      isAuthenticated: !!user,
+    };
+    const runtimeUploadProfile = getUploadChunkProfile(uploadChunkProfile);
+    const runtimeUploadProfileKey =
+      getRuntimeUploadChunkConfigKey(runtimeUploadProfile);
+    const runtimeMaxChunkSizePromise = configService
+      .getRuntimeUploadMaxChunkSize(runtimeUploadProfile)
+      .catch(
+        () =>
+          config.get(runtimeUploadProfileKey) ??
+          config.get("runtime.uploadMaxChunkBytes"),
+      );
+
     // E2E: enforce encryption consistency -- if the share is encrypted,
     // uploading without a key would store plaintext files alongside
     // encrypted ones, corrupting the share integrity.
-    let e2eCryptoKey: CryptoKey | null = null;
+    let keyPromise: Promise<CryptoKey | null> = Promise.resolve(null);
     if (isE2EEncrypted) {
       const userKey = getUserKey();
       if (!userKey) {
         toast.error(t("share.edit.notify.e2e-key-missing"));
         throw new Error("E2E_KEY_MISSING");
       }
-      e2eCryptoKey = await importKeyFromBase64(userKey);
+      keyPromise = importKeyFromBase64(userKey);
     }
 
-    const effectiveChunkSize = await getAdaptiveChunkSize(chunkSize.current);
-    const uploadLimit = pLimit(3);
+    // Crypto preparation and the bounded, cached probe run concurrently.
+    const [e2eCryptoKey, measuredBandwidth, runtimeMaxChunkSize] =
+      await Promise.all([
+        keyPromise,
+        measureBandwidthForUpload(),
+        runtimeMaxChunkSizePromise,
+      ]);
+    const maxUploadChunkSize = clampUploadChunkSizeLimit(
+      getUploadChunkSizeLimit(uploadChunkProfile),
+      runtimeMaxChunkSize,
+    );
+    const effectiveChunkSizes = await Promise.all(
+      files.map((file) =>
+        getAdaptiveChunkSize(
+          chunkSize.current,
+          file.size,
+          measuredBandwidth,
+          maxUploadChunkSize,
+        ),
+      ),
+    );
+    const localFileIndexes = files
+      .map((_file, fileIndex) => fileIndex)
+      .filter((fileIndex) => !files[fileIndex].privcloudBridgeSource);
+    const hasBridgeUpload = localFileIndexes.length !== files.length;
+    const uploadSchedulingProfile = getUploadSchedulingProfile(
+      localFileIndexes.map((fileIndex) => files[fileIndex].size),
+      localFileIndexes.map((fileIndex) => effectiveChunkSizes[fileIndex]),
+      2,
+      hasBridgeUpload,
+    );
+    console.info(
+      `[upload] scheduler -> mode=${uploadSchedulingProfile.mode} ` +
+        `localFiles=${localFileIndexes.length} ` +
+        `fileConcurrency=${uploadSchedulingProfile.fileConcurrency} ` +
+        `lanePolicy=server-adaptive ` +
+        `protocolSafetyCap=${uploadSchedulingProfile.maxParallelLanes}`,
+    );
+    const uploadLimit = pLimit(uploadSchedulingProfile.fileConcurrency);
 
     const abortCtrl = new AbortController();
     uploadAbortRef.current = abortCtrl;
 
-    const fileUploadPromises = files.map((file, fileIndex) =>
+    const scheduledFiles = files.map((file, fileIndex) => ({
+      file,
+      fileIndex,
+    }));
+    if (uploadSchedulingProfile.mode === "server-managed") {
+      scheduledFiles.sort((left, right) => {
+        const leftIsMultipart =
+          !left.file.privcloudBridgeSource &&
+          left.file.size > effectiveChunkSizes[left.fileIndex];
+        const rightIsMultipart =
+          !right.file.privcloudBridgeSource &&
+          right.file.size > effectiveChunkSizes[right.fileIndex];
+        if (leftIsMultipart !== rightIsMultipart) {
+          return leftIsMultipart ? -1 : 1;
+        }
+        return left.fileIndex - right.fileIndex;
+      });
+    }
+
+    const fileUploadPromises = scheduledFiles.map(({ file, fileIndex }) =>
       uploadLimit(async () => {
+        const effectiveChunkSize = effectiveChunkSizes[fileIndex];
         const setFileProgress = (progress: number) => {
           setUploadingFiles((files) =>
             files.map((f, i) => {
@@ -115,35 +192,30 @@ const EditableUpload = ({
           );
         };
 
-        setFileProgress(1);
-
-        const totalChunks = Math.max(
-          1,
-          Math.ceil(file.size / effectiveChunkSize),
-        );
+        setFileProgress(0);
 
         try {
           await uploadFileViaWorker(
             file,
             shareId,
             effectiveChunkSize,
-            totalChunks,
             !!isE2EEncrypted,
             e2eCryptoKey,
-            (chunkIndex, totalChunks) => {
-              setFileProgress(((chunkIndex + 1) / totalChunks) * 100);
+            (_chunkIndex, _totalChunks, _fileId, uploadedBytes) => {
+              setFileProgress(
+                Math.min(100, (uploadedBytes / Math.max(file.size, 1)) * 100),
+              );
             },
             abortCtrl.signal,
             file.uploadRelativePath,
+            uploadSchedulingProfile.maxParallelLanes,
+            uploadSchedulingProfile.fileConcurrency,
           );
         } catch (e: any) {
           if (e?.cancelled) return; // user cancelled
-          if (
-            e?.status === 413 ||
-            (e?.status === 403 && e?.quota)
-          ) {
+          if (e?.status === 413 || e?.sizeLimit) {
             if (!errorToastShown) {
-              toast.error(e?.message || "Quota exceeded");
+              toast.error(e?.message || "Configured size limit exceeded");
               errorToastShown = true;
             }
           }
@@ -211,10 +283,22 @@ const EditableUpload = ({
     setIsUploading(true);
     await wakeLock.acquire();
     let reverted = false;
+    let uploadHeartbeat: ReturnType<typeof setInterval> | null = null;
+    let uploadHeartbeatInFlight = false;
 
     try {
       await revertComplete();
       reverted = true;
+      uploadHeartbeat = setInterval(() => {
+        if (uploadHeartbeatInFlight) return;
+        uploadHeartbeatInFlight = true;
+        void shareService
+          .keepUploadAlive(shareId)
+          .catch(() => {})
+          .finally(() => {
+            uploadHeartbeatInFlight = false;
+          });
+      }, 2 * 60_000);
 
       await uploadFiles(uploadingFiles);
 
@@ -239,17 +323,19 @@ const EditableUpload = ({
         toast.error(t("share.edit.notify.generic-error"));
       }
     } finally {
-      // CRITICAL: Always re-lock the share to prevent cron deletion.
-      // If revertComplete was called but completeShare did not succeed,
-      // the share is in uploadLocked=false state and the cron job
-      // deleteUnfinishedShares would permanently delete it after 24h.
+      if (uploadHeartbeat) clearInterval(uploadHeartbeat);
+
+      // Restore the published state immediately when possible. The persistent
+      // completion marker remains the final safety net if this request cannot
+      // reach the backend: cleanup will re-lock the edit without deleting it.
       if (reverted) {
         try {
           await completeShare();
         } catch {
           // completeShare may fail (e.g. share has 0 files after all
-          // uploads failed). The cron grace period was reset by
-          // revertComplete (createdAt = now), giving 24h to retry.
+          // uploads failed). The completion marker ensures the inactivity
+          // cleanup preserves and re-locks the existing share even if this
+          // best-effort call fails.
         }
       }
       setIsUploading(false);
@@ -258,6 +344,7 @@ const EditableUpload = ({
   };
 
   const appendFiles = (appendingFiles: FileUpload[]) => {
+    if (appendingFiles.length > 0) prewarmUploadBandwidth(true);
     setUploadingFiles([...appendingFiles, ...uploadingFiles]);
   };
 
@@ -283,13 +370,18 @@ const EditableUpload = ({
 
         setUploadingFiles((prev) =>
           prev.map((f) => {
-            if (f.uploadingProgress !== undefined && f.uploadingProgress < 100) {
+            if (
+              f.uploadingProgress !== undefined &&
+              f.uploadingProgress < 100
+            ) {
               f.uploadingProgress = -1;
             }
             return f;
           }),
         );
-        toast.success(t("upload.cancel.done", { defaultMessage: "Envoi annulé" }));
+        toast.success(
+          t("upload.cancel.done", { defaultMessage: "Envoi annulé" }),
+        );
       },
     });
   };
@@ -314,7 +406,7 @@ const EditableUpload = ({
       cleanNotifications();
       errorToastShown = false;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uploadingFiles]);
 
   return (

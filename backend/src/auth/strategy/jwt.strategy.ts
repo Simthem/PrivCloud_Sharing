@@ -1,6 +1,5 @@
 import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
-import { User } from "@prisma/client";
 import { Request } from "express";
 import { Strategy } from "passport-jwt";
 import { ConfigService } from "src/config/config.service";
@@ -16,17 +15,32 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: JwtStrategy.extractJWT,
       secretOrKey: config.get("internal.jwtSecret"),
+      algorithms: ["HS256"],
     });
   }
 
   private static extractJWT(req: Request) {
-    if (!req.cookies.access_token) return null;
-    return req.cookies.access_token;
+    return req.cookies?.access_token || null;
   }
 
-  async validate(payload: { sub: string }) {
-    const user: User = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
+  async validate(payload: { sub?: string; refreshTokenId?: string }) {
+    if (!payload.sub || !payload.refreshTokenId) {
+      throw new UnauthorizedException();
+    }
+
+    // Validate the JWT and its backing session in one indexed lookup. Deleting
+    // a refresh-token row on sign-out
+    // or password reset therefore revokes the associated access token too.
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: payload.sub,
+        refreshTokens: {
+          some: {
+            id: payload.refreshTokenId,
+            expiresAt: { gt: new Date() },
+          },
+        },
+      },
     });
     if (!user) throw new UnauthorizedException();
     return user;

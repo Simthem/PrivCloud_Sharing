@@ -5,40 +5,42 @@ import {
   LogLevel,
   ValidationPipe,
 } from "@nestjs/common";
-import { NestFactory, Reflector } from "@nestjs/core";
+import { HttpAdapterHost, NestFactory, Reflector } from "@nestjs/core";
 import { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
+import { NextFunction, Request, Response } from "express";
 import helmet from "helmet";
 import * as fs from "fs";
 import { AppModule } from "./app.module";
+import {
+  isProbeRequest,
+  PROBE_MAX_BODY_BYTES,
+  validateProbeBody,
+  validateProbeContentLength,
+} from "./probe/probe-validation.util";
 import { AbortedRequestFilter } from "./aborted-request.filter";
-import { ConfigService } from "./config/config.service";
 import {
   DATA_DIRECTORY,
   LOG_LEVEL_AVAILABLE,
   LOG_LEVEL_DEFAULT,
   LOG_LEVEL_ENV,
 } from "./constants";
-
-const DEFAULT_MAX_UPLOAD_CHUNK_BYTES = 200_000_000;
-const MAX_UPLOAD_CHUNK_BYTES = Math.max(
-  1,
-  parseInt(
-    process.env.UPLOAD_MAX_CHUNK_BYTES || `${DEFAULT_MAX_UPLOAD_CHUNK_BYTES}`,
-    10,
-  ) || DEFAULT_MAX_UPLOAD_CHUNK_BYTES,
-);
+import {
+  ANONYMOUS_MAX_UPLOAD_CHUNK_BYTES,
+  AUTHENTICATED_MAX_UPLOAD_CHUNK_BYTES,
+  getMaxUploadPayloadBytes,
+  MAX_UPLOAD_CHUNK_BYTES,
+  MIN_ENCRYPTION_CHUNK_BYTES,
+} from "./file/upload-limit.util";
+import { markUploadRequestStarted } from "./file/upload-timing.util";
 
 // Suppress DEP0060 (util._extend) emitted by internal Node.js / third-party
 // dependencies on Node 24+. The API is deprecated but still works; the warning
 // is noise we cannot fix upstream.
 const _originalEmit = process.emit.bind(process);
 (process as any).emit = (event: string, ...args: any[]) => {
-  if (
-    event === "warning" &&
-    args[0]?.code === "DEP0060"
-  ) {
+  if (event === "warning" && args[0]?.code === "DEP0060") {
     return false;
   }
   return _originalEmit(event, ...args);
@@ -54,9 +56,10 @@ const _originalEmit = process.emit.bind(process);
 // because undici@latest resolved to a version with diverging internals.
 //
 // Fix: replace globalThis.fetch() with the npm undici's fetch() bound to
-// a ProxyAgent.  This ensures ALL outgoing fetch() calls (hCaptcha, OAuth,
+// a ProxyAgent.  This ensures ALL outgoing fetch() calls (OAuth,
 // etc.) go through the forward proxy.
 const proxyUrl =
+  process.env.GLOBAL_AGENT_HTTPS_PROXY ||
   process.env.GLOBAL_AGENT_HTTP_PROXY ||
   process.env.HTTPS_PROXY ||
   process.env.HTTP_PROXY ||
@@ -73,6 +76,7 @@ if (proxyUrl) {
     undici.setGlobalDispatcher(dispatcher);
 
     // Replace the built-in fetch() so ALL call sites automatically proxy.
+    const _nativeFetch = globalThis.fetch;
     globalThis.fetch = ((
       input: string | URL | globalThis.Request,
       init?: RequestInit,
@@ -82,12 +86,13 @@ if (proxyUrl) {
         dispatcher,
       })) as typeof globalThis.fetch;
 
+    // SECURITY: Log only host/port - never expose proxy credentials
     const safeProxyUrl = (() => {
       try {
-        const url = new URL(proxyUrl);
-        url.username = "";
-        url.password = "";
-        return url.toString();
+        const u = new URL(proxyUrl);
+        u.username = "";
+        u.password = "";
+        return u.toString();
       } catch {
         return "[invalid URL]";
       }
@@ -97,7 +102,9 @@ if (proxyUrl) {
     );
   } catch (err: any) {
     console.error(`[Proxy] Failed to load undici: ${err.message}`);
-    console.error(`[Proxy] OAuth / hCaptcha calls to external providers may fail/timeout.`);
+    console.error(
+      `[Proxy] OAuth calls to external providers may fail/timeout.`,
+    );
   }
 }
 
@@ -165,22 +172,121 @@ async function bootstrap() {
     }),
   );
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
-  app.useGlobalFilters(new AbortedRequestFilter());
+  app.useGlobalFilters(
+    new AbortedRequestFilter(app.get(HttpAdapterHost).httpAdapter),
+  );
 
-  const config = app.get<ConfigService>(ConfigService);
+  // Timestamp the streaming upload as soon as its headers reach Express.
+  // S3FileService later reports requestToS3Ms, which includes parsers, guards,
+  // authorization, share validation, DB work, multipart init and semaphore wait.
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    if (
+      req.method === "POST" &&
+      req.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase() ===
+        "application/vnd.privcloud.chunk"
+    ) {
+      markUploadRequestStarted(req);
+    }
+    next();
+  });
+
+  // Reject oversized or ambiguous bandwidth probes before any body parser
+  // allocates memory. A dedicated raw parser then applies the same 8 MB ceiling,
+  // and the post-parser check verifies that the body really matches the
+  // declared length and media type.
+  const validatedProbeLengths = new WeakMap<Request, number>();
+  const rejectProbe = (
+    res: Response,
+    validation: {
+      statusCode: 400 | 411 | 413 | 415;
+      message: string;
+    },
+  ) =>
+    res.status(validation.statusCode).json({
+      statusCode: validation.statusCode,
+      message: validation.message,
+      error:
+        validation.statusCode === 413
+          ? "Payload Too Large"
+          : validation.statusCode === 415
+            ? "Unsupported Media Type"
+            : validation.statusCode === 411
+              ? "Length Required"
+              : "Bad Request",
+    });
+
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (!isProbeRequest(req)) return next();
+
+    const validation = validateProbeContentLength(
+      req.headers["content-length"],
+    );
+    if (validation.ok === false) {
+      rejectProbe(res, validation);
+      return;
+    }
+
+    validatedProbeLengths.set(req, validation.length);
+    next();
+  });
+  app.useBodyParser("raw", {
+    type: (req) => isProbeRequest(req as Request),
+    limit: PROBE_MAX_BODY_BYTES,
+  });
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (!isProbeRequest(req)) return next();
+
+    const declaredLength = validatedProbeLengths.get(req);
+    const validation =
+      declaredLength === undefined
+        ? validateProbeContentLength(undefined)
+        : validateProbeBody(
+            req.body,
+            declaredLength,
+            req.headers["content-type"],
+          );
+    if (validation.ok === false) {
+      rejectProbe(res, validation);
+      return;
+    }
+    next();
+  });
 
   // Register body parsers via NestJS's useBodyParser() so the rawBody
-  app.useBodyParser("json", { limit: "50mb" });
-  app.useBodyParser("urlencoded", { limit: "50mb", extended: true });
+  // wrapper preserves raw-body access for endpoints that validate signed data.
+  // SECURITY: Limit JSON/urlencoded to 10MB to mitigate DoS via large payloads.
+  // No legitimate JSON payload should exceed this.
+  app.useBodyParser("json", { limit: "10mb" });
+  app.useBodyParser("urlencoded", { limit: "2mb", extended: true });
 
-  // Adaptive chunk sizing: the frontend may send chunks up to the configured
-  // upload ceiling based on measured bandwidth. Express buffers the entire raw
-  // body in RAM, so tune NODE_MAX_OLD_SPACE_SIZE and Docker mem_limit together.
-  // E2E encrypted chunks add 28 bytes (12 IV + 16 GCM tag).
-  const chunkSize = config.get("share.chunkSize");
-  const rawLimit = Math.max(chunkSize, MAX_UPLOAD_CHUNK_BYTES) + 128;
+  // Adaptive chunk sizing: the frontend sends chunks based on measured
+  // bandwidth. Express buffers the entire raw body in RAM, so production
+  // deployments can lower UPLOAD_MAX_CHUNK_BYTES on small VMs.
+  // E2E transport chunks contain independently authenticated records, each
+  // adding a 12-byte IV and a 16-byte GCM tag.
+  // `share.chunkSize` is a legacy/adaptive preference, not permission to
+  // widen the process safety ceiling. The controller separately applies the
+  // lower anonymous/authenticated instance profile.
+  const rawPlainLimit = MAX_UPLOAD_CHUNK_BYTES;
+  const rawLimit =
+    getMaxUploadPayloadBytes(
+      rawPlainLimit,
+      rawPlainLimit,
+      MIN_ENCRYPTION_CHUNK_BYTES,
+    ) + 128;
+  new Logger("UploadLimits").log(
+    `hard=${MAX_UPLOAD_CHUNK_BYTES} anonymous=${ANONYMOUS_MAX_UPLOAD_CHUNK_BYTES} ` +
+      `authenticated=${AUTHENTICATED_MAX_UPLOAD_CHUNK_BYTES} ` +
+      `rawPayload=${rawLimit}`,
+  );
   app.useBodyParser("raw", {
-    type: "application/octet-stream",
+    type: (req) => {
+      if (isProbeRequest(req as Request)) return false;
+      return (
+        req.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase() ===
+        "application/octet-stream"
+      );
+    },
     limit: rawLimit,
   });
 
@@ -222,8 +328,8 @@ async function bootstrap() {
   // Scenario: Caddy reuses a keepalive TCP connection that was idle for
   // slightly more than Node.js's keepAliveTimeout (default: 5 s). Node.js
   // has already sent FIN / RST on that socket, but Caddy hasn't received
-  // it yet when it dispatches the next request → "use of closed network
-  // connection" → Caddy returns 502.
+  // it yet when it dispatches the next request -> "use of closed network
+  // connection" -> Caddy returns 502.
   //
   // Fix: set keepAliveTimeout well above Caddy's backend idle timeout
   // (Caddy default is 30 s; we set 65 s so Node.js always outlasts Caddy).
@@ -233,7 +339,7 @@ async function bootstrap() {
   // Reference: https://nodejs.org/api/http.html#serverkeepalivetimeout
   const httpServer = app.getHttpServer() as import("http").Server;
   httpServer.keepAliveTimeout = 65_000; // 65 s  (> Caddy's 30 s default)
-  httpServer.headersTimeout = 66_000;   // 66 s  (> keepAliveTimeout)
+  httpServer.headersTimeout = 66_000; // 66 s  (> keepAliveTimeout)
 
   const logger = new Logger("UnhandledAsyncError");
   process.on("unhandledRejection", (e) => logger.error(e));

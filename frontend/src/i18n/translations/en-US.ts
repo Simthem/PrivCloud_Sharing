@@ -238,13 +238,6 @@ export default {
 
   // /account
   "account.title": "My account",
-  "account.upgrade.title": "Upgrade your plan",
-  "account.upgrade.description": "Upgrade for higher transfer limits, more storage, and exclusive features.",
-  "account.upgrade.cta": "Choose this plan",
-  "account.upgrade.per-month": "month",
-  "account.upgrade.transfer": "{amount} transfer",
-  "account.upgrade.storage": "{amount} storage",
-  "account.upgrade.current-plan": "Current plan: {plan}",
   "account.usage.title": "Usage",
   "account.usage.transfer": "Transfer: {used} / {total}",
   "account.usage.storage": "Storage: {used} / {total}",
@@ -525,6 +518,20 @@ export default {
   "admin.shares.table.username": "Creator",
   "admin.shares.table.visitors": "Visitors",
   "admin.shares.table.expires": "Expires on",
+  "admin.shares.table.audit-reference": "Audit reference",
+  "admin.shares.table.protection": "Protection",
+  "admin.shares.table.status": "Status",
+  "admin.shares.table.files": "Files",
+  "admin.shares.creator.anonymous": "Anonymous",
+  "admin.shares.file-count": "{count, plural, one {# file} other {# files}}",
+  "admin.shares.view-count": "{count, plural, one {# view} other {# views}}",
+  "admin.shares.protection.e2e": "End-to-end encrypted",
+  "admin.shares.protection.admin-blocked": "Admin access blocked",
+  "admin.shares.status.ready": "Ready",
+  "admin.shares.status.uploading": "Uploading",
+  "admin.shares.privacy.title": "Privacy-protected inventory",
+  "admin.shares.privacy.description":
+    "Public links, titles, descriptions, recipients and file names are hidden. Administrator privileges never grant access to user content; deletion uses only an opaque audit reference.",
 
   "admin.shares.edit.delete.title": "Delete share: {id}",
   "admin.shares.edit.delete.description":
@@ -555,6 +562,11 @@ export default {
   "upload.notify.retrying.message": "Chunk {chunk} failed (attempt {attempt}/{max}). Retrying in {delay}s…",
   "upload.notify.recovery.title": "Recovery mode",
   "upload.notify.recovery.message": "Too many consecutive errors. Pausing {pause}s before retrying (cycle {attempt}/{max}).",
+  "upload.notify.fileRetry.title": "Retrying file",
+  "upload.notify.fileRetry.message":
+    "{name} — attempt {attempt}/{max} in {delay}s",
+  "upload.notify.tab-discarded":
+    "The browser unloaded this tab to save memory, interrupting the upload. Start the upload again and keep this tab in the foreground for large transfers, or disable memory saving for this site.",
   "upload.bridge.error": "{fileName}: Bridge failed - {error}",
   "upload.reverse-share.error.invalid.title": "Invalid reverse share link",
   "upload.reverse-share.error.invalid.description":
@@ -574,10 +586,29 @@ export default {
   "upload.filelist.size": "Size",
   // Global upload progress
   "upload.progress.global": "Upload: {done}/{total} files",
-  "upload.quota.label": "Upload quota",
-  "upload.quota.exceeded":
+  "upload.size-limit.label": "Configured upload limit",
+  "upload.size-limit.exceeded":
     "Total file size exceeds the configured limit. Remove some files or ask the instance administrator to raise it.",
+  "upload.e2e.opt-out-warning":
+    "You deleted your E2E key and disabled automatic regeneration. This share will be protected in transit and at rest, but it will not be end-to-end encrypted. You can re-enable E2E from your account.",
+  "upload.e2e.configure": "Load my key",
+  "upload.e2e.reactivate": "Re-enable E2E",
+  "upload.e2e.restore-required":
+    "Your personal E2E key exists but is not loaded on this device. Restore it before uploading to this Team folder.",
+  "upload.e2e.storage-required":
+    "Secure local storage for your personal E2E key is unavailable. Unlock or reconfigure it before uploading.",
+  "upload.e2e.team-opt-out-required":
+    "You disabled personal E2E key generation. Re-enable E2E from your account before uploading to this encrypted Team folder.",
+  "upload.e2e.team-key-required":
+    "This Team folder requires your personal E2E key. Load or create it from your account before uploading.",
+  "upload.e2e.restore-warning":
+    "Your E2E key is not loaded on this device. Restore it to create end-to-end encrypted shares.",
+  "upload.e2e.first-key-warning":
+    "Create your personal E2E key to protect new shares with end-to-end encryption.",
   "upload.cancel.button": "Cancel",
+  "upload.cancel.title": "Cancel upload",
+  "upload.cancel.confirm":
+    "The current upload will be interrupted and the incomplete share deleted. Continue?",
 
   // showCreateUploadModal.tsx
   "upload.modal.title": "Create Share",
@@ -652,6 +683,7 @@ export default {
   "upload.modal.completed.share-ready": "Share ready",
   "upload.modal.completed.notified-reverse-share-creator":
     "We have notified the creator of the reverse share. You can also manually share this link with them through other means.",
+  "upload.modal.completed.e2e-backup-action": "Back up my E2E key",
 
   // Toast
   "upload.cancel.done": "Upload canceled",
@@ -662,10 +694,12 @@ export default {
     "PrivCloud Companion {version} is ready for WebDAV imports.",
   "bridge.status.enabled":
     "PrivCloud Companion is enabled for this WebDAV session.",
+  "bridge.status.saved":
+    "Companion activation is saved. Compatibility will be checked when connecting.",
   "bridge.status.detected":
     "PrivCloud Companion {version} detected. Enable it to keep WebDAV import zero-knowledge.",
   "bridge.status.proxyDefault":
-    "PrivCloud Companion is required for zero-knowledge WebDAV imports. Enable it before connecting your cloud.",
+    "Public HTTPS WebDAV clouds use the built-in proxy. Enable PrivCloud Companion only for a local/VPN cloud or a zero-knowledge transfer.",
   "bridge.status.unavailable":
     "PrivCloud Companion is not detected. Install or start it to import a WebDAV cloud without exposing files to the server.",
   "bridge.pair.start": "Enable",
@@ -674,6 +708,8 @@ export default {
   "bridge.toast.paired": "PrivCloud Companion enabled",
   "bridge.error.updateRequired":
     "PrivCloud Companion is detected, but this version does not support one-click enablement yet. Reinstall Companion from the Integrations page, then restart it.",
+  "bridge.error.openSourceUpdateRequired":
+    "This older Companion is not compatible with the open-source edition. Reinstall Companion from the Integrations page, then restart it.",
   "bridge.error.companionRequired":
     "PrivCloud Companion must be enabled to import from WebDAV in zero-knowledge mode.",
   "bridge.error.companionUpdateRequiredVpn":
@@ -691,6 +727,8 @@ export default {
     "The previous Bridge transfer was stopped because it was no longer progressing.",
   "bridge.error.tooManyJobs":
     "Too many Bridge transfers are already active. Wait for an active transfer to finish, then try again.",
+  "bridge.error.unavailable":
+    "PrivCloud Companion is unavailable. Start or reinstall it, then try again.",
   "webdav.endpoint.label": "WebDAV URL",
   "webdav.username.label": "Username",
   "webdav.password.label": "App password",
@@ -1270,7 +1308,7 @@ export default {
     "Protect sign in, sign up, password reset, anonymous upload, and share access with a self-hosted proof-of-work challenge.",
   "admin.config.altcha.language": "Language",
   "admin.config.altcha.language.description":
-    "Widget language loaded in the browser. fr-fr is the recommended default for this SaaS.",
+    "Widget language loaded in the browser. fr-fr is the recommended default for this application.",
   "admin.config.altcha.theme": "Theme",
   "admin.config.altcha.theme.description":
     "Widget visual theme. Lime is selected by default to match the application palette.",
@@ -1441,8 +1479,11 @@ export default {
   "account.e2e.button.revoke": "Delete key",
   "account.e2e.button.sskr": "Create recovery shards",
   "account.e2e.button.generate": "Generate an E2E key",
+  "account.e2e.button.reactivate": "Re-enable E2E and generate a key",
   "account.e2e.button.revokeAndCreate": "Delete old key and create a new one",
   "account.e2e.noKey": "No E2E key configured. Generate a key to enable end-to-end encryption on your future shares.",
+  "account.e2e.noKeyOptOut":
+    "You deleted your E2E key. No new key will be generated automatically and future shares will not be end-to-end encrypted. Use the button below only if you want to re-enable E2E.",
   "account.e2e.import.warning": "An E2E key is registered on your account but missing from this browser. Import it to access your encrypted shares.",
   "account.e2e.import.label": "Import your key",
   "account.e2e.import.placeholder": "Paste your secret key here...",
@@ -1482,6 +1523,10 @@ export default {
   "account.e2e.passkey.load": "Unlock from keychain (biometrics / PIN)",
   "account.e2e.passkey.load.success": "Key restored from system keychain",
   "account.e2e.passkey.load.error": "Failed to restore key from keychain",
+  "account.e2e.backupReminder.title":
+    "Back up the key for your first share now",
+  "account.e2e.backupReminder.body":
+    "The share you just created is already encrypted with this key. Copy it to a password manager, create SSKR shards, or protect it with the system keychain before closing this tab.",
 
   // SafeLine WAF 468 challenge notifications
   "safeline.notify.title": "Security verification required",
@@ -1965,6 +2010,7 @@ export default {
   "team.folder.action.request-signature": "Request a signature",
   "team.folder.action.delete-file": "Delete file",
   "team.folder.action.insufficient-access": "Insufficient access",
+  "team.folder.action.e2eShare": "Share E2EE",
 
   // --- Team dashboard (team/[id]/index.tsx) ---
   "team.dashboard.tabs.members": "Members",
@@ -2076,6 +2122,26 @@ export default {
   "team.dashboard.signatures.downloadError": "Unable to download signed document",
   "team.dashboard.signatures.untitled": "Untitled",
 
+  "team.e2e.share.title":
+    "Share {count, plural, one {# encrypted file} other {# encrypted files}}",
+  "team.e2e.share.desc":
+    "Grant selected Team members access to these end-to-end encrypted files. Only members with a personal encryption key can receive access.",
+  "team.e2e.share.filesLabel": "Files",
+  "team.e2e.share.moreFiles": "more files",
+  "team.e2e.share.recipientsLabel": "Recipients",
+  "team.e2e.share.selectAll": "Select all eligible",
+  "team.e2e.share.noMembers": "No eligible Team members.",
+  "team.e2e.share.uploader": "Uploader",
+  "team.e2e.share.legend.hasKeys": "Encryption key available",
+  "team.e2e.share.legend.noKeys": "No encryption key",
+  "team.e2e.share.cancel": "Cancel",
+  "team.e2e.share.submit":
+    "{count, plural, one {Share with # member} other {Share with # members}}",
+  "team.e2e.share.success":
+    "Shared {files, plural, one {# file} other {# files}} through {grants, plural, one {# access grant} other {# access grants}}.",
+  "team.e2e.share.partial":
+    "{success, plural, one {# access grant created} other {# access grants created}}; {failed, plural, one {# failed} other {# failed}}.",
+  "team.e2e.share.error": "Unable to share the encrypted files.",
   "team.dashboard.e2e.initButton": "Initialize E2E encryption",
   "team.dashboard.e2e.rotateButton": "Regenerate E2E key",
   "team.dashboard.e2e.keyReceivedSuccess": "Team E2E key received and stored successfully.",
@@ -2090,8 +2156,17 @@ export default {
   "team.dashboard.e2e.rotatePartialFail": "{n} file(s) could not be re-encrypted. Rotation cancelled.",
   "team.dashboard.e2e.noOtherMembers": "No other members to notify.",
   "team.dashboard.e2e.noKeyForInvite": "Team has no E2E key. Initialize E2E encryption first.",
+  "team.dashboard.e2e.staleKey.title": "Team E2E key unreadable",
+  "team.dashboard.e2e.staleKey.desc": "Your copy of this team's E2E key was sealed with a personal key that no longer exists.",
+  "team.dashboard.e2e.staleKey.adminHint": "Drop this obsolete copy, then ask another member who still holds the key to share it with you. If nobody has it anymore, you can initialize a new team key; files encrypted with the old key will stay unreadable.",
+  "team.dashboard.e2e.staleKey.memberHint": "Drop this obsolete copy, then ask an administrator to share the team key with you again.",
+  "team.dashboard.e2e.staleKey.clearButton": "Drop this obsolete key",
+  "team.dashboard.e2e.staleKey.cleared": "Obsolete key dropped. You can now receive the team key again.",
+  "team.dashboard.e2e.staleKey.clearError": "Could not drop the obsolete key.",
+  "team.dashboard.e2e.staleKey.toast": "Your personal key cannot open this team's E2E key. Drop the obsolete copy and have the key shared with you again.",
   "team.dashboard.e2e.banner.notInitTitle": "E2E encryption not initialized",
   "team.dashboard.e2e.banner.notInitDesc": "No E2E key is configured for this team. Initialize it to protect files.",
+  "team.dashboard.e2e.banner.askResharDesc": "You no longer hold this team's E2E key, but other members still do. Ask one of them to share it with you again; generating a new key would make existing files unreadable.",
   "team.dashboard.e2e.banner.missingTitle": "E2E key missing",
   "team.dashboard.e2e.banner.missingDesc": "You haven't received this team's E2E key yet. Ask your administrator to share it.",
   "team.dashboard.e2e.banner.activeTitle": "E2E encryption active",

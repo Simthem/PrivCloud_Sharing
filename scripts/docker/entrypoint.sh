@@ -36,6 +36,14 @@ DB_FILE="$DB_DIR/pingvin-share.db"
 DB_WAL="$DB_FILE-wal"
 DB_SHM="$DB_FILE-shm"
 
+# Prisma 7.9 checks SQLite connectivity before applying the first migration and
+# does not create a missing database file during that preflight. Initialise an
+# empty database so fresh self-hosted installations can migrate normally.
+mkdir -p "$DB_DIR"
+if [ ! -f "$DB_FILE" ]; then
+    NODE_OPTIONS='' node -e "new (require('better-sqlite3'))('$DB_FILE').close()"
+fi
+
 _db_diag() {
     _label="$1"
     echo "=== DB DIAG [$_label] ==="

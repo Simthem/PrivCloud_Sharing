@@ -88,7 +88,7 @@
     },
     {
       "src": "img/screenshots/mobile.png",
-      "sizes": "1080x2070",
+      "sizes": "1080x2270",
       "type": "image/png",
       "form_factor": "narrow",
       "label": "PrivCloud_Sharing mobile view"

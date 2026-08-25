@@ -1,3 +1,4 @@
+import "@mantine/core/styles/Accordion.css";
 import {
   Accordion,
   Alert,
@@ -32,6 +33,7 @@ import useTranslate, {
 } from "../../../hooks/useTranslate.hook";
 import shareService from "../../../services/share.service";
 import teamService from "../../../services/team.service";
+import { normalizeRecipientEmails } from "../../../utils/shareRecipient.util";
 import { FileUpload } from "../../../types/File.type";
 import { CreateShare } from "../../../types/share.type";
 import { getExpirationPreview } from "../../../utils/date.util";
@@ -50,7 +52,6 @@ const showCreateUploadModal = (
     userHasE2E: boolean;
     maxExpiration: Timespan;
     anonymousMaxExpiration: Timespan;
-    configuredMaxExpirationDays: number;
     shareIdLength: number;
     simplified: boolean;
     captchaEnabled?: boolean;
@@ -132,7 +133,6 @@ const CreateUploadModalBody = ({
     enableE2EKeyEmailSharing: boolean;
     maxExpiration: Timespan;
     anonymousMaxExpiration: Timespan;
-    configuredMaxExpirationDays: number;
     shareIdLength: number;
     captchaEnabled?: boolean;
     preselectedTeamFolderId?: string;
@@ -147,6 +147,10 @@ const CreateUploadModalBody = ({
   const captchaRef = useRef<AltchaWidgetHandle>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const showCaptcha = !options.isUserSignedIn && !!options.captchaEnabled;
+  const expirationLimit =
+    !options.isUserSignedIn && options.anonymousMaxExpiration.value !== 0
+      ? options.anonymousMaxExpiration
+      : options.maxExpiration;
 
   const handleCaptchaExpire = () => setCaptchaToken(null);
   const handleCaptchaError = () => {
@@ -334,42 +338,21 @@ const CreateUploadModalBody = ({
         ) as ManipulateType,
       );
 
-      // For authenticated users with a per-configured limit, use configuredMaxExpirationDays
-      // configuredMaxExpirationDays === 0 means unlimited (admin) -> no check
-      // For anonymous users, use anonymousMaxExpiration
-      // Fallback to global maxExpiration (only for anonymous without specific limit)
       let expirationExceeded = false;
       let maxHumanized = "";
 
-      if (options.isUserSignedIn && options.configuredMaxExpirationDays === 0) {
-        // Unlimited (admin) - no expiration enforcement
-      } else if (options.isUserSignedIn && options.configuredMaxExpirationDays > 0) {
-        // Per-configured limit (accounts for team membership)
-        const planMaxDate = dayjs().add(options.configuredMaxExpirationDays, "days");
-        if (form.values.never_expires || expirationDate.isAfter(planMaxDate)) {
-          expirationExceeded = true;
-          maxHumanized = dayjs.duration(options.configuredMaxExpirationDays, "days").humanize();
-        }
-      } else if (!options.isUserSignedIn && options.anonymousMaxExpiration.value !== 0) {
-        const anonMaxDate = dayjs().add(
-          options.anonymousMaxExpiration.value,
-          options.anonymousMaxExpiration.unit as ManipulateType,
+      if (expirationLimit.value !== 0) {
+        const maxDate = dayjs().add(
+          expirationLimit.value,
+          expirationLimit.unit as ManipulateType,
         );
-        if (form.values.never_expires || expirationDate.isAfter(anonMaxDate)) {
+        if (form.values.never_expires || expirationDate.isAfter(maxDate)) {
           expirationExceeded = true;
           maxHumanized = dayjs
-            .duration(options.anonymousMaxExpiration.value, options.anonymousMaxExpiration.unit as ManipulateType)
-            .humanize();
-        }
-      } else if (!options.isUserSignedIn && options.maxExpiration.value != 0) {
-        const globalMaxDate = dayjs().add(
-          options.maxExpiration.value,
-          options.maxExpiration.unit as ManipulateType,
-        );
-        if (form.values.never_expires || expirationDate.isAfter(globalMaxDate)) {
-          expirationExceeded = true;
-          maxHumanized = dayjs
-            .duration(options.maxExpiration.value, options.maxExpiration.unit as ManipulateType)
+            .duration(
+              expirationLimit.value,
+              expirationLimit.unit as ManipulateType,
+            )
             .humanize();
         }
       }
@@ -390,7 +373,7 @@ const CreateUploadModalBody = ({
           id: values.link,
           name: values.name,
           expiration: expirationString,
-          recipients: values.recipients,
+          recipients: normalizeRecipientEmails(values.recipients),
           description: values.description,
           security: {
             password: values.password || undefined,
@@ -506,7 +489,7 @@ const CreateUploadModalBody = ({
                   />
                 </Grid.Col>
               </Grid>
-              {options.isUserSignedIn && options.configuredMaxExpirationDays === 0 && (
+              {expirationLimit.value === 0 && (
                 <Checkbox
                   label={t("upload.modal.expires.never-long")}
                   {...form.getInputProps("never_expires")}
@@ -798,7 +781,6 @@ const SimplifiedCreateUploadModalModal = ({
     enableE2EKeyEmailSharing: boolean;
     maxExpiration: Timespan;
     anonymousMaxExpiration: Timespan;
-    configuredMaxExpirationDays: number;
     shareIdLength: number;
     captchaEnabled?: boolean;
   };
@@ -860,21 +842,14 @@ const SimplifiedCreateUploadModalModal = ({
       return;
     }
 
-    // Expiration defaults:
-    // - Anonymous: anonymousMaxExpiration (5d), fallback to maxExpiration
-    // - Signed-in with configured limit: configuredMaxExpirationDays
-    // - Admin (configuredMaxExpirationDays === 0): "never" (unlimited)
-    let expiration: string;
-    if (!options.isUserSignedIn && options.anonymousMaxExpiration.value !== 0) {
-      expiration = `${options.anonymousMaxExpiration.value}-${options.anonymousMaxExpiration.unit}`;
-    } else if (!options.isUserSignedIn && options.maxExpiration.value !== 0) {
-      expiration = `${options.maxExpiration.value}-${options.maxExpiration.unit}`;
-    } else if (options.isUserSignedIn && options.configuredMaxExpirationDays > 0) {
-      expiration = `${options.configuredMaxExpirationDays}-days`;
-    } else {
-      // Admin SaaS (configuredMaxExpirationDays === 0) = unlimited
-      expiration = "never";
-    }
+    const expirationLimit =
+      !options.isUserSignedIn && options.anonymousMaxExpiration.value !== 0
+        ? options.anonymousMaxExpiration
+        : options.maxExpiration;
+    const expiration =
+      expirationLimit.value === 0
+        ? "never"
+        : `${expirationLimit.value}-${expirationLimit.unit}`;
 
     const token = await resolveCaptchaToken();
     if (showCaptcha && !token) return;

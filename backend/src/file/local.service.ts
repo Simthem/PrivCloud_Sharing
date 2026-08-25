@@ -17,44 +17,25 @@ import { PrismaService } from "src/prisma/prisma.service";
 import { validate as isValidUUID } from "uuid";
 import { SHARE_DIRECTORY } from "../constants";
 import { Readable } from "stream";
-
-const DEFAULT_MAX_UPLOAD_CHUNK_BYTES = 200_000_000;
-const MAX_UPLOAD_CHUNK_BYTES = Math.max(
-  1,
-  parseInt(
-    process.env.UPLOAD_MAX_CHUNK_BYTES || `${DEFAULT_MAX_UPLOAD_CHUNK_BYTES}`,
-    10,
-  ) || DEFAULT_MAX_UPLOAD_CHUNK_BYTES,
-);
+import { MAX_UPLOAD_CHUNK_BYTES } from "./upload-limit.util";
 
 @Injectable()
 export class LocalFileService {
   private readonly logger = new Logger(LocalFileService.name);
-
-  // Cache configured limits per share to avoid a DB round-trip on every chunk.
-  // Key: shareId, Value: { limit, ts }
-  private configuredLimitCache = new Map<string, { limit: number; ts: number }>();
-  private static readonly CONFIGURED_LIMIT_TTL = 60_000; // 60s
 
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
   ) {}
 
-  private isUnsafeStorageSegment(segment: string): boolean {
-    return (
-      !segment ||
-      segment === "." ||
-      segment.includes("\0") ||
-      segment.includes("..") ||
-      segment.includes("/") ||
-      segment.includes("\\")
-    );
-  }
-
   private resolveSharePath(shareId: string, ...segments: string[]): string {
+    const forbidden = /[\/\\]|\.{2}|\x00/;
     const allSegments = [shareId, ...segments];
-    if (allSegments.some((segment) => this.isUnsafeStorageSegment(segment))) {
+    if (
+      allSegments.some(
+        (segment) => !segment || segment === "." || forbidden.test(segment),
+      )
+    ) {
       throw new BadRequestException("Invalid storage identifier");
     }
 
@@ -114,18 +95,30 @@ export class LocalFileService {
 
     // --- Parallelize independent I/O + DB lookups ---
     const tmpChunkPath = this.resolveSharePath(shareId, `${file.id}.tmp-chunk`);
-    const limitOwnerId =
-      share.reverseShare?.creatorId ?? share.creatorId ?? undefined;
-
-    const [diskFileSize, space, localLimit] = await Promise.all([
+    const [diskFileSize, space] = await Promise.all([
       // 1. Disk file size for chunk index validation
-      fs.stat(tmpChunkPath).then((s) => s.size).catch(() => 0),
+      fs
+        .stat(tmpChunkPath)
+        .then((s) => s.size)
+        .catch(() => 0),
       // 2. Available disk space
       fs.statfs(SHARE_DIRECTORY),
-      // 3. Configured limit (cached per share for 60s)
-      this.getCachedConfiguredLimit(shareId, limitOwnerId, share.reverseShare),
     ]);
-    const effectiveLimit = callerEffectiveLimit ?? localLimit;
+
+    // FileService normally supplies the effective self-hosted instance limit.
+    // Keep a local fallback for direct internal callers.
+    const configuredLimit = Number(this.config.get("share.maxSize"));
+    const reverseShareLimit = share.reverseShare?.maxShareSize
+      ? parseInt(share.reverseShare.maxShareSize)
+      : Infinity;
+    const effectiveLimit =
+      callerEffectiveLimit ??
+      Math.min(
+        Number.isFinite(configuredLimit) && configuredLimit > 0
+          ? configuredLimit
+          : Infinity,
+        reverseShareLimit,
+      );
 
     // If the sent chunk index and the expected chunk index doesn't match throw an error
     const configChunkSize = this.config.get("share.chunkSize");
@@ -141,7 +134,8 @@ export class LocalFileService {
     const cryptoRecordSize = encryptionChunkSize ?? chunkSize;
     const recordsPerTransportChunk = Math.ceil(chunkSize / cryptoRecordSize);
     // A transport chunk can contain several independently authenticated
-    // AES-GCM records. Account for every 12-byte IV + 16-byte tag.
+    // AES-GCM records. Account for every 12-byte IV + 16-byte tag when
+    // validating the append position on local storage.
     const effectiveChunkSize = share.isE2EEncrypted
       ? chunkSize + recordsPerTransportChunk * 28
       : chunkSize;
@@ -159,7 +153,7 @@ export class LocalFileService {
     }
 
     // data is already a Buffer from Express raw body parser.
-    // Avoid Buffer.from(data, "base64") which needlessly copies up to 200 MB.
+    // Avoid Buffer.from(data, "base64") which needlessly copies large chunks.
     const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, "base64");
 
     // Check if there is enough space on the server (space from parallel fetch)
@@ -202,18 +196,49 @@ export class LocalFileService {
       await fs.rename(tmpChunkPath, this.resolveSharePath(shareId, file.id));
       const fileSize = (await fs.stat(this.resolveSharePath(shareId, file.id)))
         .size;
-      await this.prisma.file.create({
-        data: {
-          id: file.id,
-          name: file.name,
-          relativePath: file.relativePath,
-          size: fileSize.toString(),
-          encryptionChunkSize: share.isE2EEncrypted ? cryptoRecordSize : null,
-          share: { connect: { id: shareId } },
-        },
-      });
-      // Invalidate configured limit cache on upload complete.
-      this.configuredLimitCache.delete(shareId);
+
+      // SQLite serializes writers, so the interactive transaction closes the
+      // completion race inside the serialized SQLite transaction.
+      let sizeLimitExceeded = false;
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          const freshShare = await tx.share.findUnique({
+            where: { id: shareId },
+            select: { files: { select: { size: true } } },
+          });
+          const currentSize = (freshShare?.files ?? []).reduce(
+            (n, { size }) => n + parseInt(size),
+            0,
+          );
+          if (currentSize + fileSize > effectiveLimit) {
+            sizeLimitExceeded = true;
+            throw new HttpException(
+              "Max share size exceeded",
+              HttpStatus.PAYLOAD_TOO_LARGE,
+            );
+          }
+          await tx.file.create({
+            data: {
+              id: file.id,
+              name: file.name,
+              relativePath: file.relativePath,
+              size: fileSize.toString(),
+              encryptionChunkSize: share.isE2EEncrypted
+                ? cryptoRecordSize
+                : null,
+              share: { connect: { id: shareId } },
+            },
+          });
+        });
+      } catch (error) {
+        if (sizeLimitExceeded) {
+          await fs
+            .unlink(this.resolveSharePath(shareId, file.id))
+            .catch(() => {});
+        }
+        throw error;
+      }
+
       this.logger.debug(
         `File uploaded: shareId=${shareId} fileId=${file.id} fileName="${file.name}" size=${fileSize} mimeType=${mime.contentType(file.name.split(".").pop() ?? "") || false}`,
       );
@@ -222,39 +247,8 @@ export class LocalFileService {
   }
 
   /**
-   * Get effective configured limit, cached per shareId.
-   * Avoids a DB round-trip on every single chunk.
-   */
-  private async getCachedConfiguredLimit(
-    shareId: string,
-    limitOwnerId: string | undefined,
-    reverseShare?: { maxShareSize?: string | null } | null,
-  ): Promise<number> {
-    void limitOwnerId;
-    const cached = this.configuredLimitCache.get(shareId);
-    if (
-      cached &&
-      Date.now() - cached.ts < LocalFileService.CONFIGURED_LIMIT_TTL
-    ) {
-      return cached.limit;
-    }
-    // 0 (or absent env var) = no limit; positive value = cap in bytes
-    const rawEnvLimit = process.env.TEAM_MAX_SHARE_SIZE
-      ? parseInt(process.env.TEAM_MAX_SHARE_SIZE)
-      : 0;
-    const configuredLimit = rawEnvLimit > 0 ? rawEnvLimit : Infinity;
-    const reverseShareLimit =
-      reverseShare?.maxShareSize
-        ? parseInt(reverseShare.maxShareSize)
-        : Infinity;
-    const limit = Math.min(configuredLimit, reverseShareLimit);
-    this.configuredLimitCache.set(shareId, { limit, ts: Date.now() });
-    return limit;
-  }
-
-  /**
    * Replace the content of an existing file (re-encryption).
-   * Skips uploadLocked / quota checks and does NOT create a DB record.
+   * Skips completion and configured size checks and does NOT create a DB record.
    */
   async replace(
     data: Buffer,
@@ -272,7 +266,11 @@ export class LocalFileService {
 
     // On first chunk, remove any stale temp file
     if (chunk.index === 0) {
-      try { await fs.unlink(tmpPath); } catch { /* no stale file */ }
+      try {
+        await fs.unlink(tmpPath);
+      } catch {
+        /* no stale file */
+      }
     }
 
     const buffer = data;
@@ -309,15 +307,19 @@ export class LocalFileService {
     fileId: string,
     range?: { start: number; end: number },
   ) {
-    const fileMetaData = await this.prisma.file.findUnique({
-      where: { id: fileId },
+    const fileMetaData = await this.prisma.file.findFirst({
+      where: { id: fileId, shareId },
     });
 
     if (!fileMetaData) throw new NotFoundException("File not found");
 
     const filePath = this.resolveSharePath(shareId, fileId);
     const file = range
-      ? createReadStream(filePath, { start: range.start, end: range.end, highWaterMark: 1_048_576 })
+      ? createReadStream(filePath, {
+          start: range.start,
+          end: range.end,
+          highWaterMark: 1_048_576,
+        })
       : createReadStream(filePath, { highWaterMark: 1_048_576 });
 
     this.logger.debug(
@@ -335,8 +337,8 @@ export class LocalFileService {
   }
 
   async remove(shareId: string, fileId: string) {
-    const fileMetaData = await this.prisma.file.findUnique({
-      where: { id: fileId },
+    const fileMetaData = await this.prisma.file.findFirst({
+      where: { id: fileId, shareId },
     });
 
     if (!fileMetaData) throw new NotFoundException("File not found");
@@ -355,6 +357,41 @@ export class LocalFileService {
       recursive: true,
       force: true,
     });
+  }
+
+  /**
+   * Return the newest physical write under an unfinished share. This protects
+   * local uploads served by an older application process that predates database
+   * heartbeats.
+   */
+  async getRecentUploadActivity(
+    shareId: string,
+    since: Date,
+  ): Promise<Date | null> {
+    const sharePath = this.resolveSharePath(shareId);
+    let names: string[];
+    try {
+      names = await fs.readdir(sharePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+
+    let newest = 0;
+    await Promise.all(
+      names.map(async (name) => {
+        try {
+          const stat = await fs.stat(this.resolveSharePath(shareId, name));
+          newest = Math.max(newest, stat.mtimeMs);
+        } catch (error) {
+          // A concurrently renamed temporary part is expected and will be
+          // represented by either its old or final path on the next probe.
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+      }),
+    );
+
+    return newest >= since.getTime() ? new Date(newest) : null;
   }
 
   async getZip(shareId: string): Promise<Readable> {

@@ -2,7 +2,7 @@
 
 PrivCloud Companion is the local client-side agent behind PrivCloud browser,
 mail and WebDAV integrations. It keeps heavy transfers and encryption on the
-user device instead of the SaaS server.
+user device instead of the application server.
 
 It exposes two controlled interfaces:
 
@@ -37,6 +37,19 @@ npm run check
 npm start
 npm run start:native
 ```
+
+## Build A Release Artifact
+
+The Companion is dependency-free JavaScript, so it does not require a
+transpilation step. Its build command validates the source/version contract,
+creates a versioned npm tarball and writes a manifest plus SHA-256 checksums:
+
+```bash
+npm run build
+```
+
+Artifacts are written to `bridge/dist/`. The archive contains the runtime,
+Linux installer, Native Messaging templates and this README.
 
 By default Companion listens on `http://127.0.0.1:47631` and allows local
 development origins plus `https://share.example.com`.

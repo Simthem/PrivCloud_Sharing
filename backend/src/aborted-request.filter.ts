@@ -4,9 +4,11 @@ import {
   ExceptionFilter,
   ForbiddenException,
   HttpException,
+  HttpServer,
   Logger,
   UnauthorizedException,
 } from "@nestjs/common";
+import { BaseExceptionFilter } from "@nestjs/core";
 import { Request, Response } from "express";
 
 /**
@@ -22,7 +24,10 @@ import { Request, Response } from "express";
  * 4. 401 on /auth/token -- refresh token absent or expired.
  */
 @Catch()
-export class AbortedRequestFilter implements ExceptionFilter {
+export class AbortedRequestFilter
+  extends BaseExceptionFilter
+  implements ExceptionFilter
+{
   private readonly logger = new Logger("AbortedRequest");
 
   private static readonly EXPECTED_SHARE_ERRORS = new Set([
@@ -45,6 +50,17 @@ export class AbortedRequestFilter implements ExceptionFilter {
       // The socket is already dead -- only send a response if still writable.
       if (!res.headersSent && res.writable) {
         res.status(499).end();
+      }
+      return;
+    }
+
+    // A direct browser navigation to an unknown API URL should land on the
+    // existing Next.js 404 page. Programmatic API clients keep the normal JSON
+    // 404 response so redirects/HTML can never break fetch or Axios callers.
+    if (this.isHtmlNavigationRouteNotFound(exception, host)) {
+      const response = host.switchToHttp().getResponse<Response>();
+      if (!response.headersSent && response.writable) {
+        response.redirect(302, "/404");
       }
       return;
     }
@@ -95,8 +111,14 @@ export class AbortedRequestFilter implements ExceptionFilter {
       return;
     }
 
-    // Re-throw anything else so the default NestJS handler takes over.
-    throw exception;
+    // Delegate everything else to Nest's canonical handler. Re-throwing from
+    // a catch-all filter bypasses that handler, logs expected HttpExceptions
+    // as uncaught stacks and may turn a normal 404 into a proxy-visible 500.
+    return super.catch(exception, host);
+  }
+
+  constructor(applicationRef?: HttpServer) {
+    super(applicationRef);
   }
 
   private isAbortedRequest(exception: unknown): boolean {
@@ -118,6 +140,38 @@ export class AbortedRequestFilter implements ExceptionFilter {
       );
     }
     return false;
+  }
+
+  private isHtmlNavigationRouteNotFound(
+    exception: unknown,
+    host: ArgumentsHost,
+  ): boolean {
+    if (
+      !(exception instanceof HttpException) ||
+      exception.getStatus() !== 404
+    ) {
+      return false;
+    }
+
+    const request = host.switchToHttp().getRequest<Request>();
+    if (request.method !== "GET" && request.method !== "HEAD") return false;
+
+    const accept = request.headers.accept || "";
+    if (
+      !accept.split(",").some((value) => value.trim().startsWith("text/html"))
+    ) {
+      return false;
+    }
+
+    const body = exception.getResponse();
+    const message =
+      typeof body === "object" && body !== null
+        ? (body as { message?: unknown }).message
+        : body;
+    return (
+      typeof message === "string" &&
+      /^Cannot (?:GET|HEAD) \/api(?:\/|$)/.test(message)
+    );
   }
 
   private isGuardForbidden(exception: unknown): boolean {

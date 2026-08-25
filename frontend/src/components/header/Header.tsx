@@ -4,6 +4,7 @@ import {
   Container,
   Group,
   Paper,
+  Portal,
   Stack,
   Text,
   Transition,
@@ -40,17 +41,17 @@ const Header = () => {
 
   const [opened, toggleOpened] = useDisclosure(false);
 
-  const [currentRoute, setCurrentRoute] = useState("");
   const [homeLink, setHomeLink] = useState("/upload");
   const [isTeamUser, setIsTeamUser] = useState(false);
   const isMobileViewport = useMediaQuery("(max-width: 47.99em)");
+  const currentRoute = router.pathname;
 
   useEffect(() => {
-    setCurrentRoute(router.pathname);
-  }, [router.pathname]);
-
-  useEffect(() => {
-    if (!user) { setHomeLink("/upload"); setIsTeamUser(false); return; }
+    if (!user) {
+      setHomeLink((current) => (current === "/upload" ? current : "/upload"));
+      setIsTeamUser((current) => (current ? false : current));
+      return;
+    }
     teamService.getTeamStatus().then((status) => {
       const inTeam = !!(status.ownsTeam || status.isTeamMember);
       setIsTeamUser(inTeam);
@@ -188,6 +189,8 @@ const Header = () => {
               aria-label="Toggle navigation menu"
             />
           </Group>
+      </Container>
+      <Portal>
         <Transition transition="pop-top-right" duration={200} mounted={opened}>
           {(styles) => (
             <Paper className={classes.dropdown} withBorder style={styles}>
@@ -195,7 +198,7 @@ const Header = () => {
             </Paper>
           )}
         </Transition>
-      </Container>
+      </Portal>
     </Box>
   );
 };

@@ -52,8 +52,16 @@ services:
       # - TEAM_TOTAL_STORAGE_BYTES=500000000000            # Total storage per team (bytes)
       # -- Upload performance / memory budget --
       - NODE_MAX_OLD_SPACE_SIZE=3072
-      - UPLOAD_MAX_CHUNK_BYTES=200000000
-      - S3_MAX_CONCURRENT_UPLOADS=4
+      - UPLOAD_MAX_CHUNK_BYTES=50000000
+      - UPLOAD_ANONYMOUS_MAX_CHUNK_BYTES=35000000
+      - UPLOAD_AUTHENTICATED_MAX_CHUNK_BYTES=50000000
+      - S3_MAX_CONCURRENT_UPLOADS=6
+      - S3_MIN_CONCURRENT_UPLOADS=2
+      - S3_MAX_CONCURRENT_PER_FILE=6
+      # Direct browser S3 transfers require a bucket CORS policy for APP_URL.
+      # - S3_DIRECT_BROWSER_UPLOAD_ENABLED=true
+      # - S3_DIRECT_BROWSER_DOWNLOAD_ENABLED=true
+      # - S3_DIRECT_BROWSER_UPLOAD_ADDRESSING_MODE=path
       # Public URL of the application
       - APP_URL=https://your-domain.example.com
       # -- PDF PAdES Signing Certificate --

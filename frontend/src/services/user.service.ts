@@ -46,8 +46,16 @@ const getCurrentUser = async (
 
 // ─── E2E Encryption Key Management ─────────────────────────────
 
-const setEncryptionKeyHash = async (keyHash: string) => {
-  return (await api.put("/users/me/encryption-key", { keyHash })).data;
+const setEncryptionKeyHash = async (
+  keyHash: string,
+  options: { explicitE2ESetup?: boolean } = {},
+) => {
+  return (
+    await api.put("/users/me/encryption-key", {
+      keyHash,
+      ...(options.explicitE2ESetup ? { explicitE2ESetup: true } : {}),
+    })
+  ).data;
 };
 
 const removeEncryptionKey = async () => {

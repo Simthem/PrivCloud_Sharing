@@ -11,8 +11,23 @@ PrivCloud instance.
 - `gmail-workspace-addon`: Google Workspace add-on skeleton.
 - `desktop`: Native Messaging registration helpers for Windows and macOS.
 
-All examples use `https://share.example.com` as a placeholder. Replace it with
-your public PrivCloud URL before packaging or publishing an integration.
+Source templates use `https://share.example.com` as a placeholder. Never edit
+them manually for a release: the build command validates the deployment origin,
+injects it into every artifact, aligns extension versions with the root package
+and writes SHA-256 checksums:
+
+```bash
+npm run build:integrations -- --base-url https://share.your-domain.example
+```
+
+The combined command generates both Companion and integration artifacts:
+
+```bash
+PRIVCLOUD_BASE_URL=https://share.your-domain.example npm run build:client-tools
+```
+
+Artifacts are written to `integrations/dist/`: browser ZIP, Thunderbird XPI,
+Outlook ZIP, Google Workspace ZIP and desktop browser-registration helpers.
 
 The companion bridge is shipped from `../bridge` and can be exposed by the
 Docker image under `/install/companion`.

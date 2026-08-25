@@ -16,6 +16,7 @@ const showCompletedUploadModal = (
   modals: ReturnType<typeof useModals>,
   share: CompletedShare,
   e2eKeyEncoded?: string | null,
+  requiresE2EBackup = false,
 ) => {
   const t = translateOutsideContext();
   return modals.openModal({
@@ -23,16 +24,24 @@ const showCompletedUploadModal = (
     withCloseButton: false,
     closeOnEscape: false,
     title: t("upload.modal.completed.share-ready"),
-    children: <Body share={share} e2eKeyEncoded={e2eKeyEncoded} />,
+    children: (
+      <Body
+        share={share}
+        e2eKeyEncoded={e2eKeyEncoded}
+        requiresE2EBackup={requiresE2EBackup}
+      />
+    ),
   });
 };
 
 const Body = ({
   share,
   e2eKeyEncoded,
+  requiresE2EBackup,
 }: {
   share: CompletedShare;
   e2eKeyEncoded?: string | null;
+  requiresE2EBackup: boolean;
 }) => {
   const modals = useModals();
   const router = useRouter();
@@ -80,12 +89,20 @@ const Body = ({
           modals.closeAll();
           if (isReverseShare) {
             router.push("/");
+          } else if (requiresE2EBackup) {
+            router.push("/account#e2e-encryption-settings");
           } else {
             router.push("/upload");
           }
         }}
       >
-        <FormattedMessage id="common.button.done" />
+        <FormattedMessage
+          id={
+            requiresE2EBackup
+              ? "upload.modal.completed.e2e-backup-action"
+              : "common.button.done"
+          }
+        />
       </Button>
     </Stack>
   );

@@ -39,14 +39,19 @@ limits are controlled by instance configuration, not by hard-coded tiers.
 - ClamAV integration for uploaded-file scanning.
 - Local filesystem and S3-compatible storage providers.
 - Video preview and text/code previews where browser memory allows.
-- Large upload retry and recovery logic for transient network/server errors.
+- Server-controlled adaptive upload windows with fair sharing between active
+  files, bounded resource pressure, distributed idempotent finalization and
+  S3-backed multipart recovery after an application restart or replacement.
+- Ordered parallel S3 range downloads with bounded memory and byte-accurate
+  browser resume for individual files, including E2E streams.
 
 ## Versioning
 
-Public `v1.23.0` is an aggregate release from public `v1.22.3`. Some work was
-developed internally before being synchronized into the open-source repository.
-The public changelog therefore jumps directly from `v1.22.3` to `v1.23.0` with
-one coherent release entry.
+Public `v1.24.0` adds the direct and resumable transfer pipeline, stronger
+session and outbound-request protections, Companion integration and
+privacy-preserving administration. It remains a self-hosted open-source
+release: transfer limits are instance settings and are not tied to a commercial
+plan or payment service.
 
 See [CHANGELOG.md](./CHANGELOG.md) for the full list of features, fixes and CVE
 patches included in the public release.
@@ -170,14 +175,86 @@ Common environment variables:
 | `TEAM_MAX_SHARE_SIZE` | Max bytes per team share, unset or `0` means unlimited | _(none)_ |
 | `TEAM_TOTAL_STORAGE_BYTES` | Total bytes per team, unset or `0` means unlimited | _(none)_ |
 | `NODE_MAX_OLD_SPACE_SIZE` | Backend V8 heap size in MB | `3072` |
-| `UPLOAD_MAX_CHUNK_BYTES` | Max accepted upload chunk body size | `200000000` |
-| `S3_MAX_CONCURRENT_UPLOADS` | S3 multipart upload concurrency | `4` |
+| `UPLOAD_MAX_CHUNK_BYTES` | Process-wide upload chunk safety ceiling | `50000000` |
+| `UPLOAD_ANONYMOUS_MAX_CHUNK_BYTES` | Max accepted upload chunk body size without an authenticated account | `35000000` |
+| `UPLOAD_AUTHENTICATED_MAX_CHUNK_BYTES` | Max accepted upload chunk body size for authenticated users | `50000000` |
+| `S3_PROXY_URL` | Optional dedicated proxy for public S3 endpoints; `NO_PROXY` remains authoritative | _(none)_ |
+| `S3_MAX_CONCURRENT_UPLOADS` | Adaptive global UploadPart ceiling | `6` |
+| `S3_MIN_CONCURRENT_UPLOADS` | Minimum upload window under resource pressure | `2` |
+| `S3_MAX_CONCURRENT_PER_FILE` | Maximum slots one otherwise-idle file can borrow | `6` |
+| `S3_MAX_CONCURRENT_DOWNLOADS` | Adaptive global S3 range-read ceiling | `6` |
+| `S3_MAX_CONCURRENT_PER_DOWNLOAD` | Maximum range reads for one large download | `6` |
+| `S3_HTTP_SOCKET_BUFFER_BYTES` | Bounded high-water mark for the explicit production proxy transport | `1048576` |
+| `AWS_REQUEST_CHECKSUM_CALCULATION` | SDK request checksum policy; `WHEN_REQUIRED` avoids the optional single-threaded CRC32 transform | `WHEN_REQUIRED` |
+| `AWS_RESPONSE_CHECKSUM_VALIDATION` | SDK response checksum policy; required checks remain enabled without optional CRC validation | `WHEN_REQUIRED` |
+| `S3_DIRECT_BROWSER_UPLOAD_ENABLED` | Authorize short-lived, exact-length browser `UploadPart` URLs and fall back idempotently to the Nest relay when the endpoint/CORS is unavailable | `false` |
+| `S3_DIRECT_BROWSER_UPLOAD_ADDRESSING_MODE` | Browser upload addressing: `path`, `virtual-host` or `dual` | `path` |
+| `S3_DIRECT_BROWSER_CONNECTIONS_PER_ORIGIN` | Maximum HTTP/1.1 upload requests assigned to each browser-visible S3 origin | `6` |
+| `S3_DIRECT_BROWSER_MAX_CONCURRENCY` | Safety ceiling across all direct upload parts in one browser page; the effective value is also bounded by the available origins | `32` |
+| `S3_DIRECT_BROWSER_UPLOAD_ENDPOINTS` | Up to four optional comma-separated, browser-visible HTTPS S3 endpoints/CNAMEs that target the same account and bucket | _(none)_ |
+| `S3_DIRECT_BROWSER_URL_TTL_SECONDS` | Lifetime of one exact-part signed URL (bounded to 60–900 seconds) | `300` |
+| `S3_DIRECT_BROWSER_DOWNLOAD_ENABLED` | Authorize one-object direct browser GETs while keeping access checks, counters, notifications and Team audit in Nest | `false` |
+| `S3_DIRECT_BROWSER_DOWNLOAD_MAX_CONCURRENCY` | Maximum direct S3 ranges fetched concurrently, bounded to six per signed origin and by the browser buffer | `24` |
+| `S3_DIRECT_BROWSER_DOWNLOAD_PART_BYTES` | Direct-browser range size; E2E ranges are aligned to encryption records | `33554432` |
+| `S3_DIRECT_BROWSER_DOWNLOAD_THRESHOLD_BYTES` | File size from which the streaming direct-browser path uses parallel ranges | `67108864` |
+| `S3_DIRECT_BROWSER_DOWNLOAD_MAX_BUFFER_BYTES` | Hard cap for completed out-of-order ranges in browser memory | `201326592` |
+| `S3_DIRECT_BROWSER_DOWNLOAD_URL_TTL_SECONDS` | Lifetime of a resumable direct GET URL (bounded to 60–3600 seconds) | `900` |
+| `S3_ALLOW_OPTIONAL_CHECKSUMS` | Explicit opt-in required before optional SDK checksums can be enabled | `false` |
+| `S3_ADAPTIVE_PRESSURE_SAMPLES` | Consecutive CPU/event-loop pressure samples required before reducing the window | `3` |
+| `S3_PARALLEL_DOWNLOAD_ENABLED` | Aggregate ordered S3 ranges for large full-file downloads | `true` |
+| `S3_DOWNLOAD_PART_BYTES` | S3 download range size | `16777216` |
+| `S3_HEALTH_TIMEOUT_MS` | Timeout for the readiness probe using the real S3 data-plane client | `10000` |
+| `S3_DOWNLOAD_MAX_BUFFER_BYTES` | Per-flow download prefetch memory ceiling | `134217728` |
+| `S3_MULTIPART_RECOVERY_ENABLED` | Recover multipart state from S3 after an application restart or replacement | `true` |
+| `S3_MULTIPART_STALE_ABORT_HOURS` | Minimum S3 age before a demonstrably orphaned multipart may be aborted | `48` |
 | `SIGNING_CERTIFICATE_PATH` | Path to P12/PFX signing certificate | _(none)_ |
-| `SIGNING_CERTIFICATE_PASSWORD` | Signing certificate password | _(none)_ |
+| `SIGNING_CERTIFICATE_PASSWORD` | Password for the signing certificate | _(none)_ |
 | `SIGNING_TSA_URL` | RFC 3161 timestamp authority URL | optional |
 | `HTTP_PROXY` / `HTTPS_PROXY` | System proxy for outbound traffic | _(none)_ |
 | `GLOBAL_AGENT_HTTP_PROXY` | Node.js global-agent proxy URL | _(none)_ |
 | `GLOBAL_AGENT_NO_PROXY` / `NO_PROXY` | Hosts that bypass the proxy | _(none)_ |
+
+With `dual`, a path-style endpoint
+`https://<region-endpoint>/<bucket>/…` and virtual-host endpoint
+`https://<bucket>.<region-endpoint>/…` form two distinct browser origins. Six
+HTTP/1.1 connections per origin provide a 12-request page window without
+raising the usual six-connection pool on either origin. Optional CNAMEs must
+resolve to the same S3-compatible storage service and bucket and use a valid
+TLS certificate; virtual-host-style custom domains may also require wildcard
+DNS and TLS configuration. Consult the storage provider's addressing and CORS
+documentation before exposing an additional browser origin.
+
+Configure the S3 bucket CORS policy with the exact public application origin
+(never `*` when the deployment can avoid it), methods `PUT`, `GET` and `HEAD`,
+and the request headers required by the storage provider. Expose `ETag`,
+`Content-Length`, `Content-Range`, `Content-Disposition` and `Content-Type`;
+direct ranged download resumption needs `Content-Range`. Every additional
+browser-visible S3 origin must also be allowed by the application's CSP
+`connect-src` when a strict CSP is deployed.
+
+Successful direct uploads and downloads keep large bodies off Nest, SafeLine
+and the application server NIC. Authentication, configured size limits,
+authorization and idempotent finalization remain server-side. The 12-upload
+window belongs to one browser page and is shared by that page's active files;
+it is not a global
+cluster scheduler. Each browser therefore keeps an independent direct window,
+while actual and aggregate throughput still depends on client hardware, the
+network and S3 endpoint capacity.
+
+`ETag` is diagnostic only for uploads: the backend finalizes from S3's
+authoritative `ListParts` response. A transient failure opens a circuit breaker
+only for the affected origin/candidate; the page can keep using the healthy
+origin. The Worker switches the part to the Nest relay only after a durable
+CORS/protocol incompatibility or when no direct candidate remains. The part
+number is safely replaced, not duplicated, and relay concurrency stays
+separate behind the server's adaptive slots, queues and memory limits.
+
+`UPLOAD_MAX_CHUNK_BYTES` is the process-wide safety ceiling. Each effective
+anonymous or authenticated limit is the lower of that ceiling and its profile
+value. Raise both explicitly when testing a profile above 50 MB; `/api/configs`
+publishes the result, and the backend independently enforces it on every
+request. Keep reverse-proxy request-body ceilings above the selected value as
+well; the application still rejects streams above its configured profile.
 
 For production, also configure SMTP, OIDC/LDAP, storage provider settings,
 ClamAV and legal pages from the admin UI or generated configuration.
@@ -229,8 +306,22 @@ The `integrations/` folder contains publishable scaffolds:
 - Google Workspace add-on;
 - Windows and macOS Native Messaging registration helpers.
 
-Before publishing, replace all `https://share.example.com` placeholders with
-your instance URL and review [integrations/PUBLISHING.md](./integrations/PUBLISHING.md).
+Generate versioned, instance-bound artifacts and their checksums with:
+
+```bash
+npm run build:companion
+npm run build:integrations -- --base-url https://share.your-domain.example
+```
+
+To generate everything in one pass:
+
+```bash
+PRIVCLOUD_BASE_URL=https://share.your-domain.example npm run build:client-tools
+```
+
+Only browser, mail and desktop Companion artifacts are produced. Review
+[integrations/PUBLISHING.md](./integrations/PUBLISHING.md) before publishing
+them.
 
 ## Electronic Signature Setup
 
@@ -269,9 +360,9 @@ When upgrading an existing instance:
 4. Check the logs for compatibility warnings.
 5. Verify login, upload, team folders, WebDAV import and signing flows.
 
-The `v1.23.0` release includes compatibility handling for legacy
-`SignatureDocument.title`, `SignatureDocument.fileKey` and
-`SignatureDocument.ownerId` columns.
+The `v1.24.0` migrations preserve existing shares while adding resumable upload
+state, explicit completion markers, E2E key-generation preferences and opaque
+administrator audit references.
 
 ## Documentation
 

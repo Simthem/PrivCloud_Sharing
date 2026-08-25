@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -45,10 +46,6 @@ export class UserController {
     const userDTO = new UserDTO().from(user);
     userDTO.hasPassword = !!user.password;
 
-    const sub = { plan: "TEAM", status: "active" };
-    userDTO.plan = sub.plan;
-    userDTO.planStatus = sub.status;
-
     // Check active team membership for users invited into an existing team.
     const teamMembership = await this.prisma.teamMember.findFirst({
       where: { userId: user.id, isActive: true },
@@ -59,10 +56,6 @@ export class UserController {
       ...userDTO,
       hasTeamMembership: !!teamMembership,
       teamId: teamMembership?.teamId || null,
-      subscription: {
-        plan: sub.plan,
-        status: sub.status,
-      },
     };
   }
 
@@ -120,8 +113,18 @@ export class UserController {
     @Body() dto: EncryptionKeyHashDTO,
   ) {
     if (!user?.id) throw new UnauthorizedException();
-    await this.userService.setEncryptionKeyHash(user.id, dto.keyHash);
-    return { hasEncryptionKey: true };
+    if (user.e2eAutoGenerationDisabledAt && dto.explicitE2ESetup !== true) {
+      throw new ConflictException(
+        "E2E auto-generation is disabled. Explicit reactivation is required.",
+      );
+    }
+    await this.userService.setEncryptionKeyHash(user.id, dto.keyHash, {
+      explicitE2ESetup: dto.explicitE2ESetup === true,
+    });
+    return {
+      hasEncryptionKey: true,
+      e2eAutoGenerationDisabled: false,
+    };
   }
 
   @Delete("me/encryption-key")
@@ -132,6 +135,7 @@ export class UserController {
     await this.userService.removeEncryptionKeyHash(user.id);
     // Also purge all wrapped keys - they reference the revoked E2E key
     await this.userService.removeAllWrappedKeys(user.id);
+    await this.userService.removeTeamKeyMaterial(user.id);
   }
 
   @Post("me/encryption-key/verify")
@@ -152,10 +156,7 @@ export class UserController {
 
   @Put("me/wrapped-keys")
   @UseGuards(JwtGuard)
-  async setWrappedKey(
-    @GetUser() user: User,
-    @Body() dto: WrappedKeyDTO,
-  ) {
+  async setWrappedKey(@GetUser() user: User, @Body() dto: WrappedKeyDTO) {
     if (!user?.id) throw new UnauthorizedException();
     await this.userService.setWrappedKey(user.id, dto);
     return { ok: true };
@@ -187,11 +188,6 @@ export class UserController {
     return users.map((user) => {
       const dto = new UserDTO().from(user);
       dto.createdAt = user.createdAt;
-      const sub = (user as Record<string, unknown>).subscription as
-        | { plan: string; status: string }
-        | undefined;
-      dto.plan = sub?.plan || "TEAM";
-      dto.planStatus = sub?.status || "active";
       return dto;
     });
   }

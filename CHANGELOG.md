@@ -1,3 +1,137 @@
+## [1.24.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.8...v1.24.0) (2026-08-25)
+
+### Features
+
+- **transfers -- direct and resumable S3 data plane:** added browser-to-S3
+  multipart uploads and ordered range downloads with bounded per-origin
+  concurrency, relay fallback, byte-accurate resume and persisted browser
+  transfer state. Instance operators retain full control through generic
+  anonymous and authenticated transfer limits; no payment provider or
+  subscription gate is involved.
+- **transfers -- adaptive scheduling:** coordinated upload slots across files
+  and tabs, separated direct and relay budgets, recorded authorized activity
+  heartbeats and exposed server-negotiated chunk and memory limits to prevent a
+  large transfer from exhausting browser or backend resources.
+- **E2E -- explicit key lifecycle:** deleting a personal encryption key now
+  disables silent regeneration until the user explicitly opts back in. Team
+  pages detect and clear stale wrapped keys and protect keys still required by
+  another member.
+- **PWA -- long-transfer continuity:** deferred manifest/service-worker setup,
+  added wake-lock recovery and made session handling upload-aware so supported
+  browsers can keep large transfers active and recover cleanly after
+  backgrounding or refresh.
+
+### Security
+
+- **open-source distribution boundary:** marked the locally authorized OSS
+  Companion contract explicitly, rejected incompatible legacy helpers before
+  token creation and excluded ignored beta artifacts from both public routing
+  and Docker build contexts.
+- **Bridge -- fixed outbound targets:** request headers and bodies can only
+  select an exact administrator-configured PrivCloud origin. The loopback
+  Bridge validates canonical startup targets before accepting work, drains
+  failed upstream responses safely and never derives a `fetch` destination
+  from untrusted request metadata.
+- **WebDAV proxy -- SSRF and resource bounds:** normalized IPv4, IPv6 and mapped
+  address forms with `ipaddr.js`, rejected private, reserved and transition
+  ranges, disabled unsafe redirects and capped buffered PROPFIND responses.
+- **authentication -- revocable access sessions:** REST access
+  tokens now require a live refresh-token session, use an explicit HS256
+  algorithm and share one race-safe browser refresh operation across uploads,
+  downloads and re-encryption.
+- **administration -- privacy-preserving share inventory:** replaced public
+  capability identifiers with opaque audit references. The administrator view
+  selects only operational aggregates, is non-cacheable and no longer grants
+  an implicit bypass to share, file or Team content.
+- **sharing -- ownership and completion controls:** anonymous mutations require
+  a dedicated ownership proof, recipient addresses are normalized and
+  deduplicated, and completion/reverse-share accounting is committed atomically.
+- **request validation -- bounded input:** added typed reset payloads, explicit
+  credential and token length limits and safe relative-path validation.
+- **container and edge -- deterministic hardened paths:** switched mutable npm
+  installation steps to lockfile-backed `npm ci`, constrained proxy bootstrap
+  handling, added a restrictive CSP with the two Companion loopback origins and
+  kept readiness responses free of storage credentials and raw errors.
+- **documentation -- bounded image parsing:** backported termination guards to
+  the CommonJS and ESM `image-size` parsers and added regression tests for
+  malformed ICNS, HEIF, JP2 and JXL inputs.
+
+### Performance
+
+- **downloads -- bounded parallel ranges:** large S3 objects can use up to the
+  configured parallel range window while ordered assembly and a fixed memory
+  ceiling preserve streaming behavior for plain and E2E-encrypted files.
+- **uploads -- non-blocking leases:** workers prepare or encrypt part bodies
+  before acquiring network slots, reuse presigned multipart state after
+  transient failures and recover authoritative S3 parts after application
+  restarts.
+- **frontend -- responsive transfer state:** moved coordination, resume,
+  download-range and E2E record handling into focused utilities and limited
+  retained per-file state during long-running operations.
+
+### Bug Fixes
+
+- **localization -- complete runtime catalog:** added every missing Team E2E,
+  upload recovery and Companion message in English and French, corrected ICU
+  variable/tag mismatches across all locales and added a source-aware catalog
+  audit so users never see raw message identifiers.
+- **previews -- CSP-compatible decrypted PDFs:** allowed same-origin and
+  application-created `blob:` URLs as frame sources so encrypted PDF previews
+  render without weakening the existing object or framing protections.
+- **Companion -- Node.js 24 installation:** retained the `.mjs` extension on
+  the atomic download target so Node can syntax-check the temporary module
+  before installing it.
+- **WebDAV -- unblocked public self-hosting:** public HTTPS endpoints now fall
+  back to the authenticated server proxy without requiring Companion. Local,
+  VPN and private targets keep the loopback Companion path, with a
+  self-instance-aware Linux installer replacing stale helpers safely.
+- **E2E -- persistent deletion opt-out:** Team membership no longer reopens the
+  key prompt after explicit deletion. Stale asynchronous passkey recovery is
+  cancelled and cannot restore browser key state after the refreshed opt-out.
+- **uploads -- retry-safe completion:** added monotonic completion markers,
+  transactional compare-and-set finalization and inactivity-aware cleanup so a
+  repeated request cannot double-complete a share or delete files from a
+  previously completed edit.
+- **Bridge -- encrypted WebDAV uploads:** send the plaintext encryption-record
+  size expected by the backend and cancel failed response bodies without
+  terminating the local service.
+- **E2E -- stale Team key recovery:** personal key removal clears the member's
+  obsolete wrapped Team keys and cancels rotations that can no longer finish;
+  the UI now offers a safe recovery action.
+- **authentication -- refresh rotation races:** coalesced concurrent 401
+  recovery into one refresh request and retries the original request once after
+  cookie rotation.
+- **reverse proxy -- restart tolerance:** use explicit IPv4 upstreams, retry
+  safe API requests during short backend restarts and answer admitted
+  keep-alive probes without rendering a frontend error page.
+
+### Maintenance
+
+- Replaced the stale integration catalog with only the Companion source,
+  installer and WebDAV connector actually shipped by the public container;
+  removed residual SaaS branding from runtime source and PDF metadata.
+- Removed the unused mobile-application authentication handoff, bearer-token
+  response channel, dedicated realtime gateway and their dependencies. The
+  public tree now contains browser, mail and desktop Companion tooling only.
+- Added deterministic `build:companion`, instance-bound `build:integrations`
+  and combined `build:client-tools` commands producing versioned archives,
+  manifests and SHA-256 checksums, with packaging tests and CI execution.
+- Added a dedicated open-source release gate covering commercial-code absence,
+  free WebDAV access, Companion provenance, private-artifact exclusion, E2E
+  deletion behavior and cross-package version parity, plus full frontend,
+  backend, Bridge and documentation validation in CI.
+- Removed the legacy compatibility subscription table, static plan fields and
+  unused upgrade translations; the public API and database schema now contain
+  no runtime commercial-plan metadata.
+- Initialized empty SQLite files before Prisma's connectivity preflight so a
+  brand-new self-hosted instance can apply its migration history successfully.
+- Added focused regression coverage for session revocation, share privacy,
+  transfer HTTP contracts, path validation, upload activity,
+  idempotent completion, E2E preferences, Bridge SSRF containment and
+  documentation parser safety.
+- Bumped root, backend, frontend, documentation, Bridge and scripts package
+  metadata and lockfiles to `1.24.0`.
+
 ## [1.23.8](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.23.7...v1.23.8) (2026-07-27)
 
 ### Security

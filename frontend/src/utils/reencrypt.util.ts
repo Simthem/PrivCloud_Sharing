@@ -16,16 +16,17 @@ import shareService from "../services/share.service";
 import teamService from "../services/team.service";
 import {
   completeSafeLineChallenge,
+  refreshTokenOnce,
   setUploadActive,
 } from "../services/api.service";
 import { MyShare, MyReverseShare } from "../types/share.type";
 import { uploadReencryptChunkInWorker } from "./reencryptUpload.util";
+import {
+  DEFAULT_REENCRYPT_TRANSPORT_CHUNK_SIZE,
+  getRuntimeReencryptChunkSize,
+} from "./reencryptChunk.util";
 
-const REENCRYPT_TRANSPORT_CHUNK_SIZE = 100_000_000;
 const REENCRYPT_CRYPTO_RECORD_SIZE = 1_000_000;
-// 199 MB plus 28 bytes per 1 MB crypto record remains below the backend's
-// 200 MB raw-body ceiling.
-const MAX_REENCRYPT_TRANSPORT_CHUNK_SIZE = 199_000_000;
 const MAX_REENCRYPT_CHUNKS = 9_500;
 const REENCRYPT_CHUNK_QUANTUM = 1_000_000;
 const MAX_RETRIES = 3;
@@ -214,10 +215,7 @@ async function uploadChunkWithRetry(
         continue;
       }
       if (status === 401 && attempt < MAX_RETRIES) {
-        await fetch("/api/auth/token", {
-          method: "POST",
-          credentials: "include",
-        }).catch(() => undefined);
+        await refreshTokenOnce().catch(() => undefined);
         continue;
       }
       if ((status === 403 || status === 429) && attempt < MAX_RETRIES) {
@@ -263,9 +261,7 @@ export async function reencryptAll(
   // so the _app.tsx 10s refresh may not fire often enough to keep the
   // 13-min access_token alive.  Refresh proactively every 10 min.
   const jwtRefresh = setInterval(() => {
-    fetch("/api/auth/token", { method: "POST", credentials: "include" }).catch(
-      () => {},
-    );
+    refreshTokenOnce().catch(() => undefined);
   }, JWT_REFRESH_INTERVAL_MS);
 
   try {
@@ -308,6 +304,7 @@ export async function reencryptAll(
 
     // Fetch chunkSize from config (same approach as share.service.ts)
     let configChunkSize = 10_000_000;
+    let reencryptChunkSize = DEFAULT_REENCRYPT_TRANSPORT_CHUNK_SIZE;
     try {
       const configs = (await fetch("/api/configs", {
         credentials: "include",
@@ -319,6 +316,7 @@ export async function reencryptAll(
       const cfg = configs.find((c) => c.key === "share.chunkSize");
       if (cfg)
         configChunkSize = parseInt(cfg.value ?? cfg.defaultValue ?? "10000000");
+      reencryptChunkSize = getRuntimeReencryptChunkSize(configs);
     } catch {
       // fallback to default
     }
@@ -387,10 +385,10 @@ export async function reencryptAll(
               sourceChunkSize: cryptoRecord.size,
               sourceChunkSizeIsExact: cryptoRecord.exact,
               totalEncryptedSize: totalSize,
-              targetChunkSize: REENCRYPT_TRANSPORT_CHUNK_SIZE,
+              targetChunkSize: reencryptChunkSize,
               targetRecordSize: REENCRYPT_CRYPTO_RECORD_SIZE,
               maxChunks: MAX_REENCRYPT_CHUNKS,
-              maxTargetChunkSize: MAX_REENCRYPT_TRANSPORT_CHUNK_SIZE,
+              maxTargetChunkSize: reencryptChunkSize,
               chunkSizeQuantum: REENCRYPT_CHUNK_QUANTUM,
               signal,
               uploadChunk: (encrypted, index, total, chunkSize) =>
@@ -561,9 +559,7 @@ export async function reencryptTeam(
   }, KEEPALIVE_INTERVAL_MS);
 
   const jwtRefresh = setInterval(() => {
-    fetch("/api/auth/token", { method: "POST", credentials: "include" }).catch(
-      () => {},
-    );
+    refreshTokenOnce().catch(() => undefined);
   }, JWT_REFRESH_INTERVAL_MS);
 
   try {
@@ -591,6 +587,7 @@ export async function reencryptTeam(
     onProgress?.({ ...progress });
 
     let configChunkSize = 10_000_000;
+    let reencryptChunkSize = DEFAULT_REENCRYPT_TRANSPORT_CHUNK_SIZE;
     try {
       const configs = (await fetch("/api/configs", {
         credentials: "include",
@@ -602,6 +599,7 @@ export async function reencryptTeam(
       const cfg = configs.find((c) => c.key === "share.chunkSize");
       if (cfg)
         configChunkSize = parseInt(cfg.value ?? cfg.defaultValue ?? "10000000");
+      reencryptChunkSize = getRuntimeReencryptChunkSize(configs);
     } catch {
       /* fallback */
     }
@@ -672,10 +670,10 @@ export async function reencryptTeam(
               sourceChunkSize: cryptoRecord.size,
               sourceChunkSizeIsExact: cryptoRecord.exact,
               totalEncryptedSize: totalSize,
-              targetChunkSize: REENCRYPT_TRANSPORT_CHUNK_SIZE,
+              targetChunkSize: reencryptChunkSize,
               targetRecordSize: REENCRYPT_CRYPTO_RECORD_SIZE,
               maxChunks: MAX_REENCRYPT_CHUNKS,
-              maxTargetChunkSize: MAX_REENCRYPT_TRANSPORT_CHUNK_SIZE,
+              maxTargetChunkSize: reencryptChunkSize,
               chunkSizeQuantum: REENCRYPT_CHUNK_QUANTUM,
               signal,
               uploadChunk: (encrypted, index, total, chunkSize) =>

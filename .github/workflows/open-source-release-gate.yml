@@ -1,0 +1,56 @@
+name: Open-source release gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-gate:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install root dependencies
+        run: npm ci
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Install documentation dependencies
+        working-directory: docs
+        run: npm ci
+      - name: Install script dependencies
+        working-directory: scripts
+        run: npm ci
+
+      - name: Run OSS release regression suite
+        run: npm run test:release
+      - name: Lint application source
+        run: npm run lint
+      - name: Build backend
+        run: npm --prefix backend run build
+      - name: Type-check frontend
+        working-directory: frontend
+        run: npx tsc --noEmit
+      - name: Build frontend
+        run: npm --prefix frontend run build
+      - name: Build documentation
+        run: npm --prefix docs run build
+      - name: Package Companion
+        run: npm run build:companion
+      - name: Package browser and mail integrations
+        run: npm run build:integrations -- --base-url https://oss.example.test

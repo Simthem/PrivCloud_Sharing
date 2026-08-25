@@ -5,7 +5,8 @@ integrations for a public instance.
 
 ## Common Setup
 
-1. Replace every `https://share.example.com` value with your public URL.
+1. Build with `npm run build:integrations -- --base-url https://your-instance`;
+   never publish the source placeholders directly.
 2. Replace icons, support URLs, privacy URLs, and provider names as needed.
 3. Build the main Docker image so `/install/...` serves the packaged files.
 4. Test login, upload, E2E upload, and large-file upload from each integration.
@@ -13,21 +14,21 @@ integrations for a public instance.
 
 ## Browser Extension
 
-- Update `integrations/browser-extension/manifest.json` host permissions.
+- The build rewrites browser host permissions to the requested instance.
 - Keep the Native Messaging host name aligned with `bridge/native-messaging`.
 - Package the folder as a ZIP for Chromium-based stores.
 - For Firefox, keep the Gecko extension ID stable across releases.
 
 ## Mail Integrations
 
-- Thunderbird: package `integrations/thunderbird-extension` as an XPI.
-- Outlook: update `manifest.xml`, host `taskpane.html`, then sideload or submit
+- Thunderbird: use the generated versioned XPI.
+- Outlook: host the generated task pane, then sideload or submit
   through Microsoft Partner Center.
 - Google Workspace: create an Apps Script project from
   `gmail-workspace-addon`, update `appsscript.json`, and deploy from the
   Google Cloud project that owns the add-on.
 
-## Desktop Native Messaging
+## Desktop Browser Messaging
 
 - Windows: run `integrations/desktop/windows/register-native-messaging.ps1`
   after installing Node.js and the bridge script.

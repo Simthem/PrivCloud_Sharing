@@ -72,6 +72,8 @@ import {
   unwrapReverseShareKey,
   wrapReverseShareKey,
   extractTeamKeyFromHash,
+  canUnwrapWithMasterKey,
+  isStaleTeamKeyError,
 } from "../../../utils/crypto.util";
 import {
   reencryptTeam,
@@ -156,6 +158,8 @@ const TeamDashboard = () => {
   const [myWrappedTeamKey, setMyWrappedTeamKey] = useState<
     string | null | undefined
   >(undefined); // undefined=loading, null=none
+  const [teamKeyStale, setTeamKeyStale] = useState(false);
+  const [clearingStaleKey, setClearingStaleKey] = useState(false);
   const [e2eInitializing, setE2eInitializing] = useState(false);
   const [memberKeyLinks, setMemberKeyLinks] = useState<Record<string, string>>(
     {},
@@ -198,6 +202,11 @@ const TeamDashboard = () => {
           );
           if (!cancelled) {
             setMyWrappedTeamKey(wrapped);
+            setTeamKeyStale(false);
+            queryClient.invalidateQueries({ queryKey: ["team", teamIdStr] });
+            queryClient.invalidateQueries({
+              queryKey: ["team.keyRotation", teamIdStr],
+            });
             toast.success(t("team.dashboard.e2e.keyReceivedSuccess"));
             // Clean fragment from URL
             router.replace(router.asPath.split("#")[0], undefined, {
@@ -208,7 +217,15 @@ const TeamDashboard = () => {
         }
         // 2. Load existing key from server
         const { wrappedTeamKey } = await teamService.getTeamKey(teamIdStr);
-        if (!cancelled) setMyWrappedTeamKey(wrappedTeamKey);
+        let stale = false;
+        if (wrappedTeamKey && userKeyB64) {
+          const masterKey = await importKeyFromBase64(userKeyB64);
+          stale = !(await canUnwrapWithMasterKey(wrappedTeamKey, masterKey));
+        }
+        if (!cancelled) {
+          setMyWrappedTeamKey(wrappedTeamKey);
+          setTeamKeyStale(stale);
+        }
       } catch {
         if (!cancelled) setMyWrappedTeamKey(null);
       }
@@ -231,8 +248,13 @@ const TeamDashboard = () => {
       const teamKey = await generateEncryptionKey();
       const masterKey = await importKeyFromBase64(userKeyB64);
       const wrapped = await wrapReverseShareKey(teamKey, masterKey);
-      await teamService.setTeamKey(teamIdStr, wrapped);
+      await teamService.setTeamKey(
+        teamIdStr,
+        wrapped,
+        keyRotationStatus?.policy.currentVersion ?? team?.keyVersion,
+      );
       setMyWrappedTeamKey(wrapped);
+      setTeamKeyStale(false);
 
       // Automatically generate sharing links for all existing members who don't have the key
       const teamKeyB64 = await exportKeyToBase64(teamKey);
@@ -259,6 +281,10 @@ const TeamDashboard = () => {
       } else {
         toast.success(t("team.dashboard.e2e.activatedSoleMember"));
       }
+      queryClient.invalidateQueries({ queryKey: ["team", teamIdStr] });
+      queryClient.invalidateQueries({
+        queryKey: ["team.keyRotation", teamIdStr],
+      });
     } catch (e) {
       toast.error(t("team.dashboard.e2e.initError"));
       console.error(e);
@@ -278,8 +304,32 @@ const TeamDashboard = () => {
       const link = `${window.location.origin}/team/${teamIdStr}#teamKey=${teamKeyB64}&version=${keyRotationStatus?.policy.currentVersion || team?.keyVersion || 1}`;
       setMemberKeyLinks((prev) => ({ ...prev, [memberId]: link }));
     } catch (e) {
-      toast.error(t("team.dashboard.e2e.shareLinkError"));
+      if (isStaleTeamKeyError(e)) {
+        setTeamKeyStale(true);
+        toast.error(t("team.dashboard.e2e.staleKey.toast"));
+      } else {
+        toast.error(t("team.dashboard.e2e.shareLinkError"));
+      }
       console.error(e);
+    }
+  };
+
+  const handleClearStaleKey = async () => {
+    setClearingStaleKey(true);
+    try {
+      await teamService.clearTeamKey(teamIdStr);
+      setMyWrappedTeamKey(null);
+      setTeamKeyStale(false);
+      toast.success(t("team.dashboard.e2e.staleKey.cleared"));
+      queryClient.invalidateQueries({ queryKey: ["team", teamIdStr] });
+      queryClient.invalidateQueries({
+        queryKey: ["team.keyRotation", teamIdStr],
+      });
+    } catch (e) {
+      toast.error(t("team.dashboard.e2e.staleKey.clearError"));
+      console.error(e);
+    } finally {
+      setClearingStaleKey(false);
     }
   };
 
@@ -417,6 +467,11 @@ const TeamDashboard = () => {
     } catch (e: any) {
       if (e?.message?.includes("annulé")) {
         toast.error(t("team.dashboard.e2e.rotateCancelled"));
+      } else if (isStaleTeamKeyError(e)) {
+        setTeamKeyStale(true);
+        closeRotate();
+        toast.error(t("team.dashboard.e2e.staleKey.toast"));
+        console.error(e);
       } else {
         toast.error(t("team.dashboard.e2e.rotateError"));
         console.error(e);
@@ -442,6 +497,7 @@ const TeamDashboard = () => {
     queryFn: () => teamService.getTeam(teamIdStr),
     enabled: !!teamIdStr,
     staleTime: 30_000,
+    refetchInterval: initLinksOpened ? 10_000 : false,
   });
 
   const { data: keyRotationStatus } = useQuery({
@@ -461,6 +517,17 @@ const TeamDashboard = () => {
   const isTeamAdmin = myRole === "OWNER" || myRole === "ADMIN";
   const canViewActivity = isTeamAdmin || !!myMember?.canViewActivity;
   const canViewSignatures = isTeamAdmin || !!myMember?.canViewSignatures;
+
+  const anotherMemberHoldsKey = useMemo(
+    () =>
+      (team?.members ?? []).some(
+        (member: any) =>
+          member.isActive &&
+          member.user?.id !== user.user?.id &&
+          member.keyStatus === "CURRENT",
+      ),
+    [team, user.user],
+  );
 
   const activeTab = useMemo(() => {
     if (!rawTab || !(VALID_TABS as readonly string[]).includes(rawTab))
@@ -551,6 +618,10 @@ const TeamDashboard = () => {
           toast.error(t("team.dashboard.e2e.noKeyForInvite"));
         }
       } catch (e) {
+        if (isStaleTeamKeyError(e)) {
+          setTeamKeyStale(true);
+          toast.error(t("team.dashboard.e2e.staleKey.toast"));
+        }
         console.warn("[E2E] Could not build secure invite link:", e);
       }
 
@@ -999,7 +1070,7 @@ const TeamDashboard = () => {
                     ).toLocaleDateString(intl.locale),
                   })}
                 </Text>
-                {keyRotationStatus.canOrchestrate && (
+                {keyRotationStatus.canOrchestrate && !teamKeyStale && (
                   <Button
                     size="compact-sm"
                     color={keyRotationStatus.policy.isDue ? "red" : "yellow"}
@@ -1013,8 +1084,34 @@ const TeamDashboard = () => {
               </Group>
             </Alert>
           )}
-        {myWrappedTeamKey === undefined ? null : myWrappedTeamKey === null &&
-          isTeamAdmin ? (
+        {myWrappedTeamKey === undefined ? null : myWrappedTeamKey &&
+          teamKeyStale ? (
+          <Alert
+            icon={<TbLock size={18} />}
+            color="red"
+            mb="md"
+            title={t("team.dashboard.e2e.staleKey.title")}
+          >
+            <Text size="sm" mb="sm">
+              {t("team.dashboard.e2e.staleKey.desc")}
+            </Text>
+            <Text size="sm" mb="sm">
+              {isTeamAdmin
+                ? t("team.dashboard.e2e.staleKey.adminHint")
+                : t("team.dashboard.e2e.staleKey.memberHint")}
+            </Text>
+            <Button
+              size="compact-sm"
+              color="red"
+              variant="light"
+              leftSection={<TbKey size={14} />}
+              loading={clearingStaleKey}
+              onClick={handleClearStaleKey}
+            >
+              {t("team.dashboard.e2e.staleKey.clearButton")}
+            </Button>
+          </Alert>
+        ) : myWrappedTeamKey === null && isTeamAdmin ? (
           <Alert
             icon={<TbLock size={18} />}
             color="orange"
@@ -1022,17 +1119,21 @@ const TeamDashboard = () => {
             title={t("team.dashboard.e2e.banner.notInitTitle")}
           >
             <Text size="sm" mb="sm">
-              {t("team.dashboard.e2e.banner.notInitDesc")}
+              {anotherMemberHoldsKey
+                ? t("team.dashboard.e2e.banner.askResharDesc")
+                : t("team.dashboard.e2e.banner.notInitDesc")}
             </Text>
-            <Button
-              size="compact-sm"
-              color="orange"
-              leftSection={<TbKey size={14} />}
-              loading={e2eInitializing}
-              onClick={handleInitE2E}
-            >
-              {t("team.dashboard.e2e.initButton")}
-            </Button>
+            {!anotherMemberHoldsKey && (
+              <Button
+                size="compact-sm"
+                color="orange"
+                leftSection={<TbKey size={14} />}
+                loading={e2eInitializing}
+                onClick={handleInitE2E}
+              >
+                {t("team.dashboard.e2e.initButton")}
+              </Button>
+            )}
           </Alert>
         ) : myWrappedTeamKey === null && !isTeamAdmin ? (
           <Alert
@@ -1188,6 +1289,7 @@ const TeamDashboard = () => {
                       </Badge>
                       {isTeamAdmin &&
                         myWrappedTeamKey &&
+                        !teamKeyStale &&
                         !member.hasTeamKey && (
                           <Tooltip
                             label={t("team.dashboard.e2e.generateLinkTooltip")}
@@ -1416,6 +1518,7 @@ const TeamDashboard = () => {
                             {/* E2E key status badge */}
                             {isTeamAdmin &&
                               myWrappedTeamKey &&
+                              !teamKeyStale &&
                               !member.hasTeamKey && (
                                 <Tooltip
                                   label={t(

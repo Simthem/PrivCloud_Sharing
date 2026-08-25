@@ -234,6 +234,10 @@ const setTeamKey = async (
   await api.put(`teams/${teamId}/team-key`, { wrappedTeamKey, keyVersion });
 };
 
+const clearTeamKey = async (teamId: string): Promise<void> => {
+  await api.delete(`teams/${teamId}/team-key`);
+};
+
 export interface TeamShare {
   id: string;
   isE2EEncrypted: boolean;
@@ -581,6 +585,7 @@ const teamService = {
   acceptInvitation,
   getTeamKey,
   setTeamKey,
+  clearTeamKey,
   removeMember,
   leaveTeam,
   getMemberFolderAccess,

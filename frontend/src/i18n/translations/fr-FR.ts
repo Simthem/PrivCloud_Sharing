@@ -222,13 +222,6 @@ export default {
   "resetPassword.notify.passwordReset": "Votre mot de passe a été réinitialisé avec succès.",
   // /account
   "account.title": "Mon compte",
-  "account.upgrade.title": "Améliorer votre forfait",
-  "account.upgrade.description": "Passez à un forfait supérieur pour plus de stockage, des transferts plus importants et des fonctionnalités exclusives.",
-  "account.upgrade.cta": "Choisir ce forfait",
-  "account.upgrade.per-month": "mois",
-  "account.upgrade.transfer": "{amount} de transfert",
-  "account.upgrade.storage": "{amount} de stockage",
-  "account.upgrade.current-plan": "Plan actuel : {plan}",
   "account.usage.title": "Utilisation",
   "account.usage.transfer": "Transfert : {used} / {total}",
   "account.usage.storage": "Stockage : {used} / {total}",
@@ -458,6 +451,19 @@ export default {
   "admin.shares.table.username": "Créateur",
   "admin.shares.table.visitors": "Visiteurs",
   "admin.shares.table.expires": "Expire le",
+  "admin.shares.table.audit-reference": "Référence d’audit",
+  "admin.shares.table.protection": "Protection",
+  "admin.shares.table.status": "État",
+  "admin.shares.table.files": "Fichiers",
+  "admin.shares.creator.anonymous": "Anonyme",
+  "admin.shares.file-count": "{count, plural, one {# fichier} other {# fichiers}}",
+  "admin.shares.view-count": "{count, plural, one {# vue} other {# vues}}",
+  "admin.shares.protection.e2e": "Chiffré de bout en bout",
+  "admin.shares.protection.admin-blocked": "Accès administrateur bloqué",
+  "admin.shares.status.ready": "Prêt",
+  "admin.shares.status.uploading": "Téléversement",
+  "admin.shares.privacy.title": "Inventaire protégé",
+  "admin.shares.privacy.description": "Les liens publics, titres, descriptions, destinataires et noms de fichiers sont masqués. Les privilèges d’administration ne donnent jamais accès au contenu utilisateur ; la suppression utilise uniquement une référence d’audit opaque.",
   "admin.shares.edit.delete.title": "Supprimer le partage : {id}",
   "admin.shares.edit.delete.description": "Voulez-vous vraiment supprimer ce partage ?",
   "admin.shares.select-all": "Tout sélectionner",
@@ -481,6 +487,11 @@ export default {
   "upload.notify.retrying.message": "Le chunk {chunk} a échoué (tentative {attempt}/{max}). Nouvel essai dans {delay}s…",
   "upload.notify.recovery.title": "Mode récupération",
   "upload.notify.recovery.message": "Trop d'erreurs consécutives. Pause de {pause}s avant de réessayer (cycle {attempt}/{max}).",
+  "upload.notify.fileRetry.title": "Nouvelle tentative pour le fichier",
+  "upload.notify.fileRetry.message":
+    "{name} - tentative {attempt}/{max} dans {delay} s",
+  "upload.notify.tab-discarded":
+    "Le navigateur a déchargé cet onglet pour économiser de la mémoire, interrompant l’envoi. Relancez l’envoi et gardez cet onglet au premier plan pour les transferts volumineux, ou désactivez l’économiseur de mémoire pour ce site.",
   "upload.bridge.error": "{fileName} : échec Bridge - {error}",
   "upload.reverse-share.error.invalid.title": "Lien de partage inversé invalide",
   "upload.reverse-share.error.invalid.description": "Ce partage inversé a expiré ou n'est pas valide.",
@@ -494,10 +505,29 @@ export default {
   "upload.filelist.size": "Taille",
   // Global upload progress
   "upload.progress.global": "Upload : {done}/{total} fichiers",
-  "upload.quota.label": "Quota d'envoi",
-  "upload.quota.exceeded":
+  "upload.size-limit.label": "Limite d'envoi configurée",
+  "upload.size-limit.exceeded":
     "La taille totale des fichiers dépasse la limite configurée. Retirez des fichiers ou demandez à l'administrateur de l'instance de l'augmenter.",
+  "upload.e2e.opt-out-warning":
+    "Vous avez supprimé votre clé E2E et désactivé sa régénération automatique. Ce partage sera protégé pendant le transport et au repos, mais ne sera pas chiffré de bout en bout. Vous pouvez réactiver l'E2E depuis votre compte.",
+  "upload.e2e.configure": "Charger ma clé",
+  "upload.e2e.reactivate": "Réactiver l'E2E",
+  "upload.e2e.restore-required":
+    "Votre clé E2E personnelle existe mais n’est pas chargée sur cet appareil. Restaurez-la avant d’envoyer des fichiers dans ce dossier d’équipe.",
+  "upload.e2e.storage-required":
+    "Le stockage local sécurisé de votre clé E2E personnelle est indisponible. Déverrouillez-le ou reconfigurez-le avant l’envoi.",
+  "upload.e2e.team-opt-out-required":
+    "Vous avez désactivé la génération de votre clé E2E personnelle. Réactivez l’E2E depuis votre compte avant d’envoyer des fichiers dans ce dossier d’équipe chiffré.",
+  "upload.e2e.team-key-required":
+    "Ce dossier d’équipe nécessite votre clé E2E personnelle. Chargez-la ou créez-la depuis votre compte avant l’envoi.",
+  "upload.e2e.restore-warning":
+    "Votre clé E2E n’est pas chargée sur cet appareil. Restaurez-la pour créer des partages chiffrés de bout en bout.",
+  "upload.e2e.first-key-warning":
+    "Créez votre clé E2E personnelle pour protéger les nouveaux partages avec le chiffrement de bout en bout.",
   "upload.cancel.button": "Annuler",
+  "upload.cancel.title": "Annuler l’envoi",
+  "upload.cancel.confirm":
+    "L’envoi en cours sera interrompu et le partage incomplet supprimé. Continuer ?",
   // showCreateUploadModal.tsx
   "upload.modal.title": "Créer un partage",
   "upload.modal.link.error.invalid": "Ne peut contenir que des lettres, des chiffres, des tirets bas et des traits d'union",
@@ -559,6 +589,7 @@ export default {
   "upload.modal.completed.expires-on": "Ce partage expirera le {expiration}.",
   "upload.modal.completed.share-ready": "Partage prêt",
   "upload.modal.completed.notified-reverse-share-creator": "Nous avons notifié le créateur du partage inverse. Vous pouvez également partager manuellement ce lien avec eux par d'autres moyens.",
+  "upload.modal.completed.e2e-backup-action": "Sauvegarder ma clé E2E",
   
   // Toast
   "upload.cancel.done": "Envoi annulé",
@@ -569,10 +600,12 @@ export default {
     "PrivCloud Companion {version} prêt pour les imports WebDAV.",
   "bridge.status.enabled":
     "PrivCloud Companion activé pour cette session WebDAV.",
+  "bridge.status.saved":
+    "Activation Companion enregistrée. Sa compatibilité sera vérifiée à la connexion.",
   "bridge.status.detected":
     "PrivCloud Companion {version} détecté. Activez-le pour garder l'import WebDAV en zero-knowledge.",
   "bridge.status.proxyDefault":
-    "PrivCloud Companion est requis pour les imports WebDAV zero-knowledge. Activez-le avant de connecter votre cloud.",
+    "Les clouds WebDAV HTTPS publics utilisent le proxy intégré. Activez PrivCloud Companion uniquement pour un cloud local/VPN ou un transfert zero-knowledge.",
   "bridge.status.unavailable":
     "PrivCloud Companion n'est pas détecté. Installez-le ou démarrez-le pour importer un cloud WebDAV sans exposer vos fichiers au serveur.",
   "bridge.pair.start": "Activer",
@@ -581,6 +614,8 @@ export default {
   "bridge.toast.paired": "PrivCloud Companion activé",
   "bridge.error.updateRequired":
     "PrivCloud Companion est détecté, mais cette version ne prend pas encore en charge l'activation en un clic. Réinstallez le Companion depuis la page Intégrations puis redémarrez-le.",
+  "bridge.error.openSourceUpdateRequired":
+    "Cette ancienne version du Companion n'est pas compatible avec l'édition open source. Réinstallez le Companion depuis la page Intégrations puis redémarrez-le.",
   "bridge.error.companionRequired":
     "PrivCloud Companion doit être activé pour importer depuis WebDAV en zero-knowledge.",
   "bridge.error.companionUpdateRequiredVpn":
@@ -598,6 +633,8 @@ export default {
     "L'ancien transfert Bridge a été interrompu car il ne progressait plus.",
   "bridge.error.tooManyJobs":
     "Trop de transferts Bridge sont déjà actifs. Attendez la fin d'un transfert en cours puis réessayez.",
+  "bridge.error.unavailable":
+    "PrivCloud Companion est indisponible. Démarrez-le ou réinstallez-le, puis réessayez.",
   "webdav.endpoint.label": "URL WebDAV",
   "webdav.username.label": "Utilisateur",
   "webdav.password.label": "Mot de passe applicatif",
@@ -866,19 +903,19 @@ export default {
   "admin.config.email.share-recipients-subject": "Sujet d'un partage",
   "admin.config.email.share-recipients-subject.description": "Intitulé du courriel envoyé aux destinataires d’un partage.",
   "admin.config.email.share-recipients-message": "Message d’un partage",
-  "admin.config.email.share-recipients-message.description": "Contenu du courriel qui est envoyé aux destinataires du partage. Variables possibles :\n {creator} - Le nom d'utilisateur du créateur du partage\n {creatorEmail} - L'adresse mail du créateur du partage\n {shareUrl} - L'URL du partage\n {desc} - La description du partage\n {expires} - La date d'expiration du partage.\n Ces variables seront remplacées par leur valeur effective.",
+  "admin.config.email.share-recipients-message.description": "Contenu du courriel qui est envoyé aux destinataires du partage. Variables possibles :\n '{creator}' - Le nom d'utilisateur du créateur du partage\n '{creatorEmail}' - L'adresse mail du créateur du partage\n '{shareUrl}' - L'URL du partage\n '{desc}' - La description du partage\n '{expires}' - La date d'expiration du partage.\n Ces variables seront remplacées par leur valeur effective.",
   "admin.config.email.reverse-share-subject": "Sujet d’un partage inversé",
   "admin.config.email.reverse-share-subject.description": "Intitulé du courriel envoyé lorsque quelqu’un a partagé des fichiers depuis votre partage inversé.",
   "admin.config.email.reverse-share-message": "Message d’un partage inversé",
-  "admin.config.email.reverse-share-message.description": "Contenu du courriel envoyé lorsque quelqu’un partage des fichiers depuis votre partage inversé. {shareUrl} sera remplacé par le nom du créateur et l’URL de partage.",
+  "admin.config.email.reverse-share-message.description": "Contenu du courriel envoyé lorsque quelqu’un partage des fichiers depuis votre partage inversé. '{shareUrl}' sera remplacé par le nom du créateur et l’URL de partage.",
   "admin.config.email.reset-password-subject": "Sujet d’une réinitialisation du mot de passe",
   "admin.config.email.reset-password-subject.description": "Intitulé du courriel envoyé lorsqu’un utilisateur demande une réinitialisation de son mot de passe.",
   "admin.config.email.reset-password-message": "Message de réinitialisation du mot de passe",
-  "admin.config.email.reset-password-message.description": "Contenu du courriel envoyé lorsqu’un utilisateur demande à réinitialiser son mot de passe. {url} sera remplacé par l’URL de réinitialisation du mot de passe.",
+  "admin.config.email.reset-password-message.description": "Contenu du courriel envoyé lorsqu’un utilisateur demande à réinitialiser son mot de passe. '{url}' sera remplacé par l’URL de réinitialisation du mot de passe.",
   "admin.config.email.invite-subject": "Sujet d’une invitation",
   "admin.config.email.invite-subject.description": "Intitulé du courriel envoyé lorsqu’un administrateur invite un utilisateur.",
   "admin.config.email.invite-message": "Message d’une invitation",
-  "admin.config.email.invite-message.description": "Message qui est envoyé lorsqu'un administrateur invite un utilisateur. {url} sera remplacé avec l'URL d'invitation, {email} avec le courriel et {password} avec le mot de passe de l'utilisateur.",
+  "admin.config.email.invite-message.description": "Message qui est envoyé lorsqu'un administrateur invite un utilisateur. '{url}' sera remplacé avec l'URL d'invitation, '{email}' avec le courriel et '{password}' avec le mot de passe de l'utilisateur.",
   "admin.config.email.download-notification-subject": "Sujet de notification de téléchargement",
   "admin.config.email.download-notification-subject.description":
     "Intitulé du courriel envoyé lorsque quelqu'un télécharge un partage.",
@@ -1063,7 +1100,7 @@ export default {
     "Protège la connexion, l'inscription, la réinitialisation du mot de passe, l'envoi anonyme et l'accès aux partages avec un challenge de preuve de travail auto-hébergé.",
   "admin.config.altcha.language": "Langue",
   "admin.config.altcha.language.description":
-    "Langue du widget chargée dans le navigateur. fr-fr est le réglage recommandé pour ce SaaS.",
+    "Langue du widget chargée dans le navigateur. fr-fr est le réglage recommandé pour cette application.",
   "admin.config.altcha.theme": "Thème",
   "admin.config.altcha.theme.description":
     "Thème visuel du widget. Lime est sélectionné par défaut pour rester proche de la palette de l'application.",
@@ -1225,8 +1262,11 @@ export default {
   "account.e2e.button.revoke": "Supprimer la clé",
   "account.e2e.button.sskr": "Créer des fragments de récupération",
   "account.e2e.button.generate": "Générer une clé E2E",
+  "account.e2e.button.reactivate": "Réactiver l'E2E et générer une clé",
   "account.e2e.button.revokeAndCreate": "Supprimer l'ancienne clé et en créer une nouvelle",
   "account.e2e.noKey": "Aucune clé E2E configurée. Générez une clé pour activer le chiffrement de bout en bout sur vos futurs partages.",
+  "account.e2e.noKeyOptOut":
+    "Vous avez supprimé votre clé E2E. Aucune nouvelle clé ne sera générée automatiquement et vos futurs partages ne seront pas chiffrés de bout en bout. Utilisez le bouton ci-dessous uniquement si vous souhaitez réactiver l'E2E.",
   "account.e2e.import.warning": "Une clé E2E est enregistrée sur votre compte mais absente de ce navigateur. Importez-la pour accéder à vos partages chiffrés.",
   "account.e2e.import.label": "Importer votre clé",
   "account.e2e.import.placeholder": "Collez votre clé secrète ici...",
@@ -1266,6 +1306,10 @@ export default {
   "account.e2e.passkey.load": "Déverrouiller depuis le trousseau (biométrie / PIN)",
   "account.e2e.passkey.load.success": "Clé restaurée depuis le trousseau système",
   "account.e2e.passkey.load.error": "Impossible de restaurer la clé depuis le trousseau",
+  "account.e2e.backupReminder.title":
+    "Sauvegardez maintenant la clé de votre premier partage",
+  "account.e2e.backupReminder.body":
+    "Le partage que vous venez de créer est déjà chiffré avec cette clé. Copiez-la dans un gestionnaire de mots de passe, créez vos fragments SSKR ou protégez-la avec le trousseau système avant de fermer l'onglet.",
 
   // SafeLine WAF 468 challenge notifications
   "safeline.notify.title": "Vérification de sécurité requise",
@@ -1750,6 +1794,7 @@ export default {
   "team.folder.action.request-signature": "Demander une signature",
   "team.folder.action.delete-file": "Supprimer le fichier",
   "team.folder.action.insufficient-access": "Accès insuffisant",
+  "team.folder.action.e2eShare": "Partager en E2EE",
 
   // --- Team dashboard (team/[id]/index.tsx) ---
   "team.dashboard.tabs.members": "Membres",
@@ -1861,6 +1906,26 @@ export default {
   "team.dashboard.signatures.downloadError": "Impossible de télécharger le document signé",
   "team.dashboard.signatures.untitled": "Sans titre",
 
+  "team.e2e.share.title":
+    "Partager {count, plural, one {# fichier chiffré} other {# fichiers chiffrés}}",
+  "team.e2e.share.desc":
+    "Accordez aux membres sélectionnés de l’équipe l’accès à ces fichiers chiffrés de bout en bout. Seuls les membres disposant d’une clé de chiffrement personnelle peuvent recevoir cet accès.",
+  "team.e2e.share.filesLabel": "Fichiers",
+  "team.e2e.share.moreFiles": "fichiers supplémentaires",
+  "team.e2e.share.recipientsLabel": "Destinataires",
+  "team.e2e.share.selectAll": "Sélectionner tous les membres éligibles",
+  "team.e2e.share.noMembers": "Aucun membre éligible dans l’équipe.",
+  "team.e2e.share.uploader": "Auteur de l’envoi",
+  "team.e2e.share.legend.hasKeys": "Clé de chiffrement disponible",
+  "team.e2e.share.legend.noKeys": "Aucune clé de chiffrement",
+  "team.e2e.share.cancel": "Annuler",
+  "team.e2e.share.submit":
+    "{count, plural, one {Partager avec # membre} other {Partager avec # membres}}",
+  "team.e2e.share.success":
+    "{files, plural, one {# fichier partagé} other {# fichiers partagés}} via {grants, plural, one {# autorisation d’accès} other {# autorisations d’accès}}.",
+  "team.e2e.share.partial":
+    "{success, plural, one {# autorisation créée} other {# autorisations créées}} ; {failed, plural, one {# échec} other {# échecs}}.",
+  "team.e2e.share.error": "Impossible de partager les fichiers chiffrés.",
   "team.dashboard.e2e.initButton": "Initialiser le chiffrement E2E",
   "team.dashboard.e2e.rotateButton": "Régénérer la clé E2E",
   "team.dashboard.e2e.keyReceivedSuccess": "Clé E2E de l'équipe reçue et stockée avec succès.",
@@ -1875,8 +1940,17 @@ export default {
   "team.dashboard.e2e.rotatePartialFail": "{n} fichier(s) n'ont pas pu être re-chiffrés. Rotation annulée.",
   "team.dashboard.e2e.noOtherMembers": "Aucun autre membre à notifier.",
   "team.dashboard.e2e.noKeyForInvite": "L'équipe n'a pas de clé E2E. Initialisez d'abord le chiffrement E2E.",
+  "team.dashboard.e2e.staleKey.title": "Clé E2E d'équipe illisible",
+  "team.dashboard.e2e.staleKey.desc": "Votre copie de la clé E2E de cette équipe a été scellée avec une clé personnelle qui n'existe plus.",
+  "team.dashboard.e2e.staleKey.adminHint": "Abandonnez cette copie obsolète, puis demandez à un membre qui détient encore la clé de vous la repartager. Si plus personne ne l'a, vous pouvez initialiser une nouvelle clé ; les anciens fichiers resteront illisibles.",
+  "team.dashboard.e2e.staleKey.memberHint": "Abandonnez cette copie obsolète, puis demandez à un administrateur de vous repartager la clé d'équipe.",
+  "team.dashboard.e2e.staleKey.clearButton": "Abandonner cette clé obsolète",
+  "team.dashboard.e2e.staleKey.cleared": "Clé obsolète abandonnée. Vous pouvez de nouveau recevoir la clé d'équipe.",
+  "team.dashboard.e2e.staleKey.clearError": "Impossible d'abandonner la clé obsolète.",
+  "team.dashboard.e2e.staleKey.toast": "Votre clé personnelle n'ouvre pas la clé E2E de cette équipe. Abandonnez la copie obsolète et faites-vous repartager la clé.",
   "team.dashboard.e2e.banner.notInitTitle": "Chiffrement E2E non initialisé",
   "team.dashboard.e2e.banner.notInitDesc": "Aucune clé E2E n'est configurée pour cette équipe. Initialisez-la pour protéger les fichiers.",
+  "team.dashboard.e2e.banner.askResharDesc": "Vous ne détenez plus la clé E2E de cette équipe, mais d'autres membres l'ont encore. Demandez-leur de vous la repartager ; générer une nouvelle clé rendrait les fichiers existants illisibles.",
   "team.dashboard.e2e.banner.missingTitle": "Clé E2E manquante",
   "team.dashboard.e2e.banner.missingDesc": "Vous n'avez pas encore reçu la clé E2E de cette équipe. Demandez à votre administrateur de vous la partager.",
   "team.dashboard.e2e.banner.activeTitle": "Chiffrement E2E actif",

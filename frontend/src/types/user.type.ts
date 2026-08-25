@@ -7,10 +7,10 @@ type User = {
   totpVerified: boolean;
   hasPassword: boolean;
   hasEncryptionKey: boolean;
+  /** True after the user explicitly deletes their E2E key. */
+  e2eAutoGenerationDisabled?: boolean;
   notificationMode: string;
   createdAt?: string;
-  plan?: string;
-  planStatus?: string;
   hasTeamMembership?: boolean;
   teamId?: string | null;
 };

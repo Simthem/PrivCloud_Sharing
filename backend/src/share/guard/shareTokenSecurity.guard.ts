@@ -49,9 +49,6 @@ export class ShareTokenSecurity extends JwtGuard {
           shareId,
           undefined,
           {
-            allowPlatformAdmin: this.configService.get(
-              "share.allowAdminAccessAllShares",
-            ),
             requireDownload: true,
           },
         );
@@ -61,9 +58,6 @@ export class ShareTokenSecurity extends JwtGuard {
         shareId,
         request.user as User | undefined,
         {
-          allowPlatformAdmin: this.configService.get(
-            "share.allowAdminAccessAllShares",
-          ),
           requireDownload: true,
         },
       );

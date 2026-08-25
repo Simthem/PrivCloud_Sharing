@@ -1,5 +1,5 @@
 import { Controller, Get, Header } from "@nestjs/common";
-import { Throttle } from "@nestjs/throttler";
+import { minutes, Throttle } from "@nestjs/throttler";
 import { AltchaService } from "./altcha.service";
 
 @Controller("altcha")
@@ -11,7 +11,7 @@ export class AltchaController {
   @Throttle({
     default: {
       limit: 60,
-      ttl: 60,
+      ttl: minutes(1),
     },
   })
   async challenge() {

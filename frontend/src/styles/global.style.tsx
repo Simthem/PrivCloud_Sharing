@@ -8,6 +8,15 @@ const GlobalStyle = () => {
         html: {
           scrollbarGutter: "stable",
         },
+        body: {
+          backgroundColor: "#000",
+          backgroundImage: [
+            "linear-gradient(to right, rgba(245, 158, 11, 0.16) 0%, rgba(245, 158, 11, 0) 50%)",
+            "linear-gradient(to left,  rgba(245, 158, 11, 0.16) 0%, rgba(245, 158, 11, 0) 50%)",
+          ].join(", "),
+          backgroundSize: "100% 100%",
+          backgroundRepeat: "no-repeat",
+        },
         a: {
           color: "inherit",
           textDecoration: "none",

@@ -33,7 +33,9 @@ interface E2EKeyPromptProps {
 
 const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
   const intl = useIntl();
-  const [mode, setMode] = useState<"import" | "recover" | "recovered">("import");
+  const [mode, setMode] = useState<"import" | "recover" | "recovered">(
+    "import",
+  );
 
   // -- import mode --
   const [value, setValue] = useState("");
@@ -48,15 +50,20 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
 
   // -- passkey recovery --
   const [loadingPasskey, setLoadingPasskey] = useState(false);
-  const [passkeyAvailable, setPasskeyAvailable] = useState(hasPasskeyWrappedKey());
+  const [passkeyAvailable, setPasskeyAvailable] = useState(
+    hasPasskeyWrappedKey(),
+  );
 
   // Also check server-side wrapped keys for multi-device
   useEffect(() => {
     if (!opened || passkeyAvailable) return;
-    userService.listWrappedKeys().then((keys) => {
-      if (keys.length > 0) setPasskeyAvailable(true);
-    }).catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    userService
+      .listWrappedKeys()
+      .then((keys) => {
+        if (keys.length > 0) setPasskeyAvailable(true);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
 
   // -- recovered mode (show key after SSKR success) --
@@ -83,7 +90,7 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
       const legacyHash = await computeKeyHashFromEncodedLegacy(encodedKey);
       valid = await userService.verifyEncryptionKey(legacyHash);
       if (!valid) return false;
-      await userService.setEncryptionKeyHash(hash);
+      await userService.setEncryptionKeyHash(hash, { explicitE2ESetup: true });
     }
     storeUserKey(encodedKey);
     return true;
@@ -123,7 +130,9 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
       const serverKeys = await userService.listWrappedKeys().catch(() => []);
       const encodedKey = await loadKeyWithPasskey(serverKeys);
       if (!encodedKey) {
-        setError(intl.formatMessage({ id: "e2ePrompt.passkey.prfUnsupported" }));
+        setError(
+          intl.formatMessage({ id: "e2ePrompt.passkey.prfUnsupported" }),
+        );
         return;
       }
       const ok = await verifyAndStore(encodedKey);
@@ -215,8 +224,14 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
           </Text>
           <Code
             block
-            style={{ wordBreak: "break-all", fontSize: "0.75rem", userSelect: "all" }}
-            aria-label={intl.formatMessage({ id: "e2ePrompt.recovered.key.aria" })}
+            style={{
+              wordBreak: "break-all",
+              fontSize: "0.75rem",
+              userSelect: "all",
+            }}
+            aria-label={intl.formatMessage({
+              id: "e2ePrompt.recovered.key.aria",
+            })}
           >
             {recoveredKey}
           </Code>
@@ -226,9 +241,13 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
                 <Button
                   variant="light"
                   size="xs"
-                  leftSection={copied ? <TbCheck size={14} /> : <TbCopy size={14} />}
+                  leftSection={
+                    copied ? <TbCheck size={14} /> : <TbCopy size={14} />
+                  }
                   onClick={copy}
-                  aria-label={intl.formatMessage({ id: "e2ePrompt.recovered.copy.aria" })}
+                  aria-label={intl.formatMessage({
+                    id: "e2ePrompt.recovered.copy.aria",
+                  })}
                 >
                   {copied
                     ? intl.formatMessage({ id: "e2ePrompt.recovered.copied" })
@@ -256,7 +275,9 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
             </Text>
             <PasswordInput
               label={intl.formatMessage({ id: "e2ePrompt.import.label" })}
-              placeholder={intl.formatMessage({ id: "e2ePrompt.import.placeholder" })}
+              placeholder={intl.formatMessage({
+                id: "e2ePrompt.import.placeholder",
+              })}
               value={value}
               onChange={(e) => {
                 setValue(e.currentTarget.value);
@@ -267,14 +288,14 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
               aria-label={intl.formatMessage({ id: "e2ePrompt.import.label" })}
             />
             <div role="alert" aria-live="assertive">
-              {error && <Text size="xs" color="red">{error}</Text>}
+              {error && (
+                <Text size="xs" color="red">
+                  {error}
+                </Text>
+              )}
             </div>
             <Group justify="right" mt="xs">
-              <Button
-                variant="subtle"
-                onClick={handleSkip}
-                disabled={loading}
-              >
+              <Button variant="subtle" onClick={handleSkip} disabled={loading}>
                 <FormattedMessage id="e2ePrompt.import.skip" />
               </Button>
               <Button type="submit" loading={loading}>
@@ -282,7 +303,10 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
               </Button>
             </Group>
 
-            <Divider label={intl.formatMessage({ id: "e2ePrompt.divider.or" })} labelPosition="center" />
+            <Divider
+              label={intl.formatMessage({ id: "e2ePrompt.divider.or" })}
+              labelPosition="center"
+            />
 
             {passkeyAvailable && (
               <Button
@@ -324,13 +348,18 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
             min={2}
             max={10}
             size="sm"
-            aria-label={intl.formatMessage({ id: "e2ePrompt.recover.shardCount" })}
+            aria-label={intl.formatMessage({
+              id: "e2ePrompt.recover.shardCount",
+            })}
           />
 
           {Array.from({ length: shardCount }, (_, i) => (
             <PasswordInput
               key={i}
-              label={intl.formatMessage({ id: "e2ePrompt.recover.shard" }, { n: i + 1 })}
+              label={intl.formatMessage(
+                { id: "e2ePrompt.recover.shard" },
+                { n: i + 1 },
+              )}
               placeholder="sskr:..."
               value={shardValues[i] ?? ""}
               onChange={(e) => {
@@ -340,7 +369,10 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
                 setRecoverError("");
               }}
               size="sm"
-              aria-label={intl.formatMessage({ id: "e2ePrompt.recover.shard" }, { n: i + 1 })}
+              aria-label={intl.formatMessage(
+                { id: "e2ePrompt.recover.shard" },
+                { n: i + 1 },
+              )}
             />
           ))}
 

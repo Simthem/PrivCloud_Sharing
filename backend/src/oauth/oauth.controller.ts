@@ -61,7 +61,8 @@ export class OAuthController {
   ) {
     const state = nanoid(16);
     const isSecure = this.config.get("general.secureCookies");
-    const { url, nonce } = await this.providers[provider].getAuthEndpoint(state);
+    const { url, nonce } =
+      await this.providers[provider].getAuthEndpoint(state);
     // Store state (and optional nonce for OIDC providers) in a single
     // httpOnly cookie so validation does not depend on the cache layer.
     const cookieValue = nonce ? `${state}|${nonce}` : state;
@@ -71,6 +72,7 @@ export class OAuthController {
       httpOnly: true,
       maxAge: 1000 * 60 * 10, // 10 minutes for OAuth flow
     });
+
     response.redirect(url);
   }
 
@@ -101,7 +103,10 @@ export class OAuthController {
 
     try {
       const oauthToken = await this.providers[provider].getToken(query);
-      const user = await this.providers[provider].getUserInfo(oauthToken, query);
+      const user = await this.providers[provider].getUserInfo(
+        oauthToken,
+        query,
+      );
       const id = await this.authService.getIdOfCurrentUser(request);
 
       if (id) {
@@ -127,7 +132,8 @@ export class OAuthController {
           response.redirect(this.config.get("general.appUrl"));
         } else {
           response.redirect(
-            this.config.get("general.appUrl") + `/auth/totp/${token.loginToken}`,
+            this.config.get("general.appUrl") +
+              `/auth/totp/${token.loginToken}`,
           );
         }
       }
@@ -140,7 +146,9 @@ export class OAuthController {
       // For non-HTTP errors, ensure a response is still sent
       if (!response.headersSent) {
         const appUrl = this.config.get("general.appUrl");
-        response.redirect(`${appUrl}/error?error=default&redirect=/auth/signIn`);
+        response.redirect(
+          `${appUrl}/error?error=default&redirect=/auth/signIn`,
+        );
       }
     }
   }
@@ -149,7 +157,10 @@ export class OAuthController {
   @UseGuards(JwtGuard, ProviderGuard)
   @UseFilters(ErrorPageExceptionFilter)
   // snyk:ignore PT - This is not fs.unlink; it calls prisma.oAuthUser.delete(). ProviderGuard whitelists provider values.
-  unlink(@GetUser() user: User, @Param("provider", SafeIdPipe) provider: string) {
+  unlink(
+    @GetUser() user: User,
+    @Param("provider", SafeIdPipe) provider: string,
+  ) {
     return this.oauthService.unlink(user, provider);
   }
 }

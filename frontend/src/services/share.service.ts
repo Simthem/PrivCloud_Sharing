@@ -7,7 +7,7 @@ import {
   downloadDecryptedBlob,
   importKeyFromBase64,
 } from "../utils/crypto.util";
-import { completeSafeLineChallenge } from "./api.service";
+import { completeSafeLineChallenge, refreshTokenOnce } from "./api.service";
 import { notifySafeLineChallenge } from "../utils/safeline-notify.util";
 import { translateOutsideContext } from "../hooks/useTranslate.hook";
 import { getSafeZipEntryName } from "../utils/uploadPath.util";
@@ -20,8 +20,18 @@ import {
   MAX_IN_MEMORY_DOWNLOAD_SIZE,
   writeDownloadChunksToDisk,
 } from "../utils/downloadStream.util";
+import { createResumableDownloadBody as createResumableResponseBody } from "../utils/downloadResume.util";
+import {
+  createParallelDirectDownloadBody,
+  createRefreshingDirectRangeFetcher,
+  DEFAULT_DIRECT_DOWNLOAD_CONCURRENCY,
+  DEFAULT_DIRECT_DOWNLOAD_MAX_BUFFER_BYTES,
+  DEFAULT_DIRECT_DOWNLOAD_PART_BYTES,
+  resolveDirectDownloadParallelConfig,
+} from "../utils/downloadParallel.util";
 
 import {
+  AdminShare,
   CreateReverseShare,
   CreateShare,
   MyReverseShare,
@@ -32,8 +42,12 @@ import {
 } from "../types/share.type";
 import api from "./api.service";
 
-const list = async (): Promise<MyShare[]> => {
+const list = async (): Promise<AdminShare[]> => {
   return (await api.get(`shares/all`)).data;
+};
+
+const removeFromAdminInventory = async (reference: string) => {
+  await api.delete(`shares/admin/${encodeURIComponent(reference)}`);
 };
 
 const create = async (share: CreateShare, isReverseShare = false) => {
@@ -49,6 +63,10 @@ const completeShare = async (id: string, e2eKey?: string) => {
   ).data;
   deleteCookie("reverse_share_token");
   return response;
+};
+
+const keepUploadAlive = async (id: string) => {
+  await api.post(`shares/${id}/upload-heartbeat`);
 };
 
 const createBridgeUploadToken = async (
@@ -102,7 +120,17 @@ const isShareIdAvailable = async (id: string): Promise<boolean> => {
 };
 
 const downloadFile = async (shareId: string, fileId: string) => {
-  window.location.href = `/api/shares/${shareId}/files/${fileId}`;
+  const relayUrl = `/api/shares/${shareId}/files/${fileId}`;
+  try {
+    const authorization = (
+      await api.get(`/shares/${shareId}/files/${fileId}/direct`)
+    ).data as { direct?: boolean; url?: string };
+    const downloadUrl =
+      authorization.direct && authorization.url ? authorization.url : relayUrl;
+    window.location.assign(new URL(downloadUrl, window.location.origin).toString());
+  } catch {
+    window.location.assign(new URL(relayUrl, window.location.origin).toString());
+  }
 };
 
 // Cache du chunkSize pour éviter des appels API répétés
@@ -149,9 +177,10 @@ const getEncryptionRecordConfig = (
 const MAX_468_RETRIES = 5;
 const DOWNLOAD_468_BACKOFF_BASE = 5_000; // 5 s
 
-const fetchStreaming = async (
+const fetchSameOriginStreaming = async (
   url: string,
   signal?: AbortSignal,
+  extraHeaders: Record<string, string> = {},
 ): Promise<Response> => {
   const opts: RequestInit = {
     credentials: "include",
@@ -160,22 +189,58 @@ const fetchStreaming = async (
     headers: {
       Accept: "application/octet-stream",
       "X-Download-Stream": "1",
+      ...extraHeaders,
     },
     ...(signal && { signal }),
   };
 
   let _lastResponse: Response | null = null;
+  let tokenRefreshAttempted = false;
+  let transientAttempts = 0;
 
   for (let attempt = 0; attempt <= MAX_468_RETRIES; attempt++) {
     const response = await fetch(url, opts);
+    const responseType = response.headers.get("Content-Type") || "";
+    const wafLike403 =
+      response.status === 403 &&
+      !responseType.toLowerCase().includes("application/json");
 
-    if (response.status !== 468) {
+    if (response.status === 401 && !tokenRefreshAttempted) {
+      tokenRefreshAttempted = true;
+      await response.body?.cancel().catch(() => undefined);
+      const refreshed = await refreshTokenOnce();
+      if (refreshed.ok) {
+        attempt--;
+        continue;
+      }
+    }
+
+    if (
+      [429, 502, 503, 504].includes(response.status) &&
+      transientAttempts < 5
+    ) {
+      transientAttempts++;
+      await response.body?.cancel().catch(() => undefined);
+      const retryAfterSeconds = Number(response.headers.get("Retry-After"));
+      const delay =
+        Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+          ? Math.min(retryAfterSeconds * 1_000, 30_000)
+          : Math.min(500 * Math.pow(2, transientAttempts - 1), 8_000);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      attempt--;
+      continue;
+    }
+
+    if (response.status !== 468 && !wafLike403) {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response;
     }
 
-    // 468 -- SafeLine anti-bot challenge required
+    // SafeLine uses 468 for its explicit challenge and can emit an HTML 403
+    // when a session cookie expires. A JSON 403 remains an application access
+    // decision and is never treated as a WAF challenge.
     _lastResponse = response;
+    await response.body?.cancel().catch(() => undefined);
 
     // Try auto-solve via hidden iframe
     try {
@@ -198,6 +263,323 @@ const fetchStreaming = async (
   throw new Error(t("safeline.download.failed", { retries: MAX_468_RETRIES }));
 };
 
+type DirectDownloadAuthorization = {
+  direct: true;
+  url: string;
+  candidates?: Array<{
+    url: string;
+    origin: string;
+    addressingMode: "path" | "virtual-host";
+  }>;
+  expiresInSeconds: number;
+  size: number;
+  encryptionChunkSize: number | null;
+  contentType?: string;
+  directDownloadConcurrency?: number;
+  directDownloadPartBytes?: number;
+  directDownloadThresholdBytes?: number;
+  directDownloadMaxBufferBytes?: number;
+};
+
+type DirectDownloadSession = DirectDownloadAuthorization & {
+  expiresAt: number;
+};
+
+const directDownloadSessions = new Map<string, DirectDownloadSession>();
+const MAX_CACHED_DIRECT_DOWNLOAD_SESSIONS = 128;
+
+const cacheDirectDownloadSession = (
+  downloadUrl: string,
+  authorization: DirectDownloadSession,
+) => {
+  const now = Date.now();
+  for (const [cachedUrl, cached] of directDownloadSessions) {
+    if (cached.expiresAt <= now) directDownloadSessions.delete(cachedUrl);
+  }
+  while (
+    !directDownloadSessions.has(downloadUrl) &&
+    directDownloadSessions.size >= MAX_CACHED_DIRECT_DOWNLOAD_SESSIONS
+  ) {
+    const oldest = directDownloadSessions.keys().next().value;
+    if (typeof oldest !== "string") break;
+    directDownloadSessions.delete(oldest);
+  }
+  directDownloadSessions.delete(downloadUrl);
+  directDownloadSessions.set(downloadUrl, authorization);
+};
+
+const getDirectDownloadAuthorizationUrl = (
+  downloadUrl: string,
+): string | null => {
+  if (typeof window === "undefined") return null;
+  const parsed = new URL(downloadUrl, window.location.origin);
+  if (
+    parsed.origin !== window.location.origin ||
+    !/^\/api\/shares\/[^/]+\/files\/[^/]+$/.test(parsed.pathname)
+  ) {
+    return null;
+  }
+  parsed.pathname += "/direct";
+  return parsed.pathname + parsed.search;
+};
+
+const requestDirectDownloadAuthorization = async (
+  downloadUrl: string,
+  authorizationUrl: string,
+  signal?: AbortSignal,
+): Promise<DirectDownloadSession | null> => {
+  const controlResponse = await fetchSameOriginStreaming(
+    authorizationUrl,
+    signal,
+    { Accept: "application/json" },
+  );
+  const data = (await controlResponse.json()) as
+    | DirectDownloadAuthorization
+    | { direct?: false };
+  if (
+    !data.direct ||
+    typeof data.url !== "string" ||
+    !Number.isSafeInteger(data.size) ||
+    data.size < 0
+  ) {
+    return null;
+  }
+
+  const authorization: DirectDownloadSession = {
+    ...data,
+    expiresAt:
+      Date.now() + Math.max(60, Number(data.expiresInSeconds) || 60) * 1_000,
+  };
+  cacheDirectDownloadSession(downloadUrl, authorization);
+  return authorization;
+};
+
+const getBoundedDirectDownloadThreshold = (
+  advertised: number | undefined,
+  partBytes: number,
+): number => {
+  const minimum = partBytes * 2;
+  const fallback = Math.max(64 * 1024 * 1024, minimum);
+  if (!Number.isSafeInteger(advertised) || advertised! < 0) return fallback;
+  return Math.max(minimum, Math.min(advertised!, 4 * 1024 * 1024 * 1024));
+};
+
+const canUseParallelDirectDownload = (
+  downloadUrl: string,
+  authorization: DirectDownloadSession,
+  isResume: boolean,
+) => {
+  if (isResume || authorization.size <= 0) return null;
+  const parsed = new URL(downloadUrl, window.location.origin);
+  // Prefix/preview reads intentionally stay mono-range: launching several
+  // large ranges would waste bandwidth when the caller only consumes a prefix.
+  if (parsed.searchParams.get("download") === "false") return null;
+
+  const encryptedRecordBytes =
+    authorization.encryptionChunkSize &&
+    Number.isSafeInteger(authorization.encryptionChunkSize) &&
+    authorization.encryptionChunkSize > 0
+      ? authorization.encryptionChunkSize + 28
+      : null;
+  const config = resolveDirectDownloadParallelConfig({
+    totalSize: authorization.size,
+    concurrency:
+      authorization.directDownloadConcurrency ??
+      DEFAULT_DIRECT_DOWNLOAD_CONCURRENCY,
+    partBytes:
+      authorization.directDownloadPartBytes ??
+      DEFAULT_DIRECT_DOWNLOAD_PART_BYTES,
+    maxBufferBytes:
+      authorization.directDownloadMaxBufferBytes ??
+      DEFAULT_DIRECT_DOWNLOAD_MAX_BUFFER_BYTES,
+    encryptedRecordBytes,
+  });
+  const threshold = getBoundedDirectDownloadThreshold(
+    authorization.directDownloadThresholdBytes,
+    config.partBytes,
+  );
+  return config.enabled && authorization.size >= threshold
+    ? { config, encryptedRecordBytes }
+    : null;
+};
+
+const fetchDirectStreaming = async (
+  url: string,
+  signal?: AbortSignal,
+  extraHeaders: Record<string, string> = {},
+): Promise<Response | null> => {
+  const authorizationUrl = getDirectDownloadAuthorizationUrl(url);
+  if (!authorizationUrl) return null;
+  const isResume = typeof extraHeaders.Range === "string";
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let authorization: DirectDownloadSession | null | undefined =
+      directDownloadSessions.get(url);
+    if (
+      !isResume ||
+      !authorization ||
+      authorization.expiresAt <= Date.now() + 30_000
+    ) {
+      try {
+        authorization = await requestDirectDownloadAuthorization(
+          url,
+          authorizationUrl,
+          signal,
+        );
+        if (!authorization) return null;
+      } catch {
+        return null;
+      }
+    }
+
+    try {
+      const parallel = canUseParallelDirectDownload(
+        url,
+        authorization,
+        isResume,
+      );
+      if (parallel) {
+        const fetchRange = createRefreshingDirectRangeFetcher({
+          initialAuthorization: authorization,
+          refreshAuthorization: async (stale, refreshSignal) => {
+            const cached = directDownloadSessions.get(url);
+            if (
+              cached &&
+              cached.url !== stale.url &&
+              cached.expiresAt > Date.now() + 30_000
+            ) {
+              return cached;
+            }
+            directDownloadSessions.delete(url);
+            const refreshed = await requestDirectDownloadAuthorization(
+              url,
+              authorizationUrl,
+              refreshSignal,
+            );
+            if (!refreshed) {
+              throw new Error("Direct download authorization refresh failed");
+            }
+            return refreshed;
+          },
+        });
+        const direct = createParallelDirectDownloadBody({
+          totalSize: authorization.size,
+          concurrency: parallel.config.concurrency,
+          partBytes: parallel.config.partBytes,
+          maxBufferBytes: parallel.config.maxBufferBytes,
+          encryptedRecordBytes: parallel.encryptedRecordBytes,
+          fetchRange,
+          signal,
+        });
+        const headers = new Headers({
+          "Accept-Ranges": "bytes",
+          "Content-Length": String(authorization.size),
+          "Content-Type":
+            authorization.contentType || "application/octet-stream",
+        });
+        if (authorization.encryptionChunkSize) {
+          headers.set(
+            "X-Encryption-Chunk-Size",
+            String(authorization.encryptionChunkSize),
+          );
+        }
+        console.info(
+          `[download] init -> transport=direct-s3-ranges lanes=${direct.config.concurrency} ` +
+            `partMiB=${Math.round(direct.config.partBytes / 1024 / 1024)} ` +
+            `bufferMiB=${Math.round(direct.config.maxBufferBytes / 1024 / 1024)} ` +
+            `parts=${direct.config.totalParts} isE2E=${Boolean(authorization.encryptionChunkSize)}`,
+        );
+        return new Response(direct.stream, {
+          status: 200,
+          headers,
+        });
+      }
+
+      const directHeaders: Record<string, string> = {
+        Accept: "application/octet-stream",
+      };
+      if (extraHeaders.Range) directHeaders.Range = extraHeaders.Range;
+      const response = await fetch(authorization.url, {
+        credentials: "omit",
+        mode: "cors",
+        cache: "no-store",
+        headers: directHeaders,
+        ...(signal && { signal }),
+      });
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        if (response.status === 403 && attempt === 0) {
+          directDownloadSessions.delete(url);
+          continue;
+        }
+        return null;
+      }
+      if (isResume && response.status !== 206) {
+        await response.body?.cancel().catch(() => undefined);
+        return null;
+      }
+
+      // Preserve the metadata headers previously emitted by Nest. S3 owns
+      // Content-Length/Content-Range; the encrypted-record layout remains
+      // trusted metadata returned by the authenticated control plane.
+      const headers = new Headers(response.headers);
+      if (
+        authorization.encryptionChunkSize &&
+        !headers.has("X-Encryption-Chunk-Size")
+      ) {
+        headers.set(
+          "X-Encryption-Chunk-Size",
+          String(authorization.encryptionChunkSize),
+        );
+      }
+      if (!isResume && !headers.has("Content-Length")) {
+        headers.set("Content-Length", String(authorization.size));
+      }
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    } catch {
+      directDownloadSessions.delete(url);
+      return null;
+    }
+  }
+  return null;
+};
+
+const fetchStreaming = async (
+  url: string,
+  signal?: AbortSignal,
+  extraHeaders: Record<string, string> = {},
+): Promise<Response> => {
+  const directResponse = await fetchDirectStreaming(url, signal, extraHeaders);
+  if (directResponse) return directResponse;
+  return fetchSameOriginStreaming(url, signal, extraHeaders);
+};
+
+/**
+ * Keep one logical byte stream alive across a dropped HTTP response.
+ *
+ * The next request starts at the exact number of bytes already enqueued into
+ * the stream. This also works for E2E data: decryptStream keeps any partial
+ * AES-GCM record in its own buffer while this source reconnects underneath it.
+ */
+const createResumableDownloadBody = (
+  url: string,
+  initialResponse: Response,
+  signal?: AbortSignal,
+): { stream: ReadableStream<Uint8Array>; totalSize: number } =>
+  createResumableResponseBody(
+    initialResponse,
+    (offset) =>
+      fetchStreaming(url, signal, {
+        Range: `bytes=${offset}-`,
+        "X-Download-Resume": "1",
+      }),
+    signal,
+  );
+
 /**
  * Télécharge un fichier chiffré E2E en streaming, le déchiffre chunk par
  * chunk côté client, puis écrit sur disque progressivement.
@@ -215,6 +597,7 @@ const downloadFileE2E = async (
   onProgress?: (_downloadedBytes: number, _totalBytes: number) => void,
   signal?: AbortSignal,
 ) => {
+  const downloadUrl = `/api/shares/${shareId}/files/${fileId}`;
   const keyPromise = importKeyFromBase64(encodedKey);
   const chunkSizePromise = getChunkSize();
   const mimeType = (
@@ -223,10 +606,7 @@ const downloadFileE2E = async (
 
   // Start crypto preparation, config lookup and network request together.
   // The save picker then hides most of this startup latency.
-  const fetchPromise = fetchStreaming(
-    `/api/shares/${shareId}/files/${fileId}`,
-    signal,
-  );
+  const fetchPromise = fetchStreaming(downloadUrl, signal);
 
   // Try File System Access API -- must be called in user gesture context
   // (before any async network operation that would expire the gesture).
@@ -257,12 +637,12 @@ const downloadFileE2E = async (
     keyPromise,
     chunkSizePromise,
   ]);
-  const totalSize = parseInt(response.headers.get("Content-Length") || "0");
+  const resumable = createResumableDownloadBody(downloadUrl, response, signal);
+  const totalSize = resumable.totalSize;
   const cryptoRecord = getEncryptionRecordConfig(response, legacyChunkSize);
 
-  if (!response.body) throw new Error("Response has no body");
   if (!writable && totalSize > MAX_IN_MEMORY_DOWNLOAD_SIZE) {
-    await response.body.cancel();
+    await resumable.stream.cancel();
     const error = new Error("Direct disk access is required for this download");
     error.name = "LargeDownloadRequiresDiskAccessError";
     throw error;
@@ -272,10 +652,10 @@ const downloadFileE2E = async (
 
   // Wrap stream with progress tracking when callback is provided.
   // TransformStream counts encrypted bytes as they flow to decryptStream.
-  let body: ReadableStream<Uint8Array> = response.body;
+  let body: ReadableStream<Uint8Array> = resumable.stream;
   if (onProgress) {
     let bytesRead = 0;
-    body = response.body.pipeThrough(
+    body = resumable.stream.pipeThrough(
       new TransformStream<Uint8Array, Uint8Array>({
         transform(chunk, controller) {
           bytesRead += chunk.length;
@@ -348,23 +728,20 @@ const fetchDecryptedFile = async (
   encodedKey: string,
   signal?: AbortSignal,
 ): Promise<ArrayBuffer> => {
+  const downloadUrl = `/api/shares/${shareId}/files/${fileId}?download=false`;
   const [key, legacyChunkSize, response] = await Promise.all([
     importKeyFromBase64(encodedKey),
     getChunkSize(),
-    fetchStreaming(
-      `/api/shares/${shareId}/files/${fileId}?download=false`,
-      signal,
-    ),
+    fetchStreaming(downloadUrl, signal),
   ]);
-  const totalSize = parseInt(response.headers.get("Content-Length") || "0");
+  const resumable = createResumableDownloadBody(downloadUrl, response, signal);
+  const totalSize = resumable.totalSize;
   const cryptoRecord = getEncryptionRecordConfig(response, legacyChunkSize);
-
-  if (!response.body) throw new Error("Response has no body");
 
   const parts: Uint8Array[] = [];
   let totalDecrypted = 0;
   for await (const chunk of decryptStream(
-    response.body,
+    resumable.stream,
     key,
     cryptoRecord.size,
     totalSize,
@@ -400,23 +777,20 @@ const fetchDecryptedFilePrefix = async (
     throw new Error("Invalid preview size limit");
   }
 
+  const downloadUrl = `/api/shares/${shareId}/files/${fileId}?download=false`;
   const [key, legacyChunkSize, response] = await Promise.all([
     importKeyFromBase64(encodedKey),
     getChunkSize(),
-    fetchStreaming(
-      `/api/shares/${shareId}/files/${fileId}?download=false`,
-      signal,
-    ),
+    fetchStreaming(downloadUrl, signal),
   ]);
-  const totalSize = parseInt(response.headers.get("Content-Length") || "0");
+  const resumable = createResumableDownloadBody(downloadUrl, response, signal);
+  const totalSize = resumable.totalSize;
   const cryptoRecord = getEncryptionRecordConfig(response, legacyChunkSize);
-
-  if (!response.body) throw new Error("Response has no body");
 
   const result = new Uint8Array(maxBytes);
   let written = 0;
   for await (const chunk of decryptStream(
-    response.body,
+    resumable.stream,
     key,
     cryptoRecord.size,
     totalSize,
@@ -437,11 +811,11 @@ const removeFile = async (shareId: string, fileId: string) => {
 
 /**
  * Download a non-encrypted file with progress tracking and cancellation.
- * Uses fetch + ReadableStream instead of window.location.href to enable
- * byte-level progress reporting and AbortSignal cancellation.
+ * Uses fetch + ReadableStream when the browser can stream directly to disk.
  *
- * Chrome/Edge: File System Access API -> streaming to disk, minimal memory.
- * Firefox/Safari: Blob accumulation -> requires ~1x file size in memory.
+ * Chrome/Edge: File System Access API -> batched disk writes, bounded memory.
+ * Other browsers: native navigation download, so the browser owns buffering
+ * and large files are never accumulated in the page's JavaScript heap.
  */
 const downloadFileWithProgress = async (
   shareId: string,
@@ -450,78 +824,73 @@ const downloadFileWithProgress = async (
   onProgress?: (_downloadedBytes: number, _totalBytes: number) => void,
   signal?: AbortSignal,
 ) => {
-  const mimeType = (
-    mime.contentType(fileName) || "application/octet-stream"
-  ).split(";")[0];
+  const canStreamToDisk =
+    typeof window !== "undefined" && "showSaveFilePicker" in window;
+  if (!canStreamToDisk) {
+    await downloadFile(shareId, fileId);
+    return;
+  }
 
-  // Démarre la requête EN PARALLÈLE du file picker pour masquer le RTT initial
-  const fetchPromise = fetchStreaming(
-    `/api/shares/${shareId}/files/${fileId}`,
-    signal,
-  );
+  // Start the request in parallel with the picker to hide initial network RTT.
+  const downloadUrl = `/api/shares/${shareId}/files/${fileId}`;
+  const fetchPromise = fetchStreaming(downloadUrl, signal);
 
   // FSAA must be called in user gesture context (before async network ops)
   let writable: FileSystemWritableFileStream | null = null;
   let fileHandle: FileSystemFileHandle | null = null;
-  if (typeof window !== "undefined" && "showSaveFilePicker" in window) {
+  try {
+    fileHandle = await (window as any).showSaveFilePicker({
+      suggestedName: fileName,
+    });
+    writable = await fileHandle!.createWritable();
+  } catch (e: any) {
     try {
-      fileHandle = await (window as any).showSaveFilePicker({
-        suggestedName: fileName,
-      });
-      writable = await fileHandle!.createWritable();
-    } catch (e: any) {
-      if (e.name === "AbortError") {
-        try {
-          (await fetchPromise).body?.cancel();
-        } catch {
-          /* ignored */
-        }
-        return;
-      }
-      writable = null;
-      fileHandle = null;
+      (await fetchPromise).body?.cancel();
+    } catch {
+      /* ignored */
     }
+    if (e.name === "AbortError") return;
+
+    // A picker implementation can exist but still be unavailable (policy,
+    // iframe, browser bug). Fall back to the browser's native download path.
+    if (fileHandle && (fileHandle as any).remove) {
+      try {
+        await (fileHandle as any).remove();
+      } catch {
+        /* ignored */
+      }
+    }
+    await downloadFile(shareId, fileId);
+    return;
   }
 
   const response = await fetchPromise;
-  const totalSize = parseInt(response.headers.get("Content-Length") || "0");
-
-  if (!response.body) throw new Error("Response has no body");
-
-  const reader = response.body.getReader();
-  const parts: BlobPart[] = [];
+  const resumable = createResumableDownloadBody(downloadUrl, response, signal);
+  const totalSize = resumable.totalSize;
+  const reader = resumable.stream.getReader();
   let downloaded = 0;
   const progress = createDownloadProgressReporter(onProgress, totalSize);
 
   try {
-    for (;;) {
-      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-      const { done, value } = await reader.read();
-      if (done) break;
-      downloaded += value.length;
-      progress.update(downloaded);
-      if (writable) {
-        await writable.write(value);
-      } else {
-        parts.push(new Uint8Array(value));
+    async function* responseChunks(): AsyncGenerator<Uint8Array> {
+      for (;;) {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        const { done, value } = await reader.read();
+        if (done) return;
+        downloaded += value.length;
+        progress.update(downloaded);
+        yield value;
       }
     }
-    if (writable) {
-      await writable.close();
-    } else {
-      const blob = new Blob(parts, { type: mimeType });
-      // cwe:ignore DOMXSS - href is a local blob: URL (URL.createObjectURL), not remote HTML.
-      // Filename is sanitized inside downloadDecryptedBlob (strips path separators).
-      downloadDecryptedBlob(blob, fileName);
-    }
+
+    await writeDownloadChunksToDisk(responseChunks(), writable, signal);
+    await writable.close();
     progress.complete(downloaded);
   } catch (e) {
-    if (writable) {
-      try {
-        await writable.abort();
-      } catch {
-        /* ignored */
-      }
+    try {
+      await writable.abort();
+    } catch {
+      /* ignored */
     }
     // Supprime le fichier 0-octet stub créé par le picker
     if (fileHandle && (fileHandle as any).remove) {
@@ -619,21 +988,18 @@ const downloadAllAsZipE2E = async (
   try {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      const fileUrl = `/api/shares/${shareId}/files/${file.id}`;
       const response =
         i === 0
           ? (await firstFetchPromise)!
-          : await fetchStreaming(
-              `/api/shares/${shareId}/files/${file.id}`,
-              signal,
-            );
-      const totalSize = parseInt(response.headers.get("Content-Length") || "0");
+          : await fetchStreaming(fileUrl, signal);
+      const resumable = createResumableDownloadBody(fileUrl, response, signal);
+      const totalSize = resumable.totalSize;
       const cryptoRecord = getEncryptionRecordConfig(response, chunkSize);
-
-      if (!response.body) throw new Error(`No body for ${file.name}`);
 
       // Compte les octets chiffrés au passage pour la progression globale
       const body = onProgress
-        ? response.body.pipeThrough(
+        ? resumable.stream.pipeThrough(
             new TransformStream<Uint8Array, Uint8Array>({
               transform(chunk, controller) {
                 downloadedBytes += chunk.length;
@@ -642,7 +1008,7 @@ const downloadAllAsZipE2E = async (
               },
             }),
           )
-        : response.body;
+        : resumable.stream;
 
       // level 0 = store (no compression) -- data is encrypted, incompressible
       const entry = new ZipPassThrough(getSafeZipEntryName(file));
@@ -912,14 +1278,23 @@ const getEncryptedE2eKey = async (shareId: string): Promise<string | null> => {
  * Télécharge le ZIP global préparé par le serveur (non-E2E) en streaming
  * avec progression en octets et annulation via AbortSignal.
  *
- * Remplace l'ancien `window.location.href = /api/shares/:id/files/zip`
- * qui ne permettait ni jauge ni annulation.
+ * Sans File System Access API, délègue le téléchargement au navigateur pour
+ * ne jamais accumuler un ZIP potentiellement énorme dans le heap JavaScript.
  */
 const downloadAllAsZip = async (
   shareId: string,
   onProgress?: (_downloadedBytes: number, _totalBytes: number) => void,
   signal?: AbortSignal,
 ) => {
+  const canStreamToDisk =
+    typeof window !== "undefined" && "showSaveFilePicker" in window;
+  if (!canStreamToDisk) {
+    window.location.assign(
+      new URL(`/api/shares/${shareId}/files/zip`, window.location.origin).toString(),
+    );
+    return;
+  }
+
   // Démarre la requête EN PARALLÈLE du file picker pour masquer la
   // latence réseau initiale (TCP/TLS + premier roundtrip).
   const fetchPromise = fetchStreaming(
@@ -929,24 +1304,30 @@ const downloadAllAsZip = async (
 
   let writable: FileSystemWritableFileStream | null = null;
   let fileHandle: FileSystemFileHandle | null = null;
-  if (typeof window !== "undefined" && "showSaveFilePicker" in window) {
+  try {
+    fileHandle = await (window as any).showSaveFilePicker({
+      suggestedName: `${shareId}.zip`,
+    });
+    writable = await fileHandle!.createWritable();
+  } catch (e: any) {
     try {
-      fileHandle = await (window as any).showSaveFilePicker({
-        suggestedName: `${shareId}.zip`,
-      });
-      writable = await fileHandle!.createWritable();
-    } catch (e: any) {
-      if (e.name === "AbortError") {
-        try {
-          (await fetchPromise).body?.cancel();
-        } catch {
-          /* ignored */
-        }
-        return;
-      }
-      writable = null;
-      fileHandle = null;
+      (await fetchPromise).body?.cancel();
+    } catch {
+      /* ignored */
     }
+    if (e.name === "AbortError") return;
+
+    if (fileHandle && (fileHandle as any).remove) {
+      try {
+        await (fileHandle as any).remove();
+      } catch {
+        /* ignored */
+      }
+    }
+    window.location.assign(
+      new URL(`/api/shares/${shareId}/files/zip`, window.location.origin).toString(),
+    );
+    return;
   }
 
   const response = await fetchPromise;
@@ -955,38 +1336,29 @@ const downloadAllAsZip = async (
   if (!response.body) throw new Error("Response has no body");
 
   const reader = response.body.getReader();
-  const parts: BlobPart[] = [];
   let downloaded = 0;
   const progress = createDownloadProgressReporter(onProgress, totalSize);
 
   try {
-    for (;;) {
-      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-      const { done, value } = await reader.read();
-      if (done) break;
-      downloaded += value.length;
-      progress.update(downloaded);
-      if (writable) {
-        await writable.write(value);
-      } else {
-        parts.push(new Uint8Array(value));
+    async function* responseChunks(): AsyncGenerator<Uint8Array> {
+      for (;;) {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        const { done, value } = await reader.read();
+        if (done) return;
+        downloaded += value.length;
+        progress.update(downloaded);
+        yield value;
       }
     }
-    if (writable) {
-      await writable.close();
-    } else {
-      const blob = new Blob(parts, { type: "application/zip" });
-      // cwe:ignore DOMXSS - href is a local blob: URL (URL.createObjectURL), not remote HTML.
-      downloadDecryptedBlob(blob, `${shareId}.zip`);
-    }
+
+    await writeDownloadChunksToDisk(responseChunks(), writable, signal);
+    await writable.close();
     progress.complete(downloaded);
   } catch (e) {
-    if (writable) {
-      try {
-        await writable.abort();
-      } catch {
-        /* ignored */
-      }
+    try {
+      await writable.abort();
+    } catch {
+      /* ignored */
     }
     if (fileHandle && (fileHandle as any).remove) {
       try {
@@ -1066,16 +1438,14 @@ const downloadSelectedAsZip = async (
   try {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      const fileUrl = `/api/shares/${shareId}/files/${file.id}`;
       const response =
         i === 0
           ? (await firstFetchPromise)!
-          : await fetchStreaming(
-              `/api/shares/${shareId}/files/${file.id}`,
-              signal,
-            );
-      if (!response.body) throw new Error(`No body for ${file.name}`);
+          : await fetchStreaming(fileUrl, signal);
+      const resumable = createResumableDownloadBody(fileUrl, response, signal);
 
-      const reader = response.body.getReader();
+      const reader = resumable.stream.getReader();
       const entry = new ZipPassThrough(getSafeZipEntryName(file));
       zip.add(entry);
 
@@ -1187,19 +1557,17 @@ const downloadSelectedAsZipE2E = async (
   try {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      const fileUrl = `/api/shares/${shareId}/files/${file.id}`;
       const response =
         i === 0
           ? (await firstFetchPromise)!
-          : await fetchStreaming(
-              `/api/shares/${shareId}/files/${file.id}`,
-              signal,
-            );
-      const totalSize = parseInt(response.headers.get("Content-Length") || "0");
+          : await fetchStreaming(fileUrl, signal);
+      const resumable = createResumableDownloadBody(fileUrl, response, signal);
+      const totalSize = resumable.totalSize;
       const cryptoRecord = getEncryptionRecordConfig(response, chunkSize);
-      if (!response.body) throw new Error(`No body for ${file.name}`);
 
       const body = onProgress
-        ? response.body.pipeThrough(
+        ? resumable.stream.pipeThrough(
             new TransformStream<Uint8Array, Uint8Array>({
               transform(chunk, controller) {
                 downloadedBytes += chunk.length;
@@ -1208,7 +1576,7 @@ const downloadSelectedAsZipE2E = async (
               },
             }),
           )
-        : response.body;
+        : resumable.stream;
 
       const entry = new ZipPassThrough(getSafeZipEntryName(file));
       zip.add(entry);
@@ -1256,8 +1624,10 @@ const downloadSelectedAsZipE2E = async (
 
 export default {
   list,
+  removeFromAdminInventory,
   create,
   completeShare,
+  keepUploadAlive,
   createBridgeUploadToken,
   revertComplete,
   getShareToken,

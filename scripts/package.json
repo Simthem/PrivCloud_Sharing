@@ -1,6 +1,6 @@
 {
   "name": "scripts",
-  "version": "1.0.0",
+  "version": "1.24.0",
   "scripts": {
     "generate-example-config": "ts-node generate-example-config.ts"
   },
@@ -14,6 +14,7 @@
   },
   "overrides": {
     "diff": "^5.2.0",
-    "picomatch": ">=4.0.4"
+    "picomatch": ">=4.0.4",
+    "undici": "7.29.0"
   }
 }

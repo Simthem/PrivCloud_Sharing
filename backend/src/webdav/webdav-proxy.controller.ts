@@ -11,10 +11,16 @@ import type { IncomingHttpHeaders, IncomingMessage } from "node:http";
 import { lookup } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
+import * as ipaddr from "ipaddr.js";
 import { Response } from "express";
 import { JwtGuard } from "../auth/guard/jwt.guard";
-import { Throttle } from "@nestjs/throttler";
-import { IsString, IsNotEmpty, IsOptional } from "class-validator";
+import { minutes, Throttle } from "@nestjs/throttler";
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  MaxLength,
+} from "class-validator";
 
 /**
  * Minimal server-side WebDAV proxy.
@@ -34,36 +40,44 @@ import { IsString, IsNotEmpty, IsOptional } from "class-validator";
 class WebDavListDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(2_048)
   endpoint: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(1_024)
   username: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(4_096)
   password: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(2_048)
   href?: string;
 }
 
 class WebDavDownloadDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(2_048)
   endpoint: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(1_024)
   username: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(4_096)
   password: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(2_048)
   href: string;
 }
 
@@ -100,6 +114,7 @@ type WebDavUpstreamResponse = {
 };
 
 const WEBDAV_REQUEST_TIMEOUT_MS = 60_000;
+const MAX_PROPFIND_XML_BYTES = 5 * 1024 * 1024;
 
 type ResolvedPublicHost = {
   address: string;
@@ -111,7 +126,7 @@ type ResolvedPublicHost = {
 export class WebDavProxyController {
   @Post("list")
   @HttpCode(200)
-  @Throttle({ default: { ttl: 60, limit: 120 } })
+  @Throttle({ default: { ttl: minutes(1), limit: 120 } })
   async list(@Body() dto: WebDavListDto) {
     if (!dto.endpoint || !dto.username || !dto.password) {
       throw new BadRequestException(
@@ -148,7 +163,7 @@ export class WebDavProxyController {
 
   @Post("download")
   @HttpCode(200)
-  @Throttle({ default: { ttl: 60, limit: 120 } })
+  @Throttle({ default: { ttl: minutes(1), limit: 120 } })
   async download(@Body() dto: WebDavDownloadDto, @Res() res: Response) {
     if (!dto.endpoint || !dto.username || !dto.password || !dto.href) {
       throw new BadRequestException(
@@ -302,56 +317,22 @@ export class WebDavProxyController {
 
   private assertPublicAddress(address: string) {
     const addr = address.replace(/^\[|\]$/g, "");
-    const version = isIP(addr);
-    if (version === 0) {
+    let parsed: ipaddr.IPv4 | ipaddr.IPv6;
+    try {
+      parsed = ipaddr.parse(addr);
+    } catch {
       throw new BadRequestException("Invalid WebDAV host address");
     }
 
-    if (version === 4) {
-      const parts = addr.split(".").map(Number);
-      const [a, b] = parts;
-      const isPrivate =
-        a === 0 ||
-        a === 10 ||
-        a === 127 ||
-        (a === 100 && b >= 64 && b <= 127) ||
-        (a === 169 && b === 254) ||
-        (a === 172 && b >= 16 && b <= 31) ||
-        (a === 192 && b === 0) ||
-        (a === 192 && b === 0 && parts[2] === 2) ||
-        (a === 192 && b === 168) ||
-        (a === 198 && b === 51 && parts[2] === 100) ||
-        (a === 198 && (b === 18 || b === 19)) ||
-        (a === 203 && b === 0 && parts[2] === 113) ||
-        a >= 224;
-      if (isPrivate) {
-        throw new BadRequestException(
-          "Private or reserved WebDAV addresses are not allowed",
-        );
-      }
-      return;
+    // Normalise both dotted and hexadecimal IPv4-mapped IPv6 forms before
+    // classifying the address. Transition mechanisms (6to4, NAT64, Teredo,
+    // etc.) remain non-unicast ranges and are refused rather than allowing an
+    // alternate spelling to bypass the SSRF policy.
+    if (parsed instanceof ipaddr.IPv6 && parsed.isIPv4MappedAddress()) {
+      parsed = parsed.toIPv4Address();
     }
 
-    // IPv6
-    const lower = addr.toLowerCase();
-    const mappedV4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
-    if (mappedV4) {
-      this.assertPublicAddress(mappedV4[1]);
-      return;
-    }
-
-    const isPrivate =
-      lower === "::" ||
-      lower === "::1" ||
-      lower.startsWith("fc") ||
-      lower.startsWith("fd") ||
-      lower.startsWith("fe8") ||
-      lower.startsWith("fe9") ||
-      lower.startsWith("fea") ||
-      lower.startsWith("feb") ||
-      lower.startsWith("2001:db8") ||
-      lower.startsWith("ff");
-    if (isPrivate) {
+    if (parsed.range() !== "unicast") {
       throw new BadRequestException(
         "Private or reserved WebDAV addresses are not allowed",
       );
@@ -404,11 +385,26 @@ export class WebDavProxyController {
   private readStreamText(stream: IncomingMessage): Promise<string> {
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
+      let totalBytes = 0;
+      let rejected = false;
       stream.on("data", (chunk: Buffer | string) => {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        if (rejected) return;
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        totalBytes += buffer.length;
+        if (totalBytes > MAX_PROPFIND_XML_BYTES) {
+          rejected = true;
+          chunks.length = 0;
+          reject(new BadRequestException("WebDAV response too large"));
+          return;
+        }
+        chunks.push(buffer);
       });
-      stream.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-      stream.on("error", reject);
+      stream.on("end", () => {
+        if (!rejected) resolve(Buffer.concat(chunks).toString("utf8"));
+      });
+      stream.on("error", (error) => {
+        if (!rejected) reject(error);
+      });
     });
   }
 

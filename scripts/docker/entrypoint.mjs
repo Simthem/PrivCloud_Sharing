@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import { existsSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, statSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const backendDirectory = resolve(
@@ -83,6 +83,15 @@ function databaseDiagnostic(label) {
     }
   }
   console.log(`=== END DIAG [${label}] ===`);
+}
+
+function ensureSqliteDatabase(databasePath = sqliteDatabase) {
+  if (existsSync(databasePath)) return false;
+  mkdirSync(dirname(databasePath), { recursive: true });
+  const Database = backendRequire("better-sqlite3");
+  const database = new Database(databasePath);
+  database.close();
+  return true;
 }
 
 function sqliteColumnExists(database, table, column) {
@@ -468,6 +477,7 @@ async function seed() {
 }
 
 async function migrate(includeSeed) {
+  ensureSqliteDatabase();
   databaseDiagnostic("before-migrate");
   reconcileSqliteMigrations();
   await run("node", [prismaCli, "migrate", "deploy"], {
@@ -591,6 +601,7 @@ if (isMain) {
 }
 
 export {
+  ensureSqliteDatabase,
   publicParitySchemaIsReady,
   reconcileSqliteMigrations,
   repairFailedPublicParityMigration,

@@ -48,7 +48,7 @@ import {
   setActiveMessages,
 } from "../i18n/locales";
 import authService from "../services/auth.service";
-import { isUploadActive } from "../services/api.service";
+import { isUploadActive } from "../services/upload-state.service";
 import configService from "../services/config.service";
 import userService from "../services/user.service";
 import GlobalStyle from "../styles/global.style";
@@ -57,6 +57,7 @@ import Config from "../types/config.type";
 import { CurrentUser } from "../types/user.type";
 import i18nUtil from "../utils/i18n.util";
 import { resolvePostAuthRedirectPath } from "../utils/router.util";
+import { shouldPromptForE2EKey } from "../utils/e2ePromptPolicy.util";
 import userPreferences from "../utils/userPreferences.util";
 
 // Module-level store for SSR i18n messages.
@@ -71,10 +72,13 @@ const CookieConsent = dynamic(
   () => import("../components/cookie/CookieConsent"),
   { ssr: false },
 );
-const E2EKeyPrompt = dynamic(
-  () => import("../components/auth/E2EKeyPrompt"),
+const PwaInstallPrompt = dynamic(
+  () => import("../components/pwa/PwaInstallPrompt"),
   { ssr: false },
 );
+const E2EKeyPrompt = dynamic(() => import("../components/auth/E2EKeyPrompt"), {
+  ssr: false,
+});
 const TeamStatusChecker = dynamic(
   () => import("../components/team/TeamStatusChecker"),
   { ssr: false },
@@ -117,8 +121,6 @@ function App({ Component, pageProps }: AppProps) {
   // Onboarding tour: shown once on first sign-in, gated by localStorage.
   const mainOffset = route === "/" ? HEADER_HEIGHT : HEADER_HEIGHT + 40;
 
-
-
   // Attempt to recover/ maintain the session client-side.  This single
   // function covers both the "cold start" scenario (SSR didn't hydrate
   // the user) and the "warm" scenario (access_token just expired while
@@ -134,6 +136,8 @@ function App({ Component, pageProps }: AppProps) {
           const target = await resolvePostAuthRedirectPath(undefined, u);
           router.replace(target);
         }
+      } else {
+        setUser(null);
       }
     } catch {
       // Refresh token is dead -- clear the stale React state so the
@@ -276,7 +280,9 @@ function App({ Component, pageProps }: AppProps) {
   useEffect(() => {
     if (!user) return;
 
-    import("../utils/crypto.util").then(
+    let cancelled = false;
+
+    void import("../utils/crypto.util").then(
       ({
         getUserKey,
         computeKeyHashFromEncoded,
@@ -287,27 +293,43 @@ function App({ Component, pageProps }: AppProps) {
         removeUserKey,
       }) => {
         const showPrompt = () => {
-          if (e2ePromptShownRef.current) return;
+          if (
+            cancelled ||
+            user.e2eAutoGenerationDisabled ||
+            e2ePromptShownRef.current
+          )
+            return;
           e2ePromptShownRef.current = true;
           setShowE2EPrompt(true);
         };
 
         const verifyAndMigrateKey = async (encodedKey: string) => {
+          if (cancelled) return false;
           const hash = await computeKeyHashFromEncoded(encodedKey, user.id);
+          if (cancelled) return false;
           let valid = await userService.verifyEncryptionKey(hash);
-          if (!valid) {
-            const legacyHash = await computeKeyHashFromEncodedLegacy(
-              encodedKey,
-            );
+          if (!valid && !cancelled) {
+            const legacyHash =
+              await computeKeyHashFromEncodedLegacy(encodedKey);
+            if (cancelled) return false;
             valid = await userService.verifyEncryptionKey(legacyHash);
-            if (valid) {
+            if (valid && !cancelled) {
               await userService.setEncryptionKeyHash(hash);
             }
           }
-          return valid;
+          return valid && !cancelled;
         };
 
         const localKey = getUserKey();
+        if (cancelled) return;
+
+        if (user.e2eAutoGenerationDisabled) {
+          removeUserKey();
+          e2ePromptShownRef.current = false;
+          setShowE2EPrompt(false);
+          return;
+        }
+
         if (!localKey) {
           // User has a server-side key but nothing in RAM -> try passkey auto-recovery
           if (user.hasEncryptionKey) {
@@ -315,6 +337,7 @@ function App({ Component, pageProps }: AppProps) {
             userService
               .listWrappedKeys()
               .then((serverKeys) => {
+                if (cancelled) return;
                 if (!hasPasskeyWrappedKey() && serverKeys.length === 0) {
                   // No passkey data anywhere -> show manual prompt
                   showPrompt();
@@ -322,10 +345,11 @@ function App({ Component, pageProps }: AppProps) {
                 }
                 loadKeyWithPasskey(serverKeys)
                   .then(async (encodedKey) => {
+                    if (cancelled) return;
                     if (encodedKey) {
                       // Verify key matches server-side hash before trusting it
                       const valid = await verifyAndMigrateKey(encodedKey);
-                      if (valid) {
+                      if (valid && !cancelled) {
                         storeUserKey(encodedKey);
                         return; // Key restored silently, no prompt needed
                       }
@@ -336,13 +360,15 @@ function App({ Component, pageProps }: AppProps) {
                   .catch(showPrompt);
               })
               .catch(() => {
+                if (cancelled) return;
                 // Server unreachable -> try local only
                 if (hasPasskeyWrappedKey()) {
                   loadKeyWithPasskey()
                     .then(async (encodedKey) => {
+                      if (cancelled) return;
                       if (encodedKey) {
                         const valid = await verifyAndMigrateKey(encodedKey);
-                        if (valid) {
+                        if (valid && !cancelled) {
                           storeUserKey(encodedKey);
                           return;
                         }
@@ -354,7 +380,7 @@ function App({ Component, pageProps }: AppProps) {
                   showPrompt();
                 }
               });
-          } else if (user.hasTeamMembership) {
+          } else if (shouldPromptForE2EKey(user, false)) {
             // Team member without any encryption key yet -> prompt to set up E2E
             showPrompt();
           }
@@ -363,13 +389,13 @@ function App({ Component, pageProps }: AppProps) {
 
         if (!user.hasEncryptionKey) {
           removeUserKey();
-          if (user.hasTeamMembership) showPrompt();
+          if (shouldPromptForE2EKey(user, false)) showPrompt();
           return;
         }
 
         verifyAndMigrateKey(localKey)
           .then((valid) => {
-            if (!valid) {
+            if (!valid && !cancelled) {
               removeUserKey();
               showPrompt();
               throw new Error("stale_e2e_session_key");
@@ -380,7 +406,20 @@ function App({ Component, pageProps }: AppProps) {
           });
       },
     );
+
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
+
+  // Close a recovery dialog immediately if the account key is deleted or the
+  // refreshed user profile no longer contains a server-side key hash.
+  useEffect(() => {
+    if (!user?.hasEncryptionKey || user.e2eAutoGenerationDisabled) {
+      e2ePromptShownRef.current = false;
+      setShowE2EPrompt(false);
+    }
+  }, [user?.hasEncryptionKey, user?.e2eAutoGenerationDisabled]);
 
   // iOS fix: prevent auto-zoom on input focus without disabling user zoom.
   // On iPhone/iPad, Safari zooms in whenever a form field receives focus if
@@ -392,9 +431,7 @@ function App({ Component, pageProps }: AppProps) {
       /iPad|iPhone/.test(navigator.userAgent) && !(window as any).MSStream;
     if (!isIOS) return;
 
-    const viewport = document.querySelector<HTMLMetaElement>(
-      "[name=viewport]",
-    );
+    const viewport = document.querySelector<HTMLMetaElement>("[name=viewport]");
     if (!viewport) return;
 
     const originalContent = viewport.getAttribute("content") ?? "";
@@ -427,7 +464,13 @@ function App({ Component, pageProps }: AppProps) {
   useEffect(() => {
     const register = () => {
       if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.register("/sw.js").catch(() => {});
+        const run = () =>
+          navigator.serviceWorker.register("/sw.js").catch(() => {});
+        if ("requestIdleCallback" in window) {
+          window.requestIdleCallback(run, { timeout: 5000 });
+        } else {
+          globalThis.setTimeout(run, 2500);
+        }
       }
     };
     if (document.readyState === "complete") {
@@ -444,7 +487,7 @@ function App({ Component, pageProps }: AppProps) {
       i18nUtil.setLanguageCookie(pageProps.language);
       if (cookieLanguage) location.reload();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -481,8 +524,8 @@ function App({ Component, pageProps }: AppProps) {
   // Client: read from window.__I18N__ (injected by _document.tsx).
   const i18nMessagesRef = useRef<Record<string, string>>(
     typeof window !== "undefined"
-      ? (window as any).__I18N__ ?? englishMessages
-      : __ssrI18nMessages ?? englishMessages,
+      ? ((window as any).__I18N__ ?? englishMessages)
+      : (__ssrI18nMessages ?? englishMessages),
   );
   const i18nMessages = useMemo(
     () => ({ ...englishMessages, ...i18nMessagesRef.current }),
@@ -498,7 +541,6 @@ function App({ Component, pageProps }: AppProps) {
     () => buildTheme(palette, colorScheme),
     [colorScheme, palette],
   );
-
   return (
     <>
       <Head>
@@ -527,7 +569,9 @@ function App({ Component, pageProps }: AppProps) {
           >
             <MantineProvider
               theme={mantineTheme}
-              forceColorScheme={colorScheme === "auto" ? undefined : colorScheme}
+              forceColorScheme={
+                colorScheme === "auto" ? undefined : colorScheme
+              }
               defaultColorScheme="dark"
               stylesTransform={emotionTransform}
               cssVariablesResolver={contrastResolver}
@@ -548,9 +592,8 @@ function App({ Component, pageProps }: AppProps) {
                       value={{
                         user,
                         refreshUser: async (options) => {
-                          const user = await userService.getCurrentUser(
-                            options,
-                          );
+                          const user =
+                            await userService.getCurrentUser(options);
                           setUser(user);
                           return user;
                         },
@@ -570,7 +613,11 @@ function App({ Component, pageProps }: AppProps) {
                                 <Container
                                   fluid={route === "/"}
                                   px={route === "/" ? 0 : undefined}
-                                  style={route === "/" ? { overflowX: "hidden" } : undefined}
+                                  style={
+                                    route === "/"
+                                      ? { overflowX: "hidden" }
+                                      : undefined
+                                  }
                                 >
                                   <Component {...pageProps} />
                                 </Container>
@@ -579,11 +626,14 @@ function App({ Component, pageProps }: AppProps) {
                             <Footer />
                           </Stack>
                           <CookieConsent />
-                          <E2EKeyPrompt
-                            opened={showE2EPrompt}
-                            onClose={() => setShowE2EPrompt(false)}
-                            userId={user?.id ?? ""}
-                          />
+                          <PwaInstallPrompt />
+                          {user && (
+                            <E2EKeyPrompt
+                              opened={showE2EPrompt}
+                              onClose={() => setShowE2EPrompt(false)}
+                              userId={user.id}
+                            />
+                          )}
                           {user && <TeamStatusChecker />}
                         </>
                       )}
@@ -665,8 +715,9 @@ App.getInitialProps = async ({ ctx }: { ctx: GetServerSidePropsContext }) => {
         // Extract the fresh access_token from the Set-Cookie to use
         // it in the retry call (the cookie jar on the server is not
         // automatically updated).
-        const freshCookie = setCookieHeaders
-          ?.find((c: string) => c.startsWith("access_token="));
+        const freshCookie = setCookieHeaders?.find((c: string) =>
+          c.startsWith("access_token="),
+        );
         if (freshCookie) {
           const token = freshCookie.split(";")[0]; // "access_token=xxx"
           pageProps.user = await axios(`${apiURL}/api/users/me`, {
@@ -684,8 +735,8 @@ App.getInitialProps = async ({ ctx }: { ctx: GetServerSidePropsContext }) => {
     pageProps.route = ctx.req.url;
 
     // URL locale from Next.js i18n routing ('fr' or 'en')
-    pageProps.language = ctx.req.cookies["language"]
-      ?? (ctx.locale === "en" ? "en-US" : "fr-FR");
+    pageProps.language =
+      ctx.req.cookies["language"] ?? (ctx.locale === "en" ? "en-US" : "fr-FR");
 
     // Load i18n messages for SSR rendering but do NOT include them in
     // pageProps (which is serialized into __NEXT_DATA__, adding ~120 kB
