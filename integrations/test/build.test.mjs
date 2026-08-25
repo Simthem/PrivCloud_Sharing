@@ -4,8 +4,19 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { buildIntegrations } from "../scripts/build.mjs";
+
+// Read from the root manifest that build.mjs uses, instead of pinning a literal
+// that has to be edited by hand at every release.
+const root = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
+const { version } = JSON.parse(
+  await readFile(path.join(root, "package.json"), "utf8"),
+);
 
 test("integration packaging is versioned, instance-bound and Android-free", async (t) => {
   const outputDirectory = await mkdtemp(
@@ -17,7 +28,7 @@ test("integration packaging is versioned, instance-bound and Android-free", asyn
     baseUrl: "https://oss.example.test",
     outputDirectory,
   });
-  assert.equal(manifest.version, "1.24.0");
+  assert.equal(manifest.version, version);
   assert.equal(manifest.baseUrl, "https://oss.example.test");
   assert.equal(manifest.artifacts.length, 5);
 
@@ -43,7 +54,10 @@ test("integration packaging is versioned, instance-bound and Android-free", asyn
     ),
   );
   assert.match(browser.toString("utf8"), /https:\/\/oss\.example\.test/);
-  assert.match(browser.toString("utf8"), /"version": "1\.24\.0"/);
+  assert.match(
+    browser.toString("utf8"),
+    new RegExp(`"version": "${version.replaceAll(".", "\\.")}"`),
+  );
 });
 
 test("integration packaging refuses an unsafe deployment URL", async () => {

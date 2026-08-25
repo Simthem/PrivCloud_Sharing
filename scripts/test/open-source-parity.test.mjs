@@ -255,6 +255,16 @@ test("all release packages stay on the same version", async () => {
     JSON.stringify({ manifests, versions }),
   );
 
+  // The Companion advertises its version from a source constant, outside any
+  // manifest: without this check a release bump leaves it behind and only the
+  // packaging script catches it.
+  const companion = await read("bridge/src/privcloud-bridge.mjs");
+  assert.equal(
+    /const VERSION = "([^"]+)";/.exec(companion)?.[1],
+    versions[0],
+    "bridge/src/privcloud-bridge.mjs must declare the released version",
+  );
+
   const lockfiles = [
     "package-lock.json",
     "backend/package-lock.json",
