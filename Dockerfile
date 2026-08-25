@@ -1,3 +1,7 @@
+# Both cache images are published for linux/amd64 only. Any multi-platform
+# build would silently reuse their amd64 content on the other platforms, so the
+# release workflow pins platforms to linux/amd64. Use Dockerfile.full-build,
+# which rebuilds OpenSSL and Node from source, to target another architecture.
 ARG OPENSSL_BUILDER_IMAGE=simthem/privcloud-sharing:openssl-builder-cache
 ARG NODE_BUILDER_IMAGE=simthem/privcloud-sharing:node-builder-cache
 
@@ -364,16 +368,31 @@ COPY ./reverse-proxy /opt/app/reverse-proxy
 # This stage is never published. It avoids installing a package manager in the
 # final image while keeping native Node addons (sharp, argon2) operational.
 FROM debian:trixie-slim AS runtime-layout
+# The multiarch triplet depends on the target platform (x86_64-linux-gnu on
+# amd64, aarch64-linux-gnu on arm64), so it is derived at build time instead of
+# being hardcoded: a hardcoded x86_64 path makes every non-amd64 leg of a
+# multi-platform build fail with "cp: cannot stat".
+#
+# CVE-2026-2673: the patched OpenSSL 3.6 artifact is staged here too. Node was
+# compiled with shared OpenSSL and loads precisely these two libraries. COPY has
+# no shell to resolve the triplet, hence the staging through /incoming.
+COPY --from=openssl-builder /usr/local/openssl/lib/libssl.so.3 /incoming/libssl.so.3
+COPY --from=openssl-builder /usr/local/openssl/lib/libcrypto.so.3 /incoming/libcrypto.so.3
 RUN set -eu; \
+    TRIPLET="$(uname -m)-linux-gnu"; \
+    LIBDIR="/runtime/usr/lib/${TRIPLET}"; \
     mkdir -p \
-        /runtime/usr/lib/x86_64-linux-gnu \
+        "${LIBDIR}" \
         /runtime/home/privcloud-sharing/.config/caddy \
         /runtime/home/privcloud-sharing/.local/share/caddy \
         /runtime/opt/app/backend/data; \
-    cp -L /usr/lib/x86_64-linux-gnu/libstdc++.so.6 \
-        /runtime/usr/lib/x86_64-linux-gnu/libstdc++.so.6; \
-    cp -L /lib/x86_64-linux-gnu/libgcc_s.so.1 \
-        /runtime/usr/lib/x86_64-linux-gnu/libgcc_s.so.1; \
+    cp -L "/usr/lib/${TRIPLET}/libstdc++.so.6" \
+        "${LIBDIR}/libstdc++.so.6"; \
+    cp -L "/lib/${TRIPLET}/libgcc_s.so.1" \
+        "${LIBDIR}/libgcc_s.so.1"; \
+    mv /incoming/libssl.so.3 "${LIBDIR}/libssl.so.3"; \
+    mv /incoming/libcrypto.so.3 "${LIBDIR}/libcrypto.so.3"; \
+    rmdir /incoming; \
     chown -R 1000:1000 \
         /runtime/home/privcloud-sharing \
         /runtime/opt/app/backend/data
@@ -392,12 +411,10 @@ ENV HOME=/home/privcloud-sharing
 
 # NODE_OPTIONS remains process-specific: proxy bootstrap is only enabled for
 # the backend by entrypoint.mjs, never for SSR, Prisma or the healthcheck.
-COPY --from=runtime-layout /runtime/ /
 
-# CVE-2026-2673: use the patched OpenSSL 3.6 artifact. Node was compiled with
-# shared OpenSSL and loads precisely these two libraries.
-COPY --from=openssl-builder /usr/local/openssl/lib/libssl.so.3 /usr/lib/x86_64-linux-gnu/libssl.so.3
-COPY --from=openssl-builder /usr/local/openssl/lib/libcrypto.so.3 /usr/lib/x86_64-linux-gnu/libcrypto.so.3
+# Carries the C++ runtime libraries and the patched OpenSSL 3.6 pair
+# (CVE-2026-2673), both placed under the target platform's multiarch triplet.
+COPY --from=runtime-layout /runtime/ /
 
 COPY --from=node-builder /node-artifact/node /usr/local/bin/node
 COPY --from=runtime-init-builder /runtime-init /usr/local/bin/runtime-init

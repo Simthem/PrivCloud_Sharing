@@ -76,10 +76,13 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: ${{ 
-            (github.event_name == 'release' || 
-             (github.event_name == 'workflow_dispatch' && github.event.inputs.push_image == 'true')) 
-            && 'linux/amd64,linux/arm64' || 'linux/amd64'}}
+          # linux/amd64 only. The builder cache images referenced by the
+          # Dockerfile (simthem/privcloud-sharing:openssl-builder-cache and
+          # :node-builder-cache) are published for amd64 alone, so an arm64 leg
+          # would assemble an arm64 image holding an x86_64 node binary and
+          # x86_64 libssl/libcrypto: it builds, then fails to start.
+          # Re-enable linux/arm64 only once both caches are multi-arch.
+          platforms: linux/amd64
           # Only push if it's a release, manual trigger with push enabled, or push to main
           push: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.push_image == 'true') || github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
