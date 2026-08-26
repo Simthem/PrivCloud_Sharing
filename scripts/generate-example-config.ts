@@ -20,8 +20,11 @@ configVariablesWithDefaultValues["initUser"] = {
   enabled: false,
   username: "admin",
   email: "admin@example.com",
-  // snyk:ignore HardcodedNonCryptoSecret - This is an example/placeholder value for config generation, not a real credential
-  password: "my-secure-password",
+  // Deliberately empty: shipping a plausible-looking default here is how an
+  // example password ends up as a real deployment's admin credential. An empty
+  // value creates the account without a password (sign-in by password is then
+  // refused), so the operator has to choose one before enabling initUser.
+  password: "",
   isAdmin: true,
   ldapDN: "",
 };
@@ -36,7 +39,11 @@ for (const category of doc.contents.items) {
     category.key.commentBefore =
       "This configuration is used to create the initial user when the application is started for the first time.\n";
     category.key.commentBefore +=
-      "Make sure to change at least the password as soon as you log in!";
+      "Set `password` to a value you choose before enabling this section: an\n";
+    category.key.commentBefore +=
+      "empty password creates an account that cannot sign in with a password.\n";
+    category.key.commentBefore +=
+      "Make sure to change it again as soon as you log in!";
   }
 
   for (const variable of category.value.items) {

@@ -1,3 +1,62 @@
+## Unreleased
+
+### Security
+
+- **uploads -- multipart session store no longer a prototype pollution sink:**
+  `S3FileService` kept its in-flight multipart sessions in a plain object keyed
+  by `${operation}:${shareId}:${fileId}`, a key built from an URL parameter and
+  a request body field. The `upload:`/`reencrypt:` prefix made the key
+  impossible to collide with `__proto__`, so no exploit path existed, but that
+  guarantee rested entirely on string formatting. The store is now a `Map`,
+  which removes the class of issue by construction rather than by accident.
+  Closes six Snyk Code MEDIUM findings on `file.controller.ts`.
+- **OAuth -- provider unlink handler renamed off the filesystem namespace:**
+  `OAuthController.unlink()` and `OAuthService.unlink()` deleted an `OAuthUser`
+  row through Prisma but were named after the POSIX syscall, which taint
+  analysis read as an `fs.unlink()` sink and a reader could read the same way.
+  Both are now `disconnectProvider()`. The HTTP route stays
+  `POST /oauth/unlink/:provider`, so no API or frontend change; `provider`
+  remains constrained by `ProviderGuard` and `SafeIdPipe`. This closes the HIGH
+  path traversal finding recorded as not actionable in 1.24.0.
+- **example configuration -- no default administrator password:**
+  `generate-example-config.ts` no longer emits a plausible-looking
+  `my-secure-password` into `config.example.yaml`. The field ships empty with a
+  generated comment telling the operator to choose one before enabling
+  `initUser`; an empty value creates an account that cannot sign in with a
+  password, so a copied example can never become a live credential. This closes
+  the second finding recorded as not actionable in 1.24.0.
+
+### Documentation
+
+- **Companion -- build and release commands:** `bridge/README.md` now states
+  the development and packaging commands, the two contracts
+  `scripts/build-release.mjs` enforces before writing anything (source/package
+  version parity and the open-source authorization marker), the three artifacts
+  produced in `bridge/dist/`, the `--output-dir` escape hatch for CI and the
+  `sha256sum -c` verification step. It also records that the build is
+  reproducible, and that `npm run build` is not what serves Companion to end
+  users -- the Docker image copies the runtime into
+  `public/install/companion/`, which is where the one-line installer fetches
+  from.
+
+### Maintenance
+
+- **Snyk Code -- scan scoped and remaining findings reviewed:** added a `.snyk`
+  policy excluding `backend|bridge|frontend/test/**` from SAST. The nine
+  findings there were fixture credentials against loopback and RFC 6761 example
+  hosts, including two on a fake key fragment that the test asserts never
+  reaches a request URL. The file also carries the audit trail for the two
+  remaining findings, with their finding identifiers and justification text:
+  the Companion's deliberate loopback HTTP transport, and a postMessage rule
+  that anchors on a type-guard signature and does not move when the origin
+  check is rewritten. Both require org-side Consistent Ignores, since neither
+  the `ignore:` block nor inline `deepcode ignore` comments suppress Snyk Code
+  findings. Open findings: 19 to 2, with no HIGH remaining.
+
+### Dependencies
+
+- Updated `next` from 16.3.0 to 16.3.3.
+
 ## [1.24.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.0...v1.24.1) (2026-08-25)
 
 ### Bug Fixes

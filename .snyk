@@ -1,0 +1,117 @@
+# Snyk policy file (https://docs.snyk.io/manage-risk/policies/the-.snyk-file)
+#
+# This repository's SAST scan reports a set of findings that were reviewed one
+# by one. The ones that were real were fixed in code (see the "FIXED IN CODE"
+# section at the bottom); what remains here is either scoped out of the scan or
+# recorded as a reviewed false positive.
+
+version: v1.25.0
+
+# ---------------------------------------------------------------------------
+# EXCLUDED FROM SNYK CODE
+# ---------------------------------------------------------------------------
+# Test suites use fixture credentials against loopback and RFC 6761 example
+# hosts. They ship no production code path and no real secret, so the SAST
+# scanner's hardcoded-credential and cleartext-transport heuristics only
+# produce noise here.
+#
+# Findings removed by this exclusion:
+#   bridge/test/privcloud-bridge.test.mjs:48   Cleartext HTTP  (mock WebDAV
+#     server bound by the test itself, torn down at the end of the test)
+#   bridge/test/privcloud-bridge.test.mjs:127,249,339  "test-password" against
+#     http://127.0.0.1:<ephemeral port> and https://webdav.example/
+#   frontend/test/webdav-open-source.test.mjs:39,49   "app-password" for
+#     user "alice" at https://cloud.example.test/dav/
+#   frontend/test/privcloudBridge.test.mjs:69        same fixture
+#   frontend/test/auth-routing.test.mjs:87,114  a fake Team E2E key fragment;
+#     the test asserts that this value never reaches the sign-in request URL,
+#     so the literal is the subject of the test, not a credential.
+exclude:
+  code:
+    - backend/test/**
+    - bridge/test/**
+    - frontend/test/**
+
+# ---------------------------------------------------------------------------
+# REVIEWED FALSE POSITIVES - Snyk Code (SAST)
+# ---------------------------------------------------------------------------
+# IMPORTANT: neither the `ignore:` block nor an inline `// deepcode ignore`
+# comment suppresses a Snyk Code finding. The `ignore:` block applies only to
+# Snyk Open Source (SCA) and Snyk IaC; an inline comment was tried on the Path
+# Traversal finding and had no effect on `snyk code test` output.
+# Snyk Code uses "Consistent Ignores", stored server-side on the finding:
+#   snyk ignore create --finding-id=<ID> --ignore-type=not-vulnerable \
+#     --reason="..." --expiration=YYYY-MM-DD --org=<ORG>
+# Obtain <ID> from `fingerprints["snyk/assets/finding/v1"]` in the JSON/SARIF
+# output. The entries below are the audit trail and the reason text to use.
+#
+# MEDIUM - "Cleartext Transmission" - bridge/src/privcloud-bridge.mjs:1501
+#   Finding ID: 331d6516-5481-48e3-b143-3191c6414bae
+#   Ignore type: not-vulnerable
+#   Paste as the justification:
+#     Loopback-only HTTP by design. Browsers reject ad-hoc localhost
+#     certificates, so self-signed TLS would break the web integration rather
+#     than protect it. assertLoopbackBindHost() refuses any non-loopback bind
+#     and createLoopbackHttpServer() drops non-loopback peers, so the traffic
+#     never leaves the host and there is no channel to sniff. Application
+#     operations additionally require exact Origin validation and bearer
+#     authentication.
+#   The Companion's local endpoint is deliberately plain HTTP on a loopback
+#   address. Browsers reject ad-hoc localhost certificates, so self-signed TLS
+#   would break the web integration rather than protect it. The exposure is
+#   bounded instead: assertLoopbackBindHost() refuses any non-loopback bind,
+#   createLoopbackHttpServer() drops non-loopback peers, and application
+#   operations require exact Origin validation plus bearer authentication.
+#   Traffic never leaves the host, so there is no channel to sniff.
+#
+# LOW - "Insufficient postMessage Validation"
+#       frontend/src/utils/reencryptUpload.util.ts:38
+#   Finding ID: cb717deb-cfb9-4f6c-bff4-321b3dd53812
+#   Ignore type: not-vulnerable
+#   Paste as the justification:
+#     The listener is bound to one dedicated Worker, not to window. Dedicated
+#     Worker messages carry an empty MessageEvent.origin by standard, so a
+#     document-origin comparison is not applicable. The handler checks the
+#     origin, requires a trusted event whose target and currentTarget are that
+#     exact Worker object, and validates the full payload shape before any data
+#     reaches the upload state machine; a cross-window postMessage cannot reach
+#     it. The rule anchors on the type-guard signature, not on the listener, and
+#     does not move when the origin check is rewritten.
+#   The listener is bound to a specific dedicated Worker, not to `window`.
+#   Dedicated Worker messages carry an empty MessageEvent.origin by standard,
+#   so comparing against a document origin is not applicable. The handler
+#   nevertheless rejects anything that is not that exact worker's own trusted
+#   event (event.origin !== "", !event.isTrusted, currentTarget/target !==
+#   activeWorker) and then validates the full payload shape with
+#   isWorkerResult() before it can enter the upload state machine.
+#   A cross-window postMessage cannot reach this listener.
+#   Rule javascript/InsufficientPostmessageValidation anchors on the *signature*
+#   of the isWorkerResult type guard (line 38, cols 25-39), not on the listener:
+#   the guard was rewritten twice - once as an explicit same-origin comparison
+#   inside the condition chain, once as a dedicated first-statement early return
+#   using window.location.origin - and the finding did not move by a single
+#   column either time. No origin check satisfies this rule here.
+
+# ---------------------------------------------------------------------------
+# FIXED IN CODE (kept for reference; no ignore needed)
+# ---------------------------------------------------------------------------
+# MEDIUM x6 - "Prototype Pollution" - backend/src/file/file.controller.ts
+#   at lines 166, 198, 261, 330, 349 and 401. All six flowed into the same
+#   sink: S3FileService kept its in-flight multipart sessions in a plain object
+#   keyed by `${operation}:${shareId}:${fileId}`. `multipartUploads` is now a
+#   Map, so no client-influenced string can reach Object.prototype.
+#
+# HIGH - "Path Traversal" - backend/src/oauth/oauth.controller.ts
+#   The rule javascript/PT matched the *method name*: the sink it reported was
+#   the `unlink` identifier in `this.oauthService.unlink(...)`. There was never
+#   a filesystem call - the method deletes an OAuthUser row through Prisma - so
+#   naming it after a POSIX syscall misled the analyser exactly as it would
+#   mislead a reader. Renamed to `disconnectProvider` on both the controller and
+#   the service; the HTTP route stays POST /oauth/unlink/:provider, so no API
+#   or frontend change. `provider` remains constrained by ProviderGuard and
+#   SafeIdPipe.
+#
+# MEDIUM - "Use of Hardcoded Passwords" - scripts/generate-example-config.ts:24
+#   The generator no longer emits a plausible-looking default admin password
+#   into config.example.yaml; the field is empty and the generated comment tells
+#   the operator to choose one before enabling initUser.

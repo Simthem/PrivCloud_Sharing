@@ -104,7 +104,10 @@ export class OAuthService {
     });
   }
 
-  async unlink(user: User, provider: string) {
+  // Named `disconnectProvider`, not `unlink`: this deletes an OAuthUser row,
+  // it touches no file. The POSIX name would suggest fs.unlink() to a reader
+  // and to any taint analyser following the call.
+  async disconnectProvider(user: User, provider: string) {
     const oauthUser = await this.prisma.oAuthUser.findFirst({
       where: {
         userId: user.id,

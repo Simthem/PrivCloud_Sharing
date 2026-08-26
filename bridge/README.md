@@ -32,24 +32,73 @@ The only persisted Companion state is the local pairing token hash in
 
 ## Development
 
+Companion has no dependencies and no transpilation step, so there is nothing to
+install first. Node.js 20 or newer is the only requirement. Run these from the
+`bridge/` directory:
+
 ```bash
-npm run check
-npm start
-npm run start:native
+npm run check        # syntax-check the runtime (node --check)
+npm start            # run the loopback HTTP server on 127.0.0.1:47631
+npm run start:native # run as a Native Messaging host on stdio
+npm test             # node --test on test/*.test.mjs
 ```
+
+From the repository root, the same test suite is `npm run test:bridge`.
 
 ## Build A Release Artifact
 
-The Companion is dependency-free JavaScript, so it does not require a
-transpilation step. Its build command validates the source/version contract,
-creates a versioned npm tarball and writes a manifest plus SHA-256 checksums:
-
 ```bash
+# from bridge/
 npm run build
+
+# or, from the repository root
+npm run build:companion
 ```
 
-Artifacts are written to `bridge/dist/`. The archive contains the runtime,
-Linux installer, Native Messaging templates and this README.
+`npm run build` is `npm run check` followed by `scripts/build-release.mjs`.
+Before writing anything, the script enforces two contracts and aborts on either:
+
+- `const VERSION` in `src/privcloud-bridge.mjs` must equal the `version` field
+  of `bridge/package.json`. A release whose runtime reports a version different
+  from its package is rejected rather than published.
+- the source must still carry the `openSourceLocalAuthorization: true` marker.
+
+It then wipes and recreates `bridge/dist/` with three files:
+
+| File | Contents |
+| --- | --- |
+| `privcloud-companion-<version>.tgz` | the release archive |
+| `manifest.json` | version, byte size and SHA-256 of the archive |
+| `SHA256SUMS` | the same digest in `sha256sum -c` format |
+
+The archive holds `package/` with the runtime (`src/`), the Linux installer and
+Native Messaging registration helper (`install/`), the browser manifests
+(`native-messaging/`), `package.json` and this README. Shell scripts and
+`privcloud-bridge.mjs` are stored mode 0755, everything else 0644.
+
+The build is reproducible: entries are sorted, timestamps are pinned to 0 and
+gzip runs at a fixed level, so the same source always yields the same SHA-256.
+Verify a published archive with:
+
+```bash
+cd bridge/dist && sha256sum -c SHA256SUMS
+```
+
+To build somewhere other than `bridge/dist/` — useful in CI, where wiping a
+directory in the work tree is undesirable — call the script directly:
+
+```bash
+node ./scripts/build-release.mjs --output-dir /path/to/output
+```
+
+Note that `npm run build` is **not** what puts Companion in front of end users.
+The Docker image copies `bridge/src/privcloud-bridge.mjs`, `bridge/install/` and
+this README into `public/install/companion/` (see the `Dockerfile`), and the
+one-line installer downloads them from a running instance. The `dist/` tarball
+is the artifact for signed desktop packaging, described under Release Signing
+below.
+
+## Configuration
 
 By default Companion listens on `http://127.0.0.1:47631` and allows local
 development origins plus `https://share.example.com`.

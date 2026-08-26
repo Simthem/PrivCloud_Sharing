@@ -74,12 +74,17 @@ const getWorker = (): Worker => {
   });
   worker = activeWorker;
   activeWorker.addEventListener("message", (event: MessageEvent<unknown>) => {
-    // Dedicated Worker messages use an empty MessageEvent.origin by standard.
-    // Binding the listener to the exact Worker object, requiring a trusted
-    // browser event and validating the full payload prevents window or custom
-    // MessageEvent data from entering the upload state machine.
+    // Check the sender's origin before anything else. A dedicated Worker
+    // delivers an empty MessageEvent.origin by standard, and the worker script
+    // is same-origin, so those are the only two values that may legitimately
+    // appear here; anything sent by another document is rejected outright.
+    if (event.origin !== "" && event.origin !== window.location.origin) {
+      return;
+    }
+    // Defence in depth: binding to the exact Worker object, requiring a trusted
+    // browser event and validating the full payload keep window or synthetic
+    // MessageEvent data out of the upload state machine.
     if (
-      event.origin !== "" ||
       !event.isTrusted ||
       event.currentTarget !== activeWorker ||
       event.target !== activeWorker ||

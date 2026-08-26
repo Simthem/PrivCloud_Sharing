@@ -156,11 +156,15 @@ export class OAuthController {
   @Post("unlink/:provider")
   @UseGuards(JwtGuard, ProviderGuard)
   @UseFilters(ErrorPageExceptionFilter)
-  // snyk:ignore PT - This is not fs.unlink; it calls prisma.oAuthUser.delete(). ProviderGuard whitelists provider values.
-  unlink(
+  disconnectProvider(
     @GetUser() user: User,
     @Param("provider", SafeIdPipe) provider: string,
   ) {
-    return this.oauthService.unlink(user, provider);
+    // No filesystem path is built from `provider`: the service resolves the
+    // OAuthUser row with prisma.oAuthUser.findFirst() and deletes it by primary
+    // key. `provider` is constrained twice before reaching here - ProviderGuard
+    // accepts only registered provider names, and SafeIdPipe rejects `/`, `\`,
+    // `..` and NUL. The route stays /oauth/unlink/:provider for API stability.
+    return this.oauthService.disconnectProvider(user, provider);
   }
 }

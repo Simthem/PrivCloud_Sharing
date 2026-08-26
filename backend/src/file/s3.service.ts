@@ -235,7 +235,10 @@ export class S3FileService {
     browserDirectDownloadExpiresInSeconds: 900,
   };
 
-  private multipartUploads: Record<
+  // Keyed by `${operation}:${shareId}:${fileId}`. A Map, not a plain object:
+  // the key embeds client-controlled identifiers, and a Map keeps prototype
+  // keys (`__proto__`, `constructor`, `prototype`) unreachable by construction.
+  private multipartUploads = new Map<
     string,
     {
       uploadId: string;
@@ -245,7 +248,7 @@ export class S3FileService {
       flowId?: string;
       totalParts?: number;
     }
-  > = {};
+  >();
   private multipartInitializations = new Map<
     string,
     Promise<{
@@ -748,7 +751,7 @@ export class S3FileService {
    */
   private async cleanupAbandonedUploads() {
     const now = Date.now();
-    for (const [key, upload] of Object.entries(this.multipartUploads)) {
+    for (const [key, upload] of this.multipartUploads) {
       if (now - upload.lastActivity > S3FileService.MULTIPART_TTL_MS) {
         this.logger.warn(
           `Evicting local multipart state: key=${key} uploadId=${upload.uploadId}`,
@@ -756,7 +759,7 @@ export class S3FileService {
         if (upload.flowId) {
           this.getAdaptiveUploadScheduler().unregisterFlow(upload.flowId);
         }
-        delete this.multipartUploads[key];
+        this.multipartUploads.delete(key);
       }
     }
   }
@@ -771,7 +774,7 @@ export class S3FileService {
     since: Date,
   ): Promise<Date | null> {
     let newest = 0;
-    for (const upload of Object.values(this.multipartUploads)) {
+    for (const upload of this.multipartUploads.values()) {
       if (upload.shareId === shareId) {
         newest = Math.max(newest, upload.lastActivity);
       }
@@ -840,12 +843,12 @@ export class S3FileService {
     const s3Instance = this.getS3Instance();
     const bucket = this.config.get("s3.bucketName");
 
-    for (const [key, upload] of Object.entries(this.multipartUploads)) {
+    for (const [key, upload] of this.multipartUploads) {
       if (upload.shareId === shareId) {
         if (upload.flowId) {
           this.getAdaptiveUploadScheduler().unregisterFlow(upload.flowId);
         }
-        delete this.multipartUploads[key];
+        this.multipartUploads.delete(key);
       }
     }
 
@@ -1013,16 +1016,17 @@ export class S3FileService {
     });
     const recovered = recoveredCandidates[0];
     const flowId = this.getUploadFlowId(shareId, fileId);
-    this.multipartUploads[
-      this.getMultipartSessionKey("upload", shareId, fileId)
-    ] = {
-      uploadId: recovered.candidate.UploadId!,
-      parts: recovered.parts,
-      lastActivity: Date.now(),
-      shareId,
-      flowId,
-      totalParts,
-    };
+    this.multipartUploads.set(
+      this.getMultipartSessionKey("upload", shareId, fileId),
+      {
+        uploadId: recovered.candidate.UploadId!,
+        parts: recovered.parts,
+        lastActivity: Date.now(),
+        shareId,
+        flowId,
+        totalParts,
+      },
+    );
     this.getAdaptiveUploadScheduler().registerFlow(flowId);
     this.logger.warn(
       `Multipart recovered from S3: shareId=${shareId} fileId=${fileId} ` +
@@ -1097,7 +1101,7 @@ export class S3FileService {
       throw new BadRequestException("Invalid multipart part count");
     }
 
-    this.multipartUploads ??= {};
+    this.multipartUploads ??= new Map();
     this.multipartInitializations ??= new Map();
     const multipartSessionKey = this.getMultipartSessionKey(
       "upload",
@@ -1105,7 +1109,7 @@ export class S3FileService {
       file.id,
     );
     const flowId = this.getUploadFlowId(shareId, file.id);
-    const existing = this.multipartUploads[multipartSessionKey];
+    const existing = this.multipartUploads.get(multipartSessionKey);
     if (existing) {
       if (
         existing.totalParts !== undefined &&
@@ -1141,7 +1145,7 @@ export class S3FileService {
       file.id,
       async () => {
         const startedAt = Date.now();
-        const afterLock = this.multipartUploads[multipartSessionKey];
+        const afterLock = this.multipartUploads.get(multipartSessionKey);
         if (afterLock) {
           if (
             afterLock.totalParts !== undefined &&
@@ -1165,7 +1169,7 @@ export class S3FileService {
           };
         }
         if (await this.recoverMultipartUpload(file.id!, shareId, totalParts)) {
-          const recovered = this.multipartUploads[multipartSessionKey];
+          const recovered = this.multipartUploads.get(multipartSessionKey);
           return {
             initialized: false,
             initMs: Date.now() - startedAt,
@@ -1184,14 +1188,14 @@ export class S3FileService {
         if (!response.UploadId) {
           throw new Error("Failed to initialize multipart upload.");
         }
-        this.multipartUploads[multipartSessionKey] = {
+        this.multipartUploads.set(multipartSessionKey, {
           uploadId: response.UploadId,
           parts: [],
           lastActivity: Date.now(),
           shareId,
           flowId,
           totalParts,
-        };
+        });
         this.getAdaptiveUploadScheduler().registerFlow(flowId);
         return {
           initialized: true,
@@ -1379,18 +1383,18 @@ export class S3FileService {
       seenPartIndexes.add(partIndex);
     }
 
-    this.multipartUploads ??= {};
+    this.multipartUploads ??= new Map();
     const multipartSessionKey = this.getMultipartSessionKey(
       "upload",
       shareId,
       fileId,
     );
-    let multipartUpload = this.multipartUploads[multipartSessionKey];
+    let multipartUpload = this.multipartUploads.get(multipartSessionKey);
     if (
       !multipartUpload &&
       (await this.recoverMultipartUpload(fileId, shareId, totalParts))
     ) {
-      multipartUpload = this.multipartUploads[multipartSessionKey];
+      multipartUpload = this.multipartUploads.get(multipartSessionKey);
     }
     if (!multipartUpload) {
       throw new HttpException(
@@ -1557,7 +1561,7 @@ export class S3FileService {
             if (existing.shareId !== shareId) {
               throw new BadRequestException("File ID is already in use");
             }
-            delete this.multipartUploads[multipartSessionKey];
+            this.multipartUploads.delete(multipartSessionKey);
             this.getAdaptiveUploadScheduler().unregisterFlow(flowId);
             return {
               ...file,
@@ -1566,12 +1570,12 @@ export class S3FileService {
             };
           }
 
-          let multipartUpload = this.multipartUploads[multipartSessionKey];
+          let multipartUpload = this.multipartUploads.get(multipartSessionKey);
           if (
             !multipartUpload &&
             (await this.recoverMultipartUpload(file.id, shareId, totalParts))
           ) {
-            multipartUpload = this.multipartUploads[multipartSessionKey];
+            multipartUpload = this.multipartUploads.get(multipartSessionKey);
           }
 
           let objectCompleted = false;
@@ -1687,7 +1691,7 @@ export class S3FileService {
               share: { connect: { id: shareId } },
             },
           });
-          delete this.multipartUploads[multipartSessionKey];
+          this.multipartUploads.delete(multipartSessionKey);
           this.getAdaptiveUploadScheduler().unregisterFlow(flowId);
           this.logger.log(
             `Multipart completed from S3 state: shareId=${shareId} fileId=${file.id} ` +
@@ -1776,7 +1780,10 @@ export class S3FileService {
       // Legacy clients still initialize with part 1. New clients use the
       // lightweight /multipart/init control request and reach this branch with
       // an existing session, allowing all data lanes to start together.
-      if (chunk.index === 0 && !this.multipartUploads[multipartSessionKey]) {
+      if (
+        chunk.index === 0 &&
+        !this.multipartUploads.has(multipartSessionKey)
+      ) {
         const initialization = await this.initializeMultipartUpload(
           file,
           shareId,
@@ -1786,13 +1793,13 @@ export class S3FileService {
       }
 
       // Get the ongoing multipart upload
-      let multipartUpload = this.multipartUploads[multipartSessionKey];
+      let multipartUpload = this.multipartUploads.get(multipartSessionKey);
       if (
         !multipartUpload &&
         chunk.index > 0 &&
         (await this.recoverMultipartUpload(file.id, shareId, chunk.total))
       ) {
-        multipartUpload = this.multipartUploads[multipartSessionKey];
+        multipartUpload = this.multipartUploads.get(multipartSessionKey);
       }
       if (!multipartUpload) {
         // Idempotency guard: a retried chunk can arrive *after* the upload
@@ -1949,7 +1956,7 @@ export class S3FileService {
             }),
           );
           // Remove the completed upload from memory
-          delete this.multipartUploads[multipartSessionKey];
+          this.multipartUploads.delete(multipartSessionKey);
           this.getAdaptiveUploadScheduler().unregisterFlow(slotKey);
           allPartsComplete = true;
         } catch (completeError) {
@@ -1962,7 +1969,7 @@ export class S3FileService {
             await s3Instance.send(
               new HeadObjectCommand({ Bucket: bucketName, Key: key }),
             );
-            delete this.multipartUploads[multipartSessionKey];
+            this.multipartUploads.delete(multipartSessionKey);
             this.getAdaptiveUploadScheduler().unregisterFlow(slotKey);
             allPartsComplete = true;
             this.logger.warn(
@@ -1970,7 +1977,7 @@ export class S3FileService {
             );
           } catch {
             if (this.isS3UploadGone(completeError)) {
-              delete this.multipartUploads[multipartSessionKey];
+              this.multipartUploads.delete(multipartSessionKey);
               this.getAdaptiveUploadScheduler().unregisterFlow(slotKey);
             }
             this.logger.error(
@@ -1995,7 +2002,7 @@ export class S3FileService {
       // clean up in-memory state and return a non-recoverable error.
       // The client must restart the upload from chunk 0.
       if (this.isS3UploadGone(error)) {
-        delete this.multipartUploads[multipartSessionKey];
+        this.multipartUploads.delete(multipartSessionKey);
         this.getAdaptiveUploadScheduler().unregisterFlow(slotKey);
         // Same idempotency guard as above: the session may be gone on S3
         // precisely because the upload already completed. If the DB record
@@ -2122,7 +2129,7 @@ export class S3FileService {
 
     try {
       if (chunk.index === 0) {
-        const staleUpload = this.multipartUploads[reencryptKey];
+        const staleUpload = this.multipartUploads.get(reencryptKey);
         if (staleUpload) {
           try {
             await s3Instance.send(
@@ -2137,7 +2144,7 @@ export class S3FileService {
               `Could not abort stale re-encryption upload: shareId=${shareId} fileId=${fileId}: ${(abortError as Error)?.message}`,
             );
           }
-          delete this.multipartUploads[reencryptKey];
+          this.multipartUploads.delete(reencryptKey);
         }
         const multipartInitResponse = await s3Instance.send(
           new CreateMultipartUploadCommand({ Bucket: bucketName, Key: key }),
@@ -2145,18 +2152,18 @@ export class S3FileService {
         const uploadId = multipartInitResponse.UploadId;
         if (!uploadId)
           throw new Error("Failed to initialize multipart upload.");
-        this.multipartUploads[reencryptKey] = {
+        this.multipartUploads.set(reencryptKey, {
           uploadId,
           parts: [],
           lastActivity: Date.now(),
           shareId,
           flowId: slotKey,
           totalParts: chunk.total,
-        };
+        });
         this.getAdaptiveUploadScheduler().registerFlow(slotKey);
       }
 
-      const multipartUpload = this.multipartUploads[reencryptKey];
+      const multipartUpload = this.multipartUploads.get(reencryptKey);
       if (!multipartUpload) {
         throw new InternalServerErrorException(
           "Multipart upload session not found.",
@@ -2226,7 +2233,7 @@ export class S3FileService {
             MultipartUpload: { Parts: sortedParts },
           }),
         );
-        delete this.multipartUploads[reencryptKey];
+        this.multipartUploads.delete(reencryptKey);
         this.getAdaptiveUploadScheduler().unregisterFlow(slotKey);
 
         const fileSize = await this.getFileSize(shareId, fileId);
@@ -2251,7 +2258,7 @@ export class S3FileService {
       // sessions.
       if (error instanceof HttpException) throw error;
       if (this.isS3UploadGone(error)) {
-        delete this.multipartUploads[reencryptKey];
+        this.multipartUploads.delete(reencryptKey);
         this.getAdaptiveUploadScheduler().unregisterFlow(slotKey);
         this.logger.warn(
           `S3 re-encryption session gone: shareId=${shareId} fileId=${fileId} chunk=${chunk.index}/${chunk.total}`,
