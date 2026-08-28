@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import * as fs from "fs";
 import moment from "moment";
+import { ConfigService } from "src/config/config.service";
 import { FileService } from "src/file/file.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { ReverseShareService } from "src/reverseShare/reverseShare.service";
@@ -25,6 +26,7 @@ export class JobsService {
     private fileService: FileService,
     private teamAuditService: TeamAuditService,
     private teamService: TeamService,
+    private config: ConfigService,
   ) {}
 
   private async runExclusive(jobName: string, job: () => Promise<void>) {
@@ -295,6 +297,15 @@ export class JobsService {
   @Cron("1 * * * *")
   async deleteExpiredUnverifiedAccounts() {
     await this.runExclusive("deleteExpiredUnverifiedAccounts", async () => {
+      // Deleting an account is irreversible, and an instance that cannot send
+      // a verification link leaves its users no way to keep theirs. Blocking
+      // at J+5 still applies and recovers on its own once SMTP is restored.
+      if (!this.config.get("smtp.enabled")) {
+        this.logger.warn(
+          "Skipped the unverified-account cleanup: SMTP is not configured",
+        );
+        return;
+      }
       const now = new Date();
       const deletionCutoff = new Date(
         now.getTime() - 14 * 24 * 60 * 60 * 1000,

@@ -31,6 +31,15 @@
   registered or not, so the new response body cannot be used to enumerate 
   accounts, and the existing 5-per-15-minutes rate limit, the single-use tokens 
   and the J+5/J+14 deadlines are unchanged.
+- **email verification -- instances without SMTP can still create accounts:**
+  a server with no mail transport no longer answers every registration with a
+  503. Sign-up, administrator provisioning and address changes create or keep
+  the account verified there, exactly like the accounts that predate this
+  feature, so the database insert trigger can never strand a user the instance
+  is unable to send a link to. The irreversible J+14 cleanup refuses to run
+  while no verification message can be delivered; blocking at J+5 is unchanged
+  and recovers on its own once SMTP is restored, because it is reversible where
+  a deletion is not.
 - **authentication -- terminal refresh failures no longer spin forever:** a
   refresh rejected twice with 401 now clears the stale HttpOnly session cookies,
   releases client state immediately and reaches the sign-in form with a

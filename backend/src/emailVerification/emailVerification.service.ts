@@ -49,8 +49,17 @@ export class EmailVerificationService {
     private emailService: EmailService,
   ) {}
 
+  /**
+   * An instance without SMTP can never deliver a verification link. Callers
+   * that create accounts use this to exempt them instead of refusing them;
+   * only an explicit request for a message is allowed to fail loudly.
+   */
+  isDeliveryAvailable(): boolean {
+    return !!this.config.get("smtp.enabled");
+  }
+
   assertDeliveryAvailable(): void {
-    if (!this.config.get("smtp.enabled")) {
+    if (!this.isDeliveryAvailable()) {
       throw new ServiceUnavailableException(
         "Email verification is required but SMTP is not configured",
       );

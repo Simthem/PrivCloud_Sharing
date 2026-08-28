@@ -53,9 +53,12 @@ export class AuthService {
     isAdmin?: boolean,
     emailAlreadyVerified = false,
   ) {
-    if (!emailAlreadyVerified) {
-      this.emailVerificationService.assertDeliveryAvailable();
-    }
+    // An instance with no SMTP can never deliver the link. Refusing every
+    // registration there would be worse than not verifying: the account is
+    // created already verified, exactly like those predating this feature.
+    const verificationRequired =
+      !emailAlreadyVerified &&
+      this.emailVerificationService.isDeliveryAvailable();
     const verificationRequiredAt = new Date();
     const hash = dto.password ? await argon.hash(dto.password) : null;
     try {
@@ -79,16 +82,16 @@ export class AuthService {
             password: hash,
             isAdmin: isAdmin ?? isFirstUser,
             emailVerificationRequiredAt: verificationRequiredAt,
-            emailVerifiedAt: emailAlreadyVerified
-              ? verificationRequiredAt
-              : null,
+            emailVerifiedAt: verificationRequired
+              ? null
+              : verificationRequiredAt,
           },
         });
       } finally {
         releaseQueue();
       }
 
-      if (!emailAlreadyVerified) {
+      if (verificationRequired) {
         try {
           await this.emailVerificationService.issueAndSend(user);
         } catch (error) {

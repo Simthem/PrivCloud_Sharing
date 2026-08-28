@@ -9,6 +9,8 @@ void (async () => {
   service.logger = { log: () => {}, warn: () => {} };
   service.runExclusive = async (_name: string, job: () => Promise<void>) =>
     job();
+  let smtpEnabled = true;
+  service.config = { get: (key: string) => (key === "smtp.enabled" ? smtpEnabled : undefined) };
   service.fileService = {
     deleteAllFiles: async (shareId: string) => {
       assert.equal(shareId, "share-1");
@@ -54,6 +56,13 @@ void (async () => {
   assert(cutoff <= after - 14 * 24 * 60 * 60 * 1000 + 10);
   assert.deepEqual(events, ["files", "database"]);
 
-  console.log("5 expired unverified account cleanup tests passed");
+  // Deleting accounts on an instance that cannot send a verification link
+  // would destroy data its users had no way to save.
+  smtpEnabled = false;
+  events.length = 0;
+  await service.deleteExpiredUnverifiedAccounts();
+  assert.deepEqual(events, []);
+
+  console.log("6 expired unverified account cleanup tests passed");
 })();
 

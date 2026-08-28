@@ -40,7 +40,10 @@ export class UserSevice {
   }
 
   async create(dto: CreateUserDTO) {
-    this.emailVerificationService.assertDeliveryAvailable();
+    // Same contract as AuthService.signUp: no SMTP means an exempt account
+    // rather than a provisioning request the operator cannot complete.
+    const verificationRequired =
+      this.emailVerificationService.isDeliveryAvailable();
     const verificationRequiredAt = new Date();
     let hash: string;
 
@@ -62,17 +65,22 @@ export class UserSevice {
           ...userData,
           password: hash,
           emailVerificationRequiredAt: verificationRequiredAt,
+          ...(verificationRequired
+            ? {}
+            : { emailVerifiedAt: verificationRequiredAt }),
         },
       });
 
       // Auto-create team for user
       await this.autoCreateTeamForUser(user.id, user.username, user.email);
 
-      try {
-        await this.emailVerificationService.issueAndSend(user);
-      } catch (error) {
-        await this.prisma.user.deleteMany({ where: { id: user.id } });
-        throw error;
+      if (verificationRequired) {
+        try {
+          await this.emailVerificationService.issueAndSend(user);
+        } catch (error) {
+          await this.prisma.user.deleteMany({ where: { id: user.id } });
+          throw error;
+        }
       }
 
       return user;
@@ -94,13 +102,15 @@ export class UserSevice {
         !!user.email &&
         user.email !== current.email &&
         !!current.emailVerificationRequiredAt;
-      if (emailChanged) {
-        this.emailVerificationService.assertDeliveryAvailable();
-      }
+      // Without SMTP the new address can never be confirmed, so the account
+      // keeps the verification state it already had rather than being locked
+      // out of an instance that cannot send it anything.
+      const reverifyOnEmailChange =
+        emailChanged && this.emailVerificationService.isDeliveryAvailable();
       const hash = user.password && (await argon.hash(user.password));
       const { password: _password, ...userData } = user as Record<string, unknown>;
 
-      const verificationData = emailChanged
+      const verificationData = reverifyOnEmailChange
         ? {
             // A still-unverified account keeps its original J+5/J+14 clock;
             // changing the address must never extend its grace period.
@@ -121,7 +131,7 @@ export class UserSevice {
         },
       });
 
-      if (emailChanged) {
+      if (reverifyOnEmailChange) {
         await this.emailVerificationService.issueAndSend(updated);
       }
 
