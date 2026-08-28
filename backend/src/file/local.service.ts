@@ -29,19 +29,24 @@ export class LocalFileService {
   ) {}
 
   private resolveSharePath(shareId: string, ...segments: string[]): string {
-    const forbidden = /[\/\\]|\.{2}|\x00/;
     const allSegments = [shareId, ...segments];
-    if (
-      allSegments.some(
-        (segment) => !segment || segment === "." || forbidden.test(segment),
-      )
-    ) {
-      throw new BadRequestException("Invalid storage identifier");
-    }
+    const safeSegments = allSegments.map((segment) => {
+      if (
+        typeof segment !== "string" ||
+        segment.length === 0 ||
+        segment.length > 255 ||
+        !/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/u.test(segment) ||
+        path.basename(segment) !== segment
+      ) {
+        throw new BadRequestException("Invalid storage identifier");
+      }
+      return path.basename(segment);
+    });
+    const [safeShareId, ...safeChildren] = safeSegments;
 
     const root = path.resolve(SHARE_DIRECTORY);
-    const resolved = path.resolve(root, shareId, ...segments);
-    const expectedShareRoot = path.resolve(root, shareId);
+    const resolved = path.resolve(root, safeShareId, ...safeChildren);
+    const expectedShareRoot = path.resolve(root, safeShareId);
     if (
       resolved !== expectedShareRoot &&
       !resolved.startsWith(`${expectedShareRoot}${path.sep}`)

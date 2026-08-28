@@ -1,3 +1,37 @@
+## [Unreleased]
+
+### Security
+
+- **request boundaries -- reject tampered parameter types:** binary upload and
+  probe handlers now require real `Buffer` bodies, scalar headers and bounded
+  numeric parameters before reading lengths or forwarding data.
+- **WebDAV proxy -- close SSRF and path-confusion paths:** targets remain on the
+  configured HTTPS origin and path, every DNS answer is checked against public
+  ranges, the selected address is pinned for TLS/request routing, and encoded
+  path separators or traversal segments are rejected.
+- **filesystem -- confine local storage paths:** share and file identifiers are
+  strictly allow-listed and every resolved path is checked below its share root.
+- **browser API paths -- encode every untrusted route segment:** share, team,
+  signing, crypto and configuration requests now keep user-controlled values in
+  one path segment, including native and streaming download paths.
+- **security headers and CI -- restore safe defaults:** Helmet now emits an
+  explicit production CSP and the backend system-test workflow grants only
+  read access to repository contents.
+- **bridge authentication -- parse one scalar Bearer token:** malformed,
+  duplicated and non-string authorization values are rejected without
+  polynomial regular-expression backtracking.
+
+### Compatibility
+
+- **E2E authentication handoff -- preserve per-tab `sessionStorage`:** the E2E
+  key remains available across reloads and long-running uploads; only the
+  pending post-authentication redirect record is validated and consumed.
+
+### Tests
+
+- Added regression coverage for encoded API segments, WebDAV SSRF/DNS rebinding,
+  local path traversal and malformed upload/control-plane inputs.
+
 ## [1.24.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.1...v1.24.2) (2026-08-27)
 
 ### Features

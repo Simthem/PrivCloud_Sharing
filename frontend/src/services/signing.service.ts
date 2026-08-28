@@ -1,4 +1,5 @@
 import api from "./api.service";
+import { apiPathSegment } from "../utils/apiPath.util";
 
 export interface SignatureRequest {
   id: string;
@@ -110,30 +111,34 @@ const getReceivedDocuments = async (): Promise<SignatureRequest[]> => {
 };
 
 const getDocument = async (id: string): Promise<SignatureRequest> => {
-  return (await api.get(`signing/documents/${id}`)).data;
+  return (await api.get(`signing/documents/${apiPathSegment(id)}`)).data;
 };
 
 const cancelDocument = async (id: string): Promise<void> => {
-  await api.delete(`signing/documents/${id}`);
+  await api.delete(`signing/documents/${apiPathSegment(id)}`);
 };
 
 const sendReminder = async (id: string): Promise<void> => {
-  await api.post(`signing/documents/${id}/remind`);
+  await api.post(`signing/documents/${apiPathSegment(id)}/remind`);
 };
 
 const downloadSigned = async (id: string): Promise<Blob> => {
-  const response = await api.get(`signing/documents/${id}/download`, {
-    responseType: "blob",
-  });
+  const response = await api.get(
+    `signing/documents/${apiPathSegment(id)}/download`,
+    {
+      responseType: "blob",
+    },
+  );
   return response.data;
 };
 
 const getAuditTrail = async (id: string): Promise<any> => {
-  return (await api.get(`signing/documents/${id}/audit`)).data;
+  return (await api.get(`signing/documents/${apiPathSegment(id)}/audit`)).data;
 };
 
 const getSignaturesForFinalization = async (id: string): Promise<any> => {
-  return (await api.get(`signing/documents/${id}/signatures`)).data;
+  return (await api.get(`signing/documents/${apiPathSegment(id)}/signatures`))
+    .data;
 };
 
 const decodeBase64 = (value: string): Uint8Array => {
@@ -146,17 +151,27 @@ const getE2ECertificatePage = async (
   id: string,
   documentHash: string,
 ): Promise<Uint8Array> => {
-  const res = (await api.post(`signing/documents/${id}/e2e-certificate-page`, {
-    documentHash,
-  })).data;
+  const res = (
+    await api.post(
+      `signing/documents/${apiPathSegment(id)}/e2e-certificate-page`,
+      {
+        documentHash,
+      },
+    )
+  ).data;
   return decodeBase64(res.certificatePage);
 };
 
 /** Send only the PDF ByteRange SHA-256 digest and receive its detached CMS. */
-const signE2EDigest = async (id: string, digest: string): Promise<Uint8Array> => {
-  const res = (await api.post(`signing/documents/${id}/sign-e2e-digest`, {
-    digest,
-  })).data;
+const signE2EDigest = async (
+  id: string,
+  digest: string,
+): Promise<Uint8Array> => {
+  const res = (
+    await api.post(`signing/documents/${apiPathSegment(id)}/sign-e2e-digest`, {
+      digest,
+    })
+  ).data;
   return decodeBase64(res.cms);
 };
 
@@ -164,7 +179,10 @@ const signE2EDigest = async (id: string, digest: string): Promise<Uint8Array> =>
  * E2E Step 2: Send re-encrypted signed PDF for storage.
  * Backend stores it and marks the document COMPLETED.
  */
-const finalizeE2E = async (id: string, encryptedPdfBuffer: ArrayBuffer): Promise<any> => {
+const finalizeE2E = async (
+  id: string,
+  encryptedPdfBuffer: ArrayBuffer,
+): Promise<any> => {
   const bytes = new Uint8Array(encryptedPdfBuffer);
   let binary = "";
   for (let i = 0; i < bytes.length; i++) {
@@ -172,9 +190,11 @@ const finalizeE2E = async (id: string, encryptedPdfBuffer: ArrayBuffer): Promise
   }
   const base64 = btoa(binary);
 
-  return (await api.post(`signing/documents/${id}/finalize-e2e`, {
-    encryptedPdf: base64,
-  })).data;
+  return (
+    await api.post(`signing/documents/${apiPathSegment(id)}/finalize-e2e`, {
+      encryptedPdf: base64,
+    })
+  ).data;
 };
 
 // ============================================================
@@ -182,18 +202,22 @@ const finalizeE2E = async (id: string, encryptedPdfBuffer: ArrayBuffer): Promise
 // ============================================================
 
 const getSigningPage = async (token: string): Promise<SigningPageData> => {
-  return (await api.get(`signing/sign/${token}`)).data;
+  return (await api.get(`signing/sign/${apiPathSegment(token)}`)).data;
 };
 
 const sendOtp = async (token: string): Promise<void> => {
-  await api.post(`signing/sign/${token}/otp/send`);
+  await api.post(`signing/sign/${apiPathSegment(token)}/otp/send`);
 };
 
 const verifyOtp = async (
   token: string,
   code: string,
 ): Promise<{ verified: boolean }> => {
-  return (await api.post(`signing/sign/${token}/otp/verify`, { otpCode: code })).data;
+  return (
+    await api.post(`signing/sign/${apiPathSegment(token)}/otp/verify`, {
+      otpCode: code,
+    })
+  ).data;
 };
 
 const signDocument = async (
@@ -205,14 +229,14 @@ const signDocument = async (
     fieldValues?: { fieldId: string; value: string }[];
   },
 ): Promise<void> => {
-  await api.post(`signing/sign/${token}/sign`, data);
+  await api.post(`signing/sign/${apiPathSegment(token)}/sign`, data);
 };
 
 const rejectDocument = async (
   token: string,
   reason?: string,
 ): Promise<void> => {
-  await api.post(`signing/sign/${token}/reject`, { reason });
+  await api.post(`signing/sign/${apiPathSegment(token)}/reject`, { reason });
 };
 
 /**
@@ -220,16 +244,19 @@ const rejectDocument = async (
  */
 const getPreviewUrl = (token: string): string => {
   const base = api.defaults.baseURL || "/api";
-  return `${base}/signing/sign/${token}/preview`;
+  return `${base}/signing/sign/${apiPathSegment(token)}/preview`;
 };
 
 /**
  * Download the signed PDF using the signer's public token.
  */
 const downloadSignedByToken = async (token: string): Promise<Blob> => {
-  const response = await api.get(`signing/sign/${token}/download-signed`, {
-    responseType: "blob",
-  });
+  const response = await api.get(
+    `signing/sign/${apiPathSegment(token)}/download-signed`,
+    {
+      responseType: "blob",
+    },
+  );
   return response.data;
 };
 
@@ -237,15 +264,23 @@ const downloadSignedByToken = async (token: string): Promise<Blob> => {
  * Download the original (encrypted) PDF for E2E finalization.
  */
 const downloadOriginal = async (documentId: string): Promise<ArrayBuffer> => {
-  const response = await api.get(`signing/documents/${documentId}/original`, {
-    responseType: "arraybuffer",
-  });
+  const response = await api.get(
+    `signing/documents/${apiPathSegment(documentId)}/original`,
+    {
+      responseType: "arraybuffer",
+    },
+  );
   return response.data;
 };
 
 export interface PaginatedTeamSignatures {
   documents: (SignatureRequest & { fileDeleted?: boolean })[];
-  pagination: { page: number; limit: number; total: number; totalPages: number };
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
 const getTeamDocuments = async (
@@ -256,15 +291,21 @@ const getTeamDocuments = async (
   if (options.page) params.set("page", String(options.page));
   if (options.limit) params.set("limit", String(options.limit));
   const query = params.toString();
-  const response = await api.get(`signing/team/${teamId}${query ? `?${query}` : ""}`);
+  const response = await api.get(
+    `signing/team/${apiPathSegment(teamId)}${query ? `?${query}` : ""}`,
+  );
   return response.data;
 };
 
 /**
  * Retry server-side finalization for a non-E2E document stuck in AWAITING_FINALIZATION.
  */
-const retryFinalize = async (documentId: string): Promise<{ status: string }> => {
-  const response = await api.post(`signing/documents/${documentId}/retry-finalize`);
+const retryFinalize = async (
+  documentId: string,
+): Promise<{ status: string }> => {
+  const response = await api.post(
+    `signing/documents/${apiPathSegment(documentId)}/retry-finalize`,
+  );
   return response.data;
 };
 

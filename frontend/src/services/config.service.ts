@@ -6,6 +6,7 @@ import {
   getRuntimeUploadChunkConfigKey,
   UploadChunkProfileName,
 } from "../utils/uploadPerformance.util";
+import { apiPathSegment } from "../utils/apiPath.util";
 
 const list = async (): Promise<Config[]> => {
   return (await api.get("/configs")).data;
@@ -29,7 +30,7 @@ const getRuntimeUploadMaxChunkSize = async (
 };
 
 const getByCategory = async (category: string): Promise<AdminConfig[]> => {
-  return (await api.get(`/configs/admin/${category}`)).data;
+  return (await api.get(`/configs/admin/${apiPathSegment(category)}`)).data;
 };
 
 const updateMany = async (data: UpdateConfig[]): Promise<AdminConfig[]> => {

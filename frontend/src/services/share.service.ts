@@ -29,6 +29,7 @@ import {
   DEFAULT_DIRECT_DOWNLOAD_PART_BYTES,
   resolveDirectDownloadParallelConfig,
 } from "../utils/downloadParallel.util";
+import { apiPathSegment } from "../utils/apiPath.util";
 
 import {
   AdminShare,
@@ -47,7 +48,7 @@ const list = async (): Promise<AdminShare[]> => {
 };
 
 const removeFromAdminInventory = async (reference: string) => {
-  await api.delete(`shares/admin/${encodeURIComponent(reference)}`);
+  await api.delete(`shares/admin/${apiPathSegment(reference)}`);
 };
 
 const create = async (share: CreateShare, isReverseShare = false) => {
@@ -59,41 +60,48 @@ const create = async (share: CreateShare, isReverseShare = false) => {
 
 const completeShare = async (id: string, e2eKey?: string) => {
   const response = (
-    await api.post(`shares/${id}/complete`, e2eKey ? { e2eKey } : {})
+    await api.post(
+      `shares/${apiPathSegment(id)}/complete`,
+      e2eKey ? { e2eKey } : {},
+    )
   ).data;
   deleteCookie("reverse_share_token");
   return response;
 };
 
 const keepUploadAlive = async (id: string) => {
-  await api.post(`shares/${id}/upload-heartbeat`);
+  await api.post(`shares/${apiPathSegment(id)}/upload-heartbeat`);
 };
 
 const createBridgeUploadToken = async (
   id: string,
   label?: string,
 ): Promise<{ token: string; expiresAt: string }> => {
-  return (await api.post(`shares/${id}/bridge-upload-token`, { label })).data;
+  return (
+    await api.post(`shares/${apiPathSegment(id)}/bridge-upload-token`, {
+      label,
+    })
+  ).data;
 };
 
 const revertComplete = async (id: string) => {
-  return (await api.delete(`shares/${id}/complete`)).data;
+  return (await api.delete(`shares/${apiPathSegment(id)}/complete`)).data;
 };
 
 const get = async (id: string): Promise<Share> => {
-  return (await api.get(`shares/${id}`)).data;
+  return (await api.get(`shares/${apiPathSegment(id)}`)).data;
 };
 
 const getFromOwner = async (id: string): Promise<Share> => {
-  return (await api.get(`shares/${id}/from-owner`)).data;
+  return (await api.get(`shares/${apiPathSegment(id)}/from-owner`)).data;
 };
 
 const getMetaData = async (id: string): Promise<ShareMetaData> => {
-  return (await api.get(`shares/${id}/metaData`)).data;
+  return (await api.get(`shares/${apiPathSegment(id)}/metaData`)).data;
 };
 
 const remove = async (id: string) => {
-  await api.delete(`shares/${id}`);
+  await api.delete(`shares/${apiPathSegment(id)}`);
 };
 
 const getMyShares = async (): Promise<MyShare[]> => {
@@ -109,27 +117,34 @@ const getShareToken = async (
   password?: string,
   captchaToken?: string,
 ) => {
-  await api.post(`/shares/${id}/token`, {
+  await api.post(`/shares/${apiPathSegment(id)}/token`, {
     password,
     ...(captchaToken && { captchaToken }),
   });
 };
 
 const isShareIdAvailable = async (id: string): Promise<boolean> => {
-  return (await api.get(`/shares/isShareIdAvailable/${id}`)).data.isAvailable;
+  return (await api.get(`/shares/isShareIdAvailable/${apiPathSegment(id)}`))
+    .data.isAvailable;
 };
 
 const downloadFile = async (shareId: string, fileId: string) => {
-  const relayUrl = `/api/shares/${shareId}/files/${fileId}`;
+  const relayUrl = `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(fileId)}`;
   try {
     const authorization = (
-      await api.get(`/shares/${shareId}/files/${fileId}/direct`)
+      await api.get(
+        `/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(fileId)}/direct`,
+      )
     ).data as { direct?: boolean; url?: string };
     const downloadUrl =
       authorization.direct && authorization.url ? authorization.url : relayUrl;
-    window.location.assign(new URL(downloadUrl, window.location.origin).toString());
+    window.location.assign(
+      new URL(downloadUrl, window.location.origin).toString(),
+    );
   } catch {
-    window.location.assign(new URL(relayUrl, window.location.origin).toString());
+    window.location.assign(
+      new URL(relayUrl, window.location.origin).toString(),
+    );
   }
 };
 
@@ -597,7 +612,7 @@ const downloadFileE2E = async (
   onProgress?: (_downloadedBytes: number, _totalBytes: number) => void,
   signal?: AbortSignal,
 ) => {
-  const downloadUrl = `/api/shares/${shareId}/files/${fileId}`;
+  const downloadUrl = `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(fileId)}`;
   const keyPromise = importKeyFromBase64(encodedKey);
   const chunkSizePromise = getChunkSize();
   const mimeType = (
@@ -728,7 +743,7 @@ const fetchDecryptedFile = async (
   encodedKey: string,
   signal?: AbortSignal,
 ): Promise<ArrayBuffer> => {
-  const downloadUrl = `/api/shares/${shareId}/files/${fileId}?download=false`;
+  const downloadUrl = `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(fileId)}?download=false`;
   const [key, legacyChunkSize, response] = await Promise.all([
     importKeyFromBase64(encodedKey),
     getChunkSize(),
@@ -777,7 +792,7 @@ const fetchDecryptedFilePrefix = async (
     throw new Error("Invalid preview size limit");
   }
 
-  const downloadUrl = `/api/shares/${shareId}/files/${fileId}?download=false`;
+  const downloadUrl = `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(fileId)}?download=false`;
   const [key, legacyChunkSize, response] = await Promise.all([
     importKeyFromBase64(encodedKey),
     getChunkSize(),
@@ -806,7 +821,9 @@ const fetchDecryptedFilePrefix = async (
 };
 
 const removeFile = async (shareId: string, fileId: string) => {
-  await api.delete(`shares/${shareId}/files/${fileId}`);
+  await api.delete(
+    `shares/${apiPathSegment(shareId)}/files/${apiPathSegment(fileId)}`,
+  );
 };
 
 /**
@@ -832,7 +849,7 @@ const downloadFileWithProgress = async (
   }
 
   // Start the request in parallel with the picker to hide initial network RTT.
-  const downloadUrl = `/api/shares/${shareId}/files/${fileId}`;
+  const downloadUrl = `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(fileId)}`;
   const fetchPromise = fetchStreaming(downloadUrl, signal);
 
   // FSAA must be called in user gesture context (before async network ops)
@@ -932,7 +949,10 @@ const downloadAllAsZipE2E = async (
   const chunkSizePromise = getChunkSize();
   const firstFetchPromise: Promise<Response | null> =
     files.length > 0
-      ? fetchStreaming(`/api/shares/${shareId}/files/${files[0].id}`, signal)
+      ? fetchStreaming(
+          `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(files[0].id)}`,
+          signal,
+        )
       : Promise.resolve(null);
 
   // Try FSAA for streaming zip to disk
@@ -988,7 +1008,7 @@ const downloadAllAsZipE2E = async (
   try {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const fileUrl = `/api/shares/${shareId}/files/${file.id}`;
+      const fileUrl = `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(file.id)}`;
       const response =
         i === 0
           ? (await firstFetchPromise)!
@@ -1082,7 +1102,7 @@ const uploadFile = async (
   //      detach fetch-internal listeners immediately
   //   3. Null-out locals that are no longer needed
 
-  let url = `/api/shares/${encodeURIComponent(shareId)}/files?`;
+  let url = `/api/shares/${apiPathSegment(shareId)}/files?`;
   url += `name=${encodeURIComponent(file.name)}`;
   url += `&chunkIndex=${chunkIndex}&totalChunks=${totalChunks}`;
   if (file.id) url += `&id=${encodeURIComponent(file.id)}`;
@@ -1174,7 +1194,7 @@ const uploadReencryptChunk = async (
   sessionId?: string,
   signal?: AbortSignal,
 ): Promise<void> => {
-  let url = `/api/shares/${encodeURIComponent(shareId)}/files/${encodeURIComponent(fileId)}/reencrypt?`;
+  let url = `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(fileId)}/reencrypt?`;
   url += `chunkIndex=${chunkIndex}&totalChunks=${totalChunks}`;
   if (rotationId) url += `&rotationId=${encodeURIComponent(rotationId)}`;
   if (encryptionChunkSize) {
@@ -1245,20 +1265,22 @@ const getMyReverseShares = async (): Promise<MyReverseShare[]> => {
 const getReverseShare = async (
   reverseShareToken: string,
 ): Promise<ReverseShare> => {
-  const { data } = await api.get(`/reverseShares/${reverseShareToken}`);
+  const { data } = await api.get(
+    `/reverseShares/${apiPathSegment(reverseShareToken)}`,
+  );
   setCookie("reverse_share_token", reverseShareToken);
   return data;
 };
 
 const removeReverseShare = async (id: string) => {
-  await api.delete(`/reverseShares/${id}`);
+  await api.delete(`/reverseShares/${apiPathSegment(id)}`);
 };
 
 const updateReverseShare = async (
   id: string,
   data: { shareExpiration?: string; encryptedReverseShareKey?: string },
 ) => {
-  await api.patch(`/reverseShares/${id}`, data);
+  await api.patch(`/reverseShares/${apiPathSegment(id)}`, data);
 };
 
 /**
@@ -1270,7 +1292,7 @@ const updateReverseShare = async (
  * Errors are propagated -- callers must handle them.
  */
 const getEncryptedE2eKey = async (shareId: string): Promise<string | null> => {
-  const { data } = await api.get(`/shares/${shareId}/e2e-key`);
+  const { data } = await api.get(`/shares/${apiPathSegment(shareId)}/e2e-key`);
   return data?.encryptedReverseShareKey ?? null;
 };
 
@@ -1290,7 +1312,10 @@ const downloadAllAsZip = async (
     typeof window !== "undefined" && "showSaveFilePicker" in window;
   if (!canStreamToDisk) {
     window.location.assign(
-      new URL(`/api/shares/${shareId}/files/zip`, window.location.origin).toString(),
+      new URL(
+        `/api/shares/${apiPathSegment(shareId)}/files/zip`,
+        window.location.origin,
+      ).toString(),
     );
     return;
   }
@@ -1298,7 +1323,7 @@ const downloadAllAsZip = async (
   // Démarre la requête EN PARALLÈLE du file picker pour masquer la
   // latence réseau initiale (TCP/TLS + premier roundtrip).
   const fetchPromise = fetchStreaming(
-    `/api/shares/${shareId}/files/zip`,
+    `/api/shares/${apiPathSegment(shareId)}/files/zip`,
     signal,
   );
 
@@ -1325,7 +1350,10 @@ const downloadAllAsZip = async (
       }
     }
     window.location.assign(
-      new URL(`/api/shares/${shareId}/files/zip`, window.location.origin).toString(),
+      new URL(
+        `/api/shares/${apiPathSegment(shareId)}/files/zip`,
+        window.location.origin,
+      ).toString(),
     );
     return;
   }
@@ -1390,7 +1418,10 @@ const downloadSelectedAsZip = async (
   // Première requête en parallèle du file picker
   const firstFetchPromise: Promise<Response | null> =
     files.length > 0
-      ? fetchStreaming(`/api/shares/${shareId}/files/${files[0].id}`, signal)
+      ? fetchStreaming(
+          `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(files[0].id)}`,
+          signal,
+        )
       : Promise.resolve(null);
 
   let writable: FileSystemWritableFileStream | null = null;
@@ -1438,7 +1469,7 @@ const downloadSelectedAsZip = async (
   try {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const fileUrl = `/api/shares/${shareId}/files/${file.id}`;
+      const fileUrl = `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(file.id)}`;
       const response =
         i === 0
           ? (await firstFetchPromise)!
@@ -1506,7 +1537,10 @@ const downloadSelectedAsZipE2E = async (
   const chunkSizePromise = getChunkSize();
   const firstFetchPromise: Promise<Response | null> =
     files.length > 0
-      ? fetchStreaming(`/api/shares/${shareId}/files/${files[0].id}`, signal)
+      ? fetchStreaming(
+          `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(files[0].id)}`,
+          signal,
+        )
       : Promise.resolve(null);
 
   let writable: FileSystemWritableFileStream | null = null;
@@ -1557,7 +1591,7 @@ const downloadSelectedAsZipE2E = async (
   try {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const fileUrl = `/api/shares/${shareId}/files/${file.id}`;
+      const fileUrl = `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(file.id)}`;
       const response =
         i === 0
           ? (await firstFetchPromise)!

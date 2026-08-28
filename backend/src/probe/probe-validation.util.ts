@@ -61,8 +61,9 @@ export function validateProbeBody(
   contentType: string | undefined,
 ): ProbeValidationResult {
   if (
-    contentType?.split(";", 1)[0]?.trim().toLowerCase() !==
-    "application/octet-stream"
+    typeof contentType !== "string" ||
+    contentType.split(";", 1)[0]?.trim().toLowerCase() !==
+      "application/octet-stream"
   ) {
     return {
       ok: false,
@@ -70,14 +71,29 @@ export function validateProbeBody(
       message: "Bandwidth probes require application/octet-stream",
     };
   }
-  if (!Buffer.isBuffer(body) || body.length !== declaredLength) {
+  if (!Number.isSafeInteger(declaredLength) || declaredLength < 0) {
+    return {
+      ok: false,
+      statusCode: 400,
+      message: "Invalid declared bandwidth probe length",
+    };
+  }
+  if (!Buffer.isBuffer(body)) {
+    return {
+      ok: false,
+      statusCode: 400,
+      message: "Bandwidth probe body must be binary",
+    };
+  }
+  const bodyLength = body.byteLength;
+  if (bodyLength !== declaredLength) {
     return {
       ok: false,
       statusCode: 400,
       message: "Bandwidth probe body does not match Content-Length",
     };
   }
-  if (body.length > PROBE_MAX_BODY_BYTES) {
+  if (bodyLength > PROBE_MAX_BODY_BYTES) {
     return {
       ok: false,
       statusCode: 413,
@@ -85,5 +101,5 @@ export function validateProbeBody(
     };
   }
 
-  return { ok: true, length: body.length };
+  return { ok: true, length: bodyLength };
 }

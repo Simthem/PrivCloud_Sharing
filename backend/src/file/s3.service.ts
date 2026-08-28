@@ -1747,8 +1747,17 @@ export class S3FileService {
       );
       throw new BadRequestException("Invalid file ID format");
     }
-    const uploadLength =
-      contentLength ?? (Buffer.isBuffer(data) ? data.length : 0);
+    let uploadLength: number;
+    if (contentLength !== undefined) {
+      if (typeof contentLength !== "number") {
+        throw new BadRequestException("Invalid upload content length");
+      }
+      uploadLength = contentLength;
+    } else if (Buffer.isBuffer(data)) {
+      uploadLength = data.byteLength;
+    } else {
+      throw new BadRequestException("Upload content length is required");
+    }
     if (!Number.isSafeInteger(uploadLength) || uploadLength < 0) {
       throw new BadRequestException("Invalid upload content length");
     }
@@ -2112,6 +2121,9 @@ export class S3FileService {
     shareId: string,
     encryptionChunkSize?: number,
   ) {
+    if (!Buffer.isBuffer(data)) {
+      throw new BadRequestException("Re-encryption body must be binary");
+    }
     if (!isValidUUID(fileId)) {
       throw new BadRequestException("Invalid file ID format");
     }
@@ -2208,13 +2220,13 @@ export class S3FileService {
         multipartUpload.parts[existingIdx] = {
           ETag: uploadPartResponse.ETag,
           PartNumber: partNumber,
-          Size: buffer.length,
+          Size: buffer.byteLength,
         };
       } else {
         multipartUpload.parts.push({
           ETag: uploadPartResponse.ETag,
           PartNumber: partNumber,
-          Size: buffer.length,
+          Size: buffer.byteLength,
         });
       }
 

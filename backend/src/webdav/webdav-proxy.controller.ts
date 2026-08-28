@@ -15,12 +15,7 @@ import * as ipaddr from "ipaddr.js";
 import { Response } from "express";
 import { JwtGuard } from "../auth/guard/jwt.guard";
 import { minutes, Throttle } from "@nestjs/throttler";
-import {
-  IsString,
-  IsNotEmpty,
-  IsOptional,
-  MaxLength,
-} from "class-validator";
+import { IsString, IsNotEmpty, IsOptional, MaxLength } from "class-validator";
 
 /**
  * Minimal server-side WebDAV proxy.
@@ -95,7 +90,10 @@ const PROPFIND_BODY =
 
 type ValidatedWebDavTarget = {
   href: string;
-  url: URL;
+  hostname: string;
+  authority: string;
+  port: number;
+  requestPath: string;
   address: string;
   family: 4 | 6;
 };
@@ -224,14 +222,50 @@ export class WebDavProxyController {
         "WebDAV target must stay on the configured endpoint origin",
       );
     }
+    if (!target.pathname.startsWith(endpoint.pathname)) {
+      throw new BadRequestException(
+        "WebDAV target must stay below the configured endpoint path",
+      );
+    }
 
     const resolved = await this.resolvePublicHost(target.hostname);
     return {
       href: target.href,
-      url: target,
+      hostname: target.hostname,
+      authority: target.host,
+      port: target.port ? Number(target.port) : 443,
+      requestPath: this.canonicalRequestPath(target),
       address: resolved.address,
       family: resolved.family,
     };
+  }
+
+  private canonicalRequestPath(url: URL): string {
+    let pathname: string;
+    try {
+      pathname = url.pathname
+        .split("/")
+        .map((segment) => {
+          const decoded = decodeURIComponent(segment);
+          if (
+            decoded === "." ||
+            decoded === ".." ||
+            decoded.includes("/") ||
+            decoded.includes("\\")
+          ) {
+            throw new Error("unsafe WebDAV path segment");
+          }
+          return encodeURIComponent(decoded).replaceAll(".", "%2E");
+        })
+        .join("/");
+    } catch {
+      throw new BadRequestException("Invalid WebDAV URL encoding");
+    }
+
+    const query = new URLSearchParams();
+    url.searchParams.forEach((value, key) => query.append(key, value));
+    const encodedQuery = query.toString();
+    return encodedQuery ? `${pathname}?${encodedQuery}` : pathname;
   }
 
   private async normalizeTargetUrlOrBridgeRequired(
@@ -274,7 +308,9 @@ export class WebDavProxyController {
       throw new BadRequestException("Invalid WebDAV URL");
     }
     if (url.protocol !== "https:") {
-      throw new BadRequestException("Only HTTPS WebDAV endpoints are supported");
+      throw new BadRequestException(
+        "Only HTTPS WebDAV endpoints are supported",
+      );
     }
     if (url.username || url.password) {
       throw new BadRequestException("Credentials in WebDAV URLs are refused");
@@ -285,7 +321,9 @@ export class WebDavProxyController {
     return url;
   }
 
-  private async resolvePublicHost(hostname: string): Promise<ResolvedPublicHost> {
+  private async resolvePublicHost(
+    hostname: string,
+  ): Promise<ResolvedPublicHost> {
     const addr = hostname.replace(/^\[|\]$/g, "");
     const literalFamily = isIP(addr);
     if (literalFamily !== 0) {
@@ -354,13 +392,19 @@ export class WebDavProxyController {
   ): Promise<WebDavUpstreamResponse> {
     return new Promise((resolve, reject) => {
       const req = httpsRequest(
-        target.url,
         {
+          protocol: "https:",
+          // Connect to the already-vetted address, not to the attacker-supplied
+          // hostname. `servername` preserves normal TLS certificate checking.
+          hostname: target.address,
+          port: target.port,
+          family: target.family,
+          ...(isIP(target.hostname) === 0 && { servername: target.hostname }),
+          path: target.requestPath,
           method: options.method,
-          headers: options.headers,
-          lookup: (_hostname, _options, callback) => {
-            callback(null, target.address, target.family);
-          },
+          headers: { ...options.headers, Host: target.authority },
+          agent: false,
+          rejectUnauthorized: true,
           timeout: WEBDAV_REQUEST_TIMEOUT_MS,
         },
         (stream) => {
@@ -412,7 +456,9 @@ export class WebDavProxyController {
     return status >= 200 && status < 300;
   }
 
-  private headerValue(value: string | string[] | undefined): string | undefined {
+  private headerValue(
+    value: string | string[] | undefined,
+  ): string | undefined {
     if (Array.isArray(value)) return value[0];
     return value;
   }

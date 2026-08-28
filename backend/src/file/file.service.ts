@@ -469,9 +469,12 @@ export class FileService {
     clientChunkSize?: number,
     encryptionChunkSize?: number,
   ) {
+    if (!Buffer.isBuffer(data)) {
+      throw new BadRequestException("Upload body must be binary");
+    }
     return this.createInternal(
       data,
-      data.length,
+      data.byteLength,
       false,
       chunk,
       file,
@@ -659,10 +662,7 @@ export class FileService {
    * Resolve the instance-configured limit. Reverse-share and Team limits are
    * ordinary self-hosting controls.
    */
-  private getCachedShareLimit(
-    shareId: string,
-    share: any,
-  ): number {
+  private getCachedShareLimit(shareId: string, share: any): number {
     const cached = this.shareLimitCache.get(shareId);
     if (cached && Date.now() - cached.ts < FileService.SHARE_LIMIT_TTL) {
       return cached.limit;
@@ -672,9 +672,7 @@ export class FileService {
     const reverseShareLimit = share.reverseShare?.maxShareSize
       ? parseInt(share.reverseShare.maxShareSize)
       : Infinity;
-    const teamMaxShareSize = parseInt(
-      process.env.TEAM_MAX_SHARE_SIZE || "0",
-    );
+    const teamMaxShareSize = parseInt(process.env.TEAM_MAX_SHARE_SIZE || "0");
     const teamLimit =
       share.teamFolderId && teamMaxShareSize > 0 ? teamMaxShareSize : Infinity;
 

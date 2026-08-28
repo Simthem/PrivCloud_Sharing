@@ -182,9 +182,7 @@ export class FileController {
       !Number.isSafeInteger(chunkIndex) ||
       !Number.isSafeInteger(contentLength)
     ) {
-      throw new BadRequestException(
-        "Invalid multipart part authorization",
-      );
+      throw new BadRequestException("Invalid multipart part authorization");
     }
     const expectedContentLength = getMultipartPartPayloadLength(
       request,
@@ -218,9 +216,7 @@ export class FileController {
       body.parts.length < 1 ||
       body.parts.length > MAX_MULTIPART_PART_AUTHORIZATIONS
     ) {
-      throw new BadRequestException(
-        "Invalid multipart parts authorization",
-      );
+      throw new BadRequestException("Invalid multipart parts authorization");
     }
 
     const seenChunkIndexes = new Set<number>();
@@ -238,9 +234,7 @@ export class FileController {
         !Number.isSafeInteger(contentLength) ||
         seenChunkIndexes.has(chunkIndex as number)
       ) {
-        throw new BadRequestException(
-          "Invalid multipart parts authorization",
-        );
+        throw new BadRequestException("Invalid multipart parts authorization");
       }
       const expectedContentLength = getMultipartPartPayloadLength(
         request,
@@ -604,7 +598,7 @@ export class FileController {
       declaredChunkSize,
       encryptionChunkSize,
     );
-    if (body.length > maxPayloadBytes) {
+    if (body.byteLength > maxPayloadBytes) {
       throw new PayloadTooLargeException(
         `Upload chunk exceeds the ${maxChunkBytes}-byte limit`,
       );
@@ -612,9 +606,18 @@ export class FileController {
   }
 
   private getBearerToken(authorization?: string): string {
-    const match = authorization?.match(/^Bearer\s+(.+)$/i);
-    if (!match) throw new BadRequestException("Missing Bridge upload token");
-    return match[1];
+    if (typeof authorization !== "string") {
+      throw new BadRequestException("Missing Bridge upload token");
+    }
+    const parts = authorization.trim().split(/\s+/u);
+    if (
+      parts.length !== 2 ||
+      parts[0].toLowerCase() !== "bearer" ||
+      !parts[1]
+    ) {
+      throw new BadRequestException("Missing Bridge upload token");
+    }
+    return parts[1];
   }
 
   @Get("zip")
@@ -984,11 +987,18 @@ export class FileController {
     @Param("fileId", SafeIdPipe) fileId: string,
     @Req() req: Request,
   ) {
-    const chunkIndex = parseInt(query.chunkIndex, 10);
-    const totalChunks = parseInt(query.totalChunks, 10);
+    const parseUnsignedInteger = (value: unknown): number =>
+      typeof value === "string" && /^(?:0|[1-9][0-9]*)$/u.test(value)
+        ? Number(value)
+        : Number.NaN;
+    const chunkIndex = parseUnsignedInteger(query.chunkIndex);
+    const totalChunks = parseUnsignedInteger(query.totalChunks);
     const encryptionChunkSize = query.encryptionChunkSize
-      ? parseInt(query.encryptionChunkSize, 10)
+      ? parseUnsignedInteger(query.encryptionChunkSize)
       : undefined;
+    if (query.sessionId !== undefined && typeof query.sessionId !== "string") {
+      throw new BadRequestException("Invalid re-encryption session ID");
+    }
     const reencryptSessionId = query.sessionId || "legacy";
 
     if (
@@ -1026,7 +1036,10 @@ export class FileController {
       MAX_UPLOAD_CHUNK_BYTES,
       encryptionChunkSize,
     );
-    if (body.length > maxReencryptPayloadBytes) {
+    if (!Buffer.isBuffer(body)) {
+      throw new BadRequestException("Missing re-encryption chunk body");
+    }
+    if (body.byteLength > maxReencryptPayloadBytes) {
       throw new BadRequestException("Chunk payload too large");
     }
 

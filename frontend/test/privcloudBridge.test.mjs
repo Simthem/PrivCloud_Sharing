@@ -81,7 +81,9 @@ test("Bridge failures stay local and report the Companion as unavailable", async
       ["127.0.0.1", "localhost"],
     );
     assert.equal(
-      calls.some(({ url }) => url.startsWith("https://attacker.invalid")),
+      calls.some(
+        ({ url }) => new URL(url).origin === "https://attacker.invalid",
+      ),
       false,
     );
     assert.equal(

@@ -15,10 +15,10 @@ import {
  */
 @Injectable()
 export class SafeIdPipe implements PipeTransform<string, string> {
-  private static readonly FORBIDDEN = /[\/\\]|\.{2}|\x00/;
+  private static readonly ALLOWED = /^[A-Za-z0-9_-]{1,255}$/u;
 
   transform(value: string, _metadata: ArgumentMetadata): string {
-    if (!value || SafeIdPipe.FORBIDDEN.test(value)) {
+    if (typeof value !== "string" || !SafeIdPipe.ALLOWED.test(value)) {
       throw new BadRequestException("Invalid identifier");
     }
     return value;

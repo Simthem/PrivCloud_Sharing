@@ -6,6 +6,8 @@ import {
   getArchiveEntryName,
   normalizeUploadRelativePath,
 } from "src/file/file-path.util";
+import { LocalFileService } from "src/file/local.service";
+import { SafeIdPipe } from "src/share/pipe/safeId.pipe";
 import { createUnitTestRunner } from "./unit-test";
 
 const { testCase, run } = createUnitTestRunner("file paths");
@@ -18,7 +20,10 @@ testCase("accepts plain file names and logical folder paths", () => {
   assert.equal(assertSafeFileName("report.pdf"), "report.pdf");
   assert.equal(normalizeUploadRelativePath(undefined, "report.pdf"), undefined);
   assert.equal(normalizeUploadRelativePath("", "report.pdf"), undefined);
-  assert.equal(normalizeUploadRelativePath("report.pdf", "report.pdf"), undefined);
+  assert.equal(
+    normalizeUploadRelativePath("report.pdf", "report.pdf"),
+    undefined,
+  );
   assert.equal(
     normalizeUploadRelativePath("client-a/contracts/report.pdf", "report.pdf"),
     "client-a/contracts/report.pdf",
@@ -71,6 +76,48 @@ testCase("uses validated relative paths as archive entries", () => {
       relativePath: "../report.pdf",
     }),
   );
+});
+
+testCase("accepts only scalar allow-listed route identifiers", () => {
+  const pipe = new SafeIdPipe();
+  assert.equal(pipe.transform("share_A-123", {} as never), "share_A-123");
+
+  for (const value of [
+    "../share",
+    "share/name",
+    "share.name",
+    "share\0name",
+    "équipe",
+    ["share", "admin"],
+    null,
+  ]) {
+    assertBadRequest(() => pipe.transform(value as never, {} as never));
+  }
+});
+
+testCase("keeps every resolved local-storage path below its share root", () => {
+  const service = Object.create(LocalFileService.prototype) as {
+    resolveSharePath: (shareId: string, ...segments: string[]) => string;
+  };
+  const resolved = service.resolveSharePath(
+    "share_A-123",
+    "7352aeee-e01b-4dcc-a812-90d9e1647bed.tmp-chunk",
+  );
+  assert.match(
+    resolved,
+    /[/\\]share_A-123[/\\]7352aeee-e01b-4dcc-a812-90d9e1647bed\.tmp-chunk$/u,
+  );
+
+  for (const [shareId, child] of [
+    ["../share", "file"],
+    ["share", "../file"],
+    ["share", "/absolute"],
+    ["share", "file\\escape"],
+    ["share", "file..tmp"],
+    ["share", "équipe"],
+  ] as Array<[string, string]>) {
+    assertBadRequest(() => service.resolveSharePath(shareId, child));
+  }
 });
 
 void run();

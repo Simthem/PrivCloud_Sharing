@@ -1,4 +1,5 @@
 import api from "./api.service";
+import { apiPathSegment } from "../utils/apiPath.util";
 
 export interface Team {
   id: string;
@@ -177,7 +178,7 @@ const getTeamStatus = async (): Promise<{
 };
 
 const getTeam = async (teamId: string): Promise<Team> => {
-  return (await api.get(`teams/${teamId}`)).data;
+  return (await api.get(`teams/${apiPathSegment(teamId)}`)).data;
 };
 
 const updateTeam = async (
@@ -190,11 +191,16 @@ const updateTeam = async (
     keyRotationIntervalDays?: number;
   },
 ): Promise<Team> => {
-  return (await api.patch(`teams/${teamId}`, data)).data;
+  return (await api.patch(`teams/${apiPathSegment(teamId)}`, data)).data;
 };
 
-const deleteTeam = async (teamId: string, confirmationName: string): Promise<void> => {
-  await api.delete(`teams/${teamId}`, { data: { confirmationName } });
+const deleteTeam = async (
+  teamId: string,
+  confirmationName: string,
+): Promise<void> => {
+  await api.delete(`teams/${apiPathSegment(teamId)}`, {
+    data: { confirmationName },
+  });
 };
 
 // ============================================================
@@ -205,15 +211,26 @@ const inviteMember = async (
   teamId: string,
   data: { email: string; role?: string; encryptedTeamKey?: string },
 ): Promise<{ invited: boolean; email: string; invitationToken: string }> => {
-  return (await api.post(`teams/${teamId}/members/invite`, data)).data;
+  return (
+    await api.post(`teams/${apiPathSegment(teamId)}/members/invite`, data)
+  ).data;
 };
 
 const acceptInvitation = async (
   token: string,
   wrappedTeamKey?: string,
   keyVersion?: number,
-): Promise<{ teamId: string; teamName: string; encryptedTeamKey: string | null }> => {
-  return (await api.post(`teams/invite/${token}/accept`, { wrappedTeamKey, keyVersion })).data;
+): Promise<{
+  teamId: string;
+  teamName: string;
+  encryptedTeamKey: string | null;
+}> => {
+  return (
+    await api.post(`teams/invite/${apiPathSegment(token)}/accept`, {
+      wrappedTeamKey,
+      keyVersion,
+    })
+  ).data;
 };
 
 const getTeamKey = async (
@@ -223,7 +240,7 @@ const getTeamKey = async (
   keyVersion: number;
   memberKeyVersion: number;
 }> => {
-  return (await api.get(`teams/${teamId}/team-key`)).data;
+  return (await api.get(`teams/${apiPathSegment(teamId)}/team-key`)).data;
 };
 
 const setTeamKey = async (
@@ -231,11 +248,14 @@ const setTeamKey = async (
   wrappedTeamKey: string,
   keyVersion?: number,
 ): Promise<void> => {
-  await api.put(`teams/${teamId}/team-key`, { wrappedTeamKey, keyVersion });
+  await api.put(`teams/${apiPathSegment(teamId)}/team-key`, {
+    wrappedTeamKey,
+    keyVersion,
+  });
 };
 
 const clearTeamKey = async (teamId: string): Promise<void> => {
-  await api.delete(`teams/${teamId}/team-key`);
+  await api.delete(`teams/${apiPathSegment(teamId)}/team-key`);
 };
 
 export interface TeamShare {
@@ -245,14 +265,16 @@ export interface TeamShare {
 }
 
 const getTeamShares = async (teamId: string): Promise<TeamShare[]> => {
-  return (await api.get(`teams/${teamId}/shares`)).data;
+  return (await api.get(`teams/${apiPathSegment(teamId)}/shares`)).data;
 };
 
 const rotateTeamKey = async (
   teamId: string,
   newWrappedTeamKey: string,
 ): Promise<void> => {
-  await api.post(`teams/${teamId}/rotate-team-key`, { newWrappedTeamKey });
+  await api.post(`teams/${apiPathSegment(teamId)}/rotate-team-key`, {
+    newWrappedTeamKey,
+  });
 };
 
 export interface TeamKeyRotationStatus {
@@ -288,13 +310,14 @@ export interface TeamKeyRotationStatus {
 const getKeyRotationStatus = async (
   teamId: string,
 ): Promise<TeamKeyRotationStatus> =>
-  (await api.get(`teams/${teamId}/key-rotation`)).data;
+  (await api.get(`teams/${apiPathSegment(teamId)}/key-rotation`)).data;
 
 const startKeyRotation = async (
   teamId: string,
   data: { newWrappedTeamKey: string; reason: "MANUAL" | "POLICY" },
 ): Promise<NonNullable<TeamKeyRotationStatus["activeRotation"]>> =>
-  (await api.post(`teams/${teamId}/key-rotation/start`, data)).data;
+  (await api.post(`teams/${apiPathSegment(teamId)}/key-rotation/start`, data))
+    .data;
 
 const updateKeyRotationProgress = async (
   teamId: string,
@@ -306,27 +329,40 @@ const updateKeyRotationProgress = async (
     errorMessage?: string;
   },
 ): Promise<NonNullable<TeamKeyRotationStatus["activeRotation"]>> =>
-  (await api.patch(`teams/${teamId}/key-rotation/${rotationId}/progress`, data)).data;
+  (
+    await api.patch(
+      `teams/${apiPathSegment(teamId)}/key-rotation/${apiPathSegment(rotationId)}/progress`,
+      data,
+    )
+  ).data;
 
 const completeKeyRotation = async (
   teamId: string,
   rotationId: string,
 ): Promise<{ success: boolean; keyVersion: number }> =>
-  (await api.post(`teams/${teamId}/key-rotation/${rotationId}/complete`)).data;
+  (
+    await api.post(
+      `teams/${apiPathSegment(teamId)}/key-rotation/${apiPathSegment(rotationId)}/complete`,
+    )
+  ).data;
 
 const cancelKeyRotation = async (teamId: string, rotationId: string) => {
-  await api.delete(`teams/${teamId}/key-rotation/${rotationId}`);
+  await api.delete(
+    `teams/${apiPathSegment(teamId)}/key-rotation/${apiPathSegment(rotationId)}`,
+  );
 };
 
 const removeMember = async (
   teamId: string,
   memberId: string,
 ): Promise<void> => {
-  await api.delete(`teams/${teamId}/members/${memberId}`);
+  await api.delete(
+    `teams/${apiPathSegment(teamId)}/members/${apiPathSegment(memberId)}`,
+  );
 };
 
 const leaveTeam = async (teamId: string): Promise<void> => {
-  await api.post(`teams/${teamId}/leave`);
+  await api.post(`teams/${apiPathSegment(teamId)}/leave`);
 };
 
 const getMemberFolderAccess = async (
@@ -345,7 +381,11 @@ const getMemberFolderAccess = async (
     permission: string | null;
   }[];
 }> => {
-  return (await api.get(`teams/${teamId}/members/${memberId}/folder-access`)).data;
+  return (
+    await api.get(
+      `teams/${apiPathSegment(teamId)}/members/${apiPathSegment(memberId)}/folder-access`,
+    )
+  ).data;
 };
 
 const updateMemberRole = async (
@@ -353,22 +393,37 @@ const updateMemberRole = async (
   memberId: string,
   role: string,
 ): Promise<void> => {
-  await api.patch(`teams/${teamId}/members/${memberId}/role`, { role });
+  await api.patch(
+    `teams/${apiPathSegment(teamId)}/members/${apiPathSegment(memberId)}/role`,
+    { role },
+  );
 };
 
 const updateMemberPermissions = async (
   teamId: string,
   memberId: string,
-  permissions: { canViewActivity?: boolean; canViewSignatures?: boolean; pushNotifMode?: string },
+  permissions: {
+    canViewActivity?: boolean;
+    canViewSignatures?: boolean;
+    pushNotifMode?: string;
+  },
 ): Promise<void> => {
-  await api.patch(`teams/${teamId}/members/${memberId}/permissions`, permissions);
+  await api.patch(
+    `teams/${apiPathSegment(teamId)}/members/${apiPathSegment(memberId)}/permissions`,
+    permissions,
+  );
 };
 
 const updateMyPreferences = async (
   teamId: string,
   preferences: { pushNotifMode?: string },
 ): Promise<{ updated: boolean; pushNotifMode?: string }> => {
-  return (await api.patch(`teams/${teamId}/my-preferences`, preferences)).data;
+  return (
+    await api.patch(
+      `teams/${apiPathSegment(teamId)}/my-preferences`,
+      preferences,
+    )
+  ).data;
 };
 
 // ============================================================
@@ -377,9 +432,14 @@ const updateMyPreferences = async (
 
 const createFolder = async (
   teamId: string,
-  data: { name: string; description?: string; parentId?: string; color?: string },
+  data: {
+    name: string;
+    description?: string;
+    parentId?: string;
+    color?: string;
+  },
 ): Promise<TeamFolder> => {
-  return (await api.post(`teams/${teamId}/folders`, data)).data;
+  return (await api.post(`teams/${apiPathSegment(teamId)}/folders`, data)).data;
 };
 
 const getFolders = async (
@@ -387,15 +447,24 @@ const getFolders = async (
   parentId?: string,
 ): Promise<TeamFolder[]> => {
   const params = parentId ? `?parentId=${parentId}` : "";
-  return (await api.get(`teams/${teamId}/folders${params}`)).data;
+  return (await api.get(`teams/${apiPathSegment(teamId)}/folders${params}`))
+    .data;
 };
 
 const setFolderAccess = async (
   teamId: string,
   folderId: string,
-  data: { memberId: string; permission: string; canRequestSignature?: boolean; canShareE2E?: boolean },
+  data: {
+    memberId: string;
+    permission: string;
+    canRequestSignature?: boolean;
+    canShareE2E?: boolean;
+  },
 ): Promise<void> => {
-  await api.post(`teams/${teamId}/folders/${folderId}/access`, data);
+  await api.post(
+    `teams/${apiPathSegment(teamId)}/folders/${apiPathSegment(folderId)}/access`,
+    data,
+  );
 };
 
 const getFolderAccess = async (
@@ -414,7 +483,11 @@ const getFolderAccess = async (
     role: string;
   }[]
 > => {
-  return (await api.get(`teams/${teamId}/folders/${folderId}/access`)).data;
+  return (
+    await api.get(
+      `teams/${apiPathSegment(teamId)}/folders/${apiPathSegment(folderId)}/access`,
+    )
+  ).data;
 };
 
 const removeFolderAccess = async (
@@ -422,7 +495,9 @@ const removeFolderAccess = async (
   folderId: string,
   memberId: string,
 ): Promise<void> => {
-  await api.delete(`teams/${teamId}/folders/${folderId}/access/${memberId}`);
+  await api.delete(
+    `teams/${apiPathSegment(teamId)}/folders/${apiPathSegment(folderId)}/access/${apiPathSegment(memberId)}`,
+  );
 };
 
 const deleteFolder = async (
@@ -430,7 +505,10 @@ const deleteFolder = async (
   folderId: string,
   confirmationName: string,
 ): Promise<void> => {
-  await api.delete(`teams/${teamId}/folders/${folderId}`, { data: { confirmationName } });
+  await api.delete(
+    `teams/${apiPathSegment(teamId)}/folders/${apiPathSegment(folderId)}`,
+    { data: { confirmationName } },
+  );
 };
 
 const getFolderShares = async (
@@ -454,10 +532,23 @@ const getFolderShares = async (
     }[];
     creator?: { id: string; username: string; email: string };
   }[];
-  myAccess?: { permission: string; canDownload: boolean; canDelete: boolean; canRequestSignature: boolean; canShareE2E: boolean } | null;
-  myFileAccess?: Record<string, { permission: string; canRequestSignature: boolean; canShareE2E: boolean }>;
+  myAccess?: {
+    permission: string;
+    canDownload: boolean;
+    canDelete: boolean;
+    canRequestSignature: boolean;
+    canShareE2E: boolean;
+  } | null;
+  myFileAccess?: Record<
+    string,
+    { permission: string; canRequestSignature: boolean; canShareE2E: boolean }
+  >;
 }> => {
-  return (await api.get(`teams/${teamId}/folders/${folderId}/shares`)).data;
+  return (
+    await api.get(
+      `teams/${apiPathSegment(teamId)}/folders/${apiPathSegment(folderId)}/shares`,
+    )
+  ).data;
 };
 
 // ============================================================
@@ -469,10 +560,20 @@ const setFileAccess = async (
   folderId: string,
   data: {
     fileIds: string[];
-    members: { memberId: string; permission: string; canRequestSignature?: boolean; canShareE2E?: boolean }[];
+    members: {
+      memberId: string;
+      permission: string;
+      canRequestSignature?: boolean;
+      canShareE2E?: boolean;
+    }[];
   },
 ): Promise<{ set: boolean; filesCount: number; membersCount: number }> => {
-  return (await api.post(`teams/${teamId}/folders/${folderId}/file-access`, data)).data;
+  return (
+    await api.post(
+      `teams/${apiPathSegment(teamId)}/folders/${apiPathSegment(folderId)}/file-access`,
+      data,
+    )
+  ).data;
 };
 
 const getFileAccess = async (
@@ -491,7 +592,11 @@ const getFileAccess = async (
     role: string;
   }[]
 > => {
-  return (await api.get(`teams/${teamId}/folders/${folderId}/file-access`)).data;
+  return (
+    await api.get(
+      `teams/${apiPathSegment(teamId)}/folders/${apiPathSegment(folderId)}/file-access`,
+    )
+  ).data;
 };
 
 const bulkDeleteFiles = async (
@@ -499,7 +604,12 @@ const bulkDeleteFiles = async (
   folderId: string,
   files: { shareId: string; fileId: string }[],
 ): Promise<{ deleted: number; total: number }> => {
-  return (await api.post(`teams/${teamId}/folders/${folderId}/bulk-delete`, { files })).data;
+  return (
+    await api.post(
+      `teams/${apiPathSegment(teamId)}/folders/${apiPathSegment(folderId)}/bulk-delete`,
+      { files },
+    )
+  ).data;
 };
 
 // ============================================================
@@ -507,7 +617,7 @@ const bulkDeleteFiles = async (
 // ============================================================
 
 const getMetrics = async (teamId: string): Promise<TeamMetrics> => {
-  return (await api.get(`teams/${teamId}/metrics`)).data;
+  return (await api.get(`teams/${apiPathSegment(teamId)}/metrics`)).data;
 };
 
 const getAccessLogs = async (
@@ -515,31 +625,40 @@ const getAccessLogs = async (
   options?: { page?: number; limit?: number; action?: string },
 ): Promise<{
   logs: AccessLog[];
-  pagination: { page: number; limit: number; total: number; totalPages: number };
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }> => {
   const params = new URLSearchParams();
   if (options?.page) params.set("page", String(options.page));
   if (options?.limit) params.set("limit", String(options.limit));
   if (options?.action) params.set("action", options.action);
   const qs = params.toString();
-  return (await api.get(`teams/${teamId}/logs${qs ? `?${qs}` : ""}`)).data;
+  return (
+    await api.get(`teams/${apiPathSegment(teamId)}/logs${qs ? `?${qs}` : ""}`)
+  ).data;
 };
 
 const getAuditReports = async (teamId: string): Promise<TeamAuditReport[]> =>
-  (await api.get(`teams/${teamId}/audit-reports`)).data;
+  (await api.get(`teams/${apiPathSegment(teamId)}/audit-reports`)).data;
 
 const sendAuditReportNow = async (teamId: string): Promise<TeamAuditReport> =>
-  (await api.post(`teams/${teamId}/audit-reports/send-now`)).data;
+  (await api.post(`teams/${apiPathSegment(teamId)}/audit-reports/send-now`))
+    .data;
 
 const getSearchIndex = async (teamId: string): Promise<TeamSearchIndex> =>
-  (await api.get(`teams/${teamId}/search-index`)).data;
+  (await api.get(`teams/${apiPathSegment(teamId)}/search-index`)).data;
 
 /** Returns all team folders the user can write to (for share upload flow) */
 const getMyWritableFolders = async (): Promise<
   { teamId: string; teamName: string; folder: TeamFolder }[]
 > => {
   const teams = await getMyTeams();
-  const results: { teamId: string; teamName: string; folder: TeamFolder }[] = [];
+  const results: { teamId: string; teamName: string; folder: TeamFolder }[] =
+    [];
   const settled = await Promise.allSettled(
     teams.map(async (team) => {
       const folders = await getFolders(team.id);
@@ -551,7 +670,11 @@ const getMyWritableFolders = async (): Promise<
       const { team, folders } = result.value;
       for (const folder of folders) {
         // Only include folders where the user has WRITE or ADMIN permission
-        if (folder.myPermission && folder.myPermission !== "READ" && folder.myPermission !== "NONE") {
+        if (
+          folder.myPermission &&
+          folder.myPermission !== "READ" &&
+          folder.myPermission !== "NONE"
+        ) {
           results.push({ teamId: team.id, teamName: team.name, folder });
         }
       }

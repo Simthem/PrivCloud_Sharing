@@ -287,14 +287,19 @@ async function readJson(req) {
 
 function authenticate(req) {
   pruneTokens();
-  const header = req.headers.authorization || "";
-  const match = /^Bearer\s+(.+)$/i.exec(header);
-  if (!match) {
+  const header = req.headers.authorization;
+  const parts =
+    typeof header === "string" ? header.trim().split(/\s+/u) : [];
+  if (
+    parts.length !== 2 ||
+    parts[0].toLowerCase() !== "bearer" ||
+    !parts[1]
+  ) {
     const err = new Error("Missing bridge bearer token");
     err.statusCode = 401;
     throw err;
   }
-  const presentedHash = sha256(match[1]);
+  const presentedHash = sha256(parts[1]);
   const token = state.tokens.find((candidate) =>
     timingSafeHexEqual(candidate.hash, presentedHash),
   );

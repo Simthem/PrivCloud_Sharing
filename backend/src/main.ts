@@ -293,9 +293,23 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // Security headers
+  const swaggerInlineSources =
+    process.env.NODE_ENV === "development" ? ["'unsafe-inline'"] : [];
   app.use(
     helmet({
-      contentSecurityPolicy: false, // Handled by upstream nginx
+      // Keep an application-level baseline even when nginx also emits a CSP.
+      // Swagger is development-only and needs inline bootstrap/styles.
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          baseUri: ["'self'"],
+          objectSrc: ["'none'"],
+          frameAncestors: ["'self'"],
+          scriptSrc: ["'self'", ...swaggerInlineSources],
+          styleSrc: ["'self'", ...swaggerInlineSources, "https:"],
+          imgSrc: ["'self'", "data:"],
+        },
+      },
       hsts: { maxAge: 31536000, includeSubDomains: true },
     }),
   );

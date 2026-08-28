@@ -14,6 +14,7 @@
  */
 
 import api from "./api.service";
+import { apiPathSegment } from "../utils/apiPath.util";
 
 // ============================================================
 // Types
@@ -60,7 +61,11 @@ export interface BulkGrantResult {
   total: number;
   success: number;
   failed: number;
-  results: Array<{ recipientUserId: string; result: GrantResult | null; error?: string }>;
+  results: Array<{
+    recipientUserId: string;
+    result: GrantResult | null;
+    error?: string;
+  }>;
 }
 
 // ============================================================
@@ -105,7 +110,10 @@ export async function generateX25519KeyPair(): Promise<{
   );
 
   const publicKeyRaw = await crypto.subtle.exportKey("raw", keyPair.publicKey);
-  const privateKeyRaw = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+  const privateKeyRaw = await crypto.subtle.exportKey(
+    "pkcs8",
+    keyPair.privateKey,
+  );
 
   // X25519 private key is 32 bytes inside the PKCS8 wrapper
   // PKCS8 format: 30 2e 02 01 00 30 05 06 03 2b 65 6e 04 22 04 20 [32 bytes]
@@ -132,7 +140,10 @@ export async function generateEd25519KeyPair(): Promise<{
   );
 
   const publicKeyRaw = await crypto.subtle.exportKey("raw", keyPair.publicKey);
-  const privateKeyRaw = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+  const privateKeyRaw = await crypto.subtle.exportKey(
+    "pkcs8",
+    keyPair.privateKey,
+  );
 
   const pkcs8 = new Uint8Array(privateKeyRaw);
   const privateKey = pkcs8.slice(pkcs8.length - 32);
@@ -207,7 +218,9 @@ export async function wrapDEKForRecipient(
 }> {
   // Check browser support
   if (!(await isX25519Supported())) {
-    throw new Error("Votre navigateur ne supporte pas X25519. Veuillez mettre à jour votre navigateur (Chrome 113+, Firefox 118+, Safari 17+).");
+    throw new Error(
+      "Votre navigateur ne supporte pas X25519. Veuillez mettre à jour votre navigateur (Chrome 113+, Firefox 118+, Safari 17+).",
+    );
   }
 
   // Import recipient's X25519 public key
@@ -286,7 +299,11 @@ export async function wrapDEKForRecipient(
  * 3. AES-256-GCM_decrypt(encryptedFileKey, wrapping_key, nonce) -> DEK
  */
 export async function unwrapDEKFromGrant(
-  grant: { encryptedFileKey: string; ephemeralPublicKey: string; nonce: string },
+  grant: {
+    encryptedFileKey: string;
+    ephemeralPublicKey: string;
+    nonce: string;
+  },
   myPrivateKeyRaw: Uint8Array, // 32 bytes - decrypted X25519 private key
 ): Promise<Uint8Array> {
   // Import my X25519 private key
@@ -378,15 +395,20 @@ export const registerIdentityKey = async (data: {
 /**
  * Get my identity keys (including encrypted private keys).
  */
-export const getMyIdentityKeys = async (): Promise<IdentityKeyWithPrivate[]> => {
+export const getMyIdentityKeys = async (): Promise<
+  IdentityKeyWithPrivate[]
+> => {
   return (await api.get("crypto/identity/keys/me")).data;
 };
 
 /**
  * Get a user's public keys (for creating grants).
  */
-export const getUserPublicKeys = async (userId: string): Promise<IdentityKey[]> => {
-  return (await api.get(`crypto/identity/keys/user/${userId}`)).data;
+export const getUserPublicKeys = async (
+  userId: string,
+): Promise<IdentityKey[]> => {
+  return (await api.get(`crypto/identity/keys/user/${apiPathSegment(userId)}`))
+    .data;
 };
 
 /**
@@ -417,7 +439,12 @@ export const registerPQKey = async (data: {
   variant?: string;
   publicKey: string;
   encryptedPrivateKey: string;
-}): Promise<{ id: string; variant: string; publicKey: string; version: number }> => {
+}): Promise<{
+  id: string;
+  variant: string;
+  publicKey: string;
+  version: number;
+}> => {
   return (await api.post("crypto/identity/pq-keys", data)).data;
 };
 
@@ -493,7 +520,7 @@ export const getMyGrants = async (filters?: {
  * Get grant for a specific file.
  */
 export const getGrantForFile = async (fileId: string): Promise<AccessGrant> => {
-  return (await api.get(`crypto/grants/file/${fileId}`)).data;
+  return (await api.get(`crypto/grants/file/${apiPathSegment(fileId)}`)).data;
 };
 
 /**
@@ -502,21 +529,26 @@ export const getGrantForFile = async (fileId: string): Promise<AccessGrant> => {
 export const getGrantForTeamFile = async (
   teamFileId: string,
 ): Promise<AccessGrant> => {
-  return (await api.get(`crypto/grants/team-file/${teamFileId}`)).data;
+  return (
+    await api.get(`crypto/grants/team-file/${apiPathSegment(teamFileId)}`)
+  ).data;
 };
 
 /**
  * Revoke a specific grant.
  */
 export const revokeGrant = async (grantId: string): Promise<void> => {
-  await api.delete(`crypto/grants/${grantId}`);
+  await api.delete(`crypto/grants/${apiPathSegment(grantId)}`);
 };
 
 /**
  * Revoke all grants for a file (before DEK rotation).
  */
-export const revokeAllGrantsForFile = async (fileId: string): Promise<{ revokedCount: number }> => {
-  return (await api.delete(`crypto/grants/file/${fileId}/all`)).data;
+export const revokeAllGrantsForFile = async (
+  fileId: string,
+): Promise<{ revokedCount: number }> => {
+  return (await api.delete(`crypto/grants/file/${apiPathSegment(fileId)}/all`))
+    .data;
 };
 
 // ============================================================
@@ -528,7 +560,12 @@ export const createEnrollmentToken = async (data: {
   teamId?: string;
   metadata?: string;
   expiresInHours?: number;
-}): Promise<{ id: string; token: string; purpose: string; expiresAt: string }> => {
+}): Promise<{
+  id: string;
+  token: string;
+  purpose: string;
+  expiresAt: string;
+}> => {
   return (await api.post("crypto/enrollment/tokens", data)).data;
 };
 
@@ -553,7 +590,7 @@ export const listEnrollmentTokens = async (): Promise<
 };
 
 export const revokeEnrollmentToken = async (tokenId: string): Promise<void> => {
-  await api.delete(`crypto/enrollment/tokens/${tokenId}`);
+  await api.delete(`crypto/enrollment/tokens/${apiPathSegment(tokenId)}`);
 };
 
 // ============================================================
@@ -566,7 +603,10 @@ function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 function base64UrlToArrayBuffer(base64url: string): ArrayBuffer {
@@ -594,7 +634,9 @@ export async function initializeIdentityKeys(masterKey: CryptoKey): Promise<{
 }> {
   // Check browser support before attempting
   if (!(await isX25519Supported())) {
-    throw new Error("Browser does not support X25519/Ed25519 - identity keys cannot be generated");
+    throw new Error(
+      "Browser does not support X25519/Ed25519 - identity keys cannot be generated",
+    );
   }
 
   // Generate key pairs
@@ -608,14 +650,18 @@ export async function initializeIdentityKeys(masterKey: CryptoKey): Promise<{
   // Register on server
   const x25519Key = await registerIdentityKey({
     keyType: "X25519",
-    publicKey: arrayBufferToBase64Url(x25519Pair.publicKey.buffer as ArrayBuffer),
+    publicKey: arrayBufferToBase64Url(
+      x25519Pair.publicKey.buffer as ArrayBuffer,
+    ),
     encryptedPrivateKey: encX25519,
     algorithm: "x25519",
   });
 
   const ed25519Key = await registerIdentityKey({
     keyType: "Ed25519",
-    publicKey: arrayBufferToBase64Url(ed25519Pair.publicKey.buffer as ArrayBuffer),
+    publicKey: arrayBufferToBase64Url(
+      ed25519Pair.publicKey.buffer as ArrayBuffer,
+    ),
     encryptedPrivateKey: encEd25519,
     algorithm: "ed25519",
   });
@@ -748,8 +794,10 @@ async function loadMLKEM(): Promise<any> {
   // Dynamic import of the ML-KEM WASM wrapper
   // Expected to be at /wasm/ml-kem-768.js (loaded from CDN or bundled)
   try {
-    // @ts-ignore: ML-KEM WASM module loaded dynamically at runtime - no type declarations available
-    mlKemModule = await import(/* webpackIgnore: true */ "../../wasm/ml-kem-768");
+    mlKemModule = await import(
+      // @ts-expect-error: the runtime-provided WASM module has no build-time declaration
+      /* webpackIgnore: true */ "../../wasm/ml-kem-768"
+    );
     return mlKemModule;
   } catch {
     throw new Error(
@@ -1032,7 +1080,11 @@ export async function encryptNotificationMetadata(
 
   if (recipientMLKEMPK) {
     // Hybrid PQ mode
-    const result = await hybridWrapDEK(plaintext, recipientX25519PK, recipientMLKEMPK);
+    const result = await hybridWrapDEK(
+      plaintext,
+      recipientX25519PK,
+      recipientMLKEMPK,
+    );
     envelope = {
       ciphertext: result.encryptedFileKey,
       ephemeralPublicKey: result.ephemeralPublicKey,
@@ -1068,23 +1120,34 @@ export async function decryptNotificationMetadata(
   masterKey: CryptoKey,
 ): Promise<Record<string, unknown> | null> {
   try {
-    const envelope: EncryptedNotificationEnvelope = JSON.parse(encryptedMetadataJson);
+    const envelope: EncryptedNotificationEnvelope = JSON.parse(
+      encryptedMetadataJson,
+    );
 
     // Fetch user's identity keys (X25519 private key)
     const identityKeys = await getMyIdentityKeys();
     const x25519Key = identityKeys.find((k) => k.keyType === "X25519");
     if (!x25519Key) return null;
 
-    const x25519SK = await decryptPrivateKey(x25519Key.encryptedPrivateKey, masterKey);
+    const x25519SK = await decryptPrivateKey(
+      x25519Key.encryptedPrivateKey,
+      masterKey,
+    );
 
     let plaintext: Uint8Array;
 
-    if (envelope.algorithm === "x25519-mlkem768-aes256gcm" && envelope.kemCiphertext) {
+    if (
+      envelope.algorithm === "x25519-mlkem768-aes256gcm" &&
+      envelope.kemCiphertext
+    ) {
       // Hybrid PQ decryption
       const myPQKey = await getMyPQKey();
       if (!myPQKey) return null;
 
-      const mlkemSK = await decryptPrivateKey(myPQKey.encryptedPrivateKey, masterKey);
+      const mlkemSK = await decryptPrivateKey(
+        myPQKey.encryptedPrivateKey,
+        masterKey,
+      );
 
       plaintext = await hybridUnwrapDEK(
         {
@@ -1175,7 +1238,12 @@ export interface TeamSharesResponse {
   received: TeamShareEntry[];
   sent: TeamShareEntry[];
   pagination: {
-    received: { page: number; limit: number; total: number; totalPages: number };
+    received: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
     sent: { page: number; limit: number; total: number; totalPages: number };
   };
 }
@@ -1185,9 +1253,14 @@ export async function getTeamShares(
   options: { receivedPage?: number; sentPage?: number; limit?: number } = {},
 ): Promise<TeamSharesResponse> {
   const params = new URLSearchParams();
-  if (options.receivedPage) params.set("receivedPage", String(options.receivedPage));
+  if (options.receivedPage)
+    params.set("receivedPage", String(options.receivedPage));
   if (options.sentPage) params.set("sentPage", String(options.sentPage));
   if (options.limit) params.set("limit", String(options.limit));
   const query = params.toString();
-  return (await api.get(`crypto/grants/team/${teamId}/shares${query ? `?${query}` : ""}`)).data;
+  return (
+    await api.get(
+      `crypto/grants/team/${apiPathSegment(teamId)}/shares${query ? `?${query}` : ""}`,
+    )
+  ).data;
 }

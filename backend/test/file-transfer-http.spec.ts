@@ -640,6 +640,49 @@ testCase("validates probe length before parsing and body after parsing", () => {
     ),
     415,
   );
+  for (const malformedBody of [
+    { length: body.length, byteLength: body.length },
+    new Uint8Array(body.length),
+    [body],
+  ]) {
+    assert.equal(
+      getProbeErrorStatus(
+        validateProbeBody(
+          malformedBody,
+          body.length,
+          "application/octet-stream",
+        ),
+      ),
+      400,
+    );
+  }
+  assert.equal(
+    getProbeErrorStatus(
+      validateProbeBody(body, [body.length] as never, "application/octet-stream"),
+    ),
+    400,
+  );
+});
+
+testCase("parses exactly one scalar Bridge Bearer token", () => {
+  const controller = createControllerHarness().controller as unknown as {
+    getBearerToken: (authorization?: string) => string;
+  };
+  assert.equal(controller.getBearerToken("Bearer pcbu_token"), "pcbu_token");
+  assert.equal(controller.getBearerToken("bearer\tpcbu_token"), "pcbu_token");
+  for (const header of [
+    undefined,
+    "",
+    "Basic pcbu_token",
+    "Bearer",
+    "Bearer one two",
+    ["Bearer one", "Bearer two"],
+  ]) {
+    assert.throws(
+      () => controller.getBearerToken(header as never),
+      BadRequestException,
+    );
+  }
 });
 
 testCase("matches only the exact POST probe endpoint", () => {
