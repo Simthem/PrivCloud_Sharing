@@ -185,6 +185,7 @@ export class OAuthService {
       },
       ip,
       user.isAdmin,
+      true,
     );
 
     await this.prisma.oAuthUser.create({

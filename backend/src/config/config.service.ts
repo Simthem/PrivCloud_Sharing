@@ -88,6 +88,11 @@ export class ConfigService extends EventEmitter {
           ? await argon.hash(this.yamlConfig.initUser.password)
           : null,
         isAdmin: this.yamlConfig.initUser.isAdmin,
+        // Bootstrap identities are provisioned by the operator, not through
+        // public registration. Mark them verified explicitly so the insert
+        // trigger cannot create an SMTP bootstrap deadlock.
+        emailVerificationRequiredAt: new Date(),
+        emailVerifiedAt: new Date(),
       },
     });
   }

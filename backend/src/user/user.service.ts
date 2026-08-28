@@ -10,7 +10,9 @@ import * as crypto from "crypto";
 import { Entry } from "ldapts";
 import { AuthSignInDTO } from "src/auth/dto/authSignIn.dto";
 import { EmailService } from "src/email/email.service";
+import { EmailVerificationService } from "src/emailVerification/emailVerification.service";
 import { PrismaService } from "src/prisma/prisma.service";
+import { createUserUniqueConflictResponse } from "src/prisma/prisma-error.util";
 import { inspect } from "util";
 import { ConfigService } from "../config/config.service";
 import { FileService } from "../file/file.service";
@@ -24,6 +26,7 @@ export class UserSevice {
   constructor(
     private prisma: PrismaService,
     private emailService: EmailService,
+    private emailVerificationService: EmailVerificationService,
     private fileService: FileService,
     private configService: ConfigService,
   ) {}
@@ -37,6 +40,8 @@ export class UserSevice {
   }
 
   async create(dto: CreateUserDTO) {
+    this.emailVerificationService.assertDeliveryAvailable();
+    const verificationRequiredAt = new Date();
     let hash: string;
 
     // The password can be undefined if the user is invited by an admin
@@ -56,45 +61,78 @@ export class UserSevice {
         data: {
           ...userData,
           password: hash,
+          emailVerificationRequiredAt: verificationRequiredAt,
         },
       });
 
       // Auto-create team for user
       await this.autoCreateTeamForUser(user.id, user.username, user.email);
 
+      try {
+        await this.emailVerificationService.issueAndSend(user);
+      } catch (error) {
+        await this.prisma.user.deleteMany({ where: { id: user.id } });
+        throw error;
+      }
+
       return user;
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code == "P2002") {
-          const duplicatedField: string = e.meta.target[0];
-          throw new BadRequestException(
-            `A user with this ${duplicatedField} already exists`,
-          );
+          throw new BadRequestException(createUserUniqueConflictResponse(e));
         }
       }
+      throw e;
     }
   }
 
   async update(id: string, user: UpdateUserDto) {
     try {
+      const current = await this.prisma.user.findUnique({ where: { id } });
+      const emailChanged =
+        !!current &&
+        !!user.email &&
+        user.email !== current.email &&
+        !!current.emailVerificationRequiredAt;
+      if (emailChanged) {
+        this.emailVerificationService.assertDeliveryAvailable();
+      }
       const hash = user.password && (await argon.hash(user.password));
       const { password: _password, ...userData } = user as Record<string, unknown>;
 
+      const verificationData = emailChanged
+        ? {
+            // A still-unverified account keeps its original J+5/J+14 clock;
+            // changing the address must never extend its grace period.
+            emailVerificationRequiredAt: current.emailVerifiedAt
+              ? new Date()
+              : current.emailVerificationRequiredAt,
+            emailVerifiedAt: null,
+            emailVerificationDeletionStartedAt: null,
+          }
+        : {};
+
       const updated = await this.prisma.user.update({
         where: { id },
-        data: { ...(userData as Prisma.UserUpdateInput), password: hash },
+        data: {
+          ...(userData as Prisma.UserUpdateInput),
+          password: hash,
+          ...verificationData,
+        },
       });
+
+      if (emailChanged) {
+        await this.emailVerificationService.issueAndSend(updated);
+      }
 
       return updated;
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code == "P2002") {
-          const duplicatedField: string = e.meta.target[0];
-          throw new BadRequestException(
-            `A user with this ${duplicatedField} already exists`,
-          );
+          throw new BadRequestException(createUserUniqueConflictResponse(e));
         }
       }
+      throw e;
     }
   }
 
@@ -294,6 +332,8 @@ export class UserSevice {
 
           isAdmin,
           ldapDN: ldapEntry.dn,
+          emailVerificationRequiredAt: new Date(),
+          emailVerifiedAt: new Date(),
         },
         update: {
           isAdmin,
@@ -353,10 +393,7 @@ export class UserSevice {
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code == "P2002") {
-          const duplicatedField: string = e.meta.target[0];
-          throw new BadRequestException(
-            `A user with this ${duplicatedField} already exists`,
-          );
+          throw new BadRequestException(createUserUniqueConflictResponse(e));
         }
       }
     }

@@ -5,8 +5,9 @@ import {
   setUploadActive,
 } from "./upload-state.service";
 import {
-  buildSignInRedirectPath,
+  buildExpiredSessionSignInPath,
   isProtectedTeamContextPath,
+  notifyAuthSessionExpired,
   rememberPostAuthRedirectTarget,
 } from "../utils/authRedirect.util";
 import {
@@ -259,6 +260,20 @@ refreshApi.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config;
+
+    if (
+      error.response?.status === 403 &&
+      error.response?.data?.error === "email_verification_required"
+    ) {
+      if (window.location.pathname !== "/auth/verify-email") {
+        window.location.href = new URL(
+          "/auth/verify-email",
+          window.location.origin,
+        ).toString();
+        return new Promise(() => {});
+      }
+      return Promise.reject(error);
+    }
     if (error.response?.status === 468 && !original._safelineRetried) {
       original._safelineRetried = true;
       // During upload: popup challenge (Worker may need cookie set).
@@ -283,6 +298,47 @@ refreshApi.interceptors.response.use(
     return Promise.reject(error);
   },
 );
+
+let sessionExpiryInFlight: Promise<void> | null = null;
+
+/**
+ * Ends a browser session only after the guarded refresh retry also returned
+ * 401. The keepalive request removes the HttpOnly session cookies server-side;
+ * the event releases React loading states immediately if navigation is delayed.
+ */
+export function expireConfirmedSession(): Promise<void> {
+  if (sessionExpiryInFlight) return sessionExpiryInFlight;
+
+  sessionExpiryInFlight = (async () => {
+    if (typeof window === "undefined") return;
+
+    const clearCookies = window
+      .fetch("/api/auth/signOut", {
+        method: "POST",
+        credentials: "same-origin",
+        keepalive: true,
+      })
+      .catch(() => undefined);
+    await Promise.race([
+      clearCookies,
+      new Promise<void>((resolve) => globalThis.setTimeout(resolve, 1_000)),
+    ]);
+
+    notifyAuthSessionExpired();
+
+    if (window.location.pathname === "/auth/signIn") return;
+
+    const returnPath = window.location.pathname.startsWith("/auth/")
+      ? "/"
+      : `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (returnPath !== "/") rememberPostAuthRedirectTarget(returnPath);
+    window.location.replace(buildExpiredSessionSignInPath(returnPath));
+  })().finally(() => {
+    sessionExpiryInFlight = null;
+  });
+
+  return sessionExpiryInFlight;
+}
 
 // --- Shared single-flight token refresh -------------------------------------
 // EVERY browser-side refresher (this interceptor, auth.service, the upload
@@ -324,6 +380,20 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config;
+
+    if (
+      error.response?.status === 403 &&
+      error.response?.data?.error === "email_verification_required"
+    ) {
+      if (window.location.pathname !== "/auth/verify-email") {
+        window.location.href = new URL(
+          "/auth/verify-email",
+          window.location.origin,
+        ).toString();
+        return new Promise(() => {});
+      }
+      return Promise.reject(error);
+    }
 
     // SafeLine anti-bot challenge
     if (error.response?.status === 468) {
@@ -408,10 +478,8 @@ api.interceptors.response.use(
         // (SafeLine 468, network wake-up glitches) should propagate
         // so the periodic refresh in _app.tsx can recover later.
         if (result.status === 401) {
-          const returnPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-          rememberPostAuthRedirectTarget(returnPath);
-          window.location.href = buildSignInRedirectPath(returnPath);
-          return new Promise(() => {});
+          await expireConfirmedSession();
+          return Promise.reject(error);
         }
         return Promise.reject(error);
       }

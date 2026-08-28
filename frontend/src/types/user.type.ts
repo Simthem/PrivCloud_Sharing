@@ -11,6 +11,10 @@ type User = {
   e2eAutoGenerationDisabled?: boolean;
   notificationMode: string;
   createdAt?: string;
+  emailVerificationRequired: boolean;
+  emailVerified: boolean;
+  emailVerificationBlockedAt: string | null;
+  emailVerificationDeletionAt: string | null;
   hasTeamMembership?: boolean;
   teamId?: string | null;
 };

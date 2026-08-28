@@ -31,6 +31,13 @@ model User {
   totpBackupCodes    TotpBackupCode[]
   resetPasswordToken ResetPasswordToken?
 
+  // NULL requiredAt is the permanent legacy exemption. Migrations must never
+  // backfill it: only accounts created after the feature deployment opt in.
+  emailVerificationRequiredAt          DateTime?
+  emailVerifiedAt                      DateTime?
+  emailVerificationDeletionStartedAt   DateTime?
+  emailVerificationTokens              EmailVerificationToken[]
+
   // E2E encryption: SHA-256 hex hash of the user's AES-256 key (never the key itself)
   encryptionKeyHash           String?
   e2eAutoGenerationDisabledAt DateTime?
@@ -64,6 +71,8 @@ model User {
   // Account lockout protection
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
+
+  @@index([emailVerifiedAt, emailVerificationRequiredAt, emailVerificationDeletionStartedAt])
 }
 
 model WrappedKey {
@@ -115,6 +124,21 @@ model ResetPasswordToken {
 
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model EmailVerificationToken {
+  tokenHash String   @id
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  email     String
+
+  // Deliberately not unique: a delayed relay can put several messages in the
+  // inbox at once and every link issued must stay usable until it expires.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model OAuthUser {

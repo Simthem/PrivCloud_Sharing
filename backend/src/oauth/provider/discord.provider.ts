@@ -91,7 +91,9 @@ export class DiscordProvider implements OAuthProvider<DiscordToken> {
       provider: "discord",
       providerId: user.id,
       providerUsername: user.global_name ?? user.username,
-      email: user.email,
+      // Discord exposes whether the address is provider-verified. Never treat
+      // an unverified provider claim as proof of mailbox ownership.
+      email: user.verified ? user.email : undefined,
       idToken: `discord:${token.idToken}`,
     };
   }

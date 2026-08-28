@@ -12,6 +12,7 @@ import * as crypto from "crypto";
 import qrcode from "qrcode-svg";
 import { ConfigService } from "src/config/config.service";
 import { PrismaService } from "src/prisma/prisma.service";
+import { assertEmailVerificationAccess } from "src/emailVerification/emailVerification.util";
 import { AuthService } from "./auth.service";
 import { AuthSignInTotpDTO } from "./dto/authSignInTotp.dto";
 
@@ -124,6 +125,8 @@ export class AuthTotpService {
 
     if (token.expiresAt < new Date())
       throw new UnauthorizedException("Login token expired", "token_expired");
+
+    assertEmailVerificationAccess(token.user);
 
     // Check the TOTP code
     const { totpSecret } = token.user;

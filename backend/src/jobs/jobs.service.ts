@@ -293,6 +293,92 @@ export class JobsService {
   }
 
   @Cron("1 * * * *")
+  async deleteExpiredUnverifiedAccounts() {
+    await this.runExclusive("deleteExpiredUnverifiedAccounts", async () => {
+      const now = new Date();
+      const deletionCutoff = new Date(
+        now.getTime() - 14 * 24 * 60 * 60 * 1000,
+      );
+      const staleClaimCutoff = new Date(
+        now.getTime() - 6 * 60 * 60 * 1000,
+      );
+      const candidates = await this.prisma.user.findMany({
+        where: {
+          emailVerificationRequiredAt: { lte: deletionCutoff },
+          emailVerifiedAt: null,
+          OR: [
+            { emailVerificationDeletionStartedAt: null },
+            {
+              emailVerificationDeletionStartedAt: {
+                lte: staleClaimCutoff,
+              },
+            },
+          ],
+        },
+        include: { shares: true },
+      });
+
+      let deletedAccounts = 0;
+      for (const candidate of candidates) {
+        const claimStartedAt = new Date();
+        const claimed = await this.prisma.user.updateMany({
+          where: {
+            id: candidate.id,
+            emailVerificationRequiredAt: { lte: deletionCutoff },
+            emailVerifiedAt: null,
+            ...(candidate.emailVerificationDeletionStartedAt
+              ? {
+                  emailVerificationDeletionStartedAt:
+                    candidate.emailVerificationDeletionStartedAt,
+                }
+              : { emailVerificationDeletionStartedAt: null }),
+          },
+          data: {
+            emailVerificationDeletionStartedAt: claimStartedAt,
+          },
+        });
+        if (claimed.count !== 1) continue;
+
+        try {
+          // Keep the existing account-deletion ordering: remove physical share
+          // data first, then rely on cascading foreign keys for database data.
+          for (const share of candidate.shares) {
+            await this.fileService.deleteAllFiles(share.id);
+          }
+        } catch (error) {
+          this.logger.warn(
+            `Could not delete data for an expired unverified account: ${(error as Error).message}`,
+          );
+          await this.prisma.user.updateMany({
+            where: {
+              id: candidate.id,
+              emailVerificationDeletionStartedAt: claimStartedAt,
+              emailVerifiedAt: null,
+            },
+            data: { emailVerificationDeletionStartedAt: null },
+          });
+          continue;
+        }
+
+        const deleted = await this.prisma.user.deleteMany({
+          where: {
+            id: candidate.id,
+            emailVerifiedAt: null,
+            emailVerificationDeletionStartedAt: claimStartedAt,
+          },
+        });
+        deletedAccounts += deleted.count;
+      }
+
+      if (deletedAccounts > 0) {
+        this.logger.log(
+          `Deleted ${deletedAccounts} account(s) left unverified for 14 days`,
+        );
+      }
+    });
+  }
+
+  @Cron("1 * * * *")
   async deleteExpiredTokens() {
     await this.runExclusive("deleteExpiredTokens", async () => {
       const { count: refreshTokenCount } =
@@ -310,8 +396,16 @@ export class JobsService {
           where: { expiresAt: { lt: new Date() } },
         });
 
+      const { count: emailVerificationTokenCount } =
+        await this.prisma.emailVerificationToken.deleteMany({
+          where: { expiresAt: { lt: new Date() } },
+        });
+
       const deletedTokensCount =
-        refreshTokenCount + loginTokenCount + resetPasswordTokenCount;
+        refreshTokenCount +
+        loginTokenCount +
+        resetPasswordTokenCount +
+        emailVerificationTokenCount;
 
       if (deletedTokensCount > 0) {
         this.logger.log(`Deleted ${deletedTokensCount} expired refresh tokens`);

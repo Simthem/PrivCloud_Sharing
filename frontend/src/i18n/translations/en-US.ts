@@ -189,6 +189,9 @@ export default {
   "signin.input.password.placeholder": "Your password",
   "signin.button.submit": "Sign in",
   "signIn.notify.error": "Wrong email or password",
+  "signIn.notify.session-expired.title": "Session expired",
+  "signIn.notify.session-expired.description":
+    "Your session has expired. Please sign in again to continue.",
   "signIn.notify.totp-required.title": "Two-factor authentication required",
   "signIn.notify.totp-required.description":
     "Please enter your two-factor authentication code",
@@ -212,6 +215,12 @@ export default {
   "signup.input.email": "Email",
   "signup.input.email.placeholder": "Your email",
   "signup.button.submit": "Let's get started",
+  "signup.notify.email-exists":
+    "An account already uses this email address. Try signing in or use another address.",
+  "signup.notify.username-exists":
+    "This username is already taken. Choose another one.",
+  "signup.notify.account-exists":
+    "An account already uses this email address or username.",
 
   // END /auth/signup
 

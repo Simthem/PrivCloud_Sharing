@@ -8,6 +8,24 @@ import moment from "moment";
 import * as nodemailer from "nodemailer";
 import { ConfigService } from "src/config/config.service";
 
+export function buildEmailVerificationMessage(
+  appName: string,
+  verificationUrl: string,
+): string {
+  return [
+    `Welcome to ${appName}.`,
+    "",
+    "Verify your email address using this secure link:",
+    verificationUrl,
+    "",
+    "The link expires in 24 hours. You can request a new one without extending the account deadline.",
+    "Access is blocked after 5 days without verification and the account is deleted after 14 days.",
+    "",
+    "Bienvenue. Vérifiez votre adresse e-mail avec le lien ci-dessus.",
+    "Sans validation, l’accès sera bloqué après 5 jours et le compte supprimé après 14 jours.",
+  ].join("\n");
+}
+
 @Injectable()
 export class EmailService {
   constructor(private config: ConfigService) {}
@@ -120,6 +138,23 @@ export class EmailService {
         .get("email.resetPasswordMessage")
         .replaceAll("\\n", "\n")
         .replaceAll("{url}", resetPasswordUrl),
+    );
+  }
+
+  async sendEmailVerificationEmail(
+    recipientEmail: string,
+    token: string,
+  ): Promise<void> {
+    const appUrl = this.config.get("general.appUrl").replace(/\/$/, "");
+    // Keep the secret in the fragment: browsers do not send it in HTTP request
+    // lines or Referer headers. The verification page removes it immediately.
+    const verificationUrl = `${appUrl}/auth/verify-email#token=${token}`;
+    const appName = this.config.get("general.appName");
+
+    await this.sendMail(
+      recipientEmail,
+      `Verify your email address for ${appName}`,
+      buildEmailVerificationMessage(appName, verificationUrl),
     );
   }
 

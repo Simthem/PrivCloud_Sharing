@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildExpiredSessionSignInPath,
   buildSignInRedirectPath,
   finalizePostAuthRedirectPath,
   getRememberedPostAuthRedirectPath,
+  isEmailVerificationRoutePath,
   isProtectedTeamContextPath,
   isTeamInvitationRoutePath,
   isTeamRoutePath,
@@ -12,6 +14,26 @@ import {
   safeRedirectPath,
   shouldRequireClassicUploadAuthentication,
 } from "../src/utils/authRedirect.util.ts";
+import { refreshAfterPossibleCookieRotation } from "../src/utils/authRefresh.util.ts";
+
+test("retries only a 401 and never consumes SafeLine or transient failures", async () => {
+  for (const status of [0, 403, 468, 500]) {
+    let attempts = 0;
+    const result = await refreshAfterPossibleCookieRotation(async () => {
+      attempts++;
+      return { ok: false, status };
+    }, 0);
+    assert.deepEqual(result, { ok: false, status });
+    assert.equal(attempts, 1);
+  }
+
+  let attempts = 0;
+  await refreshAfterPossibleCookieRotation(async () => {
+    attempts++;
+    return { ok: false, status: 401 };
+  }, 0);
+  assert.equal(attempts, 2);
+});
 
 test("never downgrades a deleted or expired upload session to anonymous mode", () => {
   assert.equal(
@@ -41,6 +63,12 @@ test("matches only the /team route family", () => {
   assert.equal(isTeamRoutePath("/teamwork"), false);
   assert.equal(isTeamInvitationRoutePath("/team/invite/[token]"), true);
   assert.equal(isTeamInvitationRoutePath("/team/[id]"), false);
+});
+
+test("keeps the verification page reachable in an authenticated session", () => {
+  assert.equal(isEmailVerificationRoutePath("/auth/verify-email"), true);
+  assert.equal(isEmailVerificationRoutePath("/auth/signIn"), false);
+  assert.equal(isEmailVerificationRoutePath("/auth/verify-email/extra"), false);
 });
 
 test("protects only Team-scoped uploads", () => {
@@ -97,6 +125,18 @@ test("never moves a Team E2E key fragment into the sign-in request URL", () => {
   );
   assert.equal(parsed.hash, "");
   assert.equal(signInPath.includes(secret), false);
+});
+
+test("marks an expired-session redirect without exposing a URL fragment", () => {
+  const path = buildExpiredSessionSignInPath(
+    "/team/acme?tab=files#teamKey=AbCdEfGhIjKlMnOp&version=1",
+  );
+  const parsed = new URL(path, "https://privcloud.example");
+
+  assert.equal(parsed.pathname, "/auth/signIn");
+  assert.equal(parsed.searchParams.get("redirect"), "/team/acme?tab=files");
+  assert.equal(parsed.searchParams.get("error"), "session-expired");
+  assert.equal(parsed.hash, "");
 });
 
 test("keeps a Team E2E fragment in per-tab storage and restores it once", () => {

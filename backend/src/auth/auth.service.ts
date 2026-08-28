@@ -15,7 +15,10 @@ import { Request, Response } from "express";
 import moment from "moment";
 import { ConfigService } from "src/config/config.service";
 import { EmailService } from "src/email/email.service";
+import { EmailVerificationService } from "src/emailVerification/emailVerification.service";
+import { assertEmailVerificationAccess } from "src/emailVerification/emailVerification.util";
 import { PrismaService } from "src/prisma/prisma.service";
+import { createUserUniqueConflictResponse } from "src/prisma/prisma-error.util";
 import { OAuthService } from "../oauth/oauth.service";
 import { GenericOidcProvider } from "../oauth/provider/genericOidc.provider";
 import { UserSevice } from "../user/user.service";
@@ -37,13 +40,23 @@ export class AuthService {
     private jwtService: JwtService,
     private config: ConfigService,
     private emailService: EmailService,
+    private emailVerificationService: EmailVerificationService,
     private ldapService: LdapService,
     private userService: UserSevice,
     @Inject(forwardRef(() => OAuthService)) private oAuthService: OAuthService,
   ) {}
   private readonly logger = new Logger(AuthService.name);
 
-  async signUp(dto: AuthRegisterDTO, ip: string, isAdmin?: boolean) {
+  async signUp(
+    dto: AuthRegisterDTO,
+    ip: string,
+    isAdmin?: boolean,
+    emailAlreadyVerified = false,
+  ) {
+    if (!emailAlreadyVerified) {
+      this.emailVerificationService.assertDeliveryAvailable();
+    }
+    const verificationRequiredAt = new Date();
     const hash = dto.password ? await argon.hash(dto.password) : null;
     try {
       let releaseQueue!: () => void;
@@ -65,10 +78,24 @@ export class AuthService {
             username: dto.username,
             password: hash,
             isAdmin: isAdmin ?? isFirstUser,
+            emailVerificationRequiredAt: verificationRequiredAt,
+            emailVerifiedAt: emailAlreadyVerified
+              ? verificationRequiredAt
+              : null,
           },
         });
       } finally {
         releaseQueue();
+      }
+
+      if (!emailAlreadyVerified) {
+        try {
+          await this.emailVerificationService.issueAndSend(user);
+        } catch (error) {
+          // Do not leave an account that can never receive its mandatory link.
+          await this.prisma.user.deleteMany({ where: { id: user.id } });
+          throw error;
+        }
       }
 
       const { refreshToken, refreshTokenId } = await this.createRefreshToken(
@@ -83,10 +110,7 @@ export class AuthService {
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code == "P2002") {
-          const duplicatedField: string = e.meta.target[0];
-          throw new BadRequestException(
-            `A user with this ${duplicatedField} already exists`,
-          );
+          throw new BadRequestException(createUserUniqueConflictResponse(e));
         }
       }
       throw e;
@@ -193,6 +217,8 @@ export class AuthService {
   }
 
   async generateToken(user: User, oauth?: { idToken?: string }) {
+    assertEmailVerificationAccess(user);
+
     // Invalidate all old loginTokens when a new one is created
     await this.prisma.loginToken.deleteMany({ where: { userId: user.id } });
 
@@ -442,6 +468,8 @@ export class AuthService {
     if (!refreshTokenMetaData || refreshTokenMetaData.expiresAt < new Date())
       throw new UnauthorizedException();
 
+    assertEmailVerificationAccess(refreshTokenMetaData.user);
+
     // Rotate: delete old token and create new one (new token will be hashed)
     const deleteToken = isLegacyToken ? refreshToken : hashedToken;
     await this.prisma.refreshToken.delete({ where: { token: deleteToken } });
@@ -586,7 +614,17 @@ export class AuthService {
           secret: this.config.get("internal.jwtSecret"),
         },
       );
-      return payload.sub;
+      const user = await this.prisma.user.findFirst({
+        where: {
+          id: payload.sub,
+          refreshTokens: {
+            some: { id: payload.refreshTokenId, expiresAt: { gt: new Date() } },
+          },
+        },
+      });
+      if (!user) return null;
+      assertEmailVerificationAccess(user);
+      return user.id;
     } catch {
       return null;
     }

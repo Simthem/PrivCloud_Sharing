@@ -40,6 +40,10 @@ export function buildSignInRedirectPath(path?: string | null): string {
   return `${SIGN_IN_PATH}?redirect=${encodeURIComponent(pathWithoutFragment)}`;
 }
 
+export function buildExpiredSessionSignInPath(path?: string | null): string {
+  return `${buildSignInRedirectPath(path)}&error=session-expired`;
+}
+
 export function shouldRequireClassicUploadAuthentication(
   isClassicUploadRoute: boolean,
   allowUnauthenticatedShares: boolean,
@@ -52,6 +56,12 @@ export function shouldRequireClassicUploadAuthentication(
 
 export function isTeamRoutePath(pathname?: string | null): boolean {
   return pathname === "/team" || Boolean(pathname?.startsWith("/team/"));
+}
+
+export function isEmailVerificationRoutePath(
+  pathname?: string | null,
+): boolean {
+  return pathname === "/auth/verify-email";
 }
 
 export function isTeamInvitationRoutePath(pathname?: string | null): boolean {

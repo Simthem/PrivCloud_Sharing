@@ -22,6 +22,8 @@ import useConfig from "../../hooks/config.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import useUser from "../../hooks/user.hook";
 import authService from "../../services/auth.service";
+import { rememberEmailVerificationEmail } from "../../utils/emailVerification.util";
+import { getUserUniqueConflictField } from "../../utils/userConflict.util";
 import toast from "../../utils/toast.util";
 
 const SignUpForm = () => {
@@ -87,15 +89,23 @@ const SignUpForm = () => {
     await authService
       .signUp(email.trim(), username.trim(), password, captchaPayload)
       .then(async () => {
-        const user = await refreshUser();
-        if (user?.isAdmin) {
-          router.replace("/admin/intro");
-        } else {
-          router.replace("/account");
-        }
+        rememberEmailVerificationEmail(email);
+        await refreshUser({ refresh: false });
+        await router.replace("/auth/verify-email");
       })
       .catch((error) => {
         resetCaptcha();
+        const conflictField = getUserUniqueConflictField(error);
+        if (conflictField) {
+          const messageId =
+            conflictField === "email"
+              ? "signup.notify.email-exists"
+              : conflictField === "username"
+                ? "signup.notify.username-exists"
+                : "signup.notify.account-exists";
+          toast.error(t(messageId));
+          return;
+        }
         toast.axiosError(error);
       })
       .finally(() => setIsLoading(false));

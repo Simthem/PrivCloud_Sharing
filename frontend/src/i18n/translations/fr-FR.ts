@@ -183,6 +183,9 @@ export default {
   "signin.input.password.placeholder": "Votre mot de passe",
   "signin.button.submit": "Se connecter",
   "signIn.notify.error": "Identifiant ou mot de passe incorrect",
+  "signIn.notify.session-expired.title": "Session expirée",
+  "signIn.notify.session-expired.description":
+    "Votre session a expiré. Reconnectez-vous pour continuer.",
   "signIn.notify.totp-required.title": "Une authentification à deux facteurs est requise",
   "signIn.notify.totp-required.description": "Veuillez entrer votre code d'authentification à deux facteurs",
   "signIn.oauth.or": "OU",
@@ -203,6 +206,12 @@ export default {
   "signup.input.email": "Adresse email",
   "signup.input.email.placeholder": "Votre courriel",
   "signup.button.submit": "Commençons",
+  "signup.notify.email-exists":
+    "Un compte utilise déjà cette adresse e-mail. Connectez-vous ou utilisez une autre adresse.",
+  "signup.notify.username-exists":
+    "Ce nom d’utilisateur est déjà utilisé. Choisissez-en un autre.",
+  "signup.notify.account-exists":
+    "Un compte utilise déjà cette adresse e-mail ou ce nom d’utilisateur.",
   // END /auth/signup
   // /auth/totp
   "totp.title": "Authentification TOTP",

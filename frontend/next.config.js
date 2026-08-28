@@ -1,4 +1,5 @@
 /** @type {import('next').NextConfig} */
+const path = require('node:path');
 const { version } = require('./package.json');
 
 // Service worker (public/sw.js) provides:
@@ -8,13 +9,18 @@ const { version } = require('./package.json');
 
 module.exports = {
   output: "standalone",
-  turbopack: {},
+  turbopack: {
+    root: path.resolve(__dirname),
+  },
   env: {
     VERSION: version,
   },
   poweredByHeader: false,
   compress: false,
   experimental: {
+    // Avoid Next 16.3's detached `tsc --showConfig` parsing failure on the
+    // Node versions used by the release builders.
+    useTypeScriptCli: false,
     // @mantine/* v6 uses Emotion (CSS-in-JS runtime) -- barrel rewriting
     // breaks SSR style collection by @mantine/next, causing FOUC.
     // Only safe with Mantine v7+ (CSS modules). Keep non-Emotion libs only.

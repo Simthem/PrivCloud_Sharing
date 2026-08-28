@@ -57,6 +57,7 @@ import Config from "../types/config.type";
 import { CurrentUser } from "../types/user.type";
 import i18nUtil from "../utils/i18n.util";
 import { resolvePostAuthRedirectPath } from "../utils/router.util";
+import { AUTH_SESSION_EXPIRED_EVENT } from "../utils/authRedirect.util";
 import { shouldPromptForE2EKey } from "../utils/e2ePromptPolicy.util";
 import userPreferences from "../utils/userPreferences.util";
 
@@ -81,6 +82,10 @@ const E2EKeyPrompt = dynamic(() => import("../components/auth/E2EKeyPrompt"), {
 });
 const TeamStatusChecker = dynamic(
   () => import("../components/team/TeamStatusChecker"),
+  { ssr: false },
+);
+const EmailVerificationNotice = dynamic(
+  () => import("../components/auth/EmailVerificationNotice"),
   { ssr: false },
 );
 
@@ -120,6 +125,16 @@ function App({ Component, pageProps }: AppProps) {
 
   // Onboarding tour: shown once on first sign-in, gated by localStorage.
   const mainOffset = route === "/" ? HEADER_HEIGHT : HEADER_HEIGHT + 40;
+
+  useEffect(() => {
+    const handleExpiredSession = () => setUser(null);
+    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, handleExpiredSession);
+    return () =>
+      window.removeEventListener(
+        AUTH_SESSION_EXPIRED_EVENT,
+        handleExpiredSession,
+      );
+  }, []);
 
   // Attempt to recover/ maintain the session client-side.  This single
   // function covers both the "cold start" scenario (SSR didn't hydrate
@@ -610,6 +625,9 @@ function App({ Component, pageProps }: AppProps) {
                             <div>
                               <Header />
                               <main style={{ paddingTop: mainOffset }}>
+                                {user && (
+                                  <EmailVerificationNotice user={user} />
+                                )}
                                 <Container
                                   fluid={route === "/"}
                                   px={route === "/" ? 0 : undefined}

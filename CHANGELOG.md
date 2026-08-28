@@ -1,7 +1,61 @@
-## Unreleased
+## [1.24.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.1...v1.24.2) (2026-08-27)
+
+### Features
+
+- **authentication -- mandatory verification for new e-mail accounts:** local
+  registrations now receive a one-time verification link. They retain a
+  five-day grace period, lose account access at J+5 and are deleted with their
+  stored shares at J+14 if the address is still unverified. The account banner,
+  verification page and generic, rate-limited resend flow display the exact
+  deadlines.
+
+### Bug Fixes
+
+- **email verification -- complete registration and validation UX:** outgoing
+  verification messages now contain real line breaks and a normalized link.
+  Authenticated users may reach the verification route instead of being caught
+  in an upload/sign-in redirect loop, successful verification refreshes the
+  account banner immediately, and the locale-sensitive deadline banner renders
+  client-side to avoid SSR hydration mismatches.
+- **email verification -- reliable link delivery and consumption:** a resend no
+  longer revokes the links already travelling to the inbox, so a relay that
+  delivers several messages late and out of order leaves each of them usable for
+  its full 24-hour lifetime. The resend endpoint reports the caller's own
+  cooldown instead of silently acknowledging a request it had dropped, and the 
+  verification page turns it into a countdown, so a slow message is no longer 
+  mistaken for a lost one and the button stops inviting a burst of useless
+  clicks. Opening a verification link while the page is already displayed now 
+  consumes the token from the hash change instead of ignoring it, and stripping 
+  the secret from the address bar preserves the router history entry that later 
+  navigation depends on. The cooldown is applied per requested address, 
+  registered or not, so the new response body cannot be used to enumerate 
+  accounts, and the existing 5-per-15-minutes rate limit, the single-use tokens 
+  and the J+5/J+14 deadlines are unchanged.
+- **authentication -- terminal refresh failures no longer spin forever:** a
+  refresh rejected twice with 401 now clears the stale HttpOnly session cookies,
+  releases client state immediately and reaches the sign-in form with a
+  translated expiry notice. SafeLine 468 challenges, application 403 responses,
+  network failures and active-upload cooldowns keep their existing recovery
+  paths and never trigger this logout flow.
+- **registration -- connector-safe duplicate handling:** Prisma P2002
+  metadata is no longer assumed to contain meta.target[0]. Duplicate e-mail
+  or username submissions now consistently return a controlled 400 with
+  SQLite driver-adapter metadata instead of raising a 500 TypeError; the
+  same guard protects administrator and LDAP user mutations, and the
+  registration UI presents translated e-mail, username or generic conflict
+  toasts from a stable API error code.
 
 ### Security
 
+- **migration -- existing users are permanently exempt:** eligibility is
+  represented by a nullable, deployment-era marker that this migration never
+  backfills; a null marker means a durable legacy exemption, independently of
+  any previous verification state. A SQLite insert trigger protects new local
+  users during deployment, while operator-provisioned, verified OAuth and LDAP
+  identities are marked explicitly. Verification uses 256-bit random,
+  single-use, 24-hour tokens stored only as SHA-256 hashes and carried in URL
+  fragments; login, refresh, JWT and TOTP paths enforce the policy, and J+14
+  cleanup uses an atomic, crash-recoverable deletion claim.
 - **uploads -- multipart session store no longer a prototype pollution sink:**
   `S3FileService` kept its in-flight multipart sessions in a plain object keyed
   by `${operation}:${shareId}:${fileId}`, a key built from an URL parameter and
@@ -41,6 +95,10 @@
 
 ### Maintenance
 
+- **Next.js release build -- deterministic TypeScript discovery:** scoped
+  Turbopack to the frontend directory and selected Next's compiler-API type
+  check, avoiding the detached `tsc --showConfig` parsing failure seen with
+  the release builder's Node/npm toolchain.
 - **Snyk Code -- scan scoped and remaining findings reviewed:** added a `.snyk`
   policy excluding `backend|bridge|frontend/test/**` from SAST. The nine
   findings there were fixture credentials against loopback and RFC 6761 example
@@ -56,6 +114,10 @@
 ### Dependencies
 
 - Updated `next` from 16.3.0 to 16.3.3.
+- **Prisma -- production baseline reviewed:** retained the existing exact
+  `7.9.1` adapter, client, CLI and engine pins. Prisma 8 remains a release
+  candidate with a separate migration path, so it is not included in the
+  production dependency set; no manifest, schema or migration changed.
 
 ## [1.24.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.0...v1.24.1) (2026-08-25)
 

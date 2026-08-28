@@ -2,6 +2,7 @@ import { forwardRef, Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import { AltchaModule } from "src/altcha/altcha.module";
 import { EmailModule } from "src/email/email.module";
+import { EmailVerificationModule } from "src/emailVerification/emailVerification.module";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { AuthTotpService } from "./authTotp.service";
@@ -17,6 +18,7 @@ import { OAuthModule } from "../oauth/oauth.module";
     }),
     AltchaModule,
     EmailModule,
+    EmailVerificationModule,
     forwardRef(() => OAuthModule),
     UserModule,
   ],

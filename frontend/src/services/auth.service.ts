@@ -1,4 +1,7 @@
-import api, { refreshTokenOnce } from "./api.service";
+import api, {
+  expireConfirmedSession,
+  refreshTokenOnce,
+} from "./api.service";
 import { removeUserKey } from "../utils/crypto.util";
 
 function isSafeLogoutRedirect(value: unknown): value is string {
@@ -41,6 +44,28 @@ const signUp = async (email: string, username: string, password: string, captcha
   return response;
 };
 
+const verifyEmail = async (token: string) => {
+  return api.post("/auth/email-verification/verify", { token });
+};
+
+export type ResendEmailVerificationResult = {
+  accepted: boolean;
+  retryAfterSeconds: number;
+};
+
+const resendEmailVerification = async (
+  email: string,
+): Promise<ResendEmailVerificationResult> => {
+  const response = await api.post<ResendEmailVerificationResult>(
+    "/auth/email-verification/resend",
+    { email },
+  );
+  return {
+    accepted: response.data?.accepted ?? true,
+    retryAfterSeconds: response.data?.retryAfterSeconds ?? 60,
+  };
+};
+
 const signOut = async () => {
   removeUserKey();
 
@@ -69,6 +94,7 @@ const refreshAccessToken = async () => {
   // the axios interceptor or the upload keepalive on the token rotation.
   const result = await refreshTokenOnce();
   if (!result.ok) {
+    if (result.status === 401) await expireConfirmedSession();
     console.info("Refresh token invalid or expired");
     throw new Error("token_refresh_failed");
   }
@@ -132,6 +158,8 @@ export default {
   signIn,
   signInTotp,
   signUp,
+  verifyEmail,
+  resendEmailVerification,
   signOut,
   refreshAccessToken,
   hasActiveSession,

@@ -34,6 +34,10 @@ import {
 } from "../../utils/oauth.util";
 import { resolvePostAuthRedirectPath } from "../../utils/router.util";
 import toast from "../../utils/toast.util";
+import {
+  isEmailVerificationRequiredError,
+  rememberEmailVerificationEmail,
+} from "../../utils/emailVerification.util";
 
 const useStyles = createStyles((theme) => ({
   signInWith: {
@@ -91,6 +95,18 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
   const [captchaToken, setCaptchaToken] = useState<string | undefined>();
   const captchaRef = useRef<AltchaWidgetHandle>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!router.isReady || router.query.error !== "session-expired") return;
+    showNotification({
+      id: "auth-session-expired",
+      icon: <TbInfoCircle />,
+      color: "blue",
+      radius: "md",
+      title: t("signIn.notify.session-expired.title"),
+      message: t("signIn.notify.session-expired.description"),
+    });
+  }, [router.isReady, router.query.error, t]);
 
   const resetCaptcha = () => {
     setCaptchaToken(undefined);
@@ -157,8 +173,13 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
           router.replace(target);
         }
       })
-      .catch(() => {
+      .catch((error) => {
         resetCaptcha();
+        if (isEmailVerificationRequiredError(error)) {
+          rememberEmailVerificationEmail(email);
+          router.push("/auth/verify-email");
+          return;
+        }
         toast.error(t("signIn.notify.error"));
       })
       .finally(() => setIsLoading(false));

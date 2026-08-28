@@ -9,6 +9,7 @@ import {
   MaxLength,
   MinLength,
 } from "class-validator";
+import { getEmailVerificationState } from "src/emailVerification/emailVerification.util";
 
 export class UserDTO {
   @Expose()
@@ -63,6 +64,18 @@ export class UserDTO {
   @Expose()
   createdAt: Date;
 
+  @Expose()
+  emailVerificationRequired: boolean;
+
+  @Expose()
+  emailVerified: boolean;
+
+  @Expose()
+  emailVerificationBlockedAt: Date | null;
+
+  @Expose()
+  emailVerificationDeletionAt: Date | null;
+
   from(partial: Partial<UserDTO>) {
     const result = plainToClass(UserDTO, partial, {
       excludeExtraneousValues: true,
@@ -72,6 +85,17 @@ export class UserDTO {
       .encryptionKeyHash;
     result.e2eAutoGenerationDisabled = !!(partial as Record<string, unknown>)
       .e2eAutoGenerationDisabledAt;
+    const verification = getEmailVerificationState(
+      partial as Partial<UserDTO> & {
+        emailVerificationRequiredAt?: Date | null;
+        emailVerifiedAt?: Date | null;
+        emailVerificationDeletionStartedAt?: Date | null;
+      },
+    );
+    result.emailVerificationRequired = verification.required;
+    result.emailVerified = verification.verified;
+    result.emailVerificationBlockedAt = verification.blockedAt;
+    result.emailVerificationDeletionAt = verification.deletionAt;
     return result;
   }
 

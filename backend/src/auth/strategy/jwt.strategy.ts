@@ -4,6 +4,7 @@ import { Request } from "express";
 import { Strategy } from "passport-jwt";
 import { ConfigService } from "src/config/config.service";
 import { PrismaService } from "src/prisma/prisma.service";
+import { assertEmailVerificationAccess } from "src/emailVerification/emailVerification.util";
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -43,6 +44,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       },
     });
     if (!user) throw new UnauthorizedException();
+    assertEmailVerificationAccess(user);
     return user;
   }
 }

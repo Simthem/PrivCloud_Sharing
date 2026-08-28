@@ -2,6 +2,7 @@ import { jwtDecode } from "jwt-decode";
 import { NextRequest, NextResponse } from "next/server";
 import {
   buildSignInRedirectPath,
+  isEmailVerificationRoutePath,
   isProtectedTeamContextPath,
 } from "./utils/authRedirect.util";
 
@@ -152,7 +153,7 @@ export async function proxy(request: NextRequest) {
     },
      // Authenticated state
     {
-      condition: user && routes.unauthenticated.contains(route) && !getConfig("share.allowUnauthenticatedShares"),
+      condition: user && routes.unauthenticated.contains(route) && !isEmailVerificationRoutePath(route) && !getConfig("share.allowUnauthenticatedShares"),
       path: "/upload",
     },
     // Unauthenticated state -- only redirect when the session is fully
