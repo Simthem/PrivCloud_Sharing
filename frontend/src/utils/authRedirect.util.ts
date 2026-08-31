@@ -172,7 +172,6 @@ export function rememberPostAuthRedirectTarget(path?: string | null): void {
     // It never enters a request and is removed when this handoff is consumed.
     window.sessionStorage.setItem(
       POST_AUTH_TARGET_STORAGE_KEY,
-      // codeql[js/clear-text-storage-of-sensitive-data]
       JSON.stringify(stored),
     );
   } catch {

@@ -148,7 +148,7 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
     @Body() dto: UpdatePasswordDTO,
   ) {
-    const result = await this.authService.updatePassword(
+    await this.authService.updatePassword(
       user,
       dto.password,
       dto.oldPassword,
@@ -156,7 +156,8 @@ export class AuthController {
 
     // The password change revoked every previous refresh token; hand the
     // freshly issued one back so the client keeps its session.
-    return this.issueTokens(response, result.refreshToken);
+    const { refreshToken } = await this.authService.createRefreshToken(user.id);
+    return this.issueTokens(response, refreshToken);
   }
 
   @Post("token")

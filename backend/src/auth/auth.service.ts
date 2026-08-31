@@ -307,7 +307,11 @@ export class AuthService {
     });
   }
 
-  async updatePassword(user: User, newPassword: string, oldPassword?: string) {
+  async updatePassword(
+    user: User,
+    newPassword: string,
+    oldPassword?: string,
+  ): Promise<void> {
     const isPasswordValid =
       !user.password || (await argon.verify(user.password, oldPassword));
 
@@ -323,8 +327,6 @@ export class AuthService {
       where: { id: user.id },
       data: { password: hash },
     });
-
-    return this.createRefreshToken(user.id);
   }
 
   async createAccessToken(user: User, refreshTokenId: string) {
@@ -588,10 +590,6 @@ export class AuthService {
       const maxAge = moment(now)
         .add(sessionDuration.value, sessionDuration.unit)
         .diff(now);
-      // SECURITY: This is a random opaque lookup credential, not user data.
-      // Only its HMAC-SHA256 digest is persisted server-side; encrypting this
-      // HttpOnly bearer cookie would not change its replay properties.
-      // codeql[js/clear-text-storage-of-sensitive-data]
       response.cookie("refresh_token", refreshToken, {
         path: "/api/auth/token",
         httpOnly: true,
