@@ -1,8 +1,11 @@
 import { BadRequestException } from "@nestjs/common";
+import path from "node:path";
 
 const MAX_FILE_NAME_LENGTH = 255;
 const MAX_RELATIVE_PATH_LENGTH = 4096;
 const MAX_RELATIVE_PATH_SEGMENTS = 64;
+const MAX_STORAGE_KEY_LENGTH = 4096;
+const MAX_STORAGE_KEY_SEGMENTS = 64;
 const CONTROL_CHARS = /[\x00-\x1F\x7F]/;
 const FORBIDDEN_SEGMENT = /[\/\\]|\.{2}|\x00/;
 
@@ -45,7 +48,11 @@ export function normalizeUploadRelativePath(
 ): string | undefined {
   assertSafeFileName(fileName);
 
-  if (relativePath === undefined || relativePath === null || relativePath === "") {
+  if (
+    relativePath === undefined ||
+    relativePath === null ||
+    relativePath === ""
+  ) {
     return undefined;
   }
 
@@ -83,4 +90,43 @@ export function getArchiveEntryName(file: ArchiveFile): string {
     normalizeUploadRelativePath(file.relativePath, file.name) ??
     assertSafeFileName(file.name)
   );
+}
+
+/** Validate a forward-slash-delimited object key before local or S3 access. */
+export function assertSafeStorageKey(key: string): string {
+  if (
+    typeof key !== "string" ||
+    key.length === 0 ||
+    key.length > MAX_STORAGE_KEY_LENGTH ||
+    key.startsWith("/") ||
+    key.startsWith("\\") ||
+    key.includes("\\") ||
+    key.includes("\x00")
+  ) {
+    throw new BadRequestException("Invalid storage key");
+  }
+
+  const segments = key.split("/");
+  if (
+    segments.length === 0 ||
+    segments.length > MAX_STORAGE_KEY_SEGMENTS ||
+    segments.some((segment) => segment.length === 0)
+  ) {
+    throw new BadRequestException("Invalid storage key");
+  }
+
+  return segments.map(assertSafePathSegment).join("/");
+}
+
+/** Resolve a validated object key and prove that it remains below its root. */
+export function resolveStoragePath(root: string, key: string): string {
+  const safeKey = assertSafeStorageKey(key);
+  const resolvedRoot = path.resolve(root);
+  const resolvedPath = path.resolve(resolvedRoot, ...safeKey.split("/"));
+
+  if (!resolvedPath.startsWith(`${resolvedRoot}${path.sep}`)) {
+    throw new BadRequestException("Invalid storage path");
+  }
+
+  return resolvedPath;
 }

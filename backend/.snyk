@@ -1,0 +1,8 @@
+# Snyk Code policy for a deliberate backend-only scan. Prefer running
+# `npm run security:snyk:code` from the repository root for the complete scan.
+version: v1.25.0
+
+exclude:
+  code:
+    - node_modules/**
+    - test/**

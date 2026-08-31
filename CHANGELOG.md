@@ -1,7 +1,22 @@
-## [Unreleased]
+## [1.24.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.2...v1.24.3) (2026-08-31)
 
 ### Security
 
+- **Caddy gateway -- close the HTTP method-override authorization bypass:**
+  `github.com/grpc-ecosystem/grpc-gateway/v2` is pinned to v2.30.0 in both
+  Docker build paths for `CVE-2026-37236`. Module-graph and compiled-binary
+  assertions prevent a later transitive downgrade to the vulnerable v2.29.0;
+  the required `google.golang.org/grpc` module is pinned to the patched v1.83.1.
+- **Snyk Code boundary and signing storage -- scan first-party code only:**
+  SAST scans now exclude vendored `node_modules` sources while Snyk Open Source
+  continues to assess their lockfiles. Every signing route ID/token is validated
+  at the controller boundary, and signing object keys are validated segment by
+  segment before a confined local path or S3 key can be used.
+- **request parsers -- close `qs` and Multer exception/DoS paths:** transitive
+  `qs` resolution is pinned to 6.16.0, Multer to 2.3.0 and its typings are
+  aligned. The administrator logo parser now accepts exactly one bounded file,
+  no text fields, no nested field names and no array indexes, without requiring
+  a NestJS 12 migration.
 - **CodeQL storage findings -- separate password changes from session issue:**
   password mutation no longer returns a refresh credential, preventing a
   password-derived data flow from being inferred for the independently random
@@ -25,6 +40,11 @@
 - **bridge authentication -- parse one scalar Bearer token:** malformed,
   duplicated and non-string authorization values are rejected without
   polynomial regular-expression backtracking.
+- ** Crypto Golang -- patch `x/crypto` to v0.55.0:** the `golang.org/x/crypto`
+  module is pinned to v0.55.0, which backports the upstream
+  `golang.org/x/crypto/ssh` fix for `CVE-2026-56854` and `GO-2026-5932`. The
+  patch is applied in both the Dockerfile and the full-build Dockerfile, and
+  verified with a `go list -m golang.org/x/crypto | grep 'v0.55.0'` assertion.
 
 ### Compatibility
 
@@ -35,7 +55,8 @@
 ### Tests
 
 - Added regression coverage for encoded API segments, WebDAV SSRF/DNS rebinding,
-  local path traversal and malformed upload/control-plane inputs.
+  local and signing-storage path traversal, `qs` limit-bypass payloads and
+  malformed upload/control-plane inputs.
 
 ## [1.24.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.1...v1.24.2) (2026-08-27)
 

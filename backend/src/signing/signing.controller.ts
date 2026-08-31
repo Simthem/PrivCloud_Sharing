@@ -17,6 +17,7 @@ import { User } from "@prisma/client";
 import { minutes, Throttle } from "@nestjs/throttler";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
+import { SafeIdPipe } from "src/share/pipe/safeId.pipe";
 import { SigningService } from "./signing.service";
 import { SigningOtpService } from "./signing-otp.service";
 import { SigningDownloadService } from "./signing-download.service";
@@ -92,7 +93,7 @@ export class SigningController {
   @Get("team/:teamId")
   @UseGuards(JwtGuard)
   async getTeamDocuments(
-    @Param("teamId") teamId: string,
+    @Param("teamId", SafeIdPipe) teamId: string,
     @Query("page") page: string | undefined,
     @Query("limit") limit: string | undefined,
     @GetUser() user: User,
@@ -109,7 +110,10 @@ export class SigningController {
    */
   @Get("documents/:id")
   @UseGuards(JwtGuard)
-  async getDocument(@Param("id") id: string, @GetUser() user: User) {
+  async getDocument(
+    @Param("id", SafeIdPipe) id: string,
+    @GetUser() user: User,
+  ) {
     if (!user?.id) throw new BadRequestException("Authentication required");
     return this.signingService.getDocument(id, user.id);
   }
@@ -119,7 +123,10 @@ export class SigningController {
    */
   @Delete("documents/:id")
   @UseGuards(JwtGuard)
-  async cancelDocument(@Param("id") id: string, @GetUser() user: User) {
+  async cancelDocument(
+    @Param("id", SafeIdPipe) id: string,
+    @GetUser() user: User,
+  ) {
     if (!user?.id) throw new BadRequestException("Authentication required");
     return this.signingService.cancelDocument(id, user.id);
   }
@@ -129,7 +136,10 @@ export class SigningController {
    */
   @Post("documents/:id/remind")
   @UseGuards(JwtGuard)
-  async sendReminder(@Param("id") id: string, @GetUser() user: User) {
+  async sendReminder(
+    @Param("id", SafeIdPipe) id: string,
+    @GetUser() user: User,
+  ) {
     if (!user?.id) throw new BadRequestException("Authentication required");
     return this.signingService.sendReminder(id, user.id);
   }
@@ -140,7 +150,10 @@ export class SigningController {
   @Post("documents/:id/retry-finalize")
   @UseGuards(JwtGuard)
   @Throttle({ default: { limit: 3, ttl: 3600 } })
-  async retryFinalize(@Param("id") id: string, @GetUser() user: User) {
+  async retryFinalize(
+    @Param("id", SafeIdPipe) id: string,
+    @GetUser() user: User,
+  ) {
     if (!user?.id) throw new BadRequestException("Authentication required");
     return this.signingService.retryFinalize(id, user.id);
   }
@@ -151,7 +164,7 @@ export class SigningController {
   @Get("documents/:id/download")
   @UseGuards(JwtGuard)
   async downloadSignedPdf(
-    @Param("id") id: string,
+    @Param("id", SafeIdPipe) id: string,
     @GetUser() user: User,
     @Res() res: Response,
   ) {
@@ -173,7 +186,7 @@ export class SigningController {
   @Get("documents/:id/original")
   @UseGuards(JwtGuard)
   async downloadOriginalPdf(
-    @Param("id") id: string,
+    @Param("id", SafeIdPipe) id: string,
     @GetUser() user: User,
     @Res() res: Response,
   ) {
@@ -194,7 +207,10 @@ export class SigningController {
    */
   @Get("documents/:id/audit")
   @UseGuards(JwtGuard)
-  async getAuditTrail(@Param("id") id: string, @GetUser() user: User) {
+  async getAuditTrail(
+    @Param("id", SafeIdPipe) id: string,
+    @GetUser() user: User,
+  ) {
     return this.signingDownloadService.getAuditTrail(id, user.id);
   }
 
@@ -204,7 +220,7 @@ export class SigningController {
   @Get("documents/:id/signatures")
   @UseGuards(JwtGuard)
   async getSignaturesForFinalization(
-    @Param("id") id: string,
+    @Param("id", SafeIdPipe) id: string,
     @GetUser() user: User,
   ) {
     return this.signingE2EService.getSignaturesForFinalization(id, user.id);
@@ -215,7 +231,7 @@ export class SigningController {
   @UseGuards(JwtGuard)
   @Throttle({ default: { limit: 5, ttl: 3600 } })
   async generateE2ECertificatePage(
-    @Param("id") id: string,
+    @Param("id", SafeIdPipe) id: string,
     @GetUser() user: User,
     @Body() dto: PrepareE2ECertificateDTO,
   ) {
@@ -233,7 +249,7 @@ export class SigningController {
   @UseGuards(JwtGuard)
   @Throttle({ default: { limit: 5, ttl: 3600 } })
   async signE2EDigest(
-    @Param("id") id: string,
+    @Param("id", SafeIdPipe) id: string,
     @GetUser() user: User,
     @Body() dto: SignE2EDigestDTO,
   ) {
@@ -254,7 +270,7 @@ export class SigningController {
   @UseGuards(JwtGuard)
   @Throttle({ default: { limit: 5, ttl: 3600 } })
   async finalizeE2E(
-    @Param("id") id: string,
+    @Param("id", SafeIdPipe) id: string,
     @GetUser() user: User,
     @Body() dto: FinalizeE2EDTO,
   ) {
@@ -278,7 +294,7 @@ export class SigningController {
    */
   @Get("sign/:token")
   async getSigningPage(
-    @Param("token") token: string,
+    @Param("token", SafeIdPipe) token: string,
     @Res({ passthrough: true }) res: Response,
   ) {
     this.setPublicSigningHeaders(res);
@@ -291,7 +307,7 @@ export class SigningController {
   @Get("sign/:token/preview")
   @Throttle({ default: { limit: 20, ttl: 60 } })
   async previewOriginalPdf(
-    @Param("token") token: string,
+    @Param("token", SafeIdPipe) token: string,
     @Res() res: Response,
   ) {
     const { buffer, fileName } = await this.signingDownloadService.getOriginalPdfForPreview(token);
@@ -308,7 +324,7 @@ export class SigningController {
   @Get("sign/:token/download-signed")
   @Throttle({ default: { limit: 10, ttl: 60 } })
   async downloadSignedPdfPublic(
-    @Param("token") token: string,
+    @Param("token", SafeIdPipe) token: string,
     @Res() res: Response,
   ) {
     const { buffer, fileName } = await this.signingDownloadService.getSignedPdfByToken(token);
@@ -325,7 +341,7 @@ export class SigningController {
   @Post("sign/:token/otp/send")
   @Throttle({ default: { limit: 3, ttl: minutes(1) } })
   async sendOtp(
-    @Param("token") token: string,
+    @Param("token", SafeIdPipe) token: string,
     @Res({ passthrough: true }) res: Response,
   ) {
     this.setPublicSigningHeaders(res);
@@ -338,7 +354,7 @@ export class SigningController {
   @Post("sign/:token/otp/verify")
   @Throttle({ default: { limit: 5, ttl: minutes(1) } })
   async verifyOtp(
-    @Param("token") token: string,
+    @Param("token", SafeIdPipe) token: string,
     @Body() dto: VerifyOtpDTO,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -352,7 +368,7 @@ export class SigningController {
   @Post("sign/:token/sign")
   @Throttle({ default: { limit: 5, ttl: minutes(1) } })
   async signDocument(
-    @Param("token") token: string,
+    @Param("token", SafeIdPipe) token: string,
     @Body() dto: SignDocumentDTO,
     @Ip() ip: string,
     @Headers("x-forwarded-for") forwardedFor: string,
@@ -373,7 +389,7 @@ export class SigningController {
   @Post("sign/:token/reject")
   @Throttle({ default: { limit: 5, ttl: minutes(1) } })
   async rejectDocument(
-    @Param("token") token: string,
+    @Param("token", SafeIdPipe) token: string,
     @Body() dto: RejectDocumentDTO,
     @Ip() ip: string,
     @Headers("x-forwarded-for") forwardedFor: string,

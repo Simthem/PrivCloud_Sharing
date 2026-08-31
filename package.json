@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing",
-  "version": "1.24.2",
+  "version": "1.24.3",
   "scripts": {
     "format": "cd frontend && npm run format && cd ../backend && npm run format",
     "lint": "cd frontend && npm run lint && cd ../backend && npm run lint",
@@ -10,6 +10,7 @@
     "test:integrations": "node --test integrations/test/*.test.mjs",
     "test:oss-parity": "node --test scripts/test/open-source-parity.test.mjs",
     "test:release": "npm run test:oss-parity && npm run test:frontend && npm run test:unit && npm run test:bridge && npm run test:integrations && npm --prefix docs run audit:ci",
+    "security:snyk:code": "snyk code test . --report --project-name='Github_Public_OpenSource' --org=themthem58",
     "build:companion": "npm --prefix bridge run build",
     "build:integrations": "node integrations/scripts/build.mjs",
     "build:client-tools": "npm run build:companion && npm run build:integrations",

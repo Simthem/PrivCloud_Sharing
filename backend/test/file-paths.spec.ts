@@ -1,10 +1,13 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
+import path from "node:path";
 import { BadRequestException } from "@nestjs/common";
 import {
   assertSafeFileName,
+  assertSafeStorageKey,
   getArchiveEntryName,
   normalizeUploadRelativePath,
+  resolveStoragePath,
 } from "src/file/file-path.util";
 import { LocalFileService } from "src/file/local.service";
 import { SafeIdPipe } from "src/share/pipe/safeId.pipe";
@@ -119,5 +122,35 @@ testCase("keeps every resolved local-storage path below its share root", () => {
     assertBadRequest(() => service.resolveSharePath(shareId, child));
   }
 });
+
+testCase(
+  "confines signing object keys below the configured storage root",
+  () => {
+    const safeKey = "signed/7352aeee-e01b-4dcc-a812-90d9e1647bed/report.pdf";
+    const storageRoot = path.resolve("test-storage");
+    assert.equal(assertSafeStorageKey(safeKey), safeKey);
+    assert.equal(
+      resolveStoragePath(storageRoot, safeKey),
+      path.join(
+        storageRoot,
+        "signed",
+        "7352aeee-e01b-4dcc-a812-90d9e1647bed",
+        "report.pdf",
+      ),
+    );
+
+    for (const key of [
+      "../secret",
+      "signed/../../secret",
+      "/absolute/file",
+      "signed\\..\\secret",
+      "signed//file.pdf",
+      "signed/file\0.pdf",
+    ]) {
+      assertBadRequest(() => assertSafeStorageKey(key));
+      assertBadRequest(() => resolveStoragePath(storageRoot, key));
+    }
+  },
+);
 
 void run();

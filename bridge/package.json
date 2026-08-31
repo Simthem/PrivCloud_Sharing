@@ -1,6 +1,6 @@
 {
   "name": "@privcloud/bridge",
-  "version": "1.24.2",
+  "version": "1.24.3",
   "type": "module",
   "bin": {
     "privcloud-bridge": "./src/privcloud-bridge.mjs"

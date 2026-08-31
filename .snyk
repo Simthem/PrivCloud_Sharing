@@ -28,6 +28,9 @@ version: v1.25.0
 #     so the literal is the subject of the test, not a credential.
 exclude:
   code:
+    # Dependency CVEs belong to the lockfile-based Snyk Open Source scan.
+    # Vendored sources, fixtures and examples are not first-party SAST input.
+    - "**/node_modules/**"
     - backend/test/**
     - bridge/test/**
     - frontend/test/**

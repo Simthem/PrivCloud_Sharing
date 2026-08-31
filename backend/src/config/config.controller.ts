@@ -28,6 +28,7 @@ import { ConfigDTO } from "./dto/config.dto";
 import { TestEmailDTO } from "./dto/testEmail.dto";
 import UpdateConfigDTO from "./dto/updateConfig.dto";
 import { LogoService } from "./logo.service";
+import { LOGO_UPLOAD_OPTIONS } from "./logo-upload.config";
 import { NoCacheInterceptor } from "./interceptor/no-cache.interceptor";
 
 @Controller("configs")
@@ -85,9 +86,7 @@ export class ConfigController {
   }
 
   @Post("admin/logo")
-  @UseInterceptors(
-    FileInterceptor("file", { limits: { fileSize: 2 * 1024 * 1024 } }),
-  )
+  @UseInterceptors(FileInterceptor("file", LOGO_UPLOAD_OPTIONS))
   @UseGuards(JwtGuard, AdministratorGuard)
   async uploadLogo(
     @UploadedFile(

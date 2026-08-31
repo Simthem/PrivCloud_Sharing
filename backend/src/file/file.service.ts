@@ -15,7 +15,9 @@ import * as mime from "mime-types";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   assertSafeFileName,
+  assertSafeStorageKey,
   normalizeUploadRelativePath,
+  resolveStoragePath,
 } from "./file-path.util";
 import { touchShareUploadActivity } from "src/share/upload-activity.util";
 
@@ -834,42 +836,20 @@ export class FileService {
   }
 
   /**
-   * Validate that a storage key is safe (no path traversal).
-   */
-  private validateStorageKey(key: string): void {
-    if (
-      !key ||
-      key.includes("..") ||
-      key.includes("\x00") ||
-      key.startsWith("/") ||
-      key.startsWith("\\")
-    ) {
-      throw new BadRequestException("Invalid storage key");
-    }
-  }
-
-  /**
    * Retrieve a file by a custom key (used for signing documents).
    * The key is a storage path like "signing/{id}/document.pdf".
    */
   async getFileByKey(key: string): Promise<Buffer> {
-    this.validateStorageKey(key);
+    const safeKey = assertSafeStorageKey(key);
     const storageService = this.getStorageService();
     if (storageService instanceof S3FileService) {
-      const stream = await storageService.getRawObjectStream(key);
+      const stream = await storageService.getRawObjectStream(safeKey);
       return Buffer.from(await this.streamToUint8Array(stream));
     }
     // Local: read directly
     const fs = await import("fs/promises");
-    const path = await import("path");
     const dataDir = this.configService.get("general.dataDir") || "./data";
-    const baseDir = path.resolve(dataDir);
-    const filePath = path.resolve(dataDir, key);
-    if (!filePath.startsWith(baseDir + path.sep)) {
-      throw new BadRequestException(
-        "Invalid storage key - path traversal detected",
-      );
-    }
+    const filePath = resolveStoragePath(dataDir, safeKey);
     return fs.readFile(filePath);
   }
 
@@ -878,23 +858,17 @@ export class FileService {
    * The key is a storage path like "signing/{id}/signed.pdf".
    */
   async storeFileByKey(key: string, data: Buffer): Promise<void> {
-    this.validateStorageKey(key);
+    const safeKey = assertSafeStorageKey(key);
     const storageService = this.getStorageService();
     if (storageService instanceof S3FileService) {
-      await storageService.putRawObject(key, data);
+      await storageService.putRawObject(safeKey, data);
       return;
     }
     // Local: write directly
     const fs = await import("fs/promises");
     const path = await import("path");
     const dataDir = this.configService.get("general.dataDir") || "./data";
-    const baseDir = path.resolve(dataDir);
-    const filePath = path.resolve(dataDir, key);
-    if (!filePath.startsWith(baseDir + path.sep)) {
-      throw new BadRequestException(
-        "Invalid storage key - path traversal detected",
-      );
-    }
+    const filePath = resolveStoragePath(dataDir, safeKey);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, data);
   }
