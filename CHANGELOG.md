@@ -2,6 +2,11 @@
 
 ### Security
 
+- **CodeQL storage findings -- document intentional credential boundaries:**
+  narrowly suppress the clear-text rule where the browser retains a validated
+  E2E handoff fragment in per-tab `sessionStorage`, and where the backend emits
+  a random HttpOnly refresh handle whose HMAC digest alone is stored in the
+  database. No E2E persistence or cookie protection is weakened.
 - **request boundaries -- reject tampered parameter types:** binary upload and
   probe handlers now require real `Buffer` bodies, scalar headers and bounded
   numeric parameters before reading lengths or forwarding data.

@@ -588,6 +588,10 @@ export class AuthService {
       const maxAge = moment(now)
         .add(sessionDuration.value, sessionDuration.unit)
         .diff(now);
+      // SECURITY: This is a random opaque lookup credential, not user data.
+      // Only its HMAC-SHA256 digest is persisted server-side; encrypting this
+      // HttpOnly bearer cookie would not change its replay properties.
+      // codeql[js/clear-text-storage-of-sensitive-data]
       response.cookie("refresh_token", refreshToken, {
         path: "/api/auth/token",
         httpOnly: true,

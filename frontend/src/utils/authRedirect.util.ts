@@ -168,8 +168,11 @@ export function rememberPostAuthRedirectTarget(path?: string | null): void {
   }
 
   try {
+    // SECURITY: Intentional per-tab storage for the validated E2E fragment.
+    // It never enters a request and is removed when this handoff is consumed.
     window.sessionStorage.setItem(
       POST_AUTH_TARGET_STORAGE_KEY,
+      // codeql[js/clear-text-storage-of-sensitive-data]
       JSON.stringify(stored),
     );
   } catch {
