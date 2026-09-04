@@ -6,7 +6,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { Readable } from "node:stream";
 
-const VERSION = "1.24.3";
+const VERSION = "1.24.4";
 const NATIVE_HOST_NAME = "fr.privcloud.companion";
 const HOST = process.env.PRIVCLOUD_BRIDGE_HOST || "127.0.0.1";
 const PORT = Number(process.env.PRIVCLOUD_BRIDGE_PORT || "47631");
