@@ -1780,6 +1780,9 @@ const TeamFolderPage = () => {
             files={e2eShareFiles}
             teamKeyB64={teamKeyB64}
             currentUserId={user?.id || ""}
+            pqNotificationEncryptionEnabled={
+              team.pqNotificationEncryptionEnabled ?? false
+            }
           />
         )}
       </Container>

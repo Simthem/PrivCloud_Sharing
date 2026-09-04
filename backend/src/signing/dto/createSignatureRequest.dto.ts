@@ -23,8 +23,8 @@ import {
 import { Type } from "class-transformer";
 
 export enum SignatureLevel {
-  AES = "AES",
-  QES = "QES",
+  STANDARD = "STANDARD",
+  REINFORCED = "REINFORCED",
 }
 
 export class SignatureRecipientDTO {
@@ -47,6 +47,27 @@ export class SignatureRecipientDTO {
   @Max(50)
   @Type(() => Number)
   order?: number;
+
+  // Client-generated UUIDs let the client encrypt an invitation containing
+  // the exact signing URL before the request is persisted.
+  @IsOptional()
+  @IsUUID()
+  signingToken?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50000)
+  teamInviteNotification?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50000)
+  teamProgressNotification?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50000)
+  teamCompletionNotification?: string;
 }
 
 export class SignatureFieldDTO {
@@ -106,6 +127,9 @@ export class SignatureFieldDTO {
 }
 
 export class CreateSignatureRequestDTO {
+  @IsOptional()
+  @IsUUID()
+  id?: string;
   @IsString()
   @Matches(/^[a-zA-Z0-9_-]+$/)
   @Length(3, 50)
@@ -139,6 +163,14 @@ export class CreateSignatureRequestDTO {
   @IsBoolean()
   @IsOptional()
   addInitials?: boolean;
+
+  @IsOptional()
+  @IsIn(["BOTTOM_LEFT", "BOTTOM_CENTER_RIGHT", "BOTTOM_RIGHT"])
+  initialsPlacement?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  initialsIncludeSignaturePage?: boolean;
 
   @IsOptional()
   @IsInt()

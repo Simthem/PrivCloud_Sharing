@@ -21,7 +21,10 @@ type PreparedPadesPdf = {
 };
 
 const toArrayBuffer = (bytes: Uint8Array): ArrayBuffer =>
-  bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
 
 const asciiBytes = (value: string): Uint8Array => {
   const result = new Uint8Array(value.length);
@@ -66,9 +69,11 @@ const addSignaturePlaceholder = (pdfDoc: PDFDocument) => {
   const signatureDict = pdfDoc.context.obj({
     Type: "Sig",
     Filter: "Adobe.PPKLite",
-    SubFilter: "adbe.pkcs7.detached",
+    SubFilter: "ETSI.CAdES.detached",
     ByteRange: byteRange,
-    Contents: PDFHexString.of(String.fromCharCode(0).repeat(SIGNATURE_HEX_LENGTH)),
+    Contents: PDFHexString.of(
+      String.fromCharCode(0).repeat(SIGNATURE_HEX_LENGTH),
+    ),
     Reason: PDFString.of(
       "Signature électronique eIDAS (E2E) - Tous les signataires ont signé",
     ),
@@ -83,7 +88,9 @@ const addSignaturePlaceholder = (pdfDoc: PDFDocument) => {
   });
   const signatureBuffer = new Uint8Array(signatureDict.sizeInBytes());
   signatureDict.copyBytesInto(signatureBuffer, 0);
-  const signatureRef = pdfDoc.context.register(PDFInvalidObject.of(signatureBuffer));
+  const signatureRef = pdfDoc.context.register(
+    PDFInvalidObject.of(signatureBuffer),
+  );
 
   const rect = pdfDoc.context.obj([0, 0, 0, 0]) as PDFArray;
   const appearance = pdfDoc.context.formXObject([], {
@@ -111,10 +118,14 @@ const addSignaturePlaceholder = (pdfDoc: PDFDocument) => {
   let acroForm = pdfDoc.catalog.lookupMaybe(PDFName.of("AcroForm"), PDFDict);
   if (!acroForm) {
     acroForm = pdfDoc.context.obj({ Fields: [] }) as PDFDict;
-    pdfDoc.catalog.set(PDFName.of("AcroForm"), pdfDoc.context.register(acroForm));
+    pdfDoc.catalog.set(
+      PDFName.of("AcroForm"),
+      pdfDoc.context.register(acroForm),
+    );
   }
 
-  const currentFlags = acroForm.lookupMaybe(PDFName.of("SigFlags"), PDFNumber)?.asNumber() || 0;
+  const currentFlags =
+    acroForm.lookupMaybe(PDFName.of("SigFlags"), PDFNumber)?.asNumber() || 0;
   acroForm.set(
     PDFName.of("SigFlags"),
     PDFNumber.of(currentFlags | SIGNATURES_EXIST | APPEND_ONLY),
@@ -132,7 +143,9 @@ export const sha256Hex = async (bytes: Uint8Array): Promise<string> => {
   const digest = new Uint8Array(
     await globalThis.crypto.subtle.digest("SHA-256", toArrayBuffer(bytes)),
   );
-  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
 };
 
 export const preparePadesPdf = async (
@@ -143,17 +156,19 @@ export const preparePadesPdf = async (
   const certDoc = await PDFDocument.load(certificatePage);
   const [certPageCopy] = await pdfDoc.copyPages(certDoc, [0]);
   pdfDoc.addPage(certPageCopy);
-  pdfDoc.setProducer("PrivCloud Sharing - Signature Électronique eIDAS PAdES-B-T");
+  pdfDoc.setProducer("PrivCloud Sharing - Signature électronique PDF PAdES");
   pdfDoc.setCreator("PrivCloud Sharing");
   addSignaturePlaceholder(pdfDoc);
 
   const bytes = new Uint8Array(await pdfDoc.save({ useObjectStreams: false }));
   const slot = findSignatureSlot(bytes);
   const byteRangeStart = findAscii(bytes, "/ByteRange [");
-  if (byteRangeStart < 0) throw new Error("ByteRange PAdES introuvable dans le PDF");
+  if (byteRangeStart < 0)
+    throw new Error("ByteRange PAdES introuvable dans le PDF");
 
   let byteRangeEnd = byteRangeStart;
-  while (byteRangeEnd < bytes.length && bytes[byteRangeEnd] !== 0x5d) byteRangeEnd++;
+  while (byteRangeEnd < bytes.length && bytes[byteRangeEnd] !== 0x5d)
+    byteRangeEnd++;
   if (byteRangeEnd >= bytes.length) throw new Error("ByteRange PAdES invalide");
 
   const prefixLength = "/ByteRange [".length;
@@ -161,7 +176,8 @@ export const preparePadesPdf = async (
   const afterSlot = slot.close + 1;
   const byteRange = [0, slot.open, afterSlot, bytes.length - afterSlot];
   const values = byteRange.join(" ");
-  if (values.length > innerLength) throw new Error("Le ByteRange PAdES dépasse son emplacement");
+  if (values.length > innerLength)
+    throw new Error("Le ByteRange PAdES dépasse son emplacement");
 
   const replacement = asciiBytes(
     `/ByteRange [${values.padEnd(innerLength, " ")}]`,
@@ -175,7 +191,10 @@ export const preparePadesPdf = async (
   return { bytes, digest: await sha256Hex(signedBytes) };
 };
 
-export const embedPadesCms = (preparedPdf: Uint8Array, cms: Uint8Array): Uint8Array => {
+export const embedPadesCms = (
+  preparedPdf: Uint8Array,
+  cms: Uint8Array,
+): Uint8Array => {
   const bytes = new Uint8Array(preparedPdf);
   const slot = findSignatureSlot(bytes);
   if (cms.length * 2 > slot.length) {
@@ -184,7 +203,9 @@ export const embedPadesCms = (preparedPdf: Uint8Array, cms: Uint8Array): Uint8Ar
     );
   }
 
-  const hex = Array.from(cms, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const hex = Array.from(cms, (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
   bytes.fill(0x30, slot.open + 1, slot.close);
   bytes.set(asciiBytes(hex), slot.open + 1);
   return bytes;

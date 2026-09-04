@@ -307,6 +307,51 @@ function App({ Component, pageProps }: AppProps) {
         storeUserKey,
         removeUserKey,
       }) => {
+        const provisionEncryptionIdentities = (encodedKey: string) => {
+          const schedule =
+            window.requestIdleCallback ||
+            ((callback: () => void) => window.setTimeout(callback, 200));
+          schedule(() => {
+            void Promise.all([
+              import("../services/crypto.service"),
+              import("../utils/crypto.util"),
+            ])
+              .then(async ([cryptoService, cryptoUtil]) => {
+                const masterKey =
+                  await cryptoUtil.importKeyFromBase64(encodedKey);
+
+                if (await cryptoService.isX25519Supported()) {
+                  const identityKeys = await cryptoService.getMyIdentityKeys();
+                  const hasX25519 = identityKeys.some(
+                    (key) => key.keyType === "X25519",
+                  );
+                  const hasEd25519 = identityKeys.some(
+                    (key) => key.keyType === "Ed25519",
+                  );
+                  if (!hasX25519 || !hasEd25519) {
+                    await cryptoService
+                      .initializeIdentityKeys(masterKey)
+                      .catch((error) => {
+                        if (error?.response?.status !== 409) throw error;
+                      });
+                  }
+                }
+
+                const pqKey = await cryptoService.getMyPQKey();
+                if (!pqKey) {
+                  await cryptoService
+                    .initializePQKeys(masterKey)
+                    .catch((error) => {
+                      if (error?.response?.status !== 409) throw error;
+                    });
+                }
+              })
+              .catch(() => {
+                // Key provisioning is retried on the next authenticated load.
+              });
+          });
+        };
+
         const showPrompt = () => {
           if (
             cancelled ||
@@ -366,6 +411,7 @@ function App({ Component, pageProps }: AppProps) {
                       const valid = await verifyAndMigrateKey(encodedKey);
                       if (valid && !cancelled) {
                         storeUserKey(encodedKey);
+                        provisionEncryptionIdentities(encodedKey);
                         return; // Key restored silently, no prompt needed
                       }
                     }
@@ -385,6 +431,7 @@ function App({ Component, pageProps }: AppProps) {
                         const valid = await verifyAndMigrateKey(encodedKey);
                         if (valid && !cancelled) {
                           storeUserKey(encodedKey);
+                          provisionEncryptionIdentities(encodedKey);
                           return;
                         }
                       }
@@ -414,6 +461,9 @@ function App({ Component, pageProps }: AppProps) {
               removeUserKey();
               showPrompt();
               throw new Error("stale_e2e_session_key");
+            }
+            if (valid && !cancelled) {
+              provisionEncryptionIdentities(localKey);
             }
           })
           .catch(() => {

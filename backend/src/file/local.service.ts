@@ -348,7 +348,14 @@ export class LocalFileService {
 
     if (!fileMetaData) throw new NotFoundException("File not found");
 
-    await fs.unlink(this.resolveSharePath(shareId, fileId));
+    try {
+      await fs.unlink(this.resolveSharePath(shareId, fileId));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
+      this.logger.warn(
+        `Stored file already absent for shareId=${shareId} fileId=${fileId}; removing the database record`,
+      );
+    }
 
     await this.prisma.file.delete({ where: { id: fileId } });
     this.logger.debug(

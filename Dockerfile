@@ -70,7 +70,7 @@ RUN test "$(grep -Fc '[]interpreter.Interpretable{reqAttr}' modules/caddyhttp/ce
 # the compiled binary below so a transitive downgrade fails the image build.
 RUN go get golang.org/x/net@v0.57.0 \
     && go get golang.org/x/text@v0.40.0 \
-    && go get golang.org/x/crypto@v0.55.0 \
+    && go get golang.org/x/crypto@v0.56.0 \
     && go get github.com/yuin/goldmark@v1.7.17 \
     && go get google.golang.org/grpc@v1.83.1 \
     && go get github.com/go-jose/go-jose/v3@v3.0.5 \
@@ -97,7 +97,7 @@ RUN go get golang.org/x/net@v0.57.0 \
     && go mod edit \
         -replace=golang.org/x/net=golang.org/x/net@v0.57.0 \
         -replace=golang.org/x/text=golang.org/x/text@v0.40.0 \
-        -replace=golang.org/x/crypto=golang.org/x/crypto@v0.55.0 \
+        -replace=golang.org/x/crypto=golang.org/x/crypto@v0.56.0 \
         -replace=golang.org/x/sys=golang.org/x/sys@v0.47.0 \
         -replace=github.com/go-chi/chi/v5=github.com/go-chi/chi/v5@v5.3.0 \
     && go mod tidy \
@@ -112,13 +112,27 @@ RUN go get golang.org/x/net@v0.57.0 \
     && grep -E 'replace|x/net|x/text|x/crypto|x/sys|go-chi/chi/v5' go.mod \
     && go list -m golang.org/x/net | grep 'v0.57.0' \
     && go list -m golang.org/x/text | grep 'v0.40.0' \
-    && go list -m golang.org/x/crypto | grep 'v0.55.0' \
+    && go list -m golang.org/x/crypto | grep 'v0.56.0' \
     && go list -m github.com/go-chi/chi/v5 | grep 'v5.3.0' \
     && test "$(go list -m -f '{{.Version}}' google.golang.org/grpc)" = "v1.83.1" \
     && test "$(go list -m -f '{{.Version}}' github.com/google/cel-go)" = "v0.30.0" \
     && test "$(go list -m -f '{{.Version}}' github.com/klauspost/compress)" = "v1.18.7" \
     && test "$(go list -m -f '{{.Version}}' github.com/grpc-ecosystem/grpc-gateway/v2)" = "v2.30.0" \
     && ! go list -deps ./cmd/caddy | grep -qx 'golang.org/x/crypto/openpgp'
+# grpc-gateway is linked through transitive OTLP/generated packages, so Caddy has
+# no application-owned NewServeMux call where the official opt-out can be passed.
+# Apply WithDisableHTTPMethodOverride inside the verified v2.30.0 constructor so
+# every current or future transitive caller is hardened. Source-shape assertions
+# make dependency drift fail the image build instead of silently dropping this.
+RUN GRPC_GATEWAY_MUX="$(go env GOMODCACHE)/github.com/grpc-ecosystem/grpc-gateway/v2@v2.30.0/runtime/mux.go" \
+    && test -f "$GRPC_GATEWAY_MUX" \
+    && chmod u+w "$GRPC_GATEWAY_MUX" \
+    && test "$(grep -Fc 'func NewServeMux(opts ...ServeMuxOption) *ServeMux {' "$GRPC_GATEWAY_MUX")" = "1" \
+    && test "$(grep -Fc 'opts = append([]ServeMuxOption{WithDisableHTTPMethodOverride()}, opts...)' "$GRPC_GATEWAY_MUX")" = "0" \
+    && sed -i '/^func NewServeMux(opts \.\.\.ServeMuxOption) \*ServeMux {$/a\    opts = append([]ServeMuxOption{WithDisableHTTPMethodOverride()}, opts...)' "$GRPC_GATEWAY_MUX" \
+    && gofmt -w "$GRPC_GATEWAY_MUX" \
+    && test "$(grep -Fc 'opts = append([]ServeMuxOption{WithDisableHTTPMethodOverride()}, opts...)' "$GRPC_GATEWAY_MUX")" = "1"
+
 # Compiler Caddy (binaire statique, stripped, sans symboles de debug)
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/caddy \
     && go version -m /usr/bin/caddy | grep -Eq \

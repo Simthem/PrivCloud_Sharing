@@ -5,6 +5,7 @@ const POST_AUTH_TARGET_STORAGE_KEY = "privcloud.postAuthTarget";
 const POST_AUTH_TARGET_TTL_MS = 15 * 60 * 1000;
 const TEAM_KEY_FRAGMENT =
   /^#teamKey=[A-Za-z0-9_-]{16,4096}(?:&version=[1-9][0-9]{0,9})?$/;
+const SIGNING_KEY_FRAGMENT = /^#key=[A-Za-z0-9_-]{16,4096}$/;
 export const AUTH_SESSION_EXPIRED_EVENT = "privcloud:auth-session-expired";
 
 /**
@@ -51,6 +52,25 @@ export function shouldRequireClassicUploadAuthentication(
 ): boolean {
   return (
     isClassicUploadRoute && (!allowUnauthenticatedShares || sessionWasExpected)
+  );
+}
+
+// Routes that only render meaningfully for a signed-in user.
+const SESSION_SCOPED_ROUTE_PREFIXES = ["/account", "/admin", "/team"];
+
+/**
+ * Whether a route must resolve the session before it is painted.
+ *
+ * The auth cookies are SameSite=Strict, so the browser withholds them on
+ * cross-site top-level navigations -- for example, a link
+ * opened from a mail client.  SSR therefore sees an anonymous request even
+ * though the session is intact, and painting the signed-out chrome before the
+ * client-side probe corrects it reads as a flash of the public site.
+ */
+export function isSessionScopedRoutePath(pathname?: string | null): boolean {
+  if (!pathname) return false;
+  return SESSION_SCOPED_ROUTE_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
 }
 
@@ -108,7 +128,8 @@ function readStoredPostAuthTarget(): StoredPostAuthTarget | null {
     const fragmentIsSafe =
       stored.fragment === undefined ||
       (typeof stored.fragment === "string" &&
-        TEAM_KEY_FRAGMENT.test(stored.fragment));
+        (TEAM_KEY_FRAGMENT.test(stored.fragment) ||
+          SIGNING_KEY_FRAGMENT.test(stored.fragment)));
 
     if (
       safePath !== stored.path ||
@@ -139,10 +160,13 @@ function readStoredPostAuthTarget(): StoredPostAuthTarget | null {
 /**
  * Keep a post-authentication target in per-tab browser storage.
  *
- * A strictly validated Team E2E key fragment is stored separately from the
+ * A strictly validated E2E key fragment is stored separately from the
  * sign-in URL, so it never crosses the network as a query parameter.
  */
-export function rememberPostAuthRedirectTarget(path?: string | null): void {
+export function rememberPostAuthRedirectTarget(
+  path?: string | null,
+  options?: { preserveExistingFragmentForSamePath?: boolean },
+): void {
   if (typeof window === "undefined") return;
 
   const safePath = safeRedirectPath(path);
@@ -154,16 +178,26 @@ export function rememberPostAuthRedirectTarget(path?: string | null): void {
 
   if (pathWithoutFragment === "/") return;
 
+  // The sign-in page itself usually has no hash. Do not let its bookkeeping
+  // erase a key that the protected source page already stored for this exact
+  // return path before navigating to /auth/signIn.
+  if (!fragment && options?.preserveExistingFragmentForSamePath) {
+    const existing = readStoredPostAuthTarget();
+    if (existing?.path === pathWithoutFragment && existing.fragment) return;
+  }
+
   const stored: StoredPostAuthTarget = {
     path: pathWithoutFragment,
     createdAt: Date.now(),
   };
   const targetPathname = new URL(pathWithoutFragment, LOCAL_URL_BASE).pathname;
-  if (
+  const isTeamKey =
     isTeamRoutePath(targetPathname) &&
-    fragment &&
-    TEAM_KEY_FRAGMENT.test(fragment)
-  ) {
+    Boolean(fragment && TEAM_KEY_FRAGMENT.test(fragment));
+  const isSigningKey =
+    targetPathname.startsWith("/sign/") &&
+    Boolean(fragment && SIGNING_KEY_FRAGMENT.test(fragment));
+  if (fragment && (isTeamKey || isSigningKey)) {
     stored.fragment = fragment;
   }
 

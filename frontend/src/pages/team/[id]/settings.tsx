@@ -77,6 +77,8 @@ const TeamSettings = () => {
   const [reportEnabled, setReportEnabled] = useState(true);
   const [reportFrequency, setReportFrequency] = useState("WEEKLY");
   const [keyRotationIntervalDays, setKeyRotationIntervalDays] = useState("90");
+  const [pqNotificationEncryptionEnabled, setPqNotificationEncryptionEnabled] =
+    useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState("");
   const [selectedMember, setSelectedMember] = useState<any>(null);
@@ -98,6 +100,9 @@ const TeamSettings = () => {
       setReportEnabled(team.reportEnabled ?? true);
       setReportFrequency(team.reportFrequency || "WEEKLY");
       setKeyRotationIntervalDays(String(team.keyRotationIntervalDays || 90));
+      setPqNotificationEncryptionEnabled(
+        team.pqNotificationEncryptionEnabled ?? false,
+      );
     }
   }, [team]);
 
@@ -131,6 +136,25 @@ const TeamSettings = () => {
       toast.error(
         err?.response?.data?.message || t("team.settings.toast.deleteError"),
       ),
+  });
+
+  const pqNotificationEncryptionMutation = useMutation({
+    mutationFn: (enabled: boolean) =>
+      teamService.updateTeam(teamIdStr, {
+        pqNotificationEncryptionEnabled: enabled,
+      }),
+    onSuccess: () => {
+      toast.success(t("team.settings.toast.pqNotificationUpdated"));
+      queryClient.invalidateQueries({ queryKey: ["team", teamIdStr] });
+    },
+    onError: (err: any) => {
+      setPqNotificationEncryptionEnabled(
+        team?.pqNotificationEncryptionEnabled ?? false,
+      );
+      toast.error(
+        err?.response?.data?.message || t("team.settings.toast.error"),
+      );
+    },
   });
 
   const removeMemberMutation = useMutation({
@@ -495,6 +519,30 @@ const TeamSettings = () => {
                   },
                 ]}
               />
+            </Paper>
+
+            <Paper withBorder p="lg" mb="lg">
+              <Group mb="md">
+                <TbShieldCheck size={20} />
+                <Title order={4}>
+                  {t("team.settings.pqNotifications.title")}
+                </Title>
+              </Group>
+              <Stack gap="xs">
+                <Switch
+                  checked={pqNotificationEncryptionEnabled}
+                  disabled={pqNotificationEncryptionMutation.isPending}
+                  onChange={(event) => {
+                    const enabled = event.currentTarget.checked;
+                    setPqNotificationEncryptionEnabled(enabled);
+                    pqNotificationEncryptionMutation.mutate(enabled);
+                  }}
+                  label={t("team.settings.pqNotifications.enabled")}
+                />
+                <Text size="xs" c="dimmed">
+                  {t("team.settings.pqNotifications.help")}
+                </Text>
+              </Stack>
             </Paper>
           </>
         )}

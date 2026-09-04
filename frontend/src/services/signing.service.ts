@@ -1,5 +1,12 @@
 import api from "./api.service";
 import { apiPathSegment } from "../utils/apiPath.util";
+import { selectPqNotificationPublicKey } from "../utils/pqNotification.util";
+import { buildSigningNotificationActions } from "../utils/signingNotification.util";
+import teamService from "./team.service";
+import {
+  batchGetPublicKeys,
+  encryptNotificationMetadata,
+} from "./crypto.service";
 
 export interface SignatureRequest {
   id: string;
@@ -13,6 +20,8 @@ export interface SignatureRequest {
   recipients: SignatureRecipient[];
   createdAt: string;
   completedAt?: string;
+  fileDeleted?: boolean;
+  fileDeletedAt?: string;
   creator?: { id: string; username?: string; email: string };
 }
 
@@ -25,9 +34,15 @@ export interface SignatureRecipient {
   order?: number;
   signedAt?: string;
   signingToken?: string;
+  identityVerificationMethod?: string;
+  identityVerifiedAt?: string;
+  authenticationMethod?: string;
+  signingIntentHash?: string;
+  signedDocumentHash?: string;
 }
 
 export interface SigningPageData {
+  documentStatus: string;
   document: {
     id: string;
     fileName: string;
@@ -43,7 +58,9 @@ export interface SigningPageData {
     email: string;
     role: string;
     status: string;
-    otpVerified?: boolean;
+    emailVerified: boolean;
+    identityVerificationMethod: string;
+    identityVerifiedAt?: string;
   };
   fields: {
     id: string;
@@ -56,19 +73,29 @@ export interface SigningPageData {
     label?: string | null;
     required: boolean;
   }[];
-  pdfUrl: string;
-  requiresOtp?: boolean;
+  requiresPasskey: boolean;
+  requiresEmailVerification: boolean;
+  emailVerificationCodePending: boolean;
+  hasRegisteredPasskey: boolean;
 }
 
 export interface CreateSignatureRequestPayload {
+  id?: string;
+  notificationCreatorId?: string;
+  /** Client-only key embedded inside recipient-encrypted notification actions. */
+  notificationE2EKey?: string;
   shareId: string;
   fileId: string;
   message?: string;
-  signatureLevel?: "AES" | "QES";
+  signatureLevel?: "STANDARD" | "REINFORCED";
   expiresAt?: string;
   addApprovalField?: boolean;
   addApprovalMention?: boolean;
   addInitials?: boolean;
+  initialsPlacement?: "BOTTOM_LEFT" | "BOTTOM_CENTER_RIGHT" | "BOTTOM_RIGHT";
+  initialsIncludeSignaturePage?: boolean;
+  signaturePage?: number;
+  watermarkPage?: number;
   isE2EEncrypted?: boolean;
   sendE2EKeyByEmail?: boolean;
   e2eKey?: string;
@@ -77,6 +104,10 @@ export interface CreateSignatureRequestPayload {
     email: string;
     role?: "SIGNER" | "APPROVER" | "CC";
     order?: number;
+    signingToken?: string;
+    teamInviteNotification?: string;
+    teamProgressNotification?: string;
+    teamCompletionNotification?: string;
   }[];
   fields?: {
     assignedRecipientEmail?: string;
@@ -99,7 +130,86 @@ export interface CreateSignatureRequestPayload {
 const createRequest = async (
   data: CreateSignatureRequestPayload,
 ): Promise<SignatureRequest> => {
-  return (await api.post("signing/request", data)).data;
+  const { notificationCreatorId, notificationE2EKey, ...request } = data;
+  const prepared = await prepareTeamSigningNotifications(
+    request,
+    notificationCreatorId,
+    notificationE2EKey,
+  );
+  return (await api.post("signing/request", prepared)).data;
+};
+
+/** Build recipient-specific PQ-hybrid notification actions in the browser. */
+const prepareTeamSigningNotifications = async (
+  request: Omit<CreateSignatureRequestPayload, "notificationCreatorId">,
+  creatorUserId?: string,
+  notificationE2EKey?: string,
+): Promise<Omit<CreateSignatureRequestPayload, "notificationCreatorId">> => {
+  if (!request.teamId || !creatorUserId || !globalThis.crypto?.randomUUID)
+    return request;
+
+  const documentId = crypto.randomUUID();
+  const team = await teamService.getTeam(request.teamId);
+  const members = (team.members || []).filter(
+    (member) => member.isActive && member.user,
+  );
+  const memberByEmail = new Map(
+    members.map((member) => [member.user!.email.trim().toLowerCase(), member]),
+  );
+  const keys = await batchGetPublicKeys([
+    ...new Set([creatorUserId, ...members.map((member) => member.userId)]),
+  ]);
+  const keyByUserId = new Map(keys.map((key) => [key.userId, key]));
+  const creatorKey = keyByUserId.get(creatorUserId);
+
+  const recipients = await Promise.all(
+    request.recipients.map(async (recipient) => {
+      const signingToken = crypto.randomUUID();
+      const actions = buildSigningNotificationActions(
+        signingToken,
+        request.isE2EEncrypted ? notificationE2EKey : null,
+      );
+      const member = memberByEmail.get(recipient.email.trim().toLowerCase());
+      const recipientKey = member ? keyByUserId.get(member.userId) : undefined;
+      const encryptFor = async (
+        key: typeof recipientKey,
+        actionUrl: string,
+        action: string,
+      ) => {
+        // ML-KEM is an explicit Team policy. Members without a registered PQ key
+        // retain the existing X25519 E2E path instead of losing notifications.
+        if (!key?.x25519) return undefined;
+        return encryptNotificationMetadata(
+          { actionUrl, action, fileName: "Document de signature" },
+          key.x25519.publicKey,
+          selectPqNotificationPublicKey(
+            Boolean(team.pqNotificationEncryptionEnabled),
+            key.pqKey?.publicKey,
+          ),
+        );
+      };
+      return {
+        ...recipient,
+        signingToken,
+        teamInviteNotification: await encryptFor(
+          recipientKey,
+          actions.invitation,
+          "SIGN",
+        ),
+        teamProgressNotification: await encryptFor(
+          creatorKey,
+          `/signing/${documentId}`,
+          "TRACK",
+        ),
+        teamCompletionNotification: await encryptFor(
+          recipientKey,
+          actions.completion,
+          "DOWNLOAD",
+        ),
+      };
+    }),
+  );
+  return { ...request, id: documentId, recipients };
 };
 
 const getMyDocuments = async (): Promise<SignatureRequest[]> => {
@@ -205,28 +315,73 @@ const getSigningPage = async (token: string): Promise<SigningPageData> => {
   return (await api.get(`signing/sign/${apiPathSegment(token)}`)).data;
 };
 
-const sendOtp = async (token: string): Promise<void> => {
-  await api.post(`signing/sign/${apiPathSegment(token)}/otp/send`);
-};
+const sendSigningEmailOtp = async (token: string) =>
+  (await api.post(`signing/sign/${apiPathSegment(token)}/email-otp/send`))
+    .data as {
+    verified: boolean;
+    sent: boolean;
+    expiresInSeconds?: number;
+  };
 
-const verifyOtp = async (
-  token: string,
-  code: string,
-): Promise<{ verified: boolean }> => {
-  return (
-    await api.post(`signing/sign/${apiPathSegment(token)}/otp/verify`, {
-      otpCode: code,
+const verifySigningEmailOtp = async (token: string, code: string) =>
+  (
+    await api.post(`signing/sign/${apiPathSegment(token)}/email-otp/verify`, {
+      code,
     })
-  ).data;
-};
+  ).data as { verified: boolean };
+
+type PasskeyActionPayload =
+  | {
+      action: "SIGN";
+      signatureData: string;
+      signatureType: string;
+      fieldValues?: { fieldId: string; value: string }[];
+    }
+  | { action: "REJECT"; reason?: string };
+
+const beginPasskeyRegistration = async (token: string) =>
+  (
+    await api.post(
+      `signing/sign/${apiPathSegment(token)}/passkey/register/options`,
+    )
+  ).data as { challengeId: string; options: Record<string, unknown> };
+
+const finishPasskeyRegistration = async (
+  token: string,
+  challengeId: string,
+  response: Record<string, unknown>,
+) =>
+  (
+    await api.post(
+      `signing/sign/${apiPathSegment(token)}/passkey/register/verify`,
+      { challengeId, response },
+    )
+  ).data as { verified: boolean };
+
+const beginPasskeyAction = async (
+  token: string,
+  payload: PasskeyActionPayload,
+) =>
+  (
+    await api.post(
+      `signing/sign/${apiPathSegment(token)}/passkey/options`,
+      payload,
+    )
+  ).data as {
+    challengeId: string;
+    intentHash: string;
+    documentHash: string;
+    options: Record<string, unknown>;
+  };
 
 const signDocument = async (
   token: string,
   data: {
     signatureData: string;
     signatureType: string;
-    otpCode?: string;
     fieldValues?: { fieldId: string; value: string }[];
+    passkeyChallengeId?: string;
+    passkeyResponse?: Record<string, unknown>;
   },
 ): Promise<void> => {
   await api.post(`signing/sign/${apiPathSegment(token)}/sign`, data);
@@ -234,9 +389,13 @@ const signDocument = async (
 
 const rejectDocument = async (
   token: string,
-  reason?: string,
+  data: {
+    reason?: string;
+    passkeyChallengeId?: string;
+    passkeyResponse?: Record<string, unknown>;
+  },
 ): Promise<void> => {
-  await api.post(`signing/sign/${apiPathSegment(token)}/reject`, { reason });
+  await api.post(`signing/sign/${apiPathSegment(token)}/reject`, data);
 };
 
 /**
@@ -245,6 +404,11 @@ const rejectDocument = async (
 const getPreviewUrl = (token: string): string => {
   const base = api.defaults.baseURL || "/api";
   return `${base}/signing/sign/${apiPathSegment(token)}/preview`;
+};
+
+const getAuthenticatedPreviewUrl = (token: string): string => {
+  const base = api.defaults.baseURL || "/api";
+  return `${base}/signing/sign/${apiPathSegment(token)}/preview-authenticated`;
 };
 
 /**
@@ -256,6 +420,16 @@ const downloadSignedByToken = async (token: string): Promise<Blob> => {
     {
       responseType: "blob",
     },
+  );
+  return response.data;
+};
+
+const downloadSignedByTokenAuthenticated = async (
+  token: string,
+): Promise<Blob> => {
+  const response = await api.get(
+    `signing/sign/${apiPathSegment(token)}/download-signed-authenticated`,
+    { responseType: "blob" },
   );
   return response.data;
 };
@@ -326,12 +500,17 @@ const signingService = {
   finalizeE2E,
   retryFinalize,
   getSigningPage,
-  sendOtp,
-  verifyOtp,
+  sendSigningEmailOtp,
+  verifySigningEmailOtp,
+  beginPasskeyRegistration,
+  finishPasskeyRegistration,
+  beginPasskeyAction,
   signDocument,
   rejectDocument,
   getPreviewUrl,
+  getAuthenticatedPreviewUrl,
   downloadSignedByToken,
+  downloadSignedByTokenAuthenticated,
 };
 
 export default signingService;

@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-frontend",
-  "version": "1.24.3",
+  "version": "1.24.4",
   "scripts": {
     "dev": "next dev",
     "prebuild": "sh scripts/strip-legacy-polyfills.sh",
@@ -22,6 +22,8 @@
     "@mantine/hooks": "8.3.18",
     "@mantine/modals": "8.3.18",
     "@mantine/notifications": "8.3.18",
+    "@noble/post-quantum": "^0.7.0",
+    "@simplewebauthn/browser": "^13.3.0",
     "@tanstack/react-query": "^5.83.0",
     "altcha": "^3.1.0",
     "axios": "1.18.1",

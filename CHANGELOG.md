@@ -1,3 +1,75 @@
+## [1.24.4](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.3...v1.24.4) (2026-09-04)
+
+### Features
+
+- **electronic signatures -- standard and reinforced evidence profiles:**
+  signing requests now support explicit PDF field placement, ordered signers,
+  e-mail mailbox verification for standard actions and transaction-bound
+  WebAuthn confirmation for reinforced actions. Evidence includes document and
+  intent hashes, credential metadata and a per-document hash-chained audit log.
+- **PAdES and timestamps -- validated RFC 3161 support:** generated signatures
+  use PAdES-B-B and can be upgraded to PAdES-B-T after validating the timestamp
+  token, message imprint, nonce, timestamping certificate and configured trust
+  fingerprint.
+- **Team notifications -- opt-in hybrid post-quantum actions:** Team owners and
+  administrators can enable ML-KEM-768/X25519 encryption for notification
+  metadata. Browser-held private keys remain client-side and recipients without
+  an ML-KEM key retain the existing X25519 path.
+
+### Bug Fixes
+
+- **Team signing links -- preserve the E2E decryption key:** opening an
+  encrypted signature request from the Team notification feed now resolves the
+  recipient-specific encrypted action before navigation, so the URL fragment
+  contains the key required to decrypt the document.
+- **completed signatures -- notify recipients with a direct download action:**
+  after the requester finalizes an E2E PDF, active internal recipients receive
+  a new encrypted notification that opens the completed signed file.
+- **signing retention -- keep evidence when source files disappear:** deleting
+  a source file tombstones the signing request instead of deleting its audit
+  evidence. Generated artifacts are cleaned separately and tombstoned requests
+  are retained for six months.
+
+### Documentation
+
+- Updated the public signing and encryption overview for standard and
+  reinforced verification, PAdES-B-T timestamps and Team ML-KEM opt-in.
+
+### Tests
+
+- Added regression coverage for encrypted signing notification actions,
+  completion delivery, field placement, WebAuthn evidence, RFC 3161 validation,
+  audit retention and already-missing local or S3 files.
+
+### Security
+
+- **Caddy gateway -- disable HTTP method overrides in the executable code:**
+  pinning `grpc-gateway` v2.30.0 makes the official opt-out available but does
+  not enable it. Both Caddy build paths now inject
+  `WithDisableHTTPMethodOverride()` into the verified runtime constructor, so
+  every transitive `ServeMux` rejects the override header. Exact source-shape
+  checks make the image build fail if a dependency update stops applying the
+  mitigation.
+- **MySQL client -- bound compressed-protocol inflation:** `mysql2` resolves to
+  3.24.2 and the package override enforces a minimum of 3.23.1, closing
+  `GHSA-rgwj-5xj2-c3m3` without permitting a vulnerable transitive downgrade.
+- **system tests -- drop the vulnerable Postman runner:** `newman` is removed
+  from the backend development dependencies. Its `postman-collection`
+  dependency pins `@faker-js/faker` 5.5.3 (`GHSA-qxc2-j82w-r537`, arbitrary
+  code execution through `helpers.fake`) and no upstream release fixes it,
+  while faker 10 cannot be forced through an override because it is ESM-only.
+  The same Postman collection is now executed by an in-repository runner that
+  implements only the sandbox subset the scenario uses, which removes 91
+  packages and clears the five remaining high-severity advisories.
+
+### Dependencies
+
+- **browserslist toolchain -- refresh the target data:** `browserslist` 4.28.2
+  to 4.28.8, `caniuse-lite` to 1.0.30001810, `electron-to-chromium` to 1.5.419,
+  `node-releases` to 2.0.54, `update-browserslist-db` to 1.3.2 and
+  `baseline-browser-mapping` to 2.11.20, in both the backend and frontend
+  lockfiles. Data only: the configured target list is unchanged.
+
 ## [1.24.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.2...v1.24.3) (2026-08-31)
 
 ### Security

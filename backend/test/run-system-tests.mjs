@@ -5,6 +5,8 @@ import path from "node:path";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { runCollection } from "./postman-collection-runner.mjs";
+
 const commandName = (name) =>
   process.platform === "win32" ? `${name}.cmd` : name;
 
@@ -95,24 +97,22 @@ async function waitForBackend(server, env) {
   }
 }
 
-async function runNewman(server, env) {
-  const newman = startCommand(
-    "Newman system tests",
-    "newman",
-    ["run", "./test/newman-system-tests.json"],
-    { env },
+async function runSystemTests(server) {
+  const collection = runCollection(
+    "./test/system-tests.postman_collection.json",
   );
   const winner = await Promise.race([
-    newman.completed.then((result) => ({ source: "newman", result })),
+    collection.then((result) => ({ source: "collection", result })),
     server.completed.then((result) => ({ source: "server", result })),
   ]);
 
   if (winner.source === "server") {
-    await stopCommand(newman);
     throw commandFailure(server, winner.result);
   }
-  if (winner.result.error || winner.result.code !== 0) {
-    throw commandFailure(newman, winner.result);
+  if (winner.result.failures.length > 0) {
+    throw new Error(
+      `System tests failed (${winner.result.failures.length} of ${winner.result.assertions} assertions)`,
+    );
   }
 }
 
@@ -160,7 +160,7 @@ try {
     detached: process.platform !== "win32",
   });
   await waitForBackend(server, env);
-  await runNewman(server, env);
+  await runSystemTests(server);
 } finally {
   await stopCommand(server);
   await rm(temporaryRoot, { recursive: true, force: true });

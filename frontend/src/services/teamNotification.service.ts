@@ -52,6 +52,14 @@ export const getTeamNotifications = async (opts?: {
   ).data;
 };
 
+export const getTeamNotification = async (
+  notificationId: string,
+): Promise<TeamNotification | null> => {
+  return (
+    await api.get(`team-notifications/${encodeURIComponent(notificationId)}`)
+  ).data;
+};
+
 /**
  * Get unread notification count (for badge).
  */

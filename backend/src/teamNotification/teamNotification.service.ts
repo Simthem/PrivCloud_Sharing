@@ -10,7 +10,10 @@ export type TeamNotificationType =
   | "GRANT_REVOKED"
   | "KEY_ROTATED"
   | "MEMBER_JOINED"
-  | "MEMBER_LEFT";
+  | "MEMBER_LEFT"
+  | "SIGNATURE_REQUESTED"
+  | "SIGNATURE_SIGNED"
+  | "SIGNATURE_COMPLETED";
 
 interface CreateNotificationParams {
   type: TeamNotificationType;
@@ -20,6 +23,10 @@ interface CreateNotificationParams {
   actorId?: string;
   teamFileId?: string;
   folderId?: string;
+  signingDocumentId?: string;
+  // Used only for non-sensitive legacy notifications. Encrypted notifications
+  // always use an opaque resolver URL instead.
+  url?: string;
   metadata?: Record<string, unknown>;
   encryptedMetadata?: string;
 }
@@ -57,7 +64,12 @@ export class TeamNotificationService {
     });
 
     // Build navigation URL: folder with file highlight if available
-    const url = this.buildNavigationUrl(params);
+    // A push worker cannot decrypt E2E metadata. It therefore opens this
+    // authenticated, opaque resolver; the browser decrypts the action then
+    // redirects immediately to the signature, tracking page or download.
+    const url = params.encryptedMetadata
+      ? `/notifications/open/${notification.id}`
+      : this.buildNavigationUrl(params);
 
     // Push notification body: generic when E2E encrypted, detailed when plaintext
     const pushBody = params.encryptedMetadata
@@ -94,6 +106,7 @@ export class TeamNotificationService {
     opts?: {
       teamFileId?: string;
       folderId?: string;
+      signingDocumentId?: string;
       metadata?: Record<string, unknown>;
       excludeUserIds?: string[];
     },
@@ -234,6 +247,17 @@ export class TeamNotificationService {
     };
   }
 
+  async getNotification(notificationId: string, userId: string) {
+    return this.prisma.teamNotification.findFirst({
+      where: { id: notificationId, userId },
+      include: {
+        team: { select: { id: true, name: true, slug: true } },
+        teamFile: { select: { id: true, name: true } },
+        folder: { select: { id: true, name: true } },
+      },
+    });
+  }
+
   /**
    * Mark a notification as read.
    */
@@ -307,6 +331,10 @@ export class TeamNotificationService {
   }
 
   private buildNavigationUrl(params: CreateNotificationParams): string {
+    if (params.url?.startsWith("/")) return params.url;
+    if (params.signingDocumentId) {
+      return `/signing/${params.signingDocumentId}`;
+    }
     if (params.teamId && params.folderId) {
       const base = `/team/${params.teamId}/folder/${params.folderId}`;
       const highlightId = params.teamFileId || params.metadata?.highlightFileId;
@@ -337,6 +365,12 @@ export class TeamNotificationService {
         return `${meta.memberName || "Un nouveau membre"} a rejoint l'équipe`;
       case "MEMBER_LEFT":
         return `${meta.memberName || "Un membre"} a quitté l'équipe`;
+      case "SIGNATURE_REQUESTED":
+        return `${meta.actorName || "Un membre"} a demandé la signature de "${meta.fileName || "un document"}"`;
+      case "SIGNATURE_SIGNED":
+        return `${meta.signerName || "Un signataire"} a signé "${meta.fileName || "un document"}"${meta.signedCount && meta.totalSigners ? ` (${meta.signedCount}/${meta.totalSigners})` : ""}`;
+      case "SIGNATURE_COMPLETED":
+        return `Le document "${meta.fileName || ""}" est prêt au téléchargement`;
       default:
         return params.title;
     }

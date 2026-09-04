@@ -635,6 +635,16 @@ export class S3FileService {
     return false;
   }
 
+  /** Return true when the object was already removed from S3. */
+  private isS3ObjectGone(error: any): boolean {
+    if (!error) return false;
+    if (error.name === "NoSuchKey" || error.Code === "NoSuchKey") return true;
+    if (error.$metadata?.httpStatusCode === 404) return true;
+    return (
+      typeof error.message === "string" && error.message.includes("NoSuchKey")
+    );
+  }
+
   /**
    * Idempotency check for retried final chunks. Returns true when a DB file
    * record already exists for this (fileId, shareId) pair -- meaning the
@@ -2775,8 +2785,13 @@ export class S3FileService {
         }),
       );
     } catch (error) {
-      this.logger.error(error);
-      throw new Error("Could not delete file from S3");
+      if (!this.isS3ObjectGone(error)) {
+        this.logger.error(error);
+        throw new Error("Could not delete file from S3");
+      }
+      this.logger.warn(
+        `S3 object already absent for shareId=${shareId} fileId=${fileId}; removing the database record`,
+      );
     }
 
     await this.prisma.file.delete({ where: { id: fileId } });
@@ -3276,6 +3291,17 @@ export class S3FileService {
         Key: rawKey,
         Body: data,
         ContentType: contentType,
+      }),
+    );
+  }
+
+  /** Delete an object addressed by an application-owned raw storage key. */
+  async deleteRawObject(rawKey: string): Promise<void> {
+    const s3 = this.getS3Instance();
+    await s3.send(
+      new DeleteObjectCommand({
+        Bucket: this.config.get("s3.bucketName"),
+        Key: rawKey,
       }),
     );
   }

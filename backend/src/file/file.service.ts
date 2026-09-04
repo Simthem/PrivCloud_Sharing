@@ -872,6 +872,20 @@ export class FileService {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, data);
   }
+
+  /** Remove a signing artifact by its application-owned storage key. */
+  async deleteFileByKey(key: string): Promise<void> {
+    const safeKey = assertSafeStorageKey(key);
+    const storageService = this.getStorageService();
+    if (storageService instanceof S3FileService) {
+      await storageService.deleteRawObject(safeKey);
+      return;
+    }
+    const fs = await import("fs/promises");
+    const dataDir = this.configService.get("general.dataDir") || "./data";
+    const filePath = resolveStoragePath(dataDir, safeKey);
+    await fs.rm(filePath, { force: true });
+  }
 }
 
 export interface File {

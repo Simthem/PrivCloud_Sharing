@@ -15,9 +15,20 @@ import {
   CreateSignatureRequestDTO,
   SignatureLevel,
 } from "./dto/createSignatureRequest.dto";
-import { SignDocumentDTO } from "./dto/signDocument.dto";
+import { RejectDocumentDTO, SignDocumentDTO } from "./dto/signDocument.dto";
 import { User } from "@prisma/client";
 import { deliverSigningCompletionEmails } from "./signing-mail.util";
+import { resolveSigningIdentityProof } from "./signing-identity.util";
+import { appendSignatureAuditEvent } from "./signing-audit.util";
+import { TeamNotificationService } from "src/teamNotification/teamNotification.service";
+import {
+  buildSigningIntentHash,
+  SigningWebAuthnService,
+} from "./signing-webauthn.service";
+
+const SIGNING_EMAIL_OTP_TTL_MS = 10 * 60 * 1000;
+const SIGNING_EMAIL_OTP_RESEND_DELAY_MS = 60 * 1000;
+const SIGNING_EMAIL_OTP_MAX_FAILURES = 5;
 
 @Injectable()
 export class SigningService {
@@ -29,7 +40,33 @@ export class SigningService {
     private fileService: FileService,
     private configService: ConfigService,
     private pdfSigningService: PdfSigningService,
+    private signingWebAuthnService: SigningWebAuthnService,
+    private teamNotificationService: TeamNotificationService,
   ) {}
+
+  private isSourceDeleted(document: {
+    fileId?: string | null;
+    fileDeletedAt?: Date | null;
+  }) {
+    return Boolean(document.fileDeletedAt || document.fileId === null);
+  }
+
+  private assertSourceAvailable(document: {
+    fileId?: string | null;
+    fileDeletedAt?: Date | null;
+  }) {
+    if (this.isSourceDeleted(document)) {
+      throw new NotFoundException(
+        "The source file was deleted; this signing link is no longer valid",
+      );
+    }
+  }
+
+  private exposeSourceState<
+    T extends { fileId?: string | null; fileDeletedAt?: Date | null },
+  >(document: T) {
+    return { ...document, fileDeleted: this.isSourceDeleted(document) };
+  }
 
   /**
    * Create a signature request for a PDF file within a share.
@@ -126,23 +163,69 @@ export class SigningService {
     }
 
     const addApprovalField = dto.addApprovalField ?? true;
+    const signatureLevel = dto.signatureLevel || SignatureLevel.STANDARD;
 
     this.validateSignatureFields(dto);
+
+    const recipientEmails = [
+      ...new Set(dto.recipients.map((recipient) => recipient.email.trim())),
+    ];
+    const recipientAccounts = await this.prisma.user.findMany({
+      where: {
+        OR: recipientEmails.map((email) => ({
+          email: { equals: email, mode: "insensitive" as const },
+        })),
+      },
+      select: {
+        id: true,
+        email: true,
+        emailVerifiedAt: true,
+        ldapDN: true,
+        oAuthUsers: { select: { provider: true }, take: 1 },
+      },
+    });
+    const accountByEmail = new Map(
+      recipientAccounts.map((account) => [
+        account.email.toLowerCase(),
+        account,
+      ]),
+    );
+    const recipientBindings = dto.recipients.map((recipient) => {
+      const account = accountByEmail.get(recipient.email.trim().toLowerCase());
+      const proof = account ? resolveSigningIdentityProof(account) : null;
+      return { account, proof };
+    });
+
+    if (signatureLevel === SignatureLevel.REINFORCED) {
+      const invalidRecipient = dto.recipients.find((recipient, index) => {
+        if ((recipient.role || "SIGNER") === "CC") return false;
+        const binding = recipientBindings[index];
+        return !binding.account || !binding.proof;
+      });
+      if (invalidRecipient) {
+        throw new BadRequestException(
+          `Reinforced signing requires a verified PrivCloud account for ${invalidRecipient.email}`,
+        );
+      }
+    }
 
     // Create the signature document
     let document = await this.prisma.signatureDocument.create({
       data: {
+        ...(dto.id ? { id: dto.id } : {}),
         fileName: file.name,
         title: file.name,
         fileKey: `${dto.shareId}/${file.id}`,
         originalFileKey: `${dto.shareId}/${file.id}`,
         status: "PENDING",
         message: dto.message,
-        signatureLevel: dto.signatureLevel || SignatureLevel.AES,
+        signatureLevel,
         expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
         addApprovalField,
         addApprovalMention: dto.addApprovalMention ?? true,
         addInitials: dto.addInitials ?? false,
+        initialsPlacement: dto.initialsPlacement ?? "BOTTOM_CENTER_RIGHT",
+        initialsIncludeSignaturePage: dto.initialsIncludeSignaturePage ?? false,
         signaturePage: dto.signaturePage ?? null,
         watermarkPage: addApprovalField ? (dto.watermarkPage ?? null) : null,
         isE2EEncrypted: dto.isE2EEncrypted ?? false,
@@ -158,6 +241,22 @@ export class SigningService {
             role: r.role || "SIGNER",
             order: r.order ?? idx + 1,
             status: "PENDING",
+            ...(r.signingToken ? { signingToken: r.signingToken } : {}),
+            teamInviteNotification: r.teamInviteNotification || null,
+            teamProgressNotification: r.teamProgressNotification || null,
+            teamCompletionNotification: r.teamCompletionNotification || null,
+            userId: recipientBindings[idx].account?.id || null,
+            // A standard request proves mailbox control later with its own
+            // OTP. Do not present a coincidental account match as identity
+            // evidence for that lower-friction workflow.
+            identityVerificationMethod:
+              signatureLevel === SignatureLevel.REINFORCED
+                ? recipientBindings[idx].proof?.method || "NONE"
+                : "NONE",
+            identityVerifiedAt:
+              signatureLevel === SignatureLevel.REINFORCED
+                ? recipientBindings[idx].proof?.verifiedAt || null
+                : null,
           })),
         },
       },
@@ -224,6 +323,13 @@ export class SigningService {
     const firstOrderRecipients = document.recipients.filter(
       (r) => r.order === 1 && r.role !== "CC",
     );
+    // Only the person who can act now receives the team push. In particular,
+    // never notify the requester that they created their own request.
+    this.notifyTeamOfSignatureInvitation(
+      document,
+      firstOrderRecipients,
+      user.id,
+    );
 
     let emailDeliveryFailures = 0;
     for (const recipient of firstOrderRecipients) {
@@ -258,11 +364,7 @@ export class SigningService {
     return { ...document, emailDeliveryFailures };
   }
 
-  /**
-   * Get signature documents created by a user.
-   * Enriches each document with a `fileDeleted` flag indicating whether the
-   * source share has been removed since the signature request was created.
-   */
+  /** Get signature documents created by a user. */
   async getMyDocuments(userId: string) {
     const docs = await this.prisma.signatureDocument.findMany({
       where: { creatorId: userId },
@@ -289,7 +391,7 @@ export class SigningService {
       orderBy: { createdAt: "desc" },
     });
 
-    return this.enrichWithFileDeleted(docs);
+    return docs.map((document) => this.exposeSourceState(document));
   }
 
   /**
@@ -328,7 +430,7 @@ export class SigningService {
       orderBy: { createdAt: "desc" },
     });
 
-    return this.enrichWithFileDeleted(docs);
+    return docs.map((document) => this.exposeSourceState(document));
   }
 
   /**
@@ -397,7 +499,7 @@ export class SigningService {
     ]);
 
     return {
-      documents: await this.enrichWithFileDeleted(docs),
+      documents: docs.map((document) => this.exposeSourceState(document)),
       pagination: {
         page,
         limit,
@@ -464,13 +566,14 @@ export class SigningService {
       teamId = share?.teamFolder?.teamId ?? null;
     }
 
-    // Enrich with fileDeleted flag
-    const [enriched] = await this.enrichWithFileDeleted([doc]);
-
     // Only expose shareId to the document creator (needed for E2E key resolution)
     const safeShareId = doc.creatorId === userId ? doc.shareId : null;
 
-    return { ...enriched, teamId, shareId: safeShareId };
+    return {
+      ...this.exposeSourceState(doc),
+      teamId,
+      shareId: safeShareId,
+    };
   }
 
   /**
@@ -494,6 +597,8 @@ export class SigningService {
       throw new NotFoundException("Invalid or expired signing link");
     }
 
+    this.assertSourceAvailable(recipient.document);
+
     if (recipient.document.status === "CANCELLED") {
       throw new BadRequestException(
         "This signature request has been cancelled",
@@ -502,6 +607,16 @@ export class SigningService {
 
     // Already signed - return data with flag instead of throwing
     const alreadySigned = recipient.status === "SIGNED";
+    const requiresEmailVerification =
+      !alreadySigned &&
+      recipient.document.signatureLevel === SignatureLevel.STANDARD &&
+      !recipient.otpVerified;
+    const emailVerificationCodePending = Boolean(
+      requiresEmailVerification &&
+      recipient.otpHash &&
+      recipient.otpSentAt &&
+      Date.now() - recipient.otpSentAt.getTime() <= SIGNING_EMAIL_OTP_TTL_MS,
+    );
 
     if (
       recipient.document.expiresAt &&
@@ -541,18 +656,258 @@ export class SigningService {
         email: recipient.email,
         role: recipient.role,
         status: recipient.status,
-        otpVerified: recipient.otpVerified,
+        emailVerified: recipient.otpVerified,
+        identityVerificationMethod: recipient.identityVerificationMethod,
+        identityVerifiedAt: recipient.identityVerifiedAt,
       },
       fields:
-        alreadySigned || !recipient.otpVerified
+        alreadySigned || requiresEmailVerification
           ? []
           : recipient.document.fields.filter(
               (f) =>
                 !f.assignedRecipientId ||
                 f.assignedRecipientId === recipient.id,
             ),
-      requiresOtp: !alreadySigned && !recipient.otpVerified,
+      requiresPasskey:
+        !alreadySigned && recipient.document.signatureLevel === "REINFORCED",
+      requiresEmailVerification,
+      emailVerificationCodePending,
+      hasRegisteredPasskey:
+        recipient.document.signatureLevel === "REINFORCED" && recipient.userId
+          ? (await this.prisma.signingPasskey.count({
+              where: { userId: recipient.userId },
+            })) > 0
+          : false,
     };
+  }
+
+  /** Send a short-lived OTP to the address assigned to a standard signer. */
+  async sendSigningEmailOtp(signingToken: string) {
+    const recipient = await this.prisma.signatureRecipient.findUnique({
+      where: { signingToken },
+      include: { document: true },
+    });
+
+    if (!recipient) throw new NotFoundException("Invalid signing link");
+    this.assertSourceAvailable(recipient.document);
+    if (recipient.document.signatureLevel !== SignatureLevel.STANDARD) {
+      throw new BadRequestException(
+        "Email verification is only used for standard signatures",
+      );
+    }
+    if (recipient.role === "CC") {
+      throw new ForbiddenException("Observers cannot sign this document");
+    }
+    if (recipient.document.status !== "PENDING") {
+      throw new ForbiddenException(
+        "This signature request is no longer pending",
+      );
+    }
+    if (
+      recipient.document.expiresAt &&
+      recipient.document.expiresAt < new Date()
+    ) {
+      throw new ForbiddenException("This signing request has expired");
+    }
+    if (recipient.status !== "PENDING" && recipient.status !== "VIEWED") {
+      throw new ForbiddenException("This signing action is already complete");
+    }
+    if (recipient.otpVerified) {
+      return { verified: true, sent: false };
+    }
+
+    const now = new Date();
+    if (
+      recipient.otpSentAt &&
+      now.getTime() - recipient.otpSentAt.getTime() <
+        SIGNING_EMAIL_OTP_RESEND_DELAY_MS
+    ) {
+      throw new BadRequestException(
+        "Please wait before requesting another verification code",
+      );
+    }
+
+    const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
+    const otpHash = this.hashSigningEmailOtp(recipient.id, code);
+
+    const claimed = await this.prisma.signatureRecipient.updateMany({
+      where: {
+        id: recipient.id,
+        otpVerified: false,
+        OR: [
+          { otpSentAt: null },
+          {
+            otpSentAt: {
+              lt: new Date(now.getTime() - SIGNING_EMAIL_OTP_RESEND_DELAY_MS),
+            },
+          },
+        ],
+      },
+      data: {
+        otpHash,
+        otpSentAt: now,
+        otpVerified: false,
+        otpFailures: 0,
+      },
+    });
+    if (claimed.count !== 1) {
+      throw new BadRequestException(
+        "Please wait before requesting another verification code",
+      );
+    }
+
+    try {
+      await this.emailService.sendMail(
+        recipient.email,
+        `Code de vérification de signature - ${recipient.document.fileName}`,
+        `Bonjour ${recipient.name},\n\n` +
+          `Votre code de vérification PrivCloud est : ${code}\n\n` +
+          `Il expire dans 10 minutes et permet de confirmer le contrôle de ` +
+          `l'adresse e-mail destinataire avant toute signature ou tout refus.\n\n` +
+          `Ne transmettez ce code à personne. Si vous n'avez pas demandé cette ` +
+          `signature, ignorez ce message.\n\n` +
+          `-- \nPrivCloud Sharing - Signature Électronique`,
+      );
+    } catch (error) {
+      // A code that was never delivered must not remain usable.
+      await this.prisma.signatureRecipient.updateMany({
+        where: { id: recipient.id, otpHash },
+        data: { otpHash: null, otpSentAt: null, otpFailures: 0 },
+      });
+      throw error;
+    }
+
+    await this.createAuditEvent(
+      recipient.documentId,
+      "EMAIL_OTP_SENT",
+      recipient.email,
+    );
+
+    return {
+      verified: false,
+      sent: true,
+      expiresInSeconds: SIGNING_EMAIL_OTP_TTL_MS / 1000,
+    };
+  }
+
+  /** Verify mailbox control without ever storing or returning the clear OTP. */
+  async verifySigningEmailOtp(
+    signingToken: string,
+    code: string,
+    ipAddress: string,
+    userAgent: string,
+  ) {
+    const recipient = await this.prisma.signatureRecipient.findUnique({
+      where: { signingToken },
+      include: { document: true },
+    });
+
+    if (!recipient) throw new NotFoundException("Invalid signing link");
+    this.assertSourceAvailable(recipient.document);
+    if (recipient.document.signatureLevel !== SignatureLevel.STANDARD) {
+      throw new BadRequestException(
+        "Email verification is only used for standard signatures",
+      );
+    }
+    if (recipient.role === "CC") {
+      throw new ForbiddenException("Observers cannot sign this document");
+    }
+    if (recipient.document.status !== "PENDING") {
+      throw new ForbiddenException(
+        "This signature request is no longer pending",
+      );
+    }
+    if (
+      recipient.document.expiresAt &&
+      recipient.document.expiresAt < new Date()
+    ) {
+      throw new ForbiddenException("This signing request has expired");
+    }
+    if (recipient.status !== "PENDING" && recipient.status !== "VIEWED") {
+      throw new ForbiddenException("This signing action is already complete");
+    }
+    if (recipient.otpVerified) return { verified: true };
+
+    const now = new Date();
+    if (!recipient.otpHash || !recipient.otpSentAt) {
+      throw new BadRequestException("Request a verification code first");
+    }
+    if (
+      now.getTime() - recipient.otpSentAt.getTime() >
+      SIGNING_EMAIL_OTP_TTL_MS
+    ) {
+      await this.prisma.signatureRecipient.updateMany({
+        where: { id: recipient.id, otpHash: recipient.otpHash },
+        data: { otpHash: null, otpSentAt: null, otpFailures: 0 },
+      });
+      throw new BadRequestException(
+        "The verification code has expired; request a new one",
+      );
+    }
+    if (recipient.otpFailures >= SIGNING_EMAIL_OTP_MAX_FAILURES) {
+      await this.prisma.signatureRecipient.updateMany({
+        where: { id: recipient.id, otpHash: recipient.otpHash },
+        data: { otpHash: null, otpSentAt: null },
+      });
+      throw new ForbiddenException(
+        "Too many invalid codes; request a new verification code",
+      );
+    }
+
+    const expectedHash = this.hashSigningEmailOtp(recipient.id, code);
+    if (!this.constantTimeHashEquals(recipient.otpHash, expectedHash)) {
+      const mustReset =
+        recipient.otpFailures + 1 >= SIGNING_EMAIL_OTP_MAX_FAILURES;
+      await this.prisma.signatureRecipient.updateMany({
+        where: {
+          id: recipient.id,
+          otpHash: recipient.otpHash,
+          otpVerified: false,
+        },
+        data: mustReset
+          ? {
+              otpHash: null,
+              otpSentAt: null,
+              otpFailures: SIGNING_EMAIL_OTP_MAX_FAILURES,
+            }
+          : { otpFailures: { increment: 1 } },
+      });
+      throw new BadRequestException(
+        mustReset
+          ? "Too many invalid codes; request a new verification code"
+          : "Invalid verification code",
+      );
+    }
+
+    const verified = await this.prisma.signatureRecipient.updateMany({
+      where: {
+        id: recipient.id,
+        otpHash: recipient.otpHash,
+        otpVerified: false,
+      },
+      data: {
+        otpHash: null,
+        otpSentAt: null,
+        otpVerified: true,
+        otpFailures: 0,
+        identityVerificationMethod: "EMAIL_OTP",
+        identityVerifiedAt: now,
+      },
+    });
+    if (verified.count !== 1) {
+      throw new ForbiddenException("Verification state changed; please retry");
+    }
+
+    await this.createAuditEvent(
+      recipient.documentId,
+      "EMAIL_VERIFIED",
+      recipient.email,
+      ipAddress,
+      userAgent,
+      JSON.stringify({ method: "EMAIL_OTP" }),
+    );
+
+    return { verified: true };
   }
 
   /**
@@ -573,6 +928,8 @@ export class SigningService {
     });
 
     if (!recipient) throw new NotFoundException("Invalid signing link");
+
+    this.assertSourceAvailable(recipient.document);
 
     // SECURITY: Refuse if document is not PENDING
     if (recipient.document.status !== "PENDING") {
@@ -596,12 +953,7 @@ export class SigningService {
       );
     }
 
-    // SECURITY: the token opens the public flow, but email OTP unlocks actions.
-    if (!recipient.otpVerified) {
-      throw new ForbiddenException(
-        "Identity verification (OTP) required before signing",
-      );
-    }
+    this.assertStandardEmailVerified(recipient);
 
     // Check signing order
     const currentOrder = Math.min(
@@ -621,6 +973,13 @@ export class SigningService {
       dto.fieldValues || [],
     );
 
+    // Verify/consume the transaction-bound credential only after all local
+    // validation has succeeded, so a correct assertion is not wasted.
+    const evidence =
+      recipient.document.signatureLevel === "REINFORCED"
+        ? await this.signingWebAuthnService.verifySignAction(signingToken, dto)
+        : await this.buildStandardEvidence(recipient, dto, "SIGN");
+
     const signedAt = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.signatureRecipient.updateMany({
@@ -632,6 +991,7 @@ export class SigningService {
           signatureType: dto.signatureType,
           signingIp: ipAddress,
           signingUserAgent: userAgent,
+          ...evidence,
         },
       });
 
@@ -655,7 +1015,24 @@ export class SigningService {
       recipient.email,
       ipAddress,
       userAgent,
-      JSON.stringify({ signatureType: dto.signatureType }),
+      JSON.stringify({
+        signatureType: dto.signatureType,
+        assuranceLevel: recipient.document.signatureLevel,
+        authenticationMethod: evidence.authenticationMethod,
+        signingIntentHash: evidence.signingIntentHash,
+        sourceDocumentHash: evidence.signedDocumentHash,
+        ...(evidence.authenticationMethod === "WEBAUTHN"
+          ? {
+              credentialIdHash: crypto
+                .createHash("sha256")
+                .update(evidence.webauthnCredentialId)
+                .digest("hex"),
+              userVerified: evidence.webauthnUserVerified,
+              deviceType: evidence.webauthnDeviceType,
+              backedUp: evidence.webauthnBackedUp,
+            }
+          : {}),
+      }),
     );
 
     // Log team activity if the document belongs to a team
@@ -689,6 +1066,12 @@ export class SigningService {
     const signedCount = allRecipients.filter(
       (r) => r.status === "SIGNED",
     ).length;
+
+    if (doc?.teamId) {
+      // Keep the event scoped to the request's participants, never the whole
+      // team. The actor is included when they are a team participant.
+      this.notifyTeamOfSignature(recipient.document, recipient);
+    }
 
     if (allSigned) {
       if (recipient.document.isE2EEncrypted) {
@@ -743,10 +1126,145 @@ export class SigningService {
 
       for (const next of nextSigners) {
         await this.sendSigningInvitation(doc!, next);
+        this.notifyTeamOfSignatureInvitation(
+          doc!,
+          [next],
+          recipient.userId || recipient.id,
+        );
       }
     }
 
     return { status: "SIGNED", allSigned };
+  }
+
+  /** Notify the active internal signer who can sign at this step. */
+  private notifyTeamOfSignatureInvitation(
+    document: {
+      id: string;
+      teamId?: string | null;
+      creatorId: string;
+    },
+    recipients: Array<{
+      id: string;
+      userId?: string | null;
+      teamInviteNotification?: string | null;
+    }>,
+    actorId: string,
+  ) {
+    this.notifyEncryptedTeamRecipients(
+      document,
+      recipients,
+      actorId,
+      "SIGNATURE_REQUESTED",
+      "Nouvelle demande de signature",
+      "teamInviteNotification",
+    );
+  }
+
+  /** Notify the requester only: their encrypted action opens tracking. */
+  private notifyTeamOfSignature(
+    document: {
+      id: string;
+      teamId?: string | null;
+      creatorId: string;
+    },
+    signer: {
+      id: string;
+      teamProgressNotification?: string | null;
+    },
+  ) {
+    this.notifyEncryptedTeamRecipients(
+      document,
+      [
+        {
+          id: signer.id,
+          userId: document.creatorId,
+          teamProgressNotification: signer.teamProgressNotification,
+        },
+      ],
+      signer.id,
+      "SIGNATURE_SIGNED",
+      "Signature réalisée",
+      "teamProgressNotification",
+    );
+  }
+
+  /** Send final download actions only to the internal signers. */
+  private notifyTeamOfSignatureCompletion(document: {
+    id: string;
+    teamId?: string | null;
+    creatorId: string;
+    recipients: Array<{
+      id: string;
+      userId?: string | null;
+      teamCompletionNotification?: string | null;
+    }>;
+  }) {
+    this.notifyEncryptedTeamRecipients(
+      document,
+      document.recipients,
+      "system",
+      "SIGNATURE_COMPLETED",
+      "Document signé disponible",
+      "teamCompletionNotification",
+    );
+  }
+
+  /** Store and deliver an already-encrypted, per-user action envelope. */
+  private notifyEncryptedTeamRecipients(
+    document: { id: string; teamId?: string | null; creatorId: string },
+    recipients: Array<{
+      id: string;
+      userId?: string | null;
+      teamInviteNotification?: string | null;
+      teamProgressNotification?: string | null;
+      teamCompletionNotification?: string | null;
+    }>,
+    actorId: string,
+    type: "SIGNATURE_REQUESTED" | "SIGNATURE_SIGNED" | "SIGNATURE_COMPLETED",
+    title: string,
+    envelopeField:
+      | "teamInviteNotification"
+      | "teamProgressNotification"
+      | "teamCompletionNotification",
+  ) {
+    if (!document.teamId) return;
+    const targets = recipients.filter(
+      (recipient) => recipient.userId && recipient[envelopeField],
+    );
+    if (targets.length === 0) return;
+
+    void (async () => {
+      const activeParticipants = await this.prisma.teamMember.findMany({
+        where: {
+          teamId: document.teamId!,
+          isActive: true,
+          userId: { in: targets.map((recipient) => recipient.userId!) },
+        },
+        select: { userId: true },
+      });
+      const activeIds = new Set(
+        activeParticipants.map((member) => member.userId),
+      );
+      await Promise.all(
+        targets
+          .filter((recipient) => activeIds.has(recipient.userId!))
+          .map((recipient) =>
+            this.teamNotificationService.notify({
+              type,
+              title,
+              teamId: document.teamId!,
+              userId: recipient.userId!,
+              actorId,
+              encryptedMetadata: recipient[envelopeField]!,
+            }),
+          ),
+      );
+    })().catch((error: unknown) =>
+      this.logger.debug(
+        `Failed to notify signing participants for ${document.id}: ${(error as Error).message}`,
+      ),
+    );
   }
 
   /**
@@ -786,7 +1304,7 @@ export class SigningService {
    */
   async rejectDocument(
     signingToken: string,
-    reason: string | undefined,
+    dto: RejectDocumentDTO,
     ipAddress: string,
     userAgent: string,
   ) {
@@ -796,6 +1314,8 @@ export class SigningService {
     });
 
     if (!recipient) throw new NotFoundException("Invalid signing link");
+
+    this.assertSourceAvailable(recipient.document);
 
     // SECURITY: Refuse action if document is not PENDING
     if (recipient.document.status !== "PENDING") {
@@ -812,13 +1332,6 @@ export class SigningService {
       throw new ForbiddenException("This signing request has expired");
     }
 
-    // SECURITY: the token opens the public flow, but email OTP unlocks actions.
-    if (!recipient.otpVerified) {
-      throw new ForbiddenException(
-        "Identity verification (OTP) required before rejecting",
-      );
-    }
-
     // SECURITY: Refuse action if recipient already finalized (signed/rejected)
     if (recipient.status !== "PENDING" && recipient.status !== "VIEWED") {
       throw new ForbiddenException(
@@ -826,14 +1339,25 @@ export class SigningService {
       );
     }
 
+    this.assertStandardEmailVerified(recipient);
+
+    const evidence =
+      recipient.document.signatureLevel === "REINFORCED"
+        ? await this.signingWebAuthnService.verifyRejectAction(
+            signingToken,
+            dto,
+          )
+        : await this.buildStandardEvidence(recipient, dto, "REJECT");
+
     // Use conditional update to prevent race conditions
     const updated = await this.prisma.signatureRecipient.updateMany({
       where: { id: recipient.id, status: { in: ["PENDING", "VIEWED"] } },
       data: {
         status: "REJECTED",
-        rejectionReason: reason,
+        rejectionReason: dto.reason,
         signingIp: ipAddress,
         signingUserAgent: userAgent,
+        ...evidence,
       },
     });
 
@@ -855,7 +1379,13 @@ export class SigningService {
       recipient.email,
       ipAddress,
       userAgent,
-      reason ? JSON.stringify({ reason }) : undefined,
+      JSON.stringify({
+        reason: dto.reason || null,
+        assuranceLevel: recipient.document.signatureLevel,
+        authenticationMethod: evidence.authenticationMethod,
+        signingIntentHash: evidence.signingIntentHash,
+        sourceDocumentHash: evidence.signedDocumentHash,
+      }),
     );
 
     // Notify document creator
@@ -864,7 +1394,7 @@ export class SigningService {
         recipient.document.creator.email,
         `Signature refusée - ${recipient.document.fileName}`,
         `${recipient.name} (${recipient.email}) a refusé de signer le document "${recipient.document.fileName}".\n\n` +
-          (reason ? `Raison : ${reason}\n\n` : "") +
+          (dto.reason ? `Raison : ${dto.reason}\n\n` : "") +
           `La demande de signature a été annulée.`,
       );
     }
@@ -890,6 +1420,45 @@ export class SigningService {
     }
 
     return { status: "REJECTED" };
+  }
+
+  private async buildStandardEvidence(
+    recipient: {
+      id: string;
+      documentId: string;
+      document: {
+        originalFileKey: string;
+        expiresAt: Date | null;
+      };
+    },
+    dto: SignDocumentDTO | RejectDocumentDTO,
+    purpose: "SIGN" | "REJECT",
+  ) {
+    const source = await this.fileService.getFileByKey(
+      recipient.document.originalFileKey,
+    );
+    const sourceDocumentHash = crypto
+      .createHash("sha256")
+      .update(source)
+      .digest("hex");
+    const signDto = purpose === "SIGN" ? (dto as SignDocumentDTO) : undefined;
+    const rejectDto =
+      purpose === "REJECT" ? (dto as RejectDocumentDTO) : undefined;
+    return {
+      authenticationMethod: "EMAIL_OTP_CONSENT" as const,
+      signingIntentHash: buildSigningIntentHash({
+        purpose,
+        documentId: recipient.documentId,
+        recipientId: recipient.id,
+        sourceDocumentHash,
+        expiresAt: recipient.document.expiresAt,
+        signatureData: signDto?.signatureData,
+        signatureType: signDto?.signatureType,
+        fieldValues: signDto?.fieldValues,
+        reason: rejectDto?.reason,
+      }),
+      signedDocumentHash: sourceDocumentHash,
+    };
   }
 
   /**
@@ -956,6 +1525,7 @@ export class SigningService {
     });
 
     if (!doc) throw new NotFoundException("Document not found or not pending");
+    this.assertSourceAvailable(doc);
 
     const pendingRecipients = doc.recipients.filter(
       (r) => r.status === "PENDING" || r.status === "VIEWED",
@@ -993,6 +1563,7 @@ export class SigningService {
         "Document not found or not eligible for retry",
       );
     }
+    this.assertSourceAvailable(doc);
 
     await this.finalizeDocument(documentId);
 
@@ -1200,6 +1771,11 @@ export class SigningService {
         pdfBuffer = await this.pdfSigningService.addInitialsToAllPages(
           pdfBuffer,
           doc.recipients.map((r) => r.name),
+          {
+            placement: doc.initialsPlacement,
+            signaturePage: doc.signaturePage,
+            includeSignaturePage: doc.initialsIncludeSignaturePage,
+          },
         );
       }
 
@@ -1219,6 +1795,11 @@ export class SigningService {
           signedAt: r.signedAt!,
           ip: r.signingIp || "N/A",
           signatureType: r.signatureType || "N/A",
+          authenticationMethod: r.authenticationMethod,
+          identityVerificationMethod: r.identityVerificationMethod,
+          signingIntentHash: r.signingIntentHash,
+          signedDocumentHash: r.signedDocumentHash,
+          webauthnUserVerified: r.webauthnUserVerified,
         })),
         documentHash,
         signatureLevel: doc.signatureLevel,
@@ -1239,8 +1820,7 @@ export class SigningService {
         pdfBuffer = await this.pdfSigningService.signPdf(pdfBuffer, {
           name: "PrivCloud Sharing",
           email: `signing@${signingDomain}`,
-          reason:
-            "Signature électronique eIDAS - Tous les signataires ont signé",
+          reason: "Scellement technique du dossier de preuve PrivCloud",
         });
       } catch (signingError: any) {
         // SECURITY: Fail-closed - mark document as SIGNING_FAILED, do NOT mark COMPLETED
@@ -1266,6 +1846,7 @@ export class SigningService {
       });
 
       await this.createAuditEvent(documentId, "COMPLETED", "system");
+      this.notifyTeamOfSignatureCompletion(doc);
 
       // Log team activity if this is a team document
       if (doc.teamId) {
@@ -1398,7 +1979,7 @@ export class SigningService {
         : "") +
       `Pour signer ce document, cliquez sur le lien ci-dessous :\n${signingUrl}\n\n` +
       `Ce lien est personnel et sécurisé. Ne le partagez pas.\n\n` +
-      `Niveau de signature : ${document.signatureLevel === "QES" ? "Qualifiée (QES)" : "Avancée (AES)"}\n\n` +
+      `Niveau de preuve : ${document.signatureLevel === "REINFORCED" ? "Renforcé (compte vérifié + passkey)" : "Standard (code e-mail + consentement)"}\n\n` +
       `-- \nPrivCloud Sharing - Signature Électronique`;
 
     try {
@@ -1486,77 +2067,53 @@ export class SigningService {
     return String(error);
   }
 
-  /**
-   * Enriches signature documents with a `fileDeleted` boolean.
-   * A file is considered deleted when:
-   *   - the source share no longer exists in DB (expired / manually removed), OR
-   *   - the individual file was deleted from the share while the share still exists.
-   */
-  private async enrichWithFileDeleted<
-    T extends { shareId: string | null; fileId?: string | null },
-  >(docs: T[]): Promise<(T & { fileDeleted: boolean })[]> {
-    if (docs.length === 0) return [];
-
-    const shareIds = [
-      ...new Set(docs.map((d) => d.shareId).filter(Boolean) as string[]),
-    ];
-    const fileIds = [
-      ...new Set(
-        docs
-          .map((d) => (d as { fileId?: string | null }).fileId)
-          .filter(Boolean) as string[],
-      ),
-    ];
-
-    const [existingShares, existingFiles] = await Promise.all([
-      shareIds.length > 0
-        ? this.prisma.share.findMany({
-            where: { id: { in: shareIds } },
-            select: { id: true },
-          })
-        : Promise.resolve([]),
-      fileIds.length > 0
-        ? this.prisma.file.findMany({
-            where: { id: { in: fileIds } },
-            select: { id: true },
-          })
-        : Promise.resolve([]),
-    ]);
-
-    const existingShareIds = new Set(existingShares.map((s) => s.id));
-    const existingFileIds = new Set(existingFiles.map((f) => f.id));
-
-    const results: (T & { fileDeleted: boolean })[] = [];
-    const idsToMarkDeleted: string[] = [];
-
-    for (const doc of docs) {
-      const docFileId = (doc as { fileId?: string | null }).fileId;
-      const shareGone =
-        doc.shareId == null || !existingShareIds.has(doc.shareId);
-      const fileGone = docFileId != null && !existingFileIds.has(docFileId);
-      const fileDeleted = shareGone || fileGone;
-
-      results.push({ ...doc, fileDeleted });
-
-      // Persist fileDeletedAt on first detection
-      if (fileDeleted && !(doc as any).fileDeletedAt) {
-        idsToMarkDeleted.push((doc as any).id);
-      }
+  private assertStandardEmailVerified(recipient: {
+    otpVerified: boolean;
+    identityVerificationMethod: string;
+    identityVerifiedAt: Date | null;
+    document: { signatureLevel: string };
+  }) {
+    if (
+      recipient.document.signatureLevel === SignatureLevel.STANDARD &&
+      (!recipient.otpVerified ||
+        recipient.identityVerificationMethod !== "EMAIL_OTP" ||
+        !recipient.identityVerifiedAt)
+    ) {
+      throw new ForbiddenException(
+        "Verify the assigned email address before signing or rejecting",
+      );
     }
-
-    if (idsToMarkDeleted.length > 0) {
-      await this.prisma.signatureDocument.updateMany({
-        where: { id: { in: idsToMarkDeleted }, fileDeletedAt: null },
-        data: { fileDeletedAt: new Date() },
-      });
-    }
-
-    return results;
   }
 
-  /**
-   * Create an immutable audit trail event.
-   */
+  private hashSigningEmailOtp(recipientId: string, code: string): string {
+    const secret = String(
+      this.configService.get("internal.jwtSecret") ||
+        process.env.JWT_SECRET ||
+        "",
+    );
+    if (!secret) {
+      throw new Error("Signing email verification secret is not configured");
+    }
+
+    return crypto
+      .createHmac("sha256", secret)
+      .update(`privcloud-signing-email-otp-v1\0${recipientId}\0${code}`)
+      .digest("hex");
+  }
+
+  private constantTimeHashEquals(left: string, right: string): boolean {
+    if (!/^[0-9a-f]{64}$/i.test(left) || !/^[0-9a-f]{64}$/i.test(right)) {
+      return false;
+    }
+    const leftBuffer = Buffer.from(left, "hex");
+    const rightBuffer = Buffer.from(right, "hex");
+    return (
+      leftBuffer.length === rightBuffer.length &&
+      crypto.timingSafeEqual(leftBuffer, rightBuffer)
+    );
+  }
+
+  /** Append an event to the per-document tamper-evident audit chain. */
   private async createAuditEvent(
     documentId: string,
     eventType: string,
@@ -1565,15 +2122,13 @@ export class SigningService {
     userAgent?: string,
     metadata?: string,
   ) {
-    await this.prisma.signatureAuditEvent.create({
-      data: {
-        documentId,
-        eventType,
-        actor,
-        ipAddress,
-        userAgent,
-        metadata,
-      },
+    await appendSignatureAuditEvent(this.prisma, {
+      documentId,
+      eventType,
+      actor,
+      ipAddress,
+      userAgent,
+      metadata,
     });
   }
 }

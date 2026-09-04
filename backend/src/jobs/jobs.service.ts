@@ -13,6 +13,7 @@ import {
   getAbandonedUploadCutoff,
 } from "src/share/upload-activity.util";
 import { NEVER_EXPIRES_CUTOFF_DATE } from "src/utils/date.util";
+import { appendSignatureAuditEvent } from "src/signing/signing-audit.util";
 import { SHARE_DIRECTORY } from "../constants";
 
 @Injectable()
@@ -39,9 +40,7 @@ export class JobsService {
       : jobName;
 
     if (this.runningJobs.has(lockName)) {
-      this.logger.debug(
-        `Skipped ${jobName}: the previous run is still active`,
-      );
+      this.logger.debug(`Skipped ${jobName}: the previous run is still active`);
       return;
     }
     this.runningJobs.add(lockName);
@@ -294,6 +293,78 @@ export class JobsService {
     });
   }
 
+  /** Remove generated PDFs after their source file is deleted. */
+  @Cron("20 * * * *")
+  async cleanupDeletedSignatureArtifacts() {
+    await this.runExclusive("cleanupDeletedSignatureArtifacts", async () => {
+      const documents = await this.prisma.signatureDocument.findMany({
+        where: {
+          fileDeletedAt: { not: null },
+          OR: [
+            { signedFileKey: { not: null } },
+            { certificatePageKey: { not: null } },
+          ],
+        },
+        select: { id: true, signedFileKey: true, certificatePageKey: true },
+        take: 100,
+      });
+
+      let cleaned = 0;
+      for (const document of documents) {
+        try {
+          const keys = [
+            document.signedFileKey,
+            document.certificatePageKey,
+          ].filter((key): key is string => Boolean(key));
+          for (const key of new Set(keys)) {
+            await this.fileService.deleteFileByKey(key);
+          }
+          await this.prisma.signatureDocument.updateMany({
+            where: { id: document.id, fileDeletedAt: { not: null } },
+            data: { signedFileKey: null, certificatePageKey: null },
+          });
+          cleaned++;
+        } catch (error) {
+          this.logger.warn(
+            `Could not remove generated signing artifacts for ${document.id}: ${(error as Error).message}`,
+          );
+        }
+      }
+      if (cleaned > 0) {
+        this.logger.log(
+          `Removed generated artifacts for ${cleaned} deleted signature source(s)`,
+        );
+      }
+    });
+  }
+
+  /** Append one explicit, hash-chained deletion event to every tombstone. */
+  @Cron("25 * * * *")
+  async recordDeletedSignatureSources() {
+    await this.runExclusive("recordDeletedSignatureSources", async () => {
+      const documents = await this.prisma.signatureDocument.findMany({
+        where: {
+          fileDeletedAt: { not: null },
+          auditTrail: { none: { eventType: "SOURCE_FILE_DELETED" } },
+        },
+        select: { id: true, fileDeletedAt: true },
+        take: 100,
+      });
+
+      for (const document of documents) {
+        await appendSignatureAuditEvent(this.prisma, {
+          documentId: document.id,
+          eventType: "SOURCE_FILE_DELETED",
+          actor: "system",
+          metadata: {
+            sourceDeletedAt: document.fileDeletedAt?.toISOString(),
+            auditRetentionMonths: 6,
+          },
+        });
+      }
+    });
+  }
+
   @Cron("1 * * * *")
   async deleteExpiredUnverifiedAccounts() {
     await this.runExclusive("deleteExpiredUnverifiedAccounts", async () => {
@@ -307,12 +378,8 @@ export class JobsService {
         return;
       }
       const now = new Date();
-      const deletionCutoff = new Date(
-        now.getTime() - 14 * 24 * 60 * 60 * 1000,
-      );
-      const staleClaimCutoff = new Date(
-        now.getTime() - 6 * 60 * 60 * 1000,
-      );
+      const deletionCutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+      const staleClaimCutoff = new Date(now.getTime() - 6 * 60 * 60 * 1000);
       const candidates = await this.prisma.user.findMany({
         where: {
           emailVerificationRequiredAt: { lte: deletionCutoff },

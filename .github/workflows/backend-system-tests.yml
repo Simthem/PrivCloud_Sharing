@@ -21,6 +21,6 @@ jobs:
       - name: Install Dependencies
         working-directory: ./backend
         run: npm ci
-      - name: Run Server and Test with Newman
+      - name: Run Server and System Tests
         working-directory: ./backend
         run: npm run test:system

@@ -60,6 +60,10 @@ import {
   getUserKey,
   unwrapReverseShareKey,
 } from "../../utils/crypto.util";
+import {
+  getInitialsStampGeometry,
+  shouldAddInitialsToPage,
+} from "../../utils/pdfPlacement.util";
 
 const statusColors: Record<string, string> = {
   PENDING: "yellow",
@@ -105,21 +109,29 @@ const SigningDetailPage = () => {
 
   const formatDateTime = (date: string) =>
     new Date(date).toLocaleDateString(intl.locale, {
-      day: "numeric", month: "long", year: "numeric",
-      hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Europe/Paris",
     });
 
   const formatDateShort = (date: string) =>
     new Date(date).toLocaleDateString(intl.locale, {
-      day: "numeric", month: "short", year: "numeric",
-      hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Europe/Paris",
     });
 
   useEffect(() => {
     if (user === null) {
       router.replace(`/auth/signIn?redirect=/signing/${docId}`);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   // E2E key resolution state
@@ -152,17 +164,27 @@ const SigningDetailPage = () => {
 
         if (typedDoc.teamId) {
           // Path 1: Team folder -> derive from team key
-          const { wrappedTeamKey } = await teamService.getTeamKey(typedDoc.teamId);
+          const { wrappedTeamKey } = await teamService.getTeamKey(
+            typedDoc.teamId,
+          );
           if (!wrappedTeamKey) return;
-          const teamKey = await unwrapReverseShareKey(wrappedTeamKey, masterKey);
+          const teamKey = await unwrapReverseShareKey(
+            wrappedTeamKey,
+            masterKey,
+          );
           const keyB64 = await exportKeyToBase64(teamKey);
           setE2eKeyB64(keyB64);
         } else if (typedDoc.shareId) {
           // Path 2: Non-team share -> use master key or unwrap reverse share key
-          const encryptedKey = await shareService.getEncryptedE2eKey(typedDoc.shareId);
+          const encryptedKey = await shareService.getEncryptedE2eKey(
+            typedDoc.shareId,
+          );
           if (encryptedKey) {
             // Reverse share: unwrap the share key with master key
-            const shareKey = await unwrapReverseShareKey(encryptedKey, masterKey);
+            const shareKey = await unwrapReverseShareKey(
+              encryptedKey,
+              masterKey,
+            );
             const keyB64 = await exportKeyToBase64(shareKey);
             setE2eKeyB64(keyB64);
           } else {
@@ -175,7 +197,12 @@ const SigningDetailPage = () => {
         // Key resolution failed - user may not have access
       }
     })();
-  }, [typedDoc?.isE2EEncrypted, typedDoc?.teamId, typedDoc?.shareId, e2eKeyB64]);
+  }, [
+    typedDoc?.isE2EEncrypted,
+    typedDoc?.teamId,
+    typedDoc?.shareId,
+    e2eKeyB64,
+  ]);
 
   // Auto-finalize E2E documents when key is resolved and status is AWAITING_FINALIZATION
   useEffect(() => {
@@ -190,7 +217,7 @@ const SigningDetailPage = () => {
       setAutoFinalizeTriggered(true);
       handleFinalizeE2E();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typedDoc?.status, e2eKeyB64, finalizing, autoFinalizeTriggered]);
 
   // E2E finalization:
@@ -208,13 +235,18 @@ const SigningDetailPage = () => {
 
       // 2. Decrypt
       const cryptoKey = await importKeyFromBase64(e2eKeyB64);
-      const decryptedBuf = await decryptFileAuto(encryptedBuf, cryptoKey, 5_000_000);
+      const decryptedBuf = await decryptFileAuto(
+        encryptedBuf,
+        cryptoKey,
+        5_000_000,
+      );
 
       // 3. Get signatures data from backend
       const sigData = await signingService.getSignaturesForFinalization(docId);
 
       // 4. Apply visual signatures with pdf-lib
-      const { PDFDocument, rgb, StandardFonts, degrees } = await import("pdf-lib");
+      const { PDFDocument, rgb, StandardFonts, degrees } =
+        await import("pdf-lib");
       const pdfDoc = await PDFDocument.load(decryptedBuf);
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -241,9 +273,13 @@ const SigningDetailPage = () => {
       const maxPageIdx = Math.max(sigPageIdx, wmPageIdx, maxFieldPageIdx);
       const pagesToAdd = maxPageIdx + 1 - pdfDoc.getPageCount();
       if (pagesToAdd > 0) {
-        const [w, h] = pdfDoc.getPageCount() > 0
-          ? [pdfDoc.getPage(0).getSize().width, pdfDoc.getPage(0).getSize().height]
-          : [595, 842];
+        const [w, h] =
+          pdfDoc.getPageCount() > 0
+            ? [
+                pdfDoc.getPage(0).getSize().width,
+                pdfDoc.getPage(0).getSize().height,
+              ]
+            : [595, 842];
         for (let i = 0; i < pagesToAdd; i++) {
           pdfDoc.addPage([w, h]);
         }
@@ -276,22 +312,53 @@ const SigningDetailPage = () => {
             s.name
               .split(" ")
               .map((w: string) => w[0]?.toUpperCase())
-              .join("")
+              .join(""),
           )
           .join(" / ");
-        for (const page of allPages) {
-          const { width: pw } = page.getSize();
+        for (const [pageIndex, page] of allPages.entries()) {
+          if (
+            !shouldAddInitialsToPage({
+              pageIndex,
+              signaturePage: sigData.signaturePage,
+              includeSignaturePage: sigData.initialsIncludeSignaturePage,
+            })
+          ) {
+            continue;
+          }
+          const { width: pw, height: ph } = page.getSize();
+          const geometry = getInitialsStampGeometry({
+            pageWidth: pw,
+            pageHeight: ph,
+            textWidth: fontBold.widthOfTextAtSize(initialsText, 9),
+            fontSize: 9,
+            placement: sigData.initialsPlacement,
+          });
+          page.drawRectangle({
+            x: geometry.x,
+            y: geometry.y,
+            width: geometry.width,
+            height: geometry.height,
+            color: rgb(1, 1, 1),
+            opacity: 0.94,
+            borderColor: rgb(0.35, 0.35, 0.35),
+            borderWidth: 0.6,
+            borderOpacity: 0.75,
+          });
           page.drawText(initialsText, {
-            x: pw - 60,
-            y: 20,
-            size: 8,
-            font,
-            color: rgb(0.3, 0.3, 0.3),
+            x: geometry.x + geometry.textXOffset,
+            y: geometry.y + geometry.textYOffset,
+            size: geometry.fontSize,
+            font: fontBold,
+            color: rgb(0.12, 0.12, 0.12),
           });
         }
       }
 
-      const wrapPdfText = (text: string, maxWidth: number, fontSize: number) => {
+      const wrapPdfText = (
+        text: string,
+        maxWidth: number,
+        fontSize: number,
+      ) => {
         const words = text.replace(/\s+/g, " ").trim().split(" ");
         const lines: string[] = [];
         let current = "";
@@ -344,9 +411,15 @@ const SigningDetailPage = () => {
         if (!page) continue;
         const { width: pageWidth, height: pageHeight } = page.getSize();
         const boxWidth = Math.min(Math.max(field.width || 200, 80), pageWidth);
-        const boxHeight = Math.min(Math.max(field.height || 42, 24), pageHeight);
+        const boxHeight = Math.min(
+          Math.max(field.height || 42, 24),
+          pageHeight,
+        );
         const x = Math.min(Math.max(field.posX || 0, 0), pageWidth - boxWidth);
-        const y = Math.min(Math.max(field.posY || 0, 0), pageHeight - boxHeight);
+        const y = Math.min(
+          Math.max(field.posY || 0, 0),
+          pageHeight - boxHeight,
+        );
         const title =
           field.type === "APPROVAL"
             ? "Mention manuscrite"
@@ -367,17 +440,25 @@ const SigningDetailPage = () => {
           );
           const visibleLines = lines.slice(
             0,
-            Math.max(1, Math.floor((boxHeight - paddingY * 2 - 14) / lineHeight)),
+            Math.max(
+              1,
+              Math.floor((boxHeight - paddingY * 2 - 14) / lineHeight),
+            ),
           );
           const textWidth = Math.max(
             fontBold.widthOfTextAtSize(title, titleSize),
-            ...visibleLines.map((line) => font.widthOfTextAtSize(line, valueSize)),
+            ...visibleLines.map((line) =>
+              font.widthOfTextAtSize(line, valueSize),
+            ),
             40,
           );
           const contentWidth = Math.min(boxWidth, textWidth + paddingX * 2);
           const contentHeight = Math.min(
             boxHeight,
-            Math.max(24, paddingY * 2 + 10 + 4 + visibleLines.length * lineHeight),
+            Math.max(
+              24,
+              paddingY * 2 + 10 + 4 + visibleLines.length * lineHeight,
+            ),
           );
           const contentPosition = placeContentWithinBox({
             boxX: x,
@@ -426,8 +507,9 @@ const SigningDetailPage = () => {
         if (!sig.signatureData) continue;
 
         const signatureField =
-          signatureFields.find((field: any) => field.assignedRecipientId === sig.id) ||
-          signatureFields.find((field: any) => !field.assignedRecipientId);
+          signatureFields.find(
+            (field: any) => field.assignedRecipientId === sig.id,
+          ) || signatureFields.find((field: any) => !field.assignedRecipientId);
         const targetPage = signatureField
           ? allPages[Math.max(0, (signatureField.page ?? 1) - 1)]
           : sigPage;
@@ -436,8 +518,13 @@ const SigningDetailPage = () => {
           ? Math.min(Math.max(signatureField.width || 240, 120), sigW)
           : 240;
         const boxHeight = signatureField
-          ? Math.min(Math.max(signatureField.height || (addMention ? 90 : 70), 50), sigH)
-          : addMention ? 90 : 70;
+          ? Math.min(
+              Math.max(signatureField.height || (addMention ? 90 : 70), 50),
+              sigH,
+            )
+          : addMention
+            ? 90
+            : 70;
         const boxX = signatureField
           ? Math.min(Math.max(signatureField.posX || 0, 0), sigW - boxWidth)
           : sigW - 250;
@@ -474,14 +561,20 @@ const SigningDetailPage = () => {
         const approvalWidth = addMention
           ? Math.min(font.widthOfTextAtSize(approvalText, 9), maxSignatureWidth)
           : 0;
-        const nameWidth = Math.min(fontBold.widthOfTextAtSize(sig.name, 10), maxSignatureWidth);
+        const nameWidth = Math.min(
+          fontBold.widthOfTextAtSize(sig.name, 10),
+          maxSignatureWidth,
+        );
         const contentWidth = Math.min(
           boxWidth,
           Math.max(80, approvalWidth, nameWidth, imageWidth) + paddingX * 2,
         );
         const contentHeight = Math.min(
           boxHeight,
-          Math.max(44, paddingY * 2 + (addMention ? 13 : 0) + 14 + 6 + imageHeight),
+          Math.max(
+            44,
+            paddingY * 2 + (addMention ? 13 : 0) + 14 + 6 + imageHeight,
+          ),
         );
         const contentPosition = placeContentWithinBox({
           boxX,
@@ -518,7 +611,11 @@ const SigningDetailPage = () => {
         }
         targetPage.drawText(sig.name, {
           x: innerX,
-          y: contentPosition.y + contentHeight - paddingY - (addMention ? 26 : 12),
+          y:
+            contentPosition.y +
+            contentHeight -
+            paddingY -
+            (addMention ? 26 : 12),
           size: 10,
           font: fontBold,
           color: rgb(0, 0, 0),
@@ -545,7 +642,10 @@ const SigningDetailPage = () => {
       );
 
       // 7. Prepare ByteRange locally, sign only its digest, then embed the CMS locally
-      const preparedPdf = await preparePadesPdf(visuallySignedPdf, certificatePage);
+      const preparedPdf = await preparePadesPdf(
+        visuallySignedPdf,
+        certificatePage,
+      );
       const cms = await signingService.signE2EDigest(docId, preparedPdf.digest);
       const padesSignedPdf = embedPadesCms(preparedPdf.bytes, cms);
 
@@ -593,7 +693,11 @@ const SigningDetailPage = () => {
       if (typedDoc?.isE2EEncrypted && e2eKeyB64) {
         const encryptedBuf = await blob.arrayBuffer();
         const cryptoKey = await importKeyFromBase64(e2eKeyB64);
-        const decryptedBuf = await decryptFileAuto(encryptedBuf, cryptoKey, 5_000_000);
+        const decryptedBuf = await decryptFileAuto(
+          encryptedBuf,
+          cryptoKey,
+          5_000_000,
+        );
         finalBlob = new Blob([decryptedBuf], { type: "application/pdf" });
       }
 
@@ -611,7 +715,9 @@ const SigningDetailPage = () => {
   if (isLoading) {
     return (
       <Container size="md" px={0}>
-        <Box ta="center" py="xl"><Loader /></Box>
+        <Box ta="center" py="xl">
+          <Loader />
+        </Box>
       </Container>
     );
   }
@@ -624,13 +730,16 @@ const SigningDetailPage = () => {
     );
   }
 
-  const isPending = typedDoc.status === "PENDING" || typedDoc.status === "PARTIAL";
+  const isPending =
+    typedDoc.status === "PENDING" || typedDoc.status === "PARTIAL";
   const isAwaitingFinalization = typedDoc.status === "AWAITING_FINALIZATION";
   const fileDeleted = !!(typedDoc as any).fileDeleted;
 
   return (
     <>
-      <Meta title={`${t("signing.title")} - ${typedDoc.fileName || typedDoc.title || t("signing.document")}`} />
+      <Meta
+        title={`${t("signing.title")} - ${typedDoc.fileName || typedDoc.title || t("signing.document")}`}
+      />
       <Container size="md" px={0}>
         <Button
           variant="subtle"
@@ -669,7 +778,9 @@ const SigningDetailPage = () => {
               </Group>
             </Title>
             <Text size="sm" c="dimmed" mt={4}>
-              {t("signing.detail.created-at", { date: formatDateTime(typedDoc.createdAt) })}
+              {t("signing.detail.created-at", {
+                date: formatDateTime(typedDoc.createdAt),
+              })}
             </Text>
           </Box>
           <Badge
@@ -701,7 +812,11 @@ const SigningDetailPage = () => {
               leftSection={<TbDownload size={16} />}
               onClick={handleDownload}
               disabled={typedDoc.isE2EEncrypted && !e2eKeyB64}
-              title={typedDoc.isE2EEncrypted && !e2eKeyB64 ? t("signing.detail.finalize.e2e-unavailable") : undefined}
+              title={
+                typedDoc.isE2EEncrypted && !e2eKeyB64
+                  ? t("signing.detail.finalize.e2e-unavailable")
+                  : undefined
+              }
             >
               {t("signing.actions.download")}
             </Button>
@@ -711,47 +826,61 @@ const SigningDetailPage = () => {
               {t("signing.detail.finalize.progress")}
             </Alert>
           )}
-          {isAwaitingFinalization && !fileDeleted && !finalizing && !e2eKeyB64 && typedDoc.isE2EEncrypted && (
-            <Alert color="yellow" icon={<TbLock size={16} />}>
-              {t("signing.detail.finalize.key-resolving")}
-            </Alert>
-          )}
-          {isAwaitingFinalization && !fileDeleted && !finalizing && typedDoc.isE2EEncrypted && e2eKeyB64 && autoFinalizeTriggered && (
-            <Button
-              color="orange"
-              leftSection={<TbLock size={16} />}
-              onClick={() => {
-                setAutoFinalizeTriggered(false);
-              }}
-            >
-              {t("signing.detail.finalize.retry")}
-            </Button>
-          )}
-          {isAwaitingFinalization && !fileDeleted && !finalizing && !typedDoc.isE2EEncrypted && (
-            <Button
-              color="orange"
-              leftSection={<TbShieldCheck size={16} />}
-              onClick={async () => {
-                setFinalizing(true);
-                try {
-                  const result = await signingService.retryFinalize(docId);
-                  if (result.status === "COMPLETED") {
-                    toast.success(t("signing.toast.finalize-success"));
-                  } else {
+          {isAwaitingFinalization &&
+            !fileDeleted &&
+            !finalizing &&
+            !e2eKeyB64 &&
+            typedDoc.isE2EEncrypted && (
+              <Alert color="yellow" icon={<TbLock size={16} />}>
+                {t("signing.detail.finalize.key-resolving")}
+              </Alert>
+            )}
+          {isAwaitingFinalization &&
+            !fileDeleted &&
+            !finalizing &&
+            typedDoc.isE2EEncrypted &&
+            e2eKeyB64 &&
+            autoFinalizeTriggered && (
+              <Button
+                color="orange"
+                leftSection={<TbLock size={16} />}
+                onClick={() => {
+                  setAutoFinalizeTriggered(false);
+                }}
+              >
+                {t("signing.detail.finalize.retry")}
+              </Button>
+            )}
+          {isAwaitingFinalization &&
+            !fileDeleted &&
+            !finalizing &&
+            !typedDoc.isE2EEncrypted && (
+              <Button
+                color="orange"
+                leftSection={<TbShieldCheck size={16} />}
+                onClick={async () => {
+                  setFinalizing(true);
+                  try {
+                    const result = await signingService.retryFinalize(docId);
+                    if (result.status === "COMPLETED") {
+                      toast.success(t("signing.toast.finalize-success"));
+                    } else {
+                      toast.error(t("signing.toast.finalize-error"));
+                    }
+                    queryClient.invalidateQueries({
+                      queryKey: ["signing.document", docId],
+                    });
+                  } catch {
                     toast.error(t("signing.toast.finalize-error"));
+                  } finally {
+                    setFinalizing(false);
                   }
-                  queryClient.invalidateQueries({ queryKey: ["signing.document", docId] });
-                } catch {
-                  toast.error(t("signing.toast.finalize-error"));
-                } finally {
-                  setFinalizing(false);
-                }
-              }}
-            >
-              {t("signing.detail.finalize.retry")}
-            </Button>
-          )}
-          {isPending && (
+                }}
+              >
+                {t("signing.detail.finalize.retry")}
+              </Button>
+            )}
+          {isPending && !fileDeleted && (
             <>
               <Button
                 variant="light"
@@ -775,104 +904,130 @@ const SigningDetailPage = () => {
         </Group>
 
         {/* Signing links - always shown to the document creator so they can re-send them */}
-        {typedDoc.recipients?.some((r: any) => r.signingToken && r.role !== "CC") && (
-          <Paper withBorder p="md" mb="lg">
-            <Text fw={600} mb="sm">
-              <Group gap="xs"><TbLink size={16} /> {t("signing.detail.signing-links")}</Group>
-            </Text>
-            <Text size="xs" c="dimmed" mb="md">
-              {typedDoc.status === "COMPLETED"
-                ? t("signing.detail.signing-links.completed-desc")
-                : t("signing.detail.signing-links.desc")}
-            </Text>
-            <Stack gap="xs">
-              {typedDoc.recipients
-                .filter((r: any) => r.signingToken && r.role !== "CC")
-                .map((r: any) => {
-                  const keyFragment = typedDoc.isE2EEncrypted && e2eKeyB64 ? `#key=${e2eKeyB64}` : "";
-                  const signingUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/sign/${r.signingToken}${keyFragment}`;
-                  return (
-                    <Group
-                      key={r.id}
-                      gap="xs"
-                      align="flex-start"
-                      wrap={isMobile ? "wrap" : "nowrap"}
-                    >
-                      <Box
-                        style={{
-                          minWidth: 0,
-                          flex: isMobile ? "1 1 100%" : "0 0 140px",
-                        }}
+        {!fileDeleted &&
+          typedDoc.recipients?.some(
+            (r: any) => r.signingToken && r.role !== "CC",
+          ) && (
+            <Paper withBorder p="md" mb="lg">
+              <Text fw={600} mb="sm">
+                <Group gap="xs">
+                  <TbLink size={16} /> {t("signing.detail.signing-links")}
+                </Group>
+              </Text>
+              <Text size="xs" c="dimmed" mb="md">
+                {typedDoc.status === "COMPLETED"
+                  ? t("signing.detail.signing-links.completed-desc")
+                  : t("signing.detail.signing-links.desc")}
+              </Text>
+              <Stack gap="xs">
+                {typedDoc.recipients
+                  .filter((r: any) => r.signingToken && r.role !== "CC")
+                  .map((r: any) => {
+                    const keyFragment =
+                      typedDoc.isE2EEncrypted && e2eKeyB64
+                        ? `#key=${e2eKeyB64}`
+                        : "";
+                    const signingUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/sign/${r.signingToken}${keyFragment}`;
+                    return (
+                      <Group
+                        key={r.id}
+                        gap="xs"
+                        align="flex-start"
+                        wrap={isMobile ? "wrap" : "nowrap"}
                       >
-                        <Text
+                        <Box
+                          style={{
+                            minWidth: 0,
+                            flex: isMobile ? "1 1 100%" : "0 0 140px",
+                          }}
+                        >
+                          <Text
+                            size="sm"
+                            fw={500}
+                            style={{ overflowWrap: "anywhere" }}
+                          >
+                            {r.name}
+                          </Text>
+                          <Text
+                            size="xs"
+                            c="dimmed"
+                            style={{ overflowWrap: "anywhere" }}
+                          >
+                            {r.email}
+                          </Text>
+                        </Box>
+                        <Badge
+                          color={statusColors[r.status] || "gray"}
+                          variant="light"
                           size="sm"
-                          fw={500}
-                          style={{ overflowWrap: "anywhere" }}
+                          style={{ flexShrink: 0 }}
                         >
-                          {r.name}
-                        </Text>
-                        <Text
-                          size="xs"
-                          c="dimmed"
-                          style={{ overflowWrap: "anywhere" }}
-                        >
-                          {r.email}
-                        </Text>
-                      </Box>
-                      <Badge
-                        color={statusColors[r.status] || "gray"}
-                        variant="light"
-                        size="sm"
-                        style={{ flexShrink: 0 }}
-                      >
-                        {getStatusLabel(r.status)}
-                      </Badge>
-                      <TextInput
-                        readOnly
-                        size="sm"
-                        value={signingUrl}
-                        style={{
-                          flex: "1 1 240px",
-                          minWidth: isMobile ? "100%" : 0,
-                        }}
-                        rightSectionPointerEvents="all"
-                        rightSectionWidth={68}
-                        rightSection={
-                          <Group gap={2} wrap="nowrap">
-                            <CopyButton value={signingUrl}>
-                              {({ copied, copy }) => (
-                                <ActionIcon color={copied ? "green" : "blue"} variant="subtle" onClick={copy} size="md">
-                                  {copied ? <TbCheck size={16} /> : <TbCopy size={16} />}
-                                </ActionIcon>
-                              )}
-                            </CopyButton>
-                            <ActionIcon
-                              color="grape"
-                              variant="subtle"
-                              size="md"
-                              onClick={() => showQrCodeModal(modals, signingUrl)}
-                              title={t("common.button.showQrCode")}
-                            >
-                              <TbQrcode size={16} />
-                            </ActionIcon>
-                          </Group>
-                        }
-                      />
-                    </Group>
-                  );
-                })}
-            </Stack>
-          </Paper>
-        )}
+                          {getStatusLabel(r.status)}
+                        </Badge>
+                        <TextInput
+                          readOnly
+                          size="sm"
+                          value={signingUrl}
+                          style={{
+                            flex: "1 1 240px",
+                            minWidth: isMobile ? "100%" : 0,
+                          }}
+                          rightSectionPointerEvents="all"
+                          rightSectionWidth={68}
+                          rightSection={
+                            <Group gap={2} wrap="nowrap">
+                              <CopyButton value={signingUrl}>
+                                {({ copied, copy }) => (
+                                  <ActionIcon
+                                    color={copied ? "green" : "blue"}
+                                    variant="subtle"
+                                    onClick={copy}
+                                    size="md"
+                                  >
+                                    {copied ? (
+                                      <TbCheck size={16} />
+                                    ) : (
+                                      <TbCopy size={16} />
+                                    )}
+                                  </ActionIcon>
+                                )}
+                              </CopyButton>
+                              <ActionIcon
+                                color="grape"
+                                variant="subtle"
+                                size="md"
+                                onClick={() =>
+                                  showQrCodeModal(modals, signingUrl)
+                                }
+                                title={t("common.button.showQrCode")}
+                              >
+                                <TbQrcode size={16} />
+                              </ActionIcon>
+                            </Group>
+                          }
+                        />
+                      </Group>
+                    );
+                  })}
+              </Stack>
+            </Paper>
+          )}
 
         {/* Recipients table */}
         <Paper withBorder mb="lg">
-          <Text fw={600} p="md" pb={0}>{t("signing.detail.recipients")}</Text>
+          <Text fw={600} p="md" pb={0}>
+            {t("signing.detail.recipients")}
+          </Text>
           {isMobile ? (
             <Stack gap="sm" p="md">
               {typedDoc.recipients?.map((r: any) => (
                 <Card key={r.id} withBorder padding="sm">
-                  <Group justify="space-between" mb={4} align="flex-start" wrap="nowrap">
+                  <Group
+                    justify="space-between"
+                    mb={4}
+                    align="flex-start"
+                    wrap="nowrap"
+                  >
                     <Text
                       fw={500}
                       size="sm"
@@ -881,7 +1036,13 @@ const SigningDetailPage = () => {
                       {r.name}
                     </Text>
                     <Badge
-                      color={r.role === "SIGNER" ? "blue" : r.role === "APPROVER" ? "grape" : "gray"}
+                      color={
+                        r.role === "SIGNER"
+                          ? "blue"
+                          : r.role === "APPROVER"
+                            ? "grape"
+                            : "gray"
+                      }
                       variant="light"
                       size="sm"
                       style={{ flexShrink: 0 }}
@@ -889,9 +1050,20 @@ const SigningDetailPage = () => {
                       {getRoleLabel(r.role)}
                     </Badge>
                   </Group>
-                  <Text size="xs" c="dimmed" mb={4} style={{ overflowWrap: "anywhere" }}>{r.email}</Text>
+                  <Text
+                    size="xs"
+                    c="dimmed"
+                    mb={4}
+                    style={{ overflowWrap: "anywhere" }}
+                  >
+                    {r.email}
+                  </Text>
                   <Group justify="space-between">
-                    <Badge color={statusColors[r.status] || "gray"} variant="dot" size="sm">
+                    <Badge
+                      color={statusColors[r.status] || "gray"}
+                      variant="dot"
+                      size="sm"
+                    >
                       {getStatusLabel(r.status)}
                     </Badge>
                     {r.signedAt ? (
@@ -899,55 +1071,83 @@ const SigningDetailPage = () => {
                         {formatDateShort(r.signedAt)}
                       </Text>
                     ) : (
-                      <Text size="xs" c="dimmed">-</Text>
+                      <Text size="xs" c="dimmed">
+                        -
+                      </Text>
                     )}
                   </Group>
                 </Card>
               ))}
             </Stack>
           ) : (
-          <Table striped highlightOnHover style={{ tableLayout: "fixed" }}>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th style={{ width: 140 }}>{t("signing.detail.table.name")}</Table.Th>
-                <Table.Th>{t("signing.detail.table.email")}</Table.Th>
-                <Table.Th style={{ width: 110 }}>{t("signing.detail.table.role")}</Table.Th>
-                <Table.Th style={{ width: 165 }}>{t("signing.detail.table.status")}</Table.Th>
-                <Table.Th style={{ width: 155 }}>{t("signing.detail.table.signed-at")}</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {typedDoc.recipients?.map((r: any) => (
-                <Table.Tr key={r.id}>
-                  <Table.Td style={{ overflow: "hidden" }}><Text fw={500} size="sm" truncate>{r.name}</Text></Table.Td>
-                  <Table.Td style={{ overflow: "hidden" }}><Text size="sm" c="dimmed" truncate>{r.email}</Text></Table.Td>
-                  <Table.Td>
-                    <Badge
-                      color={r.role === "SIGNER" ? "blue" : r.role === "APPROVER" ? "grape" : "gray"}
-                      variant="light"
-                      size="sm"
-                    >
-                      {getRoleLabel(r.role)}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    <Badge color={statusColors[r.status] || "gray"} variant="dot" size="sm">
-                      {getStatusLabel(r.status)}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    {r.signedAt ? (
-                      <Text size="sm">
-                        {formatDateShort(r.signedAt)}
-                      </Text>
-                    ) : (
-                      <Text size="sm" c="dimmed">-</Text>
-                    )}
-                  </Table.Td>
+            <Table striped highlightOnHover style={{ tableLayout: "fixed" }}>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th style={{ width: 140 }}>
+                    {t("signing.detail.table.name")}
+                  </Table.Th>
+                  <Table.Th>{t("signing.detail.table.email")}</Table.Th>
+                  <Table.Th style={{ width: 110 }}>
+                    {t("signing.detail.table.role")}
+                  </Table.Th>
+                  <Table.Th style={{ width: 165 }}>
+                    {t("signing.detail.table.status")}
+                  </Table.Th>
+                  <Table.Th style={{ width: 155 }}>
+                    {t("signing.detail.table.signed-at")}
+                  </Table.Th>
                 </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+              </Table.Thead>
+              <Table.Tbody>
+                {typedDoc.recipients?.map((r: any) => (
+                  <Table.Tr key={r.id}>
+                    <Table.Td style={{ overflow: "hidden" }}>
+                      <Text fw={500} size="sm" truncate>
+                        {r.name}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td style={{ overflow: "hidden" }}>
+                      <Text size="sm" c="dimmed" truncate>
+                        {r.email}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge
+                        color={
+                          r.role === "SIGNER"
+                            ? "blue"
+                            : r.role === "APPROVER"
+                              ? "grape"
+                              : "gray"
+                        }
+                        variant="light"
+                        size="sm"
+                      >
+                        {getRoleLabel(r.role)}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge
+                        color={statusColors[r.status] || "gray"}
+                        variant="dot"
+                        size="sm"
+                      >
+                        {getStatusLabel(r.status)}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      {r.signedAt ? (
+                        <Text size="sm">{formatDateShort(r.signedAt)}</Text>
+                      ) : (
+                        <Text size="sm" c="dimmed">
+                          -
+                        </Text>
+                      )}
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
           )}
         </Paper>
 
@@ -955,7 +1155,9 @@ const SigningDetailPage = () => {
         {typedDoc.auditTrail?.length > 0 && (
           <Paper withBorder p="md">
             <Text fw={600} mb="md">
-              <Group gap="xs"><TbShieldCheck size={16} /> {t("signing.detail.audit-trail")}</Group>
+              <Group gap="xs">
+                <TbShieldCheck size={16} /> {t("signing.detail.audit-trail")}
+              </Group>
             </Text>
             <Timeline active={typedDoc.auditTrail.length - 1} bulletSize={20}>
               {typedDoc.auditTrail.map((event: any) => {
@@ -965,11 +1167,14 @@ const SigningDetailPage = () => {
                   SIGNED: "signing.detail.audit.signed",
                   REJECTED: "signing.detail.audit.rejected",
                   COMPLETED: "signing.detail.audit.completed",
-                  AWAITING_FINALIZATION: "signing.detail.audit.awaiting-finalization",
+                  AWAITING_FINALIZATION:
+                    "signing.detail.audit.awaiting-finalization",
                   CANCELLED: "signing.detail.audit.cancelled",
                   REMINDER_SENT: "signing.detail.audit.reminder-sent",
                   FINALIZED: "signing.detail.audit.finalized",
                   DOWNLOADED: "signing.detail.audit.downloaded",
+                  SOURCE_FILE_DELETED:
+                    "signing.detail.audit.source-file-deleted",
                 };
                 const actionKey = actionKeyMap[event.action];
                 const actionLabel = actionKey
@@ -979,7 +1184,11 @@ const SigningDetailPage = () => {
                 return (
                   <Timeline.Item
                     key={event.id}
-                    title={<Text size="sm" fw={500}>{actionLabel}</Text>}
+                    title={
+                      <Text size="sm" fw={500}>
+                        {actionLabel}
+                      </Text>
+                    }
                   >
                     <Stack gap={2}>
                       <Text size="xs" c="dimmed">
@@ -987,20 +1196,28 @@ const SigningDetailPage = () => {
                       </Text>
                       {event.actorEmail && (
                         <Text size="xs" c="dimmed">
-                          {t("signing.detail.audit.actor", { email: event.actorEmail })}
+                          {t("signing.detail.audit.actor", {
+                            email: event.actorEmail,
+                          })}
                         </Text>
                       )}
                       {(event.ip || event.ipAddress) && (
                         <Text size="xs" c="dimmed">
-                          {t("signing.detail.audit.ip", { ip: event.ip || event.ipAddress })}
+                          {t("signing.detail.audit.ip", {
+                            ip: event.ip || event.ipAddress,
+                          })}
                         </Text>
                       )}
                       {event.details && (
-                        <Text size="xs" mt={2}>{event.details}</Text>
+                        <Text size="xs" mt={2}>
+                          {event.details}
+                        </Text>
                       )}
                       {event.reason && (
                         <Text size="xs" c="red" mt={2}>
-                          {t("signing.detail.audit.reason", { reason: event.reason })}
+                          {t("signing.detail.audit.reason", {
+                            reason: event.reason,
+                          })}
                         </Text>
                       )}
                     </Stack>

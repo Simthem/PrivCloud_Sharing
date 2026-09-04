@@ -14,31 +14,33 @@ import {
 } from "@nestjs/common";
 import { Response } from "express";
 import { User } from "@prisma/client";
-import { minutes, Throttle } from "@nestjs/throttler";
+import { RegistrationResponseJSON } from "@simplewebauthn/server";
+import { hours, minutes, Throttle } from "@nestjs/throttler";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
-import { SafeIdPipe } from "src/share/pipe/safeId.pipe";
 import { SigningService } from "./signing.service";
-import { SigningOtpService } from "./signing-otp.service";
 import { SigningDownloadService } from "./signing-download.service";
 import { SigningE2EService } from "./signing-e2e.service";
+import { SigningWebAuthnService } from "./signing-webauthn.service";
 import { CreateSignatureRequestDTO } from "./dto/createSignatureRequest.dto";
 import {
   SignDocumentDTO,
   RejectDocumentDTO,
-  VerifyOtpDTO,
   PrepareE2ECertificateDTO,
   SignE2EDigestDTO,
   FinalizeE2EDTO,
+  PreparePasskeyActionDTO,
+  VerifyPasskeyRegistrationDTO,
+  VerifySigningEmailOtpDTO,
 } from "./dto/signDocument.dto";
 
 @Controller("signing")
 export class SigningController {
   constructor(
     private signingService: SigningService,
-    private signingOtpService: SigningOtpService,
     private signingDownloadService: SigningDownloadService,
     private signingE2EService: SigningE2EService,
+    private signingWebAuthnService: SigningWebAuthnService,
   ) {}
 
   private setPublicSigningHeaders(res: Response) {
@@ -93,7 +95,7 @@ export class SigningController {
   @Get("team/:teamId")
   @UseGuards(JwtGuard)
   async getTeamDocuments(
-    @Param("teamId", SafeIdPipe) teamId: string,
+    @Param("teamId") teamId: string,
     @Query("page") page: string | undefined,
     @Query("limit") limit: string | undefined,
     @GetUser() user: User,
@@ -110,10 +112,7 @@ export class SigningController {
    */
   @Get("documents/:id")
   @UseGuards(JwtGuard)
-  async getDocument(
-    @Param("id", SafeIdPipe) id: string,
-    @GetUser() user: User,
-  ) {
+  async getDocument(@Param("id") id: string, @GetUser() user: User) {
     if (!user?.id) throw new BadRequestException("Authentication required");
     return this.signingService.getDocument(id, user.id);
   }
@@ -123,10 +122,7 @@ export class SigningController {
    */
   @Delete("documents/:id")
   @UseGuards(JwtGuard)
-  async cancelDocument(
-    @Param("id", SafeIdPipe) id: string,
-    @GetUser() user: User,
-  ) {
+  async cancelDocument(@Param("id") id: string, @GetUser() user: User) {
     if (!user?.id) throw new BadRequestException("Authentication required");
     return this.signingService.cancelDocument(id, user.id);
   }
@@ -136,10 +132,7 @@ export class SigningController {
    */
   @Post("documents/:id/remind")
   @UseGuards(JwtGuard)
-  async sendReminder(
-    @Param("id", SafeIdPipe) id: string,
-    @GetUser() user: User,
-  ) {
+  async sendReminder(@Param("id") id: string, @GetUser() user: User) {
     if (!user?.id) throw new BadRequestException("Authentication required");
     return this.signingService.sendReminder(id, user.id);
   }
@@ -149,11 +142,8 @@ export class SigningController {
    */
   @Post("documents/:id/retry-finalize")
   @UseGuards(JwtGuard)
-  @Throttle({ default: { limit: 3, ttl: 3600 } })
-  async retryFinalize(
-    @Param("id", SafeIdPipe) id: string,
-    @GetUser() user: User,
-  ) {
+  @Throttle({ default: { limit: 3, ttl: hours(1) } })
+  async retryFinalize(@Param("id") id: string, @GetUser() user: User) {
     if (!user?.id) throw new BadRequestException("Authentication required");
     return this.signingService.retryFinalize(id, user.id);
   }
@@ -164,7 +154,7 @@ export class SigningController {
   @Get("documents/:id/download")
   @UseGuards(JwtGuard)
   async downloadSignedPdf(
-    @Param("id", SafeIdPipe) id: string,
+    @Param("id") id: string,
     @GetUser() user: User,
     @Res() res: Response,
   ) {
@@ -186,14 +176,12 @@ export class SigningController {
   @Get("documents/:id/original")
   @UseGuards(JwtGuard)
   async downloadOriginalPdf(
-    @Param("id", SafeIdPipe) id: string,
+    @Param("id") id: string,
     @GetUser() user: User,
     @Res() res: Response,
   ) {
-    const { buffer, fileName } = await this.signingDownloadService.getOriginalPdfForOwner(
-      id,
-      user.id,
-    );
+    const { buffer, fileName } =
+      await this.signingDownloadService.getOriginalPdfForOwner(id, user.id);
     res.setHeader("Content-Type", "application/octet-stream");
     res.setHeader(
       "Content-Disposition",
@@ -207,10 +195,7 @@ export class SigningController {
    */
   @Get("documents/:id/audit")
   @UseGuards(JwtGuard)
-  async getAuditTrail(
-    @Param("id", SafeIdPipe) id: string,
-    @GetUser() user: User,
-  ) {
+  async getAuditTrail(@Param("id") id: string, @GetUser() user: User) {
     return this.signingDownloadService.getAuditTrail(id, user.id);
   }
 
@@ -220,7 +205,7 @@ export class SigningController {
   @Get("documents/:id/signatures")
   @UseGuards(JwtGuard)
   async getSignaturesForFinalization(
-    @Param("id", SafeIdPipe) id: string,
+    @Param("id") id: string,
     @GetUser() user: User,
   ) {
     return this.signingE2EService.getSignaturesForFinalization(id, user.id);
@@ -229,27 +214,28 @@ export class SigningController {
   /** Generate the certificate page without receiving the clear source PDF. */
   @Post("documents/:id/e2e-certificate-page")
   @UseGuards(JwtGuard)
-  @Throttle({ default: { limit: 5, ttl: 3600 } })
+  @Throttle({ default: { limit: 5, ttl: hours(1) } })
   async generateE2ECertificatePage(
-    @Param("id", SafeIdPipe) id: string,
+    @Param("id") id: string,
     @GetUser() user: User,
     @Body() dto: PrepareE2ECertificateDTO,
   ) {
     if (!user?.id) throw new BadRequestException("Authentication required");
-    const certificatePage = await this.signingE2EService.generateE2ECertificatePage(
-      id,
-      user.id,
-      dto.documentHash.toLowerCase(),
-    );
+    const certificatePage =
+      await this.signingE2EService.generateE2ECertificatePage(
+        id,
+        user.id,
+        dto.documentHash.toLowerCase(),
+      );
     return { certificatePage: certificatePage.toString("base64") };
   }
 
   /** Sign the SHA-256 digest of a client-prepared PDF ByteRange. */
   @Post("documents/:id/sign-e2e-digest")
   @UseGuards(JwtGuard)
-  @Throttle({ default: { limit: 5, ttl: 3600 } })
+  @Throttle({ default: { limit: 5, ttl: hours(1) } })
   async signE2EDigest(
-    @Param("id", SafeIdPipe) id: string,
+    @Param("id") id: string,
     @GetUser() user: User,
     @Body() dto: SignE2EDigestDTO,
   ) {
@@ -268,9 +254,9 @@ export class SigningController {
    */
   @Post("documents/:id/finalize-e2e")
   @UseGuards(JwtGuard)
-  @Throttle({ default: { limit: 5, ttl: 3600 } })
+  @Throttle({ default: { limit: 5, ttl: hours(1) } })
   async finalizeE2E(
-    @Param("id", SafeIdPipe) id: string,
+    @Param("id") id: string,
     @GetUser() user: User,
     @Body() dto: FinalizeE2EDTO,
   ) {
@@ -294,72 +280,176 @@ export class SigningController {
    */
   @Get("sign/:token")
   async getSigningPage(
-    @Param("token", SafeIdPipe) token: string,
+    @Param("token") token: string,
     @Res({ passthrough: true }) res: Response,
   ) {
     this.setPublicSigningHeaders(res);
     return this.signingService.getSigningPage(token);
   }
 
+  /** Send a short-lived code to the assigned address for a standard request. */
+  @Post("sign/:token/email-otp/send")
+  @Throttle({ default: { limit: 3, ttl: minutes(10) } })
+  async sendSigningEmailOtp(
+    @Param("token") token: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.setPublicSigningHeaders(res);
+    return this.signingService.sendSigningEmailOtp(token);
+  }
+
+  /** Prove current control of the assigned mailbox before standard signing. */
+  @Post("sign/:token/email-otp/verify")
+  @Throttle({ default: { limit: 10, ttl: minutes(10) } })
+  async verifySigningEmailOtp(
+    @Param("token") token: string,
+    @Body() dto: VerifySigningEmailOtpDTO,
+    @Ip() ip: string,
+    @Headers("x-forwarded-for") forwardedFor: string,
+    @Headers("user-agent") userAgent: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.setPublicSigningHeaders(res);
+    const clientIp = forwardedFor ? forwardedFor.split(",")[0].trim() : ip;
+    return this.signingService.verifySigningEmailOtp(
+      token,
+      dto.code,
+      clientIp,
+      userAgent || "",
+    );
+  }
+
   /**
-   * Stream the original PDF for preview — public, token-gated.
+   * Stream the original PDF for preview - public, token-gated.
    */
   @Get("sign/:token/preview")
-  @Throttle({ default: { limit: 20, ttl: 60 } })
+  @Throttle({ default: { limit: 20, ttl: minutes(1) } })
   async previewOriginalPdf(
-    @Param("token", SafeIdPipe) token: string,
+    @Param("token") token: string,
     @Res() res: Response,
   ) {
-    const { buffer, fileName } = await this.signingDownloadService.getOriginalPdfForPreview(token);
+    const { buffer, fileName } =
+      await this.signingDownloadService.getOriginalPdfForPreview(token);
     this.setPublicSigningHeaders(res);
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(fileName)}"`);
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${encodeURIComponent(fileName)}"`,
+    );
     res.setHeader("Content-Length", buffer.length);
     res.send(buffer);
   }
 
   /**
-   * Download the signed PDF via signing token — public, available once COMPLETED.
+   * Preview a reinforced request after authenticating as the assigned account.
+   */
+  @Get("sign/:token/preview-authenticated")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 20, ttl: minutes(1) } })
+  async previewOriginalPdfAuthenticated(
+    @Param("token") token: string,
+    @GetUser() user: User,
+    @Res() res: Response,
+  ) {
+    const { buffer, fileName } =
+      await this.signingDownloadService.getOriginalPdfForPreview(
+        token,
+        user.id,
+      );
+    this.setPublicSigningHeaders(res);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${encodeURIComponent(fileName)}"`,
+    );
+    res.setHeader("Content-Length", buffer.length);
+    res.send(buffer);
+  }
+
+  /**
+   * Download the signed PDF via signing token - public, available once COMPLETED.
    */
   @Get("sign/:token/download-signed")
-  @Throttle({ default: { limit: 10, ttl: 60 } })
+  @Throttle({ default: { limit: 10, ttl: minutes(1) } })
   async downloadSignedPdfPublic(
-    @Param("token", SafeIdPipe) token: string,
+    @Param("token") token: string,
     @Res() res: Response,
   ) {
-    const { buffer, fileName } = await this.signingDownloadService.getSignedPdfByToken(token);
+    const { buffer, fileName } =
+      await this.signingDownloadService.getSignedPdfByToken(token);
     this.setPublicSigningHeaders(res);
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(fileName)}"`);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${encodeURIComponent(fileName)}"`,
+    );
     res.setHeader("Content-Length", buffer.length);
     res.send(buffer);
   }
 
-  /**
-   * Request OTP for identity verification (AES level).
-   */
-  @Post("sign/:token/otp/send")
-  @Throttle({ default: { limit: 3, ttl: minutes(1) } })
-  async sendOtp(
-    @Param("token", SafeIdPipe) token: string,
-    @Res({ passthrough: true }) res: Response,
+  /** Download a reinforced result as the assigned authenticated account. */
+  @Get("sign/:token/download-signed-authenticated")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 10, ttl: minutes(1) } })
+  async downloadSignedPdfAuthenticated(
+    @Param("token") token: string,
+    @GetUser() user: User,
+    @Res() res: Response,
   ) {
+    const { buffer, fileName } =
+      await this.signingDownloadService.getSignedPdfByToken(token, user.id);
     this.setPublicSigningHeaders(res);
-    return this.signingOtpService.sendOtp(token);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${encodeURIComponent(fileName)}"`,
+    );
+    res.setHeader("Content-Length", buffer.length);
+    res.send(buffer);
   }
 
-  /**
-   * Verify OTP code.
-   */
-  @Post("sign/:token/otp/verify")
-  @Throttle({ default: { limit: 5, ttl: minutes(1) } })
-  async verifyOtp(
-    @Param("token", SafeIdPipe) token: string,
-    @Body() dto: VerifyOtpDTO,
+  /** Begin passkey enrolment from the authenticated, assigned account. */
+  @Post("sign/:token/passkey/register/options")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 5, ttl: minutes(10) } })
+  async beginPasskeyRegistration(
+    @Param("token") token: string,
+    @GetUser() user: User,
     @Res({ passthrough: true }) res: Response,
   ) {
     this.setPublicSigningHeaders(res);
-    return this.signingOtpService.verifyOtp(token, dto.otpCode);
+    return this.signingWebAuthnService.beginRegistration(token, user);
+  }
+
+  /** Verify and persist a new signing passkey. */
+  @Post("sign/:token/passkey/register/verify")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 5, ttl: minutes(10) } })
+  async finishPasskeyRegistration(
+    @Param("token") token: string,
+    @GetUser() user: User,
+    @Body() dto: VerifyPasskeyRegistrationDTO,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.setPublicSigningHeaders(res);
+    return this.signingWebAuthnService.finishRegistration(
+      token,
+      user,
+      dto.challengeId,
+      dto.response as unknown as RegistrationResponseJSON,
+    );
+  }
+
+  /** Create a fresh transaction-bound passkey challenge. */
+  @Post("sign/:token/passkey/options")
+  @Throttle({ default: { limit: 10, ttl: minutes(10) } })
+  async beginPasskeyAction(
+    @Param("token") token: string,
+    @Body() dto: PreparePasskeyActionDTO,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.setPublicSigningHeaders(res);
+    return this.signingWebAuthnService.beginAction(token, dto);
   }
 
   /**
@@ -368,7 +458,7 @@ export class SigningController {
   @Post("sign/:token/sign")
   @Throttle({ default: { limit: 5, ttl: minutes(1) } })
   async signDocument(
-    @Param("token", SafeIdPipe) token: string,
+    @Param("token") token: string,
     @Body() dto: SignDocumentDTO,
     @Ip() ip: string,
     @Headers("x-forwarded-for") forwardedFor: string,
@@ -377,10 +467,13 @@ export class SigningController {
   ) {
     this.setPublicSigningHeaders(res);
     // Use the first IP from X-Forwarded-For if available (real client IP behind proxy)
-    const clientIp = forwardedFor
-      ? forwardedFor.split(",")[0].trim()
-      : ip;
-    return this.signingService.signDocument(token, dto, clientIp, userAgent || "");
+    const clientIp = forwardedFor ? forwardedFor.split(",")[0].trim() : ip;
+    return this.signingService.signDocument(
+      token,
+      dto,
+      clientIp,
+      userAgent || "",
+    );
   }
 
   /**
@@ -389,7 +482,7 @@ export class SigningController {
   @Post("sign/:token/reject")
   @Throttle({ default: { limit: 5, ttl: minutes(1) } })
   async rejectDocument(
-    @Param("token", SafeIdPipe) token: string,
+    @Param("token") token: string,
     @Body() dto: RejectDocumentDTO,
     @Ip() ip: string,
     @Headers("x-forwarded-for") forwardedFor: string,
@@ -397,12 +490,10 @@ export class SigningController {
     @Res({ passthrough: true }) res: Response,
   ) {
     this.setPublicSigningHeaders(res);
-    const clientIp = forwardedFor
-      ? forwardedFor.split(",")[0].trim()
-      : ip;
+    const clientIp = forwardedFor ? forwardedFor.split(",")[0].trim() : ip;
     return this.signingService.rejectDocument(
       token,
-      dto.reason,
+      dto,
       clientIp,
       userAgent || "",
     );

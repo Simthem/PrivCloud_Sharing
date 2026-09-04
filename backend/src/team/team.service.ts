@@ -33,7 +33,9 @@ const parseConfiguredLimit = (
 ) => Number.parseInt(primaryValue || fallbackValue, 10);
 
 const TEAM_MAX_MEMBERS = parseConfiguredLimit(process.env.TEAM_MAX_MEMBERS);
-const TEAM_MAX_OWNED_TEAMS = parseConfiguredLimit(process.env.TEAM_MAX_OWNED_TEAMS);
+const TEAM_MAX_OWNED_TEAMS = parseConfiguredLimit(
+  process.env.TEAM_MAX_OWNED_TEAMS,
+);
 const TEAM_MAX_FOLDERS = parseConfiguredLimit(process.env.TEAM_MAX_FOLDERS);
 const TEAM_MAX_SHARE_SIZE = parseConfiguredLimit(
   process.env.TEAM_MAX_SHARE_SIZE,
@@ -43,13 +45,25 @@ const TEAM_TOTAL_STORAGE = parseConfiguredLimit(
   process.env.TEAM_TOTAL_STORAGE_BYTES,
 );
 
-if (!Number.isFinite(TEAM_MAX_MEMBERS) || TEAM_MAX_MEMBERS < 0 || TEAM_MAX_MEMBERS > 10000) {
+if (
+  !Number.isFinite(TEAM_MAX_MEMBERS) ||
+  TEAM_MAX_MEMBERS < 0 ||
+  TEAM_MAX_MEMBERS > 10000
+) {
   throw new Error("TEAM_MAX_MEMBERS must be between 0 and 10000");
 }
-if (!Number.isFinite(TEAM_MAX_OWNED_TEAMS) || TEAM_MAX_OWNED_TEAMS < 0 || TEAM_MAX_OWNED_TEAMS > 10000) {
+if (
+  !Number.isFinite(TEAM_MAX_OWNED_TEAMS) ||
+  TEAM_MAX_OWNED_TEAMS < 0 ||
+  TEAM_MAX_OWNED_TEAMS > 10000
+) {
   throw new Error("TEAM_MAX_OWNED_TEAMS must be between 0 and 10000");
 }
-if (!Number.isFinite(TEAM_MAX_FOLDERS) || TEAM_MAX_FOLDERS < 0 || TEAM_MAX_FOLDERS > 100000) {
+if (
+  !Number.isFinite(TEAM_MAX_FOLDERS) ||
+  TEAM_MAX_FOLDERS < 0 ||
+  TEAM_MAX_FOLDERS > 100000
+) {
   throw new Error("TEAM_MAX_FOLDERS must be between 0 and 100000");
 }
 if (
@@ -58,7 +72,9 @@ if (
   TEAM_MAX_SHARE_SIZE < 0 ||
   TEAM_TOTAL_STORAGE < 0
 ) {
-  throw new Error("Team limit environment variables must be valid non-negative numbers");
+  throw new Error(
+    "Team limit environment variables must be valid non-negative numbers",
+  );
 }
 
 @Injectable()
@@ -190,7 +206,9 @@ export class TeamService {
       include: { members: true },
     });
 
-    this.logger.log(`Team created: ${team.name} (${team.slug}) by ${user.email}`);
+    this.logger.log(
+      `Team created: ${team.name} (${team.slug}) by ${user.email}`,
+    );
     return this.serializeTeam(team);
   }
 
@@ -202,7 +220,9 @@ export class TeamService {
       },
       include: {
         members: {
-          include: { user: { select: { id: true, username: true, email: true } } },
+          include: {
+            user: { select: { id: true, username: true, email: true } },
+          },
           where: { isActive: true },
         },
       },
@@ -213,11 +233,12 @@ export class TeamService {
     // Add hasTeamKey boolean to each member (non-sensitive: just whether their key is set)
     serialized.members = serialized.members.map((m: any) => {
       const raw = team.members.find((rm: any) => rm.id === m.id);
-      const keyStatus = raw?.wrappedTeamKey && raw.teamKeyVersion === team.keyVersion
-        ? "CURRENT"
-        : raw?.teamKeyVersion > 0
-          ? "PENDING"
-          : "MISSING";
+      const keyStatus =
+        raw?.wrappedTeamKey && raw.teamKeyVersion === team.keyVersion
+          ? "CURRENT"
+          : raw?.teamKeyVersion > 0
+            ? "PENDING"
+            : "MISSING";
       return {
         ...m,
         hasTeamKey: keyStatus === "CURRENT",
@@ -232,7 +253,10 @@ export class TeamService {
     const teams = await this.prisma.team.findMany({
       where: { members: { some: { userId, isActive: true } } },
       include: {
-        members: { where: { isActive: true }, select: { id: true, role: true } },
+        members: {
+          where: { isActive: true },
+          select: { id: true, role: true },
+        },
         _count: { select: { sharedFolders: true, accessLogs: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -261,7 +285,10 @@ export class TeamService {
         team: {
           include: {
             sharedFolders: { select: { id: true } },
-            members: { where: { isActive: true }, select: { id: true, userId: true } },
+            members: {
+              where: { isActive: true },
+              select: { id: true, userId: true },
+            },
           },
         },
       },
@@ -368,20 +395,27 @@ export class TeamService {
         reportFrequency: dto.reportFrequency,
         reportEnabled: dto.reportEnabled,
         keyRotationIntervalDays: dto.keyRotationIntervalDays,
+        pqNotificationEncryptionEnabled: dto.pqNotificationEncryptionEnabled,
       },
     });
 
     const actor = await this.prisma.user.findUnique({ where: { id: userId } });
-    await this.logAccess(teamId, "TEAM_SETTINGS_CHANGE", actor?.email || userId, {
-      actorName: actor?.username,
-      targetType: "TEAM",
-      targetId: teamId,
-      metadata: {
-        reportEnabled: dto.reportEnabled,
-        reportFrequency: dto.reportFrequency,
-        keyRotationIntervalDays: dto.keyRotationIntervalDays,
+    await this.logAccess(
+      teamId,
+      "TEAM_SETTINGS_CHANGE",
+      actor?.email || userId,
+      {
+        actorName: actor?.username,
+        targetType: "TEAM",
+        targetId: teamId,
+        metadata: {
+          reportEnabled: dto.reportEnabled,
+          reportFrequency: dto.reportFrequency,
+          keyRotationIntervalDays: dto.keyRotationIntervalDays,
+          pqNotificationEncryptionEnabled: dto.pqNotificationEncryptionEnabled,
+        },
       },
-    });
+    );
 
     return this.serializeTeam(team);
   }
@@ -434,7 +468,10 @@ export class TeamService {
   // =========================================================================
 
   async inviteMember(teamId: string, dto: InviteMemberDTO, userId: string) {
-    const actorMember = await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
+    const actorMember = await this.assertTeamRole(teamId, userId, [
+      "OWNER",
+      "ADMIN",
+    ]);
 
     // Normalize email (lowercase, trim)
     const email = dto.email.trim().toLowerCase();
@@ -534,7 +571,9 @@ export class TeamService {
     this.logger.log(`Team invitation sent: ${email} -> ${team.name}`);
 
     // Log activity
-    const inviterUser = await this.prisma.user.findUnique({ where: { id: userId } });
+    const inviterUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
     void this.logAccess(teamId, "INVITE", inviterUser?.email || "unknown", {
       actorName: inviterUser?.username,
       fileName: email,
@@ -773,11 +812,18 @@ export class TeamService {
    */
   async getTeamShares(teamId: string, userId: string) {
     await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
-    const folders = await this.prisma.teamFolder.findMany({ where: { teamId }, select: { id: true } });
+    const folders = await this.prisma.teamFolder.findMany({
+      where: { teamId },
+      select: { id: true },
+    });
     const folderIds = folders.map((f) => f.id);
     if (folderIds.length === 0) return [];
     return this.prisma.share.findMany({
-      where: { teamFolderId: { in: folderIds }, isE2EEncrypted: true, uploadLocked: true },
+      where: {
+        teamFolderId: { in: folderIds },
+        isE2EEncrypted: true,
+        uploadLocked: true,
+      },
       select: {
         id: true,
         isE2EEncrypted: true,
@@ -794,7 +840,12 @@ export class TeamService {
     // Find all active memberships for the user
     const memberships = await this.prisma.teamMember.findMany({
       where: { userId, isActive: true },
-      select: { id: true, role: true, teamId: true, team: { select: { name: true } } },
+      select: {
+        id: true,
+        role: true,
+        teamId: true,
+        team: { select: { name: true } },
+      },
     });
 
     if (memberships.length === 0) return [];
@@ -807,10 +858,12 @@ export class TeamService {
       shareId: string;
       fileId: string;
       fileName: string;
+      isE2EEncrypted: boolean;
     }[] = [];
 
     for (const membership of memberships) {
-      const isAdmin = membership.role === "OWNER" || membership.role === "ADMIN";
+      const isAdmin =
+        membership.role === "OWNER" || membership.role === "ADMIN";
 
       // Get folders where user has signature permission
       let folderIds: string[];
@@ -835,6 +888,7 @@ export class TeamService {
             },
             select: {
               id: true,
+              isE2EEncrypted: true,
               teamFolderId: true,
               teamFolder: { select: { name: true } },
               files: { select: { id: true, name: true } },
@@ -852,6 +906,7 @@ export class TeamService {
                   shareId: share.id,
                   fileId: file.id,
                   fileName: file.name,
+                  isE2EEncrypted: share.isE2EEncrypted,
                 });
               }
             }
@@ -885,6 +940,7 @@ export class TeamService {
             },
             select: {
               id: true,
+              isE2EEncrypted: true,
               teamFolderId: true,
               files: { select: { id: true, name: true } },
             },
@@ -901,6 +957,7 @@ export class TeamService {
                   shareId: share.id,
                   fileId: file.id,
                   fileName: file.name,
+                  isE2EEncrypted: share.isE2EEncrypted,
                 });
               }
             }
@@ -914,7 +971,23 @@ export class TeamService {
             canRequestSignature: true,
             file: { share: { teamFolder: { teamId: membership.teamId } } },
           },
-          select: { fileId: true, file: { select: { id: true, name: true, share: { select: { id: true, teamFolderId: true, teamFolder: { select: { name: true } } } } } } },
+          select: {
+            fileId: true,
+            file: {
+              select: {
+                id: true,
+                name: true,
+                share: {
+                  select: {
+                    id: true,
+                    isE2EEncrypted: true,
+                    teamFolderId: true,
+                    teamFolder: { select: { name: true } },
+                  },
+                },
+              },
+            },
+          },
         });
 
         for (const access of fileAccess) {
@@ -932,6 +1005,7 @@ export class TeamService {
               shareId: file.share.id,
               fileId: file.id,
               fileName: file.name,
+              isE2EEncrypted: file.share.isE2EEncrypted,
             });
           }
         }
@@ -946,7 +1020,11 @@ export class TeamService {
    * all other active members' copies. They will need to receive a new distribution link.
    * Only OWNER and ADMIN (who have a current key) can rotate.
    */
-  async rotateTeamKey(teamId: string, userId: string, newWrappedTeamKey: string) {
+  async rotateTeamKey(
+    teamId: string,
+    userId: string,
+    newWrappedTeamKey: string,
+  ) {
     this.validateWrappedTeamKey(newWrappedTeamKey, "newWrappedTeamKey");
     await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
 
@@ -991,7 +1069,9 @@ export class TeamService {
     ]);
 
     const actor = await this.prisma.user.findUnique({ where: { id: userId } });
-    this.logger.warn(`KEY_ROTATED: Team ${teamId} E2E key rotated by user ${userId}`);
+    this.logger.warn(
+      `KEY_ROTATED: Team ${teamId} E2E key rotated by user ${userId}`,
+    );
     void this.logAccess(teamId, "KEY_ROTATED", actor?.email || userId, {
       actorName: actor?.username,
     });
@@ -1048,7 +1128,9 @@ export class TeamService {
             totalFiles: active.totalFiles,
             processedFiles: active.processedFiles,
             failedFiles: active.failedFiles,
-            completedFileIds: this.parseCompletedFileIds(active.completedFileIds),
+            completedFileIds: this.parseCompletedFileIds(
+              active.completedFileIds,
+            ),
             errorMessage: active.errorMessage,
             createdAt: active.createdAt,
             pendingWrappedTeamKey:
@@ -1072,10 +1154,7 @@ export class TeamService {
       where: { userId_teamId: { userId, teamId } },
     });
     if (!team || !member) throw new NotFoundException("Team not found");
-    if (
-      !member.wrappedTeamKey ||
-      member.teamKeyVersion !== team.keyVersion
-    ) {
+    if (!member.wrappedTeamKey || member.teamKeyVersion !== team.keyVersion) {
       throw new ForbiddenException(
         "A current Team key is required to start the rotation",
       );
@@ -1099,7 +1178,10 @@ export class TeamService {
       },
       select: { files: { select: { id: true } } },
     });
-    const totalFiles = shares.reduce((count, share) => count + share.files.length, 0);
+    const totalFiles = shares.reduce(
+      (count, share) => count + share.files.length,
+      0,
+    );
 
     const rotation = await this.prisma.teamKeyRotation.create({
       data: {
@@ -1140,7 +1222,9 @@ export class TeamService {
       throw new ConflictException("This rotation is no longer active");
     }
 
-    const completed = new Set(this.parseCompletedFileIds(rotation.completedFileIds));
+    const completed = new Set(
+      this.parseCompletedFileIds(rotation.completedFileIds),
+    );
     if (dto.completedFileId && !completed.has(dto.completedFileId)) {
       const file = await this.prisma.file.findFirst({
         where: {
@@ -1150,7 +1234,9 @@ export class TeamService {
         select: { id: true },
       });
       if (!file) {
-        throw new BadRequestException("Completed file does not belong to this Team rotation");
+        throw new BadRequestException(
+          "Completed file does not belong to this Team rotation",
+        );
       }
       completed.add(file.id);
     }
@@ -1184,12 +1270,17 @@ export class TeamService {
     });
     if (!rotation) throw new NotFoundException("Key rotation not found");
     if (rotation.startedById !== userId) {
-      throw new ForbiddenException("Only the rotation initiator can complete it");
+      throw new ForbiddenException(
+        "Only the rotation initiator can complete it",
+      );
     }
     if (!["PREPARING", "REENCRYPTING", "PAUSED"].includes(rotation.status)) {
       throw new ConflictException("This rotation is no longer active");
     }
-    if (rotation.failedFiles > 0 || rotation.processedFiles < rotation.totalFiles) {
+    if (
+      rotation.failedFiles > 0 ||
+      rotation.processedFiles < rotation.totalFiles
+    ) {
       throw new ConflictException(
         `Rotation incomplete: ${rotation.processedFiles}/${rotation.totalFiles} files, ${rotation.failedFiles} failure(s)`,
       );
@@ -1292,7 +1383,11 @@ export class TeamService {
       const remindAt = new Date(
         dueAt.getTime() - team.keyRotationReminderDays * 86_400_000,
       );
-      if (now < remindAt || (team.lastKeyRotationReminderAt && team.lastKeyRotationReminderAt >= remindAt)) {
+      if (
+        now < remindAt ||
+        (team.lastKeyRotationReminderAt &&
+          team.lastKeyRotationReminderAt >= remindAt)
+      ) {
         continue;
       }
       let delivered = false;
@@ -1358,7 +1453,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     }
 
     const actor = await this.prisma.user.findUnique({ where: { id: userId } });
-    const memberUser = await this.prisma.user.findUnique({ where: { id: member.userId } });
+    const memberUser = await this.prisma.user.findUnique({
+      where: { id: member.userId },
+    });
 
     await this.prisma.teamMember.update({
       where: { id: memberId },
@@ -1403,7 +1500,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       });
     }
 
-    this.logger.warn(`MEMBER_REMOVED: Member ${memberId} removed from team ${teamId} by user ${userId}`);
+    this.logger.warn(
+      `MEMBER_REMOVED: Member ${memberId} removed from team ${teamId} by user ${userId}`,
+    );
 
     // Log activity
     void this.logAccess(teamId, "MEMBER_REMOVE", actor?.email || "unknown", {
@@ -1458,7 +1557,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     });
     if (teamSharesForLeaver.length > 0) {
       const shareIds = teamSharesForLeaver.map((s) => s.id);
-      const fileIds = teamSharesForLeaver.flatMap((s) => s.files.map((f) => f.id));
+      const fileIds = teamSharesForLeaver.flatMap((s) =>
+        s.files.map((f) => f.id),
+      );
       await this.prisma.accessGrant.updateMany({
         where: {
           userId,
@@ -1487,7 +1588,11 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     return { left: true };
   }
 
-  async getMemberFolderAccess(teamId: string, memberId: string, userId: string) {
+  async getMemberFolderAccess(
+    teamId: string,
+    memberId: string,
+    userId: string,
+  ) {
     await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
 
     const member = await this.prisma.teamMember.findFirst({
@@ -1506,7 +1611,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       where: { memberId },
     });
 
-    const accessMap = new Map(accessRules.map((r) => [r.folderId, r.permission]));
+    const accessMap = new Map(
+      accessRules.map((r) => [r.folderId, r.permission]),
+    );
 
     return {
       member: {
@@ -1550,7 +1657,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     }
     // Only OWNER can promote to ADMIN
     if (role === "ADMIN" && actor.role !== "OWNER") {
-      throw new ForbiddenException("Only the owner can promote members to admin");
+      throw new ForbiddenException(
+        "Only the owner can promote members to admin",
+      );
     }
 
     await this.prisma.teamMember.update({
@@ -1558,11 +1667,17 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       data: { role },
     });
 
-    this.logger.log(`ROLE_CHANGED: Member ${memberId} role changed to ${role} in team ${teamId} by user ${userId}`);
+    this.logger.log(
+      `ROLE_CHANGED: Member ${memberId} role changed to ${role} in team ${teamId} by user ${userId}`,
+    );
 
     // Log activity
-    const actorUser = await this.prisma.user.findUnique({ where: { id: userId } });
-    const targetUser = await this.prisma.user.findUnique({ where: { id: member.userId } });
+    const actorUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: member.userId },
+    });
     void this.logAccess(teamId, "ROLE_CHANGE", actorUser?.email || "unknown", {
       actorName: actorUser?.username,
       fileName: `${targetUser?.email || memberId} -> ${role}`,
@@ -1574,7 +1689,11 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
   async updateMemberPermissions(
     teamId: string,
     memberId: string,
-    dto: { canViewActivity?: boolean; canViewSignatures?: boolean; pushNotifMode?: string },
+    dto: {
+      canViewActivity?: boolean;
+      canViewSignatures?: boolean;
+      pushNotifMode?: string;
+    },
     userId: string,
   ) {
     await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
@@ -1594,7 +1713,10 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       data.canViewActivity = dto.canViewActivity;
     if (typeof dto.canViewSignatures === "boolean")
       data.canViewSignatures = dto.canViewSignatures;
-    if (dto.pushNotifMode && ["EVERY_FILE", "SHARES_ONLY"].includes(dto.pushNotifMode))
+    if (
+      dto.pushNotifMode &&
+      ["EVERY_FILE", "SHARES_ONLY"].includes(dto.pushNotifMode)
+    )
       data.pushNotifMode = dto.pushNotifMode;
 
     if (Object.keys(data).length === 0) {
@@ -1637,7 +1759,10 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     }
 
     const data: Record<string, string> = {};
-    if (dto.pushNotifMode && ["EVERY_FILE", "SHARES_ONLY"].includes(dto.pushNotifMode)) {
+    if (
+      dto.pushNotifMode &&
+      ["EVERY_FILE", "SHARES_ONLY"].includes(dto.pushNotifMode)
+    ) {
       data.pushNotifMode = dto.pushNotifMode;
     }
 
@@ -1661,7 +1786,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
 
     // A TEAM_MAX_FOLDERS value of 0 means unlimited.
-    const folderCount = await this.prisma.teamFolder.count({ where: { teamId } });
+    const folderCount = await this.prisma.teamFolder.count({
+      where: { teamId },
+    });
     if (TEAM_MAX_FOLDERS > 0 && folderCount >= TEAM_MAX_FOLDERS) {
       throw new BadRequestException(
         `Maximum number of folders reached (${TEAM_MAX_FOLDERS}). Delete existing folders to create new ones.`,
@@ -1690,21 +1817,34 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     });
 
     // Log activity
-    const creatorUser = await this.prisma.user.findUnique({ where: { id: userId } });
-    void this.logAccess(teamId, "FOLDER_CREATE", creatorUser?.email || "unknown", {
-      actorName: creatorUser?.username,
-      fileName: dto.name,
-      folderId: folder.id,
+    const creatorUser = await this.prisma.user.findUnique({
+      where: { id: userId },
     });
+    void this.logAccess(
+      teamId,
+      "FOLDER_CREATE",
+      creatorUser?.email || "unknown",
+      {
+        actorName: creatorUser?.username,
+        fileName: dto.name,
+        folderId: folder.id,
+      },
+    );
 
     // Notify team members
-    this.teamNotificationService.notifyTeamMembers(
-      teamId,
-      userId,
-      "FILE_UPLOADED",
-      `${creatorUser?.username || creatorUser?.email || "A team member"} created folder "${dto.name}"`,
-      { folderId: folder.id },
-    ).catch(err => this.logger.error(`Failed to notify team on folder create: ${err.message}`));
+    this.teamNotificationService
+      .notifyTeamMembers(
+        teamId,
+        userId,
+        "FILE_UPLOADED",
+        `${creatorUser?.username || creatorUser?.email || "A team member"} created folder "${dto.name}"`,
+        { folderId: folder.id },
+      )
+      .catch((err) =>
+        this.logger.error(
+          `Failed to notify team on folder create: ${err.message}`,
+        ),
+      );
 
     return {
       id: folder.id,
@@ -1729,7 +1869,12 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       const folders = await this.prisma.teamFolder.findMany({
         where: { teamId, parentId: parentId || null },
         include: {
-          _count: { select: { shares: { where: { uploadLocked: true } }, children: true } },
+          _count: {
+            select: {
+              shares: { where: { uploadLocked: true } },
+              children: true,
+            },
+          },
         },
         orderBy: { name: "asc" },
       });
@@ -1760,7 +1905,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
         ],
       },
       include: {
-        _count: { select: { shares: { where: { uploadLocked: true } }, children: true } },
+        _count: {
+          select: { shares: { where: { uploadLocked: true } }, children: true },
+        },
         accessRules: { where: { memberId: member!.id } },
       },
       orderBy: { name: "asc" },
@@ -1783,7 +1930,8 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
         updatedAt: folder.updatedAt,
         _count: folder._count,
         myPermission: folder.accessRules[0]?.permission || "READ",
-        canRequestSignature: folder.accessRules[0]?.canRequestSignature ?? false,
+        canRequestSignature:
+          folder.accessRules[0]?.canRequestSignature ?? false,
         canShareE2E: folder.accessRules[0]?.canShareE2E ?? false,
       }));
   }
@@ -1823,13 +1971,21 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     } else if (dto.permission === "READ") {
       accessData.canDownload = true;
       accessData.canDelete = false;
-      accessData.canRequestSignature = typeof dto.canRequestSignature === "boolean" ? dto.canRequestSignature : false;
-      accessData.canShareE2E = typeof dto.canShareE2E === "boolean" ? dto.canShareE2E : false;
+      accessData.canRequestSignature =
+        typeof dto.canRequestSignature === "boolean"
+          ? dto.canRequestSignature
+          : false;
+      accessData.canShareE2E =
+        typeof dto.canShareE2E === "boolean" ? dto.canShareE2E : false;
     } else if (dto.permission === "WRITE") {
       accessData.canDownload = true;
       accessData.canDelete = true;
-      accessData.canRequestSignature = typeof dto.canRequestSignature === "boolean" ? dto.canRequestSignature : true;
-      accessData.canShareE2E = typeof dto.canShareE2E === "boolean" ? dto.canShareE2E : true;
+      accessData.canRequestSignature =
+        typeof dto.canRequestSignature === "boolean"
+          ? dto.canRequestSignature
+          : true;
+      accessData.canShareE2E =
+        typeof dto.canShareE2E === "boolean" ? dto.canShareE2E : true;
     } else {
       // ADMIN
       accessData.canDownload = true;
@@ -1853,11 +2009,16 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     const targetUser = await this.prisma.user.findUnique({
       where: { id: member.userId },
     });
-    void this.logAccess(teamId, "FOLDER_ACCESS_CHANGE", actor?.email || "unknown", {
-      actorName: actor?.username,
-      folderId,
-      fileName: `${targetUser?.username || member.userId} -> ${dto.permission}`,
-    });
+    void this.logAccess(
+      teamId,
+      "FOLDER_ACCESS_CHANGE",
+      actor?.email || "unknown",
+      {
+        actorName: actor?.username,
+        folderId,
+        fileName: `${targetUser?.username || member.userId} -> ${dto.permission}`,
+      },
+    );
 
     return { set: true };
   }
@@ -1874,7 +2035,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       where: { folderId },
       include: {
         member: {
-          include: { user: { select: { id: true, username: true, email: true } } },
+          include: {
+            user: { select: { id: true, username: true, email: true } },
+          },
         },
       },
     });
@@ -1958,11 +2121,16 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     }
 
     const actor = await this.prisma.user.findUnique({ where: { id: userId } });
-    void this.logAccess(teamId, "FOLDER_ACCESS_CHANGE", actor?.email || "unknown", {
-      actorName: actor?.username,
-      folderId,
-      fileName: `${memberId} -> REMOVED`,
-    });
+    void this.logAccess(
+      teamId,
+      "FOLDER_ACCESS_CHANGE",
+      actor?.email || "unknown",
+      {
+        actorName: actor?.username,
+        folderId,
+        fileName: `${memberId} -> REMOVED`,
+      },
+    );
 
     return { removed: true };
   }
@@ -1978,7 +2146,13 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
 
     // Resolve caller's folder-level access (for canDownload/canDelete flags)
     const isAdmin = member.role === "OWNER" || member.role === "ADMIN";
-    let myAccess: { permission: string; canDownload: boolean; canDelete: boolean; canRequestSignature: boolean; canShareE2E: boolean } | null = null;
+    let myAccess: {
+      permission: string;
+      canDownload: boolean;
+      canDelete: boolean;
+      canRequestSignature: boolean;
+      canShareE2E: boolean;
+    } | null = null;
     if (!isAdmin) {
       const access = await this.prisma.teamFolderAccess.findUnique({
         where: { memberId_folderId: { memberId: member.id, folderId } },
@@ -2036,14 +2210,22 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
 
     // Load file-level access rules for the current member.
     // These override folder-level permissions on a per-file basis.
-    const myFileAccess: Record<string, { permission: string; canRequestSignature: boolean; canShareE2E: boolean }> = {};
+    const myFileAccess: Record<
+      string,
+      { permission: string; canRequestSignature: boolean; canShareE2E: boolean }
+    > = {};
     const deniedFileIds = new Set<string>();
     if (!isAdmin) {
       const allFileIds = shares.flatMap((s) => s.files.map((f) => f.id));
       if (allFileIds.length > 0) {
         const fileRules = await this.prisma.fileAccess.findMany({
           where: { memberId: member.id, fileId: { in: allFileIds } },
-          select: { fileId: true, permission: true, canRequestSignature: true, canShareE2E: true },
+          select: {
+            fileId: true,
+            permission: true,
+            canRequestSignature: true,
+            canShareE2E: true,
+          },
         });
         for (const r of fileRules) {
           if (["NONE", "DENY"].includes(r.permission)) {
@@ -2128,18 +2310,25 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     const toUpsert = dto.members.filter((m) => m.permission !== "NONE");
     const deleteMemberIds = toDelete.map((m) => m.memberId);
 
-    const deleteOps = toDelete.length > 0
-      ? dto.fileIds.map((fileId) =>
-          this.prisma.fileAccess.deleteMany({
-            where: { fileId, memberId: { in: deleteMemberIds } },
-          }),
-        )
-      : [];
+    const deleteOps =
+      toDelete.length > 0
+        ? dto.fileIds.map((fileId) =>
+            this.prisma.fileAccess.deleteMany({
+              where: { fileId, memberId: { in: deleteMemberIds } },
+            }),
+          )
+        : [];
 
     const upsertOps = dto.fileIds.flatMap((fileId) =>
       toUpsert.map((m) => {
-        const canReqSig = typeof m.canRequestSignature === "boolean" ? m.canRequestSignature : m.permission !== "READ";
-        const canE2E = typeof m.canShareE2E === "boolean" ? m.canShareE2E : (m.permission === "WRITE" || m.permission === "ADMIN");
+        const canReqSig =
+          typeof m.canRequestSignature === "boolean"
+            ? m.canRequestSignature
+            : m.permission !== "READ";
+        const canE2E =
+          typeof m.canShareE2E === "boolean"
+            ? m.canShareE2E
+            : m.permission === "WRITE" || m.permission === "ADMIN";
         return this.prisma.fileAccess.upsert({
           where: { memberId_fileId: { memberId: m.memberId, fileId } },
           create: {
@@ -2161,7 +2350,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     await this.prisma.$transaction([...deleteOps, ...upsertOps]);
 
     // SECURITY: Revoke E2EE grants for members whose access was set to NONE or DENY
-    const revokedMembers = dto.members.filter((m) => m.permission === "NONE" || m.permission === "DENY");
+    const revokedMembers = dto.members.filter(
+      (m) => m.permission === "NONE" || m.permission === "DENY",
+    );
     if (revokedMembers.length > 0 && dto.fileIds.length > 0) {
       const revokedMemberIds = revokedMembers.map((m) => m.memberId);
       // Resolve userIds from memberIds
@@ -2184,13 +2375,22 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
 
     // Log activity
     const actor = await this.prisma.user.findUnique({ where: { id: userId } });
-    void this.logAccess(teamId, "FILE_ACCESS_CHANGE", actor?.email || "unknown", {
-      actorName: actor?.username,
-      folderId,
-      fileName: `${dto.fileIds.length} file(s) - ${dto.members.length} member(s)`,
-    });
+    void this.logAccess(
+      teamId,
+      "FILE_ACCESS_CHANGE",
+      actor?.email || "unknown",
+      {
+        actorName: actor?.username,
+        folderId,
+        fileName: `${dto.fileIds.length} file(s) - ${dto.members.length} member(s)`,
+      },
+    );
 
-    return { set: true, filesCount: dto.fileIds.length, membersCount: dto.members.length };
+    return {
+      set: true,
+      filesCount: dto.fileIds.length,
+      membersCount: dto.members.length,
+    };
   }
 
   async getFileAccess(teamId: string, folderId: string, userId: string) {
@@ -2209,7 +2409,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       },
       include: {
         member: {
-          include: { user: { select: { id: true, username: true, email: true } } },
+          include: {
+            user: { select: { id: true, username: true, email: true } },
+          },
         },
         file: { select: { id: true, name: true } },
       },
@@ -2255,7 +2457,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
         await this.fileService.remove(shareId, fileId);
         deletedCount++;
       } catch {
-        this.logger.warn(`Failed to delete file ${fileId} from share ${shareId}`);
+        this.logger.warn(
+          `Failed to delete file ${fileId} from share ${shareId}`,
+        );
       }
     }
 
@@ -2269,19 +2473,30 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
 
     // Notify team members
     if (deletedCount > 0) {
-      this.teamNotificationService.notifyTeamMembers(
-        teamId,
-        userId,
-        "FILE_DELETED",
-        `${actor?.username || actor?.email || "A team member"} deleted ${deletedCount} file(s)`,
-        { folderId },
-      ).catch(err => this.logger.error(`Failed to notify team on bulk delete: ${err.message}`));
+      this.teamNotificationService
+        .notifyTeamMembers(
+          teamId,
+          userId,
+          "FILE_DELETED",
+          `${actor?.username || actor?.email || "A team member"} deleted ${deletedCount} file(s)`,
+          { folderId },
+        )
+        .catch((err) =>
+          this.logger.error(
+            `Failed to notify team on bulk delete: ${err.message}`,
+          ),
+        );
     }
 
     return { deleted: deletedCount, total: dto.files.length };
   }
 
-  async deleteFolder(teamId: string, folderId: string, userId: string, confirmationName?: string) {
+  async deleteFolder(
+    teamId: string,
+    folderId: string,
+    userId: string,
+    confirmationName?: string,
+  ) {
     await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
 
     const folder = await this.prisma.teamFolder.findFirst({
@@ -2314,14 +2529,21 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     //    still valid and existing logs referencing this folder keep their
     //    folderId intact (onDelete: SetNull only fires for the folder row
     //    itself, not for already-written logs pointing to it).
-    const deleterUser = await this.prisma.user.findUnique({ where: { id: userId } });
-    await this.logAccess(teamId, "FOLDER_DELETE", deleterUser?.email || "unknown", {
-      actorName: deleterUser?.username,
-      // Embed the folder name directly so the log stays readable after
-      // the folder row is gone and folderId becomes null.
-      fileName: `[Deleted folder] ${folder.name}`,
-      folderId,
+    const deleterUser = await this.prisma.user.findUnique({
+      where: { id: userId },
     });
+    await this.logAccess(
+      teamId,
+      "FOLDER_DELETE",
+      deleterUser?.email || "unknown",
+      {
+        actorName: deleterUser?.username,
+        // Embed the folder name directly so the log stays readable after
+        // the folder row is gone and folderId becomes null.
+        fileName: `[Deleted folder] ${folder.name}`,
+        folderId,
+      },
+    );
 
     // 4. Delete the folder (cascade removes children, access rules, etc.
     //    TeamAccessLog.folderId is set to null via onDelete: SetNull so
@@ -2368,36 +2590,37 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     });
     const folderIds = visibleFolders.map((folder) => folder.id);
 
-    const shares = folderIds.length === 0
-      ? []
-      : await this.prisma.share.findMany({
-          where: {
-            teamFolderId: { in: folderIds },
-            uploadLocked: true,
-            OR: [
-              { expiration: { gt: new Date() } },
-              { expiration: { lt: NEVER_EXPIRES_CUTOFF_DATE } },
-            ],
-          },
-          select: {
-            id: true,
-            name: true,
-            expiration: true,
-            isE2EEncrypted: true,
-            teamFolderId: true,
-            creator: { select: { id: true, username: true, email: true } },
-            files: {
-              select: {
-                id: true,
-                name: true,
-                relativePath: true,
-                size: true,
-                createdAt: true,
+    const shares =
+      folderIds.length === 0
+        ? []
+        : await this.prisma.share.findMany({
+            where: {
+              teamFolderId: { in: folderIds },
+              uploadLocked: true,
+              OR: [
+                { expiration: { gt: new Date() } },
+                { expiration: { lt: NEVER_EXPIRES_CUTOFF_DATE } },
+              ],
+            },
+            select: {
+              id: true,
+              name: true,
+              expiration: true,
+              isE2EEncrypted: true,
+              teamFolderId: true,
+              creator: { select: { id: true, username: true, email: true } },
+              files: {
+                select: {
+                  id: true,
+                  name: true,
+                  relativePath: true,
+                  size: true,
+                  createdAt: true,
+                },
               },
             },
-          },
-          orderBy: { createdAt: "desc" },
-        });
+            orderBy: { createdAt: "desc" },
+          });
 
     const allFileIds = shares.flatMap((share) =>
       share.files.map((file) => file.id),
@@ -2523,18 +2746,19 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
 
     // Total files and storage (from shares linked to team folders)
     const teamFolderIds = team.sharedFolders.map((f) => f.id);
-    const sharesWithFiles = teamFolderIds.length > 0
-      ? await this.prisma.share.findMany({
-          where: {
-            teamFolderId: { in: teamFolderIds },
-            // Only count completed shares in storage/file metrics.
-            // Incomplete uploads (uploadLocked=false) have no committed
-            // files in S3 yet and must not inflate the quota display.
-            uploadLocked: true,
-          },
-          include: { files: { select: { size: true } } },
-        })
-      : [];
+    const sharesWithFiles =
+      teamFolderIds.length > 0
+        ? await this.prisma.share.findMany({
+            where: {
+              teamFolderId: { in: teamFolderIds },
+              // Only count completed shares in storage/file metrics.
+              // Incomplete uploads (uploadLocked=false) have no committed
+              // files in S3 yet and must not inflate the quota display.
+              uploadLocked: true,
+            },
+            include: { files: { select: { size: true } } },
+          })
+        : [];
 
     const totalFiles = sharesWithFiles.reduce(
       (sum, s) => sum + s.files.length,
@@ -2562,15 +2786,16 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
 
     // Uploads this month (count actual completed shares created in team folders).
     // uploadLocked=true ensures only finalised uploads are counted.
-    const uploads = teamFolderIds.length > 0
-      ? await this.prisma.share.count({
-          where: {
-            teamFolderId: { in: teamFolderIds },
-            uploadLocked: true,
-            createdAt: { gte: thirtyDaysAgo },
-          },
-        })
-      : 0;
+    const uploads =
+      teamFolderIds.length > 0
+        ? await this.prisma.share.count({
+            where: {
+              teamFolderId: { in: teamFolderIds },
+              uploadLocked: true,
+              createdAt: { gte: thirtyDaysAgo },
+            },
+          })
+        : 0;
 
     // Signature requests this month
     const signatures = await this.prisma.signatureDocument.count({
@@ -2614,7 +2839,10 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
         folderUsed: totalStorage,
         externalUsed: 0,
         limit: storageLimit,
-        percentage: storageLimit > 0 ? Math.round((totalStorage / storageLimit) * 100) : 0,
+        percentage:
+          storageLimit > 0
+            ? Math.round((totalStorage / storageLimit) * 100)
+            : 0,
       },
       activity: {
         totalFiles,
@@ -2643,7 +2871,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     const member = await this.assertTeamMembership(teamId, userId);
     const isAdmin = member.role === "OWNER" || member.role === "ADMIN";
     if (!isAdmin && !member.canViewActivity) {
-      throw new ForbiddenException("You do not have permission to view activity logs");
+      throw new ForbiddenException(
+        "You do not have permission to view activity logs",
+      );
     }
 
     const page = options.page || 1;
@@ -2715,7 +2945,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
         fileId: options.fileId,
         targetType: options.targetType,
         targetId: options.targetId,
-        metadata: options.metadata ? JSON.stringify(options.metadata) : undefined,
+        metadata: options.metadata
+          ? JSON.stringify(options.metadata)
+          : undefined,
       },
     });
   }
@@ -2759,19 +2991,26 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     });
 
     // Log activity
-    const creatorUser = await this.prisma.user.findUnique({ where: { id: userId } });
-    void this.logAccess(teamId, "GUEST_LINK_CREATE", creatorUser?.email || "unknown", {
-      actorName: creatorUser?.username,
-      fileName: folder.name,
-      folderId,
-      targetType: "GUEST_LINK",
-      targetId: link.id,
-      metadata: {
-        permission: link.permission,
-        expiresAt: link.expiresAt?.toISOString() || null,
-        maxDownloads: link.maxDownloads,
-      },
+    const creatorUser = await this.prisma.user.findUnique({
+      where: { id: userId },
     });
+    void this.logAccess(
+      teamId,
+      "GUEST_LINK_CREATE",
+      creatorUser?.email || "unknown",
+      {
+        actorName: creatorUser?.username,
+        fileName: folder.name,
+        folderId,
+        targetType: "GUEST_LINK",
+        targetId: link.id,
+        metadata: {
+          permission: link.permission,
+          expiresAt: link.expiresAt?.toISOString() || null,
+          maxDownloads: link.maxDownloads,
+        },
+      },
+    );
 
     return {
       id: link.id,
@@ -2826,13 +3065,18 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
 
     // Log activity
     const actor = await this.prisma.user.findUnique({ where: { id: userId } });
-    void this.logAccess(teamId, "GUEST_LINK_REVOKE", actor?.email || "unknown", {
-      actorName: actor?.username,
-      folderId: link.folderId,
-      fileName: link.label || linkId,
-      targetType: "GUEST_LINK",
-      targetId: linkId,
-    });
+    void this.logAccess(
+      teamId,
+      "GUEST_LINK_REVOKE",
+      actor?.email || "unknown",
+      {
+        actorName: actor?.username,
+        folderId: link.folderId,
+        fileName: link.label || linkId,
+        targetType: "GUEST_LINK",
+        targetId: linkId,
+      },
+    );
 
     return { revoked: true };
   }
@@ -2873,7 +3117,10 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     if (!owner) throw new NotFoundException("User not found with this email");
 
     // Validate slug format
-    if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(data.slug) && data.slug.length < 2) {
+    if (
+      !/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(data.slug) &&
+      data.slug.length < 2
+    ) {
       throw new BadRequestException(
         "Team URL must contain only lowercase letters, numbers, and hyphens",
       );
@@ -2923,7 +3170,10 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
   async adminListAllTeams() {
     const teams = await this.prisma.team.findMany({
       include: {
-        members: { where: { isActive: true }, select: { id: true, role: true } },
+        members: {
+          where: { isActive: true },
+          select: { id: true, role: true },
+        },
         owner: { select: { id: true, username: true, email: true } },
         _count: { select: { sharedFolders: true, accessLogs: true } },
       },
@@ -3047,7 +3297,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       throw new NotFoundException("Member not found in this team");
     }
     if (member.role === "OWNER") {
-      throw new ForbiddenException("Cannot change the owner's role via this endpoint");
+      throw new ForbiddenException(
+        "Cannot change the owner's role via this endpoint",
+      );
     }
 
     await this.prisma.teamMember.update({
@@ -3055,7 +3307,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       data: { role },
     });
 
-    this.logger.log(`ADMIN_SET_ROLE: Member ${member.user?.email} role changed to ${role} in team ${teamId}`);
+    this.logger.log(
+      `ADMIN_SET_ROLE: Member ${member.user?.email} role changed to ${role} in team ${teamId}`,
+    );
     return { updated: true, memberId, role };
   }
 
@@ -3083,7 +3337,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       data: { maxMembers },
     });
 
-    this.logger.log(`Admin updated team ${team.name} maxMembers to ${maxMembers}`);
+    this.logger.log(
+      `Admin updated team ${team.name} maxMembers to ${maxMembers}`,
+    );
     return { updated: true, teamId, maxMembers };
   }
 
@@ -3116,7 +3372,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       include: {
         owner: { select: { id: true, username: true, email: true } },
         members: {
-          include: { user: { select: { id: true, username: true, email: true } } },
+          include: {
+            user: { select: { id: true, username: true, email: true } },
+          },
           orderBy: { createdAt: "asc" },
         },
         sharedFolders: {
@@ -3132,7 +3390,10 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     return this.serializeTeam(team);
   }
 
-  async adminUpdateTeam(teamId: string, dto: { name?: string; description?: string }) {
+  async adminUpdateTeam(
+    teamId: string,
+    dto: { name?: string; description?: string },
+  ) {
     const team = await this.prisma.team.findUnique({ where: { id: teamId } });
     if (!team) throw new NotFoundException("Team not found");
 
@@ -3140,11 +3401,15 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       where: { id: teamId },
       data: {
         ...(dto.name && { name: dto.name.trim() }),
-        ...(dto.description !== undefined && { description: dto.description.trim() }),
+        ...(dto.description !== undefined && {
+          description: dto.description.trim(),
+        }),
       },
     });
 
-    this.logger.warn(`ADMIN_UPDATE_TEAM: Team ${teamId} updated (name=${dto.name})`);
+    this.logger.warn(
+      `ADMIN_UPDATE_TEAM: Team ${teamId} updated (name=${dto.name})`,
+    );
     return { updated: true, team: { id: updated.id, name: updated.name } };
   }
 
@@ -3152,7 +3417,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     const team = await this.prisma.team.findUnique({ where: { id: teamId } });
     if (!team) throw new NotFoundException("Team not found");
 
-    this.logger.warn(`ADMIN_DELETE_TEAM: Team "${team.name}" (${teamId}) deleted by platform admin`);
+    this.logger.warn(
+      `ADMIN_DELETE_TEAM: Team "${team.name}" (${teamId}) deleted by platform admin`,
+    );
     await this.prisma.team.delete({ where: { id: teamId } });
     return { deleted: true, teamId };
   }
@@ -3208,7 +3475,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       });
     }
 
-    this.logger.warn(`ADMIN_REMOVE_MEMBER: Member ${member.user?.email} removed from team ${teamId}`);
+    this.logger.warn(
+      `ADMIN_REMOVE_MEMBER: Member ${member.user?.email} removed from team ${teamId}`,
+    );
     return { removed: true, memberId };
   }
 
@@ -3225,7 +3494,11 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     });
   }
 
-  async adminUpdateFolder(teamId: string, folderId: string, data: { name?: string }) {
+  async adminUpdateFolder(
+    teamId: string,
+    folderId: string,
+    data: { name?: string },
+  ) {
     const folder = await this.prisma.teamFolder.findFirst({
       where: { id: folderId, teamId },
     });
@@ -3238,7 +3511,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       },
     });
 
-    this.logger.warn(`ADMIN_UPDATE_FOLDER: Folder ${folderId} renamed to "${data.name}" in team ${teamId}`);
+    this.logger.warn(
+      `ADMIN_UPDATE_FOLDER: Folder ${folderId} renamed to "${data.name}" in team ${teamId}`,
+    );
 
     if (data.name && data.name !== folder.name) {
       void this.logAccess(teamId, "FOLDER_RENAME", "admin", {
@@ -3257,7 +3532,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     });
     if (!folder) throw new NotFoundException("Folder not found");
 
-    this.logger.warn(`ADMIN_DELETE_FOLDER: Folder "${folder.name}" (${folderId}) deleted from team ${teamId}`);
+    this.logger.warn(
+      `ADMIN_DELETE_FOLDER: Folder "${folder.name}" (${folderId}) deleted from team ${teamId}`,
+    );
 
     void this.logAccess(teamId, "FOLDER_DELETE", "admin", {
       actorName: "Platform admin",
@@ -3300,7 +3577,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       data: { deletedAt: new Date() },
     });
 
-    this.logger.warn(`ADMIN_DELETE_FILE: File ${fileId} soft-deleted from team ${teamId}`);
+    this.logger.warn(
+      `ADMIN_DELETE_FILE: File ${fileId} soft-deleted from team ${teamId}`,
+    );
     return { deleted: true, fileId };
   }
 
@@ -3332,8 +3611,13 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     return member;
   }
 
-  private getTeamStorageLimit(team: { totalStorageLimit?: bigint | number | null }) {
-    if (team.totalStorageLimit === null || team.totalStorageLimit === undefined) {
+  private getTeamStorageLimit(team: {
+    totalStorageLimit?: bigint | number | null;
+  }) {
+    if (
+      team.totalStorageLimit === null ||
+      team.totalStorageLimit === undefined
+    ) {
       return TEAM_TOTAL_STORAGE;
     }
     return Number(team.totalStorageLimit);

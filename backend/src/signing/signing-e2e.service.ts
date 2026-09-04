@@ -5,11 +5,13 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { PrismaService } from "src/prisma/prisma.service";
+import { appendSignatureAuditEvent } from "./signing-audit.util";
 import { EmailService } from "src/email/email.service";
 import { FileService } from "src/file/file.service";
 import { ConfigService } from "src/config/config.service";
 import { PdfSigningService } from "./pdf-signing.service";
 import { deliverSigningCompletionEmails } from "./signing-mail.util";
+import { TeamNotificationService } from "src/teamNotification/teamNotification.service";
 
 @Injectable()
 export class SigningE2EService {
@@ -21,7 +23,19 @@ export class SigningE2EService {
     private fileService: FileService,
     private configService: ConfigService,
     private pdfSigningService: PdfSigningService,
+    private teamNotificationService: TeamNotificationService,
   ) {}
+
+  private assertSourceAvailable(document: {
+    fileId?: string | null;
+    fileDeletedAt?: Date | null;
+  }) {
+    if (document.fileDeletedAt || document.fileId === null) {
+      throw new NotFoundException(
+        "The source file was deleted; E2E finalization is no longer available",
+      );
+    }
+  }
 
   /** Generate only the certificate page. The clear source PDF remains client-side. */
   async generateE2ECertificatePage(
@@ -35,6 +49,7 @@ export class SigningE2EService {
     });
 
     if (!doc) throw new NotFoundException("Document not found");
+    this.assertSourceAvailable(doc);
     if (!doc.isE2EEncrypted)
       throw new BadRequestException("Not an E2E document");
     if (doc.status !== "AWAITING_FINALIZATION") {
@@ -58,6 +73,11 @@ export class SigningE2EService {
         signedAt: r.signedAt!,
         ip: r.signingIp || "N/A",
         signatureType: r.signatureType || "N/A",
+        authenticationMethod: r.authenticationMethod,
+        identityVerificationMethod: r.identityVerificationMethod,
+        signingIntentHash: r.signingIntentHash,
+        signedDocumentHash: r.signedDocumentHash,
+        webauthnUserVerified: r.webauthnUserVerified,
       })),
       documentHash,
       signatureLevel: doc.signatureLevel,
@@ -81,6 +101,7 @@ export class SigningE2EService {
     });
 
     if (!doc) throw new NotFoundException("Document not found");
+    this.assertSourceAvailable(doc);
     if (!doc.isE2EEncrypted)
       throw new BadRequestException("Not an E2E document");
     if (doc.status !== "AWAITING_FINALIZATION") {
@@ -121,6 +142,7 @@ export class SigningE2EService {
     });
 
     if (!doc) throw new NotFoundException("Document not found");
+    this.assertSourceAvailable(doc);
     if (!doc.isE2EEncrypted)
       throw new BadRequestException("Not an E2E document");
     if (doc.status !== "AWAITING_FINALIZATION") {
@@ -154,6 +176,55 @@ export class SigningE2EService {
     });
 
     await this.createAuditEvent(documentId, "COMPLETED", "client-e2e");
+
+    // The encrypted completion envelope was prepared per recipient when the
+    // request was created. Persist each in-app notification only after the
+    // requester has uploaded the finalized encrypted PDF.
+    if (doc.teamId) {
+      try {
+        const recipients = await this.prisma.signatureRecipient.findMany({
+          where: { documentId },
+          select: {
+            id: true,
+            userId: true,
+            teamCompletionNotification: true,
+          },
+        });
+        const targets = recipients.filter(
+          (recipient) =>
+            recipient.userId && recipient.teamCompletionNotification,
+        );
+        const activeMembers = await this.prisma.teamMember.findMany({
+          where: {
+            teamId: doc.teamId,
+            isActive: true,
+            userId: { in: targets.map((recipient) => recipient.userId!) },
+          },
+          select: { userId: true },
+        });
+        const activeIds = new Set(activeMembers.map((member) => member.userId));
+        await Promise.all(
+          targets
+            .filter((recipient) => activeIds.has(recipient.userId!))
+            .map((recipient) =>
+              this.teamNotificationService.notify({
+                type: "SIGNATURE_COMPLETED",
+                title: "Document signé disponible",
+                teamId: doc.teamId!,
+                userId: recipient.userId!,
+                actorId: doc.creatorId,
+                encryptedMetadata: recipient.teamCompletionNotification!,
+              }),
+            ),
+        );
+      } catch (notificationError: any) {
+        // Finalization is already durable; a delivery outage must not make the
+        // client retry the encrypted PDF upload against a COMPLETED document.
+        this.logger.error(
+          `E2E completion notification failed for ${documentId}: ${notificationError?.message || notificationError}`,
+        );
+      }
+    }
 
     // Log team activity
     if (doc.teamId) {
@@ -240,6 +311,7 @@ export class SigningE2EService {
     });
 
     if (!doc) throw new NotFoundException("Document not found");
+    this.assertSourceAvailable(doc);
     if (doc.status !== "AWAITING_FINALIZATION") {
       throw new BadRequestException("Document is not awaiting finalization");
     }
@@ -250,6 +322,8 @@ export class SigningE2EService {
       addApprovalField: doc.addApprovalField,
       addApprovalMention: doc.addApprovalMention,
       addInitials: doc.addInitials,
+      initialsPlacement: doc.initialsPlacement,
+      initialsIncludeSignaturePage: doc.initialsIncludeSignaturePage,
       signaturePage: doc.signaturePage,
       watermarkPage: doc.watermarkPage,
       signatureLevel: doc.signatureLevel,
@@ -266,8 +340,13 @@ export class SigningE2EService {
     userAgent?: string,
     metadata?: string,
   ) {
-    await this.prisma.signatureAuditEvent.create({
-      data: { documentId, eventType, actor, ipAddress, userAgent, metadata },
+    await appendSignatureAuditEvent(this.prisma, {
+      documentId,
+      eventType,
+      actor,
+      ipAddress,
+      userAgent,
+      metadata,
     });
   }
 }

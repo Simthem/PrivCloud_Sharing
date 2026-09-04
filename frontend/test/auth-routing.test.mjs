@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import test from "node:test";
 import {
   buildExpiredSessionSignInPath,
@@ -7,6 +8,7 @@ import {
   getRememberedPostAuthRedirectPath,
   isEmailVerificationRoutePath,
   isProtectedTeamContextPath,
+  isSessionScopedRoutePath,
   isTeamInvitationRoutePath,
   isTeamRoutePath,
   isTeamScopedUploadPath,
@@ -167,5 +169,98 @@ test("keeps a Team E2E fragment in per-tab storage and restores it once", () => 
     } else {
       globalThis.window = previousWindow;
     }
+  }
+});
+
+test("keeps a signing E2E fragment out of the sign-in URL and restores it", () => {
+  const previousWindow = globalThis.window;
+  const values = new Map();
+  globalThis.window = {
+    sessionStorage: {
+      getItem: (key) => values.get(key) ?? null,
+      removeItem: (key) => values.delete(key),
+      setItem: (key, value) => values.set(key, value),
+    },
+  };
+
+  try {
+    const keyFragment = randomBytes(32).toString("base64url");
+    const target = `/sign/token-1#key=${keyFragment}`;
+    const signInPath = buildSignInRedirectPath(target);
+    assert.equal(signInPath.includes(keyFragment), false);
+
+    rememberPostAuthRedirectTarget(target);
+    assert.equal(getRememberedPostAuthRedirectPath(), "/sign/token-1");
+    assert.equal(finalizePostAuthRedirectPath("/sign/token-1"), target);
+  } finally {
+    if (previousWindow === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = previousWindow;
+    }
+  }
+});
+
+test("the sign-in page cannot overwrite a stored signing key with its hashless URL", () => {
+  const previousWindow = globalThis.window;
+  const values = new Map();
+  globalThis.window = {
+    sessionStorage: {
+      getItem: (key) => values.get(key) ?? null,
+      removeItem: (key) => values.delete(key),
+      setItem: (key, value) => values.set(key, value),
+    },
+  };
+
+  try {
+    const keyFragment = randomBytes(32).toString("base64url");
+    const target = `/sign/reinforced-token#key=${keyFragment}`;
+    rememberPostAuthRedirectTarget(target);
+
+    // Mirrors /auth/signIn after Next.js removed the source page's fragment.
+    rememberPostAuthRedirectTarget("/sign/reinforced-token", {
+      preserveExistingFragmentForSamePath: true,
+    });
+
+    assert.equal(
+      finalizePostAuthRedirectPath("/sign/reinforced-token"),
+      target,
+    );
+  } finally {
+    if (previousWindow === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = previousWindow;
+    }
+  }
+});
+
+test("gates only session-scoped routes behind the client-side session probe", () => {
+  for (const pathname of [
+    "/account",
+    "/account/reverseShares",
+    "/admin",
+    "/admin/config/[category]",
+    "/team",
+    "/team/[teamId]",
+  ]) {
+    assert.equal(isSessionScopedRoutePath(pathname), true, pathname);
+  }
+
+  // Public and anonymous-capable routes must keep rendering without waiting
+  // for a session, and a shared prefix must not be mistaken for a segment.
+  for (const pathname of [
+    "/",
+    "/upload",
+    "/auth/signIn",
+    "/s/[token]",
+    "/accounts",
+    "/teams",
+    "/administration",
+    undefined,
+    null,
+    "",
+  ]) {
+    assert.equal(isSessionScopedRoutePath(pathname), false, String(pathname));
   }
 });

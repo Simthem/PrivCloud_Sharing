@@ -22,12 +22,13 @@ limits are controlled by instance configuration, not by hard-coded tiers.
 - Per-member push preferences: all file events or direct shares only.
 - E2EE identity keys, access grants, enrollment tokens and ML-KEM public-key
   metadata for post-quantum-ready key exchange plumbing.
-- Electronic PDF signing with AES/QES-oriented workflows, OTP identity checks,
-  multi-signer order, approvers, CC recipients, audit trails and PAdES-B-B
-  signing support.
+- Electronic PDF signing with standard e-mail verification or reinforced
+  WebAuthn confirmation, multi-signer order, approvers, CC recipients,
+  tamper-evident audit trails and PAdES-B-B/PAdES-B-T signing support.
 - Public signing links for external recipients without account registration;
   OTP is required before previewing, signing, rejecting or downloading PDFs.
-- Optional separate E2E key email for signing requests.
+- E2E signing links keep their decryption key in the URL fragment, including
+  encrypted Team notification actions and final signed-file downloads.
 - WebDAV/Nextcloud import from the upload page for authenticated users.
 - Server-side HTTPS WebDAV proxy for browsers and mobile devices blocked by
   CORS or Private Network Access restrictions.
@@ -71,15 +72,17 @@ Files are encrypted client-side using AES-256-GCM through the Web Crypto API.
   fragment.
 - Team sharing uses encrypted access grants so each recipient receives an
   encrypted copy of the file key.
-- The public crypto layer stores X25519/Ed25519 identity keys and ML-KEM public
-  key metadata for post-quantum-ready key exchange workflows.
+- The public crypto layer stores X25519/Ed25519 identity keys and ML-KEM-768
+  public-key metadata. Team administrators can explicitly enable hybrid
+  ML-KEM/X25519 encryption for notification actions.
 
 ### Public Signing Links
 
-Signing URLs are public no-login recipient flows, but the document body and all
-sign/reject/download actions require email OTP verification. Signing API and PDF
-responses set no-store and noindex headers to reduce accidental indexing and
-caching.
+Signing URLs are public no-login recipient flows. Standard requests verify
+mailbox control with a short-lived e-mail code; reinforced requests bind the
+decision to an authenticated account and a fresh WebAuthn assertion. Signing
+API and PDF responses set no-store and noindex headers to reduce accidental
+indexing and caching.
 
 ### WebDAV And Companion
 
@@ -335,8 +338,9 @@ environment:
 ```
 
 For production, use an appropriate certificate and timestamp authority for your
-legal context. The built-in flow supports AES/QES-oriented UX and PAdES-B-B PDF
-signing, but legal qualification depends on the certificate and trust service
+legal context. The built-in flow creates PAdES-B-B signatures and upgrades them
+to PAdES-B-T when a validated RFC 3161 timestamp service is configured. Legal
+qualification depends on the certificate, identity process and trust service
 you configure.
 
 ## Repository Layout

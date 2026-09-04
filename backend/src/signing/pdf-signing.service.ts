@@ -1,22 +1,27 @@
 import { Injectable, Logger } from "@nestjs/common";
 import * as crypto from "crypto";
 import * as fs from "fs";
+import * as https from "https";
 import * as path from "path";
+import {
+  getInitialsStampGeometry,
+  shouldAddInitialsToPage,
+} from "./initials-placement.util";
 
 /**
  * PdfSigningService handles the cryptographic signing of PDF documents
- * according to PAdES (PDF Advanced Electronic Signatures) standard.
- *
- * Compliance: eIDAS Regulation (EU) No 910/2014
- * - AES (Advanced Electronic Signature): identity verification via OTP + audit trail
- * - QES (Qualified Electronic Signature): requires qualified certificate from TSP
+ * using an embedded CMS/PDF signature and, when configured, a validated
+ * RFC 3161 signature time-stamp token.
+ * The platform certificate protects the finalized evidence file; it is not a
+ * qualified certificate issued to an individual signer.
  *
  * This service handles:
  * 1. Loading P12/PFX certificates
  * 2. Creating PKCS#7/CMS signatures
- * 3. Embedding signatures in PDF (PAdES-B-B or PAdES-B-LT)
- * 4. Timestamp Authority (TSA) requests for long-term validation
- * 5. Certificate verification page generation
+ * 3. Embedding signatures in PDF (PAdES-B-B or PAdES-B-T)
+ * 4. RFC 3161 TSA requests containing only a SHA-256 message imprint
+ * 5. Validation and CMS embedding of the returned TimeStampToken
+ * 6. Certificate verification page generation
  */
 @Injectable()
 export class PdfSigningService {
@@ -25,16 +30,19 @@ export class PdfSigningService {
   private certificatePath: string;
   private certificatePassword: string;
   private tsaUrls: string[];
+  private readonly tsaRequired: boolean;
+  private readonly tsaPolicyOid?: string;
+  private readonly tsaTrustedCertFingerprints: Set<string>;
 
   constructor() {
     this.certificatePath =
       process.env.SIGNING_CERTIFICATE_PATH ||
       path.join(process.cwd(), "data", "signing", "certificate.p12");
-    this.certificatePassword =
-      process.env.SIGNING_CERTIFICATE_PASSWORD || "";
+    this.certificatePassword = process.env.SIGNING_CERTIFICATE_PASSWORD || "";
 
-    // Build TSA URL list: primary + up to 2 fallbacks
-    const primary = process.env.SIGNING_TSA_URL || "https://freetsa.org/tsr";
+    // No implicit public TSA: production must deliberately select the exact
+    // service (and, separately, establish its eIDAS qualification if claimed).
+    const primary = process.env.SIGNING_TSA_URL || "";
     const fallback1 = process.env.SIGNING_TSA_URL_FALLBACK_1 || "";
     const fallback2 = process.env.SIGNING_TSA_URL_FALLBACK_2 || "";
 
@@ -42,36 +50,65 @@ export class PdfSigningService {
       .map((u) => u.trim())
       .filter((u) => u.length > 0);
 
-    // Reject HTTP TSA URLs in production - timestamps must be fetched over TLS
-    if (process.env.NODE_ENV === "production") {
-      const insecure = this.tsaUrls.filter((u) => !u.startsWith("https://"));
-      if (insecure.length > 0) {
-        this.logger.error(
-          `TSA URLs using insecure HTTP removed: ${insecure.join(", ")}. ` +
-          "Set all SIGNING_TSA_URL* to HTTPS endpoints.",
+    this.tsaRequired =
+      this.tsaUrls.length > 0 &&
+      process.env.SIGNING_TSA_REQUIRED?.trim().toLowerCase() !== "false";
+    this.tsaPolicyOid = process.env.SIGNING_TSA_POLICY_OID?.trim() || undefined;
+    if (this.tsaPolicyOid && !/^[0-9]+(?:\.[0-9]+)+$/.test(this.tsaPolicyOid)) {
+      throw new Error("SIGNING_TSA_POLICY_OID must be a dotted-decimal OID");
+    }
+    this.tsaTrustedCertFingerprints = new Set(
+      (process.env.SIGNING_TSA_TRUSTED_CERT_SHA256 || "")
+        .split(",")
+        .map((fingerprint) =>
+          fingerprint.replace(/:/g, "").trim().toLowerCase(),
+        )
+        .filter((fingerprint) => fingerprint.length > 0),
+    );
+    for (const fingerprint of this.tsaTrustedCertFingerprints) {
+      if (!/^[a-f0-9]{64}$/.test(fingerprint)) {
+        throw new Error(
+          "SIGNING_TSA_TRUSTED_CERT_SHA256 must contain comma-separated SHA-256 fingerprints",
         );
-        this.tsaUrls = this.tsaUrls.filter((u) => u.startsWith("https://"));
       }
+    }
+    if (
+      process.env.NODE_ENV === "production" &&
+      this.tsaUrls.length > 0 &&
+      this.tsaTrustedCertFingerprints.size === 0
+    ) {
+      throw new Error(
+        "Production RFC 3161 timestamping requires SIGNING_TSA_TRUSTED_CERT_SHA256",
+      );
     }
 
     if (this.tsaUrls.length > 0) {
       this.logger.log(
         `TSA configured: ${this.tsaUrls[0]}` +
-        (this.tsaUrls.length > 1 ? ` (+${this.tsaUrls.length - 1} fallback)` : ""),
+          (this.tsaUrls.length > 1
+            ? ` (+${this.tsaUrls.length - 1} fallback)`
+            : "") +
+          (this.tsaRequired ? " (validated timestamp required)" : ""),
       );
+      if (this.tsaTrustedCertFingerprints.size === 0) {
+        this.logger.warn(
+          "No TSA trust fingerprint configured; acceptable only outside production",
+        );
+      }
     }
   }
 
   /**
-   * Sign a PDF buffer with a PAdES-B-T signature (with RFC 3161 timestamp).
+   * Sign a PDF buffer with a PAdES-B-B signature and upgrade it to PAdES-B-T
+   * when an RFC 3161 signature time-stamp token is configured and validated.
    * Uses @signpdf/placeholder-pdf-lib for the /Sig placeholder, then builds
    * a full CMS/PKCS#7 SignedData manually (node-forge) with:
    * - signingCertificateV2 (OID 1.2.840.113549.1.9.16.2.47) in signed attributes
    * - Full certificate chain from the P12
-   * - Proper ByteRange handling and PAdES-B-T compliance
+   * - Proper ByteRange handling and ETSI.CAdES.detached SubFilter
    *
-   * If no certificate is configured, the PDF is returned with explicit
-   * "UNSIGNED" metadata - no false guarantees.
+   * If no signing certificate is configured, the operation fails closed:
+   * no unsigned document is ever presented as a finalized signature.
    */
   async signPdf(
     pdfBuffer: Buffer,
@@ -86,7 +123,9 @@ export class PdfSigningService {
     if (!p12Buffer) {
       // SECURITY: Fail-closed - refuse to produce a document without crypto signature
       const msg =
-        "No signing certificate found at " + this.certificatePath + ". " +
+        "No signing certificate found at " +
+        this.certificatePath +
+        ". " +
         "Cannot produce a cryptographically signed PDF. " +
         "Configure SIGNING_CERTIFICATE_PATH to a .p12/.pfx file.";
       this.logger.error(msg);
@@ -94,18 +133,20 @@ export class PdfSigningService {
     }
 
     const reason =
-      signerInfo.reason || "Document signé électroniquement via PrivCloud Sharing";
+      signerInfo.reason ||
+      "Document electronically signed with PrivCloud Sharing";
     const location = signerInfo.location || "PrivCloud Sharing Platform";
 
     try {
       // 1. Load the PDF with pdf-lib and add a signature placeholder
       const { PDFDocument } = await import("pdf-lib");
-      const { pdflibAddPlaceholder } = await import("@signpdf/placeholder-pdf-lib");
+      const { pdflibAddPlaceholder } =
+        await import("@signpdf/placeholder-pdf-lib");
 
       const pdfDoc = await PDFDocument.load(pdfBuffer);
 
       // Set metadata
-      pdfDoc.setProducer("PrivCloud Sharing - Signature Électronique eIDAS PAdES-B-T");
+      pdfDoc.setProducer("PrivCloud Sharing - PAdES electronic signature");
       pdfDoc.setCreator("PrivCloud Sharing");
 
       // Add the /Sig placeholder - signatureLength is in hex chars (2 per byte)
@@ -117,10 +158,13 @@ export class PdfSigningService {
         name: signerInfo.name,
         contactInfo: signerInfo.email,
         signatureLength: 32768,
+        subFilter: "ETSI.CAdES.detached",
       });
 
       // Serialize the PDF with the placeholder in place
-      const pdfWithPlaceholder = Buffer.from(await pdfDoc.save({ useObjectStreams: false }));
+      const pdfWithPlaceholder = Buffer.from(
+        await pdfDoc.save({ useObjectStreams: false }),
+      );
 
       // 2. Build PAdES-compliant CMS with proper ByteRange handling
       let signedPdf = this.signPdfWithPadesCms(pdfWithPlaceholder, p12Buffer);
@@ -131,18 +175,19 @@ export class PdfSigningService {
           signedPdf = await this.embedTimestampInSignedPdf(signedPdf);
           this.logger.log(
             `PDF signed with timestamp (PAdES-B-T) for ${signerInfo.email} - ` +
-            `${signedPdf.length} bytes, reason: "${reason}"`,
+              `${signedPdf.length} bytes, reason: "${reason}"`,
           );
         } catch (tsaError: any) {
+          if (this.tsaRequired) throw tsaError;
           this.logger.warn(
             `TSA timestamp embedding failed: ${tsaError?.message}. ` +
-            "PDF remains signed at PAdES-B-B level (no timestamp).",
+              "SIGNING_TSA_REQUIRED=false: PDF remains PAdES-B-B without timestamp.",
           );
         }
       } else {
         this.logger.log(
           `PDF signed (PAdES-B-B, no TSA configured) for ${signerInfo.email} - ` +
-          `${signedPdf.length} bytes, reason: "${reason}"`,
+            `${signedPdf.length} bytes, reason: "${reason}"`,
         );
       }
 
@@ -168,7 +213,9 @@ export class PdfSigningService {
     const p12Buffer = await this.loadCertificate();
     if (!p12Buffer) {
       const msg =
-        "No signing certificate found at " + this.certificatePath + ". " +
+        "No signing certificate found at " +
+        this.certificatePath +
+        ". " +
         "Cannot produce a cryptographic signature.";
       this.logger.error(msg);
       throw new Error(msg);
@@ -180,11 +227,14 @@ export class PdfSigningService {
       if (this.tsaUrls.length > 0) {
         try {
           cmsDer = await this.embedTimestampInCms(cmsDer);
-          this.logger.log(`Detached PAdES-B-T CMS created (${cmsDer.length} bytes)`);
+          this.logger.log(
+            `Detached PAdES-B-T CMS created (${cmsDer.length} bytes)`,
+          );
         } catch (tsaError: any) {
+          if (this.tsaRequired) throw tsaError;
           this.logger.warn(
             `TSA timestamp embedding failed: ${tsaError?.message}. ` +
-            "CMS remains signed at PAdES-B-B level.",
+              "SIGNING_TSA_REQUIRED=false: CMS remains PAdES-B-B without timestamp.",
           );
         }
       }
@@ -208,9 +258,12 @@ export class PdfSigningService {
    * - Full certificate chain in the CMS certificates field
    * - content-type, message-digest, signing-time signed attributes
    *
-   * Required for PAdES-B-T compliance and proper eIDAS validation.
+   * Required for the PAdES baseline CMS structure used here.
    */
-  private signPdfWithPadesCms(pdfWithPlaceholder: Buffer, p12Buffer: Buffer): Buffer {
+  private signPdfWithPadesCms(
+    pdfWithPlaceholder: Buffer,
+    p12Buffer: Buffer,
+  ): Buffer {
     // --- Step 1: Find the signature hex placeholder position ---
     // @signpdf/placeholder-pdf-lib writes: PDFHexString.of(String.fromCharCode(0).repeat(signatureLength))
     // This means the PDF contains <\x00\x00\x00...\x00> (NULL bytes, NOT ASCII '0' chars).
@@ -222,7 +275,7 @@ export class PdfSigningService {
     if (!placeholderMatch) {
       throw new Error(
         "Cannot find signature hex placeholder in PDF. " +
-        "Ensure pdflibAddPlaceholder was called with signatureLength >= 500.",
+          "Ensure pdflibAddPlaceholder was called with signatureLength >= 500.",
       );
     }
 
@@ -257,7 +310,10 @@ export class PdfSigningService {
 
     // Build replacement string: actual values, space-padded to exact same byte length
     const byteRangeValues = byteRange.join(" ");
-    const innerPadded = byteRangeValues.padEnd(byteRangeInnerContent.length, " ");
+    const innerPadded = byteRangeValues.padEnd(
+      byteRangeInnerContent.length,
+      " ",
+    );
     const byteRangeReplacement = `/ByteRange [${innerPadded}]`;
 
     // Verify same byte length (critical - positions must not shift)
@@ -269,7 +325,12 @@ export class PdfSigningService {
 
     // Patch ByteRange into the PDF buffer
     const pdfBuf = Buffer.from(pdfWithPlaceholder);
-    pdfBuf.write(byteRangeReplacement, byteRangeStart, byteRangeReplacement.length, "latin1");
+    pdfBuf.write(
+      byteRangeReplacement,
+      byteRangeStart,
+      byteRangeReplacement.length,
+      "latin1",
+    );
 
     // --- Step 4: Extract data to sign (everything except the hex content between < >) ---
     const dataToSign = Buffer.concat([
@@ -278,7 +339,10 @@ export class PdfSigningService {
     ]);
 
     // --- Step 5: Compute message digest ---
-    const messageDigest = crypto.createHash("sha256").update(dataToSign).digest();
+    const messageDigest = crypto
+      .createHash("sha256")
+      .update(dataToSign)
+      .digest();
 
     // --- Step 6: Build the detached CMS and patch it into the PDF ---
     const cmsDer = this.buildPadesCms(messageDigest, p12Buffer);
@@ -305,7 +369,9 @@ export class PdfSigningService {
     const p12Asn1 = forge.asn1.fromDer(p12Buffer.toString("binary"));
     const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, this.certificatePassword);
 
-    const keyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
+    const keyBags = p12.getBags({
+      bagType: forge.pki.oids.pkcs8ShroudedKeyBag,
+    });
     let privateKey = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag]?.[0]?.key;
     if (!privateKey) {
       const fallbackKeyBags = p12.getBags({ bagType: forge.pki.oids.keyBag });
@@ -335,54 +401,79 @@ export class PdfSigningService {
       }
     });
     if (!signingCert) {
-      throw new Error("Cannot identify signing certificate matching private key");
+      throw new Error(
+        "Cannot identify signing certificate matching private key",
+      );
     }
 
     const chainCerts = this.buildCertChain(signingCert, allCerts);
     this.logger.log(
       `P12 loaded: signing cert "${signingCert.subject.getField("CN")?.value}", ` +
-      `chain depth: ${chainCerts.length}`,
+        `chain depth: ${chainCerts.length}`,
     );
 
     const signingCertDer = Buffer.from(
       forge.asn1.toDer(forge.pki.certificateToAsn1(signingCert)).getBytes(),
       "binary",
     );
-    const certHash = crypto.createHash("sha256").update(signingCertDer).digest();
+    const certHash = crypto
+      .createHash("sha256")
+      .update(signingCertDer)
+      .digest();
 
     const essCertIdV2 = forge.asn1.create(
       forge.asn1.Class.UNIVERSAL,
       forge.asn1.Type.SEQUENCE,
       true,
       [
-        forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-          forge.asn1.create(
-            forge.asn1.Class.UNIVERSAL,
-            forge.asn1.Type.OID,
-            false,
-            forge.asn1.oidToDer("2.16.840.1.101.3.4.2.1").getBytes(),
-          ),
-          forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.NULL, false, ""),
-        ]),
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.SEQUENCE,
+          true,
+          [
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.OID,
+              false,
+              forge.asn1.oidToDer("2.16.840.1.101.3.4.2.1").getBytes(),
+            ),
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.NULL,
+              false,
+              "",
+            ),
+          ],
+        ),
         forge.asn1.create(
           forge.asn1.Class.UNIVERSAL,
           forge.asn1.Type.OCTETSTRING,
           false,
           certHash.toString("binary"),
         ),
-        forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-          forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-            forge.asn1.create(forge.asn1.Class.CONTEXT_SPECIFIC, 4, true, [
-              this.dnToAsn1(signingCert.issuer),
-            ]),
-          ]),
-          forge.asn1.create(
-            forge.asn1.Class.UNIVERSAL,
-            forge.asn1.Type.INTEGER,
-            false,
-            forge.util.hexToBytes(signingCert.serialNumber),
-          ),
-        ]),
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.SEQUENCE,
+          true,
+          [
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.SEQUENCE,
+              true,
+              [
+                forge.asn1.create(forge.asn1.Class.CONTEXT_SPECIFIC, 4, true, [
+                  this.dnToAsn1(signingCert.issuer),
+                ]),
+              ],
+            ),
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.INTEGER,
+              false,
+              forge.util.hexToBytes(signingCert.serialNumber),
+            ),
+          ],
+        ),
       ],
     );
 
@@ -391,9 +482,12 @@ export class PdfSigningService {
       forge.asn1.Type.SEQUENCE,
       true,
       [
-        forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-          essCertIdV2,
-        ]),
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.SEQUENCE,
+          true,
+          [essCertIdV2],
+        ),
       ],
     );
 
@@ -402,65 +496,103 @@ export class PdfSigningService {
       0,
       true,
       [
-        forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-          forge.asn1.create(
-            forge.asn1.Class.UNIVERSAL,
-            forge.asn1.Type.OID,
-            false,
-            forge.asn1.oidToDer("1.2.840.113549.1.9.3").getBytes(),
-          ),
-          forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SET, true, [
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.SEQUENCE,
+          true,
+          [
             forge.asn1.create(
               forge.asn1.Class.UNIVERSAL,
               forge.asn1.Type.OID,
               false,
-              forge.asn1.oidToDer("1.2.840.113549.1.7.1").getBytes(),
+              forge.asn1.oidToDer("1.2.840.113549.1.9.3").getBytes(),
             ),
-          ]),
-        ]),
-        forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-          forge.asn1.create(
-            forge.asn1.Class.UNIVERSAL,
-            forge.asn1.Type.OID,
-            false,
-            forge.asn1.oidToDer("1.2.840.113549.1.9.5").getBytes(),
-          ),
-          forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SET, true, [
             forge.asn1.create(
               forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.UTCTIME,
-              false,
-              this.dateToUtcTime(new Date()),
+              forge.asn1.Type.SET,
+              true,
+              [
+                forge.asn1.create(
+                  forge.asn1.Class.UNIVERSAL,
+                  forge.asn1.Type.OID,
+                  false,
+                  forge.asn1.oidToDer("1.2.840.113549.1.7.1").getBytes(),
+                ),
+              ],
             ),
-          ]),
-        ]),
-        forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-          forge.asn1.create(
-            forge.asn1.Class.UNIVERSAL,
-            forge.asn1.Type.OID,
-            false,
-            forge.asn1.oidToDer("1.2.840.113549.1.9.4").getBytes(),
-          ),
-          forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SET, true, [
+          ],
+        ),
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.SEQUENCE,
+          true,
+          [
             forge.asn1.create(
               forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.OCTETSTRING,
+              forge.asn1.Type.OID,
               false,
-              messageDigest.toString("binary"),
+              forge.asn1.oidToDer("1.2.840.113549.1.9.5").getBytes(),
             ),
-          ]),
-        ]),
-        forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-          forge.asn1.create(
-            forge.asn1.Class.UNIVERSAL,
-            forge.asn1.Type.OID,
-            false,
-            forge.asn1.oidToDer("1.2.840.113549.1.9.16.2.47").getBytes(),
-          ),
-          forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SET, true, [
-            signingCertificateV2Value,
-          ]),
-        ]),
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.SET,
+              true,
+              [
+                forge.asn1.create(
+                  forge.asn1.Class.UNIVERSAL,
+                  forge.asn1.Type.UTCTIME,
+                  false,
+                  this.dateToUtcTime(new Date()),
+                ),
+              ],
+            ),
+          ],
+        ),
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.SEQUENCE,
+          true,
+          [
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.OID,
+              false,
+              forge.asn1.oidToDer("1.2.840.113549.1.9.4").getBytes(),
+            ),
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.SET,
+              true,
+              [
+                forge.asn1.create(
+                  forge.asn1.Class.UNIVERSAL,
+                  forge.asn1.Type.OCTETSTRING,
+                  false,
+                  messageDigest.toString("binary"),
+                ),
+              ],
+            ),
+          ],
+        ),
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.SEQUENCE,
+          true,
+          [
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.OID,
+              false,
+              forge.asn1.oidToDer("1.2.840.113549.1.9.16.2.47").getBytes(),
+            ),
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.SET,
+              true,
+              [signingCertificateV2Value],
+            ),
+          ],
+        ),
       ],
     );
 
@@ -477,7 +609,9 @@ export class PdfSigningService {
     const md = forge.md.sha256.create();
     md.update(signedAttrsDer.toString("binary"));
     const signature = privateKey.sign(md, "RSASSA-PKCS1-V1_5");
-    const certsAsn1 = chainCerts.map((cert: any) => forge.pki.certificateToAsn1(cert));
+    const certsAsn1 = chainCerts.map((cert: any) =>
+      forge.pki.certificateToAsn1(cert),
+    );
 
     const signerInfoAsn1 = forge.asn1.create(
       forge.asn1.Class.UNIVERSAL,
@@ -490,34 +624,59 @@ export class PdfSigningService {
           false,
           forge.asn1.integerToDer(1).getBytes(),
         ),
-        forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-          this.dnToAsn1(signingCert.issuer),
-          forge.asn1.create(
-            forge.asn1.Class.UNIVERSAL,
-            forge.asn1.Type.INTEGER,
-            false,
-            forge.util.hexToBytes(signingCert.serialNumber),
-          ),
-        ]),
-        forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-          forge.asn1.create(
-            forge.asn1.Class.UNIVERSAL,
-            forge.asn1.Type.OID,
-            false,
-            forge.asn1.oidToDer("2.16.840.1.101.3.4.2.1").getBytes(),
-          ),
-          forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.NULL, false, ""),
-        ]),
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.SEQUENCE,
+          true,
+          [
+            this.dnToAsn1(signingCert.issuer),
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.INTEGER,
+              false,
+              forge.util.hexToBytes(signingCert.serialNumber),
+            ),
+          ],
+        ),
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.SEQUENCE,
+          true,
+          [
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.OID,
+              false,
+              forge.asn1.oidToDer("2.16.840.1.101.3.4.2.1").getBytes(),
+            ),
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.NULL,
+              false,
+              "",
+            ),
+          ],
+        ),
         signedAttrs,
-        forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-          forge.asn1.create(
-            forge.asn1.Class.UNIVERSAL,
-            forge.asn1.Type.OID,
-            false,
-            forge.asn1.oidToDer("1.2.840.113549.1.1.11").getBytes(),
-          ),
-          forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.NULL, false, ""),
-        ]),
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.SEQUENCE,
+          true,
+          [
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.OID,
+              false,
+              forge.asn1.oidToDer("1.2.840.113549.1.1.11").getBytes(),
+            ),
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.NULL,
+              false,
+              "",
+            ),
+          ],
+        ),
         forge.asn1.create(
           forge.asn1.Class.UNIVERSAL,
           forge.asn1.Type.OCTETSTRING,
@@ -538,29 +697,57 @@ export class PdfSigningService {
           false,
           forge.asn1.integerToDer(1).getBytes(),
         ),
-        forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SET, true, [
-          forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.SET,
+          true,
+          [
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.SEQUENCE,
+              true,
+              [
+                forge.asn1.create(
+                  forge.asn1.Class.UNIVERSAL,
+                  forge.asn1.Type.OID,
+                  false,
+                  forge.asn1.oidToDer("2.16.840.1.101.3.4.2.1").getBytes(),
+                ),
+                forge.asn1.create(
+                  forge.asn1.Class.UNIVERSAL,
+                  forge.asn1.Type.NULL,
+                  false,
+                  "",
+                ),
+              ],
+            ),
+          ],
+        ),
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.SEQUENCE,
+          true,
+          [
             forge.asn1.create(
               forge.asn1.Class.UNIVERSAL,
               forge.asn1.Type.OID,
               false,
-              forge.asn1.oidToDer("2.16.840.1.101.3.4.2.1").getBytes(),
+              forge.asn1.oidToDer("1.2.840.113549.1.7.1").getBytes(),
             ),
-            forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.NULL, false, ""),
-          ]),
-        ]),
-        forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-          forge.asn1.create(
-            forge.asn1.Class.UNIVERSAL,
-            forge.asn1.Type.OID,
-            false,
-            forge.asn1.oidToDer("1.2.840.113549.1.7.1").getBytes(),
-          ),
-        ]),
-        forge.asn1.create(forge.asn1.Class.CONTEXT_SPECIFIC, 0, true, certsAsn1),
-        forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SET, true, [
-          signerInfoAsn1,
-        ]),
+          ],
+        ),
+        forge.asn1.create(
+          forge.asn1.Class.CONTEXT_SPECIFIC,
+          0,
+          true,
+          certsAsn1,
+        ),
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.SET,
+          true,
+          [signerInfoAsn1],
+        ),
       ],
     );
 
@@ -575,7 +762,9 @@ export class PdfSigningService {
           false,
           forge.asn1.oidToDer("1.2.840.113549.1.7.2").getBytes(),
         ),
-        forge.asn1.create(forge.asn1.Class.CONTEXT_SPECIFIC, 0, true, [signedData]),
+        forge.asn1.create(forge.asn1.Class.CONTEXT_SPECIFIC, 0, true, [
+          signedData,
+        ]),
       ],
     );
 
@@ -593,10 +782,11 @@ export class PdfSigningService {
     let current = signingCert;
     for (let i = 0; i < maxDepth; i++) {
       // Find issuer of current cert
-      const issuer = allCerts.find((c) =>
-        c !== current &&
-        c.subject.hash === current.issuer.hash &&
-        !chain.includes(c),
+      const issuer = allCerts.find(
+        (c) =>
+          c !== current &&
+          c.subject.hash === current.issuer.hash &&
+          !chain.includes(c),
       );
       if (!issuer) break;
       chain.push(issuer);
@@ -657,14 +847,22 @@ export class PdfSigningService {
     const contentsStart = pdfStr.indexOf("<" + hexSignature + ">") + 1;
     const _contentsEnd = contentsStart + hexSignature.length;
 
-    // 2. Decode hex -> DER (strip trailing zero padding)
+    // 2. Decode hex -> DER and use the outer ASN.1 length to separate the
+    // CMS from placeholder padding. Trimming 0x00 bytes would be unsafe: a
+    // legitimate signature value may itself end with 0x00.
     const derWithPadding = Buffer.from(hexSignature, "hex");
-    // Find actual end of ASN.1 structure (strip trailing 0x00 bytes)
-    let derEnd = derWithPadding.length;
-    while (derEnd > 0 && derWithPadding[derEnd - 1] === 0x00) {
-      derEnd--;
-    }
-    const derCms = derWithPadding.slice(0, derEnd);
+    const forge = require("node-forge");
+    const derReader = forge.util.createBuffer(
+      derWithPadding.toString("binary"),
+    );
+    forge.asn1.fromDer(derReader, {
+      strict: true,
+      parseAllBytes: false,
+      decodeBitStrings: true,
+    });
+    const cmsLength = derWithPadding.length - derReader.length();
+    if (cmsLength <= 0) throw new Error("Empty CMS in PDF /Contents");
+    const derCms = derWithPadding.subarray(0, cmsLength);
 
     const modifiedDer = await this.embedTimestampInCms(derCms);
 
@@ -677,7 +875,9 @@ export class PdfSigningService {
     }
 
     // 10. Hex-encode with zero-padding to fill the placeholder
-    const modifiedHex = modifiedDer.toString("hex").padEnd(hexSignature.length, "0");
+    const modifiedHex = modifiedDer
+      .toString("hex")
+      .padEnd(hexSignature.length, "0");
 
     // 11. Patch the PDF buffer
     const result = Buffer.from(signedPdf);
@@ -685,7 +885,7 @@ export class PdfSigningService {
 
     this.logger.log(
       `Timestamp embedded successfully (CMS: ${modifiedDer.length} bytes, ` +
-      `placeholder: ${maxSize} bytes)`,
+        `placeholder: ${maxSize} bytes)`,
     );
 
     return result;
@@ -760,12 +960,9 @@ export class PdfSigningService {
       lastItem.value.push(timestampAttr);
     } else {
       signerInfo.value.push(
-        forge.asn1.create(
-          forge.asn1.Class.CONTEXT_SPECIFIC,
-          1,
-          true,
-          [timestampAttr],
-        ),
+        forge.asn1.create(forge.asn1.Class.CONTEXT_SPECIFIC, 1, true, [
+          timestampAttr,
+        ]),
       );
     }
 
@@ -775,43 +972,15 @@ export class PdfSigningService {
   /**
    * Request a timestamp token from a TSA (RFC 3161).
    * Tries each configured TSA URL in order (primary -> fallback1 -> fallback2).
-   * Required for PAdES-B-T and PAdES-B-LT long-term validation.
+   * Required for the PAdES-B-T signature time-stamp attribute used here.
    *
-   * Uses the native https/http module (NOT fetch) so that global-agent
+   * Uses the native HTTPS module (NOT fetch) so that global-agent
    * can route the request through the configured HTTP_PROXY.
    */
   async getTimestamp(messageImprint: Buffer): Promise<Buffer | null> {
     if (this.tsaUrls.length === 0) return null;
-
-    // Build a TimeStampReq (RFC 3161) using node-forge ASN.1
-    const forge = require("node-forge");
-    const nonce = crypto.randomBytes(8);
-
-    const tsReq = forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-      // version INTEGER 1
-      forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.INTEGER, false,
-        forge.asn1.integerToDer(1).getBytes()),
-      // messageImprint SEQUENCE
-      forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-        // hashAlgorithm AlgorithmIdentifier for SHA-256
-        forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
-          forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.OID, false,
-            forge.asn1.oidToDer("2.16.840.1.101.3.4.2.1").getBytes()), // SHA-256
-          forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.NULL, false, ""),
-        ]),
-        // hashedMessage OCTET STRING
-        forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.OCTETSTRING, false,
-          messageImprint.toString("binary")),
-      ]),
-      // nonce INTEGER (replay protection)
-      forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.INTEGER, false,
-        nonce.toString("binary")),
-      // certReq BOOLEAN TRUE (request TSA cert in response for validation)
-      forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.BOOLEAN, false,
-        String.fromCharCode(0xff)),
-    ]);
-
-    const tsReqBody = Buffer.from(forge.asn1.toDer(tsReq).getBytes(), "binary");
+    const { body: tsReqBody, nonce } =
+      this.buildTimestampRequest(messageImprint);
 
     // Try each TSA URL in sequence until one succeeds
     const errors: string[] = [];
@@ -822,8 +991,15 @@ export class PdfSigningService {
 
       try {
         const tsResponse = await this.requestTsa(tsaUrl, tsReqBody);
+        const evidence = this.validateTimestampResponse(
+          tsResponse,
+          messageImprint,
+          nonce,
+        );
         this.logger.log(
-          `Timestamp token obtained from TSA ${label}: ${tsaUrl}`,
+          `Validated RFC 3161 token from TSA ${label}: policy=${evidence.policyOid}, ` +
+            `serial=${evidence.serialNumber}, genTime=${evidence.generatedAt.toISOString()}, ` +
+            `certificate=${evidence.certificateFingerprintSha256}`,
         );
         return tsResponse;
       } catch (error: any) {
@@ -842,8 +1018,563 @@ export class PdfSigningService {
   }
 
   /**
+   * Build the DER TimeStampReq. Its messageImprint contains the SHA-256 digest
+   * supplied by the caller; the source PDF/document is never part of the body.
+   */
+  private buildTimestampRequest(messageImprint: Buffer): {
+    body: Buffer;
+    nonce: Buffer;
+  } {
+    if (messageImprint.length !== 32) {
+      throw new Error(
+        "RFC 3161 SHA-256 messageImprint must be exactly 32 bytes",
+      );
+    }
+
+    const forge = require("node-forge");
+    const nonce = crypto.randomBytes(8);
+    // DER INTEGER is signed; keep this random 64-bit nonce positive and
+    // non-zero so the exact value can be compared with TSTInfo.nonce.
+    nonce[0] &= 0x7f;
+    if (nonce.every((byte) => byte === 0)) nonce[nonce.length - 1] = 1;
+
+    const messageImprintAsn1 = forge.asn1.create(
+      forge.asn1.Class.UNIVERSAL,
+      forge.asn1.Type.SEQUENCE,
+      true,
+      [
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.SEQUENCE,
+          true,
+          [
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.OID,
+              false,
+              forge.asn1.oidToDer("2.16.840.1.101.3.4.2.1").getBytes(),
+            ),
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.NULL,
+              false,
+              "",
+            ),
+          ],
+        ),
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.OCTETSTRING,
+          false,
+          messageImprint.toString("binary"),
+        ),
+      ],
+    );
+    const tsReq = forge.asn1.create(
+      forge.asn1.Class.UNIVERSAL,
+      forge.asn1.Type.SEQUENCE,
+      true,
+      [
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.INTEGER,
+          false,
+          forge.asn1.integerToDer(1).getBytes(),
+        ),
+        messageImprintAsn1,
+        ...(this.tsaPolicyOid
+          ? [
+              forge.asn1.create(
+                forge.asn1.Class.UNIVERSAL,
+                forge.asn1.Type.OID,
+                false,
+                forge.asn1.oidToDer(this.tsaPolicyOid).getBytes(),
+              ),
+            ]
+          : []),
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.INTEGER,
+          false,
+          nonce.toString("binary"),
+        ),
+        forge.asn1.create(
+          forge.asn1.Class.UNIVERSAL,
+          forge.asn1.Type.BOOLEAN,
+          false,
+          String.fromCharCode(0xff),
+        ),
+      ],
+    );
+
+    return {
+      body: Buffer.from(forge.asn1.toDer(tsReq).getBytes(), "binary"),
+      nonce,
+    };
+  }
+
+  /**
+   * Validate the complete TimeStampResp before its TimeStampToken is embedded:
+   * status, CMS/TSTInfo types, imprint, nonce, signed attributes, TSA
+   * signature, ESSCertID, certificate validity and critical timeStamping EKU.
+   * This proves protocol integrity; eIDAS qualification remains a separate
+   * trust-list decision about the exact service/certificate.
+   */
+  private validateTimestampResponse(
+    response: Buffer,
+    expectedImprint: Buffer,
+    expectedNonce: Buffer,
+  ): {
+    policyOid: string;
+    serialNumber: string;
+    generatedAt: Date;
+    certificateFingerprintSha256: string;
+  } {
+    const forge = require("node-forge");
+    const asn1 = forge.asn1.fromDer(response.toString("binary"), true);
+    if (
+      asn1.tagClass !== forge.asn1.Class.UNIVERSAL ||
+      asn1.type !== forge.asn1.Type.SEQUENCE ||
+      !Array.isArray(asn1.value) ||
+      asn1.value.length !== 2
+    ) {
+      throw new Error("Invalid RFC 3161 TimeStampResp structure");
+    }
+
+    const statusInfo = asn1.value[0];
+    const status = forge.asn1.derToInteger(statusInfo.value?.[0]?.value);
+    if (status !== 0 && status !== 1) {
+      throw new Error(`TSA returned non-granted status: ${status}`);
+    }
+
+    const contentInfo = asn1.value[1];
+    const contentType = this.asn1Oid(contentInfo.value?.[0]);
+    if (contentType !== "1.2.840.113549.1.7.2") {
+      throw new Error("TimeStampToken is not CMS SignedData");
+    }
+
+    const signedData = contentInfo.value?.[1]?.value?.[0];
+    if (!signedData || !Array.isArray(signedData.value)) {
+      throw new Error("TimeStampToken SignedData is missing");
+    }
+
+    const encapContentInfo = signedData.value[2];
+    if (
+      this.asn1Oid(encapContentInfo?.value?.[0]) !== "1.2.840.113549.1.9.16.1.4"
+    ) {
+      throw new Error("TimeStampToken eContentType is not id-ct-TSTInfo");
+    }
+    const eContent = encapContentInfo?.value?.[1]?.value?.[0];
+    const tstInfoDer = this.asn1Octets(eContent);
+    if (tstInfoDer.length === 0)
+      throw new Error("TimeStampToken TSTInfo is empty");
+
+    const tstInfo = forge.asn1.fromDer(tstInfoDer.toString("binary"), true);
+    if (forge.asn1.derToInteger(tstInfo.value?.[0]?.value) !== 1) {
+      throw new Error("Unsupported TSTInfo version");
+    }
+    const policyOid = this.asn1Oid(tstInfo.value?.[1]);
+    if (this.tsaPolicyOid && policyOid !== this.tsaPolicyOid) {
+      throw new Error(
+        `TSTInfo policy ${policyOid} does not match requested policy ${this.tsaPolicyOid}`,
+      );
+    }
+    const imprint = tstInfo.value?.[2];
+    const imprintAlgorithm = this.asn1Oid(imprint?.value?.[0]?.value?.[0]);
+    const returnedImprint = this.asn1Octets(imprint?.value?.[1]);
+    if (imprintAlgorithm !== "2.16.840.1.101.3.4.2.1") {
+      throw new Error(
+        `Unexpected TSTInfo messageImprint algorithm: ${imprintAlgorithm}`,
+      );
+    }
+    if (
+      returnedImprint.length !== expectedImprint.length ||
+      !crypto.timingSafeEqual(returnedImprint, expectedImprint)
+    ) {
+      throw new Error("TSTInfo messageImprint does not match the request");
+    }
+
+    const serialNumber = this.normalizedIntegerHex(tstInfo.value?.[3]?.value);
+    const generatedAt = forge.asn1.generalizedTimeToDate(
+      tstInfo.value?.[4]?.value,
+    );
+    if (!(generatedAt instanceof Date) || Number.isNaN(generatedAt.getTime())) {
+      throw new Error("Invalid TSTInfo genTime");
+    }
+
+    const nonceNode = (tstInfo.value as any[])
+      .slice(5)
+      .find(
+        (node: any) =>
+          node.tagClass === forge.asn1.Class.UNIVERSAL &&
+          node.type === forge.asn1.Type.INTEGER,
+      );
+    if (!nonceNode) throw new Error("TSTInfo nonce is missing");
+    const returnedNonce = this.normalizedIntegerBytes(nonceNode.value);
+    const normalizedExpectedNonce = this.normalizedIntegerBytes(
+      expectedNonce.toString("binary"),
+    );
+    if (
+      returnedNonce.length !== normalizedExpectedNonce.length ||
+      !crypto.timingSafeEqual(returnedNonce, normalizedExpectedNonce)
+    ) {
+      throw new Error("TSTInfo nonce does not match the request");
+    }
+
+    const signerInfos = signedData.value[signedData.value.length - 1];
+    if (
+      signerInfos?.tagClass !== forge.asn1.Class.UNIVERSAL ||
+      signerInfos?.type !== forge.asn1.Type.SET ||
+      signerInfos.value?.length !== 1
+    ) {
+      throw new Error("TimeStampToken must contain exactly one TSA signature");
+    }
+
+    const certificates = signedData.value.find(
+      (node: any, index: number) =>
+        index > 2 &&
+        node.tagClass === forge.asn1.Class.CONTEXT_SPECIFIC &&
+        node.type === 0,
+    );
+    if (!certificates || !Array.isArray(certificates.value)) {
+      throw new Error("TSA certificate is missing despite certReq=true");
+    }
+
+    const signerInfo = signerInfos.value[0];
+    const signedAttributes = signerInfo.value?.[3];
+    if (
+      signedAttributes?.tagClass !== forge.asn1.Class.CONTEXT_SPECIFIC ||
+      signedAttributes?.type !== 0
+    ) {
+      throw new Error("TSA SignerInfo signed attributes are missing");
+    }
+
+    const digestAlgorithmOid = this.asn1Oid(signerInfo.value?.[2]?.value?.[0]);
+    const digestName = this.digestNameForOid(digestAlgorithmOid);
+    const contentTypeAttribute = this.findCmsAttribute(
+      signedAttributes,
+      "1.2.840.113549.1.9.3",
+    );
+    if (
+      this.asn1Oid(contentTypeAttribute?.value?.[0]) !==
+      "1.2.840.113549.1.9.16.1.4"
+    ) {
+      throw new Error("TSA signed content-type attribute is invalid");
+    }
+    const messageDigestAttribute = this.findCmsAttribute(
+      signedAttributes,
+      "1.2.840.113549.1.9.4",
+    );
+    const signedMessageDigest = this.asn1Octets(
+      messageDigestAttribute?.value?.[0],
+    );
+    const expectedContentDigest = crypto
+      .createHash(digestName)
+      .update(tstInfoDer)
+      .digest();
+    if (
+      signedMessageDigest.length !== expectedContentDigest.length ||
+      !crypto.timingSafeEqual(signedMessageDigest, expectedContentDigest)
+    ) {
+      throw new Error("TSA signed message-digest attribute is invalid");
+    }
+
+    const certificateEntries = certificates.value.filter(
+      (node: any) =>
+        node.tagClass === forge.asn1.Class.UNIVERSAL &&
+        node.type === forge.asn1.Type.SEQUENCE,
+    );
+    if (certificateEntries.length === 0)
+      throw new Error("No X.509 TSA certificate found");
+
+    const sid = signerInfo.value?.[1];
+    let candidates = certificateEntries;
+    let sidSerial = "";
+    if (
+      sid?.tagClass === forge.asn1.Class.UNIVERSAL &&
+      sid?.type === forge.asn1.Type.SEQUENCE &&
+      sid.value?.[1]
+    ) {
+      sidSerial = this.normalizedIntegerHex(sid.value[1].value);
+      candidates = certificateEntries.filter((certificateAsn1: any) => {
+        const certificate = forge.pki.certificateFromAsn1(certificateAsn1);
+        // Compare ASN.1 INTEGER values byte-for-byte after removing only
+        // sign-padding bytes. Do not strip hexadecimal characters: a valid
+        // serial such as 01ab... must not become 1ab....
+        const certificateSerial = this.normalizedIntegerHex(
+          forge.util.hexToBytes(certificate.serialNumber),
+        );
+        return certificateSerial === sidSerial;
+      });
+    }
+    if (candidates.length === 0)
+      throw new Error("TSA signing certificate not found");
+
+    const signedAttributesDer = Buffer.from(
+      forge.asn1
+        .toDer(
+          forge.asn1.create(
+            forge.asn1.Class.UNIVERSAL,
+            forge.asn1.Type.SET,
+            true,
+            signedAttributes.value,
+          ),
+        )
+        .getBytes(),
+      "binary",
+    );
+    const signatureAlgorithmOid = this.asn1Oid(
+      signerInfo.value?.[4]?.value?.[0],
+    );
+    const signature = this.asn1Octets(signerInfo.value?.[5]);
+
+    let verifiedCertificateAsn1: any = null;
+    let verifiedCertificate: any = null;
+    for (const candidate of candidates) {
+      const certificateDer = Buffer.from(
+        forge.asn1.toDer(candidate).getBytes(),
+        "binary",
+      );
+      const x509 = new crypto.X509Certificate(certificateDer);
+      const verificationKey =
+        signatureAlgorithmOid === "1.2.840.113549.1.1.10"
+          ? {
+              key: x509.publicKey,
+              padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+              saltLength: crypto.constants.RSA_PSS_SALTLEN_AUTO,
+            }
+          : x509.publicKey;
+      if (
+        crypto.verify(
+          digestName,
+          signedAttributesDer,
+          verificationKey,
+          signature,
+        )
+      ) {
+        if (verifiedCertificateAsn1) {
+          throw new Error("Ambiguous TSA signing certificate");
+        }
+        verifiedCertificateAsn1 = candidate;
+        verifiedCertificate = forge.pki.certificateFromAsn1(candidate);
+      }
+    }
+    if (!verifiedCertificateAsn1 || !verifiedCertificate) {
+      throw new Error("TSA CMS signature verification failed");
+    }
+
+    const ekuExtensions = verifiedCertificate.extensions.filter(
+      (extension: any) => extension.name === "extKeyUsage",
+    );
+    const eku = ekuExtensions[0];
+    const ekuPurposes = eku
+      ? Object.entries(eku)
+          .filter(([key, value]) => value === true && key !== "critical")
+          .map(([key]) => key)
+      : [];
+    if (
+      ekuExtensions.length !== 1 ||
+      eku.critical !== true ||
+      eku.timeStamping !== true ||
+      ekuPurposes.some((purpose: string) => purpose !== "timeStamping")
+    ) {
+      throw new Error(
+        "TSA certificate lacks the exclusive critical timeStamping EKU",
+      );
+    }
+    if (
+      generatedAt < verifiedCertificate.validity.notBefore ||
+      generatedAt > verifiedCertificate.validity.notAfter
+    ) {
+      throw new Error(
+        "TSTInfo genTime is outside the TSA certificate validity period",
+      );
+    }
+
+    const certificateDer = Buffer.from(
+      forge.asn1.toDer(verifiedCertificateAsn1).getBytes(),
+      "binary",
+    );
+    this.verifyEssCertificateIdentifier(signedAttributes, certificateDer);
+    this.verifyTimestampCertificateTrust(
+      verifiedCertificate,
+      certificateEntries,
+      generatedAt,
+    );
+
+    return {
+      policyOid,
+      serialNumber,
+      generatedAt,
+      certificateFingerprintSha256: crypto
+        .createHash("sha256")
+        .update(certificateDer)
+        .digest("hex"),
+    };
+  }
+
+  private verifyTimestampCertificateTrust(
+    signerCertificate: any,
+    certificateEntries: any[],
+    generatedAt: Date,
+  ): void {
+    if (this.tsaTrustedCertFingerprints.size === 0) return;
+
+    const forge = require("node-forge");
+    const certificates = certificateEntries.map((entry: any) =>
+      forge.pki.certificateFromAsn1(entry),
+    );
+    let current = signerCertificate;
+    const visited = new Set<string>();
+
+    for (let depth = 0; depth < 10; depth++) {
+      const der = Buffer.from(
+        forge.asn1.toDer(forge.pki.certificateToAsn1(current)).getBytes(),
+        "binary",
+      );
+      const fingerprint = crypto.createHash("sha256").update(der).digest("hex");
+      if (visited.has(fingerprint)) break;
+      visited.add(fingerprint);
+
+      if (
+        generatedAt < current.validity.notBefore ||
+        generatedAt > current.validity.notAfter
+      ) {
+        throw new Error(
+          "TSA certificate chain was not valid at TSTInfo genTime",
+        );
+      }
+      if (this.tsaTrustedCertFingerprints.has(fingerprint)) return;
+
+      const issuer = certificates.find((candidate: any) => {
+        if (
+          candidate === current ||
+          candidate.subject.hash !== current.issuer.hash
+        ) {
+          return false;
+        }
+        try {
+          return candidate.verify(current);
+        } catch {
+          return false;
+        }
+      });
+      if (!issuer) break;
+      current = issuer;
+    }
+
+    throw new Error(
+      "TSA certificate chain does not reach a configured SHA-256 trust fingerprint",
+    );
+  }
+
+  private findCmsAttribute(signedAttributes: any, oid: string): any {
+    const attribute = signedAttributes.value?.find(
+      (candidate: any) => this.asn1Oid(candidate.value?.[0]) === oid,
+    );
+    if (!attribute?.value?.[1])
+      throw new Error(`Required CMS attribute missing: ${oid}`);
+    return attribute.value[1];
+  }
+
+  private verifyEssCertificateIdentifier(
+    signedAttributes: any,
+    certificateDer: Buffer,
+  ): void {
+    const forge = require("node-forge");
+    const v1 = signedAttributes.value?.find(
+      (candidate: any) =>
+        this.asn1Oid(candidate.value?.[0]) === "1.2.840.113549.1.9.16.2.12",
+    );
+    const v2 = signedAttributes.value?.find(
+      (candidate: any) =>
+        this.asn1Oid(candidate.value?.[0]) === "1.2.840.113549.1.9.16.2.47",
+    );
+    if (!v1 && !v2)
+      throw new Error("TSA SigningCertificate/ESSCertID attribute is missing");
+
+    let hashName = "sha1";
+    let hashNode: any;
+    if (v2) {
+      const essCertId = v2.value?.[1]?.value?.[0]?.value?.[0]?.value?.[0];
+      if (!essCertId)
+        throw new Error("Malformed TSA SigningCertificateV2 attribute");
+      if (essCertId.value?.[0]?.type === forge.asn1.Type.SEQUENCE) {
+        hashName = this.digestNameForOid(
+          this.asn1Oid(essCertId.value[0].value?.[0]),
+        );
+        hashNode = essCertId.value[1];
+      } else {
+        hashName = "sha256";
+        hashNode = essCertId.value?.[0];
+      }
+    } else {
+      const essCertId = v1.value?.[1]?.value?.[0]?.value?.[0]?.value?.[0];
+      if (!essCertId)
+        throw new Error("Malformed TSA SigningCertificate attribute");
+      hashNode = essCertId.value?.[0];
+    }
+
+    const returnedHash = this.asn1Octets(hashNode);
+    const expectedHash = crypto
+      .createHash(hashName)
+      .update(certificateDer)
+      .digest();
+    if (
+      returnedHash.length !== expectedHash.length ||
+      !crypto.timingSafeEqual(returnedHash, expectedHash)
+    ) {
+      throw new Error(
+        "TSA ESSCertID does not identify the CMS signing certificate",
+      );
+    }
+  }
+
+  private digestNameForOid(oid: string): string {
+    const digestNames: Record<string, string> = {
+      "1.3.14.3.2.26": "sha1",
+      "2.16.840.1.101.3.4.2.1": "sha256",
+      "2.16.840.1.101.3.4.2.2": "sha384",
+      "2.16.840.1.101.3.4.2.3": "sha512",
+    };
+    const digestName = digestNames[oid];
+    if (!digestName)
+      throw new Error(`Unsupported TSA digest algorithm: ${oid}`);
+    return digestName;
+  }
+
+  private asn1Oid(node: any): string {
+    if (!node || typeof node.value !== "string") return "";
+    const forge = require("node-forge");
+    return forge.asn1.derToOid(node.value);
+  }
+
+  private asn1Octets(node: any): Buffer {
+    if (!node) return Buffer.alloc(0);
+    if (typeof node.value === "string")
+      return Buffer.from(node.value, "binary");
+    if (Array.isArray(node.value)) {
+      return Buffer.concat(
+        node.value.map((child: any) => this.asn1Octets(child)),
+      );
+    }
+    return Buffer.alloc(0);
+  }
+
+  private normalizedIntegerBytes(value: string): Buffer {
+    const bytes = Buffer.from(value || "", "binary");
+    let offset = 0;
+    while (offset < bytes.length - 1 && bytes[offset] === 0) offset++;
+    return bytes.subarray(offset);
+  }
+
+  private normalizedIntegerHex(value: string): string {
+    return this.normalizedIntegerBytes(value).toString("hex").toLowerCase();
+  }
+
+  /**
    * Send a single TimeStampReq to a specific TSA URL.
-   * Uses native https/http module (patched by global-agent for proxy support).
+   * Uses the native HTTPS module (patched by global-agent for proxy support).
    * Timeout: 10 seconds per request.
    */
   private requestTsa(tsaUrl: string, tsReqBody: Buffer): Promise<Buffer> {
@@ -857,25 +1588,50 @@ export class PdfSigningService {
         );
         return;
       }
-      const httpModule = require("https");
 
-      const req = httpModule.request(
-        tsaUrl,
+      const req = https.request(
+        url,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/timestamp-query",
+            Accept: "application/timestamp-reply",
             "Content-Length": tsReqBody.length,
           },
           timeout: 10_000, // 10s per TSA attempt
         },
         (res: any) => {
           if (res.statusCode !== 200) {
+            res.resume();
             reject(new Error(`HTTP ${res.statusCode}`));
             return;
           }
+          const contentType = String(res.headers["content-type"] || "")
+            .split(";", 1)[0]
+            .trim()
+            .toLowerCase();
+          if (
+            contentType !== "application/timestamp-reply" &&
+            contentType !== "application/timestamp-response"
+          ) {
+            res.resume();
+            reject(
+              new Error(
+                `Unexpected TSA Content-Type: ${contentType || "missing"}`,
+              ),
+            );
+            return;
+          }
           const chunks: Buffer[] = [];
-          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          let responseSize = 0;
+          res.on("data", (chunk: Buffer) => {
+            responseSize += chunk.length;
+            if (responseSize > 1024 * 1024) {
+              req.destroy(new Error("TSA response exceeds 1 MiB"));
+              return;
+            }
+            chunks.push(chunk);
+          });
           res.on("end", () => resolve(Buffer.concat(chunks)));
           res.on("error", reject);
         },
@@ -914,22 +1670,25 @@ export class PdfSigningService {
    * This page is appended as the last page of the signed document.
    * Contains: signature details, timestamp, hash, QR code, audit info.
    */
-  async generateCertificatePage(
-    documentInfo: {
-      documentId: string;
-      fileName: string;
+  async generateCertificatePage(documentInfo: {
+    documentId: string;
+    fileName: string;
+    signedAt: Date;
+    signers: Array<{
+      name: string;
+      email: string;
       signedAt: Date;
-      signers: Array<{
-        name: string;
-        email: string;
-        signedAt: Date;
-        ip: string;
-        signatureType: string;
-      }>;
-      documentHash: string;
-      signatureLevel: string;
-    },
-  ): Promise<Buffer> {
+      ip: string;
+      signatureType: string;
+      authenticationMethod?: string | null;
+      identityVerificationMethod?: string | null;
+      signingIntentHash?: string | null;
+      signedDocumentHash?: string | null;
+      webauthnUserVerified?: boolean | null;
+    }>;
+    documentHash: string;
+    signatureLevel: string;
+  }): Promise<Buffer> {
     const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
 
     const pdfDoc = await PDFDocument.create();
@@ -937,12 +1696,33 @@ export class PdfSigningService {
 
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const isReinforced = documentInfo.signatureLevel === "REINFORCED";
+    const authenticationLabel = (method?: string | null) => {
+      if (method === "EMAIL_OTP_CONSENT") {
+        return "Code e-mail à usage unique + consentement";
+      }
+      if (method === "WEBAUTHN") {
+        return "Passkey WebAuthn liée à la transaction";
+      }
+      return "Méthode non enregistrée";
+    };
+    const identityLabel = (method?: string | null) => {
+      if (method === "EMAIL_OTP") {
+        return "Contrôle de l'adresse e-mail par code à usage unique";
+      }
+      if (method === "VERIFIED_EMAIL_ACCOUNT") {
+        return "Compte PrivCloud avec adresse e-mail vérifiée";
+      }
+      if (method === "LDAP_ACCOUNT") return "Compte LDAP attribué";
+      if (method === "OIDC_ACCOUNT") return "Compte OIDC attribué";
+      return "Aucune preuve d'identité enregistrée";
+    };
 
     const { width: _width, height } = page.getSize();
     let y = height - 60;
 
     // Header
-    page.drawText("CERTIFICAT DE SIGNATURE ÉLECTRONIQUE", {
+    page.drawText("DOSSIER DE PREUVE DE SIGNATURE ÉLECTRONIQUE", {
       x: 50,
       y,
       size: 16,
@@ -951,13 +1731,18 @@ export class PdfSigningService {
     });
     y -= 30;
 
-    page.drawText("Signature électronique avancée basée sur les critères de l’article 26 du règlement eIDAS (UE) n° 910/2014", {
-      x: 50,
-      y,
-      size: 10,
-      font,
-      color: rgb(0.3, 0.3, 0.3),
-    });
+    page.drawText(
+      isReinforced
+        ? "Niveau renforcé - compte attribué et confirmation WebAuthn"
+        : "Niveau standard - contrôle de l'adresse e-mail et consentement",
+      {
+        x: 50,
+        y,
+        size: 10,
+        font,
+        color: rgb(0.3, 0.3, 0.3),
+      },
+    );
     y -= 40;
 
     // Document info
@@ -972,7 +1757,7 @@ export class PdfSigningService {
     const lines = [
       `Identifiant: ${documentInfo.documentId}`,
       `Fichier: ${documentInfo.fileName}`,
-      `Niveau de signature: ${documentInfo.signatureLevel === "QES" ? "Qualifiée (QES)" : "Avancée (AES)"}`,
+      `Niveau de preuve: ${isReinforced ? "Renforcé - compte vérifié + passkey" : "Standard - code e-mail + consentement"}`,
       `Empreinte SHA-256: ${documentInfo.documentHash}`,
       `Date de finalisation: ${documentInfo.signedAt.toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "medium", timeZone: "Europe/Paris" })}`,
     ];
@@ -1008,6 +1793,17 @@ export class PdfSigningService {
         `  Signé le: ${signer.signedAt.toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "medium", timeZone: "Europe/Paris" })}`,
         `  Adresse IP: ${signer.ip}`,
         `  Type de signature: ${signer.signatureType}`,
+        `  Authentification: ${authenticationLabel(signer.authenticationMethod)}`,
+        `  Preuve d'identité: ${identityLabel(signer.identityVerificationMethod)}`,
+        ...(signer.webauthnUserVerified
+          ? ["  Vérification locale WebAuthn: oui"]
+          : []),
+        ...(signer.signedDocumentHash
+          ? [`  Empreinte source: ${signer.signedDocumentHash}`]
+          : []),
+        ...(signer.signingIntentHash
+          ? [`  Empreinte du consentement: ${signer.signingIntentHash}`]
+          : []),
       ];
 
       for (const line of signerLines) {
@@ -1027,26 +1823,37 @@ export class PdfSigningService {
     });
     y -= 20;
 
+    const levelSpecificLegalText = isReinforced
+      ? [
+          "Le niveau renforcé impose le compte PrivCloud attribué au destinataire et enregistre sa méthode",
+          "de vérification. Chaque décision est confirmée par WebAuthn et liée à l'empreinte du document.",
+          "Ces éléments renforcent la preuve de contrôle du compte, mais ne constituent pas à eux seuls",
+          "une vérification d'identité civile par un prestataire qualifié. PrivCloud ne présente donc pas",
+          "ce parcours comme une signature avancée conforme à l'article 26, ni comme une signature qualifiée.",
+        ]
+      : [
+          "Le niveau standard exige un code à usage unique envoyé à l'adresse e-mail attribuée avant",
+          "la décision. Cette preuve établit le contrôle actuel de la boîte, pas l'identité civile de la",
+          "personne qui saisit le code ni une maîtrise personnelle exclusive et durable de cette adresse.",
+          "Le consentement est lié à l'empreinte du document. PrivCloud ne présente pas ce parcours comme",
+          "une signature avancée conforme à l'article 26, ni comme une signature électronique qualifiée.",
+        ];
     const legalText = [
-      "Ce document a fait l’objet d’une signature électronique avancée intégrant des mécanismes d’horodatage,",
-      "d’intégrité cryptographique et de traçabilité conformément aux principes définis par",
-      "l’article 26 du règlement eIDAS (UE) n° 910/2014.",
+      "Le règlement eIDAS interdit de refuser l'effet juridique ou l'admissibilité d'une signature",
+      "au seul motif de sa forme électronique ou de son caractère non qualifié (article 25, paragraphe 1).",
       "",
-      "Le système de signature met notamment en œuvre :",
-      "• Vérification du signataire par code OTP transmis par email",
-      "• Horodatage RFC 3161 via Autorité d’Horodatage (TSA)",
-      "• Empreinte cryptographique SHA-256 garantissant la détection des modifications ultérieures du document",
-      "• Piste d’audit des opérations de signature",
+      ...levelSpecificLegalText,
       "",
-      "Horodatage cryptographique (TSA) reposant sur le standard RFC 3161.",
-      "L’horodatage garantit que la signature a été créée à un moment précis,",
-      "Toute modification du document après signature invalide l’empreinte cryptographique associée.",
-      "Conformément à l’article 26 du règlement eIDAS, cette signature électronique avancée est présumée fiable",
-      "et a une valeur probante en cas de litige.",
+      "Le fichier final comporte une signature CMS/PDF du serveur destinée à détecter toute modification.",
+      "Cette signature technique du serveur n'est pas la signature personnelle du signataire.",
+      "La piste d'audit est chaînée par SHA-256 à compter de l'activation de cette fonctionnalité.",
+      "Lorsque l'horodatage est activé, seule l'empreinte SHA-256 de la valeur de signature est",
+      "soumise à la TSA. La réponse RFC 3161 (empreinte, nonce, heure, signature et certificat TSA)",
+      "est vérifiée avant que son jeton cryptographique soit incorporé au CMS/PDF, le document n'est",
+      "alors finalisé que si ce jeton est valide, sauf dérogation serveur explicitement configurée.",
       "",
-      "Cette signature électronique avancée est mise en œuvre conformément aux exigences de l’article 26 du",
-      "règlement eIDAS (UE) n° 910/2014 et s’appuie sur des mécanismes d’intégrité, d’horodatage et de",
-      "traçabilité destinés à en assurer la valeur probatoire.",
+      "Le caractère qualifié de l'horodatage dépend du service TSA et du certificat effectivement employés,",
+      "tels qu'inscritsdans la Trusted List applicable. Il ne résulte pas du seul protocole RFC 3161.",
     ];
 
     for (const line of legalText) {
@@ -1091,7 +1898,8 @@ export class PdfSigningService {
       };
     } = { addApprovalWatermark: true },
   ): Promise<Buffer> {
-    const { PDFDocument, rgb, StandardFonts, degrees } = await import("pdf-lib");
+    const { PDFDocument, rgb, StandardFonts, degrees } =
+      await import("pdf-lib");
 
     const pdfDoc = await PDFDocument.load(pdfBuffer);
     let pages = pdfDoc.getPages();
@@ -1156,10 +1964,16 @@ export class PdfSigningService {
       sigHeight,
     );
     const sigX = options.signatureField
-      ? Math.min(Math.max(options.signatureField.posX || 0, 0), sigWidth - signatureBoxWidth)
+      ? Math.min(
+          Math.max(options.signatureField.posX || 0, 0),
+          sigWidth - signatureBoxWidth,
+        )
       : sigWidth - 260;
     const sigY = options.signatureField
-      ? Math.min(Math.max(options.signatureField.posY || 0, 0), sigHeight - signatureBoxHeight)
+      ? Math.min(
+          Math.max(options.signatureField.posY || 0, 0),
+          sigHeight - signatureBoxHeight,
+        )
       : 110;
     const paddingX = 8;
     const paddingY = 8;
@@ -1180,12 +1994,18 @@ export class PdfSigningService {
     }
 
     const signatureTextWidth = signerInfo.signatureText
-      ? Math.min(font.widthOfTextAtSize(signerInfo.signatureText, 14), signatureMaxWidth)
+      ? Math.min(
+          font.widthOfTextAtSize(signerInfo.signatureText, 14),
+          signatureMaxWidth,
+        )
       : 0;
     const approvalWidth = addMention
       ? Math.min(font.widthOfTextAtSize(approvalText, 9), signatureMaxWidth)
       : 0;
-    const nameWidth = Math.min(fontBold.widthOfTextAtSize(nameText, 10), signatureMaxWidth);
+    const nameWidth = Math.min(
+      fontBold.widthOfTextAtSize(nameText, 10),
+      signatureMaxWidth,
+    );
     const visualSignatureHeight = signatureImage
       ? signatureImageHeight
       : signerInfo.signatureText
@@ -1194,7 +2014,14 @@ export class PdfSigningService {
 
     const contentWidth = Math.min(
       signatureBoxWidth,
-      Math.max(80, approvalWidth, nameWidth, signatureImageWidth, signatureTextWidth) + paddingX * 2,
+      Math.max(
+        80,
+        approvalWidth,
+        nameWidth,
+        signatureImageWidth,
+        signatureTextWidth,
+      ) +
+        paddingX * 2,
     );
     const contentHeight = Math.min(
       signatureBoxHeight,
@@ -1306,7 +2133,10 @@ export class PdfSigningService {
         const page = pages[Math.max(0, field.page - 1)];
         const { width: pageWidth, height: pageHeight } = page.getSize();
         const boxWidth = Math.min(Math.max(field.width || 200, 80), pageWidth);
-        const boxHeight = Math.min(Math.max(field.height || 42, 24), pageHeight);
+        const boxHeight = Math.min(
+          Math.max(field.height || 42, 24),
+          pageHeight,
+        );
         const title =
           field.type === "APPROVAL"
             ? "Mention manuscrite"
@@ -1314,27 +2144,39 @@ export class PdfSigningService {
               ? "Date"
               : field.label || "Texte";
         const x = Math.min(Math.max(field.posX || 0, 0), pageWidth - boxWidth);
-        const y = Math.min(Math.max(field.posY || 0, 0), pageHeight - boxHeight);
+        const y = Math.min(
+          Math.max(field.posY || 0, 0),
+          pageHeight - boxHeight,
+        );
         const paddingX = 6;
         const paddingY = 6;
         const titleSize = 7;
         const valueSize = field.type === "APPROVAL" ? 9 : 8;
         const lineHeight = valueSize + 3;
         const value = fieldValue.value.trim();
-        const lines = this.wrapPdfText(value, Math.max(20, boxWidth - paddingX * 2), valueSize);
+        const lines = this.wrapPdfText(
+          value,
+          Math.max(20, boxWidth - paddingX * 2),
+          valueSize,
+        );
         const visibleLines = lines.slice(
           0,
           Math.max(1, Math.floor((boxHeight - paddingY * 2 - 14) / lineHeight)),
         );
         const textWidth = Math.max(
           fontBold.widthOfTextAtSize(title, titleSize),
-          ...visibleLines.map((line) => font.widthOfTextAtSize(line, valueSize)),
+          ...visibleLines.map((line) =>
+            font.widthOfTextAtSize(line, valueSize),
+          ),
           40,
         );
         const contentWidth = Math.min(boxWidth, textWidth + paddingX * 2);
         const contentHeight = Math.min(
           boxHeight,
-          Math.max(24, paddingY * 2 + 10 + 4 + visibleLines.length * lineHeight),
+          Math.max(
+            24,
+            paddingY * 2 + 10 + 4 + visibleLines.length * lineHeight,
+          ),
         );
         const contentPosition = this.placeContentWithinBox({
           boxX: x,
@@ -1414,7 +2256,11 @@ export class PdfSigningService {
     };
   }
 
-  private wrapPdfText(text: string, maxWidth: number, fontSize: number): string[] {
+  private wrapPdfText(
+    text: string,
+    maxWidth: number,
+    fontSize: number,
+  ): string[] {
     const averageCharWidth = fontSize * 0.52;
     const maxChars = Math.max(8, Math.floor(maxWidth / averageCharWidth));
     const words = text.replace(/\s+/g, " ").trim().split(" ");
@@ -1448,10 +2294,15 @@ export class PdfSigningService {
   async addInitialsToAllPages(
     pdfBuffer: Buffer,
     signerNames: string[],
+    options: {
+      placement?: string | null;
+      signaturePage?: number | null;
+      includeSignaturePage?: boolean;
+    } = {},
   ): Promise<Buffer> {
     const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
     const pdfDoc = await PDFDocument.load(pdfBuffer);
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const pages = pdfDoc.getPages();
 
     const initialsText = signerNames
@@ -1463,14 +2314,42 @@ export class PdfSigningService {
       )
       .join(" / ");
 
-    for (const page of pages) {
-      const { width } = page.getSize();
+    for (const [pageIndex, page] of pages.entries()) {
+      if (
+        !shouldAddInitialsToPage({
+          pageIndex,
+          signaturePage: options.signaturePage,
+          includeSignaturePage: options.includeSignaturePage,
+        })
+      ) {
+        continue;
+      }
+      const { width, height } = page.getSize();
+      const fontSize = 9;
+      const geometry = getInitialsStampGeometry({
+        pageWidth: width,
+        pageHeight: height,
+        textWidth: font.widthOfTextAtSize(initialsText, fontSize),
+        fontSize,
+        placement: options.placement,
+      });
+      page.drawRectangle({
+        x: geometry.x,
+        y: geometry.y,
+        width: geometry.width,
+        height: geometry.height,
+        color: rgb(1, 1, 1),
+        opacity: 0.94,
+        borderColor: rgb(0.35, 0.35, 0.35),
+        borderWidth: 0.6,
+        borderOpacity: 0.75,
+      });
       page.drawText(initialsText, {
-        x: width - 60,
-        y: 20,
-        size: 8,
+        x: geometry.x + geometry.textXOffset,
+        y: geometry.y + geometry.textYOffset,
+        size: geometry.fontSize,
         font,
-        color: rgb(0.3, 0.3, 0.3),
+        color: rgb(0.12, 0.12, 0.12),
       });
     }
 

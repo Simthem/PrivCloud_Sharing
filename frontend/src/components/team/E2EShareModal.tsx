@@ -45,6 +45,7 @@ interface E2EShareModalProps {
   files: FileTarget[];
   teamKeyB64: string;
   currentUserId: string;
+  pqNotificationEncryptionEnabled: boolean;
 }
 
 /**
@@ -66,6 +67,7 @@ const E2EShareModal = ({
   files,
   teamKeyB64,
   currentUserId,
+  pqNotificationEncryptionEnabled,
 }: E2EShareModalProps) => {
   const t = useTranslate();
   const { user } = useUser();
@@ -123,7 +125,8 @@ const E2EShareModal = ({
         if (file.teamFileId) target.teamFileId = file.teamFileId;
         else target.fileId = file.fileId;
 
-        // E2E encrypted notification metadata (PQ-hybrid per recipient)
+        // E2E-encrypted notification metadata. ML-KEM is used only when the
+        // Team administrator explicitly enabled the hybrid notification mode.
         const notifMeta = {
           senderName: user?.username || user?.email || "Un membre",
           fileName: file.name,
@@ -135,6 +138,7 @@ const E2EShareModal = ({
           members,
           target,
           notifMeta,
+          pqNotificationEncryptionEnabled,
         );
         totalSuccess += result.success;
         totalFailed += result.failed;

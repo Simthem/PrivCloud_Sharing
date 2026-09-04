@@ -33,10 +33,10 @@ model User {
 
   // NULL requiredAt is the permanent legacy exemption. Migrations must never
   // backfill it: only accounts created after the feature deployment opt in.
-  emailVerificationRequiredAt          DateTime?
-  emailVerifiedAt                      DateTime?
-  emailVerificationDeletionStartedAt   DateTime?
-  emailVerificationTokens              EmailVerificationToken[]
+  emailVerificationRequiredAt        DateTime?
+  emailVerifiedAt                    DateTime?
+  emailVerificationDeletionStartedAt DateTime?
+  emailVerificationTokens            EmailVerificationToken[]
 
   // E2E encryption: SHA-256 hex hash of the user's AES-256 key (never the key itself)
   encryptionKeyHash           String?
@@ -50,9 +50,13 @@ model User {
   wrappedKeys WrappedKey[]
 
   // PDF Signing: documents created by this user
-  signatureDocuments  SignatureDocument[]
+  signatureDocuments        SignatureDocument[]
   // PDF Signing: signing actions performed by this user
-  signatureRecipients SignatureRecipient[]
+  signatureRecipients       SignatureRecipient[]
+  // WebAuthn credentials dedicated to transaction-bound signatures
+  signingPasskeys           SigningPasskey[]
+  // Short-lived WebAuthn ceremonies for registration and signing
+  signingWebAuthnChallenges SigningWebAuthnChallenge[]
 
   // Teams: memberships
   teamMemberships TeamMember[]
@@ -170,14 +174,14 @@ model Share {
   uploadLastActivityAt   DateTime?
   uploadCleanupStartedAt DateTime?
 
-  name          String?
-  uploadLocked  Boolean  @default(false)
-  hasBeenCompleted Boolean @default(false)
-  isZipReady    Boolean  @default(false)
-  views         Int      @default(0)
-  expiration    DateTime
-  description   String?
-  removedReason String?
+  name             String?
+  uploadLocked     Boolean  @default(false)
+  hasBeenCompleted Boolean  @default(false)
+  isZipReady       Boolean  @default(false)
+  views            Int      @default(0)
+  expiration       DateTime
+  description      String?
+  removedReason    String?
 
   senderName  String?
   senderEmail String?
@@ -261,9 +265,10 @@ model File {
   shareId String
   share   Share  @relation(fields: [shareId], references: [id], onDelete: Cascade)
 
-  accessRules  FileAccess[]
+  accessRules        FileAccess[]
   // E2EE access grants for this file.
-  accessGrants AccessGrant[]
+  accessGrants       AccessGrant[]
+  signatureDocuments SignatureDocument[]
 
   @@index([shareId])
 }
@@ -343,7 +348,7 @@ model DownloadEvent {
 }
 
 // ============================================================================
-// PDF ELECTRONIC SIGNATURE (eIDAS AES/QES)
+// PDF ELECTRONIC SIGNATURE
 // ============================================================================
 
 // A document submitted for signing (linked to a Share's PDF file)
@@ -366,13 +371,13 @@ model SignatureDocument {
   certificatePageKey String?
 
   // Document status: DRAFT | PENDING | COMPLETED | CANCELLED | EXPIRED
-  status String @default("DRAFT")
+  status String @default("PENDING")
 
   // Optional message from the sender to all recipients
   message String?
 
-  // Signature level: AES (Advanced) or QES (Qualified)
-  signatureLevel String @default("AES")
+  // Evidence level: STANDARD or REINFORCED
+  signatureLevel String @default("STANDARD")
 
   // Expiration for signing (after which the request is void)
   expiresAt DateTime?
@@ -389,6 +394,10 @@ model SignatureDocument {
   // Whether to add signers' initials at the bottom of every page
   addInitials Boolean @default(false)
 
+  // Initials avoid the usual page-number zone and full-signature page by default.
+  initialsPlacement            String  @default("BOTTOM_CENTER_RIGHT")
+  initialsIncludeSignaturePage Boolean @default(false)
+
   // Page number (1-based) for signature placement (null = page 1)
   signaturePage Int?
 
@@ -404,9 +413,11 @@ model SignatureDocument {
   creatorId String
   creator   User   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
 
-  // Link to the original share (PDF must come from a share)
+  // Keep a nullable source relation so deleting a file revokes every signing
+  // action while retaining the request and its audit evidence for six months.
   shareId String?
   fileId  String?
+  file    File?   @relation(fields: [fileId], references: [id], onDelete: SetNull)
 
   recipients SignatureRecipient[]
   auditTrail SignatureAuditEvent[]
@@ -420,6 +431,8 @@ model SignatureDocument {
   fileDeletedAt DateTime?
 
   @@index([teamId, createdAt])
+  @@index([fileId])
+  @@index([fileDeletedAt])
 }
 
 // A person required to sign a document
@@ -435,6 +448,11 @@ model SignatureRecipient {
 
   // Unique token for accessing the signing page (URL-safe)
   signingToken String @unique @default(uuid())
+
+  // Recipient-encrypted Team actions. The server only stores opaque envelopes.
+  teamInviteNotification     String?
+  teamProgressNotification   String?
+  teamCompletionNotification String?
 
   // Role: SIGNER | APPROVER | CC (carbon copy, view only)
   role String @default("SIGNER")
@@ -456,11 +474,24 @@ model SignatureRecipient {
   // Signature type: DRAW | TYPE | UPLOAD
   signatureType String?
 
-  // Identity verification for AES: OTP sent to email
+  // Current mailbox-control verification for STANDARD requests.
   otpHash     String?
   otpSentAt   DateTime?
   otpVerified Boolean   @default(false)
   otpFailures Int       @default(0)
+
+  // Account-level evidence for REINFORCED requests; this is not a civil eID.
+  identityVerificationMethod String    @default("NONE")
+  identityVerifiedAt         DateTime?
+
+  authenticationMethod String?
+  signingIntentHash    String?
+  signedDocumentHash   String?
+  webauthnCredentialId String?
+  webauthnAssertion    String?
+  webauthnUserVerified Boolean?
+  webauthnDeviceType   String?
+  webauthnBackedUp     Boolean?
 
   // IP address and user-agent at signing time (for audit)
   signingIp        String?
@@ -473,7 +504,51 @@ model SignatureRecipient {
   documentId String
   document   SignatureDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
-  fieldValues SignatureFieldValue[]
+  fieldValues        SignatureFieldValue[]
+  webauthnChallenges SigningWebAuthnChallenge[]
+}
+
+// Server-verified WebAuthn credential used only for reinforced signatures.
+model SigningPasskey {
+  id         String    @id @default(uuid())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  lastUsedAt DateTime?
+
+  credentialId String  @unique
+  publicKey    Bytes
+  counter      BigInt  @default(0)
+  transports   String?
+  deviceType   String
+  backedUp     Boolean @default(false)
+  aaguid       String?
+  label        String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// One-time ceremony bound to a recipient and, for actions, to the exact intent.
+model SigningWebAuthnChallenge {
+  id                 String    @id @default(uuid())
+  createdAt          DateTime  @default(now())
+  expiresAt          DateTime
+  consumedAt         DateTime?
+  purpose            String
+  challenge          String    @unique
+  intentHash         String?
+  sourceDocumentHash String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  recipientId String
+  recipient   SignatureRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, expiresAt])
+  @@index([recipientId, purpose, expiresAt])
 }
 
 // Configurable signature fields placed on the PDF
@@ -546,6 +621,10 @@ model SignatureAuditEvent {
 
   // Additional JSON metadata (e.g., field IDs signed, OTP method used)
   metadata String?
+
+  // Application-level tamper-evident chain for newly appended events.
+  previousEventHash String?
+  eventHash         String? @unique
 
   documentId String
   document   SignatureDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -635,6 +714,9 @@ model Team {
   keyRotationIntervalDays   Int       @default(90)
   keyRotationReminderDays   Int       @default(7)
   lastKeyRotationReminderAt DateTime?
+
+  // Explicit opt-in for hybrid X25519 + ML-KEM-768 notification envelopes.
+  pqNotificationEncryptionEnabled Boolean @default(false)
 }
 
 model TeamMember {

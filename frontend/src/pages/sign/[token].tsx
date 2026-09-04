@@ -2,6 +2,11 @@ import { useRouter } from "next/router";
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useIntl } from "react-intl";
+import {
+  browserSupportsWebAuthn,
+  startAuthentication,
+  startRegistration,
+} from "@simplewebauthn/browser";
 import "@mantine/core/styles/Stepper.css";
 import {
   Alert,
@@ -14,10 +19,10 @@ import {
   Group,
   Loader,
   Paper,
-  PinInput,
   Stack,
   Stepper,
   Text,
+  TextInput,
   Textarea,
   Title,
 } from "@mantine/core";
@@ -27,7 +32,10 @@ import {
   TbDownload,
   TbExternalLink,
   TbLock,
-  TbMail,
+  TbFingerprint,
+  TbFileDescription,
+  TbLogin,
+  TbMailCheck,
   TbPencil,
   TbShieldCheck,
   TbX,
@@ -35,13 +43,30 @@ import {
 import Meta from "../../components/Meta";
 import SignaturePad from "../../components/signing/SignaturePad";
 import signingService from "../../services/signing.service";
+import useUser from "../../hooks/user.hook";
+import {
+  buildSignInRedirectPath,
+  rememberPostAuthRedirectTarget,
+} from "../../utils/authRedirect.util";
 import toast from "../../utils/toast.util";
 import { importKeyFromBase64, decryptFileAuto } from "../../utils/crypto.util";
 
+const readableDangerAlertStyles = {
+  root: {
+    backgroundColor: "var(--mantine-color-red-9)",
+    borderColor: "var(--mantine-color-red-9)",
+    color: "var(--mantine-color-white)",
+  },
+  title: { color: "var(--mantine-color-white)" },
+  message: { color: "var(--mantine-color-white)" },
+  icon: { color: "var(--mantine-color-white)" },
+};
+
 /**
  * Public signing page: /sign/[token]
- * Recipients access this page via email link.
- * Steps: 1) View document 2) OTP verification 3) Sign/Reject
+ * Standard requests require a short-lived code delivered to the assigned
+ * email before explicit consent. Reinforced requests require the assigned
+ * verified account and a fresh WebAuthn action.
  */
 const SignPage = () => {
   const router = useRouter();
@@ -49,26 +74,35 @@ const SignPage = () => {
   const { token } = router.query;
   const tokenStr = Array.isArray(token) ? token[0] : token || "";
   const isMobile = useMediaQuery("(max-width: 768px)");
+  const { user } = useUser();
 
   const [step, setStep] = useState(0);
-  const [otpCode, setOtpCode] = useState("");
-  const [otpVerified, setOtpVerified] = useState(false);
   const [signatureImage, setSignatureImage] = useState<string | null>(null);
-  const [signatureType, setSignatureType] = useState<"DRAW" | "TYPE" | "UPLOAD">("DRAW");
+  const [signatureType, setSignatureType] = useState<
+    "DRAW" | "TYPE" | "UPLOAD"
+  >("DRAW");
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [downloadingSignedPdf, setDownloadingSignedPdf] = useState(false);
+  const [webAuthnSupported, setWebAuthnSupported] = useState(true);
+  const [emailOtp, setEmailOtp] = useState("");
+  const [emailOtpSent, setEmailOtpSent] = useState(false);
+  const [reviewConfirmed, setReviewConfirmed] = useState(false);
+  const directDownloadDoneRef = useRef(false);
 
   // --- E2E: read encryption key from URL fragment (#key=...) ---
   const [e2eKey, setE2eKey] = useState<string | null>(null);
   const [decryptedBlobUrl, setDecryptedBlobUrl] = useState<string | null>(null);
-  const [decryptError, setDecryptError] = useState(false);
+  const [previewError, setPreviewError] = useState<
+    "unavailable" | "decrypt" | null
+  >(null);
   const blobUrlRef = useRef<string | null>(null);
 
   // Extract key from hash on mount
   useEffect(() => {
     if (typeof window === "undefined") return;
+    setWebAuthnSupported(browserSupportsWebAuthn());
     const hash = window.location.hash;
     const match = hash.match(/#key=([A-Za-z0-9_-]+)/);
     if (match) setE2eKey(match[1]);
@@ -84,6 +118,10 @@ const SignPage = () => {
     queryKey: ["signing.page", tokenStr],
     queryFn: () => signingService.getSigningPage(tokenStr),
     enabled: !!tokenStr,
+    // A removed/expired signing token is a final state, not a transient
+    // failure. Do not keep the recipient on the loader while React Query
+    // retries the API's 404 response.
+    retry: false,
   });
 
   const fillableFields =
@@ -109,11 +147,76 @@ const SignPage = () => {
 
   const allRequiredFieldsComplete = fillableFields.every(fieldIsComplete);
 
+  const isReinforced = signingData?.document.signatureLevel === "REINFORCED";
+  const isEmailVerified = Boolean(signingData?.recipient.emailVerified);
+  const hasPendingEmailOtp = Boolean(
+    emailOtpSent || signingData?.emailVerificationCodePending,
+  );
+  const isAssignedAccount = Boolean(
+    user?.email &&
+    signingData?.recipient.email &&
+    user.email.toLowerCase() === signingData.recipient.email.toLowerCase(),
+  );
+  const previewUrl = tokenStr
+    ? isReinforced
+      ? signingService.getAuthenticatedPreviewUrl(tokenStr)
+      : signingService.getPreviewUrl(tokenStr)
+    : "";
+
+  // A final encrypted team notification resolves here with ?download=1. Do
+  // not make the signer hunt through the document list: download immediately
+  // once finalization is complete. E2E results are decrypted locally with the
+  // key carried only inside the recipient-encrypted notification action.
   useEffect(() => {
-    if (!signingData?.recipient?.otpVerified) return;
-    setOtpVerified(true);
-    setStep((current) => (current < 2 ? 2 : current));
-  }, [signingData?.recipient?.otpVerified]);
+    if (
+      router.query.download !== "1" ||
+      directDownloadDoneRef.current ||
+      !signingData ||
+      signingData.recipient.status !== "SIGNED" ||
+      signingData.documentStatus !== "COMPLETED" ||
+      (signingData.document.isE2EEncrypted && !e2eKey)
+    )
+      return;
+    directDownloadDoneRef.current = true;
+    void (async () => {
+      setDownloadingSignedPdf(true);
+      try {
+        const downloadedBlob = isReinforced
+          ? await signingService.downloadSignedByTokenAuthenticated(tokenStr)
+          : await signingService.downloadSignedByToken(tokenStr);
+        let blob = downloadedBlob;
+        if (signingData.document.isE2EEncrypted && e2eKey) {
+          const decrypted = await decryptFileAuto(
+            await downloadedBlob.arrayBuffer(),
+            await importKeyFromBase64(e2eKey),
+            5_000_000,
+          );
+          blob = new Blob([decrypted], { type: "application/pdf" });
+        }
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `${signingData.document.fileName.replace(/\.pdf$/i, "")}_signed.pdf`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+      } catch {
+        toast.error("Le document signé n'est pas encore disponible.");
+      } finally {
+        setDownloadingSignedPdf(false);
+      }
+    })();
+  }, [e2eKey, isReinforced, router.query.download, signingData, tokenStr]);
+
+  useEffect(() => {
+    if (!signingData || step >= 3) return;
+    if (!isReinforced) {
+      setStep(isEmailVerified ? 2 : 1);
+    } else if (isAssignedAccount && signingData.hasRegisteredPasskey) {
+      setStep(2);
+    } else {
+      setStep(0);
+    }
+  }, [isAssignedAccount, isEmailVerified, isReinforced, signingData, step]);
 
   useEffect(() => {
     if (!signingData?.fields?.length) return;
@@ -135,7 +238,9 @@ const SignPage = () => {
 
   // E2E: fetch encrypted preview, decrypt client-side, create blob URL
   useEffect(() => {
-    const canPreviewDocument = otpVerified || !!signingData?.recipient?.otpVerified;
+    const canPreviewDocument = isReinforced
+      ? isAssignedAccount && signingData?.hasRegisteredPasskey
+      : isEmailVerified;
     if (
       !canPreviewDocument ||
       step < 2 ||
@@ -150,20 +255,27 @@ const SignPage = () => {
     let cancelled = false;
     (async () => {
       try {
-        const previewUrl = signingService.getPreviewUrl(tokenStr);
-        const resp = await fetch(previewUrl);
-        if (!resp.ok) throw new Error("Preview fetch failed");
+        const resp = await fetch(previewUrl, { credentials: "include" });
+        if (!resp.ok) {
+          if (!cancelled) setPreviewError("unavailable");
+          return;
+        }
         const encryptedBuf = await resp.arrayBuffer();
         const cryptoKey = await importKeyFromBase64(e2eKey);
         // Default chunk size 5MB - decryptFileAuto tries multiple sizes
-        const decryptedBuf = await decryptFileAuto(encryptedBuf, cryptoKey, 5_000_000);
+        const decryptedBuf = await decryptFileAuto(
+          encryptedBuf,
+          cryptoKey,
+          5_000_000,
+        );
         if (cancelled) return;
         const blob = new Blob([decryptedBuf], { type: "application/pdf" });
         const url = URL.createObjectURL(blob);
         blobUrlRef.current = url;
         setDecryptedBlobUrl(url);
+        setPreviewError(null);
       } catch {
-        if (!cancelled) setDecryptError(true);
+        if (!cancelled) setPreviewError("decrypt");
       }
     })();
 
@@ -174,7 +286,17 @@ const SignPage = () => {
         blobUrlRef.current = null;
       }
     };
-  }, [e2eKey, tokenStr, signingData, otpVerified, step, decryptedBlobUrl]);
+  }, [
+    e2eKey,
+    tokenStr,
+    signingData,
+    isReinforced,
+    isEmailVerified,
+    isAssignedAccount,
+    previewUrl,
+    step,
+    decryptedBlobUrl,
+  ]);
 
   // Cleanup blob URL on unmount
   useEffect(() => {
@@ -183,35 +305,59 @@ const SignPage = () => {
     };
   }, []);
 
-  // Send OTP mutation
-  const sendOtpMutation = useMutation({
-    mutationFn: () => signingService.sendOtp(tokenStr),
-    onSuccess: () => {
-      toast.success("Code de vérification envoyé à votre adresse email");
-      setStep(1);
+  const registerPasskeyMutation = useMutation({
+    mutationFn: async () => {
+      const ceremony = await signingService.beginPasskeyRegistration(tokenStr);
+      const response = await startRegistration({
+        optionsJSON: ceremony.options as unknown as Parameters<
+          typeof startRegistration
+        >[0]["optionsJSON"],
+      });
+      return signingService.finishPasskeyRegistration(
+        tokenStr,
+        ceremony.challengeId,
+        response as unknown as Record<string, unknown>,
+      );
     },
-    onError: () => toast.error("Impossible d'envoyer le code de vérification"),
+    onSuccess: async () => {
+      await refetchSigningData();
+      setStep(2);
+      toast.success("Passkey enregistrée. Votre compte est prêt à signer.");
+    },
+    onError: () =>
+      toast.error("L'enregistrement de la passkey a été annulé ou a échoué."),
   });
 
-  // Verify OTP mutation
-  const verifyOtpMutation = useMutation({
-    mutationFn: () => signingService.verifyOtp(tokenStr, otpCode),
-    onSuccess: async (data) => {
-      if (data.verified) {
-        setOtpVerified(true);
-        await refetchSigningData();
+  const sendEmailOtpMutation = useMutation({
+    mutationFn: () => signingService.sendSigningEmailOtp(tokenStr),
+    onSuccess: (result) => {
+      if (result.verified) {
+        void refetchSigningData();
         setStep(2);
-        toast.success("Identité vérifiée avec succès");
-      } else {
-        toast.error("Code incorrect ou expiré");
+        return;
       }
+      setEmailOtpSent(true);
+      toast.success(intl.formatMessage({ id: "signing.sign.otp.sent" }));
     },
-    onError: () => toast.error("Erreur lors de la vérification"),
+    onError: () =>
+      toast.error(intl.formatMessage({ id: "signing.sign.otp.send-error" })),
+  });
+
+  const verifyEmailOtpMutation = useMutation({
+    mutationFn: () => signingService.verifySigningEmailOtp(tokenStr, emailOtp),
+    onSuccess: async () => {
+      await refetchSigningData();
+      setEmailOtp("");
+      setStep(2);
+      toast.success(intl.formatMessage({ id: "signing.sign.otp.verified" }));
+    },
+    onError: () =>
+      toast.error(intl.formatMessage({ id: "signing.sign.otp.invalid" })),
   });
 
   // Sign mutation
   const signMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const fieldsToSubmit = fillableFields
         .map((field) => ({
           fieldId: field.id,
@@ -219,10 +365,28 @@ const SignPage = () => {
         }))
         .filter((field) => field.value.length > 0);
 
-      return signingService.signDocument(tokenStr, {
+      const payload = {
         signatureData: signatureImage || "",
         signatureType,
         fieldValues: fieldsToSubmit,
+      };
+      if (!isReinforced) {
+        return signingService.signDocument(tokenStr, payload);
+      }
+
+      const ceremony = await signingService.beginPasskeyAction(tokenStr, {
+        action: "SIGN",
+        ...payload,
+      });
+      const assertion = await startAuthentication({
+        optionsJSON: ceremony.options as unknown as Parameters<
+          typeof startAuthentication
+        >[0]["optionsJSON"],
+      });
+      return signingService.signDocument(tokenStr, {
+        ...payload,
+        passkeyChallengeId: ceremony.challengeId,
+        passkeyResponse: assertion as unknown as Record<string, unknown>,
       });
     },
     onSuccess: () => {
@@ -233,7 +397,9 @@ const SignPage = () => {
   });
 
   const handleSign = () => {
-    const invalidField = fillableFields.find((field) => !fieldIsComplete(field));
+    const invalidField = fillableFields.find(
+      (field) => !fieldIsComplete(field),
+    );
     if (invalidField) {
       toast.error(
         invalidField.type === "APPROVAL"
@@ -247,7 +413,27 @@ const SignPage = () => {
 
   // Reject mutation
   const rejectMutation = useMutation({
-    mutationFn: () => signingService.rejectDocument(tokenStr, rejectReason),
+    mutationFn: async () => {
+      if (!isReinforced) {
+        return signingService.rejectDocument(tokenStr, {
+          reason: rejectReason || undefined,
+        });
+      }
+      const ceremony = await signingService.beginPasskeyAction(tokenStr, {
+        action: "REJECT",
+        reason: rejectReason || undefined,
+      });
+      const assertion = await startAuthentication({
+        optionsJSON: ceremony.options as unknown as Parameters<
+          typeof startAuthentication
+        >[0]["optionsJSON"],
+      });
+      return signingService.rejectDocument(tokenStr, {
+        reason: rejectReason || undefined,
+        passkeyChallengeId: ceremony.challengeId,
+        passkeyResponse: assertion as unknown as Record<string, unknown>,
+      });
+    },
     onSuccess: () => {
       toast.success("Document refusé");
       setStep(3);
@@ -258,7 +444,12 @@ const SignPage = () => {
   if (!tokenStr) {
     return (
       <Container size="sm" mt="xl">
-        <Alert color="red" title="Lien invalide">
+        <Alert
+          variant="filled"
+          color="red"
+          styles={readableDangerAlertStyles}
+          title={intl.formatMessage({ id: "signing.sign.unavailable.title" })}
+        >
           Ce lien de signature est invalide ou incomplet.
         </Alert>
       </Container>
@@ -276,8 +467,13 @@ const SignPage = () => {
   if (error || !signingData) {
     return (
       <Container size="sm" mt="xl">
-        <Alert color="red" title="Erreur">
-          Ce document n'existe pas, a déjà été signé, ou le lien a expiré.
+        <Alert
+          variant="filled"
+          color="red"
+          styles={readableDangerAlertStyles}
+          title={intl.formatMessage({ id: "signing.sign.unavailable.title" })}
+        >
+          {intl.formatMessage({ id: "signing.sign.unavailable.description" })}
         </Alert>
       </Container>
     );
@@ -316,13 +512,13 @@ const SignPage = () => {
             <Group justify="space-between">
               <Title order={2}>{sigDoc.fileName}</Title>
               <Badge
-                color={sigDoc.signatureLevel === "QES" ? "violet" : "blue"}
+                color={isReinforced ? "violet" : "blue"}
                 variant="light"
                 size="lg"
               >
                 <Group gap={4}>
                   <TbShieldCheck size={14} />
-                  eIDAS {sigDoc.signatureLevel}
+                  {isReinforced ? "Signature renforcée" : "Signature standard"}
                 </Group>
               </Badge>
             </Group>
@@ -340,128 +536,267 @@ const SignPage = () => {
 
           {/* Stepper */}
           <Stepper
-            active={step >= 3 ? 4 : step}
+            active={step >= 3 ? 5 : step === 2 ? (reviewConfirmed ? 3 : 2) : 1}
             mb="xl"
             size={isMobile ? "xs" : "sm"}
             completedIcon={<TbCheck size={isMobile ? 14 : 18} />}
           >
             <Stepper.Step
-              label={isMobile ? undefined : "Consulter"}
-              description={isMobile ? undefined : "Lire le document"}
-              icon={<TbPencil size={isMobile ? 14 : 18} />}
+              label={
+                isMobile
+                  ? undefined
+                  : intl.formatMessage({
+                      id: "signing.sign.steps.invitation",
+                    })
+              }
+              description={
+                isMobile
+                  ? undefined
+                  : intl.formatMessage({
+                      id: "signing.sign.steps.invitation.description",
+                    })
+              }
+              icon={<TbMailCheck size={isMobile ? 14 : 18} />}
             />
             <Stepper.Step
-              label={isMobile ? undefined : "Verifier"}
-              description={isMobile ? undefined : "Confirmer votre identite"}
-              icon={<TbMail size={isMobile ? 14 : 18} />}
+              label={
+                isMobile
+                  ? undefined
+                  : intl.formatMessage({ id: "signing.sign.steps.review" })
+              }
+              description={
+                isMobile
+                  ? undefined
+                  : intl.formatMessage({
+                      id: "signing.sign.steps.review.description",
+                    })
+              }
+              icon={<TbFileDescription size={isMobile ? 14 : 18} />}
             />
             <Stepper.Step
-              label={isMobile ? undefined : "Signer"}
-              description={isMobile ? undefined : "Apposer votre signature"}
+              label={
+                isMobile
+                  ? undefined
+                  : intl.formatMessage({
+                      id: isReinforced
+                        ? "signing.sign.steps.secure"
+                        : "signing.sign.steps.email",
+                    })
+              }
+              description={
+                isMobile
+                  ? undefined
+                  : intl.formatMessage({
+                      id: isReinforced
+                        ? "signing.sign.steps.secure.description"
+                        : "signing.sign.steps.email.description",
+                    })
+              }
+              icon={
+                isReinforced ? (
+                  <TbFingerprint size={isMobile ? 14 : 18} />
+                ) : (
+                  <TbMailCheck size={isMobile ? 14 : 18} />
+                )
+              }
+            />
+            <Stepper.Step
+              label={
+                isMobile
+                  ? undefined
+                  : intl.formatMessage({ id: "signing.sign.steps.sign" })
+              }
+              description={
+                isMobile
+                  ? undefined
+                  : intl.formatMessage({
+                      id: "signing.sign.steps.sign.description",
+                    })
+              }
               icon={<TbLock size={isMobile ? 14 : 18} />}
             />
             <Stepper.Step
-              label={isMobile ? undefined : "Termine"}
-              description={isMobile ? undefined : "Document signe"}
+              label={
+                isMobile
+                  ? undefined
+                  : intl.formatMessage({ id: "signing.sign.steps.done" })
+              }
+              description={
+                isMobile
+                  ? undefined
+                  : intl.formatMessage({
+                      id: "signing.sign.steps.done.description",
+                    })
+              }
               icon={<TbCheck size={isMobile ? 14 : 18} />}
               completedIcon={<TbCheck size={isMobile ? 14 : 18} />}
               color="green"
             />
           </Stepper>
 
-          {/* Step 0: Start identity verification */}
-          {step === 0 && (
+          {/* Step 0: reinforced-account and passkey gate */}
+          {step === 0 && isReinforced && (
             <Stack gap="md">
               <Paper
                 withBorder
                 style={{
                   minHeight: isMobile ? 240 : 280,
                   overflow: "hidden",
-                  background: "#f8f9fa",
+                  // Theme-aware: a hard-coded light panel makes every
+                  // Mantine child render dark-on-dark or light-on-light.
+                  background: "var(--mantine-color-default)",
                   borderRadius: "var(--mantine-radius-md)",
                 }}
               >
                 <Center style={{ minHeight: isMobile ? 240 : 280 }} p="md">
                   <Stack align="center" gap="sm" maw={520}>
-                    <TbLock size={44} color="var(--mantine-color-blue-6)" />
+                    <TbFingerprint
+                      size={48}
+                      color="var(--mantine-color-violet-6)"
+                    />
                     <Title order={3} ta="center">
-                      Verification d'identite requise
+                      Compte vérifié et passkey requis
                     </Title>
                     <Text size="sm" c="dimmed" ta="center">
-                      Pour proteger ce document, son contenu sera affiche
-                      uniquement apres verification de l'adresse email du
-                      signataire.
-                    </Text>
-                    <Text size="sm" ta="center">
-                      Un code a 6 chiffres sera envoye a{" "}
-                      <strong>{recipient.email}</strong>.
+                      Ce parcours renforcé est réservé au compte PrivCloud
+                      attribué à <strong>{recipient.email}</strong>. La passkey
+                      demandera ensuite la biométrie ou le code local de
+                      l'appareil pour chaque décision.
                     </Text>
                   </Stack>
                 </Center>
               </Paper>
 
-              <Alert variant="light" color="blue" icon={<TbShieldCheck />}>
+              <Alert variant="light" color="violet" icon={<TbShieldCheck />}>
                 <Text size="sm">
-                  <strong>Niveau de signature eIDAS {sigDoc.signatureLevel}</strong>
+                  <strong>Alignement eIDAS — niveau renforcé</strong>
                   <br />
-                  {sigDoc.signatureLevel === "AES"
-                    ? "Signature électronique avancée : vérification d'identité par code OTP email, horodatage certifié et piste d'audit complète."
-                    : "Signature électronique qualifiée : certificat qualifié délivré par un prestataire de confiance, valeur juridique équivalente à une signature manuscrite."}
+                  {intl.formatMessage({
+                    id: "signing.sign.legal.reinforced-short",
+                  })}
                 </Text>
               </Alert>
 
               <Group justify="center">
-                <Button
-                  size="lg"
-                  leftSection={<TbMail size={20} />}
-                  onClick={() => sendOtpMutation.mutate()}
-                  loading={sendOtpMutation.isPending}
-                >
-                  Vérifier mon identité pour signer
-                </Button>
+                {!user || !isAssignedAccount ? (
+                  <Button
+                    size="lg"
+                    leftSection={<TbLogin size={20} />}
+                    onClick={() => {
+                      const target = `/sign/${tokenStr}${typeof window !== "undefined" ? window.location.hash : ""}`;
+                      rememberPostAuthRedirectTarget(target);
+                      void router.push(
+                        buildSignInRedirectPath(`/sign/${tokenStr}`),
+                      );
+                    }}
+                  >
+                    {!user
+                      ? "Se connecter avec le compte attribué"
+                      : "Changer de compte PrivCloud"}
+                  </Button>
+                ) : (
+                  <Stack align="center" gap="sm">
+                    {!webAuthnSupported && (
+                      <Alert color="red">
+                        Ce navigateur ne prend pas en charge WebAuthn. Utilisez
+                        un navigateur récent ou une clé de sécurité compatible.
+                      </Alert>
+                    )}
+                    <Button
+                      size="lg"
+                      color="violet"
+                      leftSection={<TbFingerprint size={20} />}
+                      onClick={() => registerPasskeyMutation.mutate()}
+                      loading={registerPasskeyMutation.isPending}
+                      disabled={!webAuthnSupported}
+                    >
+                      Enregistrer une passkey de signature
+                    </Button>
+                  </Stack>
+                )}
               </Group>
             </Stack>
           )}
 
-          {/* Step 1: OTP Verification */}
-          {step === 1 && (
-            <Stack gap="md" align="center">
-              <TbMail size={48} color="var(--mantine-color-blue-6)" />
-              <Title order={3} ta="center">Verification d'identite</Title>
-              <Text size="sm" c="dimmed" ta="center" maw={400} px="xs">
-                Un code a 6 chiffres a ete envoye a{" "}
-                <strong>{recipient.email}</strong>. Entrez-le ci-dessous pour
-                confirmer votre identite (valide 10 minutes).
-              </Text>
+          {/* Step 1: standard email-control verification */}
+          {step === 1 && !isReinforced && (
+            <Stack gap="md">
+              <Paper
+                withBorder
+                p={isMobile ? "md" : "xl"}
+                style={{
+                  background: "var(--mantine-color-blue-light)",
+                  borderRadius: "var(--mantine-radius-md)",
+                }}
+              >
+                <Stack align="center" gap="sm" maw={560} mx="auto">
+                  <TbMailCheck size={48} color="var(--mantine-color-blue-7)" />
+                  <Title order={3} ta="center">
+                    {intl.formatMessage({ id: "signing.sign.otp.title" })}
+                  </Title>
+                  <Text size="sm" ta="center">
+                    {intl.formatMessage(
+                      { id: "signing.sign.otp.description" },
+                      { email: recipient.email },
+                    )}
+                  </Text>
+                </Stack>
+              </Paper>
 
-              <Box style={{ width: "100%", maxWidth: 320, overflow: "hidden" }}>
-                <PinInput
-                  length={6}
-                  type="number"
-                  size={isMobile ? "md" : "lg"}
-                  value={otpCode}
-                  onChange={setOtpCode}
-                  oneTimeCode
-                  style={{ justifyContent: "center" }}
-                />
-              </Box>
+              <Alert variant="light" color="blue" icon={<TbShieldCheck />}>
+                {intl.formatMessage({
+                  id: "signing.sign.legal.standard-short",
+                })}
+              </Alert>
 
-              <Group justify="center" wrap="wrap" gap="sm">
-                <Button
-                  onClick={() => verifyOtpMutation.mutate()}
-                  loading={verifyOtpMutation.isPending}
-                  disabled={otpCode.length !== 6}
-                >
-                  Verifier
-                </Button>
-                <Button
-                  variant="subtle"
-                  onClick={() => sendOtpMutation.mutate()}
-                  loading={sendOtpMutation.isPending}
-                >
-                  Renvoyer le code
-                </Button>
-              </Group>
+              {!hasPendingEmailOtp ? (
+                <Group justify="center">
+                  <Button
+                    size="lg"
+                    leftSection={<TbMailCheck size={20} />}
+                    onClick={() => sendEmailOtpMutation.mutate()}
+                    loading={sendEmailOtpMutation.isPending}
+                  >
+                    {intl.formatMessage({ id: "signing.sign.otp.send" })}
+                  </Button>
+                </Group>
+              ) : (
+                <Stack gap="sm" maw={360} mx="auto" w="100%">
+                  <TextInput
+                    label={intl.formatMessage({
+                      id: "signing.sign.otp.code-label",
+                    })}
+                    placeholder={intl.formatMessage({
+                      id: "signing.sign.otp.placeholder",
+                    })}
+                    value={emailOtp}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    onChange={(event) =>
+                      setEmailOtp(
+                        event.currentTarget.value
+                          .replace(/\D/g, "")
+                          .slice(0, 6),
+                      )
+                    }
+                  />
+                  <Button
+                    onClick={() => verifyEmailOtpMutation.mutate()}
+                    loading={verifyEmailOtpMutation.isPending}
+                    disabled={!/^\d{6}$/.test(emailOtp)}
+                  >
+                    {intl.formatMessage({ id: "signing.sign.otp.verify" })}
+                  </Button>
+                  <Button
+                    variant="subtle"
+                    onClick={() => sendEmailOtpMutation.mutate()}
+                    loading={sendEmailOtpMutation.isPending}
+                  >
+                    {intl.formatMessage({ id: "signing.sign.otp.resend" })}
+                  </Button>
+                </Stack>
+              )}
             </Stack>
           )}
 
@@ -469,8 +804,13 @@ const SignPage = () => {
           {step === 2 && !rejecting && (
             <Stack gap="md">
               <Alert color="green" icon={<TbCheck />}>
-                Identite verifiee. Vous pouvez maintenant apposer votre
-                signature.
+                {isReinforced
+                  ? intl.formatMessage({
+                      id: "signing.sign.assurance.reinforced",
+                    })
+                  : intl.formatMessage({
+                      id: "signing.sign.assurance.standard",
+                    })}
               </Alert>
 
               <Paper
@@ -478,17 +818,30 @@ const SignPage = () => {
                 style={{
                   height: isMobile ? 320 : 520,
                   overflow: "hidden",
-                  background: "#f8f9fa",
+                  // Theme-aware: a hard-coded light panel makes every
+                  // Mantine child render dark-on-dark or light-on-light.
+                  background: "var(--mantine-color-default)",
                   borderRadius: "var(--mantine-radius-md)",
                 }}
               >
                 {sigDoc.isE2EEncrypted && e2eKey ? (
                   decryptedBlobUrl ? (
                     isMobile ? (
-                      <Stack align="center" justify="center" h="100%" gap="md" p="md">
-                        <TbPencil size={40} color="var(--mantine-color-blue-6)" />
+                      <Stack
+                        align="center"
+                        justify="center"
+                        h="100%"
+                        gap="md"
+                        p="md"
+                      >
+                        <TbPencil
+                          size={40}
+                          color="var(--mantine-color-blue-6)"
+                        />
                         <Text size="sm" ta="center" c="dimmed">
-                          {intl.formatMessage({ id: "signing.mobile.pdf-e2e-unavailable" })}
+                          {intl.formatMessage({
+                            id: "signing.mobile.pdf-e2e-unavailable",
+                          })}
                         </Text>
                         <Button
                           variant="light"
@@ -498,67 +851,122 @@ const SignPage = () => {
                           target="_blank"
                           rel="noopener noreferrer"
                         >
-                          {intl.formatMessage({ id: "share.modal.file-preview.pdf-open" })}
+                          {intl.formatMessage({
+                            id: "share.modal.file-preview.pdf-open",
+                          })}
                         </Button>
                       </Stack>
                     ) : (
                       <iframe
                         src={decryptedBlobUrl}
                         title="Apercu du document (E2E)"
-                        style={{ width: "100%", height: "100%", border: "none" }}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          border: "none",
+                        }}
                       />
                     )
-                  ) : decryptError ? (
+                  ) : previewError ? (
                     <Center style={{ height: "100%" }}>
-                      <Alert color="red" title={intl.formatMessage({ id: "signing.mobile.decrypt-error-title" })}>
-                        {intl.formatMessage({ id: "signing.mobile.decrypt-error-description" })}
+                      <Alert
+                        variant="filled"
+                        color="red"
+                        styles={readableDangerAlertStyles}
+                        title={intl.formatMessage({
+                          id:
+                            previewError === "unavailable"
+                              ? "signing.preview.unavailable.title"
+                              : "signing.mobile.decrypt-error-title",
+                        })}
+                      >
+                        {intl.formatMessage({
+                          id:
+                            previewError === "unavailable"
+                              ? "signing.preview.unavailable.description"
+                              : "signing.mobile.decrypt-error-description",
+                        })}
                       </Alert>
                     </Center>
                   ) : (
                     <Center style={{ height: "100%" }}>
                       <Stack align="center" gap="xs">
                         <Loader />
-                        <Text size="sm" c="dimmed">Dechiffrement du document...</Text>
+                        <Text size="sm" c="dimmed">
+                          Déchiffrement du document…
+                        </Text>
                       </Stack>
                     </Center>
                   )
                 ) : sigDoc.isE2EEncrypted && !e2eKey ? (
                   <Center style={{ height: "100%" }}>
-                    <Alert color="orange" icon={<TbLock />} title="Document chiffre">
-                      Ce document est protege par chiffrement de bout en bout.
-                      Le lien que vous avez recu semble incomplet (cle manquante).
+                    <Alert
+                      variant="filled"
+                      color="blue"
+                      icon={<TbLock />}
+                      title="Document chiffré — clé manquante"
+                      styles={{
+                        root: {
+                          backgroundColor: "var(--mantine-color-blue-9)",
+                          borderColor: "var(--mantine-color-blue-9)",
+                          color: "var(--mantine-color-white)",
+                        },
+                        title: { color: "var(--mantine-color-white)" },
+                        message: { color: "var(--mantine-color-white)" },
+                        icon: { color: "var(--mantine-color-white)" },
+                      }}
+                    >
+                      Ce document est protégé par chiffrement de bout en bout.
+                      Le lien reçu est incomplet : sa clé de déchiffrement est
+                      absente.
                     </Alert>
                   </Center>
                 ) : tokenStr ? (
                   isMobile ? (
-                    <Stack align="center" justify="center" h="100%" gap="md" p="md">
+                    <Stack
+                      align="center"
+                      justify="center"
+                      h="100%"
+                      gap="md"
+                      p="md"
+                    >
                       <TbPencil size={40} color="var(--mantine-color-blue-6)" />
                       <Text size="sm" ta="center" c="dimmed">
-                        {intl.formatMessage({ id: "signing.mobile.view-before-sign" })}
+                        {intl.formatMessage({
+                          id: "signing.mobile.view-before-sign",
+                        })}
                       </Text>
                       <Button
                         variant="light"
                         leftSection={<TbExternalLink size={16} />}
                         component="a"
-                        href={signingService.getPreviewUrl(tokenStr)}
+                        href={previewUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        {intl.formatMessage({ id: "share.modal.file-preview.pdf-open" })}
+                        {intl.formatMessage({
+                          id: "share.modal.file-preview.pdf-open",
+                        })}
                       </Button>
                       <object
-                        data={signingService.getPreviewUrl(tokenStr)}
+                        data={previewUrl}
                         type="application/pdf"
-                        style={{ width: "100%", height: "220px", border: "none" }}
+                        style={{
+                          width: "100%",
+                          height: "220px",
+                          border: "none",
+                        }}
                       >
                         <Text size="xs" c="dimmed" ta="center" mt="xs">
-                          {intl.formatMessage({ id: "signing.mobile.pdf-fallback-hint" })}
+                          {intl.formatMessage({
+                            id: "signing.mobile.pdf-fallback-hint",
+                          })}
                         </Text>
                       </object>
                     </Stack>
                   ) : (
                     <iframe
-                      src={signingService.getPreviewUrl(tokenStr)}
+                      src={previewUrl}
                       title="Apercu du document"
                       style={{ width: "100%", height: "100%", border: "none" }}
                     />
@@ -570,111 +978,153 @@ const SignPage = () => {
                 )}
               </Paper>
 
-              <Text fw={500} size="lg">
-                Apposer votre signature
-              </Text>
-              <Text size="sm" c="dimmed">
-                Dessinez, saisissez ou importez votre signature ci-dessous.
-              </Text>
-
-              {fillableFields.length > 0 && (
-                <Paper withBorder p="md">
-                  <Stack gap="sm">
-                    <div>
-                      <Text fw={600}>Mentions et champs à compléter</Text>
-                      <Text size="xs" c="dimmed">
-                        Ces informations seront ajoutées au PDF signé.
-                      </Text>
-                    </div>
-                    {fillableFields.map((field) => {
-                      const exactMentionRequired = field.type === "APPROVAL" && field.label;
-                      return (
-                        <Textarea
-                          key={field.id}
-                          label={
-                            field.type === "APPROVAL"
-                              ? "Mention obligatoire"
-                              : field.type === "DATE"
-                                ? "Date"
-                                : field.label || "Champ texte"
-                          }
-                          description={
-                            exactMentionRequired
-                              ? `Recopiez exactement : ${field.label}`
-                              : field.label || undefined
-                          }
-                          required={field.required}
-                          autosize
-                          minRows={field.type === "APPROVAL" ? 2 : 1}
-                          readOnly={field.type === "DATE"}
-                          value={fieldValues[field.id] || ""}
-                          onChange={(event) =>
-                            setFieldValues((current) => ({
-                              ...current,
-                              [field.id]: event.currentTarget.value,
-                            }))
-                          }
-                          error={
-                            field.type === "APPROVAL" &&
-                            field.label &&
-                            (fieldValues[field.id] || "").trim() &&
-                            !fieldIsComplete(field)
-                              ? "La mention ne correspond pas au texte attendu."
-                              : undefined
-                          }
-                        />
-                      );
+              {!reviewConfirmed ? (
+                <Stack align="center" gap="sm">
+                  <Text size="sm" c="dimmed" ta="center">
+                    {intl.formatMessage({
+                      id: "signing.sign.review.confirm-description",
                     })}
-                  </Stack>
-                </Paper>
+                  </Text>
+                  <Group justify="center">
+                    <Button
+                      size={isMobile ? "md" : "lg"}
+                      leftSection={<TbCheck size={20} />}
+                      onClick={() => setReviewConfirmed(true)}
+                    >
+                      {intl.formatMessage({
+                        id: "signing.sign.review.confirm",
+                      })}
+                    </Button>
+                    <Button
+                      variant="light"
+                      color="red"
+                      size={isMobile ? "md" : "lg"}
+                      onClick={() => setRejecting(true)}
+                    >
+                      {intl.formatMessage({
+                        id: "signing.sign.review.reject",
+                      })}
+                    </Button>
+                  </Group>
+                </Stack>
+              ) : (
+                <>
+                  <Text fw={500} size="lg">
+                    Apposer votre signature
+                  </Text>
+                  <Text size="sm" c="dimmed">
+                    Dessinez, saisissez ou importez votre signature ci-dessous.
+                  </Text>
+
+                  {fillableFields.length > 0 && (
+                    <Paper withBorder p="md">
+                      <Stack gap="sm">
+                        <div>
+                          <Text fw={600}>Mentions et champs à compléter</Text>
+                          <Text size="xs" c="dimmed">
+                            Ces informations seront ajoutées au PDF signé.
+                          </Text>
+                        </div>
+                        {fillableFields.map((field) => {
+                          const exactMentionRequired =
+                            field.type === "APPROVAL" && field.label;
+                          return (
+                            <Textarea
+                              key={field.id}
+                              label={
+                                field.type === "APPROVAL"
+                                  ? "Mention obligatoire"
+                                  : field.type === "DATE"
+                                    ? "Date"
+                                    : field.label || "Champ texte"
+                              }
+                              description={
+                                exactMentionRequired
+                                  ? `Recopiez exactement : ${field.label}`
+                                  : field.label || undefined
+                              }
+                              required={field.required}
+                              autosize
+                              minRows={field.type === "APPROVAL" ? 2 : 1}
+                              readOnly={field.type === "DATE"}
+                              value={fieldValues[field.id] || ""}
+                              onChange={(event) =>
+                                setFieldValues((current) => ({
+                                  ...current,
+                                  [field.id]: event.currentTarget.value,
+                                }))
+                              }
+                              error={
+                                field.type === "APPROVAL" &&
+                                field.label &&
+                                (fieldValues[field.id] || "").trim() &&
+                                !fieldIsComplete(field)
+                                  ? "La mention ne correspond pas au texte attendu."
+                                  : undefined
+                              }
+                            />
+                          );
+                        })}
+                      </Stack>
+                    </Paper>
+                  )}
+
+                  <Box style={{ width: "100%", overflow: "hidden" }}>
+                    <Center>
+                      <SignaturePad
+                        width={
+                          isMobile ? Math.min(window.innerWidth - 64, 340) : 400
+                        }
+                        height={isMobile ? 140 : 160}
+                        onSignatureChange={setSignatureImage}
+                        onModeChange={(mode) =>
+                          setSignatureType(
+                            mode.toUpperCase() as "DRAW" | "TYPE" | "UPLOAD",
+                          )
+                        }
+                      />
+                    </Center>
+                  </Box>
+
+                  <Divider />
+
+                  <Text
+                    size="xs"
+                    c="dimmed"
+                    ta="center"
+                    maw={500}
+                    mx="auto"
+                    px="xs"
+                  >
+                    {intl.formatMessage({
+                      id: isReinforced
+                        ? "signing.sign.legal.reinforced"
+                        : "signing.sign.legal.standard",
+                    })}
+                  </Text>
+
+                  <Group justify="center" mt="md" wrap="wrap" gap="sm">
+                    <Button
+                      size={isMobile ? "md" : "lg"}
+                      color="green"
+                      leftSection={<TbPencil size={20} />}
+                      onClick={handleSign}
+                      loading={signMutation.isPending}
+                      disabled={!signatureImage || !allRequiredFieldsComplete}
+                    >
+                      Signer le document
+                    </Button>
+                    <Button
+                      variant="light"
+                      color="red"
+                      size={isMobile ? "md" : "lg"}
+                      onClick={() => setRejecting(true)}
+                    >
+                      Refuser
+                    </Button>
+                  </Group>
+                </>
               )}
-
-              <Box style={{ width: "100%", overflow: "hidden" }}>
-                <Center>
-                  <SignaturePad
-                    width={isMobile ? Math.min(window.innerWidth - 64, 340) : 400}
-                    height={isMobile ? 140 : 160}
-                    onSignatureChange={setSignatureImage}
-                    onModeChange={(mode) =>
-                      setSignatureType(
-                        mode.toUpperCase() as "DRAW" | "TYPE" | "UPLOAD",
-                      )
-                    }
-                  />
-                </Center>
-              </Box>
-
-              <Divider />
-
-              <Text size="xs" c="dimmed" ta="center" maw={500} mx="auto" px="xs">
-                En cliquant sur "Signer le document", vous attestez avoir lu
-                le document, approuver son contenu et acceptez que votre
-                signature electronique a la meme valeur juridique qu'une
-                signature manuscrite conformement au reglement eIDAS (UE)
-                910/2014. La mention "Lu et approuve le{" "}
-                {new Date().toLocaleDateString("fr-FR")} " sera apposee.
-              </Text>
-
-              <Group justify="center" mt="md" wrap="wrap" gap="sm">
-                <Button
-                  size={isMobile ? "md" : "lg"}
-                  color="green"
-                  leftSection={<TbPencil size={20} />}
-                  onClick={handleSign}
-                  loading={signMutation.isPending}
-                  disabled={!signatureImage || !allRequiredFieldsComplete}
-                >
-                  Signer le document
-                </Button>
-                <Button
-                  variant="light"
-                  color="red"
-                  size={isMobile ? "md" : "lg"}
-                  onClick={() => setRejecting(true)}
-                >
-                  Refuser
-                </Button>
-              </Group>
             </Stack>
           )}
 
@@ -719,19 +1169,30 @@ const SignPage = () => {
                 {rejectMutation.isSuccess
                   ? intl.formatMessage({ id: "signing.sign.rejected.desc" })
                   : sigDoc.isE2EEncrypted
-                    ? intl.formatMessage({ id: "signing.sign.success.e2e-desc" })
+                    ? intl.formatMessage({
+                        id: "signing.sign.success.e2e-desc",
+                      })
                     : intl.formatMessage({ id: "signing.sign.success.desc" })}
               </Text>
               <Badge
                 color="green"
                 size="lg"
                 variant="light"
-                style={{ maxWidth: "100%", whiteSpace: "normal", height: "auto", padding: "6px 12px" }}
+                style={{
+                  maxWidth: "100%",
+                  whiteSpace: "normal",
+                  height: "auto",
+                  padding: "6px 12px",
+                }}
               >
-                <Group gap={4} wrap="nowrap" style={{ flexWrap: "wrap", justifyContent: "center" }}>
+                <Group
+                  gap={4}
+                  wrap="nowrap"
+                  style={{ flexWrap: "wrap", justifyContent: "center" }}
+                >
                   <TbShieldCheck size={14} style={{ flexShrink: 0 }} />
                   <Text size="xs" span style={{ lineHeight: 1.3 }}>
-                    {intl.formatMessage({ id: "signing.sign.eidas.badge" })}
+                    Dossier de preuve et empreinte cryptographique enregistrés
                   </Text>
                 </Group>
               </Badge>
@@ -744,7 +1205,11 @@ const SignPage = () => {
                   onClick={async () => {
                     setDownloadingSignedPdf(true);
                     try {
-                      const blob = await signingService.downloadSignedByToken(tokenStr);
+                      const blob = isReinforced
+                        ? await signingService.downloadSignedByTokenAuthenticated(
+                            tokenStr,
+                          )
+                        : await signingService.downloadSignedByToken(tokenStr);
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement("a");
                       a.href = url;
@@ -752,7 +1217,11 @@ const SignPage = () => {
                       a.click();
                       URL.revokeObjectURL(url);
                     } catch {
-                      toast.error(intl.formatMessage({ id: "signing.sign.download-not-ready" }));
+                      toast.error(
+                        intl.formatMessage({
+                          id: "signing.sign.download-not-ready",
+                        }),
+                      );
                     } finally {
                       setDownloadingSignedPdf(false);
                     }

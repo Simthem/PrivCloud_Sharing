@@ -20,6 +20,7 @@ import {
   TbBellRinging,
   TbCheck,
   TbChecks,
+  TbDownload,
   TbFile,
   TbFolder,
   TbKey,
@@ -29,6 +30,7 @@ import {
   TbUserMinus,
   TbUserPlus,
 } from "react-icons/tb";
+import { isSafeSigningNotificationAction } from "../../utils/signingNotification.util";
 import {
   getTeamNotifications,
   getUnreadNotificationCount,
@@ -50,6 +52,9 @@ const NOTIFICATION_ICONS: Record<string, React.ReactNode> = {
   KEY_ROTATED: <TbKey size={16} />,
   MEMBER_JOINED: <TbUserPlus size={16} />,
   MEMBER_LEFT: <TbUserMinus size={16} />,
+  SIGNATURE_REQUESTED: <TbFile size={16} />,
+  SIGNATURE_SIGNED: <TbCheck size={16} />,
+  SIGNATURE_COMPLETED: <TbDownload size={16} />,
 };
 
 const NOTIFICATION_POLL_INTERVAL_MS = 30_000;
@@ -147,7 +152,9 @@ const TeamNotificationPanel = () => {
   const markReadMutation = useMutation({
     mutationFn: (id: string) => markNotificationRead(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["team-notifications-unread"] });
+      queryClient.invalidateQueries({
+        queryKey: ["team-notifications-unread"],
+      });
       queryClient.invalidateQueries({ queryKey: ["team-notifications-list"] });
     },
   });
@@ -156,7 +163,9 @@ const TeamNotificationPanel = () => {
   const markAllReadMutation = useMutation({
     mutationFn: () => markAllNotificationsRead(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["team-notifications-unread"] });
+      queryClient.invalidateQueries({
+        queryKey: ["team-notifications-unread"],
+      });
       queryClient.invalidateQueries({ queryKey: ["team-notifications-list"] });
     },
   });
@@ -165,13 +174,18 @@ const TeamNotificationPanel = () => {
   const deleteAllMutation = useMutation({
     mutationFn: () => deleteAllNotifications(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["team-notifications-unread"] });
+      queryClient.invalidateQueries({
+        queryKey: ["team-notifications-unread"],
+      });
       queryClient.invalidateQueries({ queryKey: ["team-notifications-list"] });
     },
   });
 
   const unreadCount = unreadData?.count || 0;
-  const notifications = useMemo(() => notifData?.notifications || [], [notifData]);
+  const notifications = useMemo(
+    () => notifData?.notifications || [],
+    [notifData],
+  );
 
   // Trigger decryption when notifications load
   useEffect(() => {
@@ -204,7 +218,11 @@ const TeamNotificationPanel = () => {
               offset={2}
               disabled={unreadCount === 0}
             >
-              {unreadCount > 0 ? <TbBellRinging size={18} /> : <TbBell size={18} />}
+              {unreadCount > 0 ? (
+                <TbBellRinging size={18} />
+              ) : (
+                <TbBell size={18} />
+              )}
             </Indicator>
           </UnstyledButton>
         </Tooltip>
@@ -312,8 +330,16 @@ const NotificationItem = ({
   // Resolved title: use decrypted metadata if available for encrypted notifications
   const displayTitle = (() => {
     if (isEncrypted && isDecrypted) {
-      const sender = decryptedMeta.senderName as string || "Un membre";
-      const fileName = decryptedMeta.fileName as string || "un fichier";
+      switch (decryptedMeta.action) {
+        case "SIGN":
+          return "Une signature est attendue de votre part";
+        case "TRACK":
+          return "Une signature vient d'être réalisée";
+        case "DOWNLOAD":
+          return "Le document signé est disponible";
+      }
+      const sender = (decryptedMeta.senderName as string) || "Un membre";
+      const fileName = (decryptedMeta.fileName as string) || "un fichier";
       return `${sender} a partagé "${fileName}"`;
     }
     return notification.title;
@@ -321,6 +347,25 @@ const NotificationItem = ({
 
   // Build navigation path: prefer folder with file highlight, fallback to team page
   const getNavigationPath = (): string | null => {
+    const metadata = (() => {
+      if (decryptedMeta) return decryptedMeta;
+      if (!notification.metadata) return null;
+      try {
+        return JSON.parse(notification.metadata) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    })();
+
+    // Signature events have no TeamNotification relation to a document, so
+    // their durable navigation target is carried in the metadata.
+    if (isSafeSigningNotificationAction(decryptedMeta?.actionUrl)) {
+      return decryptedMeta.actionUrl;
+    }
+    if (typeof metadata?.signingDocumentId === "string") {
+      return `/signing/${metadata.signingDocumentId}`;
+    }
+
     if (notification.team && notification.folder) {
       const base = `/team/${notification.team.id}/folder/${notification.folder.id}`;
       // Try teamFile.id first, then decrypted metadata, then plaintext metadata
@@ -338,7 +383,9 @@ const NotificationItem = ({
           if (meta.highlightFileId) {
             return `${base}?highlight=${meta.highlightFileId}`;
           }
-        } catch { /* ignore malformed metadata */ }
+        } catch {
+          /* ignore malformed metadata */
+        }
       }
       return base;
     }
@@ -394,20 +441,37 @@ const NotificationItem = ({
               </Badge>
             )}
             {notification.folder && (
-              <Badge size="xs" variant="light" color="cyan" leftSection={<TbFolder size={10} />}>
+              <Badge
+                size="xs"
+                variant="light"
+                color="cyan"
+                leftSection={<TbFolder size={10} />}
+              >
                 {notification.folder.name}
               </Badge>
             )}
             {notification.teamFile && (
-              <Badge size="xs" variant="light" color="violet" leftSection={<TbFile size={10} />}>
+              <Badge
+                size="xs"
+                variant="light"
+                color="violet"
+                leftSection={<TbFile size={10} />}
+              >
                 {notification.teamFile.name}
               </Badge>
             )}
-            {!notification.teamFile && isDecrypted && typeof decryptedMeta.fileName === "string" && (
-              <Badge size="xs" variant="light" color="violet" leftSection={<TbFile size={10} />}>
-                {decryptedMeta.fileName}
-              </Badge>
-            )}
+            {!notification.teamFile &&
+              isDecrypted &&
+              typeof decryptedMeta.fileName === "string" && (
+                <Badge
+                  size="xs"
+                  variant="light"
+                  color="violet"
+                  leftSection={<TbFile size={10} />}
+                >
+                  {decryptedMeta.fileName}
+                </Badge>
+              )}
           </Group>
           <Text size="xs" c="dimmed" mt={2}>
             {formatTimeAgo(notification.createdAt)}

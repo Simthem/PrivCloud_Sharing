@@ -14,6 +14,7 @@
  */
 
 import api from "./api.service";
+import { selectPqNotificationPublicKey } from "../utils/pqNotification.util";
 import { apiPathSegment } from "../utils/apiPath.util";
 
 // ============================================================
@@ -710,6 +711,7 @@ export async function grantFileAccessToTeam(
   teamMembers: Array<{ userId: string }>,
   target: { fileId?: string; teamFileId?: string; shareId?: string },
   notificationMetadata?: Record<string, unknown>,
+  usePqNotificationEncryption = false,
 ): Promise<BulkGrantResult> {
   // Batch fetch public keys
   const userIds = teamMembers.map((m) => m.userId);
@@ -733,14 +735,18 @@ export async function grantFileAccessToTeam(
 
     const wrapped = await wrapDEKForRecipient(dekRaw, entry.x25519.publicKey);
 
-    // E2E encrypt notification metadata for this recipient (PQ if available)
+    // ML-KEM is a Team-level opt-in. Members without a PQ key always retain
+    // the established X25519 notification path.
     let encryptedNotification: string | undefined;
     if (notificationMetadata) {
       try {
         encryptedNotification = await encryptNotificationMetadata(
           notificationMetadata,
           entry.x25519.publicKey,
-          entry.pqKey?.publicKey || null,
+          selectPqNotificationPublicKey(
+            usePqNotificationEncryption,
+            entry.pqKey?.publicKey,
+          ),
         );
       } catch {
         // Encryption failed - notification will fall back to plaintext server-side
@@ -782,26 +788,22 @@ export async function grantFileAccessToTeam(
  * This uses a verified WASM implementation loaded on demand.
  */
 
-let mlKemModule: any = null;
+type MLKEM768 = (typeof import("@noble/post-quantum/ml-kem.js"))["ml_kem768"];
+let mlKem768: MLKEM768 | null = null;
 
 /**
- * Dynamically load the ML-KEM WASM module.
- * The module must export: keygen(), encapsulate(pk), decapsulate(ct, sk)
+ * Dynamically load the bundled, FIPS-203 ML-KEM-768 implementation. Keeping
+ * this as a dynamic import prevents the PQ code from entering the initial app
+ * bundle while ensuring production images contain the implementation.
  */
-async function loadMLKEM(): Promise<any> {
-  if (mlKemModule) return mlKemModule;
-
-  // Dynamic import of the ML-KEM WASM wrapper
-  // Expected to be at /wasm/ml-kem-768.js (loaded from CDN or bundled)
+async function loadMLKEM(): Promise<MLKEM768> {
+  if (mlKem768) return mlKem768;
   try {
-    mlKemModule = await import(
-      // @ts-expect-error: the runtime-provided WASM module has no build-time declaration
-      /* webpackIgnore: true */ "../../wasm/ml-kem-768"
-    );
-    return mlKemModule;
-  } catch {
+    ({ ml_kem768: mlKem768 } = await import("@noble/post-quantum/ml-kem.js"));
+    return mlKem768;
+  } catch (error) {
     throw new Error(
-      "Module ML-KEM-768 non disponible. La protection post-quantique nécessite le module WASM.",
+      `Module ML-KEM-768 indisponible: ${error instanceof Error ? error.message : "erreur de chargement"}`,
     );
   }
 }
@@ -815,10 +817,10 @@ export async function generateMLKEMKeyPair(): Promise<{
   privateKey: Uint8Array; // 2400 bytes (ML-KEM-768 dk)
 }> {
   const mlkem = await loadMLKEM();
-  const { encapsulationKey, decapsulationKey } = await mlkem.keygen();
+  const { publicKey, secretKey } = mlkem.keygen();
   return {
-    publicKey: new Uint8Array(encapsulationKey),
-    privateKey: new Uint8Array(decapsulationKey),
+    publicKey: new Uint8Array(publicKey),
+    privateKey: new Uint8Array(secretKey),
   };
 }
 
@@ -913,7 +915,7 @@ export async function hybridWrapDEK(
 
   // Step 2: ML-KEM-768 Encapsulation
   const mlkemPKRaw = base64UrlToArrayBuffer(recipientMLKEMPK);
-  const { ciphertext, sharedSecret: ssPQ } = await mlkem.encapsulate(
+  const { cipherText, sharedSecret: ssPQ } = mlkem.encapsulate(
     new Uint8Array(mlkemPKRaw),
   );
 
@@ -941,7 +943,7 @@ export async function hybridWrapDEK(
     encryptedFileKey: arrayBufferToBase64Url(encryptedDEK),
     ephemeralPublicKey: arrayBufferToBase64Url(ephemeralPKRaw),
     nonce: arrayBufferToBase64Url(nonce.buffer),
-    kemCiphertext: arrayBufferToBase64Url(ciphertext.buffer ?? ciphertext),
+    kemCiphertext: arrayBufferToBase64Url(cipherText.buffer),
     algorithm: "x25519-mlkem768-aes256gcm",
   };
 }
@@ -1003,10 +1005,7 @@ export async function hybridUnwrapDEK(
 
   // Step 2: ML-KEM Decapsulation
   const ciphertextRaw = base64UrlToArrayBuffer(grant.kemCiphertext);
-  const { sharedSecret: ssPQ } = await mlkem.decapsulate(
-    new Uint8Array(ciphertextRaw),
-    myMLKEMSK,
-  );
+  const ssPQ = mlkem.decapsulate(new Uint8Array(ciphertextRaw), myMLKEMSK);
 
   // Step 3: Combine secrets
   const wrappingKey = await deriveHybridWrappingKey(
@@ -1030,7 +1029,7 @@ export async function hybridUnwrapDEK(
 
 /**
  * High-level: Initialize PQ keys for a user (in addition to classical keys).
- * Called once when the user opts into post-quantum protection.
+ * Called once after the user unlocks their E2E master key.
  */
 export async function initializePQKeys(masterKey: CryptoKey): Promise<{
   id: string;

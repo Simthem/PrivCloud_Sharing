@@ -75,8 +75,22 @@ export class TeamNotificationController {
     @GetUser() user: User,
     @Query("teamId") teamId?: string,
   ) {
-    const count = await this.notificationService.getUnreadCount(user.id, teamId);
+    const count = await this.notificationService.getUnreadCount(
+      user.id,
+      teamId,
+    );
     return { count };
+  }
+
+  /** Get one notification owned by the current user for opaque push routing. */
+  @Get(":notificationId")
+  @UseGuards(JwtGuard)
+  @Header("Cache-Control", NO_STORE_HEADERS.cacheControl)
+  async getNotification(
+    @GetUser() user: User,
+    @Param("notificationId") notificationId: string,
+  ) {
+    return this.notificationService.getNotification(notificationId, user.id);
   }
 
   /**
@@ -96,10 +110,7 @@ export class TeamNotificationController {
    */
   @Post("mark-all-read")
   @UseGuards(JwtGuard)
-  async markAllAsRead(
-    @GetUser() user: User,
-    @Query("teamId") teamId?: string,
-  ) {
+  async markAllAsRead(@GetUser() user: User, @Query("teamId") teamId?: string) {
     return this.notificationService.markAllAsRead(user.id, teamId);
   }
 
@@ -108,10 +119,7 @@ export class TeamNotificationController {
    */
   @Delete()
   @UseGuards(JwtGuard)
-  async deleteAll(
-    @GetUser() user: User,
-    @Query("teamId") teamId?: string,
-  ) {
+  async deleteAll(@GetUser() user: User, @Query("teamId") teamId?: string) {
     return this.notificationService.deleteAll(user.id, teamId);
   }
 }

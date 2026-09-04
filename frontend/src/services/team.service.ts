@@ -17,6 +17,7 @@ export interface Team {
   keyVersion: number;
   keyRotatedAt?: string | null;
   keyRotationIntervalDays: number;
+  pqNotificationEncryptionEnabled?: boolean;
   createdAt: string;
 }
 
@@ -189,6 +190,7 @@ const updateTeam = async (
     reportFrequency?: string;
     reportEnabled?: boolean;
     keyRotationIntervalDays?: number;
+    pqNotificationEncryptionEnabled?: boolean;
   },
 ): Promise<Team> => {
   return (await api.patch(`teams/${apiPathSegment(teamId)}`, data)).data;
@@ -691,6 +693,7 @@ export interface SignableFile {
   shareId: string;
   fileId: string;
   fileName: string;
+  isE2EEncrypted: boolean;
 }
 
 const getSignableFiles = async (): Promise<SignableFile[]> => {

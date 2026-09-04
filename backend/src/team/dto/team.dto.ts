@@ -56,6 +56,10 @@ export class UpdateTeamDTO {
   reportEnabled?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  pqNotificationEncryptionEnabled?: boolean;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @IsIn([30, 60, 90, 180, 365])
