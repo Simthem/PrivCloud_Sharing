@@ -429,6 +429,9 @@ export default {
   // END /admin
   // /admin/users
   "admin.users.title": "Gestion des utilisateurs",
+  "admin.users.total": "{count, plural, one {# utilisateur au total} other {# utilisateurs au total}}",
+  "admin.users.search.placeholder": "Rechercher par surnom ou courriel",
+  "admin.users.search.results": "{count, plural, one {# résultat} other {# résultats}}",
   "admin.users.table.username": "Surnom",
   "admin.users.table.email": "Courriel",
   "admin.users.table.admin": "Admin",

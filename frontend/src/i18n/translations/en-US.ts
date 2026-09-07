@@ -487,6 +487,9 @@ export default {
 
   // /admin/users
   "admin.users.title": "User management",
+  "admin.users.total": "{count, plural, one {# user total} other {# users total}}",
+  "admin.users.search.placeholder": "Search by username or email",
+  "admin.users.search.results": "{count, plural, one {# result} other {# results}}",
   "admin.users.table.username": "Username",
   "admin.users.table.email": "Email",
   "admin.users.table.admin": "Admin",

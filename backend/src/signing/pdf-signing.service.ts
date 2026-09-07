@@ -1336,6 +1336,7 @@ export class PdfSigningService {
         "binary",
       );
       const x509 = new crypto.X509Certificate(certificateDer);
+      if (this.hasUnsafeRsaPublicExponent(x509.publicKey)) continue;
       const verificationKey =
         signatureAlgorithmOid === "1.2.840.113549.1.1.10"
           ? {
@@ -1453,11 +1454,7 @@ export class PdfSigningService {
         ) {
           return false;
         }
-        try {
-          return candidate.verify(current);
-        } catch {
-          return false;
-        }
+        return this.verifyCertificateSignatureWithOpenSsl(current, candidate);
       });
       if (!issuer) break;
       current = issuer;
@@ -1465,6 +1462,45 @@ export class PdfSigningService {
 
     throw new Error(
       "TSA certificate chain does not reach a configured SHA-256 trust fingerprint",
+    );
+  }
+
+  /**
+   * Never use node-forge's PKCS#1 v1.5 verifier here. CVE-2026-85393 allows
+   * forged signatures for RSA keys whose public exponent is 3. OpenSSL both
+   * performs strict DigestInfo validation and gives us a second explicit
+   * policy boundary against low-exponent RSA certificates.
+   */
+  private verifyCertificateSignatureWithOpenSsl(
+    certificate: any,
+    issuer: any,
+  ): boolean {
+    const forge = require("node-forge");
+    try {
+      const certificateX509 = new crypto.X509Certificate(
+        Buffer.from(
+          forge.asn1.toDer(forge.pki.certificateToAsn1(certificate)).getBytes(),
+          "binary",
+        ),
+      );
+      const issuerX509 = new crypto.X509Certificate(
+        Buffer.from(
+          forge.asn1.toDer(forge.pki.certificateToAsn1(issuer)).getBytes(),
+          "binary",
+        ),
+      );
+      if (this.hasUnsafeRsaPublicExponent(issuerX509.publicKey)) return false;
+      return certificateX509.verify(issuerX509.publicKey);
+    } catch {
+      return false;
+    }
+  }
+
+  private hasUnsafeRsaPublicExponent(publicKey: crypto.KeyObject): boolean {
+    return (
+      (publicKey.asymmetricKeyType === "rsa" ||
+        publicKey.asymmetricKeyType === "rsa-pss") &&
+      publicKey.asymmetricKeyDetails?.publicExponent === 3n
     );
   }
 

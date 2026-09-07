@@ -359,6 +359,7 @@ RUN set -e; \
 FROM base AS backend-deps
 WORKDIR /opt/app/backend
 COPY backend/package.json backend/package-lock.json ./
+COPY backend/patches ./patches
 
 RUN npm ci
 

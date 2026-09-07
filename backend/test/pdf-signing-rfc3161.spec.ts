@@ -55,8 +55,12 @@ const algorithm = (algorithmOid: string) =>
     ),
   ]);
 
-const createCertificate = (commonName: string, timeStamping = false) => {
-  const keys = forge.pki.rsa.generateKeyPair(2048);
+const createCertificate = (
+  commonName: string,
+  timeStamping = false,
+  publicExponent = 0x10001,
+) => {
+  const keys = forge.pki.rsa.generateKeyPair({ bits: 2048, e: publicExponent });
   const certificate = forge.pki.createCertificate();
   certificate.publicKey = keys.publicKey;
   // X.509 serial numbers are positive ASN.1 INTEGERs. Prefixing the random
@@ -329,6 +333,37 @@ testCase(
     assert.throws(
       () => service.validateTimestampResponse(response, imprint, nonce),
       /does not reach a configured SHA-256 trust fingerprint/,
+    );
+  },
+);
+
+testCase(
+  "uses OpenSSL for certificate signatures and rejects RSA exponent 3",
+  () => {
+    const service = new PdfSigningService() as any;
+    const safe = createCertificate("OpenSSL verification control");
+    safe.certificate.verify = () => {
+      throw new Error("node-forge certificate verification must not be called");
+    };
+    assert.equal(
+      service.verifyCertificateSignatureWithOpenSsl(
+        safe.certificate,
+        safe.certificate,
+      ),
+      true,
+    );
+
+    const lowExponent = createCertificate(
+      "Unsafe exponent certificate",
+      false,
+      3,
+    );
+    assert.equal(
+      service.verifyCertificateSignatureWithOpenSsl(
+        lowExponent.certificate,
+        lowExponent.certificate,
+      ),
+      false,
     );
   },
 );

@@ -2,6 +2,17 @@
 # `npm run security:snyk:code` from the repository root for the complete scan.
 version: v1.25.0
 
+ignore:
+  SNYK-JS-NODEFORGE-19635204:
+    - "*":
+        reason: >
+          node-forge 1.4.0 is patched during npm install to enforce the exact
+          nested DigestAlgorithm field count. A regression test proves the
+          malformed e=3 signature shape is rejected; production verification
+          uses Node/OpenSSL and rejects RSA exponent 3. Remove this policy when
+          upstream publishes a fixed release.
+        expires: "2027-03-07T00:00:00.000Z"
+
 exclude:
   code:
     - node_modules/**

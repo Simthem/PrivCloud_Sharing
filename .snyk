@@ -7,6 +7,18 @@
 
 version: v1.25.0
 
+ignore:
+  SNYK-JS-NODEFORGE-19635204:
+    - "*":
+        reason: >
+          node-forge 1.4.0 is patched during npm install to enforce the exact
+          nested DigestAlgorithm field count. The regression test constructs
+          the malformed e=3 signature shape and proves rejection. Production
+          TSA certificate and CMS verification additionally use Node/OpenSSL,
+          and RSA exponent 3 is rejected. Remove this policy when upstream
+          publishes a fixed release.
+        expires: "2027-03-07T00:00:00.000Z"
+
 # ---------------------------------------------------------------------------
 # EXCLUDED FROM SNYK CODE
 # ---------------------------------------------------------------------------

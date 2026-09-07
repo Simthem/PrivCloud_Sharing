@@ -1,7 +1,7 @@
-import { Button, Group, Space, Text, Title } from "@mantine/core";
+import { Badge, Button, Group, Space, Text, TextInput, Title } from "@mantine/core";
 import { useModals } from "@mantine/modals";
-import { useEffect, useState } from "react";
-import { TbPlus } from "react-icons/tb";
+import { useEffect, useMemo, useState } from "react";
+import { TbPlus, TbSearch } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import Meta from "../../components/Meta";
 import ManageUserTable from "../../components/admin/users/ManageUserTable";
@@ -15,10 +15,22 @@ import toast from "../../utils/toast.util";
 const Users = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
   const config = useConfig();
   const modals = useModals();
   const t = useTranslate();
+
+  const filteredUsers = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase();
+    if (!query) return users;
+
+    return users.filter(
+      (user) =>
+        user.username.toLocaleLowerCase().includes(query) ||
+        user.email.toLocaleLowerCase().includes(query),
+    );
+  }, [search, users]);
 
   const getUsers = () => {
     setIsLoading(true);
@@ -60,9 +72,19 @@ const Users = () => {
     <>
       <Meta title={t("admin.users.title")} />
       <Group justify="space-between" align="baseline" mb={20}>
-        <Title mb={30} order={3}>
-          <FormattedMessage id="admin.users.title" />
-        </Title>
+        <Group gap="sm" align="center">
+          <Title order={3}>
+            <FormattedMessage id="admin.users.title" />
+          </Title>
+          {!isLoading && (
+            <Badge variant="light" size="lg">
+              <FormattedMessage
+                id="admin.users.total"
+                values={{ count: users.length }}
+              />
+            </Badge>
+          )}
+        </Group>
         <Button
           onClick={() =>
             showCreateUserModal(modals, config.get("smtp.enabled"), getUsers)
@@ -73,8 +95,26 @@ const Users = () => {
         </Button>
       </Group>
 
+      <TextInput
+        mb="md"
+        value={search}
+        onChange={(event) => setSearch(event.currentTarget.value)}
+        leftSection={<TbSearch size={18} />}
+        placeholder={t("admin.users.search.placeholder")}
+        aria-label={t("admin.users.search.placeholder")}
+        maw={480}
+      />
+      {search.trim() && !isLoading && (
+        <Text size="sm" c="dimmed" mb="sm">
+          <FormattedMessage
+            id="admin.users.search.results"
+            values={{ count: filteredUsers.length }}
+          />
+        </Text>
+      )}
+
       <ManageUserTable
-        users={users}
+        users={filteredUsers}
         getUsers={getUsers}
         deleteUser={deleteUser}
         isLoading={isLoading}

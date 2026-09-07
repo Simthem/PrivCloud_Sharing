@@ -1,3 +1,27 @@
+## [Unreleased]
+
+### Features
+
+- **administrator users -- expose totals and local search:** the `/admin/users`
+  page now shows the complete user count and filters the loaded list by
+  username or e-mail address, with result counts and English/French labels.
+
+### Security
+
+- **RSA PKCS#1 v1.5 -- mitigate `CVE-2026-85393` in `node-forge`:** installs
+  now apply a `patch-package` guard that rejects malformed nested
+  `DigestAlgorithm` fields. RFC 3161 certificate-chain validation uses
+  Node/OpenSSL instead of the vulnerable forge verifier and explicitly refuses
+  RSA exponent 3 keys. Docker builds include the patch, focused regression
+  coverage exercises both the malformed signature and the OpenSSL boundary,
+  and the temporary Snyk exception documents the mitigation until an upstream
+  release is available.
+
+### Dependencies
+
+- Updated `undici` to 7.29.1, pinned `browserslist` 4.28.8 and refreshed the
+  backend and frontend lockfiles for the new patching toolchain.
+
 ## [1.24.4](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.3...v1.24.4) (2026-09-04)
 
 ### Features
