@@ -23,11 +23,16 @@ ARG NODE_BUILDER_IMAGE=simthem/privcloud-sharing:node-builder-cache
 # CVE-2026-45135 (HIGH - FastCGI splitPos), CVE-2026-45692 (MEDIUM - Admin /config bypass),
 # GHSA-gx7w-56w6-g48x (MEDIUM - PKI path matching bypass).
 # GHSA-wwhq-w58m-w29c (MEDIUM - CVE-2026-30852 fix bypass) - status: affected, no fix yet.
-FROM golang:1.26.6-alpine AS caddy-builder
-RUN apk upgrade --no-cache && apk add --no-cache git
-RUN git clone --depth 1 --branch v2.11.4 \
-      https://github.com/caddyserver/caddy.git /caddy
+FROM golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS caddy-builder
+RUN apk upgrade --no-cache && apk add --no-cache curl git
 WORKDIR /caddy
+# Pin the exact commit behind the reviewed v2.11.4 tag and verify the archive
+# before any source from it is executed by the Go toolchain.
+RUN CADDY_SOURCE_URL=https://github.com/caddyserver/caddy/archive/e2eee6a7fce366321294c9c2a79f3146891dcbdf.tar.gz && \
+    curl -fsSL "$CADDY_SOURCE_URL" -o /tmp/caddy.tar.gz && \
+    echo '4fc5abefc3f1699e928c6a5bb763da461cbb150d74be7353058c3433363efc9f9932383469664a435bc6c053021b30f1198c643d168e0a4bcf492ee1d1e99dcb  /tmp/caddy.tar.gz' | sha512sum -c - && \
+    tar xzf /tmp/caddy.tar.gz -C . --strip-components=1 && \
+    rm /tmp/caddy.tar.gz
 # Backport the two source changes from upstream Caddy commit b2693fb so the
 # v2.11.4 tag compiles against cel-go 0.29.x. Assertions make this fail closed
 # if the pinned Caddy source no longer matches the reviewed patch.
@@ -146,7 +151,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/ca
 # ---------------------------
 # This static helper prepares mounted directories, drops from root to PUID:PGID
 # and execs Node without requiring a shell, passwd database, PAM or gosu.
-FROM golang:1.26.6-alpine AS runtime-init-builder
+FROM golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS runtime-init-builder
 WORKDIR /src
 COPY scripts/docker/runtime-init.go .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /runtime-init ./runtime-init.go
@@ -229,7 +234,7 @@ RUN apt-get update && \
 # checkov:skip=CKV_DOCKER_3:le stage de build ne produit pas l'utilisateur final.
 # Le runtime distroless démarre avec les seules capacités CHOWN/SETUID/SETGID,
 # puis runtime-init abandonne root avant d'exécuter Node.
-FROM node:24-slim AS base
+FROM node:24-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS base
 
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
@@ -250,39 +255,47 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl ca-certificates openssl python3 make g++ git && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
-    npm install -g npm@latest && \
+    npm install -g npm@12.0.2 && \
     # CVE-2026-27903/04 : npm@11.11.0 embarque minimatch 10.2.2 (vuln).
     # On ne peut PAS faire "npm install" dans le répertoire de npm :
     # ça résout toutes ses deps internes dont @npmcli/docs (privé, 404).
     # -> Remplacement direct du package via tarball.
-    MINIMATCH_URL=$(npm view minimatch@latest dist.tarball) && \
+    MINIMATCH_URL=https://registry.npmjs.org/minimatch/-/minimatch-10.2.6.tgz && \
+    curl -fsSL "$MINIMATCH_URL" -o /tmp/minimatch.tgz && \
+    echo 'be92d012cf952c2af59d4d015d2d3b99a628170943007d209e042ebadb71230bad0c510c1ead9b957fbcbe98310dd2b72753f08c22627a9efb3a2b536782e5d4  /tmp/minimatch.tgz' | sha512sum -c - && \
     rm -rf /usr/local/lib/node_modules/npm/node_modules/minimatch && \
     mkdir -p /usr/local/lib/node_modules/npm/node_modules/minimatch && \
-    curl -sL "$MINIMATCH_URL" | tar xz -C /usr/local/lib/node_modules/npm/node_modules/minimatch --strip-components=1 && \
+    tar xzf /tmp/minimatch.tgz -C /usr/local/lib/node_modules/npm/node_modules/minimatch --strip-components=1 && \
     # GHSA-qffp-2rhf-9h96 : npm bundle tar <= 7.5.9 (path traversal).
     # Même technique que minimatch : remplacement direct via tarball.
-    TAR_URL=$(npm view tar@latest dist.tarball) && \
+    TAR_URL=https://registry.npmjs.org/tar/-/tar-7.5.10.tgz && \
+    curl -fsSL "$TAR_URL" -o /tmp/tar.tgz && \
+    echo 'f2638fb35fffe6afeb9643523dc09e800ea18872580e648b108f1a307fc2752409356ced1c2f561cd6a6e7375095fa53c01f57a7b20112c1df5792ca30919503  /tmp/tar.tgz' | sha512sum -c - && \
     rm -rf /usr/local/lib/node_modules/npm/node_modules/tar && \
     mkdir -p /usr/local/lib/node_modules/npm/node_modules/tar && \
-    curl -sL "$TAR_URL" | tar xz -C /usr/local/lib/node_modules/npm/node_modules/tar --strip-components=1 && \
+    tar xzf /tmp/tar.tgz -C /usr/local/lib/node_modules/npm/node_modules/tar --strip-components=1 && \
     # CVE-2026-33671 (HIGH) / CVE-2026-33672 (MEDIUM) : npm -> tinyglobby -> picomatch 4.0.3.
     # Même technique : remplacement direct via tarball picomatch@4.0.4.
-    PICO_URL=$(npm view picomatch@4.0.4 dist.tarball) && \
+    PICO_URL=https://registry.npmjs.org/picomatch/-/picomatch-4.0.4.tgz && \
+    curl -fsSL "$PICO_URL" -o /tmp/picomatch.tgz && \
+    echo '40ff3c0402af31a9bfdcdc47eaf8f6a36d51e8c8f165401dea7970012fe99c6bcdf4854ba1c2c7c46608cc5860e9f510fb9b61e8fe1dbf8796f635f70d2223ec  /tmp/picomatch.tgz' | sha512sum -c - && \
     PICO_DIR=/usr/local/lib/node_modules/npm/node_modules/tinyglobby/node_modules/picomatch && \
     rm -rf "$PICO_DIR" && \
     mkdir -p "$PICO_DIR" && \
-    curl -sL "$PICO_URL" | tar xz -C "$PICO_DIR" --strip-components=1 && \
-    # CVE-2026-33750 / CVE-2026-45149 + CVE-2026-14257 /
-    # GHSA-mh99-v99m-4gvg : npm -> minimatch -> brace-expansion < 5.0.8.
-    # On force une version corrigée via tarball.
-    BRACE_URL=$(npm view brace-expansion@5.0.8 dist.tarball) && \
+    tar xzf /tmp/picomatch.tgz -C "$PICO_DIR" --strip-components=1 && \
+    # CVE-2026-33750 / CVE-2026-45149 + GHSA-3jxr-9vmj-r5cp +
+    # CVE-2026-14257 / GHSA-mh99-v99m-4gvg:
+    # npm -> minimatch -> brace-expansion < 5.0.9.
+    BRACE_URL=https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz && \
+    curl -fsSL "$BRACE_URL" -o /tmp/brace-expansion.tgz && \
+    echo '49c43822ebc8105d533253fb66dfaf8c9ffff7394f6f64837315b13376e4f2ceade8619d27b28ed5d09c4e274e3c929e3d6df42c4ff6713ef00b23e1a3dfd6c6  /tmp/brace-expansion.tgz' | sha512sum -c - && \
     find /usr/local/lib/node_modules/npm -path '*/node_modules/brace-expansion' -type d -prune -exec rm -rf {} + && \
     BRACE_DIR=/usr/local/lib/node_modules/npm/node_modules/brace-expansion && \
     mkdir -p "$BRACE_DIR" && \
-    curl -sL "$BRACE_URL" | tar xz -C "$BRACE_DIR" --strip-components=1 && \
-    node -e "const fs=require('fs'); const lock='/usr/local/lib/node_modules/npm/package-lock.json'; if (fs.existsSync(lock)) { const data=JSON.parse(fs.readFileSync(lock,'utf8')); const patch=(pkg)=>{ if (!pkg) return; pkg.version='5.0.8'; pkg.resolved='https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.8.tgz'; pkg.integrity='sha512-JZyDyq3D4AUifKTPOB7DELf6XsB3WdPuNxCtob1vFXPsSXhdAiHBWJ/tJ8HAc9aH84BK+5JFZLNkJKx3G9kzQg=='; }; if (data.packages) for (const [name,pkg] of Object.entries(data.packages)) if (name.endsWith('node_modules/brace-expansion')) patch(pkg); if (data.dependencies && data.dependencies['brace-expansion']) patch(data.dependencies['brace-expansion']); fs.writeFileSync(lock, JSON.stringify(data,null,2)+'\n'); }" && \
+    tar xzf /tmp/brace-expansion.tgz -C "$BRACE_DIR" --strip-components=1 && \
+    node -e "const fs=require('fs'); const lock='/usr/local/lib/node_modules/npm/package-lock.json'; if (fs.existsSync(lock)) { const data=JSON.parse(fs.readFileSync(lock,'utf8')); const patch=(pkg)=>{ if (!pkg) return; pkg.version='5.0.9'; pkg.resolved='https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz'; pkg.integrity='sha512-ScQ4IuvIEF1TMlP7Zt+vjJ//9zlPb2SDcxWxM3bk8s6t6GGdJ7KO1dCcTidOPJKePW30LE/2cT7wCyPho9/Wxg=='; }; if (data.packages) for (const [name,pkg] of Object.entries(data.packages)) if (name.endsWith('node_modules/brace-expansion')) patch(pkg); if (data.dependencies && data.dependencies['brace-expansion']) patch(data.dependencies['brace-expansion']); fs.writeFileSync(lock, JSON.stringify(data,null,2)+'\n'); }" && \
     find /usr/local/lib/node_modules/npm -path '*/node_modules/brace-expansion/package.json' \
-      -exec node -e "const fs=require('fs'); const p=process.argv[1]; const v=JSON.parse(fs.readFileSync(p,'utf8')).version; if (v !== '5.0.8') { console.error(p + ': ' + v); process.exit(1); }" {} \;
+      -exec node -e "const fs=require('fs'); const p=process.argv[1]; const v=JSON.parse(fs.readFileSync(p,'utf8')).version; if (v !== '5.0.9') { console.error(p + ': ' + v); process.exit(1); }" {} \;
 
 # ---------------------------
 # Stage 1b: Frontend dependencies
@@ -389,7 +402,7 @@ COPY ./reverse-proxy /opt/app/reverse-proxy
 # ---------------------------
 # This stage is never published. It avoids installing a package manager in the
 # final image while keeping native Node addons (sharp, argon2) operational.
-FROM debian:trixie-slim AS runtime-layout
+FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS runtime-layout
 # The multiarch triplet depends on the target platform (x86_64-linux-gnu on
 # amd64, aarch64-linux-gnu on arm64), so it is derived at build time instead of
 # being hardcoded: a hardcoded x86_64 path makes every non-amd64 leg of a
@@ -426,7 +439,7 @@ RUN set -eu; \
 # OpenSSL. The patched OpenSSL build below is therefore the only libssl/libcrypto
 # implementation in the runtime. There is no shell, apt, dpkg, tar, PAM,
 # system SQLite, ACL/attr tooling or coreutils.
-FROM gcr.io/distroless/base-nossl-debian13:latest@sha256:d3316ffea710b15ecd5ff0ca1d8b2b440225a7926c2e426403641ab60cea0b9b AS runner
+FROM gcr.io/distroless/base-nossl-debian13:latest@sha256:e50761cbc75cbd24ed76553350f67c44dda9d4a9b9c9e8f44bed6ddeb3cb8a9a AS runner
 
 ENV NODE_ENV=docker
 ENV HOME=/home/privcloud-sharing

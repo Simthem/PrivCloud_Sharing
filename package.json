@@ -10,6 +10,7 @@
     "test:integrations": "node --test integrations/test/*.test.mjs",
     "test:oss-parity": "node --test scripts/test/open-source-parity.test.mjs",
     "test:release": "npm run test:oss-parity && npm run test:frontend && npm run test:unit && npm run test:bridge && npm run test:integrations && npm --prefix docs run audit:ci",
+    "security:audit": "npm audit --audit-level=high && npm --prefix backend audit --audit-level=high && npm --prefix frontend audit --audit-level=high && npm --prefix scripts audit --audit-level=high",
     "security:snyk:code": "snyk code test . --report --project-name='Github_Public_OpenSource' --org=themthem58",
     "build:companion": "npm --prefix bridge run build",
     "build:integrations": "node integrations/scripts/build.mjs",

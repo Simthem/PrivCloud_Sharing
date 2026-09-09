@@ -426,6 +426,19 @@ export default {
   "admin.button.shares": "Gestion des partages",
   "admin.button.config": "Paramètres",
   "admin.version": "Version",
+  "admin.stats.title": "Usage de la plateforme",
+  "admin.stats.range.months": "{count, plural, one {# mois} other {# mois}}",
+  "admin.stats.metric.users": "Utilisateurs",
+  "admin.stats.metric.shares": "Partages",
+  "admin.stats.metric.storage": "Fichiers partagés",
+  "admin.stats.tooltip.no-data": "Aucune donnée",
+  "admin.stats.error": "Les statistiques d'usage n'ont pas pu être chargées.",
+  "admin.stats.unavailable": "Indisponible",
+  "admin.stats.aria": "Usage de la plateforme du {from} au {to}",
+  "admin.stats.history.partial":
+    "Chaque courbe est mise à l'échelle sur son propre maximum. Les partages et les octets stockés sont relevés une fois par jour depuis le {date} : la rétention supprime les partages et leurs fichiers, rien avant cette date ne peut donc être reconstitué. La partie en pointillés de la courbe des utilisateurs est reconstituée à partir des dates de création des comptes.",
+  "admin.stats.history.empty":
+    "Aucun relevé quotidien n'a encore été enregistré. Les courbes des partages et du stockage se remplissent à partir du premier relevé ; celle des utilisateurs est reconstituée à partir des dates de création des comptes.",
   // END /admin
   // /admin/users
   "admin.users.title": "Gestion des utilisateurs",

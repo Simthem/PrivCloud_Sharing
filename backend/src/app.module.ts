@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { ScheduleModule } from "@nestjs/schedule";
+import { AdminStatsModule } from "./adminStats/adminStats.module";
 import { AltchaModule } from "./altcha/altcha.module";
 import { AuthModule } from "./auth/auth.module";
 
@@ -30,6 +31,7 @@ import { WebDavModule } from "./webdav/webdav.module";
 @Module({
   imports: [
     ConfigModule,
+    AdminStatsModule,
     AltchaModule,
     AuthModule,
     ShareModule,

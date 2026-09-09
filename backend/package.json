@@ -3,7 +3,7 @@
   "version": "1.24.4",
   "scripts": {
     "build": "nest build",
-    "postinstall": "patch-package && ([ -f prisma/schema.prisma ] && prisma generate || true)",
+    "postinstall": "patch-package --error-on-fail && ([ -f prisma/schema.prisma ] && prisma generate || true)",
     "dev": "cross-env NODE_ENV=development nest start --watch",
     "db:prepare": "node scripts/ensure-sqlite-database.mjs",
     "prod": "npm run db:prepare && prisma migrate deploy && prisma db seed && node dist/src/main",
@@ -65,7 +65,7 @@
     "qrcode-svg": "^1.1.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "sharp": "0.35.3",
+    "sharp": "0.35.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3",
     "undici": "7.29.1",
@@ -155,7 +155,7 @@
   },
   "allowScripts": {
     "argon2@0.41.1": true,
-    "sharp@0.35.3": true,
+    "sharp@0.35.4": true,
     "@nestjs/core@11.1.19": true,
     "@scarf/scarf@1.4.0": true,
     "better-sqlite3@12.11.1": true,

@@ -8,6 +8,97 @@
 version: v1.25.0
 
 ignore:
+  # LOW x11: the current Distroless Debian 13 base still ships Trixie's latest
+  # glibc 2.41-12+deb13u3. Snyk exposes no fixed Debian 13 version; Debian marks
+  # these as minor/no-DSA. The final image has a fixed Node/Caddy entrypoint and
+  # does not expose the affected ungetwc, scanf %mc, legacy resolver printing,
+  # wordexp, tdelete or attacker-controlled fopen ccs paths. Reassess promptly
+  # when Debian publishes a Trixie update.
+  SNYK-DEBIAN13-GLIBC-16115568:
+    - "*":
+        reason: &distrolessGlibcMinorReason >
+          Current Distroless Debian 13 and Debian Trixie provide no fixed package;
+          Debian classifies the issue as minor/no-DSA. The fixed Node/Caddy
+          runtime does not expose the affected libc API to attacker-controlled
+          input. Upgrade the pinned Distroless digest when Trixie is patched.
+        expires: &distrolessGlibcExpiry "2026-12-08T00:00:00.000Z"
+  SNYK-DEBIAN13-GLIBC-16115576:
+    - "*":
+        reason: *distrolessGlibcMinorReason
+        expires: *distrolessGlibcExpiry
+  SNYK-DEBIAN13-GLIBC-16325153:
+    - "*":
+        reason: *distrolessGlibcMinorReason
+        expires: *distrolessGlibcExpiry
+  SNYK-DEBIAN13-GLIBC-16325161:
+    - "*":
+        reason: *distrolessGlibcMinorReason
+        expires: *distrolessGlibcExpiry
+  SNYK-DEBIAN13-GLIBC-18605790:
+    - "*":
+        reason: *distrolessGlibcMinorReason
+        expires: *distrolessGlibcExpiry
+  SNYK-DEBIAN13-GLIBC-18612523:
+    - "*":
+        reason: *distrolessGlibcMinorReason
+        expires: *distrolessGlibcExpiry
+  SNYK-DEBIAN13-GLIBC-19233584:
+    - "*":
+        reason: *distrolessGlibcMinorReason
+        expires: *distrolessGlibcExpiry
+  SNYK-DEBIAN13-GLIBC-19269961:
+    - "*":
+        reason: *distrolessGlibcMinorReason
+        expires: *distrolessGlibcExpiry
+  SNYK-DEBIAN13-GLIBC-19339206:
+    - "*":
+        reason: *distrolessGlibcMinorReason
+        expires: *distrolessGlibcExpiry
+  SNYK-DEBIAN13-GLIBC-19383357:
+    - "*":
+        reason: *distrolessGlibcMinorReason
+        expires: *distrolessGlibcExpiry
+  SNYK-DEBIAN13-GLIBC-19402190:
+    - "*":
+        reason: *distrolessGlibcMinorReason
+        expires: *distrolessGlibcExpiry
+
+  # LOW x7: Debian and glibc upstream classify these legacy reports as
+  # unimportant or standard behavior. The distroless runtime has no FTP/glob
+  # service, setuid program or user-selectable loader environment.
+  SNYK-DEBIAN13-GLIBC-5680884:
+    - "*":
+        reason: &distrolessGlibcLegacyReason >
+          Debian classifies this legacy glibc report as unimportant/unfixed.
+          Its required API or privileged execution context is absent from the
+          fixed, non-setuid Node/Caddy distroless runtime.
+        expires: &distrolessGlibcLegacyExpiry "2027-09-08T00:00:00.000Z"
+  SNYK-DEBIAN13-GLIBC-5681058:
+    - "*":
+        reason: *distrolessGlibcLegacyReason
+        expires: *distrolessGlibcLegacyExpiry
+  SNYK-DEBIAN13-GLIBC-5681145:
+    - "*":
+        reason: *distrolessGlibcLegacyReason
+        expires: *distrolessGlibcLegacyExpiry
+  SNYK-DEBIAN13-GLIBC-5681177:
+    - "*":
+        reason: *distrolessGlibcLegacyReason
+        expires: *distrolessGlibcLegacyExpiry
+  SNYK-DEBIAN13-GLIBC-5681215:
+    - "*":
+        reason: *distrolessGlibcLegacyReason
+        expires: *distrolessGlibcLegacyExpiry
+  SNYK-DEBIAN13-GLIBC-5681241:
+    - "*":
+        reason: *distrolessGlibcLegacyReason
+        expires: *distrolessGlibcLegacyExpiry
+  SNYK-DEBIAN13-GLIBC-5681256:
+    - "*":
+        reason: *distrolessGlibcLegacyReason
+        expires: *distrolessGlibcLegacyExpiry
+
+
   SNYK-JS-NODEFORGE-19635204:
     - "*":
         reason: >

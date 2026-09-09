@@ -11,6 +11,9 @@
     "native-messaging/",
     "README.md"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node ./src/privcloud-bridge.mjs",
     "start:native": "node ./src/privcloud-bridge.mjs --native-messaging",

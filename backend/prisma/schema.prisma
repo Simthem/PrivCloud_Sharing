@@ -1168,3 +1168,31 @@ model UserPQKey {
   @@unique([userId, version])
   @@index([userId, isActive])
 }
+
+// ============================================================================
+// PLATFORM USAGE HISTORY (administration chart)
+// ============================================================================
+
+// One row per UTC day, written by a daily job. Shares and their files are
+// purged by the retention jobs, so their history cannot be rebuilt after the
+// fact from the live tables: it exists only because it was recorded here.
+//
+// PRIVACY CONTRACT - this table holds counters and nothing else. It must never
+// gain a relation, a foreign key, an identifier, a share type, a name, a
+// filename, an email or any other per-user or per-share attribute. Retention
+// deletes what users entrusted to the platform; a usage chart is not a reason
+// to keep a shadow copy of it. Three totals and a date are enough to draw it,
+// and they describe no one.
+model UsageSnapshot {
+  // UTC calendar day, "YYYY-MM-DD". A string key is identical on PostgreSQL
+  // and SQLite, immune to the server timezone, and sorts chronologically.
+  day String @id
+
+  capturedAt DateTime @default(now())
+
+  totalUsers  Int
+  totalShares Int
+  // Stored as a string for the same reason File.size is: the platform total
+  // passes a 32-bit integer with a handful of shares.
+  totalStorageBytes String
+}

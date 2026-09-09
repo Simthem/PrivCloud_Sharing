@@ -2,12 +2,33 @@
 
 ### Features
 
+- **administrator dashboard -- chart platform usage without retaining personal
+  data:** administrators can inspect current user, share and storage totals and
+  a responsive historical chart. A UTC daily snapshot stores only aggregate
+  counters, while pre-snapshot account history is clearly marked as estimated
+  and unavailable share/storage values are never presented as zero.
 - **administrator users -- expose totals and local search:** the `/admin/users`
   page now shows the complete user count and filters the loaded list by
   username or e-mail address, with result counts and English/French labels.
 
+### Bug Fixes
+
+- **Companion startup -- retain the validated Node.js runtime:** the Linux
+  installer now records the exact Node.js 20+ executable in its launcher, so a
+  systemd service cannot silently fall back to an obsolete system runtime.
+  Internal version, URL and syntax checks are isolated from inherited
+  `NODE_OPTIONS` output without changing the Companion runtime environment.
+
 ### Security
 
+- **image processing -- update `sharp` and bundled libheif:** frontend and
+  backend now resolve `sharp` 0.35.4, closing the libheif advisories affecting
+  earlier releases without a forced audit upgrade or an incompatible override.
+- **container and CI supply chain -- pin reviewed build inputs:** official
+  Docker base images use immutable digests; Caddy, OpenSSL, Node.js and npm
+  replacement archives use reviewed versions, commits and checksums; GitHub
+  Actions use commit SHAs; and the release gate runs the application dependency
+  audit. Patch application also fails closed instead of silently continuing.
 - **RSA PKCS#1 v1.5 -- mitigate `CVE-2026-85393` in `node-forge`:** installs
   now apply a `patch-package` guard that rejects malformed nested
   `DigestAlgorithm` fields. RFC 3161 certificate-chain validation uses
@@ -19,8 +40,20 @@
 
 ### Dependencies
 
+- Updated `sharp` to 0.35.4 and refreshed its platform-specific libvips
+  packages. Updated the documentation graph to patched `colord` 2.10.0,
+  `joi` 17.13.7 and `svgo` 3.3.5; the locally patched `image-size` advisories
+  remain covered by malformed-image regression tests.
 - Updated `undici` to 7.29.1, pinned `browserslist` 4.28.8 and refreshed the
   backend and frontend lockfiles for the new patching toolchain.
+
+### Tests
+
+- Added backend coverage for usage authorization, truthful historical series,
+  daily snapshots, bounded aggregation and request coalescing, plus frontend
+  coverage for chart scaling, gaps, estimates and large byte totals.
+- Added Linux installer coverage for runtime validation, exact executable
+  pinning and noisy inherited Node.js options.
 
 ## [1.24.4](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.3...v1.24.4) (2026-09-04)
 

@@ -483,6 +483,19 @@ export default {
   "admin.button.shares": "Share management",
   "admin.button.config": "Configuration",
   "admin.version": "Version",
+  "admin.stats.title": "Platform usage",
+  "admin.stats.range.months": "{count, plural, one {# month} other {# months}}",
+  "admin.stats.metric.users": "Users",
+  "admin.stats.metric.shares": "Shares",
+  "admin.stats.metric.storage": "Shared files",
+  "admin.stats.tooltip.no-data": "No data",
+  "admin.stats.error": "Usage statistics could not be loaded.",
+  "admin.stats.unavailable": "Unavailable",
+  "admin.stats.aria": "Platform usage from {from} to {to}",
+  "admin.stats.history.partial":
+    "Each curve is scaled to its own maximum. Shares and stored bytes are recorded once a day since {date}: retention deletes shares and their files, so nothing before that date can be reconstructed. The dashed part of the user curve is rebuilt from account creation dates.",
+  "admin.stats.history.empty":
+    "No daily snapshot has been recorded yet. The share and storage curves start filling in from the first recording; the user curve is rebuilt from account creation dates.",
   // END /admin
 
   // /admin/users

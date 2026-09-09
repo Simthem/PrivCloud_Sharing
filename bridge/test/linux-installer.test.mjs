@@ -29,6 +29,11 @@ test("the Linux installer validates and installs the Companion with Node.js 24",
   const mockBinDirectory = path.join(testDirectory, "bin");
   await mkdir(homeDirectory, { recursive: true });
   await mkdir(mockBinDirectory, { recursive: true });
+  const noisyNodePreload = path.join(testDirectory, "noisy-node-options.cjs");
+  await writeFile(
+    noisyNodePreload,
+    'process.stdout.write("inherited-node-options-noise\\n");\n',
+  );
 
   const curlMock = path.join(mockBinDirectory, "curl");
   await writeFile(
@@ -91,6 +96,7 @@ esac
           "install/linux/register-native-messaging.sh",
         ),
         PATH: `${mockBinDirectory}:${process.env.PATH}`,
+        NODE_OPTIONS: `--require=${noisyNodePreload}`,
         PRIVCLOUD_BASE_URL: "http://127.0.0.1:3000",
       },
     },
@@ -120,6 +126,10 @@ esac
   const launcher = await readFile(
     path.join(homeDirectory, ".local/bin/privcloud-companion"),
     "utf8",
+  );
+  assert.ok(
+    launcher.includes("exec '" + process.execPath + "'"),
+    "the launcher must reuse the exact Node runtime validated by the installer",
   );
   assert.match(
     launcher,

@@ -1,0 +1,16 @@
+# The distroless runtime starts as root only so the static runtime-init helper
+# can prepare bind-mounted paths. The helper accepts one fixed Node entrypoint,
+# clears supplementary groups, then calls setgid/setuid before executing Node.
+AVD-DS-0002
+DS-0002
+
+# This apt-get update is paired with apt purge/autoremove to remove package-manager
+# tooling from the final cache runtime image; it is not an install layer.
+AVD-DS-0017
+DS-0017
+
+# No fixed image-size release exists for these parser DoS advisories. The docs
+# install applies docs/patches/image-size+2.0.2.patch and audit:ci exercises the
+# zero-sized ISO BMFF and malformed ICNS/HEIF/JP2/JXL regression cases.
+CVE-2025-71329
+CVE-2025-71330

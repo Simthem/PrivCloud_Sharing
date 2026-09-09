@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { TbLink, TbRefresh, TbSettings, TbUsers, TbUsersGroup } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import Meta from "../../components/Meta";
+import UsageChart from "../../components/admin/stats/UsageChart";
 import useTranslate from "../../hooks/useTranslate.hook";
 import configService from "../../services/config.service";
 
@@ -83,27 +84,40 @@ const Admin = () => {
       <Title mb={30} order={3}>
         <FormattedMessage id="admin.title" />
       </Title>
-      <Stack justify="space-between" style={{ height: "calc(100vh - 180px)" }}>
-        <Paper withBorder p={40}>
-          <Grid>
-            {managementOptions.map((item) => {
-              return (
-                <Grid.Col span={{ base: 12, xs: 6 }} key={item.route}>
-                  <Paper
-                    withBorder
-                    component={Link}
-                    href={item.route}
-                    key={item.title}
-                    className={classes.item}
-                  >
-                    <item.icon color={theme.colors[theme.primaryColor][8]} size={35} />
-                    <Text mt={7}>{item.title}</Text>
-                  </Paper>
-                </Grid.Col>
-              );
-            })}
-          </Grid>
-        </Paper>
+      <Stack
+        justify="space-between"
+        style={{ minHeight: "calc(100vh - 180px)" }}
+      >
+        <Stack gap="lg">
+          <Paper withBorder p={40}>
+            <Grid>
+              {managementOptions.map((item) => {
+                return (
+                  <Grid.Col span={{ base: 12, xs: 6 }} key={item.route}>
+                    <Paper
+                      withBorder
+                      component={Link}
+                      href={item.route}
+                      key={item.title}
+                      className={classes.item}
+                    >
+                      <item.icon
+                        color={theme.colors[theme.primaryColor][8]}
+                        size={35}
+                      />
+                      <Text mt={7}>{item.title}</Text>
+                    </Paper>
+                  </Grid.Col>
+                );
+              })}
+            </Grid>
+          </Paper>
+
+          {/* Platform-wide usage. The page itself is already reserved to
+              the instance administrator, and the API behind it is guarded
+              again. */}
+          <UsageChart />
+        </Stack>
 
         <Center>
           <Text size="xs" c="dimmed">

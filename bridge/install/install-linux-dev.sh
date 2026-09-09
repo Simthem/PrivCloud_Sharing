@@ -6,9 +6,25 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-NODE_MAJOR="$(node -p 'Number(process.versions.node.split(".")[0])')"
-if [ "$NODE_MAJOR" -lt 20 ]; then
-  echo "Node.js 20 or newer is required (found $(node --version))." >&2
+NODE_BIN="$(command -v node)"
+case "$NODE_BIN" in
+  /*) ;;
+  *)
+    echo "Node.js must resolve to an absolute executable path." >&2
+    exit 1
+    ;;
+esac
+case "$NODE_BIN" in
+  *[!A-Za-z0-9_./:+-]*)
+    echo "Node.js resolved to an unsupported executable path." >&2
+    exit 1
+    ;;
+esac
+
+if ! "$NODE_BIN" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)' \
+  >/dev/null 2>&1
+then
+  echo "Node.js 20 or newer is required (found $(NODE_OPTIONS= "$NODE_BIN" --version))." >&2
   exit 1
 fi
 
@@ -24,7 +40,7 @@ if [ -z "${PRIVCLOUD_BASE_URL:-}" ]; then
 fi
 
 # Canonicalize the origin and reject paths, credentials and unsafe remote HTTP.
-BASE_URL="$(node - "$PRIVCLOUD_BASE_URL" <<'NODE'
+BASE_URL="$(NODE_OPTIONS= "$NODE_BIN" - "$PRIVCLOUD_BASE_URL" <<'NODE'
 const raw = process.argv[2];
 let url;
 try {
@@ -64,7 +80,7 @@ trap 'rm -f "$SOURCE_TMP"' EXIT HUP INT TERM
 
 curl -fsSL "$BASE_URL/install/companion/privcloud-companion.mjs" \
   -o "$SOURCE_TMP"
-node --check "$SOURCE_TMP"
+NODE_OPTIONS= "$NODE_BIN" --check "$SOURCE_TMP"
 chmod 0755 "$SOURCE_TMP"
 mv "$SOURCE_TMP" "$APP_DIR/privcloud-companion.mjs"
 
@@ -72,7 +88,7 @@ cat > "$BIN_PATH" <<EOF
 #!/bin/sh
 export PRIVCLOUD_BRIDGE_ORIGINS='$BASE_URL'
 export PRIVCLOUD_COMPANION_NATIVE_ORIGINS='$BASE_URL'
-exec node '$APP_DIR/privcloud-companion.mjs' "\$@"
+exec '$NODE_BIN' '$APP_DIR/privcloud-companion.mjs' "\$@"
 EOF
 chmod 0755 "$BIN_PATH"
 
