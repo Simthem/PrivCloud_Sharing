@@ -11,18 +11,20 @@ export type UsageSnapshotRow = {
   day: string;
   totalUsers: number;
   totalShares: number;
+  totalViews: number | null;
   totalStorageBytes: string;
+  backfilled: boolean;
 };
 
 export type UsagePoint = {
   day: string;
   users: number | null;
   shares: number | null;
+  views: number | null;
   storageBytes: string | null;
   /**
-   * True when the point was rebuilt from User.createdAt rather than read from a
-   * snapshot. Only the user count can be rebuilt: shares and their files are
-   * purged by the retention jobs, so their history exists solely in snapshots.
+   * True when the point was rebuilt from surviving creation records rather
+   * than captured on that day.
    */
   estimated: boolean;
 };
@@ -134,10 +136,9 @@ export function accumulateUserCounts(
 /**
  * Merge the recorded snapshots with the rebuilt user counts.
  *
- * A snapshot always wins: it is the only source that knows how many shares and
- * bytes existed that day. Days before the first snapshot keep a null share and
- * storage value so the chart can start those curves where the data starts,
- * instead of drawing a flat zero that never happened.
+ * A snapshot always wins. Days without one keep null share, view and storage
+ * values so the chart opens real gaps instead of drawing zeroes that never
+ * happened.
  */
 export function buildUsageSeries(
   days: string[],
@@ -154,8 +155,9 @@ export function buildUsageSeries(
         day,
         users: snapshot.totalUsers,
         shares: snapshot.totalShares,
+        views: snapshot.totalViews,
         storageBytes: snapshot.totalStorageBytes,
-        estimated: false,
+        estimated: snapshot.backfilled,
       };
     }
 
@@ -165,6 +167,7 @@ export function buildUsageSeries(
       day,
       users: users ?? null,
       shares: null,
+      views: null,
       storageBytes: null,
       estimated: users !== undefined,
     };

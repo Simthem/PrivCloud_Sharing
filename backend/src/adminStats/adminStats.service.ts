@@ -21,10 +21,12 @@ import {
  */
 const FILE_PAGE_SIZE = 5_000;
 const CURRENT_TOTALS_CACHE_MS = 60_000;
+const SHARE_USAGE_WINDOW_MS = 30 * 24 * 60 * 60 * 1_000;
 
 export type UsageTotals = {
   users: number;
   shares: number;
+  views: number;
   storageBytes: string;
 };
 
@@ -124,7 +126,9 @@ export class AdminStatsService {
         day: true,
         totalUsers: true,
         totalShares: true,
+        totalViews: true,
         totalStorageBytes: true,
+        backfilled: true,
       },
     });
   }
@@ -153,12 +157,16 @@ export class AdminStatsService {
           day,
           totalUsers: totals.users,
           totalShares: totals.shares,
+          totalViews: totals.views,
           totalStorageBytes: totals.storageBytes,
+          backfilled: false,
         },
         update: {
           totalUsers: totals.users,
           totalShares: totals.shares,
+          totalViews: totals.views,
           totalStorageBytes: totals.storageBytes,
+          backfilled: false,
         },
       });
     } catch (error) {
@@ -175,11 +183,7 @@ export class AdminStatsService {
    */
   private async currentTotals(forceRefresh = false): Promise<UsageTotals> {
     const now = Date.now();
-    if (
-      !forceRefresh &&
-      this.totalsCache &&
-      this.totalsCache.expiresAt > now
-    ) {
+    if (!forceRefresh && this.totalsCache && this.totalsCache.expiresAt > now) {
       return this.totalsCache.value;
     }
 
@@ -201,13 +205,29 @@ export class AdminStatsService {
   }
 
   private async readCurrentTotals(): Promise<UsageTotals> {
-    const [users, shares, storageBytes] = await Promise.all([
+    const now = new Date();
+    const shareWindowStartedAt = new Date(
+      now.getTime() - SHARE_USAGE_WINDOW_MS,
+    );
+    const [users, shares, viewAggregate, storageBytes] = await Promise.all([
       this.prisma.user.count(),
-      this.prisma.share.count(),
+      // The public edition has no immutable quota ledger, so count the
+      // surviving shares created inside the same rolling window.
+      this.prisma.share.count({
+        where: {
+          createdAt: { gt: shareWindowStartedAt, lte: now },
+        },
+      }),
+      this.prisma.share.aggregate({ _sum: { views: true } }),
       this.totalStorageBytes(),
     ]);
 
-    return { users, shares, storageBytes };
+    return {
+      users,
+      shares,
+      views: viewAggregate._sum.views ?? 0,
+      storageBytes,
+    };
   }
 
   /**

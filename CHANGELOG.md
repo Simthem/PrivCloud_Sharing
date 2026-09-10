@@ -1,18 +1,27 @@
-## [Unreleased]
+## [1.24.5](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.4...v1.24.5) (2026-09-10)
 
 ### Features
 
+- **dark theme -- improve text contrast:** primary and muted light text use
+  brighter neutral shades on dark backgrounds while preserving their visual
+  hierarchy.
 - **administrator dashboard -- chart platform usage without retaining personal
-  data:** administrators can inspect current user, share and storage totals and
-  a responsive historical chart. A UTC daily snapshot stores only aggregate
-  counters, while pre-snapshot account history is clearly marked as estimated
-  and unavailable share/storage values are never presented as zero.
+  data:** administrators can inspect users, rolling 30-day shares, global views
+  and storage through a responsive historical chart with 1, 2, 6 and 12-month
+  ranges. A UTC daily snapshot stores aggregate counters only, and the release
+  migration reconstructs the last 30 days from surviving account, share and
+  file creation dates without presenting unavailable view history as zero.
 - **administrator users -- expose totals and local search:** the `/admin/users`
   page now shows the complete user count and filters the loaded list by
   username or e-mail address, with result counts and English/French labels.
 
 ### Bug Fixes
 
+- **administrator dashboard -- use the intended share window and mobile
+  width:** share totals now exclude surviving transfers older than 30 days.
+  Reconstructed points remain visually distinct, while compact screens remove
+  redundant vertical-axis gutters and reduce card padding so management
+  shortcuts and the chart use nearly all available width.
 - **Companion startup -- retain the validated Node.js runtime:** the Linux
   installer now records the exact Node.js 20+ executable in its launcher, so a
   systemd service cannot silently fall back to an obsolete system runtime.
@@ -21,6 +30,12 @@
 
 ### Security
 
+- **Caddy transport dependencies -- close the gRPC-Go xDS crash path:** all
+  container builder variants now pin and verify `google.golang.org/grpc`
+  1.83.2, addressing `CVE-2026-84445` without using a development release.
+- **mail transport -- pin the patched Nodemailer release:** the backend
+  manifest now requires Nodemailer 9.1.1 exactly, matching its lockfile and
+  preventing reinstallations from selecting an older 9.0.x release.
 - **image processing -- update `sharp` and bundled libheif:** frontend and
   backend now resolve `sharp` 0.35.4, closing the libheif advisories affecting
   earlier releases without a forced audit upgrade or an incompatible override.
@@ -37,6 +52,11 @@
   coverage exercises both the malformed signature and the OpenSSL boundary,
   and the temporary Snyk exception documents the mitigation until an upstream
   release is available.
+- **HTTP method override -- mitigate `CVE-2026-37236` in Caddy's transitive
+  grpc-gateway:** both container builds inject the upstream
+  `WithDisableHTTPMethodOverride()` option into every `ServeMux`, fail closed
+  if the dependency source changes, verify the linked module version and carry
+  a time-bounded Snyk policy entry until an upstream fixed release is available.
 
 ### Dependencies
 
@@ -44,14 +64,16 @@
   packages. Updated the documentation graph to patched `colord` 2.10.0,
   `joi` 17.13.7 and `svgo` 3.3.5; the locally patched `image-size` advisories
   remain covered by malformed-image regression tests.
-- Updated `undici` to 7.29.1, pinned `browserslist` 4.28.8 and refreshed the
-  backend and frontend lockfiles for the new patching toolchain.
+- Updated `undici` to 7.29.1, enforced it across transitive backend and
+  frontend paths, pinned `browserslist` 4.28.8 and refreshed the lockfiles for
+  the new patching toolchain.
 
 ### Tests
 
-- Added backend coverage for usage authorization, truthful historical series,
-  daily snapshots, bounded aggregation and request coalescing, plus frontend
-  coverage for chart scaling, gaps, estimates and large byte totals.
+- Added backend coverage for usage authorization, rolling share totals, view
+  aggregation, truthful historical series, daily snapshots, bounded
+  aggregation and request coalescing, plus frontend coverage for chart scaling,
+  gaps, estimates and large byte totals.
 - Added Linux installer coverage for runtime validation, exact executable
   pinning and noisy inherited Node.js options.
 

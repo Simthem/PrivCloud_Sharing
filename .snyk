@@ -110,6 +110,20 @@ ignore:
           publishes a fixed release.
         expires: "2027-03-07T00:00:00.000Z"
 
+  # MEDIUM: grpc-gateway permits X-HTTP-Method-Override by default.
+  # Caddy carries the module transitively, so both production Dockerfiles patch
+  # the v2.30.0 NewServeMux constructor to prepend the official opt-out. The
+  # build checks the source shape, the injected option and the linked module
+  # version before shipping. Snyk can identify the module metadata but cannot
+  # observe this mandatory source-level mitigation.
+  SNYK-GOLANG-GITHUBCOMGRPCECOSYSTEMGRPCGATEWAYV2RUNTIME-19432132:
+    - "*":
+        reason: >
+          Caddy is built with grpc-gateway v2.30.0 and every ServeMux receives
+          WithDisableHTTPMethodOverride() during the verified Docker build.
+          The vulnerable header-controlled method rewrite is disabled.
+        expires: "2027-09-10T00:00:00.000Z"
+
 # ---------------------------------------------------------------------------
 # EXCLUDED FROM SNYK CODE
 # ---------------------------------------------------------------------------

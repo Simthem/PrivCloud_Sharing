@@ -39,6 +39,7 @@ const CHART_HEIGHT = 300;
 const HORIZONTAL_GRID_LINES = 4;
 const AXIS_GUTTER = 56;
 const EDGE_GUTTER = 14;
+const MOBILE_EDGE_GUTTER = 6;
 
 const METRICS: {
   key: UsageMetricKey;
@@ -47,12 +48,13 @@ const METRICS: {
 }[] = [
   { key: "users", color: "blue", labelId: "admin.stats.metric.users" },
   { key: "shares", color: "grape", labelId: "admin.stats.metric.shares" },
+  { key: "views", color: "orange", labelId: "admin.stats.metric.views" },
   { key: "storage", color: "teal", labelId: "admin.stats.metric.storage" },
 ];
 
-const RANGES = [1, 3, 6, 12];
+const RANGES = [1, 2, 6, 12];
 
-type MetricColor = "blue" | "grape" | "teal";
+type MetricColor = "blue" | "grape" | "orange" | "teal";
 
 const UsageChart = () => {
   const theme = useMantineTheme();
@@ -108,7 +110,9 @@ const UsageChart = () => {
             ? point.users
             : metric.key === "shares"
               ? point.shares
-              : toPlottableBytes(point.storageBytes),
+              : metric.key === "views"
+                ? point.views
+                : toPlottableBytes(point.storageBytes),
         estimated: point.estimated,
       }));
 
@@ -156,9 +160,22 @@ const UsageChart = () => {
     theme.colors[color][colorScheme === "dark" ? 4 : 6];
 
   const points = series?.points ?? [];
-  const chartWidth = Math.max(width, 320);
-  const leftGutter = shownMetrics.length >= 1 ? AXIS_GUTTER : EDGE_GUTTER;
-  const rightGutter = shownMetrics.length >= 2 ? AXIS_GUTTER : EDGE_GUTTER;
+  // useElementSize starts at zero, but once measured the SVG must follow the
+  // real container width. A hard 320 px floor overflowed narrow phones.
+  const chartWidth = width > 0 ? width : 320;
+  const isCompact = chartWidth < 560;
+  // Exact values remain available in the tiles and tooltip. On narrow screens
+  // hiding the vertical labels recovers the space both axis gutters consumed.
+  const leftGutter = isCompact
+    ? MOBILE_EDGE_GUTTER
+    : shownMetrics.length >= 1
+      ? AXIS_GUTTER
+      : EDGE_GUTTER;
+  const rightGutter = isCompact
+    ? MOBILE_EDGE_GUTTER
+    : shownMetrics.length >= 2
+      ? AXIS_GUTTER
+      : EDGE_GUTTER;
   const plotWidth = Math.max(chartWidth - leftGutter - rightGutter, 1);
   const plotHeight = CHART_HEIGHT - 44;
 
@@ -192,7 +209,7 @@ const UsageChart = () => {
   const hoveredPoint = hoveredIndex !== null ? points[hoveredIndex] : undefined;
 
   return (
-    <Paper withBorder p="lg">
+    <Paper withBorder p={{ base: "xs", sm: "lg" }}>
       <Group
         justify="space-between"
         align="center"
@@ -217,7 +234,7 @@ const UsageChart = () => {
         />
       </Group>
 
-      <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="xs" mb="lg">
+      <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="xs" mb="lg">
         {metricSeries.map((metric) => {
           const isActive = activeMetrics.includes(metric.key);
           const total =
@@ -225,7 +242,9 @@ const UsageChart = () => {
               ? (series?.totals.users ?? 0)
               : metric.key === "shares"
                 ? (series?.totals.shares ?? 0)
-                : (toPlottableBytes(series?.totals.storageBytes ?? "0") ?? 0);
+                : metric.key === "views"
+                  ? (series?.totals.views ?? 0)
+                  : (toPlottableBytes(series?.totals.storageBytes ?? "0") ?? 0);
 
           return (
             <UnstyledButton
@@ -329,7 +348,7 @@ const UsageChart = () => {
                     stroke={gridColor}
                     strokeWidth={1}
                   />
-                  {shownMetrics[0] && (
+                  {!isCompact && shownMetrics[0] && (
                     <text
                       x={leftGutter - 8}
                       y={y + 4}
@@ -343,7 +362,7 @@ const UsageChart = () => {
                       )}
                     </text>
                   )}
-                  {shownMetrics[1] && (
+                  {!isCompact && shownMetrics[1] && (
                     <text
                       x={leftGutter + plotWidth + 8}
                       y={y + 4}
@@ -421,8 +440,8 @@ const UsageChart = () => {
                       strokeWidth={2}
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      // A rebuilt stretch is drawn dashed: it says how many
-                      // accounts existed, not what the platform stored.
+                      // A rebuilt stretch is dashed so it cannot be mistaken
+                      // for a total captured on that day.
                       strokeDasharray={segment.estimated ? "4 4" : undefined}
                     />
                   ))}

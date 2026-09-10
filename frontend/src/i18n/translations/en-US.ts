@@ -486,16 +486,17 @@ export default {
   "admin.stats.title": "Platform usage",
   "admin.stats.range.months": "{count, plural, one {# month} other {# months}}",
   "admin.stats.metric.users": "Users",
-  "admin.stats.metric.shares": "Shares",
+  "admin.stats.metric.shares": "Shares (30 days)",
+  "admin.stats.metric.views": "Views",
   "admin.stats.metric.storage": "Shared files",
   "admin.stats.tooltip.no-data": "No data",
   "admin.stats.error": "Usage statistics could not be loaded.",
   "admin.stats.unavailable": "Unavailable",
   "admin.stats.aria": "Platform usage from {from} to {to}",
   "admin.stats.history.partial":
-    "Each curve is scaled to its own maximum. Shares and stored bytes are recorded once a day since {date}: retention deletes shares and their files, so nothing before that date can be reconstructed. The dashed part of the user curve is rebuilt from account creation dates.",
+    "Each curve is scaled to its own maximum. Daily totals are available since {date}. Dashed portions were rebuilt from surviving account, share and file creation dates. Historical views cannot be rebuilt because only their cumulative total was stored.",
   "admin.stats.history.empty":
-    "No daily snapshot has been recorded yet. The share and storage curves start filling in from the first recording; the user curve is rebuilt from account creation dates.",
+    "No daily snapshot has been recorded yet. Share, view and storage curves start filling in from the first recording; users are rebuilt from account creation dates.",
   // END /admin
 
   // /admin/users

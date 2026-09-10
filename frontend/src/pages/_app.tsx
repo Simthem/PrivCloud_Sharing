@@ -89,8 +89,8 @@ const EmailVerificationNotice = dynamic(
   { ssr: false },
 );
 
-// WCAG AA: override --mantine-color-dimmed for sufficient contrast on
-// both light (gray-7 = #495057, 7.5:1 on white) and dark (dark-1 = #A6A7AB, 8.5:1) backgrounds.
+// Keep secondary text clearly readable in both themes. The custom dark-1
+// shade is deliberately lighter than Mantine's default muted gray.
 const contrastResolver: CSSVariablesResolver = () => ({
   variables: {},
   light: { "--mantine-color-dimmed": "var(--mantine-color-gray-7)" },

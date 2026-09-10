@@ -157,8 +157,8 @@ export function buildTheme(paletteName?: string, colorScheme: MantineColorScheme
     colors: {
       ...(palette.colors as any),
       dark: [
-        "#C1C2C5",
-        "#A6A7AB",
+        "#F1F3F5",
+        "#CED0D6",
         "#909296",
         "#5c5f66",
         "#373A40",

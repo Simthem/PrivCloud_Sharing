@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-frontend",
-  "version": "1.24.4",
+  "version": "1.24.5",
   "scripts": {
     "dev": "next dev",
     "prebuild": "sh scripts/strip-legacy-polyfills.sh",
@@ -82,7 +82,8 @@
     "next": "16.3.3",
     "sharp": "$sharp",
     "nanoid": "5.1.16",
-    "dompurify": "^3.4.13"
+    "dompurify": "^3.4.13",
+    "undici": "7.29.1"
   },
   "browserslist": [
     "last 2 Chrome versions",

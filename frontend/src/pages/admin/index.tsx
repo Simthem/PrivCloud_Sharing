@@ -1,15 +1,14 @@
-import {
-  Center,
-  Grid,
-  Paper,
-  Stack,
-  Text,
-  Title,
-} from "@mantine/core";
+import { Center, Grid, Paper, Stack, Text, Title } from "@mantine/core";
 import { createStyles } from "@mantine/emotion";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { TbLink, TbRefresh, TbSettings, TbUsers, TbUsersGroup } from "react-icons/tb";
+import {
+  TbLink,
+  TbRefresh,
+  TbSettings,
+  TbUsers,
+  TbUsersGroup,
+} from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import Meta from "../../components/Meta";
 import UsageChart from "../../components/admin/stats/UsageChart";
@@ -75,7 +74,7 @@ const Admin = () => {
         }
       })
       .catch();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -89,8 +88,8 @@ const Admin = () => {
         style={{ minHeight: "calc(100vh - 180px)" }}
       >
         <Stack gap="lg">
-          <Paper withBorder p={40}>
-            <Grid>
+          <Paper withBorder p={{ base: "xs", sm: "xl" }}>
+            <Grid gutter={{ base: "xs", sm: "md" }}>
               {managementOptions.map((item) => {
                 return (
                   <Grid.Col span={{ base: 12, xs: 6 }} key={item.route}>

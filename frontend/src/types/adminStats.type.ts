@@ -3,11 +3,12 @@ export type UsagePoint = {
   day: string;
   users: number | null;
   shares: number | null;
+  views: number | null;
   /** Decimal string: the platform total overflows Number.MAX_SAFE_INTEGER. */
   storageBytes: string | null;
   /**
-   * The day predates the snapshot history and was rebuilt from account
-   * creation dates. Only `users` can be rebuilt that way.
+   * The point was rebuilt from surviving creation records instead of captured
+   * on that day.
    */
   estimated: boolean;
 };
@@ -20,6 +21,7 @@ export type UsageSeries = {
   totals: {
     users: number;
     shares: number;
+    views: number;
     storageBytes: string;
   };
   /** First day backed by a recorded snapshot, null when none exists yet. */

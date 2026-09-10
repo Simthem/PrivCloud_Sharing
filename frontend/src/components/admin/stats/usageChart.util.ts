@@ -5,11 +5,11 @@
  * without a DOM lives here so it stays testable.
  */
 
-export type UsageMetricKey = "users" | "shares" | "storage";
+export type UsageMetricKey = "users" | "shares" | "views" | "storage";
 
 export type ChartPoint = {
   value: number | null;
-  /** The value was rebuilt from account creation dates, not recorded. */
+  /** The value was rebuilt from surviving creation records, not recorded. */
   estimated: boolean;
 };
 

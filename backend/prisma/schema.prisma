@@ -1190,9 +1190,15 @@ model UsageSnapshot {
 
   capturedAt DateTime @default(now())
 
-  totalUsers  Int
-  totalShares Int
+  totalUsers        Int
+  totalShares       Int
+  // Null on snapshots captured before view totals were introduced: Share.views
+  // is cumulative and cannot reconstruct when historical views happened.
+  totalViews        Int?
   // Stored as a string for the same reason File.size is: the platform total
   // passes a 32-bit integer with a handful of shares.
   totalStorageBytes String
+
+  // True for the 30-day deployment backfill rebuilt from surviving records.
+  backfilled Boolean @default(false)
 }

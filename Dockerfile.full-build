@@ -39,6 +39,7 @@ RUN test "$(grep -Fc '[]interpreter.Interpretable{reqAttr}' modules/caddyhttp/ce
 # CVE-2026-33186 (CVSS 9.1, CRITICAL) : google.golang.org/grpc < 1.79.3
 # GHSA-hrxh-6v49-42gf (CVSS 8.8, HIGH) : google.golang.org/grpc < 1.82.1
 # GHSA-qc2q-p7wx-3px3 (MODERATE) : google.golang.org/grpc <= 1.83.0
+# CVE-2026-84445 (HIGH) : google.golang.org/grpc 1.83.1 (xDS server DoS)
 # GHSA-q4r8-xm5f-56gw (CRITICAL) + CVE-2026-30836 (CVSS 7.8, HIGH) : github.com/smallstep/certificates < 0.30.2
 # CVE-2026-34986 (CVSS 8.7, HIGH) : github.com/go-jose/go-jose v3 < 3.0.5, v4 < 4.1.4
 # CVE-2026-33816 (CVSS 8.7, HIGH) : github.com/jackc/pgx/v5 < 5.9.0
@@ -56,7 +57,8 @@ RUN test "$(grep -Fc '[]interpreter.Interpretable{reqAttr}' modules/caddyhttp/ce
 # CVE-2026-46600 : golang.org/x/net < 0.56.0
 # CVE-2026-56852 : golang.org/x/text < 0.39.0
 # GHSA-gcjh-h69q-9w9g : github.com/google/cel-go <= 0.28.1
-# CVE-2026-37236 : github.com/grpc-ecosystem/grpc-gateway/v2 < 2.30.0
+# CVE-2026-37236 : grpc-gateway v2.30.0, mitigated below by disabling
+#                  X-HTTP-Method-Override in every ServeMux.
 # go mod tidy runs FIRST, then we re-pin smallstep + bbolt AFTER to prevent transitive downgrade
 # IMPORTANT: 'replace' directives are used (not 'require' bumps) for x/net, x/text, x/crypto, x/sys.
 # Unlike 'go get' or 'go mod edit -require', replace directives survive 'go mod tidy' because
@@ -71,7 +73,7 @@ RUN go get golang.org/x/net@v0.57.0 \
     && go get golang.org/x/text@v0.40.0 \
     && go get golang.org/x/crypto@v0.56.0 \
     && go get github.com/yuin/goldmark@v1.7.17 \
-    && go get google.golang.org/grpc@v1.83.1 \
+    && go get google.golang.org/grpc@v1.83.2 \
     && go get github.com/go-jose/go-jose/v3@v3.0.5 \
     && go get github.com/go-jose/go-jose/v4@v4.1.4 \
     && go get github.com/jackc/pgx/v5@v5.9.2 \
@@ -101,7 +103,7 @@ RUN go get golang.org/x/net@v0.57.0 \
         -replace=github.com/go-chi/chi/v5=github.com/go-chi/chi/v5@v5.3.0 \
     && go mod tidy \
     && go mod edit -require=github.com/go-chi/chi/v5@v5.3.0 \
-    && go get google.golang.org/grpc@v1.83.1 \
+    && go get google.golang.org/grpc@v1.83.2 \
     && go get github.com/google/cel-go@v0.30.0 \
     && go get github.com/klauspost/compress@v1.18.7 \
     && go get github.com/grpc-ecosystem/grpc-gateway/v2@v2.30.0 \
@@ -113,7 +115,7 @@ RUN go get golang.org/x/net@v0.57.0 \
     && go list -m golang.org/x/text | grep 'v0.40.0' \
     && go list -m golang.org/x/crypto | grep 'v0.56.0' \
     && go list -m github.com/go-chi/chi/v5 | grep 'v5.3.0' \
-    && test "$(go list -m -f '{{.Version}}' google.golang.org/grpc)" = "v1.83.1" \
+    && test "$(go list -m -f '{{.Version}}' google.golang.org/grpc)" = "v1.83.2" \
     && test "$(go list -m -f '{{.Version}}' github.com/google/cel-go)" = "v0.30.0" \
     && test "$(go list -m -f '{{.Version}}' github.com/klauspost/compress)" = "v1.18.7" \
     && test "$(go list -m -f '{{.Version}}' github.com/grpc-ecosystem/grpc-gateway/v2)" = "v2.30.0" \
@@ -135,7 +137,7 @@ RUN GRPC_GATEWAY_MUX="$(go env GOMODCACHE)/github.com/grpc-ecosystem/grpc-gatewa
 # Compiler Caddy (binaire statique, stripped, sans symboles de debug)
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/caddy \
     && go version -m /usr/bin/caddy | grep -Eq \
-        'dep[[:space:]]+google[.]golang[.]org/grpc[[:space:]]+v1[.]83[.]1' \
+        'dep[[:space:]]+google[.]golang[.]org/grpc[[:space:]]+v1[.]83[.]2' \
     && go version -m /usr/bin/caddy | grep -Eq \
         'dep[[:space:]]+github[.]com/grpc-ecosystem/grpc-gateway/v2[[:space:]]+v2[.]30[.]0' \
     && go clean -cache -modcache

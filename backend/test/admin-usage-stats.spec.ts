@@ -88,13 +88,17 @@ testCase("prefers snapshots and never invents share or storage history", () => {
         day: "2026-09-03",
         totalUsers: 6,
         totalShares: 12,
+        totalViews: null,
         totalStorageBytes: "500",
+        backfilled: true,
       },
       {
         day: "2026-09-04",
         totalUsers: 7,
         totalShares: 15,
+        totalViews: 24,
         totalStorageBytes: "900",
+        backfilled: false,
       },
     ],
     userCounts,
@@ -106,6 +110,7 @@ testCase("prefers snapshots and never invents share or storage history", () => {
     day: "2026-09-01",
     users: 5,
     shares: null,
+    views: null,
     storageBytes: null,
     estimated: true,
   });
@@ -113,10 +118,10 @@ testCase("prefers snapshots and never invents share or storage history", () => {
     day: "2026-09-03",
     users: 6,
     shares: 12,
+    views: null,
     storageBytes: "500",
-    estimated: false,
+    estimated: true,
   });
-
 });
 
 testCase("clamps the requested window to a supported range", () => {
@@ -136,6 +141,7 @@ testCase("clamps the requested window to a supported range", () => {
 function fakePrisma(options: {
   users?: Date[];
   shares?: number;
+  views?: number;
   files?: { id: string; size: string }[];
   snapshots?: UsageSnapshotRow[];
 }) {
@@ -147,9 +153,11 @@ function fakePrisma(options: {
     (options.snapshots ?? []).map((snapshot) => [snapshot.day, snapshot]),
   );
   const filePages: number[] = [];
+  const shareCountQueries: unknown[] = [];
 
   return {
     filePages,
+    shareCountQueries,
     snapshots,
     user: {
       count: async (query?: { where?: { createdAt?: { lt?: Date } } }) => {
@@ -169,7 +177,16 @@ function fakePrisma(options: {
           )
           .map((createdAt) => ({ createdAt })),
     },
-    share: { count: async () => options.shares ?? 0 },
+    share: {
+      count: async (query?: unknown) => {
+        shareCountQueries.push(query);
+        return options.shares ?? 0;
+      },
+      aggregate: async () => ({ _sum: { views: options.views ?? null } }),
+    },
+    shareQuotaEvent: {
+      count: async () => options.shares ?? 0,
+    },
     file: {
       findMany: async (query: {
         take: number;
@@ -225,7 +242,12 @@ testCase("adds up file sizes one page at a time", async () => {
     id: `file-${String(index).padStart(6, "0")}`,
     size: "1000000000",
   }));
-  const prisma = fakePrisma({ files, shares: 4, users: [new Date()] });
+  const prisma = fakePrisma({
+    files,
+    shares: 4,
+    views: 17,
+    users: [new Date()],
+  });
   const service = new AdminStatsService(prisma as never);
 
   const series = await service.getUsageSeries(1);
@@ -233,25 +255,37 @@ testCase("adds up file sizes one page at a time", async () => {
   assert.deepEqual(prisma.filePages, [5_000, 5_000, 0]);
   assert.equal(series.totals.storageBytes, "10000000000000");
   assert.equal(series.totals.shares, 4);
-});
-
-testCase("coalesces concurrent totals and briefly reuses their file scan", async () => {
-  const prisma = fakePrisma({
-    users: [new Date("2026-01-01T00:00:00.000Z")],
-    shares: 2,
-    files: [{ id: "a", size: "512" }],
-  });
-  const service = new AdminStatsService(prisma as never);
-
-  await Promise.all([service.getUsageSeries(1), service.getUsageSeries(3)]);
-  await service.getUsageSeries(6);
-
-  assert.deepEqual(
-    prisma.filePages,
-    [1],
-    "one inventory scan should serve concurrent and immediately repeated reads",
+  assert.equal(series.totals.views, 17);
+  const shareWindow = prisma.shareCountQueries[0] as {
+    where: { createdAt: { gt: Date; lte: Date } };
+  };
+  assert.equal(
+    shareWindow.where.createdAt.lte.getTime() -
+      shareWindow.where.createdAt.gt.getTime(),
+    30 * 24 * 60 * 60 * 1_000,
   );
 });
+
+testCase(
+  "coalesces concurrent totals and briefly reuses their file scan",
+  async () => {
+    const prisma = fakePrisma({
+      users: [new Date("2026-01-01T00:00:00.000Z")],
+      shares: 2,
+      files: [{ id: "a", size: "512" }],
+    });
+    const service = new AdminStatsService(prisma as never);
+
+    await Promise.all([service.getUsageSeries(1), service.getUsageSeries(3)]);
+    await service.getUsageSeries(6);
+
+    assert.deepEqual(
+      prisma.filePages,
+      [1],
+      "one inventory scan should serve concurrent and immediately repeated reads",
+    );
+  },
+);
 
 testCase(
   "records today on read so the chart is never a day behind",
@@ -271,7 +305,9 @@ testCase(
       day: today,
       totalUsers: 1,
       totalShares: 2,
+      totalViews: 0,
       totalStorageBytes: "512",
+      backfilled: false,
     });
 
     assert.equal(series.months, 6);
@@ -284,6 +320,7 @@ testCase(
       day: today,
       users: 1,
       shares: 2,
+      views: 0,
       storageBytes: "512",
       estimated: false,
     });
@@ -297,37 +334,45 @@ testCase(
   },
 );
 
-testCase("reports the first real snapshot even when it predates the window", async () => {
-  const prisma = fakePrisma({
-    snapshots: [
-      {
-        day: "2024-01-02",
-        totalUsers: 1,
-        totalShares: 1,
-        totalStorageBytes: "128",
-      },
-    ],
-  });
-  const service = new AdminStatsService(prisma as never);
+testCase(
+  "reports the first real snapshot even when it predates the window",
+  async () => {
+    const prisma = fakePrisma({
+      snapshots: [
+        {
+          day: "2024-01-02",
+          totalUsers: 1,
+          totalShares: 1,
+          totalViews: null,
+          totalStorageBytes: "128",
+          backfilled: false,
+        },
+      ],
+    });
+    const service = new AdminStatsService(prisma as never);
 
-  const series = await service.getUsageSeries(1);
+    const series = await service.getUsageSeries(1);
 
-  assert.equal(series.snapshotsFrom, "2024-01-02");
-  assert.ok(
-    series.points.every((point) => point.day !== "2024-01-02"),
-    "the response should not expand beyond the requested chart window",
-  );
-});
+    assert.equal(series.snapshotsFrom, "2024-01-02");
+    assert.ok(
+      series.points.every((point) => point.day !== "2024-01-02"),
+      "the response should not expand beyond the requested chart window",
+    );
+  },
+);
 
-testCase("schedules the daily snapshot at the end of an explicit UTC day", () => {
-  const schedule = Reflect.getMetadata(
-    "SCHEDULE_CRON_OPTIONS",
-    AdminStatsService.prototype.recordDailySnapshot,
-  );
+testCase(
+  "schedules the daily snapshot at the end of an explicit UTC day",
+  () => {
+    const schedule = Reflect.getMetadata(
+      "SCHEDULE_CRON_OPTIONS",
+      AdminStatsService.prototype.recordDailySnapshot,
+    );
 
-  assert.equal(schedule?.cronTime, "59 59 23 * * *");
-  assert.equal(schedule?.timeZone, "UTC");
-});
+    assert.equal(schedule?.cronTime, "59 59 23 * * *");
+    assert.equal(schedule?.timeZone, "UTC");
+  },
+);
 
 testCase("refreshes today on read and freezes every earlier day", async () => {
   const today = toDayKey(new Date());
@@ -336,12 +381,21 @@ testCase("refreshes today on read and freezes every earlier day", async () => {
     day: yesterday,
     totalUsers: 99,
     totalShares: 99,
+    totalViews: 99,
     totalStorageBytes: "99",
+    backfilled: false,
   };
   const prisma = fakePrisma({
     snapshots: [
       frozen,
-      { day: today, totalUsers: 0, totalShares: 0, totalStorageBytes: "0" },
+      {
+        day: today,
+        totalUsers: 0,
+        totalShares: 0,
+        totalViews: 0,
+        totalStorageBytes: "0",
+        backfilled: false,
+      },
     ],
     shares: 1,
     files: [{ id: "a", size: "4096" }],
@@ -361,12 +415,15 @@ testCase("refreshes today on read and freezes every earlier day", async () => {
     day: today,
     totalUsers: 0,
     totalShares: 1,
+    totalViews: 0,
     totalStorageBytes: "4096",
+    backfilled: false,
   });
   assert.deepEqual(series.points[series.points.length - 1], {
     day: today,
     users: 0,
     shares: 1,
+    views: 0,
     storageBytes: "4096",
     estimated: false,
   });
@@ -388,12 +445,14 @@ testCase(
 
     // Retention deletes what users entrusted to the platform. The chart must
     // never become a reason to keep a shadow copy of it, so the recorded row is
-    // pinned to exactly these four aggregate fields.
+    // pinned to exactly these aggregate fields.
     assert.deepEqual(Object.keys(prisma.snapshots.get(today)!).sort(), [
+      "backfilled",
       "day",
       "totalShares",
       "totalStorageBytes",
       "totalUsers",
+      "totalViews",
     ]);
 
     // The same goes for what leaves over HTTP: dates, counts, one boolean.
@@ -410,11 +469,13 @@ testCase(
       "shares",
       "storageBytes",
       "users",
+      "views",
     ]);
     assert.deepEqual(Object.keys(series.totals).sort(), [
       "shares",
       "storageBytes",
       "users",
+      "views",
     ]);
   },
 );
