@@ -441,7 +441,9 @@ RUN set -eu; \
 # OpenSSL. The patched OpenSSL build below is therefore the only libssl/libcrypto
 # implementation in the runtime. There is no shell, apt, dpkg, tar, PAM,
 # system SQLite, ACL/attr tooling or coreutils.
-FROM gcr.io/distroless/base-nossl-debian13:latest@sha256:e50761cbc75cbd24ed76553350f67c44dda9d4a9b9c9e8f44bed6ddeb3cb8a9a AS runner
+# CVE-2026-5450 / CVE-2026-5928: this digest contains Debian's
+# libc6 2.41-12+deb13u4 security update.
+FROM gcr.io/distroless/base-nossl-debian13:latest@sha256:af5cb8dd589b8520b8c06bebb9efb73d7e16406cab58e85c51761fff49d370a0 AS runner
 
 ENV NODE_ENV=docker
 ENV HOME=/home/privcloud-sharing

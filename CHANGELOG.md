@@ -1,3 +1,13 @@
+## [Unreleased]
+
+### Security
+
+- **container runtime -- update the Debian 13 C library:** both Docker build
+  paths now pin the distroless digest containing `libc6` 2.41-12+deb13u4,
+  fixing CVE-2026-5450 and CVE-2026-5928.
+- **upload parser -- select the patched Multer release:** the backend override
+  and lockfile now resolve Multer 2.4.0 consistently.
+
 ## [1.24.5](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.4...v1.24.5) (2026-09-10)
 
 ### Features
