@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+### Dependencies
+
+- **backend dependency floors -- close URI and locale parsing issues:** raised
+  `moment` to 2.31.0 for CVE-2026-17495 and `fast-uri` to 3.1.8 for
+  CVE-2026-86472, and require `proxy-addr` 2.0.8 or newer when it is resolved
+  transitively.
+
 ### Security
 
 - **container runtime -- update the Debian 13 C library:** both Docker build
