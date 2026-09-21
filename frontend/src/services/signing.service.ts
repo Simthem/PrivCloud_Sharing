@@ -16,6 +16,7 @@ export interface SignatureRequest {
   status: string;
   signatureLevel: string;
   isE2EEncrypted?: boolean;
+  pageRotations?: { page: number; rotation: number }[] | null;
   teamId?: string;
   recipients: SignatureRecipient[];
   createdAt: string;
@@ -50,6 +51,7 @@ export interface SigningPageData {
     signatureLevel: string;
     addApprovalField?: boolean;
     isE2EEncrypted?: boolean;
+    pageRotations?: { page: number; rotation: number }[] | null;
     creator?: { username: string; email: string };
   };
   recipient: {
@@ -96,6 +98,7 @@ export interface CreateSignatureRequestPayload {
   initialsIncludeSignaturePage?: boolean;
   signaturePage?: number;
   watermarkPage?: number;
+  pageRotations?: { page: number; rotation: number }[];
   isE2EEncrypted?: boolean;
   sendE2EKeyByEmail?: boolean;
   e2eKey?: string;

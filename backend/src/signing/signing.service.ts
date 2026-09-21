@@ -20,6 +20,7 @@ import { User } from "@prisma/client";
 import { deliverSigningCompletionEmails } from "./signing-mail.util";
 import { resolveSigningIdentityProof } from "./signing-identity.util";
 import { appendSignatureAuditEvent } from "./signing-audit.util";
+import { applyPdfPageRotations, PdfPageRotation } from "./pdf-rotation.util";
 import { TeamNotificationService } from "src/teamNotification/teamNotification.service";
 import {
   buildSigningIntentHash,
@@ -164,6 +165,7 @@ export class SigningService {
 
     const addApprovalField = dto.addApprovalField ?? true;
     const signatureLevel = dto.signatureLevel || SignatureLevel.STANDARD;
+    const pageRotations = this.validatePageRotations(dto.pageRotations);
 
     this.validateSignatureFields(dto);
 
@@ -228,6 +230,9 @@ export class SigningService {
         initialsIncludeSignaturePage: dto.initialsIncludeSignaturePage ?? false,
         signaturePage: dto.signaturePage ?? null,
         watermarkPage: addApprovalField ? (dto.watermarkPage ?? null) : null,
+        pageRotations: pageRotations.length
+          ? JSON.parse(JSON.stringify(pageRotations))
+          : undefined,
         isE2EEncrypted: dto.isE2EEncrypted ?? false,
         ownerId: user.id,
         creatorId: user.id,
@@ -648,6 +653,7 @@ export class SigningService {
         signatureLevel: recipient.document.signatureLevel,
         addApprovalField: recipient.document.addApprovalField,
         isE2EEncrypted: recipient.document.isE2EEncrypted,
+        pageRotations: recipient.document.pageRotations,
         creator: recipient.document.creator,
       },
       recipient: {
@@ -1189,7 +1195,7 @@ export class SigningService {
     );
   }
 
-  /** Send final download actions only to the internal signers. */
+  /** Send final download actions to internal signers except the requester. */
   private notifyTeamOfSignatureCompletion(document: {
     id: string;
     teamId?: string | null;
@@ -1202,7 +1208,9 @@ export class SigningService {
   }) {
     this.notifyEncryptedTeamRecipients(
       document,
-      document.recipients,
+      document.recipients.filter(
+        (recipient) => recipient.userId !== document.creatorId,
+      ),
       "system",
       "SIGNATURE_COMPLETED",
       "Document signé disponible",
@@ -1229,8 +1237,15 @@ export class SigningService {
       | "teamCompletionNotification",
   ) {
     if (!document.teamId) return;
-    const targets = recipients.filter(
-      (recipient) => recipient.userId && recipient[envelopeField],
+    // One OS/database notification per account and event. A requester may also
+    // be a signer, and malformed/legacy requests may contain the same account
+    // more than once; neither should produce duplicate notifications.
+    const targets = Array.from(
+      new Map(
+        recipients
+          .filter((recipient) => recipient.userId && recipient[envelopeField])
+          .map((recipient) => [recipient.userId!, recipient]),
+      ).values(),
     );
     if (targets.length === 0) return;
 
@@ -1599,6 +1614,31 @@ export class SigningService {
     }
   }
 
+  private validatePageRotations(
+    rotations: PdfPageRotation[] | undefined,
+  ): PdfPageRotation[] {
+    if (!rotations?.length) return [];
+    const seenPages = new Set<number>();
+    for (const entry of rotations) {
+      if (seenPages.has(entry.page)) {
+        throw new BadRequestException("A page rotation may only be supplied once");
+      }
+      seenPages.add(entry.page);
+    }
+    return rotations;
+  }
+
+  private parsePageRotations(value: unknown): PdfPageRotation[] {
+    if (!Array.isArray(value)) return [];
+    return value.filter(
+      (entry): entry is PdfPageRotation =>
+        typeof entry === "object" &&
+        entry !== null &&
+        Number.isInteger((entry as PdfPageRotation).page) &&
+        [90, 180, 270].includes((entry as PdfPageRotation).rotation),
+    );
+  }
+
   private collectFieldValuesForRecipient(
     recipientId: string,
     fields: Array<{
@@ -1702,6 +1742,10 @@ export class SigningService {
     try {
       // Load original PDF
       let pdfBuffer = await this.fileService.getFileByKey(doc.originalFileKey);
+      pdfBuffer = await applyPdfPageRotations(
+        pdfBuffer,
+        this.parsePageRotations(doc.pageRotations),
+      );
 
       const filledTextFields = doc.fields.filter(
         (field) =>

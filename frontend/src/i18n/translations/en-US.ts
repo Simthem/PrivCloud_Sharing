@@ -189,6 +189,9 @@ export default {
   "signin.input.password.placeholder": "Your password",
   "signin.button.submit": "Sign in",
   "signIn.notify.error": "Wrong email or password",
+  "signIn.notify.rate-limited":
+    "Too many failed attempts. Try again in {seconds} seconds.",
+  "signin.button.retry-after": "Try again in {seconds}s",
   "signIn.notify.session-expired.title": "Session expired",
   "signIn.notify.session-expired.description":
     "Your session has expired. Please sign in again to continue.",
@@ -1025,6 +1028,21 @@ export default {
   "maintenance.default-message":
     "We are currently performing scheduled maintenance. File uploads are temporarily unavailable. Please try again later.",
 
+  "admin.config.category.security": "Security",
+  "admin.config.security.login-max-failures": "Failed attempts before lock",
+  "admin.config.security.login-max-failures.description":
+    "Number of failed password or LDAP attempts allowed before the first temporary lock.",
+  "admin.config.security.login-base-lock-minutes": "Initial lock (minutes)",
+  "admin.config.security.login-base-lock-minutes.description":
+    "Duration of the first lock. Each additional failure in the observation window doubles it.",
+  "admin.config.security.login-max-lock-minutes": "Maximum lock (minutes)",
+  "admin.config.security.login-max-lock-minutes.description":
+    "Upper bound for the exponentially increasing login delay.",
+  "admin.config.security.login-failure-window-minutes":
+    "Failure observation window (minutes)",
+  "admin.config.security.login-failure-window-minutes.description":
+    "Failed attempts older than this window no longer increase the next lock. A successful login resets the counter immediately.",
+
   "admin.config.cache.ttl": "TTL",
   "admin.config.cache.ttl.description":
     "Time in second to keep information inside the cache.",
@@ -1662,11 +1680,11 @@ export default {
   "signing.modal.file-placeholder": "Select the file to sign",
   "signing.modal.message": "Message to signers",
   "signing.modal.message-placeholder": "Optional message that will appear in the email invitation...",
-  "signing.modal.level": "Signature level (eIDAS)",
-  "signing.modal.level.aes": "Advanced (AES)",
-  "signing.modal.level.qes": "Qualified (QES)",
-  "signing.modal.level.aes-description": "Identity verified via email OTP, certified timestamp. Compliant with the technical requirements of Art. 26 eIDAS.",
-  "signing.modal.level.qes-description": "Qualified certificate from a trust service provider. Maximum legal value, equivalent to handwritten signature (eIDAS Art. 25.2).",
+  "signing.modal.level": "Evidence level",
+  "signing.modal.level.aes": "Standard - verified email + consent",
+  "signing.modal.level.qes": "Reinforced - verified account + passkey",
+  "signing.modal.level.aes-description": "No account required: the signer enters a one-time code received at the assigned address, then consents to the document hash. This proves current mailbox control, not civil identity.",
+  "signing.modal.level.qes-description": "Each signer uses the assigned PrivCloud account. Their consent is confirmed by a passkey and bound to the exact document hash. The reinforced flow provides authentication, consent and integrity evidence. Advanced electronic signature (AdES) status also depends on the signatory-identification process and demonstrable sole control for each signer. This flow is not a qualified electronic signature (QES).",
   "signing.modal.recipients": "Signers",
   "signing.modal.add-recipient": "Add",
   "signing.modal.recipient.name": "Full name",
@@ -1755,8 +1773,8 @@ export default {
   "signing.new.file-id": "File ID",
   "signing.new.file-id.desc": "PDF file identifier to sign within the share",
   "signing.new.file-id.placeholder": "e.g. clxyz...",
-  "signing.new.eidas-level": "eIDAS signature level",
-  "signing.new.eidas-desc": "Advanced electronic signature (AdES) based on eIDAS Article 26 requirements: email OTP verification, RFC 3161 timestamp and audit trail guaranteeing document integrity.",
+  "signing.new.eidas-level": "Signature evidence level",
+  "signing.new.eidas-desc": "Both flows record consent and document integrity. The reinforced level also associates an assigned account and a passkey. It provides evidence useful for an advanced electronic signature (AdES). That status requires the signatory-identification process and demonstrable sole control to meet all eIDAS Article 26 criteria. Neither flow is a qualified electronic signature (QES).",
   "signing.new.options": "Signed document options",
   "signing.new.option.approval-field": "Diagonal 'Approved' watermark",
   "signing.new.option.approval-field.desc": "Shows a semi-transparent diagonal watermark on the first page",
@@ -2509,11 +2527,11 @@ export default {
   "signing.preview.unavailable.title": "Document unavailable",
   "signing.preview.unavailable.description": "The file can no longer be loaded. It may have been deleted; signing is not possible.",
   "signing.sign.legal.standard-short": "This check proves current access to the recipient email address, not the civil identity of the person entering the code.",
-  "signing.sign.legal.reinforced-short": "The assigned PrivCloud account underwent the verification recorded in the evidence file; the passkey confirms the decision and binds it to the document hash. PrivCloud does not claim qualified civil-identity verification or advanced/qualified signature status solely from this flow.",
+  "signing.sign.legal.reinforced-short": "The assigned PrivCloud account and passkey reinforce authentication, consent and the link to the document. Advanced electronic signature (AdES) status also depends on the signatory-identification process and demonstrable sole control. This flow is not a qualified electronic signature (QES).",
   "signing.sign.assurance.standard": "Standard level: current access to the recipient email address was confirmed with a one-time code. Mailbox control does not verify civil identity.",
   "signing.sign.assurance.reinforced": "Reinforced level: the assigned PrivCloud account is recognised and each decision is confirmed by a passkey bound to the document hash. Account control is not qualified civil-identity verification.",
   "signing.sign.legal.standard": "By clicking “Sign document”, you confirm that you reviewed and agree to sign it. The evidence file retains the document hash, date, proof of the code sent to the assigned email and technical elements. The code establishes current mailbox control, not civil identity. This flow does not claim advanced or qualified electronic-signature status.",
-  "signing.sign.legal.reinforced": "By clicking “Sign document”, you confirm that you reviewed and agree to sign it from the assigned PrivCloud account. The evidence file retains the document hash, date, account-verification method and WebAuthn proof bound to this decision. This reinforced flow does not by itself constitute civil-identity verification or an advanced or qualified electronic signature.",
+  "signing.sign.legal.reinforced": "By clicking “Sign document”, you confirm that you reviewed and agree to sign it from the assigned PrivCloud account. The evidence file retains the document hash, date, account-verification method and WebAuthn proof bound to this decision. The reinforced flow provides authentication, consent and integrity safeguards. Advanced electronic signature (AdES) status under eIDAS also depends on the signatory-identification process and demonstrable sole control. This flow is not a qualified electronic signature (QES).",
   "signing.modal.custom-page": "Customise signature and watermark placement",
   "signing.modal.custom-page.desc": "By default, the signature and watermark are placed on the first page.",
   "signing.modal.custom-page.signature-label": "Signature page",
@@ -2544,6 +2562,14 @@ export default {
   "signing.new.fields.preview.title": "Placement preview",
   "signing.new.fields.preview.document": "PDF document preview",
   "signing.new.fields.preview.page": "Displayed page",
+  "signing.new.fields.preview.rotate-clockwise": "Rotate page clockwise",
+  "signing.new.fields.preview.zoom-in": "Zoom in",
+  "signing.new.fields.preview.zoom-out": "Zoom out",
+  "signing.new.fields.detection.loading": "Looking for a signature area…",
+  "signing.new.fields.detection.found-text": "A signature area was detected from the document text. It will be used by default and remains editable.",
+  "signing.new.fields.detection.found-box": "A likely signature box was detected. Check the suggested placement before sending.",
+  "signing.new.fields.detection.field-title": "Signature field placed automatically",
+  "signing.new.fields.detection.field-description": "The detected area is already used in the preview. Adjust the page, coordinates or dimensions below if needed.",
   "signing.new.fields.preview.loading": "Reading the PDF's actual dimensions…",
   "signing.new.fields.preview.error": "The preview could not be loaded. Placement will use an A4 fallback.",
   "signing.new.fields.preview.dimensions": "Page: {width} × {height} mm",

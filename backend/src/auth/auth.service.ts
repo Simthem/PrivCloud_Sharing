@@ -2,6 +2,8 @@ import {
   BadRequestException,
   ForbiddenException,
   forwardRef,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -25,6 +27,10 @@ import { UserSevice } from "../user/user.service";
 import { AuthRegisterDTO } from "./dto/authRegister.dto";
 import { AuthSignInDTO } from "./dto/authSignIn.dto";
 import { LdapService } from "./ldap.service";
+import {
+  LoginBackoffPolicy,
+  nextLoginFailureState,
+} from "./loginBackoff.util";
 
 @Injectable()
 export class AuthService {
@@ -120,8 +126,34 @@ export class AuthService {
     }
   }
 
-  private readonly MAX_LOGIN_ATTEMPTS = 5;
-  private readonly LOCKOUT_DURATION_MINUTES = 15;
+  private loginBackoffPolicy(): LoginBackoffPolicy {
+    const baseLockMinutes = this.config.get("security.loginBaseLockMinutes");
+    return {
+      maxFailures: this.config.get("security.loginMaxFailures"),
+      baseLockMinutes,
+      maxLockMinutes: Math.max(
+        baseLockMinutes,
+        this.config.get("security.loginMaxLockMinutes"),
+      ),
+      failureWindowMinutes: this.config.get(
+        "security.loginFailureWindowMinutes",
+      ),
+    };
+  }
+
+  private lockedLogin(until: Date): HttpException {
+    return new HttpException(
+      {
+        statusCode: HttpStatus.TOO_MANY_REQUESTS,
+        message: "Too many failed login attempts. Please try again later.",
+        retryAfterSeconds: Math.max(
+          1,
+          Math.ceil((until.getTime() - Date.now()) / 1000),
+        ),
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+  }
 
   async signIn(dto: AuthSignInDTO, ip: string) {
     if (!dto.email && !dto.username) {
@@ -143,9 +175,7 @@ export class AuthService {
       this.logger.warn(
         `Locked account login attempt for ${dto.email || dto.username} from IP ${ip}`,
       );
-      throw new ForbiddenException(
-        "Account temporarily locked due to too many failed attempts. Please try again later.",
-      );
+      throw this.lockedLogin(targetUser.lockedUntil);
     }
 
     if (!this.config.get("oauth.disablePassword")) {
@@ -157,7 +187,11 @@ export class AuthService {
         if (targetUser.failedLoginAttempts > 0) {
           await this.prisma.user.update({
             where: { id: targetUser.id },
-            data: { failedLoginAttempts: 0, lockedUntil: null },
+            data: {
+              failedLoginAttempts: 0,
+              lockedUntil: null,
+              lastFailedLoginAt: null,
+            },
           });
         }
         this.logger.log(
@@ -180,7 +214,11 @@ export class AuthService {
         if (user.failedLoginAttempts > 0) {
           await this.prisma.user.update({
             where: { id: user.id },
-            data: { failedLoginAttempts: 0, lockedUntil: null },
+            data: {
+              failedLoginAttempts: 0,
+              lockedUntil: null,
+              lastFailedLoginAt: null,
+            },
           });
         }
         this.logger.log(
@@ -192,24 +230,27 @@ export class AuthService {
 
     // Increment failed attempts
     if (targetUser) {
-      const attempts = targetUser.failedLoginAttempts + 1;
-      const lockout =
-        attempts >= this.MAX_LOGIN_ATTEMPTS
-          ? new Date(Date.now() + this.LOCKOUT_DURATION_MINUTES * 60 * 1000)
-          : null;
+      const failure = nextLoginFailureState({
+        previousAttempts: targetUser.failedLoginAttempts,
+        lastFailedLoginAt: targetUser.lastFailedLoginAt,
+        previousLockedUntil: targetUser.lockedUntil,
+        policy: this.loginBackoffPolicy(),
+      });
 
       await this.prisma.user.update({
         where: { id: targetUser.id },
         data: {
-          failedLoginAttempts: attempts,
-          lockedUntil: lockout,
+          failedLoginAttempts: failure.attempts,
+          lockedUntil: failure.lockedUntil,
+          lastFailedLoginAt: failure.lastFailedLoginAt,
         },
       });
 
-      if (lockout) {
+      if (failure.lockedUntil) {
         this.logger.warn(
-          `Account ${targetUser.email} locked after ${attempts} failed attempts from IP ${ip}`,
+          `Account ${targetUser.email} locked after ${failure.attempts} failed attempts from IP ${ip}`,
         );
+        throw this.lockedLogin(failure.lockedUntil);
       }
     }
 

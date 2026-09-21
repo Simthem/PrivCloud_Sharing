@@ -46,6 +46,7 @@ __pycache__/
 
 # typescript
 *.tsbuildinfo
+/frontend/public/pdf.worker.min.mjs
 
 # project specific
 /backend/data/

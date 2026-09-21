@@ -326,6 +326,7 @@ export class SigningE2EService {
       initialsIncludeSignaturePage: doc.initialsIncludeSignaturePage,
       signaturePage: doc.signaturePage,
       watermarkPage: doc.watermarkPage,
+      pageRotations: doc.pageRotations,
       signatureLevel: doc.signatureLevel,
       signers: doc.recipients,
       fields: doc.fields,

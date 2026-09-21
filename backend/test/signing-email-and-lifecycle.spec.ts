@@ -320,6 +320,16 @@ testCase(
           userId: "member-b",
           teamCompletionNotification: "encrypted-b",
         },
+        {
+          id: "recipient-b-duplicate",
+          userId: "member-b",
+          teamCompletionNotification: "encrypted-b-2",
+        },
+        {
+          id: "recipient-a",
+          userId: "member-a",
+          teamCompletionNotification: "encrypted-a",
+        },
       ],
     });
     await new Promise<void>((resolve) => setImmediate(resolve));

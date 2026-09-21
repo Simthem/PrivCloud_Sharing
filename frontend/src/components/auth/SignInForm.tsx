@@ -95,6 +95,17 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
   const [captchaToken, setCaptchaToken] = useState<string | undefined>();
   const captchaRef = useRef<AltchaWidgetHandle>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState(0);
+  const retryActive = retryAfterSeconds > 0;
+
+  useEffect(() => {
+    if (!retryActive) return;
+    const timer = window.setInterval(
+      () => setRetryAfterSeconds((seconds) => Math.max(0, seconds - 1)),
+      1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [retryActive]);
 
   useEffect(() => {
     if (!router.isReady || router.query.error !== "session-expired") return;
@@ -146,6 +157,7 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
     password: string,
     captchaPayload?: string,
   ) => {
+    if (retryAfterSeconds > 0) return;
     setIsLoading(true);
     await authService
       .signIn(email.trim(), password, captchaPayload)
@@ -175,6 +187,16 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
       })
       .catch((error) => {
         resetCaptcha();
+        const retry = Number(error?.response?.data?.retryAfterSeconds);
+        if (error?.response?.status === 429 && Number.isFinite(retry)) {
+          setRetryAfterSeconds(Math.max(1, Math.ceil(retry)));
+          toast.error(
+            t("signIn.notify.rate-limited", {
+              seconds: Math.max(1, Math.ceil(retry)),
+            }),
+          );
+          return;
+        }
         if (isEmailVerificationRequiredError(error)) {
           rememberEmailVerificationEmail(email);
           router.push("/auth/verify-email");
@@ -262,10 +284,15 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
               type="submit"
               loading={isLoading}
               disabled={
-                captchaEnabled && altcha.shouldWaitForToken && !captchaToken
+                retryAfterSeconds > 0 ||
+                (captchaEnabled && altcha.shouldWaitForToken && !captchaToken)
               }
             >
-              <FormattedMessage id="signin.button.submit" />
+              {retryAfterSeconds > 0
+                ? t("signin.button.retry-after", {
+                    seconds: retryAfterSeconds,
+                  })
+                : t("signin.button.submit")}
             </Button>
             {captchaEnabled && (
               <Group justify="center" mt="md">

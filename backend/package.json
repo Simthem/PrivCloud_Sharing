@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-backend",
-  "version": "1.24.5",
+  "version": "1.24.6",
   "scripts": {
     "build": "nest build",
     "postinstall": "patch-package --error-on-fail && ([ -f prisma/schema.prisma ] && prisma generate || true)",
@@ -56,7 +56,7 @@
     "moment": "^2.31.0",
     "nanoid": "^5.1.16",
     "node-forge": "^1.4.0",
-    "nodemailer": "9.1.1",
+    "nodemailer": "10.0.5",
     "otplib": "^13.0.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",

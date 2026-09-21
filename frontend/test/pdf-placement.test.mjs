@@ -9,6 +9,8 @@ import {
   millimetersToPoints,
   pageSizeMillimeters,
   pointsToMillimeters,
+  rawPdfBoxToVisual,
+  visualPdfPointToRaw,
 } from "../src/utils/pdfPlacement.util.ts";
 
 const a4 = { ...DEFAULT_PDF_PAGE, rotation: 0 };
@@ -55,4 +57,51 @@ test("uses the actual page dimensions for presets and keeps fields in bounds", (
     landscape,
   );
   assert.equal(fieldFitsPage(clamped, landscape), true);
+});
+
+test("maps visual placement through every PDF page rotation", () => {
+  const field = { leftMm: 10, topMm: 20, widthMm: 30, heightMm: 40 };
+  const width = millimetersToPoints(30);
+  const height = millimetersToPoints(40);
+  const left = millimetersToPoints(10);
+  const top = millimetersToPoints(20);
+
+  assert.deepEqual(pageSizeMillimeters({ ...DEFAULT_PDF_PAGE, rotation: 90 }), {
+    widthMm: 297,
+    heightMm: 209.9,
+  });
+  assert.deepEqual(
+    fieldMillimetersToPdfPoints(field, { ...DEFAULT_PDF_PAGE, rotation: 90 }),
+    { posX: top, posY: left, width: height, height: width },
+  );
+  assert.deepEqual(
+    fieldMillimetersToPdfPoints(field, { ...DEFAULT_PDF_PAGE, rotation: 180 }),
+    {
+      posX: DEFAULT_PDF_PAGE.widthPoints - left - width,
+      posY: top,
+      width,
+      height,
+    },
+  );
+  assert.deepEqual(
+    fieldMillimetersToPdfPoints(field, { ...DEFAULT_PDF_PAGE, rotation: 270 }),
+    {
+      posX: DEFAULT_PDF_PAGE.widthPoints - top - height,
+      posY: DEFAULT_PDF_PAGE.heightPoints - left - width,
+      width: height,
+      height: width,
+    },
+  );
+});
+
+test("maps rotated drawing boxes back to the viewer coordinate system", () => {
+  const page = { widthPoints: 600, heightPoints: 800, rotation: 90 };
+  assert.deepEqual(
+    rawPdfBoxToVisual({ x: 20, y: 10, width: 40, height: 100 }, page),
+    { x: 10, y: 540, width: 100, height: 40 },
+  );
+  assert.deepEqual(visualPdfPointToRaw({ x: 10, y: 540 }, page), {
+    x: 60,
+    y: 10,
+  });
 });

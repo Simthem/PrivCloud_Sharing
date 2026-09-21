@@ -219,6 +219,26 @@ export class ConfigService extends EventEmitter {
         message: "Zip compression level must be between 0 and 9",
       },
       {
+        key: "security.loginMaxFailures",
+        condition: (value: number) => value >= 3 && value <= 20,
+        message: "Login failure threshold must be between 3 and 20",
+      },
+      {
+        key: "security.loginBaseLockMinutes",
+        condition: (value: number) => value >= 1 && value <= 1440,
+        message: "Initial login lock must be between 1 and 1440 minutes",
+      },
+      {
+        key: "security.loginMaxLockMinutes",
+        condition: (value: number) => value >= 1 && value <= 10080,
+        message: "Maximum login lock must be between 1 and 10080 minutes",
+      },
+      {
+        key: "security.loginFailureWindowMinutes",
+        condition: (value: number) => value >= 5 && value <= 10080,
+        message: "Login failure window must be between 5 and 10080 minutes",
+      },
+      {
         key: "altcha.algorithm",
         condition: (value: string) =>
           ["PBKDF2/SHA-256", "PBKDF2/SHA-384", "PBKDF2/SHA-512"].includes(

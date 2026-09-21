@@ -126,6 +126,18 @@ export class SignatureFieldDTO {
   assignedRecipientEmail?: string;
 }
 
+export class PdfPageRotationDTO {
+  @IsInt()
+  @Min(1)
+  @Max(9999)
+  @Type(() => Number)
+  page: number;
+
+  @IsIn([90, 180, 270])
+  @Type(() => Number)
+  rotation: number;
+}
+
 export class CreateSignatureRequestDTO {
   @IsOptional()
   @IsUUID()
@@ -185,6 +197,13 @@ export class CreateSignatureRequestDTO {
   @Max(9999)
   @Type(() => Number)
   watermarkPage?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(9999)
+  @ValidateNested({ each: true })
+  @Type(() => PdfPageRotationDTO)
+  pageRotations?: PdfPageRotationDTO[];
 
   @IsBoolean()
   @IsOptional()

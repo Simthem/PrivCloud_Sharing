@@ -51,10 +51,26 @@ export const pointsToMillimeters = (points: number) =>
 export const millimetersToPoints = (millimeters: number) =>
   (finiteOr(millimeters, 0) * 72) / 25.4;
 
-export const pageSizeMillimeters = (page: PdfPageLayout) => ({
-  widthMm: pointsToMillimeters(page.widthPoints),
-  heightMm: pointsToMillimeters(page.heightPoints),
-});
+export const normalizedPdfRotation = (rotation: number) =>
+  ((Math.round(finiteOr(rotation, 0) / 90) * 90) % 360 + 360) % 360;
+
+/** Dimensions as displayed by a PDF viewer, after the page /Rotate is applied. */
+export const pageSizePoints = (page: PdfPageLayout) => {
+  const rotation = normalizedPdfRotation(page.rotation);
+  const swapsAxes = rotation === 90 || rotation === 270;
+  return {
+    width: swapsAxes ? page.heightPoints : page.widthPoints,
+    height: swapsAxes ? page.widthPoints : page.heightPoints,
+  };
+};
+
+export const pageSizeMillimeters = (page: PdfPageLayout) => {
+  const visual = pageSizePoints(page);
+  return {
+    widthMm: pointsToMillimeters(visual.width),
+    heightMm: pointsToMillimeters(visual.height),
+  };
+};
 
 export const getPlacementInMillimeters = (
   placement: PdfFieldPlacement,
@@ -121,17 +137,95 @@ export const fieldMillimetersToPdfPoints = (
   page: PdfPageLayout,
 ) => {
   const safe = clampFieldToPage(field, page);
-  const width = millimetersToPoints(safe.widthMm);
-  const height = millimetersToPoints(safe.heightMm);
-  return {
-    posX: millimetersToPoints(safe.leftMm),
-    posY: Math.max(
-      0,
-      page.heightPoints - millimetersToPoints(safe.topMm) - height,
-    ),
-    width,
-    height,
-  };
+  const left = millimetersToPoints(safe.leftMm);
+  const top = millimetersToPoints(safe.topMm);
+  const visualWidth = millimetersToPoints(safe.widthMm);
+  const visualHeight = millimetersToPoints(safe.heightMm);
+
+  // Form coordinates use the viewer's visual top-left origin. PDF drawing uses
+  // the unrotated page's bottom-left origin, even when /Rotate is 90/180/270.
+  // Convert the whole rectangle so presets and manual placement land at the
+  // same visual position on every page orientation.
+  switch (normalizedPdfRotation(page.rotation)) {
+    case 90:
+      return {
+        posX: top,
+        posY: left,
+        width: visualHeight,
+        height: visualWidth,
+      };
+    case 180:
+      return {
+        posX: Math.max(0, page.widthPoints - left - visualWidth),
+        posY: top,
+        width: visualWidth,
+        height: visualHeight,
+      };
+    case 270:
+      return {
+        posX: Math.max(0, page.widthPoints - top - visualHeight),
+        posY: Math.max(0, page.heightPoints - left - visualWidth),
+        width: visualHeight,
+        height: visualWidth,
+      };
+    default:
+      return {
+        posX: left,
+        posY: Math.max(0, page.heightPoints - top - visualHeight),
+        width: visualWidth,
+        height: visualHeight,
+      };
+  }
+};
+
+export const rawPdfBoxToVisual = (
+  box: { x: number; y: number; width: number; height: number },
+  page: PdfPageLayout,
+) => {
+  switch (normalizedPdfRotation(page.rotation)) {
+    case 90:
+      return {
+        x: box.y,
+        y: page.widthPoints - box.x - box.width,
+        width: box.height,
+        height: box.width,
+      };
+    case 180:
+      return {
+        x: page.widthPoints - box.x - box.width,
+        y: page.heightPoints - box.y - box.height,
+        width: box.width,
+        height: box.height,
+      };
+    case 270:
+      return {
+        x: page.heightPoints - box.y - box.height,
+        y: box.x,
+        width: box.height,
+        height: box.width,
+      };
+    default:
+      return box;
+  }
+};
+
+export const visualPdfPointToRaw = (
+  point: { x: number; y: number },
+  page: PdfPageLayout,
+) => {
+  switch (normalizedPdfRotation(page.rotation)) {
+    case 90:
+      return { x: page.widthPoints - point.y, y: point.x };
+    case 180:
+      return {
+        x: page.widthPoints - point.x,
+        y: page.heightPoints - point.y,
+      };
+    case 270:
+      return { x: point.y, y: page.heightPoints - point.x };
+    default:
+      return point;
+  }
 };
 
 export const fieldFitsPage = (

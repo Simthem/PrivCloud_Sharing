@@ -75,6 +75,7 @@ model User {
   // Account lockout protection
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
+  lastFailedLoginAt   DateTime?
 
   @@index([emailVerifiedAt, emailVerificationRequiredAt, emailVerificationDeletionStartedAt])
 }
@@ -403,6 +404,9 @@ model SignatureDocument {
 
   // Page number (1-based) for watermark placement (null = same as signaturePage)
   watermarkPage Int?
+
+  // Requester-selected clockwise page rotations, kept separate from the source file.
+  pageRotations Json?
 
   // Whether the original PDF is E2E encrypted (client-side finalization required)
   isE2EEncrypted Boolean @default(false)

@@ -34,6 +34,9 @@ import {
   TbTrash,
   TbShieldCheck,
   TbSend,
+  TbRotateClockwise,
+  TbZoomIn,
+  TbZoomOut,
 } from "react-icons/tb";
 import Meta from "../../components/Meta";
 import useUser from "../../hooks/user.hook";
@@ -63,7 +66,12 @@ import {
   fieldMillimetersToPdfPoints,
   getPlacementInMillimeters,
   pageSizeMillimeters,
+  normalizedPdfRotation,
 } from "../../utils/pdfPlacement.util";
+import {
+  detectSignaturePlacement,
+  type DetectedSignaturePlacement,
+} from "../../utils/signaturePlacementDetection.util";
 
 interface RecipientForm {
   name: string;
@@ -82,6 +90,7 @@ interface FieldForm {
   heightMm: number;
   required: boolean;
   label: string;
+  autoDetected?: boolean;
 }
 
 const FIELD_PLACEMENTS: { key: PdfFieldPlacement; label: string }[] = [
@@ -113,9 +122,17 @@ const NewSigningRequestPage = () => {
   const [teamKeyB64, setTeamKeyB64] = useState<string | null>(null);
   const [pageLayouts, setPageLayouts] = useState<PdfPageLayout[]>([]);
   const [previewPage, setPreviewPage] = useState(1);
+  const [previewZoom, setPreviewZoom] = useState(100);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfLayoutLoading, setPdfLayoutLoading] = useState(false);
   const [pdfLayoutError, setPdfLayoutError] = useState(false);
+  const [detectedSignaturePlacement, setDetectedSignaturePlacement] =
+    useState<DetectedSignaturePlacement | null>(null);
+  const [signatureDetectionLoading, setSignatureDetectionLoading] =
+    useState(false);
+  const [pageRotations, setPageRotations] = useState<Record<number, number>>(
+    {},
+  );
 
   useEffect(() => {
     if (user === null) {
@@ -250,8 +267,12 @@ const NewSigningRequestPage = () => {
 
     setPageLayouts([]);
     setPreviewPage(1);
+    setPreviewZoom(100);
     setPdfPreviewUrl(null);
     setPdfLayoutError(false);
+    setDetectedSignaturePlacement(null);
+    setSignatureDetectionLoading(false);
+    setPageRotations({});
     if (!selectedFileEntry) {
       setPdfLayoutLoading(false);
       return () => controller.abort();
@@ -298,6 +319,18 @@ const NewSigningRequestPage = () => {
         );
         setPageLayouts(layouts);
         setPdfPreviewUrl(objectUrl);
+        setSignatureDetectionLoading(true);
+        try {
+          const detected = await detectSignaturePlacement(pdfBytes.slice(0));
+          if (active) {
+            setDetectedSignaturePlacement(detected);
+            if (detected) setPreviewPage(detected.page);
+          }
+        } catch {
+          if (active) setDetectedSignaturePlacement(null);
+        } finally {
+          if (active) setSignatureDetectionLoading(false);
+        }
       } catch {
         if (active && !controller.signal.aborted) {
           setPdfLayoutError(true);
@@ -313,6 +346,45 @@ const NewSigningRequestPage = () => {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [selectedFileEntry, teamKeyB64]);
+
+  useEffect(() => {
+    const fields = form.values.fields;
+    const autoDetectedIndex = fields.findIndex(
+      (field) => field.autoDetected === true,
+    );
+
+    if (!detectedSignaturePlacement) {
+      if (autoDetectedIndex >= 0) {
+        form.removeListItem("fields", autoDetectedIndex);
+      }
+      return;
+    }
+
+    const firstSignerEmail =
+      form.values.recipients.find((recipient) => recipient.role === "SIGNER")
+        ?.email || "";
+    const detectedField: FieldForm = {
+      recipientEmail: firstSignerEmail,
+      type: "SIGNATURE",
+      page: detectedSignaturePlacement.page,
+      leftMm: detectedSignaturePlacement.leftMm,
+      topMm: detectedSignaturePlacement.topMm,
+      widthMm: detectedSignaturePlacement.widthMm,
+      heightMm: detectedSignaturePlacement.heightMm,
+      required: true,
+      label: "",
+      autoDetected: true,
+    };
+
+    if (autoDetectedIndex >= 0) {
+      form.setFieldValue(`fields.${autoDetectedIndex}`, detectedField);
+    } else if (!fields.some((field) => field.type === "SIGNATURE")) {
+      form.insertListItem("fields", detectedField);
+    }
+    // The detected placement is the only trigger. Form updates are performed
+    // deliberately here so the suggestion becomes a real editable field.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detectedSignaturePlacement]);
 
   const createMutation = useMutation({
     mutationFn: (data: CreateSignatureRequestPayload) =>
@@ -364,22 +436,34 @@ const NewSigningRequestPage = () => {
     const dimensions = textLike
       ? DEFAULT_TEXT_FIELD_MM
       : DEFAULT_SIGNATURE_FIELD_MM;
-    const page = form.values.customPageEnabled ? form.values.signaturePage : 1;
+    const detectedPlacement =
+      type === "SIGNATURE" && !form.values.customPageEnabled
+        ? detectedSignaturePlacement
+        : null;
+    const page = form.values.customPageEnabled
+      ? form.values.signaturePage
+      : (detectedPlacement?.page ?? 1);
     const pageLayout = getPageLayout(page);
     const bottomRight = getPlacementInMillimeters("bottom-right", pageLayout, {
       widthMm: dimensions.width,
       heightMm: dimensions.height,
     });
+    const suggestedPlacement = detectedPlacement
+      ? {
+          leftMm: detectedPlacement.leftMm,
+          topMm: detectedPlacement.topMm,
+        }
+      : bottomRight;
     const initialPlacement = clampFieldToPage(
       {
-        ...bottomRight,
+        ...suggestedPlacement,
         widthMm: dimensions.width,
         heightMm: dimensions.height,
         topMm: textLike
           ? bottomRight.topMm -
             DEFAULT_SIGNATURE_FIELD_MM.height -
             DEFAULT_FIELD_GAP_MM
-          : bottomRight.topMm,
+          : suggestedPlacement.topMm,
       },
       pageLayout,
     );
@@ -443,7 +527,14 @@ const NewSigningRequestPage = () => {
     }
 
     const fields = [...customFields];
-    const targetPage = values.customPageEnabled ? values.signaturePage : 1;
+    const targetPage = values.customPageEnabled
+      ? values.signaturePage
+      : (detectedSignaturePlacement?.page ?? 1);
+    const suggestedSignaturePlacement =
+      !values.customPageEnabled &&
+      detectedSignaturePlacement?.page === targetPage
+        ? detectedSignaturePlacement
+        : null;
     signerRecipients.forEach((recipient, idx) => {
       const alreadyHasSignature = fields.some(
         (field) =>
@@ -468,10 +559,14 @@ const NewSigningRequestPage = () => {
         );
         const placement = clampFieldToPage(
           {
-            leftMm: anchorField?.leftMm ?? defaultSignaturePosition.leftMm,
+            leftMm:
+              anchorField?.leftMm ??
+              suggestedSignaturePlacement?.leftMm ??
+              defaultSignaturePosition.leftMm,
             topMm: anchorField
               ? anchorField.topMm + anchorField.heightMm + DEFAULT_FIELD_GAP_MM
-              : defaultSignaturePosition.topMm -
+              : (suggestedSignaturePlacement?.topMm ??
+                  defaultSignaturePosition.topMm) -
                 idx *
                   (DEFAULT_SIGNATURE_FIELD_MM.height + DEFAULT_FIELD_GAP_MM),
             widthMm: DEFAULT_SIGNATURE_FIELD_MM.width,
@@ -502,15 +597,17 @@ const NewSigningRequestPage = () => {
       addInitials: values.addInitials,
       initialsPlacement: values.initialsPlacement,
       initialsIncludeSignaturePage: values.initialsIncludeSignaturePage,
-      signaturePage: values.customPageEnabled
-        ? values.signaturePage
-        : undefined,
+      signaturePage: targetPage,
       watermarkPage:
         values.addApprovalField &&
         values.customPageEnabled &&
         !values.watermarkSamePage
           ? values.watermarkPage
           : undefined,
+      pageRotations: Object.entries(pageRotations).map(([page, rotation]) => ({
+        page: Number(page),
+        rotation,
+      })),
       isE2EEncrypted: fileEntry?.isE2EEncrypted === true,
       sendE2EKeyByEmail: shouldEmailE2EKey,
       e2eKey: shouldEmailE2EKey ? teamKeyB64 || undefined : undefined,
@@ -538,9 +635,73 @@ const NewSigningRequestPage = () => {
     });
   };
 
+  const rotatePreviewPage = async () => {
+    const pageNumber = Math.max(1, Math.min(pageLayouts.length, previewPage));
+    setPageRotations((current) => {
+      const nextRotation = ((current[pageNumber] || 0) + 90) % 360;
+      if (!nextRotation) {
+        const { [pageNumber]: _removed, ...rest } = current;
+        return rest;
+      }
+      return { ...current, [pageNumber]: nextRotation };
+    });
+    setPageLayouts((current) =>
+      current.map((layout, index) =>
+        index === pageNumber - 1
+          ? {
+              ...layout,
+              rotation: normalizedPdfRotation(layout.rotation + 90),
+            }
+          : layout,
+      ),
+    );
+    if (!pdfPreviewUrl) return;
+    try {
+      const source = await fetch(pdfPreviewUrl).then((response) =>
+        response.arrayBuffer(),
+      );
+      const { PDFDocument, degrees } = await import("pdf-lib");
+      const pdf = await PDFDocument.load(source);
+      const page = pdf.getPages()[pageNumber - 1];
+      if (!page) return;
+      page.setRotation(
+        degrees(normalizedPdfRotation(page.getRotation().angle + 90)),
+      );
+      const rotatedBytes = new Uint8Array(await pdf.save());
+      const rotatedUrl = URL.createObjectURL(
+        new Blob([rotatedBytes.buffer], { type: "application/pdf" }),
+      );
+      setPdfPreviewUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return rotatedUrl;
+      });
+      setSignatureDetectionLoading(true);
+      try {
+        const detected = await detectSignaturePlacement(
+          rotatedBytes.buffer.slice(0),
+        );
+        setDetectedSignaturePlacement(detected);
+        if (detected) setPreviewPage(detected.page);
+      } catch {
+        setDetectedSignaturePlacement(null);
+      } finally {
+        setSignatureDetectionLoading(false);
+      }
+    } catch {
+      // The final document still receives the validated rotation server-side.
+    }
+  };
+
+  const markFieldPlacementAsManual = (index: number) => {
+    if (form.values.fields[index]?.autoDetected) {
+      form.setFieldValue(`fields.${index}.autoDetected`, false);
+    }
+  };
+
   const applyFieldPlacement = (index: number, placement: PdfFieldPlacement) => {
     const field = form.values.fields[index];
     if (!field) return;
+    markFieldPlacementAsManual(index);
     const coordinates = getPlacementInMillimeters(
       placement,
       getPageLayout(field.page),
@@ -966,6 +1127,23 @@ const NewSigningRequestPage = () => {
                       </Text>
                     </Group>
                   )}
+                  {signatureDetectionLoading && (
+                    <Group gap="xs">
+                      <Loader size="xs" />
+                      <Text size="sm" c="dimmed">
+                        {t("signing.new.fields.detection.loading")}
+                      </Text>
+                    </Group>
+                  )}
+                  {detectedSignaturePlacement && (
+                    <Alert color="teal">
+                      {t(
+                        detectedSignaturePlacement.source === "text"
+                          ? "signing.new.fields.detection.found-text"
+                          : "signing.new.fields.detection.found-box",
+                      )}
+                    </Alert>
+                  )}
                   {pdfLayoutError && (
                     <Alert color="orange">
                       {t("signing.new.fields.preview.error")}
@@ -1005,6 +1183,42 @@ const NewSigningRequestPage = () => {
                             }
                             style={{ width: 100 }}
                           />
+                          <Group gap={4} wrap="nowrap">
+                            <ActionIcon
+                              variant="light"
+                              disabled={previewZoom <= 50}
+                              title={t("signing.new.fields.preview.zoom-out")}
+                              onClick={() =>
+                                setPreviewZoom((current) =>
+                                  Math.max(50, current - 25),
+                                )
+                              }
+                            >
+                              <TbZoomOut size={16} />
+                            </ActionIcon>
+                            <Text size="sm" fw={600} miw={48} ta="center">
+                              {previewZoom}%
+                            </Text>
+                            <ActionIcon
+                              variant="light"
+                              disabled={previewZoom >= 200}
+                              title={t("signing.new.fields.preview.zoom-in")}
+                              onClick={() =>
+                                setPreviewZoom((current) =>
+                                  Math.min(200, current + 25),
+                                )
+                              }
+                            >
+                              <TbZoomIn size={16} />
+                            </ActionIcon>
+                          </Group>
+                          <Button
+                            variant="light"
+                            leftSection={<TbRotateClockwise size={16} />}
+                            onClick={rotatePreviewPage}
+                          >
+                            {t("signing.new.fields.preview.rotate-clockwise")}
+                          </Button>
                         </Group>
                         {getPageLayout(previewPage).rotation % 360 !== 0 && (
                           <Alert color="orange">
@@ -1015,8 +1229,9 @@ const NewSigningRequestPage = () => {
                           {pdfPreviewUrl && (
                             <Box
                               component="iframe"
+                              key={`${pdfPreviewUrl}-${previewPage}-${previewZoom}`}
                               title={t("signing.new.fields.preview.document")}
-                              src={`${pdfPreviewUrl}#page=${previewPage}&view=FitH`}
+                              src={`${pdfPreviewUrl}#page=${previewPage}&zoom=${previewZoom}`}
                               style={{
                                 width: "100%",
                                 minHeight: 430,
@@ -1031,7 +1246,7 @@ const NewSigningRequestPage = () => {
                               position: "relative",
                               width: "100%",
                               maxWidth: 360,
-                              aspectRatio: `${getPageLayout(previewPage).widthPoints} / ${getPageLayout(previewPage).heightPoints}`,
+                              aspectRatio: `${pageSizeMillimeters(getPageLayout(previewPage)).widthMm} / ${pageSizeMillimeters(getPageLayout(previewPage)).heightMm}`,
                               marginInline: "auto",
                               background: "white",
                               border: "1px solid var(--mantine-color-gray-4)",
@@ -1085,6 +1300,18 @@ const NewSigningRequestPage = () => {
                         bg="var(--mantine-color-default)"
                       >
                         <Stack gap="xs">
+                          {field.autoDetected && (
+                            <Alert color="teal" variant="light">
+                              <Text size="sm" fw={600}>
+                                {t("signing.new.fields.detection.field-title")}
+                              </Text>
+                              <Text size="xs">
+                                {t(
+                                  "signing.new.fields.detection.field-description",
+                                )}
+                              </Text>
+                            </Alert>
+                          )}
                           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
                             <Select
                               label={t("signing.new.fields.signer")}
@@ -1148,6 +1375,7 @@ const NewSigningRequestPage = () => {
                               max={9999}
                               style={{ width: 90 }}
                               {...form.getInputProps(`fields.${idx}.page`)}
+                              onFocus={() => markFieldPlacementAsManual(idx)}
                             />
                             <NumberInput
                               label={t("signing.new.fields.left-mm")}
@@ -1156,6 +1384,7 @@ const NewSigningRequestPage = () => {
                               step={0.1}
                               style={{ width: 120 }}
                               {...form.getInputProps(`fields.${idx}.leftMm`)}
+                              onFocus={() => markFieldPlacementAsManual(idx)}
                             />
                             <NumberInput
                               label={t("signing.new.fields.top-mm")}
@@ -1164,6 +1393,7 @@ const NewSigningRequestPage = () => {
                               step={0.1}
                               style={{ width: 120 }}
                               {...form.getInputProps(`fields.${idx}.topMm`)}
+                              onFocus={() => markFieldPlacementAsManual(idx)}
                             />
                             <NumberInput
                               label={t("signing.new.fields.width-mm")}
@@ -1172,6 +1402,7 @@ const NewSigningRequestPage = () => {
                               step={0.1}
                               style={{ width: 130 }}
                               {...form.getInputProps(`fields.${idx}.widthMm`)}
+                              onFocus={() => markFieldPlacementAsManual(idx)}
                             />
                             <NumberInput
                               label={t("signing.new.fields.height-mm")}
@@ -1180,6 +1411,7 @@ const NewSigningRequestPage = () => {
                               step={0.1}
                               style={{ width: 130 }}
                               {...form.getInputProps(`fields.${idx}.heightMm`)}
+                              onFocus={() => markFieldPlacementAsManual(idx)}
                             />
                             <Checkbox
                               label={t("signing.new.fields.required")}

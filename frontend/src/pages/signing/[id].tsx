@@ -62,7 +62,11 @@ import {
 } from "../../utils/crypto.util";
 import {
   getInitialsStampGeometry,
+  normalizedPdfRotation,
+  pageSizePoints,
+  rawPdfBoxToVisual,
   shouldAddInitialsToPage,
+  visualPdfPointToRaw,
 } from "../../utils/pdfPlacement.util";
 
 const statusColors: Record<string, string> = {
@@ -248,6 +252,16 @@ const SigningDetailPage = () => {
       const { PDFDocument, rgb, StandardFonts, degrees } =
         await import("pdf-lib");
       const pdfDoc = await PDFDocument.load(decryptedBuf);
+      for (const entry of Array.isArray(sigData.pageRotations)
+        ? sigData.pageRotations
+        : []) {
+        const page = pdfDoc.getPages()[entry.page - 1];
+        if (page && [90, 180, 270].includes(entry.rotation)) {
+          page.setRotation(
+            degrees(normalizedPdfRotation(page.getRotation().angle + entry.rotation)),
+          );
+        }
+      }
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
       const textFields = (sigData.fields || []).filter(
@@ -287,18 +301,31 @@ const SigningDetailPage = () => {
       const allPages = pdfDoc.getPages();
       const sigPage = allPages[sigPageIdx];
       const wmPage = sigData.addApprovalField ? allPages[wmPageIdx] : undefined;
+      const getDrawLayout = (page: (typeof allPages)[number]) => ({
+        widthPoints: page.getSize().width,
+        heightPoints: page.getSize().height,
+        rotation: page.getRotation().angle,
+      });
 
       // Add "Bon pour Accord" diagonal watermark on target page if enabled
       if (sigData.addApprovalField && wmPage) {
-        const { width: wmWidth, height: wmHeight } = wmPage.getSize();
+        const wmLayout = getDrawLayout(wmPage);
+        const wmVisualSize = pageSizePoints(wmLayout);
+        const watermarkOrigin = visualPdfPointToRaw(
+          {
+            x: wmVisualSize.width * 0.12,
+            y: wmVisualSize.height * 0.38,
+          },
+          wmLayout,
+        );
         wmPage.drawText("Bon pour Accord", {
-          x: wmWidth * 0.12,
-          y: wmHeight * 0.38,
+          x: watermarkOrigin.x,
+          y: watermarkOrigin.y,
           size: 60,
           font: fontBold,
           color: rgb(0.5, 0.75, 0.5),
           opacity: 0.35,
-          rotate: degrees(45),
+          rotate: degrees(normalizedPdfRotation(wmLayout.rotation) + 45),
         });
       }
 
@@ -325,7 +352,8 @@ const SigningDetailPage = () => {
           ) {
             continue;
           }
-          const { width: pw, height: ph } = page.getSize();
+          const pageLayout = getDrawLayout(page);
+          const { width: pw, height: ph } = pageSizePoints(pageLayout);
           const geometry = getInitialsStampGeometry({
             pageWidth: pw,
             pageHeight: ph,
@@ -333,23 +361,34 @@ const SigningDetailPage = () => {
             fontSize: 9,
             placement: sigData.initialsPlacement,
           });
+          const drawRotation = normalizedPdfRotation(pageLayout.rotation);
+          const stampOrigin = visualPdfPointToRaw(geometry, pageLayout);
           page.drawRectangle({
-            x: geometry.x,
-            y: geometry.y,
+            x: stampOrigin.x,
+            y: stampOrigin.y,
             width: geometry.width,
             height: geometry.height,
+            rotate: degrees(drawRotation),
             color: rgb(1, 1, 1),
             opacity: 0.94,
             borderColor: rgb(0.35, 0.35, 0.35),
             borderWidth: 0.6,
             borderOpacity: 0.75,
           });
+          const textOrigin = visualPdfPointToRaw(
+            {
+              x: geometry.x + geometry.textXOffset,
+              y: geometry.y + geometry.textYOffset,
+            },
+            pageLayout,
+          );
           page.drawText(initialsText, {
-            x: geometry.x + geometry.textXOffset,
-            y: geometry.y + geometry.textYOffset,
+            x: textOrigin.x,
+            y: textOrigin.y,
             size: geometry.fontSize,
             font: fontBold,
             color: rgb(0.12, 0.12, 0.12),
+            rotate: degrees(drawRotation),
           });
         }
       }
@@ -409,15 +448,32 @@ const SigningDetailPage = () => {
       for (const field of textFields) {
         const page = allPages[Math.max(0, (field.page ?? 1) - 1)];
         if (!page) continue;
-        const { width: pageWidth, height: pageHeight } = page.getSize();
-        const boxWidth = Math.min(Math.max(field.width || 200, 80), pageWidth);
+        const pageLayout = getDrawLayout(page);
+        const { width: pageWidth, height: pageHeight } =
+          pageSizePoints(pageLayout);
+        const visualField = rawPdfBoxToVisual(
+          {
+            x: field.posX,
+            y: field.posY,
+            width: field.width,
+            height: field.height,
+          },
+          pageLayout,
+        );
+        const boxWidth = Math.min(
+          Math.max(visualField.width || 200, 80),
+          pageWidth,
+        );
         const boxHeight = Math.min(
-          Math.max(field.height || 42, 24),
+          Math.max(visualField.height || 42, 24),
           pageHeight,
         );
-        const x = Math.min(Math.max(field.posX || 0, 0), pageWidth - boxWidth);
+        const x = Math.min(
+          Math.max(visualField.x || 0, 0),
+          pageWidth - boxWidth,
+        );
         const y = Math.min(
-          Math.max(field.posY || 0, 0),
+          Math.max(visualField.y || 0, 0),
           pageHeight - boxHeight,
         );
         const title =
@@ -470,32 +526,51 @@ const SigningDetailPage = () => {
             pageWidth,
             pageHeight,
           });
+          const drawRotation = normalizedPdfRotation(pageLayout.rotation);
+          const contentOrigin = visualPdfPointToRaw(
+            contentPosition,
+            pageLayout,
+          );
 
           page.drawRectangle({
-            x: contentPosition.x,
-            y: contentPosition.y,
+            x: contentOrigin.x,
+            y: contentOrigin.y,
             width: contentWidth,
             height: contentHeight,
+            rotate: degrees(drawRotation),
             color: rgb(1, 1, 1),
             opacity: 0.94,
             borderColor: rgb(0.55, 0.55, 0.55),
             borderWidth: 0.6,
           });
+          const titleOrigin = visualPdfPointToRaw(
+            {
+              x: contentPosition.x + paddingX,
+              y: contentPosition.y + contentHeight - paddingY - 7,
+            },
+            pageLayout,
+          );
           page.drawText(title, {
-            x: contentPosition.x + paddingX,
-            y: contentPosition.y + contentHeight - paddingY - 7,
+            x: titleOrigin.x,
+            y: titleOrigin.y,
             size: titleSize,
             font: fontBold,
             color: rgb(0.32, 0.32, 0.32),
+            rotate: degrees(drawRotation),
           });
           let textY = contentPosition.y + contentHeight - paddingY - 21;
           for (const line of visibleLines) {
+            const lineOrigin = visualPdfPointToRaw(
+              { x: contentPosition.x + paddingX, y: textY },
+              pageLayout,
+            );
             page.drawText(line, {
-              x: contentPosition.x + paddingX,
-              y: textY,
+              x: lineOrigin.x,
+              y: lineOrigin.y,
               size: valueSize,
               font,
               color: rgb(0.05, 0.05, 0.05),
+              rotate: degrees(drawRotation),
             });
             textY -= lineHeight;
           }
@@ -513,23 +588,35 @@ const SigningDetailPage = () => {
         const targetPage = signatureField
           ? allPages[Math.max(0, (signatureField.page ?? 1) - 1)]
           : sigPage;
-        const { width: sigW, height: sigH } = targetPage.getSize();
+        const targetLayout = getDrawLayout(targetPage);
+        const { width: sigW, height: sigH } = pageSizePoints(targetLayout);
+        const visualField = signatureField
+          ? rawPdfBoxToVisual(
+              {
+                x: signatureField.posX,
+                y: signatureField.posY,
+                width: signatureField.width,
+                height: signatureField.height,
+              },
+              targetLayout,
+            )
+          : undefined;
         const boxWidth = signatureField
-          ? Math.min(Math.max(signatureField.width || 240, 120), sigW)
+          ? Math.min(Math.max(visualField?.width || 240, 120), sigW)
           : 240;
         const boxHeight = signatureField
           ? Math.min(
-              Math.max(signatureField.height || (addMention ? 90 : 70), 50),
+              Math.max(visualField?.height || (addMention ? 90 : 70), 50),
               sigH,
             )
           : addMention
             ? 90
             : 70;
         const boxX = signatureField
-          ? Math.min(Math.max(signatureField.posX || 0, 0), sigW - boxWidth)
+          ? Math.min(Math.max(visualField?.x || 0, 0), sigW - boxWidth)
           : sigW - 250;
         const boxY = signatureField
-          ? Math.min(Math.max(signatureField.posY || 0, 0), sigH - boxHeight)
+          ? Math.min(Math.max(visualField?.y || 0, 0), sigH - boxHeight)
           : yOffset;
         const paddingX = 8;
         const paddingY = 8;
@@ -588,12 +675,18 @@ const SigningDetailPage = () => {
         });
         const innerX = contentPosition.x + paddingX;
         const imageY = contentPosition.y + paddingY;
+        const drawRotation = normalizedPdfRotation(targetLayout.rotation);
+        const contentOrigin = visualPdfPointToRaw(
+          contentPosition,
+          targetLayout,
+        );
 
         targetPage.drawRectangle({
-          x: contentPosition.x,
-          y: contentPosition.y,
+          x: contentOrigin.x,
+          y: contentOrigin.y,
           width: contentWidth,
           height: contentHeight,
+          rotate: degrees(drawRotation),
           color: rgb(1, 1, 1),
           opacity: 1,
           borderColor: rgb(0.7, 0.7, 0.7),
@@ -601,31 +694,52 @@ const SigningDetailPage = () => {
         });
 
         if (addMention) {
+          const approvalOrigin = visualPdfPointToRaw(
+            {
+              x: innerX,
+              y: contentPosition.y + contentHeight - paddingY - 9,
+            },
+            targetLayout,
+          );
           targetPage.drawText(approvalText, {
-            x: innerX,
-            y: contentPosition.y + contentHeight - paddingY - 9,
+            x: approvalOrigin.x,
+            y: approvalOrigin.y,
             size: 9,
             font,
             color: rgb(0, 0, 0),
+            rotate: degrees(drawRotation),
           });
         }
+        const nameOrigin = visualPdfPointToRaw(
+          {
+            x: innerX,
+            y:
+              contentPosition.y +
+              contentHeight -
+              paddingY -
+              (addMention ? 26 : 12),
+          },
+          targetLayout,
+        );
         targetPage.drawText(sig.name, {
-          x: innerX,
-          y:
-            contentPosition.y +
-            contentHeight -
-            paddingY -
-            (addMention ? 26 : 12),
+          x: nameOrigin.x,
+          y: nameOrigin.y,
           size: 10,
           font: fontBold,
           color: rgb(0, 0, 0),
+          rotate: degrees(drawRotation),
         });
 
+        const imageOrigin = visualPdfPointToRaw(
+          { x: innerX, y: imageY },
+          targetLayout,
+        );
         targetPage.drawImage(sigImage, {
-          x: innerX,
-          y: imageY,
+          x: imageOrigin.x,
+          y: imageOrigin.y,
           width: imageWidth,
           height: imageHeight,
+          rotate: degrees(drawRotation),
         });
 
         if (!signatureField) yOffset += 80;

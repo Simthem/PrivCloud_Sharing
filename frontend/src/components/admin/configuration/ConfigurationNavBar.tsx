@@ -8,6 +8,7 @@ import {
   TbBinaryTree,
   TbBucket,
   TbMail,
+  TbLock,
   TbScale,
   TbServerBolt,
   TbSettings,
@@ -27,6 +28,7 @@ const categories = [
   { name: "S3", icon: <TbBucket /> },
   { name: "Legal", icon: <TbScale /> },
   { name: "Cache", icon: <TbServerBolt /> },
+  { name: "Security", icon: <TbLock /> },
   { name: "Altcha", icon: <TbShieldCheck /> },
   { name: "PushNotifications", id: "pushNotifications", icon: <TbBell /> },
 ];

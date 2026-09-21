@@ -1,5 +1,58 @@
 ## [Unreleased]
 
+## [1.24.6](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.5...v1.24.6) (2026-09-21)
+
+### Features
+
+- **signature requests -- suggest the signature area automatically:** the
+  request screen reads the document structure and pre-fills the signature
+  field. An existing signature widget is reused verbatim, otherwise the frame
+  or the ruled line that surrounds a signature label wins, and a plainly empty
+  frame low on the page is the last resort. The suggested field never leaves
+  the frame it was matched to, a passing mention of the word in a sentence is
+  ignored, and when a contract shows two blocks the one the issuer left empty
+  is preferred. The proposal stays editable, and the page is parsed instead of
+  being rendered, so no rasterisation happens at all.
+- **signing preview -- rotate and zoom before placing fields:** requesters can
+  turn a page clockwise and zoom the placement preview. The chosen rotations
+  travel with the request and are applied to the signing rendition only, so the
+  stored source file is never modified.
+- **administrator security settings -- tune the sign-in lockout:** a new
+  Security category exposes the failure threshold, the initial lock, the
+  maximum lock and the observation window, each validated on the server.
+
+### Bug Fixes
+
+- **field placement on rotated pages -- keep the visual position:** millimetre
+  coordinates are converted through the page rotation value, so presets and
+  manual placement land where the viewer shows them on 90, 180 and 270 degree
+  pages instead of drifting off the sheet.
+- **signature completion notifications -- send one per account:** the requester
+  no longer receives the signer download notification, and an account listed
+  twice on the same request now produces a single notification.
+- **sign-in lockout -- answer with a retryable status:** a locked account
+  returns 429 with the remaining delay instead of a generic 403, and the
+  sign-in button counts that delay down rather than accepting attempts that
+  cannot succeed.
+
+### Documentation
+
+- **electronic-signature wording -- state the AdES conditions precisely:** the
+  request and signing screens now explain that the reinforced flow supplies
+  authentication, consent and integrity evidence, that advanced electronic
+  signature status also depends on the signatory-identification process and on
+  demonstrable sole control, and that neither flow is a qualified electronic
+  signature.
+
+### Build and Release
+
+- **PDF.js worker -- serve it from the application origin:** `pdfjs-dist` is
+  pinned to 4.10.38 and its worker is copied into the public directory during
+  `dev` and `prebuild`, with the generated file kept out of version control.
+- **frontend test runner -- resolve extensionless module imports:** the test
+  command registers a small resolver so utilities that import their neighbours
+  the way the bundler does can be exercised directly.
+
 ### Dependencies
 
 - **backend dependency floors -- close URI and locale parsing issues:** raised
@@ -9,11 +62,29 @@
 
 ### Security
 
+- **Caddy telemetry -- align the OpenTelemetry Logs release train:** the log
+  API, SDK, OTLP gRPC and HTTP exporters, and stdout exporter are all pinned
+  to `v0.21.0`. This fixes CVE-2026-81871 without combining incompatible
+  experimental log APIs during the static Caddy build.
+- **sign-in backoff -- grow the lock exponentially inside a window:** every
+  failure past the configured threshold doubles the lock up to the configured
+  ceiling. The observation window restarts from the moment a retry became
+  allowed rather than from the last failure, so a long lock can no longer reset
+  itself, and a successful sign-in clears the counter immediately.
 - **container runtime -- update the Debian 13 C library:** both Docker build
   paths now pin the distroless digest containing `libc6` 2.41-12+deb13u4,
   fixing CVE-2026-5450 and CVE-2026-5928.
 - **upload parser -- select the patched Multer release:** the backend override
   and lockfile now resolve Multer 2.4.0 consistently.
+
+### Tests
+
+- Added coverage for the signature-area suggestion across framed label blocks,
+  existing signature widgets, ruled lines, rotated pages, documents carrying no
+  signature wording and prose that merely mentions the word, asserting each
+  time that the field stays inside the frame it was matched to.
+- Added coverage for rotated-page coordinate mapping and for the sign-in
+  backoff policy, including window expiry and the lock ceiling.
 
 ## [1.24.5](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.4...v1.24.5) (2026-09-10)
 

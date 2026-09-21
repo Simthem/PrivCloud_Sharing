@@ -83,11 +83,16 @@ RUN go get golang.org/x/net@v0.57.0 \
     && go get github.com/go-jose/go-jose/v3@v3.0.5 \
     && go get github.com/go-jose/go-jose/v4@v4.1.4 \
     && go get github.com/jackc/pgx/v5@v5.9.2 \
-    && go get go.opentelemetry.io/otel@v1.44.0 \
-    && go get go.opentelemetry.io/otel/sdk@v1.44.0 \
-    && go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.44.0 \
-    && go get go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp@v1.44.0 \
-    && go get go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.20.0 \
+    && go get go.opentelemetry.io/otel@v1.45.0 \
+    && go get go.opentelemetry.io/otel/sdk@v1.45.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc@v1.45.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.45.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp@v1.45.0 \
+    && go get go.opentelemetry.io/otel/log@v0.21.0 \
+    && go get go.opentelemetry.io/otel/sdk/log@v0.21.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc@v0.21.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.21.0 \
+    && go get go.opentelemetry.io/otel/exporters/stdout/stdoutlog@v0.21.0 \
     && go get github.com/quic-go/quic-go/http3@v0.59.1 \
     && go get github.com/go-chi/chi/v5@v5.3.0 \
     && go get golang.org/x/sys@v0.47.0 \
@@ -107,6 +112,12 @@ RUN go get golang.org/x/net@v0.57.0 \
         -replace=golang.org/x/crypto=golang.org/x/crypto@v0.56.0 \
         -replace=golang.org/x/sys=golang.org/x/sys@v0.47.0 \
         -replace=github.com/go-chi/chi/v5=github.com/go-chi/chi/v5@v5.3.0 \
+        -replace=go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptrace-grpc=go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptrace-grpc@v1.45.0 \
+        -replace=go.opentelemetry.io/otel/log=go.opentelemetry.io/otel/log@v0.21.0 \
+        -replace=go.opentelemetry.io/otel/sdk/log=go.opentelemetry.io/otel/sdk/log@v0.21.0 \
+        -replace=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc@v0.21.0 \
+        -replace=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.21.0 \
+        -replace=go.opentelemetry.io/otel/exporters/stdout/stdoutlog=go.opentelemetry.io/otel/exporters/stdout/stdoutlog@v0.21.0 \
     && go mod tidy \
     && go mod edit -require=github.com/go-chi/chi/v5@v5.3.0 \
     && go get google.golang.org/grpc@v1.83.2 \
@@ -125,6 +136,13 @@ RUN go get golang.org/x/net@v0.57.0 \
     && test "$(go list -m -f '{{.Version}}' github.com/google/cel-go)" = "v0.30.0" \
     && test "$(go list -m -f '{{.Version}}' github.com/klauspost/compress)" = "v1.18.7" \
     && test "$(go list -m -f '{{.Version}}' github.com/grpc-ecosystem/grpc-gateway/v2)" = "v2.30.0" \
+    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel)" = "v1.45.0" \
+    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/sdk)" = "v1.45.0" \
+    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/sdk/log)" = "v0.21.0" \
+    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/log)" = "v0.21.0" \
+    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc)" = "v0.21.0" \
+    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp)" = "v0.21.0" \
+    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/exporters/stdout/stdoutlog)" = "v0.21.0" \
     && ! go list -deps ./cmd/caddy | grep -qx 'golang.org/x/crypto/openpgp'
 # grpc-gateway is linked through transitive OTLP/generated packages, so Caddy has
 # no application-owned NewServeMux call where the official opt-out can be passed.

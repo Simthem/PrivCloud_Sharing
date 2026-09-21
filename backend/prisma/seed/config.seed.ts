@@ -609,6 +609,24 @@ export const configVariables = {
       obscured: true,
     },
   },
+  security: {
+    loginMaxFailures: {
+      type: "number",
+      defaultValue: "5",
+    },
+    loginBaseLockMinutes: {
+      type: "number",
+      defaultValue: "3",
+    },
+    loginMaxLockMinutes: {
+      type: "number",
+      defaultValue: "1440",
+    },
+    loginFailureWindowMinutes: {
+      type: "number",
+      defaultValue: "60",
+    },
+  },
   altcha: {
     enabled: {
       type: "boolean",

@@ -7,6 +7,12 @@ import {
   getInitialsStampGeometry,
   shouldAddInitialsToPage,
 } from "./initials-placement.util";
+import {
+  normalizedPdfRotation,
+  rawPdfBoxToVisual,
+  visualPageSize,
+  visualPdfPointToRaw,
+} from "./pdf-rotation.util";
 
 /**
  * PdfSigningService handles the cryptographic signing of PDF documents
@@ -1961,21 +1967,37 @@ export class PdfSigningService {
       ? pages[wmPageIdx]
       : undefined;
 
-    const { width: sigWidth, height: sigHeight } = signaturePage.getSize();
+    const { width: sigRawWidth, height: sigRawHeight } = signaturePage.getSize();
+    const sigGeometry = {
+      width: sigRawWidth,
+      height: sigRawHeight,
+      rotation: signaturePage.getRotation().angle,
+    };
+    const { width: sigWidth, height: sigHeight } = visualPageSize(sigGeometry);
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
     // Add diagonal "Bon pour Accord" watermark on the WATERMARK page
     if (options.addApprovalWatermark && watermarkPage) {
       const { width: wmWidth, height: wmHeight } = watermarkPage.getSize();
+      const wmGeometry = {
+        width: wmWidth,
+        height: wmHeight,
+        rotation: watermarkPage.getRotation().angle,
+      };
+      const wmVisualSize = visualPageSize(wmGeometry);
+      const watermarkOrigin = visualPdfPointToRaw(
+        { x: wmVisualSize.width * 0.12, y: wmVisualSize.height * 0.38 },
+        wmGeometry,
+      );
       watermarkPage.drawText("Bon pour Accord", {
-        x: wmWidth * 0.12,
-        y: wmHeight * 0.38,
+        x: watermarkOrigin.x,
+        y: watermarkOrigin.y,
         size: 60,
         font: fontBold,
         color: rgb(0.5, 0.75, 0.5),
         opacity: 0.35,
-        rotate: degrees(45),
+        rotate: degrees(normalizedPdfRotation(wmGeometry.rotation) + 45),
       });
     }
 
@@ -1991,25 +2013,30 @@ export class PdfSigningService {
     const approvalText = `Lu et approuvé le ${dateStr}`;
     const nameText = signerInfo.name;
 
+    const visualField = options.signatureField
+      ? rawPdfBoxToVisual(
+          {
+            x: options.signatureField.posX,
+            y: options.signatureField.posY,
+            width: options.signatureField.width,
+            height: options.signatureField.height,
+          },
+          sigGeometry,
+        )
+      : undefined;
     const signatureBoxWidth = Math.min(
-      Math.max(options.signatureField?.width || 240, 120),
+      Math.max(visualField?.width || 240, 120),
       sigWidth,
     );
     const signatureBoxHeight = Math.min(
-      Math.max(options.signatureField?.height || (addMention ? 90 : 70), 50),
+      Math.max(visualField?.height || (addMention ? 90 : 70), 50),
       sigHeight,
     );
-    const sigX = options.signatureField
-      ? Math.min(
-          Math.max(options.signatureField.posX || 0, 0),
-          sigWidth - signatureBoxWidth,
-        )
+    const sigX = visualField
+      ? Math.min(Math.max(visualField.x, 0), sigWidth - signatureBoxWidth)
       : sigWidth - 260;
-    const sigY = options.signatureField
-      ? Math.min(
-          Math.max(options.signatureField.posY || 0, 0),
-          sigHeight - signatureBoxHeight,
-        )
+    const sigY = visualField
+      ? Math.min(Math.max(visualField.y, 0), sigHeight - signatureBoxHeight)
       : 110;
     const paddingX = 8;
     const paddingY = 8;
@@ -2078,12 +2105,15 @@ export class PdfSigningService {
     });
     const innerX = contentPosition.x + paddingX;
     const imageY = contentPosition.y + paddingY;
+    const drawRotation = normalizedPdfRotation(sigGeometry.rotation);
+    const contentOrigin = visualPdfPointToRaw(contentPosition, sigGeometry);
 
     signaturePage.drawRectangle({
-      x: contentPosition.x,
-      y: contentPosition.y,
+      x: contentOrigin.x,
+      y: contentOrigin.y,
       width: contentWidth,
       height: contentHeight,
+      rotate: degrees(drawRotation),
       color: rgb(1, 1, 1),
       opacity: 1,
       borderColor: rgb(0.75, 0.75, 0.75),
@@ -2092,39 +2122,69 @@ export class PdfSigningService {
 
     if (addMention) {
       // "Lu et approuvé le ..."
+      const approvalOrigin = visualPdfPointToRaw(
+        {
+          x: innerX,
+          y: contentPosition.y + contentHeight - paddingY - 9,
+        },
+        sigGeometry,
+      );
       signaturePage.drawText(approvalText, {
-        x: innerX,
-        y: contentPosition.y + contentHeight - paddingY - 9,
+        x: approvalOrigin.x,
+        y: approvalOrigin.y,
         size: 9,
         font,
         color: rgb(0.15, 0.15, 0.15),
+        rotate: degrees(drawRotation),
       });
     }
 
     // Signer name above signature
+    const nameOrigin = visualPdfPointToRaw(
+      {
+        x: innerX,
+        y:
+          contentPosition.y +
+          contentHeight -
+          paddingY -
+          (addMention ? 26 : 12),
+      },
+      sigGeometry,
+    );
     signaturePage.drawText(nameText, {
-      x: innerX,
-      y: contentPosition.y + contentHeight - paddingY - (addMention ? 26 : 12),
+      x: nameOrigin.x,
+      y: nameOrigin.y,
       size: 10,
       font: fontBold,
       color: rgb(0, 0, 0),
+      rotate: degrees(drawRotation),
     });
 
     if (signatureImage) {
+      const imageOrigin = visualPdfPointToRaw(
+        { x: innerX, y: imageY },
+        sigGeometry,
+      );
       signaturePage.drawImage(signatureImage, {
-        x: innerX,
-        y: imageY,
+        x: imageOrigin.x,
+        y: imageOrigin.y,
         width: signatureImageWidth,
         height: signatureImageHeight,
+        rotate: degrees(drawRotation),
       });
     } else if (signerInfo.signatureText) {
       // Text-based signature (italic style)
+      const signatureOrigin = visualPdfPointToRaw(
+        { x: innerX, y: imageY + 10 },
+        sigGeometry,
+      );
       signaturePage.drawText(signerInfo.signatureText, {
-        x: innerX,
-        y: imageY + 10,
+        x: signatureOrigin.x,
+        y: signatureOrigin.y,
         size: 14,
         font,
         color: rgb(0.1, 0.1, 0.5),
+        rotate: degrees(drawRotation),
       });
     }
 
@@ -2151,7 +2211,8 @@ export class PdfSigningService {
       }>;
     }>,
   ): Promise<Buffer> {
-    const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
+    const { PDFDocument, rgb, StandardFonts, degrees } =
+      await import("pdf-lib");
     const pdfDoc = await PDFDocument.load(pdfBuffer);
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -2167,10 +2228,29 @@ export class PdfSigningService {
       if (field.type === "SIGNATURE" || field.type === "INITIALS") continue;
       for (const fieldValue of field.fieldValues) {
         const page = pages[Math.max(0, field.page - 1)];
-        const { width: pageWidth, height: pageHeight } = page.getSize();
-        const boxWidth = Math.min(Math.max(field.width || 200, 80), pageWidth);
+        const { width: rawWidth, height: rawHeight } = page.getSize();
+        const pageGeometry = {
+          width: rawWidth,
+          height: rawHeight,
+          rotation: page.getRotation().angle,
+        };
+        const { width: pageWidth, height: pageHeight } =
+          visualPageSize(pageGeometry);
+        const visualField = rawPdfBoxToVisual(
+          {
+            x: field.posX,
+            y: field.posY,
+            width: field.width,
+            height: field.height,
+          },
+          pageGeometry,
+        );
+        const boxWidth = Math.min(
+          Math.max(visualField.width || 200, 80),
+          pageWidth,
+        );
         const boxHeight = Math.min(
-          Math.max(field.height || 42, 24),
+          Math.max(visualField.height || 42, 24),
           pageHeight,
         );
         const title =
@@ -2179,9 +2259,12 @@ export class PdfSigningService {
             : field.type === "DATE"
               ? "Date"
               : field.label || "Texte";
-        const x = Math.min(Math.max(field.posX || 0, 0), pageWidth - boxWidth);
+        const x = Math.min(
+          Math.max(visualField.x || 0, 0),
+          pageWidth - boxWidth,
+        );
         const y = Math.min(
-          Math.max(field.posY || 0, 0),
+          Math.max(visualField.y || 0, 0),
           pageHeight - boxHeight,
         );
         const paddingX = 6;
@@ -2224,34 +2307,53 @@ export class PdfSigningService {
           pageWidth,
           pageHeight,
         });
+        const drawRotation = normalizedPdfRotation(pageGeometry.rotation);
+        const contentOrigin = visualPdfPointToRaw(
+          contentPosition,
+          pageGeometry,
+        );
 
         page.drawRectangle({
-          x: contentPosition.x,
-          y: contentPosition.y,
+          x: contentOrigin.x,
+          y: contentOrigin.y,
           width: contentWidth,
           height: contentHeight,
+          rotate: degrees(drawRotation),
           color: rgb(1, 1, 1),
           opacity: 0.94,
           borderColor: rgb(0.55, 0.55, 0.55),
           borderWidth: 0.6,
         });
 
+        const titleOrigin = visualPdfPointToRaw(
+          {
+            x: contentPosition.x + paddingX,
+            y: contentPosition.y + contentHeight - paddingY - 7,
+          },
+          pageGeometry,
+        );
         page.drawText(title, {
-          x: contentPosition.x + paddingX,
-          y: contentPosition.y + contentHeight - paddingY - 7,
+          x: titleOrigin.x,
+          y: titleOrigin.y,
           size: titleSize,
           font: fontBold,
           color: rgb(0.32, 0.32, 0.32),
+          rotate: degrees(drawRotation),
         });
 
         let textY = contentPosition.y + contentHeight - paddingY - 21;
         for (const line of visibleLines) {
+          const lineOrigin = visualPdfPointToRaw(
+            { x: contentPosition.x + paddingX, y: textY },
+            pageGeometry,
+          );
           page.drawText(line, {
-            x: contentPosition.x + paddingX,
-            y: textY,
+            x: lineOrigin.x,
+            y: lineOrigin.y,
             size: valueSize,
             font,
             color: rgb(0.05, 0.05, 0.05),
+            rotate: degrees(drawRotation),
           });
           textY -= lineHeight;
         }
@@ -2336,7 +2438,8 @@ export class PdfSigningService {
       includeSignaturePage?: boolean;
     } = {},
   ): Promise<Buffer> {
-    const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
+    const { PDFDocument, rgb, StandardFonts, degrees } =
+      await import("pdf-lib");
     const pdfDoc = await PDFDocument.load(pdfBuffer);
     const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const pages = pdfDoc.getPages();
@@ -2360,7 +2463,13 @@ export class PdfSigningService {
       ) {
         continue;
       }
-      const { width, height } = page.getSize();
+      const { width: rawWidth, height: rawHeight } = page.getSize();
+      const pageGeometry = {
+        width: rawWidth,
+        height: rawHeight,
+        rotation: page.getRotation().angle,
+      };
+      const { width, height } = visualPageSize(pageGeometry);
       const fontSize = 9;
       const geometry = getInitialsStampGeometry({
         pageWidth: width,
@@ -2369,23 +2478,34 @@ export class PdfSigningService {
         fontSize,
         placement: options.placement,
       });
+      const drawRotation = normalizedPdfRotation(pageGeometry.rotation);
+      const stampOrigin = visualPdfPointToRaw(geometry, pageGeometry);
       page.drawRectangle({
-        x: geometry.x,
-        y: geometry.y,
+        x: stampOrigin.x,
+        y: stampOrigin.y,
         width: geometry.width,
         height: geometry.height,
+        rotate: degrees(drawRotation),
         color: rgb(1, 1, 1),
         opacity: 0.94,
         borderColor: rgb(0.35, 0.35, 0.35),
         borderWidth: 0.6,
         borderOpacity: 0.75,
       });
+      const textOrigin = visualPdfPointToRaw(
+        {
+          x: geometry.x + geometry.textXOffset,
+          y: geometry.y + geometry.textYOffset,
+        },
+        pageGeometry,
+      );
       page.drawText(initialsText, {
-        x: geometry.x + geometry.textXOffset,
-        y: geometry.y + geometry.textYOffset,
+        x: textOrigin.x,
+        y: textOrigin.y,
         size: geometry.fontSize,
         font,
         color: rgb(0.12, 0.12, 0.12),
+        rotate: degrees(drawRotation),
       });
     }
 
