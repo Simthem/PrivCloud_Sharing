@@ -84,8 +84,8 @@ Verify a published archive with:
 cd bridge/dist && sha256sum -c SHA256SUMS
 ```
 
-To build somewhere other than `bridge/dist/` — useful in CI, where wiping a
-directory in the work tree is undesirable — call the script directly:
+To build somewhere other than `bridge/dist/` (useful in CI, where wiping a
+directory in the work tree is undesirable), call the script directly:
 
 ```bash
 node ./scripts/build-release.mjs --output-dir /path/to/output

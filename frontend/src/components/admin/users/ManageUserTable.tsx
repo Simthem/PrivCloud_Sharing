@@ -51,6 +51,18 @@ const ManageUserTable = ({
                         {user.username}
                       </Text>
                       {user.isLdap && <Badge size="xs">LDAP</Badge>}
+                      {user.totpVerified && (
+                        <Badge size="xs" color="teal" variant="light">
+                          2FA
+                        </Badge>
+                      )}
+                      {["EMAIL_LINK", "ADMINISTRATOR"].includes(
+                        user.emailVerificationSource || "",
+                      ) && (
+                        <Badge size="xs" color="green" variant="light">
+                          <FormattedMessage id="admin.users.table.email-verified" />
+                        </Badge>
+                      )}
                       {user.isAdmin && (
                         <Badge size="xs" color="red" variant="light" style={{ flexShrink: 0 }}>
                           Admin
@@ -127,6 +139,18 @@ const ManageUserTable = ({
                     {user.isLdap ? (
                       <Badge style={{ marginLeft: "1em" }}>LDAP</Badge>
                     ) : null}
+                    {user.totpVerified && (
+                      <Badge size="xs" ml={6} color="teal" variant="light">
+                        2FA
+                      </Badge>
+                    )}
+                    {["EMAIL_LINK", "ADMINISTRATOR"].includes(
+                      user.emailVerificationSource || "",
+                    ) && (
+                      <Badge size="xs" ml={6} color="green" variant="light">
+                        <FormattedMessage id="admin.users.table.email-verified" />
+                      </Badge>
+                    )}
                   </td>
                   <td>{user.email}</td>
                   <td>

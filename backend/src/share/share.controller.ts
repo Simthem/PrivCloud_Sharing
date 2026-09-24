@@ -282,7 +282,7 @@ export class ShareController {
     for (const [key, value] of Object.entries(request.cookies)) {
       if (!key.startsWith("share_") || !key.endsWith("_token")) continue;
       if (typeof value !== "string" || !value) {
-        // Malformed cookie value — clear it immediately
+        // Malformed cookie value, clear it immediately
         response.clearCookie(key);
         continue;
       }
@@ -293,13 +293,13 @@ export class ShareController {
           typeof payload !== "object" ||
           typeof (payload as any).exp !== "number"
         ) {
-          // Not a valid JWT payload — clear the cookie
+          // Not a valid JWT payload, clear the cookie
           response.clearCookie(key);
           continue;
         }
         shareTokenCookies.push({ key, exp: (payload as any).exp });
       } catch {
-        // jwtService.decode threw (not a JWT at all) — clear it
+        // jwtService.decode threw (not a JWT at all), clear it
         response.clearCookie(key);
       }
     }

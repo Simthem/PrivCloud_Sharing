@@ -17,7 +17,7 @@ export const DATABASE_URL =
  * relative to process.cwd(). This mismatch causes the adapter to open
  * a different (empty) database file.
  *
- * This function mimics Prisma’s resolution: relative paths are resolved
+ * This function mimics Prisma's resolution: relative paths are resolved
  * from {cwd}/prisma/ (where schema.prisma resides).
  */
 export function resolveDbUrl(url: string): string {

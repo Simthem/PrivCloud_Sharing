@@ -37,10 +37,12 @@ import {
   TbRotateClockwise,
   TbZoomIn,
   TbZoomOut,
+  TbAlertTriangle,
 } from "react-icons/tb";
 import Meta from "../../components/Meta";
 import useUser from "../../hooks/user.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
+import useReinforcedEligibility from "../../hooks/useReinforcedEligibility.hook";
 import signingService, {
   CreateSignatureRequestPayload,
   SignatureRecipient,
@@ -68,6 +70,7 @@ import {
   pageSizeMillimeters,
   normalizedPdfRotation,
 } from "../../utils/pdfPlacement.util";
+import { buildAutoSignatureFields } from "../../utils/signatureAutoFields.util";
 import {
   detectSignaturePlacement,
   type DetectedSignaturePlacement,
@@ -124,6 +127,9 @@ const NewSigningRequestPage = () => {
   const [previewPage, setPreviewPage] = useState(1);
   const [previewZoom, setPreviewZoom] = useState(100);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewData, setPdfPreviewData] = useState<ArrayBuffer | null>(
+    null,
+  );
   const [pdfLayoutLoading, setPdfLayoutLoading] = useState(false);
   const [pdfLayoutError, setPdfLayoutError] = useState(false);
   const [detectedSignaturePlacement, setDetectedSignaturePlacement] =
@@ -148,12 +154,17 @@ const NewSigningRequestPage = () => {
     enabled: !!user,
   });
 
-  // Build Select data grouped by team > folder
+  // Build Select data grouped by team > folder, then the user's own files
   const fileSelectData = useMemo(() => {
     if (!signableFiles || signableFiles.length === 0) return [];
+    const personalLabel = t("signing.new.personal-files");
     const groups: Record<string, { value: string; label: string }[]> = {};
-    for (const f of signableFiles) {
-      const groupLabel = `${f.teamName} / ${f.folderName}`;
+    for (const f of [...signableFiles].sort(
+      (left, right) => Number(!left.teamId) - Number(!right.teamId),
+    )) {
+      const groupLabel = f.teamId
+        ? `${f.teamName} / ${f.folderName}`
+        : personalLabel;
       if (!groups[groupLabel]) groups[groupLabel] = [];
       groups[groupLabel].push({
         value: `${f.shareId}::${f.fileId}`,
@@ -164,7 +175,7 @@ const NewSigningRequestPage = () => {
       group,
       items,
     }));
-  }, [signableFiles]);
+  }, [signableFiles, t]);
 
   const form = useForm({
     initialValues: {
@@ -204,6 +215,10 @@ const NewSigningRequestPage = () => {
       },
     },
   });
+  const ineligibleEmails = useReinforcedEligibility(
+    form.values.signatureLevel,
+    form.values.recipients,
+  );
 
   // Resolve team E2E key when the selected file changes
   const selectedFileValue = form.values.selectedFile;
@@ -232,6 +247,11 @@ const NewSigningRequestPage = () => {
       setTeamKeyB64(null);
       return;
     }
+    if (!fileEntry.teamId) {
+      // Own share: encrypted with the user's master key
+      setTeamKeyB64(getUserKey());
+      return;
+    }
     setTeamKeyB64(null);
 
     let cancelled = false;
@@ -240,7 +260,7 @@ const NewSigningRequestPage = () => {
         const userKeyB64 = getUserKey();
         if (!userKeyB64) return;
         const { wrappedTeamKey } = await teamService.getTeamKey(
-          fileEntry.teamId,
+          fileEntry.teamId!,
         );
         if (cancelled || !wrappedTeamKey) return;
         const masterKey = await importKeyFromBase64(userKeyB64);
@@ -269,6 +289,7 @@ const NewSigningRequestPage = () => {
     setPreviewPage(1);
     setPreviewZoom(100);
     setPdfPreviewUrl(null);
+    setPdfPreviewData(null);
     setPdfLayoutError(false);
     setDetectedSignaturePlacement(null);
     setSignatureDetectionLoading(false);
@@ -319,6 +340,7 @@ const NewSigningRequestPage = () => {
         );
         setPageLayouts(layouts);
         setPdfPreviewUrl(objectUrl);
+        setPdfPreviewData(pdfBytes.slice(0));
         setSignatureDetectionLoading(true);
         try {
           const detected = await detectSignaturePlacement(pdfBytes.slice(0));
@@ -347,44 +369,72 @@ const NewSigningRequestPage = () => {
     };
   }, [selectedFileEntry, teamKeyB64]);
 
+  const autoSignerEmailsKey = form.values.recipients
+    .filter((recipient) => recipient.role === "SIGNER")
+    .map((recipient) => recipient.email.trim())
+    .join("\n");
+  const manualSignatureFieldsKey = form.values.fields
+    .filter(
+      (field) => field.type === "SIGNATURE" && field.autoDetected !== true,
+    )
+    .map((field) => field.recipientEmail.trim())
+    .join("\n");
+
   useEffect(() => {
     const fields = form.values.fields;
-    const autoDetectedIndex = fields.findIndex(
-      (field) => field.autoDetected === true,
-    );
+    const kept = fields.filter((field) => field.autoDetected !== true);
 
     if (!detectedSignaturePlacement) {
-      if (autoDetectedIndex >= 0) {
-        form.removeListItem("fields", autoDetectedIndex);
-      }
+      if (kept.length !== fields.length) form.setFieldValue("fields", kept);
       return;
     }
 
-    const firstSignerEmail =
-      form.values.recipients.find((recipient) => recipient.role === "SIGNER")
-        ?.email || "";
-    const detectedField: FieldForm = {
-      recipientEmail: firstSignerEmail,
+    // A signature field left unassigned on purpose is shared by the signers
+    // and split between them at finalization, so no suggestion is added.
+    if (
+      kept.some((field) => field.type === "SIGNATURE" && !field.recipientEmail)
+    ) {
+      if (kept.length !== fields.length) form.setFieldValue("fields", kept);
+      return;
+    }
+
+    // One block per signer who has no signature field of their own yet.
+    const placedEmails = new Set(
+      kept
+        .filter((field) => field.type === "SIGNATURE")
+        .map((field) => field.recipientEmail.trim().toLowerCase()),
+    );
+    const signerEmails = autoSignerEmailsKey
+      .split("\n")
+      .filter((email) => email && !placedEmails.has(email.toLowerCase()));
+    if (placedEmails.size > 0 && signerEmails.length === 0) {
+      if (kept.length !== fields.length) form.setFieldValue("fields", kept);
+      return;
+    }
+
+    const detectedFields: FieldForm[] = buildAutoSignatureFields(
+      detectedSignaturePlacement,
+      signerEmails,
+      pageSizeMillimeters(getPageLayout(detectedSignaturePlacement.page)),
+    ).map((placement) => ({
+      ...placement,
       type: "SIGNATURE",
       page: detectedSignaturePlacement.page,
-      leftMm: detectedSignaturePlacement.leftMm,
-      topMm: detectedSignaturePlacement.topMm,
-      widthMm: detectedSignaturePlacement.widthMm,
-      heightMm: detectedSignaturePlacement.heightMm,
       required: true,
       label: "",
       autoDetected: true,
-    };
-
-    if (autoDetectedIndex >= 0) {
-      form.setFieldValue(`fields.${autoDetectedIndex}`, detectedField);
-    } else if (!fields.some((field) => field.type === "SIGNATURE")) {
-      form.insertListItem("fields", detectedField);
-    }
-    // The detected placement is the only trigger. Form updates are performed
-    // deliberately here so the suggestion becomes a real editable field.
+    }));
+    form.setFieldValue("fields", [...kept, ...detectedFields]);
+    // The detected placement, the signers and their manual fields are the only
+    // triggers. Form updates are performed deliberately here so the
+    // suggestions become real editable fields, one per signer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detectedSignaturePlacement]);
+  }, [
+    detectedSignaturePlacement,
+    autoSignerEmailsKey,
+    manualSignatureFieldsKey,
+    pageLayouts,
+  ]);
 
   const createMutation = useMutation({
     mutationFn: (data: CreateSignatureRequestPayload) =>
@@ -655,11 +705,11 @@ const NewSigningRequestPage = () => {
           : layout,
       ),
     );
-    if (!pdfPreviewUrl) return;
+    if (!pdfPreviewUrl || !pdfPreviewData) return;
     try {
-      const source = await fetch(pdfPreviewUrl).then((response) =>
-        response.arrayBuffer(),
-      );
+      // The bytes are already in memory, and fetching the blob: URL is
+      // refused by the connect-src Content Security Policy.
+      const source = pdfPreviewData.slice(0);
       const { PDFDocument, degrees } = await import("pdf-lib");
       const pdf = await PDFDocument.load(source);
       const page = pdf.getPages()[pageNumber - 1];
@@ -675,6 +725,7 @@ const NewSigningRequestPage = () => {
         if (current) URL.revokeObjectURL(current);
         return rotatedUrl;
       });
+      setPdfPreviewData(rotatedBytes.buffer);
       setSignatureDetectionLoading(true);
       try {
         const detected = await detectSignaturePlacement(
@@ -1038,6 +1089,17 @@ const NewSigningRequestPage = () => {
                             label={t("signing.detail.table.email")}
                             placeholder="jean@example.com"
                             required
+                            description={
+                              ineligibleEmails.has(
+                                form.values.recipients[idx].email
+                                  .trim()
+                                  .toLowerCase(),
+                              ) ? (
+                                <Text span size="xs" c="orange">
+                                  {t("signing.new.reinforced.ineligible")}
+                                </Text>
+                              ) : undefined
+                            }
                             {...form.getInputProps(`recipients.${idx}.email`)}
                           />
                         </SimpleGrid>
@@ -1455,6 +1517,11 @@ const NewSigningRequestPage = () => {
 
               <Divider />
 
+              {ineligibleEmails.size > 0 && (
+                <Alert color="orange" icon={<TbAlertTriangle size={16} />}>
+                  {t("signing.new.reinforced.ineligible-alert")}
+                </Alert>
+              )}
               {/* Submit */}
               <Group justify="center">
                 <Button variant="subtle" onClick={() => router.back()}>
@@ -1462,6 +1529,7 @@ const NewSigningRequestPage = () => {
                 </Button>
                 <Button
                   type="submit"
+                  disabled={ineligibleEmails.size > 0}
                   size="md"
                   leftSection={<TbSend size={16} />}
                   loading={createMutation.isPending}

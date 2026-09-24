@@ -82,7 +82,7 @@ const SSKRGenerateModal = ({
           </Text>
           <Text size="sm" c="dimmed">
             Stockez chaque fragment dans un endroit différent : gestionnaire de
-            mots de passe, clé USB, coffre-fort papier, contact de confiance…
+            mots de passe, clé USB, coffre-fort papier, contact de confiance...
           </Text>
 
           <NumberInput

@@ -192,7 +192,7 @@ oauth:
   oidc-enabled: "false"
   # Discovery URI of the OpenID Connect OAuth app
   oidc-discoveryUri: ""
-  # Whether the “Sign out” button will sign out from the OpenID Connect provider
+  # Whether the "Sign out" button will sign out from the OpenID Connect provider
   oidc-signOut: "false"
   # Scopes which should be requested from the OpenID Connect provider.
   oidc-scope: openid email profile
@@ -202,9 +202,9 @@ oauth:
   # Managing access rights using OpenID Connect roles is only recommended if no other identity provider is configured and password login is disabled.
   # Leave it blank if you don't know what this config is.
   oidc-rolePath: ""
-  # Role required for general access. Must be present in a user’s roles for them to log in. Leave it blank if you don't know what this config is.
+  # Role required for general access. Must be present in a user's roles for them to log in. Leave it blank if you don't know what this config is.
   oidc-roleGeneralAccess: ""
-  # Role required for administrative access. Must be present in a user’s roles for them to access the admin panel. Leave it blank if you don't know what this config is.
+  # Role required for administrative access. Must be present in a user's roles for them to access the admin panel. Leave it blank if you don't know what this config is.
   oidc-roleAdminAccess: ""
   # Client ID of the OpenID Connect OAuth app
   oidc-clientId: ""

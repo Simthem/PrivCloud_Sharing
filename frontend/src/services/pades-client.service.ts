@@ -154,8 +154,13 @@ export const preparePadesPdf = async (
 ): Promise<PreparedPadesPdf> => {
   const pdfDoc = await PDFDocument.load(visualPdf);
   const certDoc = await PDFDocument.load(certificatePage);
-  const [certPageCopy] = await pdfDoc.copyPages(certDoc, [0]);
-  pdfDoc.addPage(certPageCopy);
+  // The dossier spans several pages when there are many signers.
+  for (const certPageCopy of await pdfDoc.copyPages(
+    certDoc,
+    certDoc.getPageIndices(),
+  )) {
+    pdfDoc.addPage(certPageCopy);
+  }
   pdfDoc.setProducer("PrivCloud Sharing - Signature électronique PDF PAdES");
   pdfDoc.setCreator("PrivCloud Sharing");
   addSignaturePlaceholder(pdfDoc);
@@ -199,7 +204,7 @@ export const embedPadesCms = (
   const slot = findSignatureSlot(bytes);
   if (cms.length * 2 > slot.length) {
     throw new Error(
-      `La signature CMS (${cms.length} octets) dépasse l’emplacement PDF (${slot.length / 2} octets)`,
+      `La signature CMS (${cms.length} octets) dépasse l'emplacement PDF (${slot.length / 2} octets)`,
     );
   }
 

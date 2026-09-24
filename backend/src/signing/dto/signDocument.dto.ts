@@ -1,8 +1,9 @@
 import {
   ArrayMaxSize,
-  IsIn,
   IsArray,
   IsDefined,
+  IsEmail,
+  IsIn,
   IsObject,
   IsOptional,
   IsString,
@@ -10,8 +11,8 @@ import {
   Matches,
   MaxLength,
   MinLength,
-  ValidateNested,
   ValidateIf,
+  ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
 
@@ -27,6 +28,11 @@ export class SignatureFieldValueDTO {
 }
 
 export class SignDocumentDTO {
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-fA-F0-9]{64}$/)
+  displayedDocumentHash?: string;
+
   @IsString()
   @MinLength(1)
   @MaxLength(5_000_000) // base64 PNG can be large but cap at ~3.75 MB decoded
@@ -68,6 +74,14 @@ export class RejectDocumentDTO {
   passkeyResponse?: Record<string, unknown>;
 }
 
+export class StoreRecipientE2EKeyDTO {
+  // AES key wrapped with AES-GCM: IV, key and tag in base64url.
+  @IsString()
+  @MaxLength(256)
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  wrappedKey: string;
+}
+
 export class VerifySigningEmailOtpDTO {
   @IsString()
   @Matches(/^\d{6}$/)
@@ -77,6 +91,11 @@ export class VerifySigningEmailOtpDTO {
 export class PreparePasskeyActionDTO {
   @IsIn(["SIGN", "REJECT"])
   action: "SIGN" | "REJECT";
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-fA-F0-9]{64}$/)
+  displayedDocumentHash?: string;
 
   @ValidateIf((dto: PreparePasskeyActionDTO) => dto.action === "SIGN")
   @IsDefined()
@@ -127,9 +146,23 @@ export class SignE2EDigestDTO {
     message: "digest must be a SHA-256 hexadecimal digest",
   })
   digest: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-fA-F0-9]{64}$/)
+  sourceDocumentHash?: string;
 }
 
 export class FinalizeE2EDTO {
+  @IsString()
+  @Matches(/^[a-fA-F0-9]{64}$/)
+  finalDocumentHash: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-fA-F0-9]{64}$/)
+  sourceDocumentHash?: string;
+
   @IsString()
   @MinLength(100)
   @MaxLength(200_000_000)
@@ -137,4 +170,11 @@ export class FinalizeE2EDTO {
     message: "encryptedPdf must be valid base64",
   })
   encryptedPdf: string;
+}
+
+export class CheckReinforcedEligibilityDTO {
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsEmail({}, { each: true })
+  emails: string[];
 }

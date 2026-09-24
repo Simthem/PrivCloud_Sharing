@@ -59,7 +59,7 @@ export default {
   // Comparison table
   "home.comparison.table.title": "PrivCloud vs the competition",
   "home.comparison.table.subtitle": "An honest look at what sets PrivCloud apart from mainstream file-sharing services.",
-  "home.comparison.table.note": "(—) Partial or paid-only feature. Data verified mid-2025. For the use of the self-hosted instance of PrivCloud (GitHub): Features may vary depending on the configuration of your instance.",
+  "home.comparison.table.note": "(-) Partial or paid-only feature. Data verified mid-2025. For the use of the self-hosted instance of PrivCloud (GitHub): Features may vary depending on the configuration of your instance.",
   "home.comparison.table.header.criteria": "Feature",
   "home.comparison.table.header.privcloud": "PrivCloud",
   "home.comparison.table.header.wetransfer": "WeTransfer",
@@ -282,6 +282,19 @@ export default {
     "Unlinking your social accounts may cause you to lose your account if you don't remember your login credentials",
   "account.notify.oauth.unlinked.success": "Unlinked successfully",
 
+  "account.card.signing-passkeys.title": "Signing passkeys",
+  "account.card.signing-passkeys.description":
+    "Passkeys enrolled for reinforced signatures. Remove the ones you no longer have: you will be offered a new one at your next signature.",
+  "account.card.signing-passkeys.created": "Enrolled on {date}",
+  "account.card.signing-passkeys.last-used": "Last used on {date}",
+  "account.card.signing-passkeys.never-used": "Never used to sign",
+  "account.card.signing-passkeys.synced": "Synced",
+  "account.card.signing-passkeys.device-bound": "Device-bound",
+  "account.card.signing-passkeys.delete": "Remove",
+  "account.card.signing-passkeys.confirm.title": "Remove this passkey?",
+  "account.card.signing-passkeys.confirm.text":
+    "It can no longer be used to sign. Documents already signed keep their full evidence.",
+  "account.card.signing-passkeys.deleted": "Passkey removed",
   "account.card.security.title": "Security",
   "account.card.security.totp.enable.description":
     "Enter your current password to start enabling TOTP",
@@ -522,6 +535,31 @@ export default {
     "Password changed successfully",
   "admin.users.edit.update.totp.disable": "Disable 2FA for this user",
   "admin.users.edit.update.totp.disabled": "2FA disabled successfully",
+  "admin.users.edit.security.title": "Account security",
+  "admin.users.edit.security.email.link":
+    "E-mail address verified on {date} by confirmation link",
+  "admin.users.edit.security.email.admin":
+    "E-mail address verified on {date} by an administrator",
+  "admin.users.edit.security.email.unproven":
+    "E-mail address not proven. Without LDAP or OIDC, this account cannot sign at the reinforced level.",
+  "admin.users.edit.security.email.button": "Mark e-mail address as verified",
+  "admin.users.edit.security.email.confirm.title":
+    "Confirm the e-mail address",
+  "admin.users.edit.security.email.confirm.text":
+    "Confirm that you checked through another channel that {email} belongs to this person. This is recorded under your name and serves as identity proof for reinforced signatures.",
+  "admin.users.edit.security.email.done": "E-mail address marked as verified",
+  "admin.users.edit.security.passkeys.count": "Signing passkeys: {count}",
+  "admin.users.edit.security.passkeys.button": "Reset signing passkeys",
+  "admin.users.edit.security.passkeys.confirm.title":
+    "Reset signing passkeys?",
+  "admin.users.edit.security.passkeys.confirm.text":
+    "Every signing passkey of {email} will be removed. The account will enroll a new one at its next reinforced signature, under the same requirements as the first enrollment. Documents already signed keep their evidence. Check the identity of the requester through another channel first.",
+  "admin.users.edit.security.passkeys.done": "Signing passkeys reset",
+  "admin.users.edit.security.totp.confirm.title":
+    "Reset two-factor authentication",
+  "admin.users.edit.security.totp.confirm.text":
+    "The 2FA of {email} and its backup codes will be removed. Check the person's identity through another channel before continuing. They can enable it again from their account.",
+  "admin.users.table.email-verified": "E-mail verified",
 
   "admin.users.edit.delete.title": "Delete user: {username} ?",
   "admin.users.edit.delete.description":
@@ -588,12 +626,12 @@ export default {
     "An error occurred while finishing your share.",
   "upload.notify.count-failed": "{count} files failed to upload. Trying again.",
   "upload.notify.retrying.title": "Retrying chunk",
-  "upload.notify.retrying.message": "Chunk {chunk} failed (attempt {attempt}/{max}). Retrying in {delay}s…",
+  "upload.notify.retrying.message": "Chunk {chunk} failed (attempt {attempt}/{max}). Retrying in {delay}s...",
   "upload.notify.recovery.title": "Recovery mode",
   "upload.notify.recovery.message": "Too many consecutive errors. Pausing {pause}s before retrying (cycle {attempt}/{max}).",
   "upload.notify.fileRetry.title": "Retrying file",
   "upload.notify.fileRetry.message":
-    "{name} — attempt {attempt}/{max} in {delay}s",
+    "{name}: attempt {attempt}/{max} in {delay}s",
   "upload.notify.tab-discarded":
     "The browser unloaded this tab to save memory, interrupting the upload. Start the upload again and keep this tab in the foreground for large transfers, or disable memory saving for this site.",
   "upload.bridge.error": "{fileName}: Bridge failed - {error}",
@@ -691,7 +729,7 @@ export default {
   "upload.modal.accordion.security.e2e-key-email.label":
     "Share E2E decryption key via email",
   "upload.modal.accordion.security.e2e-key-email.description":
-    "Include the decryption key in the email sent to recipients. They will be able to decrypt and preview files directly.\n⚠️ Not recommended: email is not a secure channel. It is safer to share the key fragment (#key=…) separately via an encrypted messaging app or another secure method.",
+    "Include the decryption key in the email sent to recipients. They will be able to decrypt and preview files directly.\n⚠️ Not recommended: email is not a secure channel. It is safer to share the key fragment (#key=...) separately via an encrypted messaging app or another secure method.",
 
   "upload.modal.notify-download.label":
     "Notify me when my files are downloaded",
@@ -1067,7 +1105,7 @@ export default {
   "admin.config.email.enable-e2ekey-email-sharing":
     "Allow E2E key sharing via email",
   "admin.config.email.enable-e2ekey-email-sharing.description":
-    "Allow users to include the E2E decryption key in emails sent to share recipients. When enabled, a per-share toggle appears in the share creation modal.\n⚠️ This is NOT recommended: email is not a secure channel. The decryption key fragment (#key=…) should ideally be shared through a separate, more secure method (e.g. encrypted messaging, in person).",
+    "Allow users to include the E2E decryption key in emails sent to share recipients. When enabled, a per-share toggle appears in the share creation modal.\n⚠️ This is NOT recommended: email is not a secure channel. The decryption key fragment (#key=...) should ideally be shared through a separate, more secure method (e.g. encrypted messaging, in person).",
   "admin.config.email.reply-to-email": "Reply to email",
   "admin.config.email.reply-to-email.description":
     "(Optional) The email address which should be used as the reply-to address for emails sent. If not set, the default email address will be used.",
@@ -1231,7 +1269,7 @@ export default {
     "Discovery URI of the OpenID Connect OAuth app",
   "admin.config.oauth.oidc-sign-out": "Sign out from OpenID Connect",
   "admin.config.oauth.oidc-sign-out.description":
-    "Whether the “Sign out” button will sign out from the OpenID Connect provider",
+    "Whether the 'Sign out' button will sign out from the OpenID Connect provider",
   "admin.config.oauth.oidc-scope": "OpenID Connect scope",
   "admin.config.oauth.oidc-scope.description":
     "Scopes which should be requested from the OpenID Connect provider.",
@@ -1246,12 +1284,12 @@ export default {
   "admin.config.oauth.oidc-role-general-access":
     "OpenID Connect role for general access",
   "admin.config.oauth.oidc-role-general-access.description":
-    "Role required for general access. Must be present in a user’s roles for them to log in. " +
+    "Role required for general access. Must be present in a user's roles for them to log in. " +
     "Leave it blank if you don't know what this config is.",
   "admin.config.oauth.oidc-role-admin-access":
     "OpenID Connect role for admin access",
   "admin.config.oauth.oidc-role-admin-access.description":
-    "Role required for administrative access. Must be present in a user’s roles for them to access the admin panel. " +
+    "Role required for administrative access. Must be present in a user's roles for them to access the admin panel. " +
     "Leave it blank if you don't know what this config is.",
   "admin.config.oauth.oidc-client-id": "OpenID Connect Client ID",
   "admin.config.oauth.oidc-client-id.description":
@@ -1615,8 +1653,8 @@ export default {
   "signing.empty.description": "Create your first electronic signature request to get started.",
   "signing.document": "Document",
   "signing.level": "Level",
-  "signing.level.aes": "Advanced (AES)",
-  "signing.level.qes": "Qualified (QES)",
+  "signing.level.aes": "Standard",
+  "signing.level.qes": "Reinforced",
   "signing.recipients": "Recipients",
   "signing.status": "Status",
   "signing.status.pending": "Pending",
@@ -1633,8 +1671,8 @@ export default {
   "signing.new.message": "Message for recipients",
   "signing.new.message.placeholder": "Optional message to include in the signing invitation...",
   "signing.new.level": "Signature Level",
-  "signing.new.level.aes.desc": "Identity verified via email OTP - eIDAS Advanced",
-  "signing.new.level.qes.desc": "Qualified certificate required - eIDAS Qualified",
+  "signing.new.level.aes.desc": "Email verified by code, consent and transaction hash",
+  "signing.new.level.qes.desc": "Assigned verified PrivCloud account and passkey confirmation",
   "signing.new.recipients": "Recipients",
   "signing.new.recipients.add": "Add recipient",
   "signing.new.recipients.name": "Full name",
@@ -1682,9 +1720,9 @@ export default {
   "signing.modal.message-placeholder": "Optional message that will appear in the email invitation...",
   "signing.modal.level": "Evidence level",
   "signing.modal.level.aes": "Standard - verified email + consent",
-  "signing.modal.level.qes": "Reinforced - verified account + passkey",
+  "signing.modal.level.qes": "Advanced electronic signature (AdES)",
   "signing.modal.level.aes-description": "No account required: the signer enters a one-time code received at the assigned address, then consents to the document hash. This proves current mailbox control, not civil identity.",
-  "signing.modal.level.qes-description": "Each signer uses the assigned PrivCloud account. Their consent is confirmed by a passkey and bound to the exact document hash. The reinforced flow provides authentication, consent and integrity evidence. Advanced electronic signature (AdES) status also depends on the signatory-identification process and demonstrable sole control for each signer. This flow is not a qualified electronic signature (QES).",
+  "signing.modal.level.qes-description": "Each signer uses the assigned named PrivCloud account. Every decision is a WebAuthn assertion whose challenge is derived from a manifest binding the account, consent and the exact document hash. The attestation given to the parties and the forensic dossier kept by PrivCloud enable independent verification. This is not a qualified electronic signature (QES).",
   "signing.modal.recipients": "Signers",
   "signing.modal.add-recipient": "Add",
   "signing.modal.recipient.name": "Full name",
@@ -1710,6 +1748,34 @@ export default {
   "signing.status.viewed": "Viewed",
   "signing.status.signed": "Signed",
   "signing.status.awaiting-finalization": "E2E Finalization",
+  "signing.passkey.registered":
+    "Passkey registered. Your account is ready to sign.",
+  "signing.passkey.register-another":
+    "Passkey not found or deleted? Register a new passkey",
+  "signing.passkey.error.registration": "Passkey registration failed.",
+  "signing.passkey.error.domain":
+    "The browser refuses the passkey for {origin}: open the page from the configured application address.",
+  "signing.passkey.error.cancelled":
+    "The passkey was cancelled, timed out or refused by the browser. Check that a passkey manager, a phone or a security key is available, with a PIN or biometrics set up.",
+  "signing.passkey.error.already-registered":
+    "This passkey is already registered for your account.",
+  "signing.passkey.error.unsupported":
+    "This device cannot verify your identity locally (PIN or biometrics), which signing requires.",
+  "signing.passkey.error.stale":
+    "The confirmation is no longer valid (timed out or document changed). Review the document again, then sign again.",
+  "signing.toast.signed": "Document signed successfully",
+  "signing.toast.sign-error": "Error while signing the document",
+  "signing.toast.rejected": "Document rejected",
+  "signing.toast.reject-error": "Error while rejecting",
+  "signing.new.reinforced.ineligible":
+    "No verified PrivCloud account for this address",
+  "signing.new.reinforced.ineligible-alert":
+    "Some recipients have no verified PrivCloud account. At the reinforced level, every signer needs an account with a verified e-mail address, or an LDAP or OIDC account. An administrator can verify the address from user management.",
+  "signing.status.signing-failed": "Sealing failed",
+  "signing.detail.evidence.download": "Evidence attestation",
+  "signing.detail.forensic.download": "My evidence data",
+  "signing.toast.forensic-error": "Your evidence data is not available",
+  "signing.toast.evidence-error": "The evidence bundle is not available",
   "signing.received": "Received documents",
   "signing.received.empty": "No documents received for signature.",
   "signing.empty.eidas": "Create your first request to have your PDF documents signed in compliance with eIDAS regulation.",
@@ -1758,9 +1824,10 @@ export default {
   "signing.detail.audit.actor": "By: {email}",
   "signing.detail.audit.ip": "IP: {ip}",
   "signing.detail.audit.reason": "Reason: {reason}",
-  "signing.detail.finalize.progress": "Finalization in progress: decryption, visual signatures, PAdES cryptographic signature, re-encryption and storage…",
-  "signing.detail.finalize.key-resolving": "Resolving encryption key… Finalization will start automatically.",
+  "signing.detail.finalize.progress": "Finalization in progress: decryption, visual signatures, PAdES cryptographic signature, re-encryption and storage...",
+  "signing.detail.finalize.key-resolving": "Resolving encryption key... Finalization will start automatically.",
   "signing.detail.finalize.retry": "Retry finalization",
+  "signing.detail.download.e2e-open-link": "This PDF is end-to-end encrypted. Open the signing link received by e-mail once while signed in to this account, and the download will then be available here.",
   "signing.detail.finalize.e2e-unavailable": "E2E key unavailable - unable to resolve encryption key",
   "signing.toast.finalize-success": "Document finalized successfully!",
   "signing.toast.finalize-error": "Error finalizing encrypted document",
@@ -1989,7 +2056,7 @@ export default {
   // Access control section
   "team.folder.access.title": "Access control",
   "team.folder.access.addButton": "Add access",
-  "team.folder.access.noRules": "No access rules defined – all team members have access by default.",
+  "team.folder.access.noRules": "No access rules defined - all team members have access by default.",
   "team.folder.access.role.owner": "Owner",
   "team.folder.access.role.admin": "Admin",
   "team.folder.access.role.member": "Member",
@@ -2227,9 +2294,9 @@ export default {
   "team.dashboard.e2e.rotateModal.warning2": "Invalidate the current key for all members",
   "team.dashboard.e2e.rotateModal.warning3": "You will need to re-distribute links to members",
   "team.dashboard.e2e.rotateModal.description": "Use this if a member left the team, a key was compromised, or you want to renew the key as a precaution.",
-  "team.dashboard.e2e.rotateModal.progress": "Re-encryption in progress… {done}/{total} file(s)",
+  "team.dashboard.e2e.rotateModal.progress": "Re-encryption in progress... {done}/{total} file(s)",
   "team.dashboard.e2e.rotateModal.failures": "{n} failure(s)",
-  "team.dashboard.e2e.rotateModal.preparing": "Preparing…",
+  "team.dashboard.e2e.rotateModal.preparing": "Preparing...",
   "team.dashboard.e2e.rotateModal.startButton": "Start rotation",
   "team.dashboard.e2e.rotateModal.cancelButton": "Cancel",
   "team.dashboard.e2e.distModal.title": "E2E encryption activated - distribute keys",
@@ -2280,9 +2347,9 @@ export default {
   "team.dashboard.modals.rotation.warning": "This operation will: 1) Re-encrypt all team files with a new key, 2) Invalidate the key of all other members, 3) You will need to re-distribute links to each member.",
   "team.dashboard.modals.rotation.description": "Use this function if a member has left the team, if a key was compromised, or if you simply want to renew the key as a precaution.",
   "team.dashboard.modals.rotation.startBtn": "Start rotation",
-  "team.dashboard.modals.rotation.progress": "Re-encrypting… {done}/{total} file(s)",
+  "team.dashboard.modals.rotation.progress": "Re-encrypting... {done}/{total} file(s)",
   "team.dashboard.modals.rotation.failures": "{n} failure(s)",
-  "team.dashboard.modals.rotation.preparing": "Preparing…",
+  "team.dashboard.modals.rotation.preparing": "Preparing...",
 
   // --- Modals: Init links ---
   "team.dashboard.modals.initLinks.title": "E2E encryption enabled - distribute keys",
@@ -2349,10 +2416,11 @@ export default {
 
   // --- File selection in signature request ---
   "signing.new.select-file": "PDF file to sign",
-  "signing.new.select-file.desc": "Choose a PDF file from your accessible team folders",
-  "signing.new.select-file.placeholder": "Search for a file…",
-  "signing.new.loading-files": "Loading available files…",
-  "signing.new.no-signable-files": "No PDF files available. You need signature request permission on at least one team folder.",
+  "signing.new.select-file.desc": "Choose a PDF file from your accessible team folders, then from your own shares",
+  "signing.new.select-file.placeholder": "Search for a file...",
+  "signing.new.loading-files": "Loading available files...",
+  "signing.new.no-signable-files": "No PDF files available. Upload a PDF or obtain the signature request permission on a team folder.",
+  "signing.new.personal-files": "My files",
 
   // --- Upload page: target folder indication ---
   "upload.team-folder.hint.title": "Target folder",
@@ -2527,11 +2595,11 @@ export default {
   "signing.preview.unavailable.title": "Document unavailable",
   "signing.preview.unavailable.description": "The file can no longer be loaded. It may have been deleted; signing is not possible.",
   "signing.sign.legal.standard-short": "This check proves current access to the recipient email address, not the civil identity of the person entering the code.",
-  "signing.sign.legal.reinforced-short": "The assigned PrivCloud account and passkey reinforce authentication, consent and the link to the document. Advanced electronic signature (AdES) status also depends on the signatory-identification process and demonstrable sole control. This flow is not a qualified electronic signature (QES).",
+  "signing.sign.legal.reinforced-short": "PrivCloud's reinforced profile implements an advanced electronic signature in accordance with the requirements of Article 26 of the eIDAS Regulation: transactional WebAuthn assertion, assigned account, explicit consent and a CMS/PDF cryptographic seal of the evidence by PrivCloud. This is not a qualified electronic signature (QES).",
   "signing.sign.assurance.standard": "Standard level: current access to the recipient email address was confirmed with a one-time code. Mailbox control does not verify civil identity.",
   "signing.sign.assurance.reinforced": "Reinforced level: the assigned PrivCloud account is recognised and each decision is confirmed by a passkey bound to the document hash. Account control is not qualified civil-identity verification.",
-  "signing.sign.legal.standard": "By clicking “Sign document”, you confirm that you reviewed and agree to sign it. The evidence file retains the document hash, date, proof of the code sent to the assigned email and technical elements. The code establishes current mailbox control, not civil identity. This flow does not claim advanced or qualified electronic-signature status.",
-  "signing.sign.legal.reinforced": "By clicking “Sign document”, you confirm that you reviewed and agree to sign it from the assigned PrivCloud account. The evidence file retains the document hash, date, account-verification method and WebAuthn proof bound to this decision. The reinforced flow provides authentication, consent and integrity safeguards. Advanced electronic signature (AdES) status under eIDAS also depends on the signatory-identification process and demonstrable sole control. This flow is not a qualified electronic signature (QES).",
+  "signing.sign.legal.standard": "By clicking 'Sign document', you confirm that you reviewed and agree to sign it. The evidence file retains the document hash, date, proof of the code sent to the assigned email and technical elements. The code establishes current mailbox control, not civil identity. This flow does not claim advanced or qualified electronic-signature status.",
+  "signing.sign.legal.reinforced": "By clicking 'Sign document', you confirm that you reviewed and agree to sign it from the assigned PrivCloud account. The evidence file retains the document hash, date, account-verification method and WebAuthn proof bound to this decision. The reinforced flow provides authentication, consent and integrity safeguards. Advanced electronic signature (AdES) status under eIDAS also depends on the signatory-identification process and demonstrable sole control. This flow is not a qualified electronic signature (QES).",
   "signing.modal.custom-page": "Customise signature and watermark placement",
   "signing.modal.custom-page.desc": "By default, the signature and watermark are placed on the first page.",
   "signing.modal.custom-page.signature-label": "Signature page",
@@ -2543,7 +2611,7 @@ export default {
   "signing.source": "Source",
   "signing.source.mine": "Sent",
   "signing.source.received": "Received",
-  "signing.detail.audit.source-file-deleted": "Source file deleted — audit retained for 6 months",
+  "signing.detail.audit.source-file-deleted": "Source file deleted, finalized evidence retained under the configured policy",
   "signing.new.option.initials.placement": "Initials position",
   "signing.new.option.initials.bottom-left": "Bottom left",
   "signing.new.option.initials.bottom-center-right": "Slightly right of centre (recommended)",
@@ -2565,12 +2633,12 @@ export default {
   "signing.new.fields.preview.rotate-clockwise": "Rotate page clockwise",
   "signing.new.fields.preview.zoom-in": "Zoom in",
   "signing.new.fields.preview.zoom-out": "Zoom out",
-  "signing.new.fields.detection.loading": "Looking for a signature area…",
+  "signing.new.fields.detection.loading": "Looking for a signature area...",
   "signing.new.fields.detection.found-text": "A signature area was detected from the document text. It will be used by default and remains editable.",
   "signing.new.fields.detection.found-box": "A likely signature box was detected. Check the suggested placement before sending.",
   "signing.new.fields.detection.field-title": "Signature field placed automatically",
   "signing.new.fields.detection.field-description": "The detected area is already used in the preview. Adjust the page, coordinates or dimensions below if needed.",
-  "signing.new.fields.preview.loading": "Reading the PDF's actual dimensions…",
+  "signing.new.fields.preview.loading": "Reading the PDF's actual dimensions...",
   "signing.new.fields.preview.error": "The preview could not be loaded. Placement will use an A4 fallback.",
   "signing.new.fields.preview.dimensions": "Page: {width} × {height} mm",
   "signing.new.fields.preview.rotated": "This page is rotated in the PDF. Placement follows the unrotated page: check the result before sending.",

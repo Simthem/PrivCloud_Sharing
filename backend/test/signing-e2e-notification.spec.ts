@@ -63,6 +63,7 @@ testCase(
           notifications.push(params);
         },
       } as never,
+      { createFinalEvidence: async () => ({}) } as never,
     ) as any;
     service.createAuditEvent = async () => undefined;
 
@@ -70,6 +71,7 @@ testCase(
       "document-1",
       "creator-1",
       Buffer.from("encrypted-pdf"),
+      "a".repeat(64),
     );
 
     assert.equal(stored, true);

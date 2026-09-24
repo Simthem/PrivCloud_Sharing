@@ -49,9 +49,10 @@ export class SignatureRecipientDTO {
   order?: number;
 
   // Client-generated UUIDs let the client encrypt an invitation containing
-  // the exact signing URL before the request is persisted.
+  // the exact signing URL before the request is persisted. Only random v4
+  // values are accepted, as the token is the only secret of the public link.
   @IsOptional()
-  @IsUUID()
+  @IsUUID("4")
   signingToken?: string;
 
   @IsOptional()

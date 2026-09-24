@@ -7,16 +7,19 @@ import {
   PasswordInput,
   Stack,
   Switch,
+  Text,
   TextInput,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { yupResolver } from "mantine-form-yup-resolver";
 import { useModals } from "@mantine/modals";
+import { useEffect, useState } from "react";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
 import useTranslate, {
   translateOutsideContext,
 } from "../../../hooks/useTranslate.hook";
+import signingService from "../../../services/signing.service";
 import userService from "../../../services/user.service";
 import User from "../../../types/user.type";
 import toast from "../../../utils/toast.util";
@@ -43,6 +46,14 @@ const Body = ({
   getUsers: () => void;
 }) => {
   const t = useTranslate();
+  const [signingPasskeyCount, setSigningPasskeyCount] = useState(0);
+
+  useEffect(() => {
+    signingService
+      .adminListSigningPasskeys(user.id)
+      .then((passkeys) => setSigningPasskeyCount(passkeys.length))
+      .catch(() => setSigningPasskeyCount(0));
+  }, [user.id]);
 
   const accountForm = useForm({
     initialValues: {
@@ -137,24 +148,137 @@ const Body = ({
           </Accordion.Panel>
         </Accordion.Item>
       </Accordion>
-      {user.totpVerified && (
-        <Button
-          color="orange"
-          variant="light"
-          onClick={() => {
-            userService
-              .adminDisableTOTP(user.id)
-              .then(() => {
-                toast.success(t("admin.users.edit.update.totp.disabled"));
-                getUsers();
-                modals.closeAll();
+      <Stack gap={6}>
+        <Text size="sm" fw={500}>
+          <FormattedMessage id="admin.users.edit.security.title" />
+        </Text>
+        <Text size="sm" c="dimmed">
+          {user.emailVerificationSource === "EMAIL_LINK" && user.emailVerifiedAt
+            ? t("admin.users.edit.security.email.link", {
+                date: new Date(user.emailVerifiedAt).toLocaleDateString(),
               })
-              .catch(toast.axiosError);
-          }}
-        >
-          <FormattedMessage id="admin.users.edit.update.totp.disable" />
-        </Button>
-      )}
+            : user.emailVerificationSource === "ADMINISTRATOR" &&
+                user.emailVerifiedAt
+              ? t("admin.users.edit.security.email.admin", {
+                  date: new Date(user.emailVerifiedAt).toLocaleDateString(),
+                })
+              : t("admin.users.edit.security.email.unproven")}
+        </Text>
+        <Text size="sm" c="dimmed">
+          {t("admin.users.edit.security.passkeys.count", {
+            count: signingPasskeyCount,
+          })}
+        </Text>
+        <Group gap="xs">
+          {!["EMAIL_LINK", "ADMINISTRATOR"].includes(
+            user.emailVerificationSource || "",
+          ) && (
+            <Button
+              variant="light"
+              onClick={() =>
+                modals.openConfirmModal({
+                  title: t("admin.users.edit.security.email.confirm.title"),
+                  children: (
+                    <Text size="sm">
+                      {t("admin.users.edit.security.email.confirm.text", {
+                        email: user.email,
+                      })}
+                    </Text>
+                  ),
+                  labels: {
+                    confirm: t("admin.users.edit.security.email.button"),
+                    cancel: t("common.button.cancel"),
+                  },
+                  onConfirm: () =>
+                    userService
+                      .adminMarkEmailVerified(user.id)
+                      .then(() => {
+                        toast.success(
+                          t("admin.users.edit.security.email.done"),
+                        );
+                        getUsers();
+                        modals.closeAll();
+                      })
+                      .catch(toast.axiosError),
+                })
+              }
+            >
+              <FormattedMessage id="admin.users.edit.security.email.button" />
+            </Button>
+          )}
+          {user.totpVerified && (
+            <Button
+              color="orange"
+              variant="light"
+              onClick={() =>
+                modals.openConfirmModal({
+                  title: t("admin.users.edit.security.totp.confirm.title"),
+                  children: (
+                    <Text size="sm">
+                      {t("admin.users.edit.security.totp.confirm.text", {
+                        email: user.email,
+                      })}
+                    </Text>
+                  ),
+                  labels: {
+                    confirm: t("admin.users.edit.update.totp.disable"),
+                    cancel: t("common.button.cancel"),
+                  },
+                  confirmProps: { color: "orange" },
+                  onConfirm: () =>
+                    userService
+                      .adminDisableTOTP(user.id)
+                      .then(() => {
+                        toast.success(
+                          t("admin.users.edit.update.totp.disabled"),
+                        );
+                        getUsers();
+                        modals.closeAll();
+                      })
+                      .catch(toast.axiosError),
+                })
+              }
+            >
+              <FormattedMessage id="admin.users.edit.update.totp.disable" />
+            </Button>
+          )}
+          {signingPasskeyCount > 0 && (
+            <Button
+              color="orange"
+              variant="light"
+              onClick={() =>
+                modals.openConfirmModal({
+                  title: t("admin.users.edit.security.passkeys.confirm.title"),
+                  children: (
+                    <Text size="sm">
+                      {t("admin.users.edit.security.passkeys.confirm.text", {
+                        email: user.email,
+                      })}
+                    </Text>
+                  ),
+                  labels: {
+                    confirm: t("admin.users.edit.security.passkeys.button"),
+                    cancel: t("common.button.cancel"),
+                  },
+                  confirmProps: { color: "orange" },
+                  onConfirm: () =>
+                    signingService
+                      .adminResetSigningPasskeys(user.id)
+                      .then(() => {
+                        toast.success(
+                          t("admin.users.edit.security.passkeys.done"),
+                        );
+                        setSigningPasskeyCount(0);
+                      })
+                      .catch(toast.axiosError),
+                })
+              }
+            >
+              <FormattedMessage id="admin.users.edit.security.passkeys.button" />
+            </Button>
+          )}
+        </Group>
+      </Stack>
       <Group justify="right">
         <Button type="submit" form="accountForm">
           <FormattedMessage id="common.button.save" />

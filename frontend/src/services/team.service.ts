@@ -686,10 +686,11 @@ const getMyWritableFolders = async (): Promise<
 };
 
 export interface SignableFile {
-  teamId: string;
-  teamName: string;
-  folderId: string;
-  folderName: string;
+  /** Null for a file of the user's own shares. */
+  teamId: string | null;
+  teamName: string | null;
+  folderId: string | null;
+  folderName: string | null;
   shareId: string;
   fileId: string;
   fileName: string;

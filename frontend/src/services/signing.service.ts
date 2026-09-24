@@ -40,6 +40,8 @@ export interface SignatureRecipient {
   authenticationMethod?: string;
   signingIntentHash?: string;
   signedDocumentHash?: string;
+  isCurrentUser?: boolean;
+  wrappedE2EKey?: string;
 }
 
 export interface SigningPageData {
@@ -63,6 +65,7 @@ export interface SigningPageData {
     emailVerified: boolean;
     identityVerificationMethod: string;
     identityVerifiedAt?: string;
+    hasWrappedE2EKey?: boolean;
   };
   fields: {
     id: string;
@@ -79,6 +82,7 @@ export interface SigningPageData {
   requiresEmailVerification: boolean;
   emailVerificationCodePending: boolean;
   hasRegisteredPasskey: boolean;
+  signingConsent: { version: string; text: string; sha256: string };
 }
 
 export interface CreateSignatureRequestPayload {
@@ -245,6 +249,32 @@ const downloadSigned = async (id: string): Promise<Blob> => {
   return response.data;
 };
 
+const downloadEvidence = async (id: string): Promise<Blob> => {
+  const response = await api.get(
+    `signing/documents/${apiPathSegment(id)}/evidence`,
+    { responseType: "blob" },
+  );
+  return response.data;
+};
+
+/** Which recipients can sign at the reinforced level. */
+const checkReinforcedEligibility = async (
+  emails: string[],
+): Promise<{ recipients: { email: string; eligible: boolean }[] }> => {
+  return (
+    await api.post("signing/recipients/reinforced-eligibility", { emails })
+  ).data;
+};
+
+/** The caller's own forensic records (right of access). */
+const downloadOwnForensicRecord = async (id: string): Promise<Blob> => {
+  const response = await api.get(
+    `signing/documents/${apiPathSegment(id)}/forensic/me`,
+    { responseType: "blob" },
+  );
+  return response.data;
+};
+
 const getAuditTrail = async (id: string): Promise<any> => {
   return (await api.get(`signing/documents/${apiPathSegment(id)}/audit`)).data;
 };
@@ -279,10 +309,12 @@ const getE2ECertificatePage = async (
 const signE2EDigest = async (
   id: string,
   digest: string,
+  sourceDocumentHash: string,
 ): Promise<Uint8Array> => {
   const res = (
     await api.post(`signing/documents/${apiPathSegment(id)}/sign-e2e-digest`, {
       digest,
+      sourceDocumentHash,
     })
   ).data;
   return decodeBase64(res.cms);
@@ -295,6 +327,8 @@ const signE2EDigest = async (
 const finalizeE2E = async (
   id: string,
   encryptedPdfBuffer: ArrayBuffer,
+  finalDocumentHash: string,
+  sourceDocumentHash: string,
 ): Promise<any> => {
   const bytes = new Uint8Array(encryptedPdfBuffer);
   let binary = "";
@@ -306,6 +340,8 @@ const finalizeE2E = async (
   return (
     await api.post(`signing/documents/${apiPathSegment(id)}/finalize-e2e`, {
       encryptedPdf: base64,
+      finalDocumentHash,
+      sourceDocumentHash,
     })
   ).data;
 };
@@ -339,8 +375,15 @@ type PasskeyActionPayload =
       signatureData: string;
       signatureType: string;
       fieldValues?: { fieldId: string; value: string }[];
+      displayedDocumentHash?: string;
     }
   | { action: "REJECT"; reason?: string };
+
+const storeRecipientE2EKey = async (token: string, wrappedKey: string) => {
+  await api.post(`signing/sign/${apiPathSegment(token)}/e2e-key`, {
+    wrappedKey,
+  });
+};
 
 const beginPasskeyRegistration = async (token: string) =>
   (
@@ -383,6 +426,7 @@ const signDocument = async (
     signatureData: string;
     signatureType: string;
     fieldValues?: { fieldId: string; value: string }[];
+    displayedDocumentHash?: string;
     passkeyChallengeId?: string;
     passkeyResponse?: Record<string, unknown>;
   },
@@ -486,6 +530,32 @@ const retryFinalize = async (
   return response.data;
 };
 
+export type SigningPasskey = {
+  id: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  deviceType: string;
+  backedUp: boolean;
+  transports: string[];
+};
+
+const listSigningPasskeys = async (): Promise<SigningPasskey[]> =>
+  (await api.get("signing/passkeys")).data;
+
+const deleteSigningPasskey = async (id: string) => {
+  await api.delete(`signing/passkeys/${apiPathSegment(id)}`);
+};
+
+const adminListSigningPasskeys = async (
+  userId: string,
+): Promise<SigningPasskey[]> =>
+  (await api.get(`signing/admin/users/${apiPathSegment(userId)}/passkeys`))
+    .data;
+
+const adminResetSigningPasskeys = async (userId: string) => {
+  await api.delete(`signing/admin/users/${apiPathSegment(userId)}/passkeys`);
+};
+
 const signingService = {
   createRequest,
   getMyDocuments,
@@ -495,6 +565,9 @@ const signingService = {
   cancelDocument,
   sendReminder,
   downloadSigned,
+  downloadEvidence,
+  downloadOwnForensicRecord,
+  checkReinforcedEligibility,
   downloadOriginal,
   getAuditTrail,
   getSignaturesForFinalization,
@@ -505,6 +578,7 @@ const signingService = {
   getSigningPage,
   sendSigningEmailOtp,
   verifySigningEmailOtp,
+  storeRecipientE2EKey,
   beginPasskeyRegistration,
   finishPasskeyRegistration,
   beginPasskeyAction,
@@ -514,6 +588,10 @@ const signingService = {
   getAuthenticatedPreviewUrl,
   downloadSignedByToken,
   downloadSignedByTokenAuthenticated,
+  listSigningPasskeys,
+  deleteSigningPasskey,
+  adminListSigningPasskeys,
+  adminResetSigningPasskeys,
 };
 
 export default signingService;

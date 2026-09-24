@@ -454,7 +454,7 @@ export class AccessGrantService {
   /**
    * Get team shares: received (grants where I'm recipient) and sent (grants where I'm grantor),
    * scoped to team files within a specific team.
-   * Supports both teamFileId-based grants AND fileId-based grants (via Share → teamFolder).
+   * Supports both teamFileId-based grants AND fileId-based grants (via Share -> teamFolder).
    */
   async getTeamShares(
     userId: string,

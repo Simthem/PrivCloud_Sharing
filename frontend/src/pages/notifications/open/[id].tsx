@@ -66,7 +66,7 @@ export default function OpenEncryptedNotification() {
   return (
     <Center mih="50vh">
       <Loader size="sm" />
-      <Text ml="sm">Ouverture de la notification chiffrée…</Text>
+      <Text ml="sm">Ouverture de la notification chiffrée...</Text>
     </Center>
   );
 }

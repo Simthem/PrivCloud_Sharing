@@ -121,6 +121,7 @@ testCase(
         {} as never,
         {} as never,
         { get: () => true } as never,
+        {} as never,
       );
       (jobs as any).logger = {
         debug: () => undefined,
@@ -197,6 +198,7 @@ testCase(
       {} as never,
       {} as never,
       { get: () => true } as never,
+      {} as never,
     );
     (jobs as any).logger = {
       debug: () => undefined,

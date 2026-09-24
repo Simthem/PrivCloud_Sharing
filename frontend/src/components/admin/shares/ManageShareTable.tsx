@@ -20,7 +20,7 @@ import dayjs from "../../../utils/dayjs";
 import { byteToHumanSizeString } from "../../../utils/fileSize.util";
 
 const truncateReference = (reference: string, max = 12): string =>
-  reference.length > max ? `${reference.slice(0, max)}…` : reference;
+  reference.length > max ? `${reference.slice(0, max)}...` : reference;
 
 const ProtectionBadge = ({ share }: { share: AdminShare }) =>
   share.isE2EEncrypted ? (

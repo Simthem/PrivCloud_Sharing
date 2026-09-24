@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  Logger,
   Param,
   Patch,
   Post,
@@ -31,6 +32,8 @@ import { AuthTotpService } from "src/auth/authTotp.service";
 
 @Controller("users")
 export class UserController {
+  private readonly logger = new Logger(UserController.name);
+
   constructor(
     private userService: UserSevice,
     private config: ConfigService,
@@ -207,8 +210,27 @@ export class UserController {
   @Delete(":id/totp")
   @HttpCode(204)
   @UseGuards(JwtGuard, AdministratorGuard)
-  async adminDisableTotp(@Param("id") id: string) {
+  async adminDisableTotp(@Param("id") id: string, @GetUser() admin: User) {
     await this.authTotpService.adminDisableTotp(id);
+    this.logger.warn(`Administrator ${admin.email} reset the 2FA of user ${id}`);
+  }
+
+  /**
+   * Records that an administrator checked, by another channel, that the
+   * address belongs to the user. Reinforced signatures accept it as such.
+   */
+  @Post(":id/email-verification")
+  @HttpCode(200)
+  @UseGuards(JwtGuard, AdministratorGuard)
+  async adminMarkEmailVerified(
+    @Param("id") id: string,
+    @GetUser() admin: User,
+  ) {
+    const user = await this.userService.adminMarkEmailVerified(id);
+    this.logger.warn(
+      `Administrator ${admin.email} marked the e-mail address of user ${id} as verified`,
+    );
+    return new UserDTO().from(user);
   }
 
   @Delete(":id")

@@ -139,9 +139,27 @@ const SignaturePad = ({
       if (!file.type.startsWith("image/")) return;
       if (file.size > 2_000_000) return; // max 2MB
 
+      // Re-encode as PNG: the PDF can only embed PNG or JPEG, and redrawing
+      // the pixels drops metadata such as the EXIF location of a photo.
       const reader = new FileReader();
       reader.onload = () => {
-        onSignatureChange(reader.result as string);
+        const image = new Image();
+        image.onload = () => {
+          const scale = Math.min(
+            1,
+            1200 / image.naturalWidth,
+            600 / image.naturalHeight,
+          );
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+          canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+          ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+          onSignatureChange(canvas.toDataURL("image/png"));
+        };
+        image.onerror = () => onSignatureChange(null);
+        image.src = reader.result as string;
       };
       reader.readAsDataURL(file);
     },

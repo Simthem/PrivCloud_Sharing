@@ -28,7 +28,7 @@ const EmailVerificationNotice = ({ user }: { user: CurrentUser }) => {
         <Group justify="space-between" align="center">
           <Text size="sm">
             {french
-              ? "Validez " + user.email + ". L’accès sera bloqué le " + blockedAt + " et le compte supprimé le " + deletionAt + "."
+              ? "Validez " + user.email + ". L'accès sera bloqué le " + blockedAt + " et le compte supprimé le " + deletionAt + "."
               : "Verify " + user.email + ". Access will be blocked on " + blockedAt + " and the account deleted on " + deletionAt + "."}
           </Text>
           <Button

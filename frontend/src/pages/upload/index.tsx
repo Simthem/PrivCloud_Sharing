@@ -208,7 +208,7 @@ const Upload = ({
     }
 
     // Popup cache: only trust a cached "true" result.
-    // On WebKit (Safari, Epiphany, GNOME Web…) window.open probes are
+    // On WebKit (Safari, Epiphany, GNOME Web...) window.open probes are
     // unreliable (succeed silently even when popups are blocked), so we
     // assume popups are NOT proven until the user clicks the test button.
     const rawPopup = localStorage.getItem(POPUP_CACHE_KEY);
@@ -232,7 +232,7 @@ const Upload = ({
 
   // Probe popup permission once on mount if no cached result exists (or expired).
   // The result is persisted in localStorage so this flash only happens once.
-  // On WebKit (Safari, Epiphany, GNOME Web…) the window.open probe is
+  // On WebKit (Safari, Epiphany, GNOME Web...) the window.open probe is
   // unreliable - it succeeds silently even when popups are blocked.
   // So we skip auto-probing on WebKit; the user must click "Test pop-ups".
   useEffect(() => {

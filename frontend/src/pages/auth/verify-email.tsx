@@ -131,13 +131,13 @@ const VerifyEmailPage = () => {
       if (accepted) {
         toast.success(
           french
-            ? "Si ce compte nécessite une validation, un lien vient d’être envoyé. La remise peut prendre plusieurs minutes : pensez aux indésirables. Les liens déjà reçus restent valables."
+            ? "Si ce compte nécessite une validation, un lien vient d'être envoyé. La remise peut prendre plusieurs minutes : pensez aux indésirables. Les liens déjà reçus restent valables."
             : "If this account requires verification, a link has just been sent. Delivery can take several minutes, so check your spam folder. Links you already received remain valid.",
         );
       } else {
         toast.error(
           french
-            ? `Un lien a déjà été demandé il y a moins d’une minute. Attendez ${retryAfterSeconds} s avant d’en redemander un.`
+            ? `Un lien a déjà été demandé il y a moins d'une minute. Attendez ${retryAfterSeconds} s avant d'en redemander un.`
             : `A link was already requested less than a minute ago. Wait ${retryAfterSeconds}s before requesting another one.`,
         );
       }
@@ -147,19 +147,19 @@ const VerifyEmailPage = () => {
         setCooldown(60);
         toast.error(
           french
-            ? "Trop de demandes d’envoi. Réessayez dans quelques minutes."
+            ? "Trop de demandes d'envoi. Réessayez dans quelques minutes."
             : "Too many resend requests. Try again in a few minutes.",
         );
       } else if (statusCode === 503) {
         toast.error(
           french
-            ? "L’envoi d’e-mails n’est pas configuré sur ce serveur. Contactez l’administrateur."
+            ? "L'envoi d'e-mails n'est pas configuré sur ce serveur. Contactez l'administrateur."
             : "Email delivery is not configured on this server. Contact the administrator.",
         );
       } else {
         toast.error(
           french
-            ? "Impossible d’envoyer le message pour le moment."
+            ? "Impossible d'envoyer le message pour le moment."
             : "The message could not be sent right now.",
         );
       }
@@ -184,7 +184,7 @@ const VerifyEmailPage = () => {
   return (
     <>
       <Meta
-        title={french ? "Vérification de l’e-mail" : "Email verification"}
+        title={french ? "Vérification de l'e-mail" : "Email verification"}
         noIndex
       />
       <Head>
@@ -199,7 +199,7 @@ const VerifyEmailPage = () => {
             {status === "verifying" && (
               <Group justify="center">
                 <Loader size="sm" />
-                <Text>{french ? "Validation en cours…" : "Verifying…"}</Text>
+                <Text>{french ? "Validation en cours..." : "Verifying..."}</Text>
               </Group>
             )}
             {status === "verified" && (
@@ -224,7 +224,7 @@ const VerifyEmailPage = () => {
             {status === "unreachable" && (
               <Text c="red">
                 {french
-                  ? "La validation n’a pas pu aboutir : le serveur est injoignable. Rouvrez le lien depuis votre e-mail, il reste valable."
+                  ? "La validation n'a pas pu aboutir : le serveur est injoignable. Rouvrez le lien depuis votre e-mail, il reste valable."
                   : "Verification could not complete: the server is unreachable. Reopen the link from your email, it is still valid."}
               </Text>
             )}

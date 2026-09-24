@@ -137,8 +137,8 @@ const IntegrationsPage = () => {
                   {bridgeHealth
                     ? `${bridgeHealth.name} ${bridgeHealth.version}`
                     : isFr
-                      ? "Non détecté — facultatif pour un WebDAV HTTPS public"
-                      : "Not detected — optional for public HTTPS WebDAV"}
+                      ? "Non détecté, facultatif pour un WebDAV HTTPS public"
+                      : "Not detected, optional for public HTTPS WebDAV"}
                 </Text>
               </Stack>
             </Group>

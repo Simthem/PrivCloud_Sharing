@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-backend",
-  "version": "1.24.6",
+  "version": "1.25.0",
   "scripts": {
     "build": "nest build",
     "postinstall": "patch-package --error-on-fail && ([ -f prisma/schema.prisma ] && prisma generate || true)",
@@ -11,6 +11,7 @@
     "format": "prettier --end-of-line=auto --write 'src/**/*.ts'",
     "test": "npm run test:unit",
     "test:unit": "NODE_PATH=. node -r ts-node/register test/unit-runner.ts",
+    "verify:evidence": "node scripts/verify-signing-evidence.mjs",
     "test:system": "node test/run-system-tests.mjs"
   },
   "dependencies": {
@@ -34,6 +35,7 @@
     "@signpdf/signpdf": "^3.3.0",
     "@simplewebauthn/server": "^13.3.2",
     "@types/jmespath": "^0.15.2",
+    "@xmldom/xmldom": "^0.8.15",
     "altcha-lib": "^2.2.0",
     "archiver": "^8.0.0",
     "argon2": "^0.41.1",
@@ -71,6 +73,7 @@
     "undici": "7.29.1",
     "uuid": "^14.0.0",
     "web-push": "^3.6.7",
+    "xml-crypto": "^6.3.1",
     "yaml": "^2.7.1"
   },
   "devDependencies": {

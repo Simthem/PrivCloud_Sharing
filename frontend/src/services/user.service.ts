@@ -1,4 +1,4 @@
-import {
+import User, {
   CreateUser,
   CurrentUser,
   UpdateCurrentUser,
@@ -91,6 +91,10 @@ const removeWrappedKey = async (credentialId: string) => {
   );
 };
 
+const adminMarkEmailVerified = async (userId: string): Promise<User> => {
+  return (await api.post(`/users/${userId}/email-verification`)).data;
+};
+
 const adminDisableTOTP = async (userId: string) => {
   await api.delete(`/users/${userId}/totp`);
 };
@@ -110,4 +114,5 @@ export default {
   listWrappedKeys,
   removeWrappedKey,
   adminDisableTOTP,
+  adminMarkEmailVerified,
 };

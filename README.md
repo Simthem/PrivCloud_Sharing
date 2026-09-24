@@ -27,6 +27,9 @@ limits are controlled by instance configuration, not by hard-coded tiers.
   tamper-evident audit trails and PAdES-B-B/PAdES-B-T signing support.
 - Public signing links for external recipients without account registration;
   OTP is required before previewing, signing, rejecting or downloading PDFs.
+  The standard level therefore needs SMTP. Without it, only reinforced
+  requests can be created. A link accepts five wrong codes per code and
+  fifteen in total before the sender has to send a new invitation.
 - E2E signing links keep their decryption key in the URL fragment, including
   encrypted Team notification actions and final signed-file downloads.
 - WebDAV/Nextcloud import from the upload page for authenticated users.
@@ -80,9 +83,13 @@ Files are encrypted client-side using AES-256-GCM through the Web Crypto API.
 
 Signing URLs are public no-login recipient flows. Standard requests verify
 mailbox control with a short-lived e-mail code; reinforced requests bind the
-decision to an authenticated account and a fresh WebAuthn assertion. Signing
-API and PDF responses set no-store and noindex headers to reduce accidental
-indexing and caching.
+decision to an authenticated account and a fresh WebAuthn assertion over the
+exact displayed document, versioned consent and action. PrivCloud's reinforced
+profile implements an advanced electronic signature in accordance with the
+requirements of Article 26 of the eIDAS Regulation and produces an
+exportable, platform-signed evidence bundle. It is not a qualified electronic
+signature (QES). Signing API and PDF responses set no-store and noindex headers
+to reduce accidental indexing and caching.
 
 ### WebDAV And Companion
 
@@ -195,13 +202,13 @@ Common environment variables:
 | `S3_DIRECT_BROWSER_CONNECTIONS_PER_ORIGIN` | Maximum HTTP/1.1 upload requests assigned to each browser-visible S3 origin | `6` |
 | `S3_DIRECT_BROWSER_MAX_CONCURRENCY` | Safety ceiling across all direct upload parts in one browser page; the effective value is also bounded by the available origins | `32` |
 | `S3_DIRECT_BROWSER_UPLOAD_ENDPOINTS` | Up to four optional comma-separated, browser-visible HTTPS S3 endpoints/CNAMEs that target the same account and bucket | _(none)_ |
-| `S3_DIRECT_BROWSER_URL_TTL_SECONDS` | Lifetime of one exact-part signed URL (bounded to 60–900 seconds) | `300` |
+| `S3_DIRECT_BROWSER_URL_TTL_SECONDS` | Lifetime of one exact-part signed URL (bounded to 60-900 seconds) | `300` |
 | `S3_DIRECT_BROWSER_DOWNLOAD_ENABLED` | Authorize one-object direct browser GETs while keeping access checks, counters, notifications and Team audit in Nest | `false` |
 | `S3_DIRECT_BROWSER_DOWNLOAD_MAX_CONCURRENCY` | Maximum direct S3 ranges fetched concurrently, bounded to six per signed origin and by the browser buffer | `24` |
 | `S3_DIRECT_BROWSER_DOWNLOAD_PART_BYTES` | Direct-browser range size; E2E ranges are aligned to encryption records | `33554432` |
 | `S3_DIRECT_BROWSER_DOWNLOAD_THRESHOLD_BYTES` | File size from which the streaming direct-browser path uses parallel ranges | `67108864` |
 | `S3_DIRECT_BROWSER_DOWNLOAD_MAX_BUFFER_BYTES` | Hard cap for completed out-of-order ranges in browser memory | `201326592` |
-| `S3_DIRECT_BROWSER_DOWNLOAD_URL_TTL_SECONDS` | Lifetime of a resumable direct GET URL (bounded to 60–3600 seconds) | `900` |
+| `S3_DIRECT_BROWSER_DOWNLOAD_URL_TTL_SECONDS` | Lifetime of a resumable direct GET URL (bounded to 60-3600 seconds) | `900` |
 | `S3_ALLOW_OPTIONAL_CHECKSUMS` | Explicit opt-in required before optional SDK checksums can be enabled | `false` |
 | `S3_ADAPTIVE_PRESSURE_SAMPLES` | Consecutive CPU/event-loop pressure samples required before reducing the window | `3` |
 | `S3_PARALLEL_DOWNLOAD_ENABLED` | Aggregate ordered S3 ranges for large full-file downloads | `true` |
@@ -213,13 +220,18 @@ Common environment variables:
 | `SIGNING_CERTIFICATE_PATH` | Path to P12/PFX signing certificate | _(none)_ |
 | `SIGNING_CERTIFICATE_PASSWORD` | Password for the signing certificate | _(none)_ |
 | `SIGNING_TSA_URL` | RFC 3161 timestamp authority URL | optional |
+| `SIGNING_TSA_TRUSTED_LIST_URL` | Trusted List checked every day for the pinned TSA certificate authority, trace e-mailed to the administrators | _(none, check disabled)_ |
+| `SIGNING_TSA_LOTL_URL` | EU List of Trusted Lists that must authorize the signer of that Trusted List | `https://ec.europa.eu/tools/lotl/eu-lotl.xml` |
+| `SIGNING_TSA_REQUIRE_QUALIFIED_STATUS` | `true` refuses to timestamp unless a recent check confirmed the TSA as a granted qualified service | `false` |
+| `SIGNING_TSA_TRUSTED_LIST_MAX_AGE_DAYS` | Maximum age of that confirmation | `7` |
+| `SIGNING_EVIDENCE_RETENTION_YEARS` | Finalized PDF/evidence retention after source deletion (1-30) | `10` |
 | `HTTP_PROXY` / `HTTPS_PROXY` | System proxy for outbound traffic | _(none)_ |
 | `GLOBAL_AGENT_HTTP_PROXY` | Node.js global-agent proxy URL | _(none)_ |
 | `GLOBAL_AGENT_NO_PROXY` / `NO_PROXY` | Hosts that bypass the proxy | _(none)_ |
 
 With `dual`, a path-style endpoint
-`https://<region-endpoint>/<bucket>/…` and virtual-host endpoint
-`https://<bucket>.<region-endpoint>/…` form two distinct browser origins. Six
+`https://<region-endpoint>/<bucket>/...` and virtual-host endpoint
+`https://<bucket>.<region-endpoint>/...` form two distinct browser origins. Six
 HTTP/1.1 connections per origin provide a 12-request page window without
 raising the usual six-connection pool on either origin. Optional CNAMEs must
 resolve to the same S3-compatible storage service and bucket and use a valid
@@ -334,14 +346,195 @@ PDF signing requires a P12/PFX certificate:
 environment:
   - SIGNING_CERTIFICATE_PATH=/opt/app/backend/data/signing/certificate.p12
   - SIGNING_CERTIFICATE_PASSWORD=change-me
+  - SIGNING_EVIDENCE_RETENTION_YEARS=10
   # - SIGNING_TSA_URL=https://freetsa.org/tsr
 ```
+
+Generate the seal certificate with `scripts/generate-signing-cert.sh`. It
+builds a three-level PKI and never prompts:
+
+```text
+PrivCloud Root CA                  (20 years, keep offline)
+  +-- PrivCloud Signing CA         (10 years)
+        +-- PrivCloud Sharing PDF Signing   (5 years, certificate.p12)
+```
+
+```bash
+CA_KEY_PASSWORD=change-me ./scripts/generate-signing-cert.sh ./data/signing "$SIGNING_CERTIFICATE_PASSWORD"
+```
+
+`certificate.p12` holds the seal key and the whole chain, so every CMS seal
+carries it. Publish `root-ca.pem`, the trust anchor verifiers pass with `--ca`,
+and move `ca/root-ca.key` offline. A later run reuses the existing root, so the
+Signing CA and the seal certificate can be renewed without changing the trust
+anchor. Public TLS authorities such as Let's Encrypt only issue server
+certificates and cannot issue this document-signing certificate.
+
+Every accepted timestamp is archived with its raw request (`.tsq`) and response
+(`.tsr`). The attestation and the forensic dossier downloads carry these
+exchanges, so the request nonce and the untouched TSA answer stay checkable.
+
+With `SIGNING_TSA_TRUSTED_LIST_URL` set (the Spanish list,
+`https://tsl.digital.gob.es/TSL.xml`, for the configured Sectigo service), a
+daily job downloads the Trusted List, checks its XML signature and that the EU
+List of Trusted Lists, itself signed, authorizes its signer for its territory,
+then checks that every certificate pinned in
+`SIGNING_TSA_TRUSTED_CERT_SHA256` still belongs to a granted qualified time
+stamp service (QTST) and that the list is not past its announced next update.
+The trace (list SHA-256, sequence number, list and LOTL signers, status of each
+pinned certificate) is
+stored, joined to the attestation and the forensic dossier of every request
+finalized afterwards, and e-mailed to the instance administrators every day,
+flagged as an alert when the result is not OK. Without SMTP it stays in the
+database and in the logs. A failed download is retried an hour later,
+and the trace records its cause. The instance must reach
+`tsl.digital.gob.es` and `ec.europa.eu` over HTTPS, so an egress proxy has to
+allow them next to `timestamp.sectigo.com`. `SIGNING_TSA_REQUIRE_QUALIFIED_STATUS=true` then
+refuses to timestamp, so to finalize, until a check younger than
+`SIGNING_TSA_TRUSTED_LIST_MAX_AGE_DAYS` confirms the qualified status. The
+list to use is the one of the country where the TSA provider is established and
+supervised, whatever the country of the platform or of the signers: a
+qualified timestamp has the same effect in every Member State (eIDAS Article
+41). Sectigo (Europe) SL is supervised in Spain, hence the Spanish list.
 
 For production, use an appropriate certificate and timestamp authority for your
 legal context. The built-in flow creates PAdES-B-B signatures and upgrades them
 to PAdES-B-T when a validated RFC 3161 timestamp service is configured. Legal
 qualification depends on the certificate, identity process and trust service
 you configure.
+
+A signer who lost a passkey removes it from the "Signing passkeys" section of
+the account, or enrolls a new one from the signing page under the same
+conditions as the first. An administrator can reset every signing passkey of an
+account from the user form. Documents already signed keep their evidence, since
+the public key and the sealed enrollment are copied on each signer when they
+sign.
+
+Evidence is split in two platform-signed objects. The forensic dossier, kept
+by PrivCloud, freezes at each decision what attributes it: IP address, user
+agent, account and directory identifiers (OIDC subject, LDAP DN), raw WebAuthn
+values, public key, signed passkey enrollment, transaction manifest and the full
+audit trail. The attestation, given to every party, holds the identity needed
+(name, e-mail), a random evidence identifier, the date, the method, the
+document and consent hashes, and the salted SHA-256 of each signer's forensic
+record and of the whole dossier. The PDF certificate page shows the same data
+and "IP address: recorded in the forensic dossier". The salt and the random
+identifier keep the published hashes useless for guessing an identifier.
+
+Parties download the attestation from the document page. A signer with an
+account also gets their own forensic record there (right of access). An
+instance administrator exports the complete dossier for a dispute or a legal
+request through `GET /api/signing/admin/documents/:id/forensic`, and each
+export is recorded in the audit trail. Verify offline from `backend/` with
+`npm run verify:evidence -- attestation.json signed.pdf`, and add
+`--forensic forensic.json` to re-verify the WebAuthn assertions, account
+binding, contributions and audit chain against the hashes the parties hold.
+Add `--ca root.pem` to validate the platform certificate chain as well as the
+attestation, dossier and embedded PAdES signatures. The file may hold several
+PEM certificates, for instance the current root and the certificate that sealed
+records before a change of PKI. `--trusted-list` takes the national Trusted
+List of the TSA (`https://tsl.digital.gob.es/TSL.xml` for Sectigo), not the EU
+List of Trusted Lists, which only points to the national lists and goes with
+`--lotl eu-lotl.xml`. The sealed PDF carries the exact source approved by
+the signers as the `privcloud-source.pdf` attachment, and the verifier checks it
+against every signed WebAuthn manifest (`--source source.pdf` checks a separate
+copy instead).
+
+#### Verifying a signature for an expert or a court
+
+The verifier is part of the public repository, runs offline and never contacts
+PrivCloud. Its point is that the expert does not have to trust PrivCloud: the
+dossier kept by PrivCloud is checked against copies that the parties hold.
+
+1. Gather the files, each from the source indicated:
+
+   | File | Provided by | Holds |
+   |------|-------------|-------|
+   | `signed.pdf` | any party (their own copy) | the sealed PDF and the approved source attached as `privcloud-source.pdf` |
+   | `attestation.json` | any party (document page, "Evidence attestation") | identities, dates, hashes, the hash of the forensic dossier and the raw RFC 3161 exchanges of the seals, signed by PrivCloud |
+   | `forensic.json` | the PrivCloud administrator, on request (`GET /api/signing/admin/documents/:id/forensic`) | IP addresses, account and directory identifiers, raw WebAuthn assertions, full audit trail |
+   | `root-ca.pem` | PrivCloud operator (`data/signing/root-ca.pem`) | the PrivCloud Root CA, trust anchor of every seal |
+   | `tl.xml` | the Trusted List of the TSA's country, listed in the EU List of Trusted Lists (`https://ec.europa.eu/tools/lotl/eu-lotl.xml`) | the certificate of the qualified TSA and its status over time |
+   | `eu-lotl.xml` | the EU List of Trusted Lists | which certificate may sign each national list |
+
+   The Trusted List is itself the trust anchor of a qualified TSA: it
+   publishes the TSA certificate authority, so no separate TSA root is needed.
+   The configured Sectigo qualified TSA is listed by Spain:
+
+   ```bash
+   curl -o tl.xml https://tsl.digital.gob.es/TSL.xml
+   curl -o eu-lotl.xml https://ec.europa.eu/tools/lotl/eu-lotl.xml
+   ```
+
+   The verifier checks the XML signature of both lists, that the EU list
+   authorizes the signer of the national one, and prints the signer of the EU
+   list with the Official Journal publication its certificate can be compared
+   with. For a TSA that is not qualified, pass its root instead with
+   `--tsa-ca tsa-root.pem`, taken from the certificate repository of that TSA.
+
+2. Install the verifier (Node.js 24 and OpenSSL are required):
+
+   ```bash
+   git clone https://github.com/Simthem/PrivCloud_Sharing.git
+   cd PrivCloud_Sharing/backend
+   npm ci
+   ```
+
+3. Check the attestation alone, which is what every party can do:
+
+   ```bash
+   npm run verify:evidence -- /path/attestation.json /path/signed.pdf --ca /path/root-ca.pem
+   ```
+
+4. Check everything, with the detailed report:
+
+   ```bash
+   npm run verify:evidence -- /path/attestation.json /path/signed.pdf --forensic /path/forensic.json --ca /path/root-ca.pem --trusted-list /path/tl.xml --lotl /path/eu-lotl.xml --verbose
+   ```
+
+The command prints `PrivCloud evidence: VALID` and exits with code 0, or
+prints `PrivCloud evidence: INVALID` with the failed check and exits with
+code 1. With `--verbose` it also prints a report section by section
+(Attestation, Forensic, WebAuthn and Manifest per signer, CMS, Timestamp per
+seal, Trusted List, EU List of Trusted Lists), including after a failure, so an auditor can follow every check without
+reading the code. What a valid result establishes:
+
+| Check | Establishes |
+|-------|-------------|
+| Attestation and dossier CMS signatures, `--ca` chain | both files were issued by the platform and not modified |
+| Seal chain PrivCloud Sharing PDF Signing > PrivCloud Signing CA > PrivCloud Root CA | every seal ends at the published trust anchor |
+| Final PDF hash, ByteRange and embedded PAdES seal | the PDF is the finalized one, unchanged since sealing |
+| Embedded source against every manifest | each signer approved exactly this source document |
+| Every signer signed | the request was complete when sealed |
+| Dossier hash against the attestation | the dossier is the one frozen at finalization, not rebuilt later: the hash comes from a copy held by a party |
+| Each signer record against its hash (also printed in the PDF) | network data and identifiers were not altered after the signature |
+| WebAuthn assertion, challenge, RP ID, origin, UP and UV flags | the signer's private key signed this transaction with user verification |
+| Signed passkey enrollment against the manifest account | this public key belongs to the account that signed |
+| Consent hash and applied contribution against the manifest | the consent text, signature image and field values shown are the approved ones |
+| Recomputed audit chain | no event was inserted, removed or altered |
+| RFC 3161 token, imprint, nonce against the archived request, archived `.tsr` | each seal was timestamped at the stated time by that TSA |
+| TSA critical `timeStamping` EKU, validity and chain at generation time, up to a certificate the Trusted List publishes | the TSA certificate was entitled to issue the token when it did |
+| Trusted List service type and status at generation time | the TSA was a qualified time stamp service (QTST) with a granted status on that date |
+| XML signature of the Trusted List, signer authorized by the signed EU List of Trusted Lists | the list read is the one the supervisory body published, unmodified |
+
+The last link, from the signer of the EU List of Trusted Lists to the
+certificates the Commission publishes in the Official Journal of the European
+Union, is left to the expert: the report prints that certificate and the
+Official Journal reference.
+
+Two exports of `forensic.json` requested at different dates are identical: the
+exported dossier is the one frozen at finalization and its hash never changes.
+Each export is still recorded in the live audit trail of the request.
+
+With several signers, each one approves the same source and their own
+contribution (signature image, type and field values). Before sealing, the
+server, or the requester's browser for an end-to-end encrypted request, rebuilds
+every contribution and refuses to finalize if one differs from the manifest that
+signer approved. The evidence bundle carries these applied contributions and the
+verifier checks each of them, as well as that every signer signed. Each signer
+also gets a visual block of their own: a detected or shared signature area is
+split between the signers, and signers without a field are laid out in a grid,
+so handwritten or uploaded signatures never overlap.
 
 ## Repository Layout
 

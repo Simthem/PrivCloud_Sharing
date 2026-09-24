@@ -1,14 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const docsRoot = fileURLToPath(new URL("../", import.meta.url));
-const patchPath = fileURLToPath(
-  new URL("../patches/image-size+2.0.2.patch", import.meta.url),
-);
-
 const runParser = (source) =>
   spawnSync(process.execPath, ["--input-type=commonjs", "--eval", source], {
     cwd: docsRoot,
@@ -27,12 +23,26 @@ const assertRejectedWithoutHang = (name, source) => {
   );
 };
 
-test("patch-package covers every published CommonJS and ESM parser bundle", () => {
-  const patch = readFileSync(patchPath, "utf8");
-  assert.equal((patch.match(/if \(boxSize === 0\) return;/g) ?? []).length, 18);
-  assert.equal(
-    (patch.match(/Invalid ICNS entry length/g) ?? []).length,
-    12,
+test("image-size is a release that rejects malformed boxes by itself", () => {
+  const { version } = JSON.parse(
+    readFileSync(
+      fileURLToPath(
+        new URL("../node_modules/image-size/package.json", import.meta.url),
+      ),
+      "utf8",
+    ),
+  );
+  const [major, minor, patch] = version.split(".").map(Number);
+  assert.ok(
+    major > 2 || (major === 2 && (minor > 0 || patch >= 4)),
+    `image-size ${version} predates the upstream fix released in 2.0.4`,
+  );
+  assert.deepEqual(
+    readdirSync(fileURLToPath(new URL("../patches/", import.meta.url))).filter(
+      (name) => name.startsWith("image-size+"),
+    ),
+    [],
+    "a stale image-size patch would be applied over the fixed release",
   );
 });
 
@@ -81,6 +91,23 @@ test("malformed JXL partial streams cannot stall the event loop", () => {
         0x00,0x00,0x00,0x00, 0xff,0x0a,0x00,0x00,
       ]);
       try { JXL.calculate(payload); process.exit(2); } catch { process.exit(0); }
+    `,
+  );
+});
+
+test("malformed JPEG 2000 boxes cannot stall the event loop", () => {
+  assertRejectedWithoutHang(
+    "JP2",
+    `
+      const { JP2 } = require("image-size/types/jp2");
+      const payload = Uint8Array.from([
+        0x00,0x00,0x00,0x0c, 0x6a,0x50,0x20,0x20, 0x0d,0x0a,0x87,0x0a,
+        0x00,0x00,0x00,0x14, 0x66,0x74,0x79,0x70, 0x6a,0x70,0x32,0x20,
+        0x00,0x00,0x00,0x00, 0x6a,0x70,0x32,0x20,
+        0x00,0x00,0x00,0x00, 0x6a,0x70,0x32,0x68,
+        0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+      ]);
+      try { JP2.calculate(payload); process.exit(2); } catch { process.exit(0); }
     `,
   );
 });

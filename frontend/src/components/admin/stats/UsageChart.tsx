@@ -280,7 +280,7 @@ const UsageChart = () => {
                     }
                   >
                     {hasFailed || !series
-                      ? "—"
+                      ? "-"
                       : formatValue(metric.key, total)}
                   </Text>
                 )}

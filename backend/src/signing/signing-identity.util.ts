@@ -1,11 +1,16 @@
 export type SigningIdentityAccount = {
   emailVerifiedAt: Date | null;
+  emailVerificationSource: string | null;
   ldapDN: string | null;
   oAuthUsers?: { provider: string }[];
 };
 
 export type SigningIdentityProof = {
-  method: "VERIFIED_EMAIL_ACCOUNT" | "LDAP_ACCOUNT" | "OIDC_ACCOUNT";
+  method:
+    | "VERIFIED_EMAIL_ACCOUNT"
+    | "ADMIN_VERIFIED_EMAIL_ACCOUNT"
+    | "LDAP_ACCOUNT"
+    | "OIDC_ACCOUNT";
   verifiedAt: Date;
 };
 
@@ -23,9 +28,20 @@ export function resolveSigningIdentityProof(
   if (user.oAuthUsers?.length) {
     return { method: "OIDC_ACCOUNT", verifiedAt: now };
   }
-  if (user.emailVerifiedAt) {
+  // An automatic exemption (no SMTP, bootstrap) also sets emailVerifiedAt
+  // but proves nothing, so only a recorded source counts.
+  if (user.emailVerifiedAt && user.emailVerificationSource === "EMAIL_LINK") {
     return {
       method: "VERIFIED_EMAIL_ACCOUNT",
+      verifiedAt: user.emailVerifiedAt,
+    };
+  }
+  if (
+    user.emailVerifiedAt &&
+    user.emailVerificationSource === "ADMINISTRATOR"
+  ) {
+    return {
+      method: "ADMIN_VERIFIED_EMAIL_ACCOUNT",
       verifiedAt: user.emailVerifiedAt,
     };
   }

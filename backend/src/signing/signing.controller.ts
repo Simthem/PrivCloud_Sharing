@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Ip,
   Param,
   Post,
@@ -18,19 +19,23 @@ import { RegistrationResponseJSON } from "@simplewebauthn/server";
 import { hours, minutes, Throttle } from "@nestjs/throttler";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
+import { AdministratorGuard } from "src/auth/guard/isAdmin.guard";
 import { SigningService } from "./signing.service";
 import { SigningDownloadService } from "./signing-download.service";
 import { SigningE2EService } from "./signing-e2e.service";
 import { SigningWebAuthnService } from "./signing-webauthn.service";
+import { SigningEvidenceService } from "./signing-evidence.service";
 import { CreateSignatureRequestDTO } from "./dto/createSignatureRequest.dto";
 import {
   SignDocumentDTO,
   RejectDocumentDTO,
   PrepareE2ECertificateDTO,
   SignE2EDigestDTO,
+  CheckReinforcedEligibilityDTO,
   FinalizeE2EDTO,
   PreparePasskeyActionDTO,
   VerifyPasskeyRegistrationDTO,
+  StoreRecipientE2EKeyDTO,
   VerifySigningEmailOtpDTO,
 } from "./dto/signDocument.dto";
 
@@ -41,6 +46,7 @@ export class SigningController {
     private signingDownloadService: SigningDownloadService,
     private signingE2EService: SigningE2EService,
     private signingWebAuthnService: SigningWebAuthnService,
+    private signingEvidenceService: SigningEvidenceService,
   ) {}
 
   private setPublicSigningHeaders(res: Response) {
@@ -71,6 +77,14 @@ export class SigningController {
   /**
    * Get all signature documents created by the current user.
    */
+  /** Which recipients can sign at the reinforced level, checked before sending. */
+  @Post("recipients/reinforced-eligibility")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 30, ttl: minutes(1) } })
+  async checkReinforcedEligibility(@Body() dto: CheckReinforcedEligibilityDTO) {
+    return this.signingService.checkReinforcedEligibility(dto.emails);
+  }
+
   @Get("documents")
   @UseGuards(JwtGuard)
   async getMyDocuments(@GetUser() user: User) {
@@ -199,6 +213,94 @@ export class SigningController {
     return this.signingDownloadService.getAuditTrail(id, user.id);
   }
 
+  @Get("documents/:id/evidence")
+  @UseGuards(JwtGuard)
+  async downloadEvidence(
+    @Param("id") id: string,
+    @GetUser() user: User,
+    @Res() res: Response,
+  ) {
+    const { buffer, fileName } =
+      await this.signingEvidenceService.getEvidenceEnvelope(id, user.id);
+    this.sendJsonAttachment(res, buffer, fileName);
+  }
+
+  /**
+   * Right of access: the caller's own forensic records for this request,
+   * never those of the other parties.
+   */
+  @Get("documents/:id/forensic/me")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 10, ttl: minutes(10) } })
+  async downloadOwnForensicRecords(
+    @Param("id") id: string,
+    @GetUser() user: User,
+    @Res() res: Response,
+  ) {
+    const { buffer, fileName } =
+      await this.signingEvidenceService.getOwnForensicRecords(id, user.id);
+    this.sendJsonAttachment(res, buffer, fileName);
+  }
+
+  /** Complete forensic dossier, for an instance administrator only. */
+  @Get("admin/documents/:id/forensic")
+  @UseGuards(JwtGuard, AdministratorGuard)
+  async downloadForensicEvidence(
+    @Param("id") id: string,
+    @GetUser() user: User,
+    @Res() res: Response,
+  ) {
+    const { buffer, fileName } =
+      await this.signingEvidenceService.getForensicEnvelopeForAdmin(
+        id,
+        user.email,
+      );
+    this.sendJsonAttachment(res, buffer, fileName);
+  }
+
+  /** Signing passkeys of the signed-in account. */
+  @Get("passkeys")
+  @UseGuards(JwtGuard)
+  async listPasskeys(@GetUser() user: User) {
+    return this.signingWebAuthnService.listPasskeys(user.id);
+  }
+
+  /** Removes one of the signed-in account's signing passkeys. */
+  @Delete("passkeys/:id")
+  @HttpCode(204)
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 10, ttl: minutes(10) } })
+  async deletePasskey(@Param("id") id: string, @GetUser() user: User) {
+    await this.signingWebAuthnService.deletePasskey(user.id, id);
+  }
+
+  @Get("admin/users/:userId/passkeys")
+  @UseGuards(JwtGuard, AdministratorGuard)
+  async listUserPasskeys(@Param("userId") userId: string) {
+    return this.signingWebAuthnService.listPasskeys(userId);
+  }
+
+  /** Lets an account that lost every passkey enroll a new one. */
+  @Delete("admin/users/:userId/passkeys")
+  @UseGuards(JwtGuard, AdministratorGuard)
+  async resetUserPasskeys(
+    @Param("userId") userId: string,
+    @GetUser() admin: User,
+  ) {
+    return this.signingWebAuthnService.resetPasskeys(userId, admin.email);
+  }
+
+  private sendJsonAttachment(res: Response, buffer: Buffer, fileName: string) {
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${encodeURIComponent(fileName)}"`,
+    );
+    res.setHeader("Content-Length", buffer.length);
+    res.setHeader("Cache-Control", "no-store");
+    res.send(buffer);
+  }
+
   /**
    * Get signer data for E2E client-side finalization.
    */
@@ -245,6 +347,7 @@ export class SigningController {
       id,
       user.id,
       Buffer.from(dto.digest, "hex"),
+      dto.sourceDocumentHash?.toLowerCase(),
     );
     return { cms: cms.toString("base64") };
   }
@@ -267,7 +370,13 @@ export class SigningController {
       throw new BadRequestException("Empty PDF data");
     }
 
-    return this.signingE2EService.storeE2EFinal(id, user.id, pdfBuffer);
+    return this.signingE2EService.storeE2EFinal(
+      id,
+      user.id,
+      pdfBuffer,
+      dto.finalDocumentHash.toLowerCase(),
+      dto.sourceDocumentHash?.toLowerCase(),
+    );
   }
 
   // =========================================================================
@@ -285,6 +394,27 @@ export class SigningController {
   ) {
     this.setPublicSigningHeaders(res);
     return this.signingService.getSigningPage(token);
+  }
+
+  /**
+   * Keep the document key of an end-to-end encrypted request for the signer's
+   * account, wrapped in the browser with that account's master key.
+   */
+  @Post("sign/:token/e2e-key")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 10, ttl: minutes(10) } })
+  async storeRecipientE2EKey(
+    @Param("token") token: string,
+    @GetUser() user: User,
+    @Body() dto: StoreRecipientE2EKeyDTO,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.setPublicSigningHeaders(res);
+    return this.signingService.storeRecipientE2EKey(
+      token,
+      user,
+      dto.wrappedKey,
+    );
   }
 
   /** Send a short-lived code to the assigned address for a standard request. */

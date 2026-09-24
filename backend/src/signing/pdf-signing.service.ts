@@ -1,4 +1,10 @@
-import { Injectable, Logger } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  Optional,
+} from "@nestjs/common";
+import { PrismaService } from "src/prisma/prisma.service";
 import * as crypto from "crypto";
 import * as fs from "fs";
 import * as https from "https";
@@ -13,6 +19,14 @@ import {
   visualPageSize,
   visualPdfPointToRaw,
 } from "./pdf-rotation.util";
+import {
+  defaultSignatureSlotPosition,
+  fitSignatureImage,
+} from "./signature-slots.util";
+import { pdfSafeText } from "./pdf-text.util";
+import { parseSignatureData, SignatureVisual } from "./signature-data.util";
+import { consentSha256For } from "./signing-evidence.util";
+import type { PDFDocument } from "pdf-lib";
 
 /**
  * PdfSigningService handles the cryptographic signing of PDF documents
@@ -29,6 +43,13 @@ import {
  * 5. Validation and CMS embedding of the returned TimeStampToken
  * 6. Certificate verification page generation
  */
+
+/** Seal a timestamp belongs to, recorded with its raw RFC 3161 exchange. */
+export type TimestampContext = {
+  scope: "pdf-seal" | "attestation" | "forensic" | "enrollment";
+  documentId?: string;
+  webauthnCredentialId?: string;
+};
 @Injectable()
 export class PdfSigningService {
   private readonly logger = new Logger(PdfSigningService.name);
@@ -40,7 +61,7 @@ export class PdfSigningService {
   private readonly tsaPolicyOid?: string;
   private readonly tsaTrustedCertFingerprints: Set<string>;
 
-  constructor() {
+  constructor(@Optional() private readonly prisma?: PrismaService) {
     this.certificatePath =
       process.env.SIGNING_CERTIFICATE_PATH ||
       path.join(process.cwd(), "data", "signing", "certificate.p12");
@@ -124,6 +145,7 @@ export class PdfSigningService {
       reason?: string;
       location?: string;
     },
+    timestampContext?: TimestampContext,
   ): Promise<Buffer> {
     const p12Buffer = await this.loadCertificate();
     if (!p12Buffer) {
@@ -178,7 +200,10 @@ export class PdfSigningService {
       // 3. Embed RFC 3161 timestamp into the CMS (PAdES-B-B -> PAdES-B-T)
       if (this.tsaUrls.length > 0) {
         try {
-          signedPdf = await this.embedTimestampInSignedPdf(signedPdf);
+          signedPdf = await this.embedTimestampInSignedPdf(
+            signedPdf,
+            timestampContext,
+          );
           this.logger.log(
             `PDF signed with timestamp (PAdES-B-T) for ${signerInfo.email} - ` +
               `${signedPdf.length} bytes, reason: "${reason}"`,
@@ -211,7 +236,10 @@ export class PdfSigningService {
    * Create a detached PAdES CMS signature for a SHA-256 PDF ByteRange digest.
    * The PDF stays client-side: only its 32-byte digest reaches this service.
    */
-  async signDigest(messageDigest: Buffer): Promise<Buffer> {
+  async signDigest(
+    messageDigest: Buffer,
+    timestampContext?: TimestampContext,
+  ): Promise<Buffer> {
     if (messageDigest.length !== 32) {
       throw new Error("PAdES signing requires a 32-byte SHA-256 digest");
     }
@@ -232,7 +260,7 @@ export class PdfSigningService {
 
       if (this.tsaUrls.length > 0) {
         try {
-          cmsDer = await this.embedTimestampInCms(cmsDer);
+          cmsDer = await this.embedTimestampInCms(cmsDer, timestampContext);
           this.logger.log(
             `Detached PAdES-B-T CMS created (${cmsDer.length} bytes)`,
           );
@@ -840,7 +868,10 @@ export class PdfSigningService {
    * 5. Add the token as unsigned attribute (OID 1.2.840.113549.1.9.16.2.14)
    * 6. Re-encode and patch back into the PDF
    */
-  private async embedTimestampInSignedPdf(signedPdf: Buffer): Promise<Buffer> {
+  private async embedTimestampInSignedPdf(
+    signedPdf: Buffer,
+    timestampContext?: TimestampContext,
+  ): Promise<Buffer> {
     // 1. Find the hex-encoded signature in the PDF
     // The signature is between angle brackets: /Contents <HEX...>
     const pdfStr = signedPdf.toString("latin1");
@@ -870,7 +901,10 @@ export class PdfSigningService {
     if (cmsLength <= 0) throw new Error("Empty CMS in PDF /Contents");
     const derCms = derWithPadding.subarray(0, cmsLength);
 
-    const modifiedDer = await this.embedTimestampInCms(derCms);
+    const modifiedDer = await this.embedTimestampInCms(
+      derCms,
+      timestampContext,
+    );
 
     // Verify it fits in the placeholder
     const maxSize = hexSignature.length / 2; // original placeholder size in bytes
@@ -898,7 +932,10 @@ export class PdfSigningService {
   }
 
   /** Add an RFC 3161 timestamp unsigned attribute to a detached CMS. */
-  private async embedTimestampInCms(derCms: Buffer): Promise<Buffer> {
+  private async embedTimestampInCms(
+    derCms: Buffer,
+    timestampContext?: TimestampContext,
+  ): Promise<Buffer> {
     const forge = require("node-forge");
     const contentInfo = forge.asn1.fromDer(derCms.toString("binary"));
     const signedDataContent = contentInfo.value[1];
@@ -923,7 +960,10 @@ export class PdfSigningService {
       .createHash("sha256")
       .update(signatureBytes)
       .digest();
-    const tsaResponse = await this.getTimestamp(messageImprint);
+    const tsaResponse = await this.getTimestamp(
+      messageImprint,
+      timestampContext,
+    );
     if (!tsaResponse) {
       throw new Error("TSA returned no response");
     }
@@ -983,8 +1023,13 @@ export class PdfSigningService {
    * Uses the native HTTPS module (NOT fetch) so that global-agent
    * can route the request through the configured HTTP_PROXY.
    */
-  async getTimestamp(messageImprint: Buffer): Promise<Buffer | null> {
+  async getTimestamp(
+    messageImprint: Buffer,
+    timestampContext?: TimestampContext,
+  ): Promise<Buffer | null> {
     if (this.tsaUrls.length === 0) return null;
+    await this.assertQualifiedTsaConfirmed();
+    let accepted: { tsaUrl: string; response: Buffer } | null = null;
     const { body: tsReqBody, nonce } =
       this.buildTimestampRequest(messageImprint);
 
@@ -1007,7 +1052,8 @@ export class PdfSigningService {
             `serial=${evidence.serialNumber}, genTime=${evidence.generatedAt.toISOString()}, ` +
             `certificate=${evidence.certificateFingerprintSha256}`,
         );
-        return tsResponse;
+        accepted = { tsaUrl, response: tsResponse };
+        break;
       } catch (error: any) {
         const msg = `TSA ${label} (${tsaUrl}) failed: ${error?.message}`;
         errors.push(msg);
@@ -1016,11 +1062,77 @@ export class PdfSigningService {
       }
     }
 
+    if (accepted) {
+      // Outside the fallback loop: an archive failure is not a TSA failure.
+      await this.archiveTimestamp(
+        messageImprint,
+        tsReqBody,
+        accepted,
+        timestampContext,
+      );
+      return accepted.response;
+    }
+
     // All TSAs failed
     this.logger.error(
       `All ${this.tsaUrls.length} TSA(s) failed. Errors:\n  ${errors.join("\n  ")}`,
     );
     return null;
+  }
+
+  /**
+   * With SIGNING_TSA_REQUIRE_QUALIFIED_STATUS=true, no timestamp is requested
+   * unless a recent Trusted List check confirmed the pinned TSA as a granted
+   * qualified time stamp service.
+   */
+  private async assertQualifiedTsaConfirmed() {
+    if (
+      process.env.SIGNING_TSA_REQUIRE_QUALIFIED_STATUS?.trim().toLowerCase() !==
+      "true"
+    ) {
+      return;
+    }
+    const maxAgeDays =
+      Number.parseInt(process.env.SIGNING_TSA_TRUSTED_LIST_MAX_AGE_DAYS || "", 10) || 7;
+    const latest = await this.prisma?.trustedListCheck.findFirst({
+      orderBy: { checkedAt: "desc" },
+    });
+    if (
+      !latest ||
+      latest.result !== "OK" ||
+      Date.now() - latest.checkedAt.getTime() > maxAgeDays * 86_400_000
+    ) {
+      throw new Error(
+        "The qualified status of the TSA is not confirmed by a recent Trusted List check",
+      );
+    }
+  }
+
+  /**
+   * Keeps the raw request and response of an accepted timestamp, so the
+   * request nonce and the untouched TSA answer stay checkable by an expert.
+   * Calls without a seal context (tests, tooling) keep nothing.
+   */
+  private async archiveTimestamp(
+    messageImprint: Buffer,
+    request: Buffer,
+    accepted: { tsaUrl: string; response: Buffer },
+    timestampContext?: TimestampContext,
+  ) {
+    if (!this.prisma || !timestampContext) return;
+    const data = {
+      scope: timestampContext.scope,
+      documentId: timestampContext.documentId ?? null,
+      webauthnCredentialId: timestampContext.webauthnCredentialId ?? null,
+      tsaUrl: accepted.tsaUrl,
+      requestBase64: request.toString("base64"),
+      responseBase64: accepted.response.toString("base64"),
+    };
+    await this.prisma.signingTimestamp.upsert({
+      where: { messageImprint: messageImprint.toString("hex") },
+      create: { messageImprint: messageImprint.toString("hex"), ...data },
+      update: data,
+    });
   }
 
   /**
@@ -1720,13 +1832,16 @@ export class PdfSigningService {
       name: string;
       email: string;
       signedAt: Date;
-      ip: string;
       signatureType: string;
       authenticationMethod?: string | null;
       identityVerificationMethod?: string | null;
+      accountAssigned?: boolean;
+      transactionBound?: boolean;
       signingIntentHash?: string | null;
       signedDocumentHash?: string | null;
       webauthnUserVerified?: boolean | null;
+      evidenceId?: string | null;
+      forensicRecordSha256?: string | null;
     }>;
     documentHash: string;
     signatureLevel: string;
@@ -1734,7 +1849,7 @@ export class PdfSigningService {
     const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
 
     const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage([595.28, 841.89]); // A4
+    let page = pdfDoc.addPage([595.28, 841.89]); // A4
 
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -1748,20 +1863,34 @@ export class PdfSigningService {
       }
       return "Méthode non enregistrée";
     };
-    const identityLabel = (method?: string | null) => {
+    // How the account or address behind the signer was checked. This is
+    // account-level assurance, never a civil identity check.
+    const verificationLabel = (method?: string | null) => {
       if (method === "EMAIL_OTP") {
         return "Contrôle de l'adresse e-mail par code à usage unique";
       }
       if (method === "VERIFIED_EMAIL_ACCOUNT") {
-        return "Compte PrivCloud avec adresse e-mail vérifiée";
+        return "Adresse e-mail vérifiée par lien de confirmation";
       }
-      if (method === "LDAP_ACCOUNT") return "Compte LDAP attribué";
-      if (method === "OIDC_ACCOUNT") return "Compte OIDC attribué";
-      return "Aucune preuve d'identité enregistrée";
+      if (method === "ADMIN_VERIFIED_EMAIL_ACCOUNT") {
+        return "Adresse e-mail vérifiée par un administrateur";
+      }
+      if (method === "LDAP_ACCOUNT") return "Identité fournie par l'annuaire LDAP";
+      if (method === "OIDC_ACCOUNT") return "Identité fournie par le fournisseur OIDC";
+      return "Aucune vérification enregistrée";
     };
 
     const { width: _width, height } = page.getSize();
     let y = height - 60;
+    // The dossier grows with the number of signers, so it continues on as
+    // many A4 pages as needed instead of running off the bottom edge.
+    const ensureSpace = (needed: number) => {
+      if (y - needed >= 50) return;
+      page = pdfDoc.addPage([595.28, 841.89]);
+      y = height - 60;
+    };
+    const wrapped = (line: string) =>
+      this.wrapPdfText(pdfSafeText(line, font), 470, 9);
 
     // Header
     page.drawText("DOSSIER DE PREUVE DE SIGNATURE ÉLECTRONIQUE", {
@@ -1788,6 +1917,7 @@ export class PdfSigningService {
     y -= 40;
 
     // Document info
+    ensureSpace(40);
     page.drawText("INFORMATIONS DU DOCUMENT", {
       x: 50,
       y,
@@ -1800,17 +1930,22 @@ export class PdfSigningService {
       `Identifiant: ${documentInfo.documentId}`,
       `Fichier: ${documentInfo.fileName}`,
       `Niveau de preuve: ${isReinforced ? "Renforcé - compte vérifié + passkey" : "Standard - code e-mail + consentement"}`,
-      `Empreinte SHA-256: ${documentInfo.documentHash}`,
+      // Each hash names its exact scope: a file cannot contain its own hash,
+      // so the final PDF hash lives in the attestation, not here.
+      `Empreinte du contenu signé (avant page de preuve et scellement): ${documentInfo.documentHash}`,
+      "Empreinte du fichier PDF final: figure dans l'attestation de preuve, un fichier ne pouvant contenir sa propre empreinte",
       `Date de finalisation: ${documentInfo.signedAt.toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "medium", timeZone: "Europe/Paris" })}`,
     ];
 
-    for (const line of lines) {
+    for (const line of lines.flatMap(wrapped)) {
+      ensureSpace(15);
       page.drawText(line, { x: 70, y, size: 9, font });
       y -= 15;
     }
     y -= 20;
 
     // Signers
+    ensureSpace(40);
     page.drawText("SIGNATAIRES", {
       x: 50,
       y,
@@ -1821,6 +1956,7 @@ export class PdfSigningService {
 
     for (let i = 0; i < documentInfo.signers.length; i++) {
       const signer = documentInfo.signers[i];
+      ensureSpace(30);
       page.drawText(`Signataire ${i + 1}:`, {
         x: 70,
         y,
@@ -1829,26 +1965,48 @@ export class PdfSigningService {
       });
       y -= 15;
 
+      // Network data and account identifiers stay in the forensic dossier.
+      // Its salted hash below lets anyone check a record disclosed later.
       const signerLines = [
         `  Nom: ${signer.name}`,
         `  Email: ${signer.email}`,
+        ...(signer.evidenceId
+          ? [`  Identifiant de preuve: ${signer.evidenceId}`]
+          : []),
+        "  Adresse IP: enregistrée dans le dossier probatoire",
         `  Signé le: ${signer.signedAt.toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "medium", timeZone: "Europe/Paris" })}`,
-        `  Adresse IP: ${signer.ip}`,
         `  Type de signature: ${signer.signatureType}`,
         `  Authentification: ${authenticationLabel(signer.authenticationMethod)}`,
-        `  Preuve d'identité: ${identityLabel(signer.identityVerificationMethod)}`,
+        signer.accountAssigned
+          ? "  Attribution du signataire: compte PrivCloud attribué"
+          : "  Attribution du signataire: destinataire désigné par son adresse e-mail",
+        `  ${signer.accountAssigned ? "Vérification du compte" : "Vérification de l'adresse"}: ${verificationLabel(signer.identityVerificationMethod)}`,
         ...(signer.webauthnUserVerified
           ? ["  Vérification locale WebAuthn: oui"]
           : []),
-        ...(signer.signedDocumentHash
-          ? [`  Empreinte source: ${signer.signedDocumentHash}`]
+        ...(signer.transactionBound
+          ? ["  Transaction liée au document: vérifiée"]
           : []),
+        ...(signer.signedDocumentHash
+          ? [
+              `  Empreinte du document source approuvé: ${signer.signedDocumentHash}`,
+            ]
+          : []),
+        `  Empreinte du texte de consentement: ${consentSha256For("SIGN")}`,
         ...(signer.signingIntentHash
-          ? [`  Empreinte du consentement: ${signer.signingIntentHash}`]
+          ? [
+              `  Empreinte du manifeste de transaction: ${signer.signingIntentHash}`,
+            ]
+          : []),
+        ...(signer.forensicRecordSha256
+          ? [
+              `  Empreinte du dossier probatoire: ${signer.forensicRecordSha256}`,
+            ]
           : []),
       ];
 
-      for (const line of signerLines) {
+      for (const line of signerLines.flatMap(wrapped)) {
+        ensureSpace(14);
         page.drawText(line, { x: 80, y, size: 9, font });
         y -= 14;
       }
@@ -1857,6 +2015,7 @@ export class PdfSigningService {
     y -= 20;
 
     // Legal notice
+    ensureSpace(40);
     page.drawText("MENTION LÉGALE", {
       x: 50,
       y,
@@ -1867,11 +2026,15 @@ export class PdfSigningService {
 
     const levelSpecificLegalText = isReinforced
       ? [
-          "Le niveau renforcé impose le compte PrivCloud attribué au destinataire et enregistre sa méthode",
-          "de vérification. Chaque décision est confirmée par WebAuthn et liée à l'empreinte du document.",
-          "Ces éléments renforcent la preuve de contrôle du compte, mais ne constituent pas à eux seuls",
-          "une vérification d'identité civile par un prestataire qualifié. PrivCloud ne présente donc pas",
-          "ce parcours comme une signature avancée conforme à l'article 26, ni comme une signature qualifiée.",
+          "Le profil renforcé de PrivCloud met en œuvre une signature électronique avancée conformément aux",
+          "exigences de l'article 26 du règlement eIDAS. Elle repose sur une assertion WebAuthn transactionnelle",
+          "et s'accompagne d'un scellement cryptographique CMS/PDF du dossier de preuve apposé par PrivCloud.",
+          "Chaque décision fait l'objet d'une assertion WebAuthn dont le challenge est dérivé d'un manifeste",
+          "liant le compte attribué, le consentement et l'empreinte exacte du document. La clé WebAuthn est",
+          "rattachée au compte par une preuve d'enrôlement signée. L'assertion brute, la clé publique et les",
+          "données réseau sont conservées dans un dossier probatoire scellé, communiqué en cas de contestation",
+          "et vérifiable hors ligne grâce aux empreintes ci-dessus. Il ne s'agit ni d'une identité civile",
+          "qualifiée, ni d'une signature électronique qualifiée (QES).",
         ]
       : [
           "Le niveau standard exige un code à usage unique envoyé à l'adresse e-mail attribuée avant",
@@ -1889,25 +2052,37 @@ export class PdfSigningService {
       "Le fichier final comporte une signature CMS/PDF du serveur destinée à détecter toute modification.",
       "Cette signature technique du serveur n'est pas la signature personnelle du signataire.",
       "La piste d'audit est chaînée par SHA-256 à compter de l'activation de cette fonctionnalité.",
+      "Les adresses IP et identifiants techniques, conservés pour établir la preuve et prévenir la fraude,",
+      "ne sont pas diffusés aux parties. Chaque signataire peut obtenir les données qui le concernent.",
       "Lorsque l'horodatage est activé, seule l'empreinte SHA-256 de la valeur de signature est",
       "soumise à la TSA. La réponse RFC 3161 (empreinte, nonce, heure, signature et certificat TSA)",
       "est vérifiée avant que son jeton cryptographique soit incorporé au CMS/PDF, le document n'est",
       "alors finalisé que si ce jeton est valide, sauf dérogation serveur explicitement configurée.",
       "",
       "Le caractère qualifié de l'horodatage dépend du service TSA et du certificat effectivement employés,",
-      "tels qu'inscritsdans la Trusted List applicable. Il ne résulte pas du seul protocole RFC 3161.",
+      "tels qu'inscrits dans la Trusted List applicable. Il ne résulte pas du seul protocole RFC 3161.",
     ];
 
     for (const line of legalText) {
+      ensureSpace(12);
       page.drawText(line, { x: 70, y, size: 8, font });
       y -= 12;
     }
-    y -= 30;
 
-    // Footer
-    page.drawText(
-      `Généré par PrivCloud Sharing - ${new Date().toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "medium", timeZone: "Europe/Paris" })}`,
-      { x: 50, y: 30, size: 7, font, color: rgb(0.5, 0.5, 0.5) },
+    // Footer on every page of the dossier
+    const generatedAt = new Date().toLocaleString("fr-FR", {
+      dateStyle: "long",
+      timeStyle: "medium",
+      timeZone: "Europe/Paris",
+    });
+    const pages = pdfDoc.getPages();
+    pages.forEach((dossierPage, index) =>
+      dossierPage.drawText(
+        pages.length > 1
+          ? `Généré par PrivCloud Sharing - ${generatedAt} - page ${index + 1}/${pages.length}`
+          : `Généré par PrivCloud Sharing - ${generatedAt}`,
+        { x: 50, y: 30, size: 7, font, color: rgb(0.5, 0.5, 0.5) },
+      ),
     );
 
     return Buffer.from(await pdfDoc.save());
@@ -1938,6 +2113,8 @@ export class PdfSigningService {
         width: number;
         height: number;
       };
+      /** Position in the default grid when the signer has no field. */
+      defaultSlot?: { index: number; count: number };
     } = { addApprovalWatermark: true },
   ): Promise<Buffer> {
     const { PDFDocument, rgb, StandardFonts, degrees } =
@@ -2011,7 +2188,10 @@ export class PdfSigningService {
     });
 
     const approvalText = `Lu et approuvé le ${dateStr}`;
-    const nameText = signerInfo.name;
+    const nameText = pdfSafeText(signerInfo.name, fontBold);
+    const signatureText = signerInfo.signatureText
+      ? pdfSafeText(signerInfo.signatureText, font)
+      : undefined;
 
     const visualField = options.signatureField
       ? rawPdfBoxToVisual(
@@ -2032,12 +2212,21 @@ export class PdfSigningService {
       Math.max(visualField?.height || (addMention ? 90 : 70), 50),
       sigHeight,
     );
+    const defaultPosition = defaultSignatureSlotPosition({
+      index: options.defaultSlot?.index ?? 0,
+      count: options.defaultSlot?.count ?? 1,
+      pageWidth: sigWidth,
+      boxWidth: signatureBoxWidth,
+      boxHeight: signatureBoxHeight,
+      rightEdge: sigWidth - 20,
+      baseY: 110,
+    });
     const sigX = visualField
       ? Math.min(Math.max(visualField.x, 0), sigWidth - signatureBoxWidth)
-      : sigWidth - 260;
+      : defaultPosition.x;
     const sigY = visualField
       ? Math.min(Math.max(visualField.y, 0), sigHeight - signatureBoxHeight)
-      : 110;
+      : defaultPosition.y;
     const paddingX = 8;
     const paddingY = 8;
     let signatureImage: any = null;
@@ -2046,19 +2235,24 @@ export class PdfSigningService {
     const signatureMaxWidth = Math.max(20, signatureBoxWidth - paddingX * 2);
 
     if (signerInfo.signatureImage) {
-      signatureImage = await pdfDoc.embedPng(signerInfo.signatureImage);
-      const sigDims = signatureImage.scale(0.5);
-      signatureImageWidth = Math.min(sigDims.width, signatureMaxWidth, 180);
-      signatureImageHeight = Math.min(
-        sigDims.height,
-        Math.max(28, signatureBoxHeight - (addMention ? 42 : 26)),
-        40,
+      signatureImage = await this.embedSignatureImage(
+        pdfDoc,
+        signerInfo.signatureImage,
       );
+      const fitted = fitSignatureImage(signatureImage.scale(0.5), {
+        width: Math.min(signatureMaxWidth, 180),
+        height: Math.min(
+          Math.max(28, signatureBoxHeight - (addMention ? 42 : 26)),
+          40,
+        ),
+      });
+      signatureImageWidth = fitted.width;
+      signatureImageHeight = fitted.height;
     }
 
-    const signatureTextWidth = signerInfo.signatureText
+    const signatureTextWidth = signatureText
       ? Math.min(
-          font.widthOfTextAtSize(signerInfo.signatureText, 14),
+          font.widthOfTextAtSize(signatureText, 14),
           signatureMaxWidth,
         )
       : 0;
@@ -2071,7 +2265,7 @@ export class PdfSigningService {
     );
     const visualSignatureHeight = signatureImage
       ? signatureImageHeight
-      : signerInfo.signatureText
+      : signatureText
         ? 18
         : 24;
 
@@ -2172,13 +2366,13 @@ export class PdfSigningService {
         height: signatureImageHeight,
         rotate: degrees(drawRotation),
       });
-    } else if (signerInfo.signatureText) {
+    } else if (signatureText) {
       // Text-based signature (italic style)
       const signatureOrigin = visualPdfPointToRaw(
         { x: innerX, y: imageY + 10 },
         sigGeometry,
       );
-      signaturePage.drawText(signerInfo.signatureText, {
+      signaturePage.drawText(signatureText, {
         x: signatureOrigin.x,
         y: signatureOrigin.y,
         size: 14,
@@ -2258,7 +2452,7 @@ export class PdfSigningService {
             ? "Mention manuscrite"
             : field.type === "DATE"
               ? "Date"
-              : field.label || "Texte";
+              : pdfSafeText(field.label || "Texte", fontBold);
         const x = Math.min(
           Math.max(visualField.x || 0, 0),
           pageWidth - boxWidth,
@@ -2272,7 +2466,7 @@ export class PdfSigningService {
         const titleSize = 7;
         const valueSize = field.type === "APPROVAL" ? 9 : 8;
         const lineHeight = valueSize + 3;
-        const value = fieldValue.value.trim();
+        const value = pdfSafeText(fieldValue.value.trim(), font);
         const lines = this.wrapPdfText(
           value,
           Math.max(20, boxWidth - paddingX * 2),
@@ -2394,6 +2588,36 @@ export class PdfSigningService {
     };
   }
 
+  private embedSignatureImage(pdfDoc: PDFDocument, bytes: Uint8Array) {
+    return bytes[0] === 0xff && bytes[1] === 0xd8
+      ? pdfDoc.embedJpg(bytes)
+      : pdfDoc.embedPng(bytes);
+  }
+
+  /**
+   * Rejects, at signing time, signature data the final PDF could not draw:
+   * an unsupported or corrupted image would otherwise make the finalization
+   * fail for every signer of the request.
+   */
+  async assertRenderableSignature(
+    signatureData: string,
+    signatureType: string,
+  ): Promise<void> {
+    let visual: SignatureVisual;
+    try {
+      visual = parseSignatureData(signatureData, signatureType);
+    } catch (error: any) {
+      throw new BadRequestException(error?.message || "Invalid signature");
+    }
+    if (visual.kind === "text") return;
+    const { PDFDocument } = await import("pdf-lib");
+    try {
+      await this.embedSignatureImage(await PDFDocument.create(), visual.bytes);
+    } catch {
+      throw new BadRequestException("The signature image could not be read");
+    }
+  }
+
   private wrapPdfText(
     text: string,
     maxWidth: number,
@@ -2444,14 +2668,17 @@ export class PdfSigningService {
     const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const pages = pdfDoc.getPages();
 
-    const initialsText = signerNames
-      .map((name) =>
-        name
-          .split(" ")
-          .map((w) => w[0]?.toUpperCase() || "")
-          .join(""),
-      )
-      .join(" / ");
+    const initialsText = pdfSafeText(
+      signerNames
+        .map((name) =>
+          name
+            .split(" ")
+            .map((w) => [...w][0]?.toUpperCase() || "")
+            .join(""),
+        )
+        .join(" / "),
+      font,
+    );
 
     for (const [pageIndex, page] of pages.entries()) {
       if (

@@ -63,7 +63,7 @@ const fetchPreviewPrefix = async (
 const truncateForPreview = (s: string): string =>
   s.length > MAX_TEXT_PREVIEW_CHARS
     ? s.slice(0, MAX_TEXT_PREVIEW_CHARS) +
-      "\n\n[… truncated — file too large for preview]"
+      "\n\n[... truncated, file too large for preview]"
     : s;
 
 const ensureString = (value: unknown): string =>
@@ -470,7 +470,7 @@ const CodePreview = () => {
         .finally(() => setLoading(false));
     } else {
       // responseType: "text" prevents Axios from auto-parsing JSON files
-      // into objects (which would crash React — error #31).
+      // into objects (which would crash React, error #31).
       api
         .get(`/shares/${shareId}/files/${fileId}?download=false`, {
           responseType: "text",

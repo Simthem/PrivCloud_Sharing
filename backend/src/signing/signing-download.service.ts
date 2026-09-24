@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "src/prisma/prisma.service";
 import { appendSignatureAuditEvent } from "./signing-audit.util";
+import { toVisibleAuditEvent } from "./signing-exposure.util";
 import { FileService } from "src/file/file.service";
 
 @Injectable()
@@ -42,12 +43,15 @@ export class SigningDownloadService {
     const doc = await this.prisma.signatureDocument.findFirst({
       where: {
         id: documentId,
-        OR: [{ creatorId: userId }, { recipients: { some: { userId } } }],
+        OR: [
+          { creatorId: userId },
+          { recipients: { some: { userId } } },
+          ...(await this.recipientEmailMatch(userId)),
+        ],
       },
     });
 
     if (!doc) throw new NotFoundException("Document not found");
-    this.assertSourceAvailable(doc);
     if (doc.status !== "COMPLETED" || !doc.signedFileKey) {
       throw new BadRequestException("Signed document not yet available");
     }
@@ -184,8 +188,6 @@ export class SigningDownloadService {
       throw new NotFoundException("Invalid signing link");
     }
 
-    this.assertSourceAvailable(recipient.document);
-
     if (
       recipient.document.status !== "COMPLETED" ||
       !recipient.document.signedFileKey
@@ -239,6 +241,21 @@ export class SigningDownloadService {
   }
 
   /**
+   * A signer invited by address, before any account was linked to the
+   * request, reaches the document through that address.
+   */
+  private async recipientEmailMatch(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, emailVerifiedAt: true },
+    });
+    // Only an address the account proved it owns.
+    return user?.email && user.emailVerifiedAt
+      ? [{ recipients: { some: { email: user.email, userId: null } } }]
+      : [];
+  }
+
+  /**
    * Get the audit trail for a document.
    */
   async getAuditTrail(documentId: string, userId: string) {
@@ -251,10 +268,11 @@ export class SigningDownloadService {
 
     if (!doc) throw new NotFoundException("Document not found");
 
-    return this.prisma.signatureAuditEvent.findMany({
+    const events = await this.prisma.signatureAuditEvent.findMany({
       where: { documentId },
       orderBy: { createdAt: "asc" },
     });
+    return events.map(toVisibleAuditEvent);
   }
 
   private async createAuditEvent(

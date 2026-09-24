@@ -76,6 +76,14 @@ export class UserDTO {
   @Expose()
   emailVerificationDeletionAt: Date | null;
 
+  // When and how the address was proven (EMAIL_LINK or ADMINISTRATOR). An
+  // automatic exemption keeps emailVerified true but leaves the source empty.
+  @Expose()
+  emailVerifiedAt: Date | null;
+
+  @Expose()
+  emailVerificationSource: string | null;
+
   from(partial: Partial<UserDTO>) {
     const result = plainToClass(UserDTO, partial, {
       excludeExtraneousValues: true,

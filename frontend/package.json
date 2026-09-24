@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-frontend",
-  "version": "1.24.6",
+  "version": "1.25.0",
   "scripts": {
     "dev": "node scripts/copy-pdf-worker.mjs && next dev",
     "prebuild": "node scripts/copy-pdf-worker.mjs && sh scripts/strip-legacy-polyfills.sh",

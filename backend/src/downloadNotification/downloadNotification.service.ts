@@ -113,7 +113,7 @@ export class DownloadNotificationService {
       return;
     }
 
-    // Push already sent immediately in onDownload() — no duplicate here
+    // Push already sent immediately in onDownload(), no duplicate here
 
     // Mark events as notified and update cooldown timestamp
     await this.prisma.downloadEvent.updateMany({

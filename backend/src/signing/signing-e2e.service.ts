@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -12,6 +13,12 @@ import { ConfigService } from "src/config/config.service";
 import { PdfSigningService } from "./pdf-signing.service";
 import { deliverSigningCompletionEmails } from "./signing-mail.util";
 import { TeamNotificationService } from "src/teamNotification/teamNotification.service";
+import * as crypto from "crypto";
+import { SigningEvidenceService } from "./signing-evidence.service";
+import {
+  buildSignerContribution,
+  reconcileSignerContribution,
+} from "./signing-evidence.util";
 
 @Injectable()
 export class SigningE2EService {
@@ -24,6 +31,7 @@ export class SigningE2EService {
     private configService: ConfigService,
     private pdfSigningService: PdfSigningService,
     private teamNotificationService: TeamNotificationService,
+    private signingEvidenceService: SigningEvidenceService,
   ) {}
 
   private assertSourceAvailable(document: {
@@ -71,13 +79,16 @@ export class SigningE2EService {
         name: r.name,
         email: r.email,
         signedAt: r.signedAt!,
-        ip: r.signingIp || "N/A",
         signatureType: r.signatureType || "N/A",
         authenticationMethod: r.authenticationMethod,
         identityVerificationMethod: r.identityVerificationMethod,
         signingIntentHash: r.signingIntentHash,
         signedDocumentHash: r.signedDocumentHash,
         webauthnUserVerified: r.webauthnUserVerified,
+        accountAssigned: Boolean(r.userId),
+        transactionBound: Boolean(r.webauthnTransactionManifest),
+        evidenceId: r.evidenceId,
+        forensicRecordSha256: r.forensicRecordSha256,
       })),
       documentHash,
       signatureLevel: doc.signatureLevel,
@@ -94,10 +105,14 @@ export class SigningE2EService {
     documentId: string,
     userId: string,
     digest: Buffer,
+    sourceDocumentHash?: string,
   ): Promise<Buffer> {
     const doc = await this.prisma.signatureDocument.findFirst({
       where: { id: documentId, creatorId: userId },
-      include: { recipients: { where: { role: "SIGNER" } } },
+      include: {
+        recipients: { where: { role: "SIGNER" } },
+        fields: { include: { fieldValues: true } },
+      },
     });
 
     if (!doc) throw new NotFoundException("Document not found");
@@ -112,8 +127,12 @@ export class SigningE2EService {
     if (!doc.recipients.every((recipient) => recipient.status === "SIGNED")) {
       throw new BadRequestException("Not all signers have signed yet");
     }
+    await this.assertContributionsMatchSignedManifests(doc, sourceDocumentHash);
 
-    const cms = await this.pdfSigningService.signDigest(digest);
+    const cms = await this.pdfSigningService.signDigest(digest, {
+      scope: "pdf-seal",
+      documentId,
+    });
     await this.createAuditEvent(
       documentId,
       "PADES_DIGEST_SIGNED",
@@ -135,10 +154,15 @@ export class SigningE2EService {
     documentId: string,
     userId: string,
     encryptedPdfBuffer: Buffer,
+    finalDocumentHash: string,
+    sourceDocumentHash?: string,
   ) {
     const doc = await this.prisma.signatureDocument.findFirst({
       where: { id: documentId, creatorId: userId },
-      include: { recipients: { where: { role: "SIGNER" } } },
+      include: {
+        recipients: { where: { role: "SIGNER" } },
+        fields: { include: { fieldValues: true } },
+      },
     });
 
     if (!doc) throw new NotFoundException("Document not found");
@@ -155,6 +179,7 @@ export class SigningE2EService {
     if (!allSigned) {
       throw new BadRequestException("Not all signers have signed yet");
     }
+    await this.assertContributionsMatchSignedManifests(doc, sourceDocumentHash);
 
     const padesSignature = await this.prisma.signatureAuditEvent.findFirst({
       where: { documentId, eventType: "PADES_DIGEST_SIGNED" },
@@ -169,6 +194,25 @@ export class SigningE2EService {
     // Store the re-encrypted signed PDF
     const signedKey = `signed/${documentId}/${doc.fileName}`;
     await this.fileService.storeFileByKey(signedKey, encryptedPdfBuffer);
+
+    await this.createAuditEvent(
+      documentId,
+      "FINAL_E2E_CONTAINER_STORED",
+      "client-e2e",
+      undefined,
+      undefined,
+      JSON.stringify({
+        sha256: crypto
+          .createHash("sha256")
+          .update(encryptedPdfBuffer)
+          .digest("hex"),
+      }),
+    );
+    await this.signingEvidenceService.createFinalEvidence(
+      documentId,
+      encryptedPdfBuffer,
+      finalDocumentHash,
+    );
 
     await this.prisma.signatureDocument.update({
       where: { id: documentId },
@@ -295,6 +339,10 @@ export class SigningE2EService {
             signatureData: true,
             signatureType: true,
             order: true,
+            userId: true,
+            signingIntentHash: true,
+            signedDocumentHash: true,
+            webauthnTransactionManifest: true,
           },
           orderBy: { order: "asc" },
         },
@@ -331,6 +379,76 @@ export class SigningE2EService {
       signers: doc.recipients,
       fields: doc.fields,
     };
+  }
+
+  /**
+   * The requester's browser rebuilds the final PDF from the decrypted source.
+   * Before sealing, every signer's applied contribution and the source hash
+   * reported by the requester must match the manifest that signer approved.
+   */
+  private async assertContributionsMatchSignedManifests(
+    doc: {
+      id: string;
+      signatureLevel: string;
+      recipients: Array<{
+        id: string;
+        name: string;
+        status: string;
+        userId: string | null;
+        signatureType: string | null;
+        signatureData: string | null;
+        signingIntentHash: string | null;
+        webauthnTransactionManifest: string | null;
+      }>;
+      fields: Array<{
+        fieldValues: Array<{ recipientId: string; fieldId: string; value: string }>;
+      }>;
+    },
+    sourceDocumentHash: string | undefined,
+  ) {
+    if (doc.signatureLevel !== "REINFORCED") return;
+    if (!sourceDocumentHash) {
+      throw new BadRequestException(
+        "The SHA-256 hash of the decrypted source document is required",
+      );
+    }
+    const problems: string[] = [];
+    for (const recipient of doc.recipients) {
+      // Signed before manifests were persisted, nothing to reconcile.
+      if (!recipient.webauthnTransactionManifest) continue;
+      problems.push(
+        ...reconcileSignerContribution({
+          manifestJson: recipient.webauthnTransactionManifest,
+          signingIntentHash: recipient.signingIntentHash,
+          documentId: doc.id,
+          recipientId: recipient.id,
+          signerAccountId: recipient.userId,
+          sourceSha256: sourceDocumentHash,
+          contribution: buildSignerContribution({
+            signatureType: recipient.signatureType,
+            signatureData: recipient.signatureData,
+            fieldValues: doc.fields.flatMap((field) =>
+              field.fieldValues.filter(
+                (value) => value.recipientId === recipient.id,
+              ),
+            ),
+          }),
+        }).map((problem) => `${recipient.name}: ${problem}`),
+      );
+    }
+    if (problems.length > 0) {
+      await this.createAuditEvent(
+        doc.id,
+        "EVIDENCE_RECONCILIATION_FAILED",
+        "system",
+        undefined,
+        undefined,
+        JSON.stringify({ problems }),
+      );
+      throw new ConflictException(
+        `Signer contributions do not match the signed manifests: ${problems.join(", ")}`,
+      );
+    }
   }
 
   private async createAuditEvent(

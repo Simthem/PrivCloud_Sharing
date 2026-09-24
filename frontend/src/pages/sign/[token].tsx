@@ -49,7 +49,14 @@ import {
   rememberPostAuthRedirectTarget,
 } from "../../utils/authRedirect.util";
 import toast from "../../utils/toast.util";
-import { importKeyFromBase64, decryptFileAuto } from "../../utils/crypto.util";
+import { describePasskeyError } from "../../utils/passkeyError.util";
+import {
+  importKeyFromBase64,
+  decryptFileAuto,
+  getUserKey,
+  wrapReverseShareKey,
+} from "../../utils/crypto.util";
+import { sha256Hex } from "../../services/pades-client.service";
 
 const readableDangerAlertStyles = {
   root: {
@@ -71,6 +78,22 @@ const readableDangerAlertStyles = {
 const SignPage = () => {
   const router = useRouter();
   const intl = useIntl();
+  // The browser shows nothing when a passkey ceremony fails, so the reason
+  // is logged and translated into something the signer can act on.
+  const passkeyErrorToast = (error: unknown, fallbackId: string) => {
+    console.error("Passkey ceremony failed", error);
+    const { reason, detail } = describePasskeyError(error);
+    toast.error(
+      reason === "server"
+        ? detail || intl.formatMessage({ id: fallbackId })
+        : reason === "unknown"
+          ? intl.formatMessage({ id: fallbackId })
+          : intl.formatMessage(
+              { id: `signing.passkey.error.${reason}` },
+              { origin: window.location.origin },
+            ),
+    );
+  };
   const { token } = router.query;
   const tokenStr = Array.isArray(token) ? token[0] : token || "";
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -94,6 +117,11 @@ const SignPage = () => {
   // --- E2E: read encryption key from URL fragment (#key=...) ---
   const [e2eKey, setE2eKey] = useState<string | null>(null);
   const [decryptedBlobUrl, setDecryptedBlobUrl] = useState<string | null>(null);
+  // SHA-256 of the exact decrypted bytes shown to the signer, computed once at
+  // decryption: the blob: URL cannot be fetched under the page's CSP.
+  const [displayedSourceHash, setDisplayedSourceHash] = useState<string | null>(
+    null,
+  );
   const [previewError, setPreviewError] = useState<
     "unavailable" | "decrypt" | null
   >(null);
@@ -148,6 +176,36 @@ const SignPage = () => {
   const allRequiredFieldsComplete = fillableFields.every(fieldIsComplete);
 
   const isReinforced = signingData?.document.signatureLevel === "REINFORCED";
+
+  // Keep the document key for the signer's own account, wrapped with its
+  // master key, so the signed PDF stays readable from the signatures page
+  // once the link is gone.
+  const e2eKeyStoredRef = useRef(false);
+  useEffect(() => {
+    if (
+      !e2eKey ||
+      !user ||
+      !signingData?.document.isE2EEncrypted ||
+      signingData.recipient.hasWrappedE2EKey ||
+      user.email.toLowerCase() !== signingData.recipient.email.toLowerCase() ||
+      e2eKeyStoredRef.current
+    )
+      return;
+    const masterKeyB64 = getUserKey();
+    if (!masterKeyB64) return;
+    e2eKeyStoredRef.current = true;
+    void (async () => {
+      try {
+        const wrappedKey = await wrapReverseShareKey(
+          await importKeyFromBase64(e2eKey),
+          await importKeyFromBase64(masterKeyB64),
+        );
+        await signingService.storeRecipientE2EKey(tokenStr, wrappedKey);
+      } catch {
+        // The signing link keeps working without the stored copy.
+      }
+    })();
+  }, [e2eKey, user, signingData, tokenStr]);
   const isEmailVerified = Boolean(signingData?.recipient.emailVerified);
   const hasPendingEmailOtp = Boolean(
     emailOtpSent || signingData?.emailVerificationCodePending,
@@ -268,10 +326,12 @@ const SignPage = () => {
           cryptoKey,
           5_000_000,
         );
+        const sourceHash = await sha256Hex(new Uint8Array(decryptedBuf));
         if (cancelled) return;
         const blob = new Blob([decryptedBuf], { type: "application/pdf" });
         const url = URL.createObjectURL(blob);
         blobUrlRef.current = url;
+        setDisplayedSourceHash(sourceHash);
         setDecryptedBlobUrl(url);
         setPreviewError(null);
       } catch {
@@ -322,10 +382,10 @@ const SignPage = () => {
     onSuccess: async () => {
       await refetchSigningData();
       setStep(2);
-      toast.success("Passkey enregistrée. Votre compte est prêt à signer.");
+      toast.success(intl.formatMessage({ id: "signing.passkey.registered" }));
     },
-    onError: () =>
-      toast.error("L'enregistrement de la passkey a été annulé ou a échoué."),
+    onError: (error) =>
+      passkeyErrorToast(error, "signing.passkey.error.registration"),
   });
 
   const sendEmailOtpMutation = useMutation({
@@ -356,6 +416,14 @@ const SignPage = () => {
   });
 
   // Sign mutation
+  // Back to the start of the signing flow: fresh request data and a new
+  // reading confirmation, since the document may have changed meanwhile.
+  const restartIfStale = (error: unknown) => {
+    if (describePasskeyError(error).reason !== "stale") return;
+    setReviewConfirmed(false);
+    void refetchSigningData();
+  };
+
   const signMutation = useMutation({
     mutationFn: async () => {
       const fieldsToSubmit = fillableFields
@@ -365,10 +433,17 @@ const SignPage = () => {
         }))
         .filter((field) => field.value.length > 0);
 
+      const displayedDocumentHash = signingData?.document.isE2EEncrypted
+        ? displayedSourceHash || undefined
+        : undefined;
+      if (signingData?.document.isE2EEncrypted && !displayedDocumentHash) {
+        throw new Error("The displayed E2E document is not available");
+      }
       const payload = {
         signatureData: signatureImage || "",
         signatureType,
         fieldValues: fieldsToSubmit,
+        displayedDocumentHash,
       };
       if (!isReinforced) {
         return signingService.signDocument(tokenStr, payload);
@@ -390,10 +465,13 @@ const SignPage = () => {
       });
     },
     onSuccess: () => {
-      toast.success("Document signé avec succès !");
+      toast.success(intl.formatMessage({ id: "signing.toast.signed" }));
       setStep(3);
     },
-    onError: () => toast.error("Erreur lors de la signature du document"),
+    onError: (error) => {
+      passkeyErrorToast(error, "signing.toast.sign-error");
+      restartIfStale(error);
+    },
   });
 
   const handleSign = () => {
@@ -435,10 +513,13 @@ const SignPage = () => {
       });
     },
     onSuccess: () => {
-      toast.success("Document refusé");
+      toast.success(intl.formatMessage({ id: "signing.toast.rejected" }));
       setStep(3);
     },
-    onError: () => toast.error("Erreur lors du refus"),
+    onError: (error) => {
+      passkeyErrorToast(error, "signing.toast.reject-error");
+      restartIfStale(error);
+    },
   });
 
   if (!tokenStr) {
@@ -669,7 +750,7 @@ const SignPage = () => {
 
               <Alert variant="light" color="violet" icon={<TbShieldCheck />}>
                 <Text size="sm">
-                  <strong>Alignement eIDAS — niveau renforcé</strong>
+                  <strong>Alignement eIDAS : niveau renforcé</strong>
                   <br />
                   {intl.formatMessage({
                     id: "signing.sign.legal.reinforced-short",
@@ -893,7 +974,7 @@ const SignPage = () => {
                       <Stack align="center" gap="xs">
                         <Loader />
                         <Text size="sm" c="dimmed">
-                          Déchiffrement du document…
+                          Déchiffrement du document...
                         </Text>
                       </Stack>
                     </Center>
@@ -904,7 +985,7 @@ const SignPage = () => {
                       variant="filled"
                       color="blue"
                       icon={<TbLock />}
-                      title="Document chiffré — clé manquante"
+                      title="Document chiffré : clé manquante"
                       styles={{
                         root: {
                           backgroundColor: "var(--mantine-color-blue-9)",
@@ -1096,11 +1177,11 @@ const SignPage = () => {
                     mx="auto"
                     px="xs"
                   >
-                    {intl.formatMessage({
-                      id: isReinforced
-                        ? "signing.sign.legal.reinforced"
-                        : "signing.sign.legal.standard",
-                    })}
+                    {isReinforced
+                      ? signingData?.signingConsent.text
+                      : intl.formatMessage({
+                          id: "signing.sign.legal.standard",
+                        })}
                   </Text>
 
                   <Group justify="center" mt="md" wrap="wrap" gap="sm">
@@ -1123,6 +1204,22 @@ const SignPage = () => {
                       Refuser
                     </Button>
                   </Group>
+                  {isReinforced && (
+                    <Center>
+                      <Button
+                        variant="subtle"
+                        size="xs"
+                        leftSection={<TbFingerprint size={14} />}
+                        onClick={() => registerPasskeyMutation.mutate()}
+                        loading={registerPasskeyMutation.isPending}
+                        disabled={!webAuthnSupported || signMutation.isPending}
+                      >
+                        {intl.formatMessage({
+                          id: "signing.passkey.register-another",
+                        })}
+                      </Button>
+                    </Center>
+                  )}
                 </>
               )}
             </Stack>

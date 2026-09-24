@@ -39,6 +39,7 @@ import * as yup from "yup";
 import Meta from "../../components/Meta";
 import LanguagePicker from "../../components/account/LanguagePicker";
 import PushNotificationSection from "../../components/account/PushNotificationSection";
+import SigningPasskeysSection from "../../components/account/SigningPasskeysSection";
 import ThemeSwitcher from "../../components/account/ThemeSwitcher";
 import showEnableTotpModal from "../../components/account/showEnableTotpModal";
 import useTranslate from "../../hooks/useTranslate.hook";
@@ -312,7 +313,7 @@ const E2EEncryptionSection = ({
   const handleImport = async () => {
     setImportError("");
     // Strip everything that is not a valid base64url character.
-    // Prevents invisible chars (ZWSP, NBSP, newlines …) from corrupting
+    // Prevents invisible chars (ZWSP, NBSP, newlines ...) from corrupting
     // the decoded bytes and producing a different SHA-256 hash.
     const sanitized = importValue.replace(/[^A-Za-z0-9_-]/g, "");
     if (!sanitized) {
@@ -335,7 +336,7 @@ const E2EEncryptionSection = ({
         if (!valid) {
           console.debug(
             "[E2E import] verification failed -- submitted hash:",
-            hash.slice(0, 8) + "…",
+            hash.slice(0, 8) + "...",
             "key length:",
             sanitized.length,
           );
@@ -1226,6 +1227,7 @@ const Account = () => {
           </Tabs>
         </Paper>
         <E2EEncryptionSection refreshUser={refreshUser} />
+        <SigningPasskeysSection />
         <PushNotificationSection />
         <Paper withBorder p="xl" mt="lg">
           <Title order={5} mb="xs">

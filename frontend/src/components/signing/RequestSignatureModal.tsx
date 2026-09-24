@@ -33,8 +33,10 @@ import {
   TbRotateClockwise,
   TbZoomIn,
   TbZoomOut,
+  TbAlertTriangle,
 } from "react-icons/tb";
 import { useIntl } from "react-intl";
+import useReinforcedEligibility from "../../hooks/useReinforcedEligibility.hook";
 import useUser from "../../hooks/user.hook";
 import signingService, {
   CreateSignatureRequestPayload,
@@ -56,6 +58,7 @@ import {
   pageSizeMillimeters,
   normalizedPdfRotation,
 } from "../../utils/pdfPlacement.util";
+import { buildAutoSignatureFields } from "../../utils/signatureAutoFields.util";
 import {
   detectSignaturePlacement,
   type DetectedSignaturePlacement,
@@ -159,6 +162,10 @@ export default function RequestSignatureModal({
       },
     },
   });
+  const ineligibleEmails = useReinforcedEligibility(
+    form.values.signatureLevel,
+    form.values.recipients,
+  );
 
   const [loading, setLoading] = useState(false);
   const [createdRecipients, setCreatedRecipients] = useState<
@@ -169,6 +176,9 @@ export default function RequestSignatureModal({
   const [previewPage, setPreviewPage] = useState(1);
   const [previewZoom, setPreviewZoom] = useState(100);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewData, setPdfPreviewData] = useState<ArrayBuffer | null>(
+    null,
+  );
   const [pdfLayoutLoading, setPdfLayoutLoading] = useState(false);
   const [pdfLayoutError, setPdfLayoutError] = useState(false);
   const [detectedSignaturePlacement, setDetectedSignaturePlacement] =
@@ -192,6 +202,7 @@ export default function RequestSignatureModal({
     setPreviewPage(1);
     setPreviewZoom(100);
     setPdfPreviewUrl(null);
+    setPdfPreviewData(null);
     setPdfLayoutError(false);
     setDetectedSignaturePlacement(null);
     setSignatureDetectionLoading(false);
@@ -238,6 +249,7 @@ export default function RequestSignatureModal({
         );
         setPageLayouts(layouts);
         setPdfPreviewUrl(objectUrl);
+        setPdfPreviewData(pdfBytes.slice(0));
         setSignatureDetectionLoading(true);
         try {
           const detected = await detectSignaturePlacement(pdfBytes.slice(0));
@@ -288,44 +300,70 @@ export default function RequestSignatureModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageLayouts]);
 
+  const autoSignerEmailsKey = form.values.recipients
+    .filter((recipient) => recipient.role === "SIGNER")
+    .map((recipient) => recipient.email.trim())
+    .join("\n");
+  const manualSignatureFieldsKey = form.values.fields
+    .filter((field) => field.type === "SIGNATURE" && field.autoDetected !== true)
+    .map((field) => field.recipientEmail.trim())
+    .join("\n");
+
   useEffect(() => {
     const fields = form.values.fields;
-    const autoDetectedIndex = fields.findIndex(
-      (field) => field.autoDetected === true,
-    );
+    const kept = fields.filter((field) => field.autoDetected !== true);
 
     if (!detectedSignaturePlacement) {
-      if (autoDetectedIndex >= 0) {
-        form.removeListItem("fields", autoDetectedIndex);
-      }
+      if (kept.length !== fields.length) form.setFieldValue("fields", kept);
       return;
     }
 
-    const firstSignerEmail =
-      form.values.recipients.find((recipient) => recipient.role === "SIGNER")
-        ?.email || "";
-    const detectedField: FieldEntry = {
-      recipientEmail: firstSignerEmail,
+    // A signature field left unassigned on purpose is shared by the signers
+    // and split between them at finalization, so no suggestion is added.
+    if (
+      kept.some((field) => field.type === "SIGNATURE" && !field.recipientEmail)
+    ) {
+      if (kept.length !== fields.length) form.setFieldValue("fields", kept);
+      return;
+    }
+
+    // One block per signer who has no signature field of their own yet.
+    const placedEmails = new Set(
+      kept
+        .filter((field) => field.type === "SIGNATURE")
+        .map((field) => field.recipientEmail.trim().toLowerCase()),
+    );
+    const signerEmails = autoSignerEmailsKey
+      .split("\n")
+      .filter((email) => email && !placedEmails.has(email.toLowerCase()));
+    if (placedEmails.size > 0 && signerEmails.length === 0) {
+      if (kept.length !== fields.length) form.setFieldValue("fields", kept);
+      return;
+    }
+
+    const detectedFields: FieldEntry[] = buildAutoSignatureFields(
+      detectedSignaturePlacement,
+      signerEmails,
+      pageSizeMillimeters(getPageLayout(detectedSignaturePlacement.page)),
+    ).map((placement) => ({
+      ...placement,
       type: "SIGNATURE",
       page: detectedSignaturePlacement.page,
-      leftMm: detectedSignaturePlacement.leftMm,
-      topMm: detectedSignaturePlacement.topMm,
-      widthMm: detectedSignaturePlacement.widthMm,
-      heightMm: detectedSignaturePlacement.heightMm,
       required: true,
       label: "",
       autoDetected: true,
-    };
-
-    if (autoDetectedIndex >= 0) {
-      form.setFieldValue(`fields.${autoDetectedIndex}`, detectedField);
-    } else if (!fields.some((field) => field.type === "SIGNATURE")) {
-      form.insertListItem("fields", detectedField);
-    }
-    // The detected placement is the only trigger. Form updates are performed
-    // deliberately here so the suggestion becomes a real editable field.
+    }));
+    form.setFieldValue("fields", [...kept, ...detectedFields]);
+    // The detected placement, the signers and their manual fields are the only
+    // triggers. Form updates are performed deliberately here so the
+    // suggestions become real editable fields, one per signer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detectedSignaturePlacement]);
+  }, [
+    detectedSignaturePlacement,
+    autoSignerEmailsKey,
+    manualSignatureFieldsKey,
+    pageLayouts,
+  ]);
 
   const createMutation = useMutation({
     mutationFn: (data: CreateSignatureRequestPayload) =>
@@ -522,11 +560,11 @@ export default function RequestSignatureModal({
           : layout,
       ),
     );
-    if (!pdfPreviewUrl) return;
+    if (!pdfPreviewUrl || !pdfPreviewData) return;
     try {
-      const source = await fetch(pdfPreviewUrl).then((response) =>
-        response.arrayBuffer(),
-      );
+      // The bytes are already in memory, and fetching the blob: URL is
+      // refused by the connect-src Content Security Policy.
+      const source = pdfPreviewData.slice(0);
       const { PDFDocument, degrees } = await import("pdf-lib");
       const pdf = await PDFDocument.load(source);
       const page = pdf.getPages()[pageNumber - 1];
@@ -542,6 +580,7 @@ export default function RequestSignatureModal({
         if (current) URL.revokeObjectURL(current);
         return rotatedUrl;
       });
+      setPdfPreviewData(rotatedBytes.buffer);
       setSignatureDetectionLoading(true);
       try {
         const detected = await detectSignaturePlacement(
@@ -919,6 +958,15 @@ export default function RequestSignatureModal({
                     <TextInput
                       placeholder={t("signing.modal.recipient.email")}
                       style={{ flex: 1.5 }}
+                      description={
+                        ineligibleEmails.has(
+                          form.values.recipients[idx].email.trim().toLowerCase(),
+                        ) ? (
+                          <Text span size="xs" c="orange">
+                            {t("signing.new.reinforced.ineligible")}
+                          </Text>
+                        ) : undefined
+                      }
                       {...form.getInputProps(`recipients.${idx}.email`)}
                     />
                     <Select
@@ -1323,6 +1371,11 @@ export default function RequestSignatureModal({
               </Stack>
             </div>
 
+            {ineligibleEmails.size > 0 && (
+              <Alert color="orange" icon={<TbAlertTriangle size={16} />}>
+                {t("signing.new.reinforced.ineligible-alert")}
+              </Alert>
+            )}
             {/* Submit */}
             <Group justify="right" mt="md">
               <Button variant="default" onClick={handleClose}>
@@ -1330,6 +1383,7 @@ export default function RequestSignatureModal({
               </Button>
               <Button
                 type="submit"
+                disabled={ineligibleEmails.size > 0}
                 loading={loading || createMutation.isPending}
               >
                 {t("signing.modal.submit")}

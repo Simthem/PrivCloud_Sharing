@@ -1,6 +1,6 @@
 {
   "name": "scripts",
-  "version": "1.24.6",
+  "version": "1.25.0",
   "scripts": {
     "generate-example-config": "ts-node generate-example-config.ts"
   },

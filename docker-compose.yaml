@@ -67,7 +67,9 @@ services:
       # -- PDF PAdES Signing Certificate --
       - SIGNING_CERTIFICATE_PATH=/opt/app/backend/data/signing/certificate.p12
       - SIGNING_CERTIFICATE_PASSWORD=XXXXXXXXXX
+      - SIGNING_EVIDENCE_RETENTION_YEARS=${SIGNING_EVIDENCE_RETENTION_YEARS:-10}
       # - SIGNING_TSA_URL=https://freetsa.org/tsr  # RFC 3161 TSA (default) -- Prod -> http://timestamp.sectigo.com
+      # - SIGNING_TSA_TRUSTED_LIST_URL=https://tsl.digital.gob.es/TSL.xml  # daily check of a qualified TSA, trace e-mailed to admins
     volumes:
       - "./data:/opt/app/backend/data"
       - "./data/images:/opt/app/frontend/public/img"

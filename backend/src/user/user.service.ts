@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import * as argon from "argon2";
@@ -33,6 +34,24 @@ export class UserSevice {
 
   async list() {
     return await this.prisma.user.findMany();
+  }
+
+  /**
+   * An administrator confirms, out of band, that the address belongs to the
+   * user. The source is recorded so evidence never presents it as a link
+   * confirmation.
+   */
+  async adminMarkEmailVerified(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException("User not found");
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        emailVerifiedAt: new Date(),
+        emailVerificationSource: "ADMINISTRATOR",
+        emailVerificationDeletionStartedAt: null,
+      },
+    });
   }
 
   async get(id: string) {
@@ -110,6 +129,14 @@ export class UserSevice {
       const hash = user.password && (await argon.hash(user.password));
       const { password: _password, ...userData } = user as Record<string, unknown>;
 
+      // A proven address says nothing about a new one: whatever happens to
+
+      // the exemption, the proof accepted by the reinforced signature is lost.
+
+      const addressChanged =
+
+        !!current && !!user.email && user.email !== current.email;
+
       const verificationData = reverifyOnEmailChange
         ? {
             // A still-unverified account keeps its original J+5/J+14 clock;
@@ -128,6 +155,7 @@ export class UserSevice {
           ...(userData as Prisma.UserUpdateInput),
           password: hash,
           ...verificationData,
+          ...(addressChanged ? { emailVerificationSource: null } : {}),
         },
       });
 
@@ -283,8 +311,8 @@ export class UserSevice {
     if (!match) {
       this.logger.debug(
         `[E2E verify] hash mismatch for user ${userId} -- ` +
-          `stored: ${user.encryptionKeyHash.slice(0, 8)}… ` +
-          `submitted: ${keyHash.slice(0, 8)}…`,
+          `stored: ${user.encryptionKeyHash.slice(0, 8)}... ` +
+          `submitted: ${keyHash.slice(0, 8)}...`,
       );
     }
     return match;

@@ -248,7 +248,10 @@ export class EmailVerificationService {
           emailVerifiedAt: null,
           emailVerificationDeletionStartedAt: null,
         },
-        data: { emailVerifiedAt: verifiedAt },
+        data: {
+          emailVerifiedAt: verifiedAt,
+          emailVerificationSource: "EMAIL_LINK",
+        },
       }),
       // Every sibling link becomes useless once the address is confirmed.
       this.prisma.emailVerificationToken.deleteMany({

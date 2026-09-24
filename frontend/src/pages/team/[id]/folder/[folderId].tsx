@@ -645,7 +645,7 @@ const TeamFolderPage = () => {
 
   return (
     <>
-      <Meta title={`${t("team.folder.breadcrumb.folders")} – ${folder.name}`} />
+      <Meta title={`${t("team.folder.breadcrumb.folders")} - ${folder.name}`} />
       <Container size="lg" mt="xl" px={0}>
         <Breadcrumbs mb="md">
           <Link

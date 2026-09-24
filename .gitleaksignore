@@ -1,0 +1,4 @@
+# Historical placeholder from the upstream Pingvin Share example environment
+# file, removed long ago. It was never a deployed secret and no current code
+# reads it.
+4bab33ad8a79302fd94c6d92a3ddf87cdff8b214:backend/.env.example:generic-api-key:12

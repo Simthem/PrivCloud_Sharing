@@ -437,7 +437,7 @@ export async function runCollection(collectionPath, options = {}) {
     }
     pm.response = response;
 
-    log(`  ${request.method} ${request.url} → ${response.code} [${label}]`);
+    log(`  ${request.method} ${request.url} -> ${response.code} [${label}]`);
     runScripts(collectScripts(chain, "test"), "test");
   }
 

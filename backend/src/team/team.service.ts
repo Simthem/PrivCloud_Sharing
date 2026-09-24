@@ -848,13 +848,11 @@ export class TeamService {
       },
     });
 
-    if (memberships.length === 0) return [];
-
     const results: {
-      teamId: string;
-      teamName: string;
-      folderId: string;
-      folderName: string;
+      teamId: string | null;
+      teamName: string | null;
+      folderId: string | null;
+      folderName: string | null;
       shareId: string;
       fileId: string;
       fileName: string;
@@ -1012,6 +1010,39 @@ export class TeamService {
       }
     }
 
+    // Then the user's own shares, outside any team folder.
+    const personalShares = await this.prisma.share.findMany({
+      where: {
+        creatorId: userId,
+        teamFolderId: null,
+        uploadLocked: true,
+        OR: [
+          { expiration: { gt: new Date() } },
+          { expiration: { lt: NEVER_EXPIRES_CUTOFF_DATE } },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        isE2EEncrypted: true,
+        files: { select: { id: true, name: true } },
+      },
+    });
+    for (const share of personalShares) {
+      for (const file of share.files) {
+        if (!file.name.toLowerCase().endsWith(".pdf")) continue;
+        results.push({
+          teamId: null,
+          teamName: null,
+          folderId: null,
+          folderName: null,
+          shareId: share.id,
+          fileId: file.id,
+          fileName: file.name,
+          isE2EEncrypted: share.isE2EEncrypted,
+        });
+      }
+    }
     return results;
   }
 
@@ -3363,7 +3394,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
   }
 
   // =========================================================================
-  // PLATFORM ADMIN – FULL MANAGEMENT
+  // PLATFORM ADMIN - FULL MANAGEMENT
   // =========================================================================
 
   async adminGetTeamDetails(teamId: string) {

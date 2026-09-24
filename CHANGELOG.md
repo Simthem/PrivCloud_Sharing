@@ -1,5 +1,176 @@
 ## [Unreleased]
 
+## [1.25.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.6...v1.25.0) (2026-09-24)
+
+### Features
+
+- **reinforced signatures -- advanced electronic signature profile:** the
+  reinforced profile implements an advanced electronic signature in accordance
+  with the requirements of Article 26 of the eIDAS Regulation. Each decision is
+  a WebAuthn assertion whose challenge is derived from a canonical transaction
+  manifest binding the displayed document hash, the versioned consent text, the
+  signer account, the recipient, the action, the field values, the signature
+  image hash and the request expiry. The raw assertion, the public key and a
+  platform-signed passkey enrolment record are frozen with each decision.
+- **multi-signer requests -- rebuild every contribution at finalization:** the
+  sealed PDF is rebuilt from the exact source every signer approved, and each
+  applied signature image and field value is reconciled with the manifest that
+  signer confirmed, including end-to-end encrypted requests finalized in the
+  requester's browser. The approved source travels inside the sealed PDF as the
+  `privcloud-source.pdf` attachment.
+- **signature areas -- one non-overlapping slot per signer:** request forms
+  place a signature field for each signer automatically, and the finalized PDF
+  splits a shared area into slots large enough for drawn, uploaded or typed
+  signatures, so signatures are never stacked on top of each other.
+- **evidence -- separate the shared attestation from the forensic dossier:**
+  every party receives a platform-signed attestation holding the identity
+  needed, a random evidence identifier, the method, the document and consent
+  hashes and the salted SHA-256 of each signer record. IP address, user agent,
+  directory identifiers and raw WebAuthn values stay in a platform-signed
+  forensic dossier bound to the attestation by its hash. Signers download their
+  own records, and only an instance administrator exports the full dossier,
+  each export being audited.
+- **certificate page -- scoped hashes and precise wording:** each hash states
+  what it covers (signed content, approved source, consent text, transaction
+  manifest, forensic dossier), signer attribution and account verification are
+  shown separately, the IP address is referenced as recorded in the forensic
+  dossier, and long certificates are paginated.
+- **seal PKI -- three-level certificate hierarchy:**
+  `scripts/generate-signing-cert.sh` now builds PrivCloud Root CA, PrivCloud
+  Signing CA and a five-year PrivCloud Sharing PDF Signing certificate, embeds
+  the chain in the P12 and exports `root-ca.pem` as the public trust anchor. An
+  existing root is reused when the seal certificate is renewed.
+- **RFC 3161 timestamps -- archive the raw exchanges:** every timestamp request
+  and response is stored and joined to the evidence, so the nonce and the
+  untouched TSA answer remain checkable.
+- **qualified TSA -- daily Trusted List monitoring:** a scheduled job downloads
+  the Trusted List of the TSA, verifies its XML signature and that the signed
+  EU List of Trusted Lists authorizes its signer, then confirms that every
+  pinned TSA certificate authority is still a granted qualified time stamp
+  service. The trace is stored, joined to the evidence of later requests and
+  e-mailed to the instance administrators. `SIGNING_TSA_REQUIRE_QUALIFIED_STATUS`
+  optionally refuses to timestamp without a recent successful check.
+- **offline verifier -- check both evidence files independently:**
+  `npm run verify:evidence` validates the attestation, the forensic dossier,
+  the WebAuthn assertions, the CMS seals and their certificate chain, the
+  RFC 3161 tokens, the Trusted List and the EU List of Trusted Lists, and
+  `--verbose` prints a report section by section for an expert.
+- **user administration -- account security actions:** administrators can
+  mark an e-mail address as verified after an out-of-band check, reset a
+  second factor and reset the signing passkeys of an account, each action
+  being logged.
+- **signing passkeys -- manage and replace them:** the account page lists the
+  signing passkeys with their enrolment and last-use dates and lets the owner
+  remove one, and the signing page offers to enrol a new passkey when the
+  previous one was deleted from the device.
+- **reinforced requests -- check eligibility before sending:** request forms
+  warn about recipients whose account cannot sign at the reinforced level and
+  block the submission until the list is valid.
+- **failed finalizations -- retry from the request page:** a request left in
+  the failed state can be finalized again instead of remaining blocked.
+- **signature requests -- choose any accessible PDF:** the new request page
+  lists the PDFs of every team folder the user may request signatures in,
+  grouped by team and folder, followed by the user's own files, so a request
+  can be sent from outside a team as well.
+- **end-to-end encrypted requests -- signed PDF from the signer's account:**
+  when a signer opens the signing link while signed in, the browser keeps the
+  document key wrapped with that account's own master key. The signatures page
+  then decrypts and downloads the signed PDF without the link, and the server
+  still cannot read the key.
+
+### Bug Fixes
+
+- **passkey confirmation -- stop rejecting valid assertions:** the transaction
+  challenge is handed to WebAuthn as bytes, which removes the conflict error
+  raised when signing, and an expired confirmation now restarts the signing
+  flow instead of leaving the page stuck.
+- **passkey errors -- explain what the browser refused:** wrong address,
+  cancelled or timed-out ceremony, already registered authenticator and
+  missing user verification each produce a specific message.
+- **signing preview -- open documents stored in shares:** the preview no
+  longer fails on files kept in a share storage key.
+- **end-to-end signing -- hash the document without a blocked fetch:** the
+  displayed document hash is computed at decryption time, so the content
+  security policy no longer blocks the confirmation.
+- **PDF rendering -- accept every signer name and signature format:** names
+  outside the WinAnsi character set are transliterated instead of crashing the
+  finalization, JPEG signature images are embedded, typed signatures are drawn
+  as text and uploaded images are normalized.
+- **date fields -- sign the value that is stored:** default dates are
+  committed in the manifest exactly as they are persisted.
+- **signing evidence -- keep it after source deletion:** the finalized PDF and
+  its evidence stay downloadable for the retention period, and the purge now
+  removes the forensic objects as well.
+- **audit timeline -- show the recorded event and actor:** the request page
+  reads the fields the audit trail actually stores.
+- **reinforced requests -- explain refused recipients:** creating a request for
+  an account without a proven e-mail address now answers with the reason
+  instead of a bare 400 error.
+- **signed PDF download -- reach signers invited by address:** a signer whose
+  account was created after the request, and whose address is verified, can
+  now download the signed PDF from the signatures page, as the page already
+  showed the document.
+- **Trusted List monitoring -- retry and explain a failed download:** a check
+  that cannot download the list is retried an hour later, and after a restart
+  instead of the next day. The trace and the log state the cause.
+- **recipient lookup on SQLite -- match e-mail addresses without crashing:**
+  the case-insensitive search for recipient accounts uses a portable query, so
+  signature requests no longer fail on SQLite deployments.
+
+### Security
+
+- **signing requests -- expose only what each party needs:** document and
+  audit endpoints return a whitelisted view, so signing tokens, one-time code
+  hashes and network data of other recipients are no longer sent to the
+  browser.
+- **e-mail one-time codes -- bound every attempt:** a code accepts five wrong
+  entries and a recipient fifteen in total, resending a code no longer resets the
+  counter, and the feature answers 503 when SMTP is not configured instead of
+  failing silently. Existing e-mail code signatures keep working.
+- **account verification -- count only real proofs:** only a confirmed
+  verification link or an administrator decision proves an e-mail address for
+  a reinforced signature, and an address change clears that proof.
+- **signing tokens -- accept only random identifiers:** client-provided
+  signing tokens must be version 4 UUIDs.
+- **Trusted Lists -- read signed content only:** the monitoring job and the
+  verifier only read the part of a list its XML signature covers, and reject a
+  modified list.
+
+### Dependencies
+
+- **XML signatures -- add `xml-crypto` 6.3.1 and `@xmldom/xmldom` 0.8.15:**
+  used to verify the enveloped signatures of the Trusted Lists.
+- **documentation site -- move to the fixed `image-size` 2.0.4:** the upstream
+  release rejects malformed ICNS, HEIF, JPEG 2000 and JXL boxes by itself, so
+  the local patch and the audit exception for its two advisories are removed.
+  An override keeps 2.0.4 as the floor and the regression tests still exercise
+  every format.
+
+### Documentation
+
+- **electronic signature -- expert verification procedure:** the README
+  explains how to fetch the trust anchors, the national Trusted List and the EU
+  List of Trusted Lists, how to verify both evidence files for a court or an
+  expert, and what each check establishes.
+
+### Maintenance
+
+- **interface texts -- plain punctuation:** apostrophes, quotation marks,
+  dashes and ellipses in interface texts and documentation use plain
+  characters.
+- **secret scanning -- add the repository configuration:** a `.gitleaks.toml`
+  allowlists by exact line the Companion upload field and the wrapped
+  end-to-end key returned to its owner, and a `.gitleaksignore` covers a
+  placeholder from a long-removed example environment file.
+- **scanner exceptions -- drop the obsolete `image-size` entries:** the Trivy
+  ignores for the two `image-size` advisories are removed now that the
+  documentation site uses the fixed 2.0.4 release.
+- **upgrade -- database migrations and seal certificate:** apply the six new
+  migrations, regenerate the seal certificate with `CA_KEY_PASSWORD` set and
+  publish `root-ca.pem`. New variables are `SIGNING_TSA_TRUSTED_LIST_URL`,
+  `SIGNING_TSA_LOTL_URL`, `SIGNING_TSA_REQUIRE_QUALIFIED_STATUS` and
+  `SIGNING_TSA_TRUSTED_LIST_MAX_AGE_DAYS`.
+
 ## [1.24.6](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.5...v1.24.6) (2026-09-21)
 
 ### Features

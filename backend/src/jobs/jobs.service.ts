@@ -14,6 +14,7 @@ import {
 } from "src/share/upload-activity.util";
 import { NEVER_EXPIRES_CUTOFF_DATE } from "src/utils/date.util";
 import { appendSignatureAuditEvent } from "src/signing/signing-audit.util";
+import { TrustedListMonitorService } from "src/signing/trusted-list-monitor.service";
 import { SHARE_DIRECTORY } from "../constants";
 
 @Injectable()
@@ -28,7 +29,26 @@ export class JobsService {
     private teamAuditService: TeamAuditService,
     private teamService: TeamService,
     private config: ConfigService,
+    private trustedListMonitor: TrustedListMonitorService,
   ) {}
+
+  /** Daily confirmation that the pinned TSA is still qualified, mailed to admins. */
+  @Cron("40 6 * * *", { timeZone: "Europe/Paris" })
+  async checkTsaTrustedList() {
+    await this.runExclusive("checkTsaTrustedList", async () => {
+      await this.trustedListMonitor.check();
+    });
+  }
+
+  private signingEvidenceRetentionYears() {
+    const configured = Number.parseInt(
+      process.env.SIGNING_EVIDENCE_RETENTION_YEARS || "10",
+      10,
+    );
+    return Number.isInteger(configured) && configured >= 1 && configured <= 30
+      ? configured
+      : 10;
+  }
 
   private async runExclusive(jobName: string, job: () => Promise<void>) {
     const lockName = [
@@ -300,6 +320,7 @@ export class JobsService {
       const documents = await this.prisma.signatureDocument.findMany({
         where: {
           fileDeletedAt: { not: null },
+          status: { not: "COMPLETED" },
           OR: [
             { signedFileKey: { not: null } },
             { certificatePageKey: { not: null } },
@@ -358,7 +379,7 @@ export class JobsService {
           actor: "system",
           metadata: {
             sourceDeletedAt: document.fileDeletedAt?.toISOString(),
-            auditRetentionMonths: 6,
+            evidenceRetentionYears: this.signingEvidenceRetentionYears(),
           },
         });
       }
@@ -491,25 +512,49 @@ export class JobsService {
     });
   }
 
-  /**
-   * Purge signature documents whose source file has been deleted for more than 6 months.
-   * Runs daily at 4:00 AM.
-   */
+  /** Purge evidence only after the configured probative retention term. */
   @Cron("0 4 * * *")
   async purgeDeletedSignatureDocuments() {
     await this.runExclusive("purgeDeletedSignatureDocuments", async () => {
-      const sixMonthsAgo = new Date();
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-
-      const { count } = await this.prisma.signatureDocument.deleteMany({
+      const retentionYears = this.signingEvidenceRetentionYears();
+      const cutoff = moment().subtract(retentionYears, "years").toDate();
+      const documents = await this.prisma.signatureDocument.findMany({
         where: {
-          fileDeletedAt: { not: null, lt: sixMonthsAgo },
+          fileDeletedAt: { not: null, lt: cutoff },
         },
+        select: {
+          id: true,
+          signedFileKey: true,
+          certificatePageKey: true,
+          evidenceJsonKey: true,
+          evidenceSignatureKey: true,
+          forensicEvidenceKey: true,
+          forensicEvidenceSignatureKey: true,
+        },
+        take: 100,
       });
-
-      if (count > 0) {
+      let purged = 0;
+      for (const document of documents) {
+        for (const key of new Set(
+          [
+            document.signedFileKey,
+            document.certificatePageKey,
+            document.evidenceJsonKey,
+            document.evidenceSignatureKey,
+            document.forensicEvidenceKey,
+            document.forensicEvidenceSignatureKey,
+          ].filter((value): value is string => Boolean(value)),
+        )) {
+          await this.fileService.deleteFileByKey(key);
+        }
+        const deleted = await this.prisma.signatureDocument.deleteMany({
+          where: { id: document.id },
+        });
+        purged += deleted.count;
+      }
+      if (purged > 0) {
         this.logger.log(
-          `Purged ${count} signature documents deleted over 6 months ago`,
+          `Purged ${purged} signature evidence request(s) retained for ${retentionYears} years`,
         );
       }
     });

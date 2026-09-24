@@ -10,6 +10,7 @@ import {
 import { LocalFileService } from "./local.service";
 import { S3FileService } from "./s3.service";
 import { ConfigService } from "src/config/config.service";
+import { DATA_DIRECTORY } from "src/constants";
 import { Readable } from "stream";
 import * as mime from "mime-types";
 import { PrismaService } from "../prisma/prisma.service";
@@ -835,12 +836,29 @@ export class FileService {
     });
   }
 
+  /** "{shareId}/{fileId}" designates a share file, signing artifacts are deeper. */
+  private parseShareFileKey(
+    key: string,
+  ): { shareId: string; fileId: string } | null {
+    const segments = key.split("/");
+    return segments.length === 2 && segments.every(Boolean)
+      ? { shareId: segments[0], fileId: segments[1] }
+      : null;
+  }
+
   /**
    * Retrieve a file by a custom key (used for signing documents).
    * The key is a storage path like "signing/{id}/document.pdf".
    */
   async getFileByKey(key: string): Promise<Buffer> {
     const safeKey = assertSafeStorageKey(key);
+    // The source of a signature request is a share file: it is read through
+    // the share's own storage (uploads directory or S3 prefix).
+    const shareFile = this.parseShareFileKey(safeKey);
+    if (shareFile) {
+      const { file } = await this.get(shareFile.shareId, shareFile.fileId);
+      return Buffer.from(await this.streamToUint8Array(file));
+    }
     const storageService = this.getStorageService();
     if (storageService instanceof S3FileService) {
       const stream = await storageService.getRawObjectStream(safeKey);
@@ -848,7 +866,7 @@ export class FileService {
     }
     // Local: read directly
     const fs = await import("fs/promises");
-    const dataDir = this.configService.get("general.dataDir") || "./data";
+    const dataDir = DATA_DIRECTORY;
     const filePath = resolveStoragePath(dataDir, safeKey);
     return fs.readFile(filePath);
   }
@@ -867,7 +885,7 @@ export class FileService {
     // Local: write directly
     const fs = await import("fs/promises");
     const path = await import("path");
-    const dataDir = this.configService.get("general.dataDir") || "./data";
+    const dataDir = DATA_DIRECTORY;
     const filePath = resolveStoragePath(dataDir, safeKey);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, data);
@@ -882,7 +900,7 @@ export class FileService {
       return;
     }
     const fs = await import("fs/promises");
-    const dataDir = this.configService.get("general.dataDir") || "./data";
+    const dataDir = DATA_DIRECTORY;
     const filePath = resolveStoragePath(dataDir, safeKey);
     await fs.rm(filePath, { force: true });
   }

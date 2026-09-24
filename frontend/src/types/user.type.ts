@@ -15,6 +15,9 @@ type User = {
   emailVerified: boolean;
   emailVerificationBlockedAt: string | null;
   emailVerificationDeletionAt: string | null;
+  /** When the address was proven, and how: EMAIL_LINK or ADMINISTRATOR. */
+  emailVerifiedAt?: string | null;
+  emailVerificationSource?: string | null;
   hasTeamMembership?: boolean;
   teamId?: string | null;
 };

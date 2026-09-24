@@ -40,7 +40,9 @@ import {
 import { useIntl } from "react-intl";
 import { useModals } from "@mantine/modals";
 import Meta from "../../components/Meta";
-import signingService from "../../services/signing.service";
+import signingService, {
+  SignatureRecipient,
+} from "../../services/signing.service";
 import shareService from "../../services/share.service";
 import teamService from "../../services/team.service";
 import {
@@ -49,6 +51,14 @@ import {
   sha256Hex,
 } from "../../services/pades-client.service";
 import showQrCodeModal from "../../components/core/showQrCodeModal";
+import { reconcileSignerContributions } from "../../utils/signingReconciliation.util";
+import { parseSignatureData } from "../../utils/signatureData.util";
+import { pdfSafeText } from "../../utils/pdfText.util";
+import {
+  defaultSignatureSlotPosition,
+  fitSignatureImage,
+  resolveSignatureSlots,
+} from "../../utils/signatureSlots.util";
 import toast from "../../utils/toast.util";
 import useUser from "../../hooks/user.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
@@ -78,6 +88,7 @@ const statusColors: Record<string, string> = {
   COMPLETED: "green",
   CANCELLED: "gray",
   AWAITING_FINALIZATION: "orange",
+  SIGNING_FAILED: "red",
 };
 
 const statusKeyMap: Record<string, string> = {
@@ -89,6 +100,7 @@ const statusKeyMap: Record<string, string> = {
   CANCELLED: "signing.status.cancelled",
   REJECTED: "signing.status.rejected",
   AWAITING_FINALIZATION: "signing.status.awaiting-finalization",
+  SIGNING_FAILED: "signing.status.signing-failed",
 };
 
 const SigningDetailPage = () => {
@@ -157,8 +169,12 @@ const SigningDetailPage = () => {
   useEffect(() => {
     if (!typedDoc?.isE2EEncrypted) return;
     if (e2eKeyB64) return; // already resolved
+    const ownWrappedKey: string | undefined = typedDoc?.recipients?.find(
+      (recipient: SignatureRecipient) =>
+        recipient.isCurrentUser && recipient.wrappedE2EKey,
+    )?.wrappedE2EKey;
     // Need at least one resolution path
-    if (!typedDoc?.teamId && !typedDoc?.shareId) return;
+    if (!ownWrappedKey && !typedDoc?.teamId && !typedDoc?.shareId) return;
 
     (async () => {
       try {
@@ -166,7 +182,14 @@ const SigningDetailPage = () => {
         if (!userKeyB64) return;
         const masterKey = await importKeyFromBase64(userKeyB64);
 
-        if (typedDoc.teamId) {
+        if (ownWrappedKey) {
+          // Path 0: signer, key kept for this account when the link was opened
+          const documentKey = await unwrapReverseShareKey(
+            ownWrappedKey,
+            masterKey,
+          );
+          setE2eKeyB64(await exportKeyToBase64(documentKey));
+        } else if (typedDoc.teamId) {
           // Path 1: Team folder -> derive from team key
           const { wrappedTeamKey } = await teamService.getTeamKey(
             typedDoc.teamId,
@@ -205,6 +228,7 @@ const SigningDetailPage = () => {
     typedDoc?.isE2EEncrypted,
     typedDoc?.teamId,
     typedDoc?.shareId,
+    typedDoc?.recipients,
     e2eKeyB64,
   ]);
 
@@ -248,10 +272,36 @@ const SigningDetailPage = () => {
       // 3. Get signatures data from backend
       const sigData = await signingService.getSignaturesForFinalization(docId);
 
+      // 3b. Rebuild every signer's contribution locally and refuse to seal
+      // anything a signer did not approve with WebAuthn.
+      const sourceSha256 = await sha256Hex(new Uint8Array(decryptedBuf));
+      if (sigData.signatureLevel === "REINFORCED") {
+        const problems = await reconcileSignerContributions({
+          documentId: docId,
+          sourceSha256,
+          signers: sigData.signers,
+          fieldValues: (sigData.fields || []).flatMap(
+            (field: any) => field.fieldValues || [],
+          ),
+          sha256Hex,
+        });
+        if (problems.length > 0) {
+          throw new Error(
+            `Signer contributions do not match the signed manifests: ${problems.join(", ")}`,
+          );
+        }
+      }
+
       // 4. Apply visual signatures with pdf-lib
       const { PDFDocument, rgb, StandardFonts, degrees } =
         await import("pdf-lib");
       const pdfDoc = await PDFDocument.load(decryptedBuf);
+      // Keep the exact decrypted source approved by the signers inside the
+      // sealed PDF so the WebAuthn manifest hash stays checkable offline.
+      await pdfDoc.attach(new Uint8Array(decryptedBuf), "privcloud-source.pdf", {
+        mimeType: "application/pdf",
+        description: `Source document SHA-256 ${sourceSha256}`,
+      });
       for (const entry of Array.isArray(sigData.pageRotations)
         ? sigData.pageRotations
         : []) {
@@ -334,14 +384,17 @@ const SigningDetailPage = () => {
 
       // Add initials at bottom of each page if enabled
       if (sigData.addInitials && sigData.signers?.length) {
-        const initialsText = sigData.signers
-          .map((s: any) =>
-            s.name
-              .split(" ")
-              .map((w: string) => w[0]?.toUpperCase())
-              .join(""),
-          )
-          .join(" / ");
+        const initialsText = pdfSafeText(
+          sigData.signers
+            .map((s: any) =>
+              s.name
+                .split(" ")
+                .map((w: string) => [...w][0]?.toUpperCase() || "")
+                .join(""),
+            )
+            .join(" / "),
+          fontBold,
+        );
         for (const [pageIndex, page] of allPages.entries()) {
           if (
             !shouldAddInitialsToPage({
@@ -481,7 +534,7 @@ const SigningDetailPage = () => {
             ? "Mention manuscrite"
             : field.type === "DATE"
               ? "Date"
-              : field.label || "Texte";
+              : pdfSafeText(field.label || "Texte", fontBold);
 
         for (const fieldValue of field.fieldValues || []) {
           const paddingX = 6;
@@ -490,7 +543,7 @@ const SigningDetailPage = () => {
           const valueSize = field.type === "APPROVAL" ? 9 : 8;
           const lineHeight = valueSize + 3;
           const lines = wrapPdfText(
-            String(fieldValue.value || ""),
+            pdfSafeText(String(fieldValue.value || ""), font),
             Math.max(20, boxWidth - paddingX * 2),
             valueSize,
           );
@@ -577,14 +630,16 @@ const SigningDetailPage = () => {
         }
       }
 
-      let yOffset = 120;
+      // Every signer gets its own block, never the same position as another.
+      const signatureSlots = resolveSignatureSlots(
+        (sigData.signers || []).map((sig: any) => sig.id),
+        sigData.fields || [],
+      );
       for (const sig of sigData.signers || []) {
         if (!sig.signatureData) continue;
 
-        const signatureField =
-          signatureFields.find(
-            (field: any) => field.assignedRecipientId === sig.id,
-          ) || signatureFields.find((field: any) => !field.assignedRecipientId);
+        const slot = signatureSlots.get(sig.id);
+        const signatureField = slot?.kind === "field" ? slot.field : undefined;
         const targetPage = signatureField
           ? allPages[Math.max(0, (signatureField.page ?? 1) - 1)]
           : sigPage;
@@ -612,32 +667,56 @@ const SigningDetailPage = () => {
           : addMention
             ? 90
             : 70;
+        const defaultPosition = defaultSignatureSlotPosition({
+          index: slot?.kind === "default" ? slot.index : 0,
+          count: slot?.kind === "default" ? slot.count : 1,
+          pageWidth: sigW,
+          boxWidth,
+          boxHeight,
+          rightEdge: sigW - 10,
+          baseY: 120,
+        });
         const boxX = signatureField
           ? Math.min(Math.max(visualField?.x || 0, 0), sigW - boxWidth)
-          : sigW - 250;
+          : defaultPosition.x;
         const boxY = signatureField
           ? Math.min(Math.max(visualField?.y || 0, 0), sigH - boxHeight)
-          : yOffset;
+          : defaultPosition.y;
         const paddingX = 8;
         const paddingY = 8;
-        const sigBytes = Uint8Array.from(
-          atob(sig.signatureData.replace(/^data:[^;]+;base64,/, "")),
-          (c) => c.charCodeAt(0),
+        // Same parsing as the server: the format comes from the bytes, and a
+        // typed signature sent as text is drawn as text.
+        const signatureVisual = parseSignatureData(
+          sig.signatureData,
+          sig.signatureType,
         );
-        let sigImage;
-        try {
-          sigImage = await pdfDoc.embedPng(sigBytes);
-        } catch {
-          sigImage = await pdfDoc.embedJpg(sigBytes);
-        }
-        const sigDims = sigImage.scale(0.5);
+        const sigImage =
+          signatureVisual.kind === "image"
+            ? signatureVisual.format === "jpg"
+              ? await pdfDoc.embedJpg(signatureVisual.bytes)
+              : await pdfDoc.embedPng(signatureVisual.bytes)
+            : null;
+        const signatureText =
+          signatureVisual.kind === "text"
+            ? pdfSafeText(signatureVisual.text, font)
+            : "";
+        const signerName = pdfSafeText(sig.name, fontBold);
         const maxSignatureWidth = Math.max(20, boxWidth - paddingX * 2);
-        const imageWidth = Math.min(sigDims.width, maxSignatureWidth, 180);
-        const imageHeight = Math.min(
-          sigDims.height,
-          Math.max(28, boxHeight - (addMention ? 42 : 26)),
-          40,
-        );
+        const { width: imageWidth, height: imageHeight } = sigImage
+          ? fitSignatureImage(sigImage.scale(0.5), {
+              width: Math.min(maxSignatureWidth, 180),
+              height: Math.min(
+                Math.max(28, boxHeight - (addMention ? 42 : 26)),
+                40,
+              ),
+            })
+          : {
+              width: Math.min(
+                font.widthOfTextAtSize(signatureText, 14),
+                maxSignatureWidth,
+              ),
+              height: 18,
+            };
         const dateStr = new Date(sig.signedAt).toLocaleDateString("fr-FR", {
           day: "numeric",
           month: "long",
@@ -649,7 +728,7 @@ const SigningDetailPage = () => {
           ? Math.min(font.widthOfTextAtSize(approvalText, 9), maxSignatureWidth)
           : 0;
         const nameWidth = Math.min(
-          fontBold.widthOfTextAtSize(sig.name, 10),
+          fontBold.widthOfTextAtSize(signerName, 10),
           maxSignatureWidth,
         );
         const contentWidth = Math.min(
@@ -721,7 +800,7 @@ const SigningDetailPage = () => {
           },
           targetLayout,
         );
-        targetPage.drawText(sig.name, {
+        targetPage.drawText(signerName, {
           x: nameOrigin.x,
           y: nameOrigin.y,
           size: 10,
@@ -731,18 +810,27 @@ const SigningDetailPage = () => {
         });
 
         const imageOrigin = visualPdfPointToRaw(
-          { x: innerX, y: imageY },
+          { x: innerX, y: sigImage ? imageY : imageY + 10 },
           targetLayout,
         );
-        targetPage.drawImage(sigImage, {
-          x: imageOrigin.x,
-          y: imageOrigin.y,
-          width: imageWidth,
-          height: imageHeight,
-          rotate: degrees(drawRotation),
-        });
-
-        if (!signatureField) yOffset += 80;
+        if (sigImage) {
+          targetPage.drawImage(sigImage, {
+            x: imageOrigin.x,
+            y: imageOrigin.y,
+            width: imageWidth,
+            height: imageHeight,
+            rotate: degrees(drawRotation),
+          });
+        } else {
+          targetPage.drawText(signatureText, {
+            x: imageOrigin.x,
+            y: imageOrigin.y,
+            size: 14,
+            font,
+            color: rgb(0.1, 0.1, 0.5),
+            rotate: degrees(drawRotation),
+          });
+        }
       }
 
       // 5. Save PDF with visual signatures
@@ -760,7 +848,11 @@ const SigningDetailPage = () => {
         visuallySignedPdf,
         certificatePage,
       );
-      const cms = await signingService.signE2EDigest(docId, preparedPdf.digest);
+      const cms = await signingService.signE2EDigest(
+        docId,
+        preparedPdf.digest,
+        sourceSha256,
+      );
       const padesSignedPdf = embedPadesCms(preparedPdf.bytes, cms);
 
       // 8. Re-encrypt the PAdES-signed PDF before any file upload
@@ -771,7 +863,12 @@ const SigningDetailPage = () => {
       const reEncrypted = await encryptFile(padesSignedBuffer, cryptoKey);
 
       // 9. Upload encrypted final PDF for storage
-      await signingService.finalizeE2E(docId, reEncrypted);
+      await signingService.finalizeE2E(
+        docId,
+        reEncrypted,
+        await sha256Hex(padesSignedPdf),
+        sourceSha256,
+      );
 
       queryClient.invalidateQueries({ queryKey: ["signing.document", docId] });
       toast.success(t("signing.toast.finalize-success"));
@@ -826,6 +923,34 @@ const SigningDetailPage = () => {
     }
   };
 
+  const handleOwnForensicDownload = async () => {
+    try {
+      const blob = await signingService.downloadOwnForensicRecord(docId);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${(doc as any)?.fileName?.replace(/\.pdf$/i, "") || "document"}.my-forensic-record.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error(t("signing.toast.forensic-error"));
+    }
+  };
+
+  const handleEvidenceDownload = async () => {
+    try {
+      const blob = await signingService.downloadEvidence(docId);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${(doc as any)?.fileName?.replace(/\.pdf$/i, "") || "document"}.attestation.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error(t("signing.toast.evidence-error"));
+    }
+  };
+
   if (isLoading) {
     return (
       <Container size="md" px={0}>
@@ -847,6 +972,9 @@ const SigningDetailPage = () => {
   const isPending =
     typedDoc.status === "PENDING" || typedDoc.status === "PARTIAL";
   const isAwaitingFinalization = typedDoc.status === "AWAITING_FINALIZATION";
+  // A failed sealing (TSA or certificate unavailable) can be retried.
+  const canRetryServerFinalization =
+    isAwaitingFinalization || typedDoc.status === "SIGNING_FAILED";
   const fileDeleted = !!(typedDoc as any).fileDeleted;
 
   return (
@@ -921,7 +1049,8 @@ const SigningDetailPage = () => {
 
         {/* Actions */}
         <Group mb="lg" gap="sm">
-          {typedDoc.status === "COMPLETED" && !fileDeleted && (
+          {/* The signed PDF and its evidence outlive the source file. */}
+          {typedDoc.status === "COMPLETED" && (
             <Button
               leftSection={<TbDownload size={16} />}
               onClick={handleDownload}
@@ -933,6 +1062,37 @@ const SigningDetailPage = () => {
               }
             >
               {t("signing.actions.download")}
+            </Button>
+          )}
+          {typedDoc.status === "COMPLETED" &&
+            typedDoc.isE2EEncrypted &&
+            !e2eKeyB64 &&
+            typedDoc.recipients?.some(
+              (recipient: SignatureRecipient) => recipient.isCurrentUser,
+            ) && (
+              <Text size="xs" c="dimmed" w="100%">
+                {t("signing.detail.download.e2e-open-link")}
+              </Text>
+            )}
+          {typedDoc.status === "COMPLETED" && (
+            <Button
+              variant="light"
+              leftSection={<TbShieldCheck size={16} />}
+              onClick={handleEvidenceDownload}
+            >
+              {t("signing.detail.evidence.download")}
+            </Button>
+          )}
+          {typedDoc.recipients?.some(
+            (r: any) =>
+              r.isCurrentUser && ["SIGNED", "REJECTED"].includes(r.status),
+          ) && (
+            <Button
+              variant="subtle"
+              leftSection={<TbLock size={16} />}
+              onClick={handleOwnForensicDownload}
+            >
+              {t("signing.detail.forensic.download")}
             </Button>
           )}
           {isAwaitingFinalization && !fileDeleted && finalizing && (
@@ -965,7 +1125,7 @@ const SigningDetailPage = () => {
                 {t("signing.detail.finalize.retry")}
               </Button>
             )}
-          {isAwaitingFinalization &&
+          {canRetryServerFinalization &&
             !fileDeleted &&
             !finalizing &&
             !typedDoc.isE2EEncrypted && (
@@ -1290,10 +1450,15 @@ const SigningDetailPage = () => {
                   SOURCE_FILE_DELETED:
                     "signing.detail.audit.source-file-deleted",
                 };
-                const actionKey = actionKeyMap[event.action];
+                // Some events are attributed to "system" or to an internal
+                // account id, only an e-mail address is worth displaying.
+                const actorEmail = String(event.actor || "").includes("@")
+                  ? event.actor
+                  : "";
+                const actionKey = actionKeyMap[event.eventType];
                 const actionLabel = actionKey
-                  ? t(actionKey, { email: event.actorEmail || "" })
-                  : event.action;
+                  ? t(actionKey, { email: actorEmail })
+                  : event.eventType;
 
                 return (
                   <Timeline.Item
@@ -1308,23 +1473,11 @@ const SigningDetailPage = () => {
                       <Text size="xs" c="dimmed">
                         {formatDateTime(event.createdAt)}
                       </Text>
-                      {event.actorEmail && (
+                      {actorEmail && (
                         <Text size="xs" c="dimmed">
                           {t("signing.detail.audit.actor", {
-                            email: event.actorEmail,
+                            email: actorEmail,
                           })}
-                        </Text>
-                      )}
-                      {(event.ip || event.ipAddress) && (
-                        <Text size="xs" c="dimmed">
-                          {t("signing.detail.audit.ip", {
-                            ip: event.ip || event.ipAddress,
-                          })}
-                        </Text>
-                      )}
-                      {event.details && (
-                        <Text size="xs" mt={2}>
-                          {event.details}
                         </Text>
                       )}
                       {event.reason && (

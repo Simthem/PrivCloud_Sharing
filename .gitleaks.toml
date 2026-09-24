@@ -1,0 +1,24 @@
+title = "PrivCloud Sharing Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Bridge E2E runtime upload material, not a committed API key"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''bridge/src/privcloud-bridge\.mjs''']
+regexTarget = "line"
+regexes = [
+  '''\bencryptionKey\b''',
+  '''e2eMaterial:\s*body\.isE2EEncrypted''',
+  '''decodeBase64UrlKey\(body\.encryptionKey\)''',
+]
+
+[[allowlists]]
+description = "Field name of the signer's wrapped E2E document key, returned to its owner only. The value is read from the database row and is never a literal, and the server cannot unwrap it"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''backend/src/signing/signing-exposure\.util\.ts''']
+regexTarget = "line"
+regexes = ['''\{ wrappedE2EKey: recipient\.wrappedE2EKey \}''']

@@ -97,6 +97,7 @@ const signatureStatusTranslationKeys: Record<string, string> = {
   REJECTED: "team.dashboard.signatures.status.rejected",
   AWAITING_FINALIZATION:
     "team.dashboard.signatures.status.awaitingFinalization",
+  SIGNING_FAILED: "signing.status.signing-failed",
 };
 
 const formatBytes = (bytes: number) => {
@@ -2142,6 +2143,7 @@ const TeamDashboard = () => {
                       CANCELLED: "gray",
                       REJECTED: "red",
                       AWAITING_FINALIZATION: "orange",
+                      SIGNING_FAILED: "red",
                     };
                     const sigStatusLabels: Record<string, string> = {
                       PENDING: t("team.dashboard.signatures.status.pending"),
@@ -2156,6 +2158,7 @@ const TeamDashboard = () => {
                       AWAITING_FINALIZATION: t(
                         "team.dashboard.signatures.status.awaitingFinalization",
                       ),
+                      SIGNING_FAILED: t("signing.status.signing-failed"),
                     };
                     return (
                       <Card
@@ -2324,6 +2327,7 @@ const TeamDashboard = () => {
                           CANCELLED: "gray",
                           REJECTED: "red",
                           AWAITING_FINALIZATION: "orange",
+                          SIGNING_FAILED: "red",
                         };
                         const sigStatusLabels: Record<string, string> = {
                           PENDING: t(
@@ -2344,6 +2348,7 @@ const TeamDashboard = () => {
                           AWAITING_FINALIZATION: t(
                             "team.dashboard.signatures.status.awaitingFinalization",
                           ),
+                          SIGNING_FAILED: t("signing.status.signing-failed"),
                         };
                         return (
                           <Table.Tr
@@ -2586,6 +2591,7 @@ const TeamDashboard = () => {
                                     CANCELLED: "gray",
                                     REJECTED: "red",
                                     AWAITING_FINALIZATION: "orange",
+                                    SIGNING_FAILED: "red",
                                   }[doc.status] || "gray"
                                 }
                                 variant="light"
@@ -2715,6 +2721,7 @@ const TeamDashboard = () => {
                                         CANCELLED: "gray",
                                         REJECTED: "red",
                                         AWAITING_FINALIZATION: "orange",
+                                        SIGNING_FAILED: "red",
                                       }[doc.status] || "gray"
                                     }
                                     variant="light"

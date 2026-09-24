@@ -22,7 +22,7 @@ export function buildEmailVerificationMessage(
     "Access is blocked after 5 days without verification and the account is deleted after 14 days.",
     "",
     "Bienvenue. Vérifiez votre adresse e-mail avec le lien ci-dessus.",
-    "Sans validation, l’accès sera bloqué après 5 jours et le compte supprimé après 14 jours.",
+    "Sans validation, l'accès sera bloqué après 5 jours et le compte supprimé après 14 jours.",
   ].join("\n");
 }
 

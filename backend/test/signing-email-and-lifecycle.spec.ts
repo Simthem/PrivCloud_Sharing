@@ -92,6 +92,7 @@ const createOtpHarness = () => {
     { get: () => "unit-test-signing-secret" } as never,
     {} as never,
     {} as never,
+    {} as never,
     { notifyTeamMembers: async () => [] } as never,
   ) as any;
   service.createAuditEvent = async () => undefined;
@@ -238,6 +239,7 @@ testCase("keeps a tombstoned request in the owner audit listing", async () => {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
     { notifyTeamMembers: async () => [] } as never,
   );
 
@@ -261,6 +263,7 @@ testCase(
               .map((userId: string) => ({ userId })),
         },
       } as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -393,7 +396,7 @@ testCase(
     );
     assert.match(
       certificateSource,
-      /compte PrivCloud attribué au destinataire/,
+      /met en œuvre une signature électronique avancée conformément aux/,
     );
     assert.doesNotMatch(
       certificateSource,

@@ -170,7 +170,7 @@ export async function proxy(request: NextRequest) {
       condition: routes.admin.contains(route) && !user?.isAdmin && !hasActiveSession,
       path: "/upload",
     },
-    // Home page – also redirect when the session is still alive
+    // Home page - also redirect when the session is still alive
     // (logged_in cookie present) to avoid a flash of the public homepage
     // while the client-side refreshes an expired access token.
     {

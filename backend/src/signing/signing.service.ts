@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import * as crypto from "crypto";
 import { PrismaService } from "src/prisma/prisma.service";
@@ -16,7 +18,7 @@ import {
   SignatureLevel,
 } from "./dto/createSignatureRequest.dto";
 import { RejectDocumentDTO, SignDocumentDTO } from "./dto/signDocument.dto";
-import { User } from "@prisma/client";
+import { User, Prisma } from "@prisma/client";
 import { deliverSigningCompletionEmails } from "./signing-mail.util";
 import { resolveSigningIdentityProof } from "./signing-identity.util";
 import { appendSignatureAuditEvent } from "./signing-audit.util";
@@ -26,10 +28,31 @@ import {
   buildSigningIntentHash,
   SigningWebAuthnService,
 } from "./signing-webauthn.service";
+import { SigningEvidenceService } from "./signing-evidence.service";
+import {
+  SIGNING_CONSENT_TEXT,
+  SIGNING_CONSENT_VERSION,
+  SIGNING_SOURCE_ATTACHMENT_NAME,
+  buildSignerContribution,
+  buildSignerForensicRecord,
+  generateEvidenceId,
+  reconcileSignerContribution,
+  sha256Hex,
+} from "./signing-evidence.util";
+import { collectRecipientFieldValues } from "./signing-field-values.util";
+import { resolveSignatureSlots } from "./signature-slots.util";
+import { parseSignatureData } from "./signature-data.util";
+import {
+  toVisibleAuditEvent,
+  toVisibleRecipient,
+} from "./signing-exposure.util";
 
 const SIGNING_EMAIL_OTP_TTL_MS = 10 * 60 * 1000;
 const SIGNING_EMAIL_OTP_RESEND_DELAY_MS = 60 * 1000;
 const SIGNING_EMAIL_OTP_MAX_FAILURES = 5;
+// Failures accumulate across codes: requesting a new code must not reset the
+// guessing budget of someone who only holds a leaked signing link.
+const SIGNING_EMAIL_OTP_MAX_TOTAL_FAILURES = 15;
 
 @Injectable()
 export class SigningService {
@@ -42,6 +65,7 @@ export class SigningService {
     private configService: ConfigService,
     private pdfSigningService: PdfSigningService,
     private signingWebAuthnService: SigningWebAuthnService,
+    private signingEvidenceService: SigningEvidenceService,
     private teamNotificationService: TeamNotificationService,
   ) {}
 
@@ -74,6 +98,18 @@ export class SigningService {
    * Sends email notifications to all recipients.
    */
   async createSignatureRequest(dto: CreateSignatureRequestDTO, user: User) {
+    // The standard level proves mailbox control with an e-mailed code. Without
+    // SMTP no recipient could ever sign, so the request is refused upfront.
+    if (
+      (dto.signatureLevel ?? SignatureLevel.STANDARD) ===
+        SignatureLevel.STANDARD &&
+      !this.configService.get("smtp.enabled")
+    ) {
+      throw new ServiceUnavailableException(
+        "Standard signatures need e-mail delivery; configure SMTP or use the reinforced level",
+      );
+    }
+
     let share: any;
     let file: any;
 
@@ -172,20 +208,7 @@ export class SigningService {
     const recipientEmails = [
       ...new Set(dto.recipients.map((recipient) => recipient.email.trim())),
     ];
-    const recipientAccounts = await this.prisma.user.findMany({
-      where: {
-        OR: recipientEmails.map((email) => ({
-          email: { equals: email, mode: "insensitive" as const },
-        })),
-      },
-      select: {
-        id: true,
-        email: true,
-        emailVerifiedAt: true,
-        ldapDN: true,
-        oAuthUsers: { select: { provider: true }, take: 1 },
-      },
-    });
+    const recipientAccounts = await this.findRecipientAccounts(recipientEmails);
     const accountByEmail = new Map(
       recipientAccounts.map((account) => [
         account.email.toLowerCase(),
@@ -521,7 +544,7 @@ export class SigningService {
     // Resolve user email for recipient lookup (recipients may not have userId set)
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { email: true },
+      select: { email: true, emailVerifiedAt: true },
     });
 
     const doc = await this.prisma.signatureDocument.findFirst({
@@ -574,8 +597,18 @@ export class SigningService {
     // Only expose shareId to the document creator (needed for E2E key resolution)
     const safeShareId = doc.creatorId === userId ? doc.shareId : null;
 
+    const viewer = {
+      userId,
+      // A recipient is only recognised by address once the account proved it.
+      email: user?.emailVerifiedAt ? user.email : null,
+      isRequester: doc.creatorId === userId,
+    };
     return {
       ...this.exposeSourceState(doc),
+      recipients: doc.recipients.map((recipient) =>
+        toVisibleRecipient(recipient, viewer),
+      ),
+      auditTrail: doc.auditTrail.map(toVisibleAuditEvent),
       teamId,
       shareId: safeShareId,
     };
@@ -665,6 +698,7 @@ export class SigningService {
         emailVerified: recipient.otpVerified,
         identityVerificationMethod: recipient.identityVerificationMethod,
         identityVerifiedAt: recipient.identityVerifiedAt,
+        hasWrappedE2EKey: !!recipient.wrappedE2EKey,
       },
       fields:
         alreadySigned || requiresEmailVerification
@@ -684,6 +718,11 @@ export class SigningService {
               where: { userId: recipient.userId },
             })) > 0
           : false,
+      signingConsent: {
+        version: SIGNING_CONSENT_VERSION,
+        text: SIGNING_CONSENT_TEXT,
+        sha256: sha256Hex(SIGNING_CONSENT_TEXT),
+      },
     };
   }
 
@@ -722,6 +761,17 @@ export class SigningService {
       return { verified: true, sent: false };
     }
 
+    if (recipient.otpFailures >= SIGNING_EMAIL_OTP_MAX_TOTAL_FAILURES) {
+      throw new ForbiddenException(
+        "Too many invalid codes for this link; ask the sender for a new invitation",
+      );
+    }
+    if (!this.configService.get("smtp.enabled")) {
+      throw new ServiceUnavailableException(
+        "E-mail delivery is not configured on this server",
+      );
+    }
+
     const now = new Date();
     if (
       recipient.otpSentAt &&
@@ -740,6 +790,7 @@ export class SigningService {
       where: {
         id: recipient.id,
         otpVerified: false,
+        otpFailures: { lt: SIGNING_EMAIL_OTP_MAX_TOTAL_FAILURES },
         OR: [
           { otpSentAt: null },
           {
@@ -753,7 +804,6 @@ export class SigningService {
         otpHash,
         otpSentAt: now,
         otpVerified: false,
-        otpFailures: 0,
       },
     });
     if (claimed.count !== 1) {
@@ -778,7 +828,7 @@ export class SigningService {
       // A code that was never delivered must not remain usable.
       await this.prisma.signatureRecipient.updateMany({
         where: { id: recipient.id, otpHash },
-        data: { otpHash: null, otpSentAt: null, otpFailures: 0 },
+        data: { otpHash: null, otpSentAt: null },
       });
       throw error;
     }
@@ -844,13 +894,13 @@ export class SigningService {
     ) {
       await this.prisma.signatureRecipient.updateMany({
         where: { id: recipient.id, otpHash: recipient.otpHash },
-        data: { otpHash: null, otpSentAt: null, otpFailures: 0 },
+        data: { otpHash: null, otpSentAt: null },
       });
       throw new BadRequestException(
         "The verification code has expired; request a new one",
       );
     }
-    if (recipient.otpFailures >= SIGNING_EMAIL_OTP_MAX_FAILURES) {
+    if (recipient.otpFailures >= SIGNING_EMAIL_OTP_MAX_TOTAL_FAILURES) {
       await this.prisma.signatureRecipient.updateMany({
         where: { id: recipient.id, otpHash: recipient.otpHash },
         data: { otpHash: null, otpSentAt: null },
@@ -862,8 +912,10 @@ export class SigningService {
 
     const expectedHash = this.hashSigningEmailOtp(recipient.id, code);
     if (!this.constantTimeHashEquals(recipient.otpHash, expectedHash)) {
+      // Every fifth failure burns the current code, the fifteenth the link.
       const mustReset =
-        recipient.otpFailures + 1 >= SIGNING_EMAIL_OTP_MAX_FAILURES;
+        (recipient.otpFailures + 1) % SIGNING_EMAIL_OTP_MAX_FAILURES === 0 ||
+        recipient.otpFailures + 1 >= SIGNING_EMAIL_OTP_MAX_TOTAL_FAILURES;
       await this.prisma.signatureRecipient.updateMany({
         where: {
           id: recipient.id,
@@ -874,7 +926,7 @@ export class SigningService {
           ? {
               otpHash: null,
               otpSentAt: null,
-              otpFailures: SIGNING_EMAIL_OTP_MAX_FAILURES,
+              otpFailures: { increment: 1 },
             }
           : { otpFailures: { increment: 1 } },
       });
@@ -973,20 +1025,44 @@ export class SigningService {
       );
     }
 
-    const fieldValueRows = this.collectFieldValuesForRecipient(
+    const fieldValueRows = collectRecipientFieldValues(
       recipient.id,
       recipient.document.fields,
       dto.fieldValues || [],
     );
+    // Refuse a signature the final PDF could not draw before it can block the
+    // finalization of the whole request.
+    await this.pdfSigningService.assertRenderableSignature(
+      dto.signatureData,
+      dto.signatureType,
+    );
+    // The signer commits to the persisted values, not to the raw submission.
+    const committedDto = {
+      ...dto,
+      fieldValues: fieldValueRows.map(({ fieldId, value }) => ({
+        fieldId,
+        value,
+      })),
+    };
 
     // Verify/consume the transaction-bound credential only after all local
     // validation has succeeded, so a correct assertion is not wasted.
     const evidence =
       recipient.document.signatureLevel === "REINFORCED"
-        ? await this.signingWebAuthnService.verifySignAction(signingToken, dto)
-        : await this.buildStandardEvidence(recipient, dto, "SIGN");
+        ? await this.signingWebAuthnService.verifySignAction(
+            signingToken,
+            committedDto,
+          )
+        : await this.buildStandardEvidence(recipient, committedDto, "SIGN");
 
     const signedAt = new Date();
+    const forensic = this.freezeForensicRecord(
+      recipient,
+      "SIGN",
+      signedAt,
+      { ipAddress, userAgent },
+      evidence,
+    );
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.signatureRecipient.updateMany({
         where: { id: recipient.id, status: { in: ["PENDING", "VIEWED"] } },
@@ -998,6 +1074,7 @@ export class SigningService {
           signingIp: ipAddress,
           signingUserAgent: userAgent,
           ...evidence,
+          ...forensic,
         },
       });
 
@@ -1364,6 +1441,13 @@ export class SigningService {
           )
         : await this.buildStandardEvidence(recipient, dto, "REJECT");
 
+    const forensic = this.freezeForensicRecord(
+      recipient,
+      "REJECT",
+      new Date(),
+      { ipAddress, userAgent },
+      evidence,
+    );
     // Use conditional update to prevent race conditions
     const updated = await this.prisma.signatureRecipient.updateMany({
       where: { id: recipient.id, status: { in: ["PENDING", "VIEWED"] } },
@@ -1373,6 +1457,7 @@ export class SigningService {
         signingIp: ipAddress,
         signingUserAgent: userAgent,
         ...evidence,
+        ...forensic,
       },
     });
 
@@ -1561,14 +1646,17 @@ export class SigningService {
 
   /**
    * Retry server-side finalization for a non-E2E document.
-   * Only the creator can trigger this; document must be in AWAITING_FINALIZATION.
+   * Only the creator can trigger this, for a document awaiting finalization or
+   * whose sealing failed.
    */
   async retryFinalize(documentId: string, userId: string) {
     const doc = await this.prisma.signatureDocument.findFirst({
       where: {
         id: documentId,
         creatorId: userId,
-        status: "AWAITING_FINALIZATION",
+        // A sealing that failed (TSA or certificate unavailable) must not
+        // leave a fully signed request stuck forever.
+        status: { in: ["AWAITING_FINALIZATION", "SIGNING_FAILED"] },
         isE2EEncrypted: false,
       },
     });
@@ -1579,6 +1667,16 @@ export class SigningService {
       );
     }
     this.assertSourceAvailable(doc);
+    if (doc.status === "SIGNING_FAILED") {
+      const reopened = await this.prisma.signatureDocument.updateMany({
+        where: { id: documentId, status: "SIGNING_FAILED" },
+        data: { status: "AWAITING_FINALIZATION" },
+      });
+      if (reopened.count !== 1) {
+        throw new ConflictException("Document state changed concurrently");
+      }
+      await this.createAuditEvent(documentId, "FINALIZATION_RETRIED", userId);
+    }
 
     await this.finalizeDocument(documentId);
 
@@ -1639,77 +1737,189 @@ export class SigningService {
     );
   }
 
-  private collectFieldValuesForRecipient(
-    recipientId: string,
-    fields: Array<{
-      id: string;
-      type: string;
-      label: string | null;
-      required: boolean;
-      assignedRecipientId: string | null;
-    }>,
-    submittedValues: Array<{ fieldId: string; value: string }>,
-  ) {
-    const fillableFields = fields.filter(
-      (field) =>
-        !field.assignedRecipientId || field.assignedRecipientId === recipientId,
+  /**
+   * Tells the requester, before sending, which recipients cannot sign at the
+   * reinforced level. Only a yes or no per address is returned, never whether
+   * an account exists, to avoid turning this into an account lookup.
+   */
+  async checkReinforcedEligibility(emails: string[]) {
+    const unique = [...new Set(emails.map((email) => email.trim()))];
+    const accounts = await this.findRecipientAccounts(unique);
+    const accountByEmail = new Map(
+      accounts.map((account) => [account.email.toLowerCase(), account]),
     );
-    const fillableFieldIds = new Set(fillableFields.map((field) => field.id));
-    const submittedByField = new Map(
-      submittedValues.map((entry) => [entry.fieldId, entry.value.trim()]),
-    );
-
-    for (const submitted of submittedValues) {
-      if (!fillableFieldIds.has(submitted.fieldId)) {
-        throw new ForbiddenException(
-          "Cannot fill a field assigned to another signer",
-        );
-      }
-    }
-
-    const rows: Array<{ fieldId: string; recipientId: string; value: string }> =
-      [];
-    for (const field of fillableFields) {
-      if (field.type === "SIGNATURE" || field.type === "INITIALS") continue;
-
-      let value = submittedByField.get(field.id) || "";
-      if (field.type === "DATE" && !value) {
-        value = new Date().toLocaleDateString("fr-FR", {
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-          timeZone: "Europe/Paris",
-        });
-      }
-
-      if (field.required && !value) {
-        throw new BadRequestException("A required signature field is missing");
-      }
-
-      if (
-        field.type === "APPROVAL" &&
-        field.label?.trim() &&
-        this.normalizeSignatureText(value) !==
-          this.normalizeSignatureText(field.label)
-      ) {
-        throw new BadRequestException(
-          "The approval mention does not match the expected text",
-        );
-      }
-
-      if (value) rows.push({ fieldId: field.id, recipientId, value });
-    }
-
-    return rows;
-  }
-
-  private normalizeSignatureText(value: string): string {
-    return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("fr-FR");
+    return {
+      recipients: unique.map((email) => {
+        const account = accountByEmail.get(email.toLowerCase());
+        return {
+          email,
+          eligible: Boolean(account && resolveSigningIdentityProof(account)),
+        };
+      }),
+    };
   }
 
   // =========================================================================
   // PRIVATE HELPERS
   // =========================================================================
+
+  /** Case-insensitive account lookup that works on PostgreSQL and SQLite. */
+  private async findRecipientAccounts(emails: string[]) {
+    if (emails.length === 0) return [];
+    const matches = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "User"
+      WHERE lower("email") IN (${Prisma.join(
+        emails.map((email) => email.toLowerCase()),
+      )})`;
+    return this.prisma.user.findMany({
+      where: { id: { in: matches.map((match) => match.id) } },
+      select: {
+        id: true,
+        email: true,
+        emailVerifiedAt: true,
+        emailVerificationSource: true,
+        ldapDN: true,
+        oAuthUsers: { select: { provider: true }, take: 1 },
+      },
+    });
+  }
+
+  /**
+   * Freezes the internal forensic record of a decision. Only its random
+   * evidence identifier and salted hash leave PrivCloud.
+   */
+  private freezeForensicRecord(
+    recipient: {
+      id: string;
+      documentId: string;
+      name: string;
+      email: string;
+      role: string;
+      userId: string | null;
+      identityVerificationMethod: string | null;
+      identityVerifiedAt: Date | null;
+    },
+    action: "SIGN" | "REJECT",
+    actedAt: Date,
+    network: { ipAddress: string; userAgent: string },
+    evidence: {
+      authenticationMethod: string;
+      signingIntentHash: string;
+      signedDocumentHash: string;
+      webauthnIdentitySnapshot?: string;
+    },
+  ) {
+    const evidenceId = generateEvidenceId();
+    const { record, sha256 } = buildSignerForensicRecord({
+      evidenceId,
+      documentId: recipient.documentId,
+      recipientId: recipient.id,
+      action,
+      actedAt,
+      signer: {
+        name: recipient.name,
+        email: recipient.email,
+        role: recipient.role,
+        privcloudUserId: recipient.userId,
+      },
+      identity: {
+        verificationMethod: recipient.identityVerificationMethod,
+        verifiedAt: recipient.identityVerifiedAt,
+        accountSnapshot: evidence.webauthnIdentitySnapshot ?? null,
+      },
+      network: {
+        ipAddress: network.ipAddress || null,
+        userAgent: network.userAgent || null,
+      },
+      evidence,
+    });
+    return {
+      evidenceId,
+      forensicRecord: record,
+      forensicRecordSha256: sha256,
+    };
+  }
+
+  /**
+   * Rebuilds what the final PDF applies for every signer and refuses to seal
+   * it unless each contribution is exactly the one approved with WebAuthn.
+   */
+  private async assertContributionsMatchSignedManifests(
+    doc: {
+      id: string;
+      signatureLevel: string;
+      recipients: Array<{
+        id: string;
+        name: string;
+        status: string;
+        userId: string | null;
+        signatureType: string | null;
+        signatureData: string | null;
+        signingIntentHash: string | null;
+        webauthnTransactionManifest: string | null;
+      }>;
+      fields: Array<{
+        fieldValues: Array<{ fieldId: string; recipientId: string; value: string }>;
+      }>;
+    },
+    sourceSha256: string,
+  ) {
+    if (doc.signatureLevel !== "REINFORCED") return;
+    const problems: string[] = [];
+    const legacyRecipientIds: string[] = [];
+    for (const recipient of doc.recipients) {
+      if (recipient.status !== "SIGNED") continue;
+      // Signed before manifests were persisted. The evidence bundle will not
+      // verify as an advanced signature, but the request can still complete.
+      if (!recipient.webauthnTransactionManifest) {
+        legacyRecipientIds.push(recipient.id);
+        continue;
+      }
+      const contribution = buildSignerContribution({
+        signatureType: recipient.signatureType,
+        signatureData: recipient.signatureData,
+        fieldValues: doc.fields.flatMap((field) =>
+          field.fieldValues.filter(
+            (value) => value.recipientId === recipient.id,
+          ),
+        ),
+      });
+      problems.push(
+        ...reconcileSignerContribution({
+          manifestJson: recipient.webauthnTransactionManifest,
+          signingIntentHash: recipient.signingIntentHash,
+          documentId: doc.id,
+          recipientId: recipient.id,
+          signerAccountId: recipient.userId,
+          sourceSha256,
+          contribution,
+        }).map((problem) => `${recipient.name}: ${problem}`),
+      );
+    }
+    if (legacyRecipientIds.length > 0) {
+      await this.createAuditEvent(
+        doc.id,
+        "LEGACY_SIGNERS_WITHOUT_MANIFEST",
+        "system",
+        undefined,
+        undefined,
+        JSON.stringify({ recipientIds: legacyRecipientIds }),
+      );
+    }
+    if (problems.length > 0) {
+      await this.createAuditEvent(
+        doc.id,
+        "EVIDENCE_RECONCILIATION_FAILED",
+        "system",
+        undefined,
+        undefined,
+        JSON.stringify({ problems }),
+      );
+      throw new Error(
+        `Signer contributions do not match the signed manifests: ${problems.join(", ")}`,
+      );
+    }
+  }
 
   /**
    * Finalize a document after all signatures are collected.
@@ -1741,7 +1951,12 @@ export class SigningService {
 
     try {
       // Load original PDF
-      let pdfBuffer = await this.fileService.getFileByKey(doc.originalFileKey);
+      const sourcePdf = await this.fileService.getFileByKey(doc.originalFileKey);
+      let pdfBuffer = sourcePdf;
+      await this.assertContributionsMatchSignedManifests(
+        doc,
+        sha256Hex(sourcePdf),
+      );
       pdfBuffer = await applyPdfPageRotations(
         pdfBuffer,
         this.parsePageRotations(doc.pageRotations),
@@ -1759,41 +1974,38 @@ export class SigningService {
         );
       }
 
-      // Apply each signer's signature to the PDF after text fields so it stays visible.
-      for (const recipient of doc.recipients) {
-        const signatureImage = recipient.signatureData
-          ? Buffer.from(
-              recipient.signatureData.replace(/^data:image\/\w+;base64,/, ""),
-              "base64",
-            )
+      // Apply each signer's signature to the PDF after text fields so it stays
+      // visible, every signer in its own block.
+      const signatureSlots = resolveSignatureSlots(
+        doc.recipients.map((recipient) => recipient.id),
+        doc.fields,
+      );
+      for (const [recipientIndex, recipient] of doc.recipients.entries()) {
+        const slot = signatureSlots.get(recipient.id);
+        // The format comes from the bytes: a typed signature is a PNG image
+        // produced by the signing pad, and an upload may be a JPEG.
+        const signatureVisual = recipient.signatureData
+          ? parseSignatureData(recipient.signatureData, recipient.signatureType)
           : undefined;
-        const signatureField =
-          doc.fields.find(
-            (field) =>
-              field.type === "SIGNATURE" &&
-              field.assignedRecipientId === recipient.id,
-          ) ||
-          doc.fields.find(
-            (field) => field.type === "SIGNATURE" && !field.assignedRecipientId,
-          );
+        const signatureField = slot?.kind === "field" ? slot.field : undefined;
 
         pdfBuffer = await this.pdfSigningService.addApprovalFieldAndSignature(
           pdfBuffer,
           {
             name: recipient.name,
             signatureImage:
-              recipient.signatureType === "DRAW" ||
-              recipient.signatureType === "UPLOAD"
-                ? signatureImage
+              signatureVisual?.kind === "image"
+                ? Buffer.from(signatureVisual.bytes)
                 : undefined,
             signatureText:
-              recipient.signatureType === "TYPE"
-                ? recipient.signatureData
+              signatureVisual?.kind === "text"
+                ? signatureVisual.text
                 : undefined,
             signedDate: recipient.signedAt!,
           },
           {
-            addApprovalWatermark: doc.addApprovalField,
+            // The watermark is page-wide, drawing it once keeps it legible.
+            addApprovalWatermark: doc.addApprovalField && recipientIndex === 0,
             addApprovalMention: doc.addApprovalMention,
             signaturePage: doc.signaturePage ?? undefined,
             watermarkPage: doc.watermarkPage ?? undefined,
@@ -1806,6 +2018,10 @@ export class SigningService {
                   height: signatureField.height,
                 }
               : undefined,
+            defaultSlot:
+              slot?.kind === "default"
+                ? { index: slot.index, count: slot.count }
+                : undefined,
           },
         );
       }
@@ -1837,13 +2053,16 @@ export class SigningService {
           name: r.name,
           email: r.email,
           signedAt: r.signedAt!,
-          ip: r.signingIp || "N/A",
           signatureType: r.signatureType || "N/A",
           authenticationMethod: r.authenticationMethod,
           identityVerificationMethod: r.identityVerificationMethod,
           signingIntentHash: r.signingIntentHash,
           signedDocumentHash: r.signedDocumentHash,
           webauthnUserVerified: r.webauthnUserVerified,
+          accountAssigned: Boolean(r.userId),
+          transactionBound: Boolean(r.webauthnTransactionManifest),
+          evidenceId: r.evidenceId,
+          forensicRecordSha256: r.forensicRecordSha256,
         })),
         documentHash,
         signatureLevel: doc.signatureLevel,
@@ -1853,19 +2072,34 @@ export class SigningService {
       const { PDFDocument } = await import("pdf-lib");
       const mainDoc = await PDFDocument.load(pdfBuffer);
       const certDoc = await PDFDocument.load(certPage);
-      const [certPageCopy] = await mainDoc.copyPages(certDoc, [0]);
-      mainDoc.addPage(certPageCopy);
+      // The dossier spans several pages when there are many signers.
+      for (const certPageCopy of await mainDoc.copyPages(
+        certDoc,
+        certDoc.getPageIndices(),
+      )) {
+        mainDoc.addPage(certPageCopy);
+      }
+      // The exact source bytes approved by the signers stay inside the sealed
+      // PDF, so the signed manifest hash remains checkable after share expiry.
+      await mainDoc.attach(sourcePdf, SIGNING_SOURCE_ATTACHMENT_NAME, {
+        mimeType: "application/pdf",
+        description: `Source document SHA-256 ${sha256Hex(sourcePdf)}`,
+      });
       pdfBuffer = Buffer.from(await mainDoc.save());
 
       // Apply cryptographic signature (PAdES)
       const appUrl = this.configService.get("general.appUrl") as string;
       const signingDomain = new URL(appUrl).hostname;
       try {
-        pdfBuffer = await this.pdfSigningService.signPdf(pdfBuffer, {
-          name: "PrivCloud Sharing",
-          email: `signing@${signingDomain}`,
-          reason: "Scellement technique du dossier de preuve PrivCloud",
-        });
+        pdfBuffer = await this.pdfSigningService.signPdf(
+          pdfBuffer,
+          {
+            name: "PrivCloud Sharing",
+            email: `signing@${signingDomain}`,
+            reason: "Scellement technique du dossier de preuve PrivCloud",
+          },
+          { scope: "pdf-seal", documentId },
+        );
       } catch (signingError: any) {
         // SECURITY: Fail-closed - mark document as SIGNING_FAILED, do NOT mark COMPLETED
         this.logger.error(
@@ -1882,6 +2116,21 @@ export class SigningService {
       // Store the signed PDF
       const signedKey = `signed/${documentId}/${doc.fileName}`;
       await this.fileService.storeFileByKey(signedKey, pdfBuffer);
+
+      await this.createAuditEvent(
+        documentId,
+        "FINAL_PDF_SEALED",
+        "system",
+        undefined,
+        undefined,
+        JSON.stringify({
+          sha256: crypto.createHash("sha256").update(pdfBuffer).digest("hex"),
+        }),
+      );
+      await this.signingEvidenceService.createFinalEvidence(
+        documentId,
+        pdfBuffer,
+      );
 
       // Update document status
       await this.prisma.signatureDocument.update({
@@ -2109,6 +2358,44 @@ export class SigningService {
   private getErrorMessage(error: unknown): string {
     if (error instanceof Error) return error.message;
     return String(error);
+  }
+
+  /**
+   * Keeps, for the signer's own account, the document key of an end-to-end
+   * encrypted request wrapped with that account's master key. The server
+   * only stores what it cannot read.
+   */
+  async storeRecipientE2EKey(
+    signingToken: string,
+    user: { id: string; email: string; emailVerifiedAt?: Date | null },
+    wrappedKey: string,
+  ) {
+    const recipient = await this.prisma.signatureRecipient.findUnique({
+      where: { signingToken },
+      select: {
+        id: true,
+        email: true,
+        userId: true,
+        document: { select: { isE2EEncrypted: true } },
+      },
+    });
+    const ownsRecipient =
+      !!recipient &&
+      (recipient.userId
+        ? recipient.userId === user.id
+        : !!user.emailVerifiedAt &&
+          recipient.email.toLowerCase() === user.email.toLowerCase());
+    if (!recipient || !ownsRecipient) {
+      throw new NotFoundException("Signing request not found");
+    }
+    if (!recipient.document.isE2EEncrypted) {
+      throw new BadRequestException("This request is not end-to-end encrypted");
+    }
+    await this.prisma.signatureRecipient.update({
+      where: { id: recipient.id },
+      data: { wrappedE2EKey: wrappedKey },
+    });
+    return { stored: true };
   }
 
   private assertStandardEmailVerified(recipient: {

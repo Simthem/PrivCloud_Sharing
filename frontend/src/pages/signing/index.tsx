@@ -46,6 +46,7 @@ const statusColors: Record<string, string> = {
   CANCELLED: "gray",
   REJECTED: "red",
   AWAITING_FINALIZATION: "orange",
+  SIGNING_FAILED: "red",
 };
 
 const statusKeyMap: Record<string, string> = {
@@ -55,6 +56,7 @@ const statusKeyMap: Record<string, string> = {
   CANCELLED: "signing.status.cancelled",
   REJECTED: "signing.status.rejected",
   AWAITING_FINALIZATION: "signing.status.awaiting-finalization",
+  SIGNING_FAILED: "signing.status.signing-failed",
 };
 
 const SigningIndexPage = () => {

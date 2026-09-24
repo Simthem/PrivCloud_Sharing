@@ -165,7 +165,7 @@ const MyShares = () => {
           )}
           {shares.map((share) => {
             // For team shares the encryption key is K_team, not K_master.
-            // Don't inject master key in the hash — Phase 2 on the share page
+            // Don't inject master key in the hash (Phase 2 on the share page)
             // will resolve the correct team key via getTeamKey().
             const storedKey =
               share.isE2EEncrypted && !share.teamFolderId

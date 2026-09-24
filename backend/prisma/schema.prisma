@@ -35,6 +35,10 @@ model User {
   // backfill it: only accounts created after the feature deployment opt in.
   emailVerificationRequiredAt        DateTime?
   emailVerifiedAt                    DateTime?
+  // How the address was proven: EMAIL_LINK or ADMINISTRATOR. NULL for an
+  // automatic exemption (no SMTP, bootstrap), which proves nothing and is not
+  // accepted as an identity proof by the reinforced signature.
+  emailVerificationSource            String?
   emailVerificationDeletionStartedAt DateTime?
   emailVerificationTokens            EmailVerificationToken[]
 
@@ -359,17 +363,26 @@ model SignatureDocument {
   updatedAt DateTime @updatedAt
 
   // Original PDF file name
-  fileName           String
+  fileName                     String
   // Backward-compatible display title for existing deployments.
-  title              String
+  title                        String
   // Legacy storage key kept for databases created before originalFileKey.
-  fileKey            String
+  fileKey                      String
   // Storage path/key for the original PDF
-  originalFileKey    String
+  originalFileKey              String
   // Storage path/key for the signed PDF (set after all signatures complete)
-  signedFileKey      String?
+  signedFileKey                String?
   // Storage path/key for the certificate page PDF
-  certificatePageKey String?
+  certificatePageKey           String?
+  // Immutable, platform-signed evidence generated at finalization.
+  evidenceJsonKey              String?
+  evidenceSignatureKey         String?
+  finalDocumentHash            String?
+  // Complete forensic dossier kept by PrivCloud. The distributed attestation
+  // (evidenceJsonKey) only carries its hash.
+  forensicEvidenceKey          String?
+  forensicEvidenceSignatureKey String?
+  forensicEvidenceSha256       String?
 
   // Document status: DRAFT | PENDING | COMPLETED | CANCELLED | EXPIRED
   status String @default("PENDING")
@@ -418,7 +431,7 @@ model SignatureDocument {
   creator   User   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
 
   // Keep a nullable source relation so deleting a file revokes every signing
-  // action while retaining the request and its audit evidence for six months.
+  // action while retaining finalized evidence under the configured policy.
   shareId String?
   fileId  String?
   file    File?   @relation(fields: [fileId], references: [id], onDelete: SetNull)
@@ -488,18 +501,47 @@ model SignatureRecipient {
   identityVerificationMethod String    @default("NONE")
   identityVerifiedAt         DateTime?
 
-  authenticationMethod String?
-  signingIntentHash    String?
-  signedDocumentHash   String?
-  webauthnCredentialId String?
-  webauthnAssertion    String?
-  webauthnUserVerified Boolean?
-  webauthnDeviceType   String?
-  webauthnBackedUp     Boolean?
+  authenticationMethod        String?
+  signingIntentHash           String?
+  signedDocumentHash          String?
+  webauthnCredentialId        String?
+  webauthnAssertion           String?
+  webauthnUserVerified        Boolean?
+  webauthnDeviceType          String?
+  webauthnBackedUp            Boolean?
+  webauthnPublicKey           String?
+  webauthnAlgorithm           Int?
+  webauthnChallenge           String?
+  webauthnChallengeNonce      String?
+  webauthnTransactionManifest String?
+  webauthnOrigin              String?
+  webauthnRpId                String?
+  webauthnSignCount           BigInt?
+  webauthnClientDataJSON      String?
+  webauthnAuthenticatorData   String?
+  webauthnSignature           String?
+  webauthnUserHandle          String?
+  webauthnUserPresent         Boolean?
+  webauthnBackupEligible      Boolean?
+  webauthnIdentitySnapshot    String?
+  webauthnEnrollmentRecord    String?
+  webauthnEnrollmentSignature String?
 
   // IP address and user-agent at signing time (for audit)
   signingIp        String?
   signingUserAgent String?
+
+  // Random identifier printed in the distributed attestation, never derived
+  // from the identity so it cannot be reversed by a dictionary attack.
+  evidenceId           String? @unique
+  // Internal forensic record frozen at the action: network data, account
+  // identifiers and raw WebAuthn material. Only its salted hash is distributed.
+  forensicRecord       String?
+  forensicRecordSha256 String?
+  // Document key of an end-to-end encrypted request, wrapped in the browser
+  // with the signer's own master key so the signed PDF stays readable from
+  // the account. The server cannot unwrap it.
+  wrappedE2EKey        String?
 
   // Linked user (if the recipient is a registered user)
   userId String?
@@ -512,6 +554,44 @@ model SignatureRecipient {
   webauthnChallenges SigningWebAuthnChallenge[]
 }
 
+// Daily check that the pinned TSA certificate authority is still a granted
+// qualified time stamp service in its Trusted List.
+model TrustedListCheck {
+  id             String    @id @default(uuid())
+  checkedAt      DateTime  @default(now())
+  listUrl        String
+  listSha256     String?
+  sequenceNumber String?
+  nextUpdate     DateTime?
+  // OK, ALERT (not granted, not listed, stale list) or ERROR (unreadable list).
+  result         String
+  // Human-readable trace, also e-mailed to the administrators.
+  trace          String
+
+  @@index([checkedAt])
+}
+
+// Raw RFC 3161 exchange behind every timestamp embedded in a platform seal,
+// archived so an expert can recheck the request nonce against the token and
+// read the untouched TSA response.
+model SigningTimestamp {
+  id                   String   @id @default(uuid())
+  createdAt            DateTime @default(now())
+  // SHA-256 of the CMS signature value covered by the token (its imprint).
+  messageImprint       String   @unique
+  // Seal the token belongs to: pdf-seal, attestation, forensic or enrollment.
+  scope                String
+  documentId           String?
+  webauthnCredentialId String?
+  tsaUrl               String
+  // DER TimeStampReq (.tsq) and TimeStampResp (.tsr), base64.
+  requestBase64        String
+  responseBase64       String
+
+  @@index([documentId])
+  @@index([webauthnCredentialId])
+}
+
 // Server-verified WebAuthn credential used only for reinforced signatures.
 model SigningPasskey {
   id         String    @id @default(uuid())
@@ -519,14 +599,22 @@ model SigningPasskey {
   updatedAt  DateTime  @updatedAt
   lastUsedAt DateTime?
 
-  credentialId String  @unique
-  publicKey    Bytes
-  counter      BigInt  @default(0)
-  transports   String?
-  deviceType   String
-  backedUp     Boolean @default(false)
-  aaguid       String?
-  label        String?
+  credentialId         String    @unique
+  publicKey            Bytes
+  counter              BigInt    @default(0)
+  transports           String?
+  deviceType           String
+  backedUp             Boolean   @default(false)
+  aaguid               String?
+  label                String?
+  publicKeyAlgorithm   Int?
+  rpId                 String?
+  origin               String?
+  registrationResponse String?
+  identitySnapshot     String?
+  enrollmentRecord     String?
+  enrollmentSignature  String?
+  enrolledAt           DateTime?
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -536,14 +624,16 @@ model SigningPasskey {
 
 // One-time ceremony bound to a recipient and, for actions, to the exact intent.
 model SigningWebAuthnChallenge {
-  id                 String    @id @default(uuid())
-  createdAt          DateTime  @default(now())
-  expiresAt          DateTime
-  consumedAt         DateTime?
-  purpose            String
-  challenge          String    @unique
-  intentHash         String?
-  sourceDocumentHash String?
+  id                  String    @id @default(uuid())
+  createdAt           DateTime  @default(now())
+  expiresAt           DateTime
+  consumedAt          DateTime?
+  purpose             String
+  challenge           String    @unique
+  intentHash          String?
+  sourceDocumentHash  String?
+  transactionManifest String?
+  challengeNonce      String?
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
