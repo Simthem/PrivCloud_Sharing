@@ -115,9 +115,7 @@ export class AltchaService {
     } catch (error) {
       if (error instanceof BadRequestException) throw error;
       this.usedChallenges.delete(challengeId);
-      this.logger.warn(
-        `ALTCHA verification error: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      this.logger.warn("ALTCHA verification error");
       throw new BadRequestException("Captcha verification failed");
     }
   }
@@ -139,10 +137,8 @@ export class AltchaService {
       }
 
       return parsed;
-    } catch (error) {
-      this.logger.warn(
-        `ALTCHA payload parsing failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+    } catch {
+      this.logger.warn("ALTCHA payload parsing failed");
       throw new BadRequestException("Captcha verification failed");
     }
   }

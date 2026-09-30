@@ -47,6 +47,13 @@ import {
   unwrapReverseShareKey,
 } from "../../utils/crypto.util";
 import { resolvePersonalE2EKeyAction } from "../../utils/e2eUploadPolicy.util";
+import {
+  LEGACY_ACCOUNT_KEY,
+  SHARE_DEK_V1,
+  createShareDek,
+} from "../../utils/shareKey.util";
+import { reportShareCryptoEvent } from "../../utils/shareCryptoEvents.util";
+import { FILE_META_V1, isFileMetaShare } from "../../utils/fileMetadata.util";
 import userService from "../../services/user.service";
 import teamService from "../../services/team.service";
 import {
@@ -450,6 +457,13 @@ const Upload = ({
     const storedKey = user ? getUserKey() : null;
     e2eKeyEncoded = null;
     shouldShareE2EKeyViaEmail = false;
+    // K_master of a personal share, kept to fall back to the legacy scheme if
+    // the server stops accepting SHARE_DEK_V1 while this page is open.
+    let personalMasterKeyEncoded: string | null = null;
+    delete share.cryptoScheme;
+    delete share.wrappedShareKey;
+    delete share.wrappedShareKeyAlgorithm;
+    delete share.fileMetadataScheme;
 
     try {
       if (isReverseShare) {
@@ -518,6 +532,33 @@ const Upload = ({
         }
         if (keyAction !== "upload-without-e2e") {
           share.isE2EEncrypted = true;
+          personalMasterKeyEncoded = e2eKeyEncoded;
+          share.cryptoScheme = LEGACY_ACCOUNT_KEY;
+          if (user.shareDekV1Write && e2eKeyEncoded) {
+            try {
+              // SHARE_DEK_V1: this share gets its own key. The recipient link
+              // carries K_share, the server only receives it wrapped.
+              const dek = await createShareDek(e2eKeyEncoded, share.id);
+              cryptoKey = dek.key;
+              e2eKeyEncoded = dek.encodedKey;
+              share.cryptoScheme = SHARE_DEK_V1;
+              share.wrappedShareKey = dek.wrappedShareKey;
+              share.wrappedShareKeyAlgorithm = dek.wrappedShareKeyAlgorithm;
+              // FILE_META_V1: file names are encrypted with the same key.
+              // WebDAV Bridge imports are uploaded by the local Bridge, which
+              // only sends plain names, so such batches keep them in clear.
+              if (
+                user.fileMetaV1Write &&
+                !files.some(isBridgeWebDavUploadFile)
+              ) {
+                share.fileMetadataScheme = FILE_META_V1;
+              }
+            } catch (dekError) {
+              // Never block an upload: the share keeps the account key.
+              console.warn("[E2E] Share key creation failed:", dekError);
+              reportShareCryptoEvent("dek_create_error", SHARE_DEK_V1);
+            }
+          }
         }
       } else {
         // Anonymous classic shares have no durable or fragment-based key
@@ -576,7 +617,41 @@ const Upload = ({
 
     try {
       const isReverseShare = router.pathname != "/upload";
-      createdShare = await shareService.create(share, isReverseShare);
+      try {
+        try {
+          createdShare = await shareService.create(share, isReverseShare);
+        } catch (createError: any) {
+          if (
+            share.fileMetadataScheme !== FILE_META_V1 ||
+            createError?.response?.data?.error !==
+              "file_metadata_scheme_unavailable"
+          ) {
+            throw createError;
+          }
+          // Encrypted names were switched off since this page loaded: the
+          // share keeps its own key and stores the names in clear.
+          delete share.fileMetadataScheme;
+          createdShare = await shareService.create(share, isReverseShare);
+        }
+      } catch (createError: any) {
+        if (
+          share.cryptoScheme !== SHARE_DEK_V1 ||
+          !personalMasterKeyEncoded ||
+          createError?.response?.data?.error !==
+            "share_crypto_scheme_unavailable"
+        ) {
+          throw createError;
+        }
+        // SHARE_DEK_V1 was switched off since this page loaded: nothing has
+        // been stored yet, so the same upload continues with K_master.
+        share.cryptoScheme = LEGACY_ACCOUNT_KEY;
+        delete share.wrappedShareKey;
+        delete share.wrappedShareKeyAlgorithm;
+        delete share.fileMetadataScheme;
+        cryptoKey = await importKeyFromBase64(personalMasterKeyEncoded);
+        e2eKeyEncoded = personalMasterKeyEncoded;
+        createdShare = await shareService.create(share, isReverseShare);
+      }
     } catch (e) {
       toast.axiosError(e);
       setisUploading(false);
@@ -880,6 +955,9 @@ const Upload = ({
             file.uploadRelativePath,
             uploadSchedulingProfile.maxParallelLanes,
             uploadSchedulingProfile.fileConcurrency,
+            // Read from the server answer: a backend without FILE_META_V1
+            // ignores the request and keeps plain names.
+            isFileMetaShare(createdShare),
           );
         }
         setFileProgress(100);

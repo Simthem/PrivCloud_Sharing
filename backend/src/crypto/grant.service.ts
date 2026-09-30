@@ -109,10 +109,7 @@ export class AccessGrantService {
       },
     });
 
-    this.logger.log(
-      `Grant created: ${grant.id} for user ${dto.recipientUserId} ` +
-        `(file=${dto.fileId || dto.teamFileId || "share:" + dto.shareId})`,
-    );
+    this.logger.log("Grant created");
 
     void this.logTeamGrantEvent(grantorId, dto, "E2E_SHARE", grant.id);
 
@@ -379,10 +376,8 @@ export class AccessGrantService {
           metadata: JSON.stringify({ recipientUserId: target.recipientUserId }),
         },
       });
-    } catch (error) {
-      this.logger.error?.(
-        `Failed to write Team grant audit event: ${(error as Error).message}`,
-      );
+    } catch {
+      this.logger.error?.("Failed to write Team grant audit event");
     }
   }
 

@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { inspect } from "node:util";
 import { ConfigService } from "../config/config.service";
 import { Client, Entry, InvalidCredentialsError } from "ldapts";
 
@@ -32,8 +31,8 @@ export class LdapService {
           bindDn,
           this.serviceConfig.get("ldap.bindPassword"),
         );
-      } catch (error) {
-        this.logger.warn(`Failed to bind to default user: ${error}`);
+      } catch {
+        this.logger.warn("Failed to bind the configured LDAP service account");
         throw new Error("failed to bind to default user");
       }
     }
@@ -46,9 +45,7 @@ export class LdapService {
     password: string,
   ): Promise<Entry | null> {
     if (!username.match(/^[a-zA-Z0-9-_.@]+$/)) {
-      this.logger.verbose(
-        `Username ${username} does not match username pattern. Authentication failed.`,
-      );
+      this.logger.verbose("LDAP username validation failed");
       return null;
     }
 
@@ -69,38 +66,30 @@ export class LdapService {
 
       if (searchEntries.length > 1) {
         /* too many users found */
-        this.logger.verbose(
-          `Authentication for username ${username} failed. Too many users found with query ${searchQuery}`,
-        );
+        this.logger.verbose("LDAP lookup returned multiple entries");
         return null;
       } else if (searchEntries.length == 0) {
         /* user not found */
-        this.logger.verbose(
-          `Authentication for username ${username} failed. No user found with query ${searchQuery}`,
-        );
+        this.logger.verbose("LDAP lookup returned no entry");
         return null;
       }
 
       const targetEntity = searchEntries[0];
-      this.logger.verbose(
-        `Trying to authenticate ${username} against LDAP user ${targetEntity.dn}`,
-      );
+      this.logger.verbose("Trying LDAP user bind");
       try {
         await ldapClient.bind(targetEntity.dn, password);
         return targetEntity;
       } catch (error) {
         if (error instanceof InvalidCredentialsError) {
-          this.logger.verbose(
-            `Failed to authenticate ${username} against ${targetEntity.dn}. Invalid credentials.`,
-          );
+          this.logger.verbose("LDAP user bind rejected invalid credentials");
           return null;
         }
 
-        this.logger.warn(`User bind failure: ${inspect(error)}`);
+        this.logger.warn("LDAP user bind failed");
         return null;
       }
-    } catch (error) {
-      this.logger.warn(`Connect error: ${inspect(error)}`);
+    } catch {
+      this.logger.warn("LDAP lookup failed");
       return null;
     }
   }

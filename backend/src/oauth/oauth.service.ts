@@ -69,7 +69,7 @@ export class OAuthService {
           id: oauthUser.userId,
         },
       });
-      this.logger.log(`Successful login for user ${user.email} from IP ${ip}`);
+      this.logger.log(`Successful OAuth login for user ${oauthUser.userId}`);
       return this.auth.generateToken(updatedUser, { idToken: user.idToken });
     }
 

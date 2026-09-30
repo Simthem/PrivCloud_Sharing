@@ -15,6 +15,20 @@ export type TeamNotificationType =
   | "SIGNATURE_SIGNED"
   | "SIGNATURE_COMPLETED";
 
+export function normalizeNotificationPagination(
+  limit?: number,
+  offset?: number,
+) {
+  const hasValidLimit =
+    typeof limit === "number" && Number.isSafeInteger(limit);
+  const hasValidOffset =
+    typeof offset === "number" && Number.isSafeInteger(offset);
+  return {
+    limit: hasValidLimit ? Math.min(100, Math.max(1, limit)) : 50,
+    offset: hasValidOffset ? Math.max(0, offset) : 0,
+  };
+}
+
 interface CreateNotificationParams {
   type: TeamNotificationType;
   title: string;
@@ -83,10 +97,8 @@ export class TeamNotificationService {
         body: pushBody,
         url,
       })
-      .catch((err) => {
-        this.logger.debug(
-          `Push send failed for ${params.userId}: ${err.message}`,
-        );
+      .catch(() => {
+        this.logger.debug("Push send failed");
       });
 
     return notification;
@@ -189,8 +201,8 @@ export class TeamNotificationService {
     const pushPromises = notifiableMembers.map((m) =>
       this.pushService
         .sendToUser(m.userId, { title, body: pushBody, url })
-        .catch((err) => {
-          this.logger.debug(`Push failed for ${m.userId}: ${err.message}`);
+          .catch(() => {
+            this.logger.debug(`Push failed for ${m.userId}`);
         }),
     );
 
@@ -216,13 +228,17 @@ export class TeamNotificationService {
     const where: any = { userId };
     if (opts?.teamId) where.teamId = opts.teamId;
     if (opts?.unreadOnly) where.isRead = false;
+    const pagination = normalizeNotificationPagination(
+      opts?.limit,
+      opts?.offset,
+    );
 
     const [notifications, total] = await Promise.all([
       this.prisma.teamNotification.findMany({
         where,
         orderBy: { createdAt: "desc" },
-        take: opts?.limit || 50,
-        skip: opts?.offset || 0,
+        take: pagination.limit,
+        skip: pagination.offset,
         include: {
           team: { select: { id: true, name: true, slug: true } },
           teamFile: { select: { id: true, name: true } },

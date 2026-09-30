@@ -607,10 +607,8 @@ export class S3FileService {
   private releaseUploadSlot(flowId: string): void {
     try {
       this.getAdaptiveUploadScheduler().release(flowId);
-    } catch (error) {
-      this.logger.error(
-        error instanceof Error ? error.message : "Upload slot underflow",
-      );
+    } catch {
+      this.logger.error("Upload slot underflow");
     }
   }
 
@@ -883,19 +881,17 @@ export class S3FileService {
                 }),
               );
               this.logger.log(
-                `Aborted orphan multipart upload for share ${shareId}: key=${upload.Key}`,
+                "Aborted orphan multipart upload for share [redacted]",
               );
-            } catch (e) {
-              this.logger.error(
-                `Failed to abort multipart upload: key=${upload.Key} error=${e}`,
-              );
+            } catch {
+              this.logger.error("Failed to abort multipart upload");
             }
           }
         }
       }
-    } catch (e) {
+    } catch {
       this.logger.error(
-        `Failed to list multipart uploads for share ${shareId}: ${e}`,
+        "Failed to list multipart uploads for share [redacted]",
       );
     }
 
@@ -961,10 +957,8 @@ export class S3FileService {
                   }),
                 );
                 aborted++;
-              } catch (e) {
-                this.logger.error(
-                  `Failed to abort stale multipart: key=${upload.Key} err=${e}`,
-                );
+              } catch {
+                this.logger.error("Failed to abort stale multipart");
               }
             }
           }
@@ -974,8 +968,8 @@ export class S3FileService {
         keyMarker = listResp.NextKeyMarker;
         uploadIdMarker = listResp.NextUploadIdMarker;
       }
-    } catch (e) {
-      this.logger.error(`Failed to list S3 multipart uploads: ${e}`);
+    } catch {
+      this.logger.error("Failed to list S3 multipart uploads");
     }
 
     if (aborted > 0) {
@@ -1039,7 +1033,7 @@ export class S3FileService {
     );
     this.getAdaptiveUploadScheduler().registerFlow(flowId);
     this.logger.warn(
-      `Multipart recovered from S3: shareId=${shareId} fileId=${fileId} ` +
+      `Multipart recovered from S3: share=redacted fileId=${fileId} ` +
         `parts=${recovered.parts.length}/${totalParts} candidates=${candidates.length}`,
     );
     return true;
@@ -1090,7 +1084,13 @@ export class S3FileService {
    * promise, so they can never leak two S3 multipart sessions.
    */
   async initializeMultipartUpload(
-    file: { id?: string; name: string; relativePath?: string },
+    file: {
+      id?: string;
+      name: string;
+      relativePath?: string;
+      metadataScheme?: number | null;
+      encryptedMetadata?: string | null;
+    },
     shareId: string,
     totalParts: number,
   ): Promise<{
@@ -1530,7 +1530,13 @@ export class S3FileService {
   }
 
   async completeMultipartUpload(
-    file: { id: string; name: string; relativePath?: string },
+    file: {
+      id: string;
+      name: string;
+      relativePath?: string;
+      metadataScheme?: number | null;
+      encryptedMetadata?: string | null;
+    },
     shareId: string,
     totalParts: number,
     share: { isE2EEncrypted?: boolean },
@@ -1694,6 +1700,8 @@ export class S3FileService {
               id: file.id,
               name: file.name,
               relativePath: file.relativePath,
+              metadataScheme: file.metadataScheme ?? null,
+              encryptedMetadata: file.encryptedMetadata ?? null,
               size: String(fileSize),
               encryptionChunkSize: share.isE2EEncrypted
                 ? encryptionChunkSize
@@ -1704,7 +1712,7 @@ export class S3FileService {
           this.multipartUploads.delete(multipartSessionKey);
           this.getAdaptiveUploadScheduler().unregisterFlow(flowId);
           this.logger.log(
-            `Multipart completed from S3 state: shareId=${shareId} fileId=${file.id} ` +
+            `Multipart completed from S3 state: share=redacted fileId=${file.id} ` +
               `parts=${totalParts} sizeMiB=${Math.round((fileSize as number) / 1024 / 1024)}`,
           );
           return { ...file, uploadComplete: true };
@@ -1715,17 +1723,15 @@ export class S3FileService {
       if (sizeLimitExceeded) {
         await this.getS3Instance()
           .send(new DeleteObjectCommand({ Bucket: bucketName, Key: key }))
-          .catch((cleanupError) => {
+          .catch(() => {
             this.logger.error(
-              `Could not clean size-rejected S3 object: shareId=${shareId} fileId=${file.id}`,
-              cleanupError instanceof Error ? cleanupError.stack : cleanupError,
+              `Could not clean size-rejected S3 object: share=redacted fileId=${file.id}`,
             );
           });
       }
       if (error instanceof HttpException) throw error;
       this.logger.error(
-        `Multipart finalization failed: shareId=${shareId} fileId=${file.id}`,
-        error instanceof Error ? error.stack : error,
+        `Multipart finalization failed: share=redacted fileId=${file.id}`,
       );
       throw new HttpException(
         "S3 upload temporarily unavailable",
@@ -1737,7 +1743,13 @@ export class S3FileService {
   async create(
     data: Buffer | Readable,
     chunk: { index: number; total: number },
-    file: { id?: string; name: string; relativePath?: string },
+    file: {
+      id?: string;
+      name: string;
+      relativePath?: string;
+      metadataScheme?: number | null;
+      encryptedMetadata?: string | null;
+    },
     shareId: string,
     _clientChunkSize?: number,
     _share?: any,
@@ -1749,11 +1761,11 @@ export class S3FileService {
     if (!file.id) {
       file.id = crypto.randomUUID();
       this.logger.debug(
-        `Upload started: shareId=${shareId} fileId=${file.id} fileName="${file.name}" note="generated fileId"`,
+        `Upload started: share=redacted fileId=${file.id} note="generated fileId"`,
       );
     } else if (!isValidUUID(file.id)) {
       this.logger.warn(
-        `Invalid fileId format on upload: shareId=${shareId} fileId="${originalFileId}"`,
+        `Invalid fileId format on upload: share=redacted fileId="${originalFileId}"`,
       );
       throw new BadRequestException("Invalid file ID format");
     }
@@ -1830,7 +1842,7 @@ export class S3FileService {
         if (await this.isUploadAlreadyCompleted(file.id, shareId)) {
           this.logger.warn(
             `Idempotent completion (session absent): fileId=${file.id} ` +
-              `shareId=${shareId} chunk=${chunk.index}/${chunk.total}`,
+              `share=redacted chunk=${chunk.index}/${chunk.total}`,
           );
           return file;
         }
@@ -1992,7 +2004,7 @@ export class S3FileService {
             this.getAdaptiveUploadScheduler().unregisterFlow(slotKey);
             allPartsComplete = true;
             this.logger.warn(
-              `S3 complete response lost but object exists: fileId=${file.id} shareId=${shareId}`,
+              `S3 complete response lost but object exists: fileId=${file.id} share=redacted`,
             );
           } catch {
             if (this.isS3UploadGone(completeError)) {
@@ -2000,10 +2012,7 @@ export class S3FileService {
               this.getAdaptiveUploadScheduler().unregisterFlow(slotKey);
             }
             this.logger.error(
-              `S3 complete requires reconciliation: fileId=${file.id} chunk=${chunk.index}/${chunk.total}: ${(completeError as any)?.message}`,
-              completeError instanceof Error
-                ? completeError.stack
-                : completeError,
+              `S3 complete requires reconciliation: fileId=${file.id} chunk=${chunk.index}/${chunk.total}`,
             );
             throw new InternalServerErrorException(
               "Multipart upload completion failed.",
@@ -2030,12 +2039,12 @@ export class S3FileService {
         if (await this.isUploadAlreadyCompleted(file.id, shareId)) {
           this.logger.warn(
             `Idempotent completion (S3 session gone): fileId=${file.id} ` +
-              `shareId=${shareId} chunk=${chunk.index}/${chunk.total}`,
+              `share=redacted chunk=${chunk.index}/${chunk.total}`,
           );
           return file;
         }
         this.logger.warn(
-          `S3 multipart session gone: fileId=${file.id} chunk=${chunk.index}/${chunk.total}: ${(error as any)?.message}`,
+          `S3 multipart session gone: fileId=${file.id} chunk=${chunk.index}/${chunk.total}`,
         );
         throw new InternalServerErrorException(
           "Multipart upload session not found.",
@@ -2046,8 +2055,7 @@ export class S3FileService {
       // and the in-memory tracking is still correct.  Return 503 so the
       // worker retries this specific chunk with exponential back-off.
       this.logger.error(
-        `Transient S3 error: fileId=${file.id} chunk=${chunk.index}/${chunk.total}: ${(error as any)?.message}`,
-        error instanceof Error ? error.stack : error,
+        `Transient S3 error: fileId=${file.id} chunk=${chunk.index}/${chunk.total}`,
       );
       throw new HttpException(
         "S3 upload temporarily unavailable, retry this chunk",
@@ -2085,6 +2093,8 @@ export class S3FileService {
               id: file.id,
               name: file.name,
               relativePath: file.relativePath,
+              metadataScheme: file.metadataScheme ?? null,
+              encryptedMetadata: file.encryptedMetadata ?? null,
               size: fileSize.toString(),
               encryptionChunkSize: _share?.isE2EEncrypted
                 ? encryptionChunkSize
@@ -2099,12 +2109,9 @@ export class S3FileService {
           // object is not referenced because the transaction was rolled back.
           await this.getS3Instance()
             .send(new DeleteObjectCommand({ Bucket: bucketName, Key: key }))
-            .catch((cleanupError) => {
+            .catch(() => {
               this.logger.error(
-                `Could not clean size-rejected S3 object: shareId=${shareId} fileId=${file.id}`,
-                cleanupError instanceof Error
-                  ? cleanupError.stack
-                  : cleanupError,
+                `Could not clean size-rejected S3 object: share=redacted fileId=${file.id}`,
               );
             });
         }
@@ -2112,7 +2119,7 @@ export class S3FileService {
       }
 
       this.logger.debug(
-        `File uploaded: shareId=${shareId} fileId=${file.id} fileName="${file.name}" size=${fileSize} mimeType=${mime.contentType(file.name.split(".").pop() ?? "") || false}`,
+        `File uploaded: share=redacted fileId=${file.id} size=${fileSize} mimeType=${mime.contentType(file.name.split(".").pop() ?? "") || false}`,
       );
     }
 
@@ -2161,9 +2168,9 @@ export class S3FileService {
                 UploadId: staleUpload.uploadId,
               }),
             );
-          } catch (abortError) {
+          } catch {
             this.logger.warn(
-              `Could not abort stale re-encryption upload: shareId=${shareId} fileId=${fileId}: ${(abortError as Error)?.message}`,
+              `Could not abort stale re-encryption upload: share=redacted fileId=${fileId}`,
             );
           }
           this.multipartUploads.delete(reencryptKey);
@@ -2270,7 +2277,7 @@ export class S3FileService {
           throw new NotFoundException("File not found in this share");
         }
         this.logger.debug(
-          `File re-encrypted: shareId=${shareId} fileId=${fileId} size=${fileSize}`,
+          `File re-encrypted: share=redacted fileId=${fileId} size=${fileSize}`,
         );
       }
     } catch (error) {
@@ -2283,15 +2290,14 @@ export class S3FileService {
         this.multipartUploads.delete(reencryptKey);
         this.getAdaptiveUploadScheduler().unregisterFlow(slotKey);
         this.logger.warn(
-          `S3 re-encryption session gone: shareId=${shareId} fileId=${fileId} chunk=${chunk.index}/${chunk.total}`,
+          `S3 re-encryption session gone: share=redacted fileId=${fileId} chunk=${chunk.index}/${chunk.total}`,
         );
         throw new InternalServerErrorException(
           "Multipart upload session not found.",
         );
       }
       this.logger.error(
-        `Transient S3 re-encryption error (multipart retained): shareId=${shareId} fileId=${fileId} chunk=${chunk.index}/${chunk.total}`,
-        error instanceof Error ? error.stack : error,
+        `Transient S3 re-encryption error (multipart retained): share=redacted fileId=${fileId} chunk=${chunk.index}/${chunk.total}`,
       );
       throw new HttpException(
         "S3 re-encryption temporarily unavailable, retry this chunk",
@@ -2626,7 +2632,7 @@ export class S3FileService {
     const responseHeadersMs = Date.now() - startedAt;
     const bytes = Math.max(0, end - start + 1);
     let settled = false;
-    const finish = (completed: boolean, error?: Error) => {
+    const finish = (completed: boolean) => {
       if (settled) return;
       settled = true;
       opened.release();
@@ -2651,12 +2657,12 @@ export class S3FileService {
       } else {
         this.logger.warn(
           `Download stream failed: fileId=${fileId} responseHeadersMs=${responseHeadersMs} ` +
-            `error=${error?.message || "client closed stream"}`,
+            "error=redacted",
         );
       }
     };
     opened.body.once("end", () => finish(true));
-    opened.body.once("error", (error) => finish(false, error));
+    opened.body.once("error", () => finish(false));
     opened.body.once("close", () => finish(false));
     return {
       stream: opened.body,
@@ -2738,7 +2744,7 @@ export class S3FileService {
       mime.contentType(fileName.split(".").pop()) || "application/octet-stream";
     const size = range ? String(range.end - range.start + 1) : String(fileSize);
     this.logger.debug(
-      `File download opened: shareId=${shareId} fileId=${fileId} fileName="${fileName}" ` +
+      `File download opened: share=redacted fileId=${fileId} ` +
         `size=${size} mimeType=${mimeType} mode=${canParallelize ? "parallel" : "direct"} ` +
         `responseHeadersMs=${download.responseHeadersMs}`,
     );
@@ -2786,22 +2792,22 @@ export class S3FileService {
       );
     } catch (error) {
       if (!this.isS3ObjectGone(error)) {
-        this.logger.error(error);
+        this.logger.error("Could not delete file from S3");
         throw new Error("Could not delete file from S3");
       }
       this.logger.warn(
-        `S3 object already absent for shareId=${shareId} fileId=${fileId}; removing the database record`,
+        `S3 object already absent for share=redacted fileId=${fileId}; removing the database record`,
       );
     }
 
     await this.prisma.file.delete({ where: { id: fileId } });
     this.logger.debug(
-      `File deleted: shareId=${shareId} fileId=${fileMetaData.id} fileName="${fileMetaData.name}" size=${fileMetaData.size}`,
+      `File deleted: share=redacted fileId=${fileMetaData.id} size=${fileMetaData.size}`,
     );
   }
 
   async deleteAllFiles(shareId: string) {
-    this.logger.debug(`Delete all files requested: shareId=${shareId}`);
+    this.logger.debug("Delete all share files requested");
     const prefix = this.getSharePrefix(shareId);
     const bucket = this.config.get("s3.bucketName");
     const s3Instance = this.getS3Instance();
@@ -2826,7 +2832,7 @@ export class S3FileService {
         if (!listResponse.Contents || listResponse.Contents.length === 0) {
           if (totalDeleted === 0) {
             this.logger.warn(
-              `No files found in S3 for share ${shareId} - skipping deletion`,
+              `No files found in S3 for share [redacted] - skipping deletion`,
             );
           }
           break;
@@ -2851,11 +2857,11 @@ export class S3FileService {
 
       if (totalDeleted > 0) {
         this.logger.log(
-          `Deleted ${totalDeleted} S3 objects for share ${shareId}`,
+          `Deleted ${totalDeleted} S3 objects for share [redacted]`,
         );
       }
-    } catch (error) {
-      this.logger.error(error);
+    } catch {
+      this.logger.error("Could not delete all files from S3");
       throw new Error("Could not delete all files from S3");
     }
   }
@@ -3191,15 +3197,15 @@ export class S3FileService {
     });
 
     if (files.length === 0) {
-      throw new NotFoundException(`No files found for share ${shareId}`);
+      throw new NotFoundException("No files found for share");
     }
 
     const archive = createZipArchive({
       zlib: { level: parseInt(compressionLevel) },
     });
 
-    archive.on("error", (err) => {
-      this.logger.error("Archive error", err);
+    archive.on("error", () => {
+      this.logger.error("Archive error");
     });
 
     const processNextFile = async (index: number) => {
@@ -3215,7 +3221,7 @@ export class S3FileService {
         fileName = getArchiveEntryName(fileRecord);
       } catch {
         this.logger.warn(
-          `Skipping file with unsafe archive path: shareId=${shareId} fileId=${fileRecord.id}`,
+          `Skipping file with unsafe archive path: share=redacted fileId=${fileRecord.id}`,
         );
         processNextFile(index + 1);
         return;
@@ -3236,8 +3242,8 @@ export class S3FileService {
             processNextFile(index + 1);
           });
 
-          fileStream.on("error", (err) => {
-            this.logger.error(`Error streaming file ${fileName}`, err);
+          fileStream.on("error", () => {
+            this.logger.error("Error streaming archive file");
             processNextFile(index + 1);
           });
 
@@ -3245,8 +3251,8 @@ export class S3FileService {
         } else {
           processNextFile(index + 1);
         }
-      } catch (error) {
-        this.logger.error(`Error processing file ${fileName}`, error);
+      } catch {
+        this.logger.error("Error processing archive file");
         processNextFile(index + 1);
       }
     };

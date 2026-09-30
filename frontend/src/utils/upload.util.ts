@@ -15,6 +15,10 @@ import {
 } from "./uploadPerformance.util";
 import { notifyAuthSessionExpired } from "./authRedirect.util";
 import { acquireUploadFlowCoordinator } from "./uploadBatchCoordinator.util";
+import {
+  encryptFileMetadata,
+  encryptedFilePlaceholderName,
+} from "./fileMetadata.util";
 
 export { computeAdaptiveChunkSize } from "./uploadPerformance.util";
 
@@ -377,6 +381,7 @@ function runWorkerBatch(
   signal?: AbortSignal,
   maxParallelLanes?: number,
   plannedFileConcurrency?: number,
+  encryptedMetadata?: string,
 ): Promise<{ fileId: string; nextChunk: number }> {
   return new Promise((resolve, reject) => {
     const worker = new Worker("/upload-worker.js?v=" + WORKER_CACHE_KEY);
@@ -704,6 +709,7 @@ function runWorkerBatch(
       fileId,
       fileName,
       relativePath,
+      encryptedMetadata,
       maxParallelLanes,
       plannedFileConcurrency,
       // Current backends continuously advertise the fair data window. The
@@ -735,6 +741,7 @@ export async function uploadFileViaWorker(
   relativePath?: string,
   maxParallelLanes?: number,
   plannedFileConcurrency?: number,
+  encryptFileName = false,
 ): Promise<string> {
   let cryptoKeyRaw: ArrayBuffer | null = null;
   if (isE2E) {
@@ -748,6 +755,26 @@ export async function uploadFileViaWorker(
   // then reconcile already committed S3 parts instead of creating an orphaned
   // multipart upload and retransmitting the complete file.
   let fileId: string | undefined = getStableMultipartFileId(file, shareId);
+
+  // FILE_META_V1: the server only receives a placeholder name, the real
+  // name and folder path travel encrypted with the share key.
+  let fileName = file instanceof File ? file.name : "blob";
+  let uploadRelativePath = relativePath;
+  let encryptedMetadata: string | undefined;
+  if (encryptFileName) {
+    if (!cryptoKey) {
+      throw new Error("Encrypted file names require the share key");
+    }
+    encryptedMetadata = await encryptFileMetadata(
+      cryptoKey,
+      shareId,
+      fileId,
+      fileName,
+      relativePath,
+    );
+    fileName = encryptedFilePlaceholderName(fileId);
+    uploadRelativePath = undefined;
+  }
   // Do not trust caller arithmetic here: the Worker uses a variable-size
   // bootstrap part, so its total and bounds must come from one authoritative
   // layout calculation.
@@ -771,12 +798,13 @@ export async function uploadFileViaWorker(
       0,
       totalChunks,
       fileId,
-      file instanceof File ? file.name : "blob",
-      relativePath,
+      fileName,
+      uploadRelativePath,
       onProgress,
       signal,
       maxParallelLanes,
       plannedFileConcurrency,
+      encryptedMetadata,
     );
   } catch (error: any) {
     if (error?.cancelled) forgetStableMultipartFileId(file, shareId);

@@ -13,6 +13,9 @@ void (async () => {
     [];
   let lookedUpUser: unknown;
   const deliveries: string[] = [];
+  let queuedMessage:
+    | { recipient: string; subject: string; text: string }
+    | undefined;
 
   const prisma = {
     emailVerificationToken: {
@@ -29,22 +32,38 @@ void (async () => {
     user: {
       findFirst: async () => lookedUpUser,
     },
-    $transaction: async (operations: Promise<unknown>[]) =>
-      Promise.all(operations),
+    $transaction: async (operation: (client: unknown) => Promise<unknown>) =>
+      operation(prisma),
   };
   const config = {
     get: (key: string) => (key === "smtp.enabled" ? true : undefined),
   };
   const email = {
-    sendEmailVerificationEmail: async (recipient: string, token: string) => {
-      deliveries.push(recipient);
-      deliveredToken = token;
+    buildEmailVerificationEmail: (recipient: string, token: string) => ({
+      recipient,
+      subject: "Verify",
+      text: `token=${token}`,
+    }),
+  };
+  const outbox = {
+    enqueue: async (
+      _client: unknown,
+      message: { recipient: string; subject: string; text: string },
+    ) => {
+      queuedMessage = message;
+      deliveredToken = message.text.replace("token=", "");
+      return "outbox-1";
+    },
+    deliverPending: async () => {
+      if (queuedMessage) deliveries.push(queuedMessage.recipient);
+      queuedMessage = undefined;
     },
   };
   const service = new EmailVerificationService(
     prisma as never,
     config as never,
     email as never,
+    outbox as never,
   );
 
   const unverifiedUser = {
@@ -74,10 +93,26 @@ void (async () => {
   // only expired tokens and the oldest ones beyond the cap are dropped.
   const now = Date.now();
   storedTokens = [
-    { tokenHash: "live-1", createdAt: new Date(now - 1000), expiresAt: new Date(now + HOUR_MS) },
-    { tokenHash: "live-2", createdAt: new Date(now - 2000), expiresAt: new Date(now + HOUR_MS) },
-    { tokenHash: "live-3", createdAt: new Date(now - 3000), expiresAt: new Date(now + HOUR_MS) },
-    { tokenHash: "expired-1", createdAt: new Date(now - 4000), expiresAt: new Date(now - HOUR_MS) },
+    {
+      tokenHash: "live-1",
+      createdAt: new Date(now - 1000),
+      expiresAt: new Date(now + HOUR_MS),
+    },
+    {
+      tokenHash: "live-2",
+      createdAt: new Date(now - 2000),
+      expiresAt: new Date(now + HOUR_MS),
+    },
+    {
+      tokenHash: "live-3",
+      createdAt: new Date(now - 3000),
+      expiresAt: new Date(now + HOUR_MS),
+    },
+    {
+      tokenHash: "expired-1",
+      createdAt: new Date(now - 4000),
+      expiresAt: new Date(now - HOUR_MS),
+    },
   ];
   deletedHashes = undefined;
   await service.issueAndSend(unverifiedUser);

@@ -10,7 +10,8 @@
 		X-XSS-Protection "1; mode=block"
 		X-Download-Options "noopen"
 		X-Permitted-Cross-Domain-Policies "none"
-		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'self' blob:; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss: http://localhost:47631 http://127.0.0.1:47631; worker-src 'self' blob:; media-src 'self' blob:; manifest-src 'self'"
+		# Next.js emits the request-scoped nonce CSP. Do not add a second
+		# policy here: browsers enforce both and a static policy breaks nonces.
 		Permissions-Policy "geolocation=(), microphone=(), camera=(), fullscreen=(), payment=()"
 	}
 

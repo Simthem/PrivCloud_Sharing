@@ -29,6 +29,8 @@ import {
   SigningWebAuthnService,
 } from "./signing-webauthn.service";
 import { SigningEvidenceService } from "./signing-evidence.service";
+import { FILE_META_V1 } from "src/file/file-metadata-scheme";
+import { assertSafeFileName } from "src/file/file-path.util";
 import {
   SIGNING_CONSENT_TEXT,
   SIGNING_CONSENT_VERSION,
@@ -186,8 +188,23 @@ export class SigningService {
       }
     }
 
+    // An encrypted file name is unknown to the server. The owner discloses it
+    // for this request only: it names the document in the signers' e-mails
+    // and in the evidence, as the file bytes do once they are signed.
+    let documentName: string;
+    if (file.metadataScheme === FILE_META_V1) {
+      if (!dto.documentName) {
+        throw new BadRequestException(
+          "documentName is required for a file with an encrypted name",
+        );
+      }
+      documentName = assertSafeFileName(dto.documentName);
+    } else {
+      documentName = file.name;
+    }
+
     // Verify it's a PDF
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
+    if (!documentName.toLowerCase().endsWith(".pdf")) {
       throw new BadRequestException(
         "Electronic signatures are only supported for PDF files",
       );
@@ -238,8 +255,8 @@ export class SigningService {
     let document = await this.prisma.signatureDocument.create({
       data: {
         ...(dto.id ? { id: dto.id } : {}),
-        fileName: file.name,
-        title: file.name,
+        fileName: documentName,
+        title: documentName,
         fileKey: `${dto.shareId}/${file.id}`,
         originalFileKey: `${dto.shareId}/${file.id}`,
         status: "PENDING",
@@ -338,12 +355,12 @@ export class SigningService {
             action: "SIGNATURE_REQUEST",
             actorEmail: user.email,
             actorName: user.username || undefined,
-            fileName: file.name,
+            fileName: documentName,
             folderId: share.teamFolderId || undefined,
           },
         })
-        .catch((err) =>
-          this.logger.error(`Failed to log SIGNATURE_REQUEST: ${err.message}`),
+        .catch(() =>
+          this.logger.error("Failed to log SIGNATURE_REQUEST"),
         );
     }
 
@@ -385,7 +402,7 @@ export class SigningService {
     }
 
     this.logger.log(
-      `Signature request created: docId=${document.id} by ${user.email} ` +
+      `Signature request created: docId=${document.id} ` +
         `with ${document.recipients.length} recipients`,
     );
 
@@ -1135,9 +1152,7 @@ export class SigningService {
             fileName: doc.fileName,
           },
         })
-        .catch((err) =>
-          this.logger.error(`Failed to log SIGNATURE_SIGNED: ${err.message}`),
-        );
+        .catch(() => this.logger.error("Failed to log SIGNATURE_SIGNED"));
     }
 
     // Check if all signers have signed
@@ -1352,10 +1367,8 @@ export class SigningService {
             }),
           ),
       );
-    })().catch((error: unknown) =>
-      this.logger.debug(
-        `Failed to notify signing participants for ${document.id}: ${(error as Error).message}`,
-      ),
+    })().catch(() =>
+      this.logger.debug("Failed to notify signing participants"),
     );
   }
 
@@ -1384,10 +1397,8 @@ export class SigningService {
           `Suivez l'avancement ici :\n${baseUrl}/signing/${document.id}\n\n` +
           `-- \nPrivCloud Sharing - Signature Électronique`,
       );
-    } catch (error: any) {
-      this.logger.error(
-        `Failed to notify signature creator for ${document.id}: ${error?.message || error}`,
-      );
+    } catch {
+      this.logger.error("Failed to notify signature creator");
     }
   }
 
@@ -1514,8 +1525,8 @@ export class SigningService {
             fileName: recipient.document.fileName,
           },
         })
-        .catch((err) =>
-          this.logger.error(`Failed to log SIGNATURE_REJECTED: ${err.message}`),
+        .catch(() =>
+          this.logger.error("Failed to log SIGNATURE_REJECTED"),
         );
     }
 
@@ -1596,9 +1607,7 @@ export class SigningService {
             fileName: doc.fileName,
           },
         })
-        .catch((err) =>
-          this.logger.error(`Failed to log SIGNATURE_CANCEL: ${err.message}`),
-        );
+        .catch(() => this.logger.error("Failed to log SIGNATURE_CANCEL"));
     }
 
     // Notify pending recipients
@@ -2102,9 +2111,7 @@ export class SigningService {
         );
       } catch (signingError: any) {
         // SECURITY: Fail-closed - mark document as SIGNING_FAILED, do NOT mark COMPLETED
-        this.logger.error(
-          `Signing failed for document ${documentId}: ${signingError?.message}`,
-        );
+        this.logger.error("Document signing failed");
         await this.prisma.signatureDocument.update({
           where: { id: documentId },
           data: { status: "SIGNING_FAILED" },
@@ -2154,10 +2161,8 @@ export class SigningService {
               fileName: doc.fileName,
             },
           })
-          .catch((err) =>
-            this.logger.error(
-              `Failed to log SIGNATURE_COMPLETE: ${err.message}`,
-            ),
+          .catch(() =>
+            this.logger.error("Failed to log SIGNATURE_COMPLETE"),
           );
       }
 
@@ -2175,22 +2180,16 @@ export class SigningService {
           recipients: allRecipients,
           sendMail: (email, subject, body) =>
             this.emailService.sendMail(email, subject, body),
-          onFailure: (email, error: any) =>
-            this.logger.error(
-              `Completion email failed for ${documentId} to ${email}: ${error?.message || error}`,
-            ),
+          onFailure: () =>
+            this.logger.error("Completion email delivery failed"),
         });
-      } catch (notificationError: any) {
-        this.logger.error(
-          `Failed to prepare completion emails for ${documentId}: ${notificationError?.message || notificationError}`,
-        );
+      } catch {
+        this.logger.error("Failed to prepare completion emails");
       }
 
       this.logger.log(`Document ${documentId} finalized successfully`);
-    } catch (error: any) {
-      this.logger.error(
-        `Failed to finalize document ${documentId}: ${error?.message}`,
-      );
+    } catch {
+      this.logger.error("Failed to finalize document");
 
       // SECURITY: Fail-closed - only overwrite status if it's NOT already
       // SIGNING_FAILED (set by the inner PAdES catch). A crypto failure
@@ -2217,7 +2216,7 @@ export class SigningService {
         "system",
         undefined,
         undefined,
-        `Server-side finalization failed: ${error?.message || "Unknown error"}`,
+        "Server-side finalization failed",
       ).catch(() => {});
 
       // Notify creator of the failure
@@ -2285,10 +2284,8 @@ export class SigningService {
       );
 
       return true;
-    } catch (error) {
-      this.logger.warn(
-        `Signing invitation email failed for ${recipient.email}: ${this.getErrorMessage(error)}`,
-      );
+    } catch {
+      this.logger.warn("Signing invitation email failed");
       return false;
     }
   }
@@ -2315,10 +2312,8 @@ export class SigningService {
         body,
       );
       return true;
-    } catch (error) {
-      this.logger.warn(
-        `Signing CC email failed for ${recipient.email}: ${this.getErrorMessage(error)}`,
-      );
+    } catch {
+      this.logger.warn("Signing CC email failed");
       return false;
     }
   }
@@ -2347,17 +2342,10 @@ export class SigningService {
     try {
       await this.emailService.sendMail(recipient.email, subject, body);
       return true;
-    } catch (error) {
-      this.logger.warn(
-        `Signing E2E key email failed for ${recipient.email}: ${this.getErrorMessage(error)}`,
-      );
+    } catch {
+      this.logger.warn("Signing E2E key email failed");
       return false;
     }
-  }
-
-  private getErrorMessage(error: unknown): string {
-    if (error instanceof Error) return error.message;
-    return String(error);
   }
 
   /**

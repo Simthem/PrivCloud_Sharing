@@ -22,7 +22,9 @@
  *   main -> worker: { type: 'start', shareId, file, chunkSize,
  *                     initialChunkSize,
  *                     totalChunks, isE2E, cryptoKeyRaw?, fileId?,
- *                     fileName, startChunk, endChunk }
+ *                     fileName, encryptedMetadata?, startChunk, endChunk }
+ *   encryptedMetadata (FILE_META_V1): the real name and folder path, already
+ *   encrypted with the share key. fileName is then the server placeholder.
  *   main -> worker: { type: 'safeline-resolved' }
  *   main -> worker: { type: 'abort' }
  *
@@ -167,6 +169,7 @@ async function runBatch(opts) {
   var cryptoChunkSize = opts.cryptoChunkSize || chunkSize;
   var fileName = opts.fileName;
   var relativePath = opts.relativePath;
+  var encryptedMetadata = opts.encryptedMetadata || undefined;
   var startChunk = opts.startChunk || 0;
   var endChunk = opts.endChunk != null ? opts.endChunk : totalChunks;
   var fileId = opts.fileId || undefined;
@@ -857,6 +860,7 @@ async function runBatch(opts) {
       id: fileId,
       name: fileName,
       relativePath: relativePath,
+      encryptedMetadata: encryptedMetadata,
       totalChunks: totalChunks,
       fileSize: file.size,
       chunkSize: chunkSize,
@@ -1877,6 +1881,9 @@ async function runBatch(opts) {
           if (relativePath) {
             headers["X-File-Relative-Path"] =
               encodeURIComponent(relativePath);
+          }
+          if (encryptedMetadata) {
+            headers["X-File-Metadata"] = encryptedMetadata;
           }
 
           var relayLeaseId = null;

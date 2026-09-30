@@ -161,20 +161,24 @@ test("the distributed Companion proves local OSS authorization", async () => {
   );
 });
 
-test("the public CSP permits same-origin and decrypted blob previews", async () => {
+test("the public proxy leaves the request-scoped application CSP untouched", async () => {
   for (const relativePath of [
     "reverse-proxy/Caddyfile",
     "reverse-proxy/Caddyfile.trust-proxy",
   ]) {
     const caddyfile = await read(relativePath);
-    const csp = caddyfile
-      .split("\n")
-      .find((line) => line.includes("Content-Security-Policy"));
-    assert.ok(csp, `${relativePath} must set a Content-Security-Policy`);
-    assert.match(csp, /frame-src 'self' blob:/);
-    assert.match(csp, /frame-ancestors 'self'/);
-    assert.match(csp, /object-src 'none'/);
+    assert.doesNotMatch(
+      caddyfile,
+      /^\s*Content-Security-Policy\s+/m,
+      `${relativePath} must not add a second, static CSP`,
+    );
   }
+
+  const cspUtility = await read("frontend/src/utils/csp.util.ts");
+  assert.match(cspUtility, /frame-src 'self' blob: https:/);
+  assert.match(cspUtility, /frame-ancestors 'self'/);
+  assert.match(cspUtility, /object-src 'none'/);
+  assert.match(cspUtility, /'strict-dynamic'/);
 });
 
 test("client tools have explicit reproducible packaging commands", async () => {

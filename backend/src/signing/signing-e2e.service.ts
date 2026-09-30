@@ -261,12 +261,10 @@ export class SigningE2EService {
               }),
             ),
         );
-      } catch (notificationError: any) {
+      } catch {
         // Finalization is already durable; a delivery outage must not make the
         // client retry the encrypted PDF upload against a COMPLETED document.
-        this.logger.error(
-          `E2E completion notification failed for ${documentId}: ${notificationError?.message || notificationError}`,
-        );
+        this.logger.error("E2E completion notification failed");
       }
     }
 
@@ -285,10 +283,8 @@ export class SigningE2EService {
             fileName: doc.fileName,
           },
         })
-        .catch((err) =>
-          this.logger.error(
-            `Failed to log SIGNATURE_COMPLETE (E2E): ${err.message}`,
-          ),
+        .catch(() =>
+          this.logger.error("Failed to log SIGNATURE_COMPLETE (E2E)"),
         );
     }
 
@@ -306,15 +302,11 @@ export class SigningE2EService {
         recipients: allRecipients,
         sendMail: (email, subject, body) =>
           this.emailService.sendMail(email, subject, body),
-        onFailure: (email, error: any) =>
-          this.logger.error(
-            `E2E completion email failed for ${documentId} to ${email}: ${error?.message || error}`,
-          ),
+        onFailure: () =>
+          this.logger.error("E2E completion email delivery failed"),
       });
-    } catch (notificationError: any) {
-      this.logger.error(
-        `Failed to prepare E2E completion emails for ${documentId}: ${notificationError?.message || notificationError}`,
-      );
+    } catch {
+      this.logger.error("Failed to prepare E2E completion emails");
     }
 
     this.logger.log(`Document ${documentId} finalized (E2E client-side)`);

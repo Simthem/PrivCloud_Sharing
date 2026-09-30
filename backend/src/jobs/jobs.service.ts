@@ -86,10 +86,8 @@ export class JobsService {
       for (const expiredShare of expiredShares) {
         try {
           await this.fileService.deleteAllFiles(expiredShare.id);
-        } catch (e) {
-          this.logger.warn(
-            `Failed to delete files for share ${expiredShare.id}: ${(e as Error).message}`,
-          );
+        } catch {
+          this.logger.warn("Failed to delete files for an expired share");
         }
         await this.prisma.share.deleteMany({
           where: { id: expiredShare.id },
@@ -181,12 +179,10 @@ export class JobsService {
             });
             continue;
           }
-        } catch (e) {
+        } catch {
           // Fail closed: an unavailable storage probe must never turn into an
           // unverified destructive cleanup. Retry on the next five-minute run.
-          this.logger.warn(
-            `Could not verify upload activity for unfinished share ${unfinishedShare.id}: ${(e as Error).message}`,
-          );
+          this.logger.warn("Could not verify unfinished-share upload activity");
           continue;
         }
 
@@ -211,10 +207,8 @@ export class JobsService {
             unfinishedShare.id,
             unfinishedShare.storageProvider,
           );
-        } catch (e) {
-          this.logger.warn(
-            `Failed to delete files for unfinished share ${unfinishedShare.id}: ${(e as Error).message}`,
-          );
+        } catch {
+          this.logger.warn("Failed to delete files for an unfinished share");
           await this.prisma.share.updateMany({
             where: {
               id: unfinishedShare.id,
@@ -243,9 +237,7 @@ export class JobsService {
             },
             data: { uploadCleanupStartedAt: null },
           });
-          this.logger.warn(
-            `Cleanup claim changed before unfinished share ${unfinishedShare.id} could be deleted`,
-          );
+          this.logger.warn("Cleanup claim changed before unfinished share deletion");
         }
       }
 
@@ -305,10 +297,8 @@ export class JobsService {
     await this.runExclusive("cleanupStaleS3Multiparts", async () => {
       try {
         await this.fileService.cleanupStaleS3Multiparts();
-      } catch (e) {
-        this.logger.warn(
-          `S3 multipart cleanup failed: ${(e as Error).message}`,
-        );
+      } catch {
+        this.logger.warn("S3 multipart cleanup failed");
       }
     });
   }
@@ -345,10 +335,8 @@ export class JobsService {
             data: { signedFileKey: null, certificatePageKey: null },
           });
           cleaned++;
-        } catch (error) {
-          this.logger.warn(
-            `Could not remove generated signing artifacts for ${document.id}: ${(error as Error).message}`,
-          );
+        } catch {
+          this.logger.warn("Could not remove generated signing artifacts");
         }
       }
       if (cleaned > 0) {
@@ -444,10 +432,8 @@ export class JobsService {
           for (const share of candidate.shares) {
             await this.fileService.deleteAllFiles(share.id);
           }
-        } catch (error) {
-          this.logger.warn(
-            `Could not delete data for an expired unverified account: ${(error as Error).message}`,
-          );
+        } catch {
+          this.logger.warn("Could not delete data for an expired unverified account");
           await this.prisma.user.updateMany({
             where: {
               id: candidate.id,

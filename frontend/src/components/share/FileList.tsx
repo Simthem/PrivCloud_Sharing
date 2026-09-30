@@ -26,6 +26,7 @@ import {
 import { FormattedMessage } from "react-intl";
 import useTranslate from "../../hooks/useTranslate.hook";
 import shareService from "../../services/share.service";
+import { reportE2EDownloadFailure } from "../../utils/shareCryptoEvents.util";
 import { FileMetaData } from "../../types/File.type";
 import DownloadProgressIndicator from "./DownloadProgressIndicator";
 import { Share } from "../../types/share.type";
@@ -163,6 +164,9 @@ const FileList = ({
       if (e?.name !== "AbortError") {
         toast.error(t("common.error"));
       }
+      if (share.isE2EEncrypted) {
+        reportE2EDownloadFailure(e, share.cryptoScheme);
+      }
     } finally {
       selectedAbortRef.current = null;
       setDownloadingSelected(false);
@@ -211,6 +215,9 @@ const FileList = ({
     } catch (e: any) {
       if (e.name !== "AbortError") {
         toast.error(t("common.error"));
+      }
+      if (share.isE2EEncrypted) {
+        reportE2EDownloadFailure(e, share.cryptoScheme);
       }
     } finally {
       setDownloads((prev) => {

@@ -8,7 +8,9 @@ import {
 } from "@nestjs/common";
 import { User } from "@prisma/client";
 import * as argon from "argon2";
+import { FILE_META_V1 } from "src/file/file-metadata-scheme";
 import { PrismaService } from "src/prisma/prisma.service";
+import { EmailOutboxService } from "src/email/email-outbox.service";
 import { EmailService } from "src/email/email.service";
 import { ConfigService } from "src/config/config.service";
 import { FileService } from "src/file/file.service";
@@ -27,10 +29,15 @@ import {
   UpdateTeamKeyRotationProgressDTO,
 } from "./dto/team.dto";
 
-const parseConfiguredLimit = (
+export const parseConfiguredLimit = (
   primaryValue: string | undefined,
   fallbackValue = "0",
-) => Number.parseInt(primaryValue || fallbackValue, 10);
+) => {
+  const value = primaryValue || fallbackValue;
+  if (!/^\d+$/.test(value)) return Number.NaN;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : Number.NaN;
+};
 
 const TEAM_MAX_MEMBERS = parseConfiguredLimit(process.env.TEAM_MAX_MEMBERS);
 const TEAM_MAX_OWNED_TEAMS = parseConfiguredLimit(
@@ -44,6 +51,16 @@ const TEAM_MAX_SHARE_SIZE = parseConfiguredLimit(
 const TEAM_TOTAL_STORAGE = parseConfiguredLimit(
   process.env.TEAM_TOTAL_STORAGE_BYTES,
 );
+
+export function normalizeAccessLogPagination(page?: number, limit?: number) {
+  const hasValidPage = typeof page === "number" && Number.isSafeInteger(page);
+  const hasValidLimit =
+    typeof limit === "number" && Number.isSafeInteger(limit);
+  return {
+    page: hasValidPage ? Math.min(1_000_000, Math.max(1, page)) : 1,
+    limit: hasValidLimit ? Math.min(100, Math.max(1, limit)) : 50,
+  };
+}
 
 if (
   !Number.isFinite(TEAM_MAX_MEMBERS) ||
@@ -69,6 +86,8 @@ if (
 if (
   !Number.isFinite(TEAM_MAX_SHARE_SIZE) ||
   !Number.isFinite(TEAM_TOTAL_STORAGE) ||
+  !Number.isSafeInteger(TEAM_MAX_SHARE_SIZE) ||
+  !Number.isSafeInteger(TEAM_TOTAL_STORAGE) ||
   TEAM_MAX_SHARE_SIZE < 0 ||
   TEAM_TOTAL_STORAGE < 0
 ) {
@@ -87,6 +106,7 @@ export class TeamService {
     private configService: ConfigService,
     private fileService: FileService,
     private teamNotificationService: TeamNotificationService,
+    private emailOutbox: EmailOutboxService,
   ) {}
 
   /**
@@ -206,9 +226,7 @@ export class TeamService {
       include: { members: true },
     });
 
-    this.logger.log(
-      `Team created: ${team.name} (${team.slug}) by ${user.email}`,
-    );
+    this.logger.log(`Team created by user ${user.id}`);
     return this.serializeTeam(team);
   }
 
@@ -456,7 +474,7 @@ export class TeamService {
     await this.prisma.team.delete({ where: { id: teamId } });
 
     this.logger.warn(
-      `TEAM_DELETED: Team "${team.name}" (${teamId}) permanently deleted by user ${userId}. ` +
+      `TEAM_DELETED: Team ${teamId} permanently deleted by user ${userId}. ` +
         `${folderIds.length} folders and associated shares/files purged.`,
     );
 
@@ -522,53 +540,56 @@ export class TeamService {
       }
     }
 
-    // Create invitation (expires in 7 days)
-    const invitation = await this.prisma.teamInvitation.upsert({
-      where: { email_teamId: { email, teamId } },
-      create: {
-        email,
-        role: dto.role || "MEMBER",
-        teamId,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        encryptedTeamKey: dto.encryptedTeamKey || null,
-      },
-      update: {
-        role: dto.role || "MEMBER",
-        status: "PENDING",
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        encryptedTeamKey: dto.encryptedTeamKey || null,
-      },
+    const baseUrl = await this.configService.get("general.appUrl");
+    const smtpEnabled = await this.configService.get("smtp.enabled");
+    const canSendEmail = smtpEnabled === true || smtpEnabled === "true";
+    const invitation = await this.prisma.$transaction(async (transaction) => {
+      const createdInvitation = await transaction.teamInvitation.upsert({
+        where: { email_teamId: { email, teamId } },
+        create: {
+          email,
+          role: dto.role || "MEMBER",
+          teamId,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          encryptedTeamKey: dto.encryptedTeamKey || null,
+        },
+        update: {
+          role: dto.role || "MEMBER",
+          status: "PENDING",
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          encryptedTeamKey: dto.encryptedTeamKey || null,
+        },
+      });
+      if (canSendEmail) {
+        const inviteUrl = `${baseUrl}/team/invite/${createdInvitation.token}`;
+        await this.emailOutbox.enqueue(
+          transaction,
+          {
+            recipient: email,
+            subject: `Invitation to join "${team.name}" - PrivCloud Sharing`,
+            text:
+              `Hello,\n\n` +
+              `You have been invited to join "${team.name}" on PrivCloud Sharing.\n\n` +
+              `Role: ${dto.role || "MEMBER"}\n\n` +
+              `Open this link to accept the invitation:\n${inviteUrl}\n\n` +
+              `This invitation expires in 7 days.\n\n` +
+              `-- \nPrivCloud Sharing`,
+          },
+          `team-invitation:${createdInvitation.id}:${createdInvitation.expiresAt.toISOString()}`,
+        );
+      }
+      return createdInvitation;
     });
 
-    // Send invitation email
-    const baseUrl = await this.configService.get("general.appUrl");
-    const inviteUrl = `${baseUrl}/team/invite/${invitation.token}`;
-
-    const smtpEnabled = await this.configService.get("smtp.enabled");
-    if (smtpEnabled === true || smtpEnabled === "true") {
-      await this.emailService
-        .sendMail(
-          email,
-          `Invitation to join "${team.name}" - PrivCloud Sharing`,
-          `Hello,\n\n` +
-            `You have been invited to join "${team.name}" on PrivCloud Sharing.\n\n` +
-            `Role: ${dto.role || "MEMBER"}\n\n` +
-            `Open this link to accept the invitation:\n${inviteUrl}\n\n` +
-            `This invitation expires in 7 days.\n\n` +
-            `-- \nPrivCloud Sharing`,
-        )
-        .catch((error) => {
-          this.logger.warn(
-            `Team invitation email could not be sent to ${email}: ${error.message}`,
-          );
-        });
+    if (canSendEmail) {
+      await this.emailOutbox.deliverPending();
     } else {
-      this.logger.warn(
-        `SMTP is disabled; generated team invitation token for ${email}.`,
-      );
+      this.logger.warn("SMTP is disabled; generated a team invitation token");
     }
 
-    this.logger.log(`Team invitation sent: ${email} -> ${team.name}`);
+    this.logger.log(
+      `Team invitation ${invitation.id} created for team ${teamId}`,
+    );
 
     // Log activity
     const inviterUser = await this.prisma.user.findUnique({
@@ -669,9 +690,7 @@ export class TeamService {
       data: { status: "ACCEPTED" },
     });
 
-    this.logger.log(
-      `${user.email} joined team ${invitation.team.name} as ${invitation.role}`,
-    );
+    this.logger.log(`User joined a team as ${invitation.role}`);
 
     // Log activity
     void this.logAccess(invitation.teamId, "MEMBER_JOIN", user.email, {
@@ -857,6 +876,12 @@ export class TeamService {
       fileId: string;
       fileName: string;
       isE2EEncrypted: boolean;
+      // Own shares with encrypted file names only: the client opens the name
+      // with the share key and keeps the PDF files itself.
+      metadataScheme?: number;
+      encryptedMetadata?: string;
+      cryptoScheme?: number | null;
+      wrappedShareKey?: string | null;
     }[] = [];
 
     for (const membership of memberships) {
@@ -1025,11 +1050,37 @@ export class TeamService {
       select: {
         id: true,
         isE2EEncrypted: true,
-        files: { select: { id: true, name: true } },
+        cryptoScheme: true,
+        wrappedShareKey: true,
+        files: {
+          select: {
+            id: true,
+            name: true,
+            metadataScheme: true,
+            encryptedMetadata: true,
+          },
+        },
       },
     });
     for (const share of personalShares) {
       for (const file of share.files) {
+        if (file.metadataScheme === FILE_META_V1 && file.encryptedMetadata) {
+          results.push({
+            teamId: null,
+            teamName: null,
+            folderId: null,
+            folderName: null,
+            shareId: share.id,
+            fileId: file.id,
+            fileName: file.name,
+            isE2EEncrypted: share.isE2EEncrypted,
+            metadataScheme: file.metadataScheme,
+            encryptedMetadata: file.encryptedMetadata,
+            cryptoScheme: share.cryptoScheme,
+            wrappedShareKey: share.wrappedShareKey,
+          });
+          continue;
+        }
         if (!file.name.toLowerCase().endsWith(".pdf")) continue;
         results.push({
           teamId: null,
@@ -1433,10 +1484,8 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
           );
           delivered = true;
           sent++;
-        } catch (error) {
-          this.logger.error(
-            `Key rotation reminder failed for ${member.user.email}: ${(error as Error).message}`,
-          );
+        } catch {
+          this.logger.error("Key rotation reminder failed");
         }
       }
       if (delivered) {
@@ -1871,11 +1920,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
         `${creatorUser?.username || creatorUser?.email || "A team member"} created folder "${dto.name}"`,
         { folderId: folder.id },
       )
-      .catch((err) =>
-        this.logger.error(
-          `Failed to notify team on folder create: ${err.message}`,
-        ),
-      );
+      .catch(() => this.logger.error("Failed to notify team on folder create"));
 
     return {
       id: folder.id,
@@ -2488,9 +2533,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
         await this.fileService.remove(shareId, fileId);
         deletedCount++;
       } catch {
-        this.logger.warn(
-          `Failed to delete file ${fileId} from share ${shareId}`,
-        );
+        this.logger.warn("Failed to delete a file from a share");
       }
     }
 
@@ -2512,11 +2555,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
           `${actor?.username || actor?.email || "A team member"} deleted ${deletedCount} file(s)`,
           { folderId },
         )
-        .catch((err) =>
-          this.logger.error(
-            `Failed to notify team on bulk delete: ${err.message}`,
-          ),
-        );
+        .catch(() => this.logger.error("Failed to notify team on bulk delete"));
     }
 
     return { deleted: deletedCount, total: dto.files.length };
@@ -2582,7 +2621,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     await this.prisma.teamFolder.delete({ where: { id: folderId } });
 
     this.logger.warn(
-      `FOLDER_DELETED: Folder "${folder.name}" (${folderId}) permanently deleted from team ${teamId} by user ${userId}. ` +
+      `FOLDER_DELETED: Folder ${folderId} permanently deleted from team ${teamId} by user ${userId}. ` +
         `${shares.length} shares and all associated files purged.`,
     );
 
@@ -2907,8 +2946,10 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       );
     }
 
-    const page = options.page || 1;
-    const limit = Math.min(options.limit || 50, 100);
+    const { page, limit } = normalizeAccessLogPagination(
+      options.page,
+      options.limit,
+    );
     const skip = (page - 1) * limit;
 
     const where: any = { teamId };
@@ -3189,9 +3230,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       },
     });
 
-    this.logger.log(
-      `Admin created team: ${team.name} (${team.slug}) with owner ${owner.email}`,
-    );
+    this.logger.log("Admin created a team");
     return this.serializeTeam(team);
   }
 
@@ -3235,7 +3274,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       },
     });
 
-    this.logger.log(`Platform admin ${adminUserId} joined team ${team.name}`);
+    this.logger.log(`Platform admin ${adminUserId} joined team ${teamId}`);
     return { joined: true, teamId, teamName: team.name };
   }
 
@@ -3298,9 +3337,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       });
     }
 
-    this.logger.log(
-      `Admin added user ${targetUser.email} to team ${team.name} as ${role}`,
-    );
+    this.logger.log(`Admin added a user to a team as ${role}`);
 
     return {
       added: true,
@@ -3339,7 +3376,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     });
 
     this.logger.log(
-      `ADMIN_SET_ROLE: Member ${member.user?.email} role changed to ${role} in team ${teamId}`,
+      `ADMIN_SET_ROLE: Member role changed to ${role} in team ${teamId}`,
     );
     return { updated: true, memberId, role };
   }
@@ -3368,9 +3405,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       data: { maxMembers },
     });
 
-    this.logger.log(
-      `Admin updated team ${team.name} maxMembers to ${maxMembers}`,
-    );
+    this.logger.log(`Admin updated team maxMembers to ${maxMembers}`);
     return { updated: true, teamId, maxMembers };
   }
 
@@ -3449,7 +3484,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     if (!team) throw new NotFoundException("Team not found");
 
     this.logger.warn(
-      `ADMIN_DELETE_TEAM: Team "${team.name}" (${teamId}) deleted by platform admin`,
+      `ADMIN_DELETE_TEAM: Team ${teamId} deleted by platform admin`,
     );
     await this.prisma.team.delete({ where: { id: teamId } });
     return { deleted: true, teamId };
@@ -3506,9 +3541,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       });
     }
 
-    this.logger.warn(
-      `ADMIN_REMOVE_MEMBER: Member ${member.user?.email} removed from team ${teamId}`,
-    );
+    this.logger.warn(`ADMIN_REMOVE_MEMBER: Member removed from team ${teamId}`);
     return { removed: true, memberId };
   }
 
@@ -3543,7 +3576,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     });
 
     this.logger.warn(
-      `ADMIN_UPDATE_FOLDER: Folder ${folderId} renamed to "${data.name}" in team ${teamId}`,
+      `ADMIN_UPDATE_FOLDER: Folder ${folderId} renamed in team ${teamId}`,
     );
 
     if (data.name && data.name !== folder.name) {
@@ -3564,7 +3597,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     if (!folder) throw new NotFoundException("Folder not found");
 
     this.logger.warn(
-      `ADMIN_DELETE_FOLDER: Folder "${folder.name}" (${folderId}) deleted from team ${teamId}`,
+      `ADMIN_DELETE_FOLDER: Folder ${folderId} deleted from team ${teamId}`,
     );
 
     void this.logAccess(teamId, "FOLDER_DELETE", "admin", {

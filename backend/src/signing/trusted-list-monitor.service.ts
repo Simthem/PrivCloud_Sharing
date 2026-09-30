@@ -55,8 +55,8 @@ export class TrustedListMonitorService implements OnApplicationBootstrap {
   onApplicationBootstrap() {
     if (!this.listUrl) return;
     setTimeout(() => {
-      void this.checkIfStale().catch((error) =>
-        this.logger.error(`Trusted List check failed: ${error?.message}`),
+      void this.checkIfStale().catch(() =>
+        this.logger.error("Trusted List check failed"),
       );
     }, 30_000).unref();
   }
@@ -141,8 +141,8 @@ export class TrustedListMonitorService implements OnApplicationBootstrap {
     if (result === "ERROR" && retryOnError) {
       // A network failure is often transient: try once more an hour later.
       setTimeout(() => {
-        void this.check(false).catch((error) =>
-          this.logger.error(`Trusted List check failed: ${error?.message}`),
+        void this.check(false).catch(() =>
+          this.logger.error("Trusted List check failed"),
         );
       }, RETRY_AFTER_ERROR_MS).unref();
     }
@@ -222,10 +222,8 @@ export class TrustedListMonitorService implements OnApplicationBootstrap {
     for (const { email } of administrators) {
       await this.emailService
         .sendMail(email, subject, body)
-        .catch((error) =>
-          this.logger.error(
-            `Trusted List trace not delivered to ${email}: ${error?.message}`,
-          ),
+        .catch(() =>
+          this.logger.error("Trusted List trace delivery failed"),
         );
     }
   }

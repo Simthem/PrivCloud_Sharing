@@ -77,7 +77,7 @@ export default {
   "home.comparison.table.ads": "No advertising / tracking",
 
   "home.comparison.title": "PrivCloud vs WeTransfer",
-  "home.comparison.text": "Unlike WeTransfer, SwissTransfer, Smash, or TransferNow, PrivCloud encrypts your files directly in your browser before they leave your device. Your encryption key is never transmitted to our servers -- even if compromised, your files remain unreadable. Enable download notifications to know exactly when someone accesses your share. No ads, no tracking, no third-party access -- genuinely private, GDPR-compliant file sharing hosted in France.",
+  "home.comparison.text": "Unlike WeTransfer, SwissTransfer, Smash, or TransferNow, PrivCloud encrypts your files directly in your browser before they leave your device. By default, your encryption key is not transmitted to our servers -- even if compromised, your files remain unreadable. Enable download notifications to know exactly when someone accesses your share. No ads, no tracking, no third-party access -- genuinely private, GDPR-compliant file sharing hosted in France.",
 
   // Use cases section
   "home.usecases.title": "Who is PrivCloud for?",
@@ -91,7 +91,7 @@ export default {
   // Features section
   "home.features.title": "Why choose PrivCloud_Sharing?",
   "home.features.security.title": "End-to-end AES-256 encryption for all your files",
-  "home.features.security.description": "Only you and the recipient can read the files. The encryption key never leaves your browser - for us, your files are unreadable.",
+  "home.features.security.description": "Only you and the recipient can read the files. By default, the encryption key is not transmitted to the server - for us, your files are unreadable.",
   "home.features.privacy.title": "Your data, your rules - hosted in France",
   "home.features.privacy.description": "Hosted in France, 100% GDPR compliant. No tracking, no analytics, no third-party access.",
   "home.features.speed.title": "Unlimited files, max transfer speed",
@@ -108,7 +108,7 @@ export default {
   "home.howto.step1.desc": "Drag and drop your files (documents, images, archives, videos...) or click to select them. Multiple files at once, no installation required -- everything happens directly in your browser.",
   "home.howto.step2.num": "02",
   "home.howto.step2.title": "End-to-end AES-256 encryption - your key stays private",
-  "home.howto.step2.desc": "Your files are encrypted locally in your browser with AES-256-GCM before leaving your device. The encryption key never transits to our servers -- zero-knowledge architecture.",
+  "home.howto.step2.desc": "Your files are encrypted locally in your browser with AES-256-GCM before leaving your device. By default, the encryption key does not pass through our servers: it stays in the share link.",
   "home.howto.step3.num": "03",
   "home.howto.step3.title": "Share the secure link",
   "home.howto.step3.desc": "Copy the share link and send it to your recipients. Set an expiration date and optional password for additional protection. Receive a notification whenever someone downloads your files.",
@@ -119,7 +119,7 @@ export default {
 
   // Security, privacy and compliance section
   "home.security.title": "Security, privacy and GDPR compliance",
-  "home.security.encryption.title": "AES-256-GCM encryption: your key never leaves your browser",
+  "home.security.encryption.title": "AES-256-GCM encryption: your key is generated in your browser",
   "home.security.encryption.text": "Every file is encrypted locally in your browser before being uploaded. The AES-256 symmetric encryption key is randomly generated and embedded in the URL fragment (#key=...), a part that is never transmitted to the server by HTTP protocol design. Result: even if the server is compromised, your files remain unreadable. No plaintext data ever transits the network or resides on our servers.",
   "home.security.zeroknowledge.title": "Verifiable zero-knowledge architecture",
   "home.security.zeroknowledge.text": "The server only stores opaque encrypted blobs. It never sees your decryption key, cannot read your files, and retains no plaintext data. This promise is verifiable: the full source code is open and auditable on GitHub. You do not have to trust us -- you can verify for yourself.",
@@ -136,7 +136,7 @@ export default {
   "home.faq.a2": "Yes. All transfers are encrypted. With end-to-end encryption enabled, your files are encrypted directly in your browser (AES-256) before upload. No one, not even us, can read their content.",
 
   "home.faq.q3": "How does end-to-end encryption work?",
-  "home.faq.a3": "Encryption is performed locally in your browser before upload. The decryption key is never transmitted to the server: it is included only in the share link. Without the full link, files are unusable.",
+  "home.faq.a3": "Encryption is performed locally in your browser before upload. By default, the decryption key is not transmitted to the server: it is included only in the share link. It only passes through our servers if you choose to send it by e-mail, and for files received through an upload link. Without the full link, files are unusable.",
 
   "home.faq.q4": "Are my files stored permanently?",
   "home.faq.a4": "No. Every transfer has a configurable expiration. Once expired, files are automatically deleted from our servers, with no action required.",
@@ -930,7 +930,7 @@ export default {
   "security.zeroKnowledge.title": "Zero-knowledge architecture",
   "security.zeroKnowledge.text": "Zero-knowledge architecture means our system is designed so that it is technically impossible for us to access your file contents, even if we wanted to -- or were compelled to.",
   "security.zeroKnowledge.point1": "Your files are encrypted before upload",
-  "security.zeroKnowledge.point2": "Your key never passes through our servers",
+  "security.zeroKnowledge.point2": "By default, your key does not pass through our servers",
   "security.zeroKnowledge.point3": "Our logs contain no decryption keys",
   "security.zeroKnowledge.point4": "Even full access to our database would not allow reading your files",
   "security.sskr.title": "Shamir's Secret Sharing (SSKR)",
@@ -1551,7 +1551,7 @@ export default {
 
   // --- Account E2E Section ---
   "account.e2e.title": "End-to-End Encryption (E2E)",
-  "account.e2e.description": "Your AES-256 encryption key is never sent to the server. It is kept in your tab for the duration of your session. When the tab is closed, it is automatically purged. Each new session requires you to re-enter it. Store it carefully in a password manager.",
+  "account.e2e.description": "Your AES-256 encryption key is not sent to the server, unless you choose to include it in the e-mail sent to the recipients of a share. It is kept in your tab for the duration of your session. When the tab is closed, it is automatically purged. Each new session requires you to re-enter it. Store it carefully in a password manager.",
   "account.e2e.yourKey": "Your key:",
   "account.e2e.key.reveal": "Reveal",
   "account.e2e.key.hide": "Hide",
@@ -1630,7 +1630,7 @@ export default {
   "onboarding.step0.body": "PrivCloud lets you share files securely, privately and without middlemen. This quick tour explains the key concepts you need to know before you start.",
   "onboarding.step1.title": "End-to-end encryption (E2E)",
   "onboarding.step1.body": "With E2E encryption enabled, your files are encrypted inside your browser before they ever reach our servers. Nobody but you and your recipients can read them.",
-  "onboarding.step1.li1": "Your key never leaves your device.",
+  "onboarding.step1.li1": "By default, your key is not sent to our servers.",
   "onboarding.step1.li2": "Even we cannot access your files.",
   "onboarding.step1.li3": "Enable E2E in your profile \u2192 \"E2E Encryption\" section.",
   "onboarding.step2.title": "Your encryption key",

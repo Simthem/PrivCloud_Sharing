@@ -45,6 +45,7 @@ import signingService, {
 } from "../../services/signing.service";
 import shareService from "../../services/share.service";
 import teamService from "../../services/team.service";
+import { resolveOwnerShareKey } from "../../utils/shareKey.util";
 import {
   embedPadesCms,
   preparePadesPdf,
@@ -202,23 +203,14 @@ const SigningDetailPage = () => {
           const keyB64 = await exportKeyToBase64(teamKey);
           setE2eKeyB64(keyB64);
         } else if (typedDoc.shareId) {
-          // Path 2: Non-team share -> use master key or unwrap reverse share key
-          const encryptedKey = await shareService.getEncryptedE2eKey(
+          // Path 2: Non-team share -> unwrap the reverse-share key or the
+          // SHARE_DEK_V1 share key, else the file uses the master key
+          const material = await shareService.getShareKeyMaterial(
             typedDoc.shareId,
           );
-          if (encryptedKey) {
-            // Reverse share: unwrap the share key with master key
-            const shareKey = await unwrapReverseShareKey(
-              encryptedKey,
-              masterKey,
-            );
-            const keyB64 = await exportKeyToBase64(shareKey);
-            setE2eKeyB64(keyB64);
-          } else {
-            // Normal share: encrypted directly with user's master key
-            const keyB64 = await exportKeyToBase64(masterKey);
-            setE2eKeyB64(keyB64);
-          }
+          setE2eKeyB64(
+            await resolveOwnerShareKey(typedDoc.shareId, userKeyB64, material),
+          );
         }
       } catch {
         // Key resolution failed - user may not have access

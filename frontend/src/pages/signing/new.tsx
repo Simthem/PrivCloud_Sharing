@@ -47,8 +47,10 @@ import signingService, {
   CreateSignatureRequestPayload,
   SignatureRecipient,
 } from "../../services/signing.service";
-import teamService from "../../services/team.service";
+import teamService, { SignableFile } from "../../services/team.service";
 import shareService from "../../services/share.service";
+import { resolveOwnerShareKey } from "../../utils/shareKey.util";
+import { decryptShareFileNames } from "../../utils/fileMetadata.util";
 import toast from "../../utils/toast.util";
 import {
   getUserKey,
@@ -148,11 +150,70 @@ const NewSigningRequestPage = () => {
   }, [user]);
 
   // Fetch signable files from all teams
-  const { data: signableFiles, isLoading: filesLoading } = useQuery({
+  const { data: listedSignableFiles, isLoading: filesListLoading } = useQuery({
     queryKey: ["signableFiles"],
     queryFn: teamService.getSignableFiles,
     enabled: !!user,
   });
+
+  // FILE_META_V1: the server lists every file of the user's shares with an
+  // encrypted name. Their names are opened here and only PDF files are kept.
+  const [signableFiles, setSignableFiles] = useState<SignableFile[]>();
+  useEffect(() => {
+    if (!listedSignableFiles) {
+      setSignableFiles(undefined);
+      return;
+    }
+    const plain = listedSignableFiles.filter((f) => !f.metadataScheme);
+    const encrypted = listedSignableFiles.filter((f) => !!f.metadataScheme);
+    const userKeyB64 = getUserKey();
+    if (encrypted.length === 0 || !userKeyB64) {
+      setSignableFiles(plain);
+      return;
+    }
+    let cancelled = false;
+    const byShare = new Map<string, SignableFile[]>();
+    for (const f of encrypted) {
+      byShare.set(f.shareId, [...(byShare.get(f.shareId) ?? []), f]);
+    }
+    void Promise.all(
+      [...byShare.entries()].map(async ([shareId, entries]) => {
+        try {
+          const key = await resolveOwnerShareKey(shareId, userKeyB64, {
+            cryptoScheme: entries[0].cryptoScheme,
+            wrappedShareKey: entries[0].wrappedShareKey,
+          });
+          const opened = await decryptShareFileNames<
+            SignableFile & {
+              id: string;
+              name: string;
+              metadataUnreadable?: boolean;
+            }
+          >(
+            shareId,
+            entries.map((f) => ({ ...f, id: f.fileId, name: f.fileName })),
+            key,
+          );
+          return opened
+            .filter((f) => !f.metadataUnreadable && /\.pdf$/i.test(f.name))
+            .map(({ id: _id, name, ...f }) => ({
+              ...f,
+              fileName: name,
+              encryptedName: true,
+            }));
+        } catch {
+          return [];
+        }
+      }),
+    ).then((groups) => {
+      if (!cancelled) setSignableFiles([...plain, ...groups.flat()]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [listedSignableFiles]);
+  const filesLoading =
+    filesListLoading || (!!listedSignableFiles && !signableFiles);
 
   // Build Select data grouped by team > folder, then the user's own files
   const fileSelectData = useMemo(() => {
@@ -247,14 +308,34 @@ const NewSigningRequestPage = () => {
       setTeamKeyB64(null);
       return;
     }
-    if (!fileEntry.teamId) {
-      // Own share: encrypted with the user's master key
-      setTeamKeyB64(getUserKey());
-      return;
-    }
     setTeamKeyB64(null);
 
     let cancelled = false;
+    if (!fileEntry.teamId) {
+      // Own share: the master key, or the share's own key (SHARE_DEK_V1)
+      const userKeyB64 = getUserKey();
+      if (!userKeyB64) return;
+      (async () => {
+        try {
+          const material = await shareService.getShareKeyMaterial(
+            fileEntry.shareId,
+          );
+          const keyB64 = await resolveOwnerShareKey(
+            fileEntry.shareId,
+            userKeyB64,
+            material,
+          );
+          if (!cancelled) setTeamKeyB64(keyB64);
+        } catch {
+          // Unknown share state: keep the previous behaviour for legacy files
+          if (!cancelled) setTeamKeyB64(userKeyB64);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
+
     (async () => {
       try {
         const userKeyB64 = getUserKey();
@@ -640,6 +721,7 @@ const NewSigningRequestPage = () => {
       notificationE2EKey: teamKeyB64 || undefined,
       shareId,
       fileId,
+      documentName: fileEntry?.encryptedName ? fileEntry.fileName : undefined,
       message: values.message || undefined,
       signatureLevel: values.signatureLevel,
       addApprovalField: values.addApprovalField,

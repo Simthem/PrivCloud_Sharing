@@ -44,11 +44,14 @@ export async function importKeyFromBase64(encoded: string): Promise<CryptoKey> {
 export async function encryptFile(
   plaintext: ArrayBuffer,
   key: CryptoKey,
+  additionalData?: Uint8Array<ArrayBuffer>,
 ): Promise<ArrayBuffer> {
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
 
   let ciphertext: ArrayBuffer | null = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
+    additionalData
+      ? { name: "AES-GCM", iv, additionalData }
+      : { name: "AES-GCM", iv },
     key,
     plaintext,
   );
@@ -72,12 +75,19 @@ export async function encryptFile(
 export async function decryptFile(
   encrypted: ArrayBuffer,
   key: CryptoKey,
+  additionalData?: Uint8Array<ArrayBuffer>,
 ): Promise<ArrayBuffer> {
   const data = new Uint8Array(encrypted);
   const iv = data.subarray(0, IV_LENGTH);
   const ciphertext = data.subarray(IV_LENGTH);
 
-  return crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+  return crypto.subtle.decrypt(
+    additionalData
+      ? { name: "AES-GCM", iv, additionalData }
+      : { name: "AES-GCM", iv },
+    key,
+    ciphertext,
+  );
 }
 
 const GCM_TAG_LENGTH = 16;
@@ -870,10 +880,59 @@ export async function unwrapReverseShareKey(
   ]);
 }
 
-// ----- Téléchargement déchiffré ------------------------------------------------------------─
+// ----- Clé propre à un partage personnel (SHARE_DEK_V1) --------------------
 
 /**
- * Crée un lien de téléchargement pour un Blob déchiffré.
+ * Données authentifiées de l'enveloppe de K_share : l'identifiant du partage.
+ * Une enveloppe recopiée sur un autre partage ne s'ouvre donc pas, et le lien
+ * d'un partage ne peut jamais recevoir la clé d'un autre.
+ */
+function shareKeyAdditionalData(shareId: string): Uint8Array<ArrayBuffer> {
+  return new TextEncoder().encode(`privcloud:share-dek:v1:${shareId}`);
+}
+
+/**
+ * Enveloppe K_share avec K_master, même format que K_rs et K_team :
+ * base64url [IV 12 octets][AES-256-GCM(K_share) + tag 16 octets].
+ */
+export async function wrapShareKey(
+  shareKey: CryptoKey,
+  masterKey: CryptoKey,
+  shareId: string,
+): Promise<string> {
+  const raw = await crypto.subtle.exportKey("raw", shareKey);
+  const encrypted = await encryptFile(
+    raw,
+    masterKey,
+    shareKeyAdditionalData(shareId),
+  );
+  return arrayBufferToBase64Url(encrypted);
+}
+
+/** Ouvre l'enveloppe de K_share. Échoue si K_master ou le partage diffère. */
+export async function unwrapShareKey(
+  wrappedBase64: string,
+  masterKey: CryptoKey,
+  shareId: string,
+): Promise<CryptoKey> {
+  const raw = await decryptFile(
+    base64UrlToArrayBuffer(wrappedBase64),
+    masterKey,
+    shareKeyAdditionalData(shareId),
+  );
+  if (raw.byteLength !== 32) throw new Error("Invalid share key length");
+  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, [
+    "encrypt",
+    "decrypt",
+  ]);
+}
+
+/**
+ * Reconnaît l'échec de déballage d'une clé encapsulée.
+ *
+ * WebCrypto signale un tag AES-GCM invalide par un `OperationError` nu, sans
+ * message : impossible de distinguer "mauvaise clé" d'un vrai bug sans ce test.
+ * `DataError` / `InvalidCharacterError` couvrent le blob illisible ou tronqué.
  */
 export function isStaleTeamKeyError(error: unknown): boolean {
   const name = (error as { name?: string } | null)?.name;
@@ -884,6 +943,15 @@ export function isStaleTeamKeyError(error: unknown): boolean {
   );
 }
 
+/**
+ * Vérifie qu'une clé encapsulée s'ouvre bien avec cette K_master.
+ *
+ * Une clé encapsulée sous une K_master révoquée reste stockée côté serveur et
+ * paraît valide : seule une tentative de déchiffrement révèle le problème, et
+ * elle échoue par un `OperationError` WebCrypto brut (tag AES-GCM invalide)
+ * impossible à distinguer d'une panne. Ce test permet de détecter l'état
+ * "clé périmée" en amont, avant de proposer une action qui échouera.
+ */
 export async function canUnwrapWithMasterKey(
   encryptedBase64: string,
   masterKey: CryptoKey,
@@ -896,6 +964,11 @@ export async function canUnwrapWithMasterKey(
   }
 }
 
+// ----- Téléchargement déchiffré ------------------------------------------------------------─
+
+/**
+ * Crée un lien de téléchargement pour un Blob déchiffré.
+ */
 export function downloadDecryptedBlob(blob: Blob, filename: string): void {
   // Sanitize filename: strip path separators and null bytes to prevent path traversal
   const safeName = filename.replace(/[/\\\0]/g, "_").replace(/^\.\./, "_");
@@ -914,7 +987,7 @@ export function downloadDecryptedBlob(blob: Blob, filename: string): void {
 
 // ----- Utilitaires base64url -----------------------------------------------------------------─
 
-function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
+export function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = "";
   for (let i = 0; i < bytes.byteLength; i++) {
@@ -926,7 +999,7 @@ function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
     .replace(/=+$/, "");
 }
 
-function base64UrlToArrayBuffer(base64url: string): ArrayBuffer {
+export function base64UrlToArrayBuffer(base64url: string): ArrayBuffer {
   // Restaurer le base64 standard
   let base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
   // Ajouter le padding

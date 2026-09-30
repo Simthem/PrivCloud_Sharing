@@ -24,8 +24,21 @@ import { ReverseShareService } from "src/reverseShare/reverseShare.service";
 import { parseRelativeDateToAbsolute } from "src/utils/date.util";
 import { SHARE_DIRECTORY } from "../constants";
 import { getArchiveEntryName } from "../file/file-path.util";
+import {
+  FILE_META_V1,
+  isFileMetaWriteEnabledFor,
+} from "../file/file-metadata-scheme";
 import { createZipArchive } from "../utils/archive.util";
 import { CreateShareDTO } from "./dto/createShare.dto";
+import {
+  LEGACY_ACCOUNT_KEY,
+  SHARE_DEK_V1,
+  SHARE_KEY_WRAP_ALGORITHM,
+  isShareDekReadEnabled,
+  isShareDekWriteEnabledFor,
+  resolveShareCryptoScheme,
+  shareCryptoSchemeName,
+} from "./share-crypto-scheme";
 import { normalizeShareRecipients } from "./share-recipient.util";
 import { touchShareUploadActivity } from "./upload-activity.util";
 
@@ -45,12 +58,154 @@ export class ShareService {
     private pushService: PushService,
   ) {}
 
+  /**
+   * Validate the personal key scheme requested by the client and return the
+   * columns to store. Only an authenticated owner's personal E2E share can
+   * use SHARE_DEK_V1: team shares keep K_team and reverse-share uploads keep
+   * K_rs. Clients that send nothing keep the historical NULL value.
+   */
+  resolveCreateCryptoData(
+    share: Pick<
+      CreateShareDTO,
+      | "id"
+      | "isE2EEncrypted"
+      | "cryptoScheme"
+      | "wrappedShareKey"
+      | "wrappedShareKeyAlgorithm"
+      | "fileMetadataScheme"
+    >,
+    user: Pick<User, "id" | "email"> | undefined,
+    isReverseShareUpload: boolean,
+    isTeamShare: boolean,
+  ): {
+    cryptoScheme: number | null;
+    wrappedShareKey: string | null;
+    wrappedShareKeyAlgorithm: string | null;
+    wrappedShareKeyVersion: number | null;
+    fileMetadataScheme: number | null;
+  } {
+    const keyData = this.resolveCreateKeyData(
+      share,
+      user,
+      isReverseShareUpload,
+      isTeamShare,
+    );
+    if (
+      share.fileMetadataScheme === undefined ||
+      share.fileMetadataScheme === null
+    ) {
+      return { ...keyData, fileMetadataScheme: null };
+    }
+    if (share.fileMetadataScheme !== FILE_META_V1) {
+      throw new BadRequestException(
+        `Unsupported file metadata scheme: ${share.fileMetadataScheme}`,
+      );
+    }
+    if (keyData.cryptoScheme !== SHARE_DEK_V1) {
+      throw new BadRequestException(
+        "Encrypted file names require cryptoScheme SHARE_DEK_V1",
+      );
+    }
+    if (!isFileMetaWriteEnabledFor(user)) {
+      this.logger.warn(
+        `Share file names refused: share=redacted fileMetadataScheme=FILE_META_V1 reason=write_disabled`,
+      );
+      throw new ConflictException(
+        "Encrypted file names are not enabled for this account",
+        "file_metadata_scheme_unavailable",
+      );
+    }
+    return { ...keyData, fileMetadataScheme: FILE_META_V1 };
+  }
+
+  private resolveCreateKeyData(
+    share: Pick<
+      CreateShareDTO,
+      | "id"
+      | "isE2EEncrypted"
+      | "cryptoScheme"
+      | "wrappedShareKey"
+      | "wrappedShareKeyAlgorithm"
+    >,
+    user: Pick<User, "id" | "email"> | undefined,
+    isReverseShareUpload: boolean,
+    isTeamShare: boolean,
+  ): {
+    cryptoScheme: number | null;
+    wrappedShareKey: string | null;
+    wrappedShareKeyAlgorithm: string | null;
+    wrappedShareKeyVersion: number | null;
+  } {
+    const legacy = {
+      cryptoScheme: null,
+      wrappedShareKey: null,
+      wrappedShareKeyAlgorithm: null,
+      wrappedShareKeyVersion: null,
+    };
+    const hasWrappedKey =
+      share.wrappedShareKey !== undefined ||
+      share.wrappedShareKeyAlgorithm !== undefined;
+
+    if (share.cryptoScheme === undefined || share.cryptoScheme === null) {
+      if (hasWrappedKey) {
+        throw new BadRequestException(
+          "A wrapped share key requires cryptoScheme SHARE_DEK_V1",
+        );
+      }
+      return legacy;
+    }
+
+    const scheme = resolveShareCryptoScheme(share.cryptoScheme);
+    const isPersonalE2E =
+      !!user && !!share.isE2EEncrypted && !isReverseShareUpload && !isTeamShare;
+
+    if (scheme === LEGACY_ACCOUNT_KEY) {
+      if (hasWrappedKey) {
+        throw new BadRequestException(
+          "LEGACY_ACCOUNT_KEY shares cannot carry a wrapped share key",
+        );
+      }
+      return isPersonalE2E
+        ? { ...legacy, cryptoScheme: LEGACY_ACCOUNT_KEY }
+        : legacy;
+    }
+
+    if (!isPersonalE2E) {
+      throw new BadRequestException(
+        "SHARE_DEK_V1 is only available for personal end-to-end encrypted shares",
+      );
+    }
+    if (
+      !share.wrappedShareKey ||
+      share.wrappedShareKeyAlgorithm !== SHARE_KEY_WRAP_ALGORITHM
+    ) {
+      throw new BadRequestException(
+        "SHARE_DEK_V1 requires a wrapped share key and its algorithm",
+      );
+    }
+    if (!isShareDekReadEnabled() || !isShareDekWriteEnabledFor(user)) {
+      this.logger.warn(
+        `Share crypto refused: share=redacted cryptoScheme=SHARE_DEK_V1 reason=write_disabled`,
+      );
+      throw new ConflictException(
+        "SHARE_DEK_V1 is not enabled for this account",
+        "share_crypto_scheme_unavailable",
+      );
+    }
+    return {
+      cryptoScheme: SHARE_DEK_V1,
+      wrappedShareKey: share.wrappedShareKey,
+      wrappedShareKeyAlgorithm: SHARE_KEY_WRAP_ALGORITHM,
+      wrappedShareKeyVersion: 1,
+    };
+  }
+
   async create(share: CreateShareDTO, user?: User, reverseShareToken?: string) {
     if (!(await this.isShareIdAvailable(share.id)).isAvailable)
       throw new BadRequestException("Share id already in use");
 
     this.logger.debug(
-      `Creating share: shareId=${share.id} userId=${user?.id ?? "anonymous"} reverseShareToken=${reverseShareToken ? "provided" : "none"}`,
+      `Creating share: share=redacted userId=${user?.id ?? "anonymous"} reverseShareToken=${reverseShareToken ? "provided" : "none"}`,
     );
 
     const hasSecurity =
@@ -58,15 +213,9 @@ export class ShareService {
     const hasPassword = !!share.security?.password;
 
     if (!hasSecurity) {
-      this.logger.debug(`No security provided: shareId=${share.id}`);
       share.security = undefined;
-    } else {
-      this.logger.debug(
-        `Security provided: shareId=${share.id} passwordProtected=${hasPassword} maxViews=${share.security?.maxViews ?? "none"}`,
-      );
     }
     if (hasPassword) {
-      this.logger.debug(`Hashing password: shareId=${share.id}`);
       share.security.password = await argon.hash(share.security.password);
     }
 
@@ -79,7 +228,7 @@ export class ShareService {
       // RS with a finite expiration: use it directly
       expirationDate = reverseShare.shareExpiration;
       this.logger.debug(
-        `Using reverse share expiration: shareId=${share.id} reverseShareToken=provided expiration=${expirationDate.toISOString()}`,
+        `Using reverse share expiration: share=redacted reverseShareToken=provided expiration=${expirationDate.toISOString()}`,
       );
     } else {
       const parsedExpiration = parseRelativeDateToAbsolute(share.expiration);
@@ -96,7 +245,7 @@ export class ShareService {
             .toDate();
           if (expiresNever || parsedExpiration > anonMaxDate) {
             this.logger.warn(
-              `Anonymous share expiration exceeds limit: shareId=${share.id} requested=${expiresNever ? "never" : parsedExpiration.toISOString()} max=${anonMaxDate.toISOString()}`,
+              `Anonymous share expiration exceeds limit: share=redacted requested=${expiresNever ? "never" : parsedExpiration.toISOString()} max=${anonMaxDate.toISOString()}`,
             );
             throw new BadRequestException(
               "Anonymous shares cannot exceed the maximum allowed expiration",
@@ -115,7 +264,7 @@ export class ShareService {
             .toDate();
           if (expiresNever || parsedExpiration > maxExpiryDate) {
             this.logger.warn(
-              `Expiration exceeds maximum: shareId=${share.id} requested=${parsedExpiration.toISOString()} max=${maxExpiryDate.toISOString()}`,
+              `Expiration exceeds maximum: share=redacted requested=${parsedExpiration.toISOString()} max=${maxExpiryDate.toISOString()}`,
             );
             throw new BadRequestException(
               "Expiration date exceeds maximum expiration date",
@@ -141,12 +290,12 @@ export class ShareService {
     if (reverseShare) {
       if (share.recipients?.length) {
         this.logger.warn(
-          `Stripped recipients from reverse share upload: shareId=${share.id} count=${share.recipients.length}`,
+          `Stripped recipients from reverse share upload: share=redacted count=${share.recipients.length}`,
         );
       }
       if (share.security?.maxViews) {
         this.logger.warn(
-          `Stripped maxViews from reverse share upload: shareId=${share.id}`,
+          `Stripped maxViews from reverse share upload: share=redacted`,
         );
       }
       share.recipients = [];
@@ -214,7 +363,7 @@ export class ShareService {
         );
       }
       this.logger.debug(
-        `Team folder validated: shareId=${share.id} teamFolderId=${share.teamFolderId} teamId=${folder.teamId} userId=${user.id}`,
+        `Team folder validated: share=redacted teamFolderId=${share.teamFolderId} teamId=${folder.teamId} userId=${user.id}`,
       );
       teamFolderConnect = { id: share.teamFolderId };
     }
@@ -223,17 +372,30 @@ export class ShareService {
       ? "S3"
       : "LOCAL";
     this.logger.debug(
-      `Selected storage provider: shareId=${share.id} provider=${storageProvider}`,
+      `Selected storage provider: share=redacted provider=${storageProvider}`,
     );
 
-    const { teamFolderId: _tfId, ...shareData } = share;
+    const {
+      teamFolderId: _tfId,
+      cryptoScheme: _requestedScheme,
+      wrappedShareKey: _wrappedShareKey,
+      wrappedShareKeyAlgorithm: _wrappedShareKeyAlgorithm,
+      fileMetadataScheme: _fileMetadataScheme,
+      ...shareData
+    } = share;
+    const cryptoData = this.resolveCreateCryptoData(
+      share,
+      user,
+      !!reverseShare,
+      !!teamFolderConnect,
+    );
 
     const shareTuple = await this.prisma.$transaction(async (tx) => {
         fs.mkdirSync(`${SHARE_DIRECTORY}/${share.id}`, {
           recursive: true,
         });
         this.logger.debug(
-          `Ensured share directory: shareId=${share.id} path=${SHARE_DIRECTORY}/${share.id}`,
+          `Ensured share directory: share=redacted`,
         );
 
         const createdShare = await tx.share.create({
@@ -249,6 +411,7 @@ export class ShareService {
                 : [],
             },
             storageProvider,
+            ...cryptoData,
             ...(teamFolderConnect && {
               teamFolder: { connect: teamFolderConnect },
             }),
@@ -270,8 +433,16 @@ export class ShareService {
     });
 
     this.logger.debug(
-      `Share created: shareId=${share.id} userId=${user?.id ?? "anonymous"} recipients=${share.recipients?.length ?? 0} storage=${storageProvider} expires=${expirationDate.toISOString()}`,
+      `Share created: share=redacted userId=${user?.id ?? "anonymous"} recipients=${share.recipients?.length ?? 0} storage=${storageProvider} expires=${expirationDate.toISOString()}`,
     );
+    if (cryptoData.cryptoScheme !== null) {
+      this.logger.log(
+        `Share crypto: share=redacted cryptoScheme=${shareCryptoSchemeName(cryptoData.cryptoScheme)}` +
+          (cryptoData.fileMetadataScheme === FILE_META_V1
+            ? " fileMetadataScheme=FILE_META_V1"
+            : ""),
+      );
+    }
 
     // Log team activity for team-folder uploads
     if (teamFolderConnect && user) {
@@ -292,9 +463,7 @@ export class ShareService {
               folderId: teamFolderConnect.id,
             },
           })
-          .catch((err) =>
-            this.logger.error(`Failed to log UPLOAD: ${err.message}`),
-          );
+          .catch(() => this.logger.error("Failed to log UPLOAD"));
       }
     }
 
@@ -330,7 +499,7 @@ export class ShareService {
         archiveName = getArchiveEntryName(file);
       } catch {
         this.logger.warn(
-          `Skipping file with unsafe archive path: shareId=${shareId} fileId=${file.id}`,
+          `Skipping file with unsafe archive path: share=redacted fileId=${file.id}`,
         );
         continue;
       }
@@ -341,12 +510,12 @@ export class ShareService {
 
     archive.pipe(writeStream);
     await archive.finalize();
-    this.logger.debug(`Created zip: shareId=${shareId}`);
+    this.logger.debug("Created share archive");
   }
 
   async complete(id: string, reverseShareToken?: string, e2eKey?: string) {
     this.logger.debug(
-      `Completing share: shareId=${id} reverseShareToken=${reverseShareToken ? "provided" : "none"} e2eKeyProvided=${!!e2eKey}`,
+      `Completing share: share=redacted reverseShareToken=${reverseShareToken ? "provided" : "none"} e2eKeyProvided=${!!e2eKey}`,
     );
 
     const share = await this.prisma.share.findUnique({
@@ -360,7 +529,7 @@ export class ShareService {
     });
 
     if (!share) {
-      this.logger.warn(`Share not found on complete: shareId=${id}`);
+      this.logger.warn("Share not found during completion");
       throw new NotFoundException("Share not found");
     }
 
@@ -374,13 +543,13 @@ export class ShareService {
     });
 
     if (share.uploadLocked) {
-      this.logger.warn(`Share already completed: shareId=${id}`);
+      this.logger.warn("Share is already completed");
       throw new BadRequestException("Share already completed");
     }
     await touchShareUploadActivity(this.prisma, share);
 
     if (share.files.length === 0) {
-      this.logger.warn(`Attempt to complete without files: shareId=${id}`);
+      this.logger.warn("Attempt to complete a share without files");
       throw new BadRequestException(
         "You need at least on file in your share to complete it.",
       );
@@ -412,7 +581,7 @@ export class ShareService {
     });
 
     if (!updatedShare) {
-      this.logger.warn(`Share already completed concurrently: shareId=${id}`);
+      this.logger.warn("Share was completed concurrently");
       throw new BadRequestException("Share already completed");
     }
 
@@ -424,7 +593,7 @@ export class ShareService {
     // A one-file folder upload still needs a ZIP to preserve its parent path.
     if (shouldCreateZip && !share.isE2EEncrypted) {
       this.logger.debug(
-        `Scheduling zip creation: shareId=${id} fileCount=${share.files.length}`,
+        `Scheduling zip creation: share=redacted fileCount=${share.files.length}`,
       );
       this.createZip(id)
         .then(async () => {
@@ -432,12 +601,10 @@ export class ShareService {
             where: { id },
             data: { isZipReady: true },
           });
-          this.logger.debug(`Zip ready: shareId=${id}`);
+          this.logger.debug("Share archive is ready");
         })
-        .catch((err) => {
-          this.logger.error(
-            `Zip creation failed: shareId=${id} error=${(err as Error).message}`,
-          );
+        .catch(() => {
+          this.logger.error("Zip creation failed");
         });
     }
 
@@ -453,7 +620,7 @@ export class ShareService {
         : undefined;
     if (recipientCount > 0 && this.config.get("smtp.enabled")) {
       this.logger.debug(
-        `Sending recipient emails: shareId=${id} recipients=${recipientCount} e2eKeyInEmail=${!!e2eKeyForEmail}`,
+        `Sending recipient emails: share=redacted recipients=${recipientCount} e2eKeyInEmail=${!!e2eKeyForEmail}`,
       );
       for (const recipientEmail of recipientEmails) {
         try {
@@ -466,19 +633,15 @@ export class ShareService {
             share.expiration,
             e2eKeyForEmail,
           );
-          this.logger.debug(
-            `Recipient email sent: shareId=${id} recipient=${recipientEmail}`,
-          );
-        } catch (err) {
+          this.logger.debug("Recipient email sent");
+        } catch {
           // Log and continue sending to others
-          this.logger.error(
-            `Recipient email failed: shareId=${id} recipient=${recipientEmail} error=${(err as Error).message}`,
-          );
+          this.logger.error("Recipient email failed");
         }
       }
     } else {
       this.logger.debug(
-        `Skipping recipient emails: shareId=${id} recipients=${recipientCount} smtpEnabled=${this.config.get("smtp.enabled")}`,
+        `Skipping recipient emails: share=redacted recipients=${recipientCount} smtpEnabled=${this.config.get("smtp.enabled")}`,
       );
     }
 
@@ -493,11 +656,9 @@ export class ShareService {
           share.id,
           e2eKey,
         );
-        this.logger.debug(`Reverse share creator notified: shareId=${id}`);
-      } catch (err) {
-        this.logger.error(
-          `Reverse share notification failed: shareId=${id} error=${(err as Error).message}`,
-        );
+        this.logger.debug("Reverse-share creator notified");
+      } catch {
+        this.logger.error("Reverse share notification failed");
       }
     }
 
@@ -524,21 +685,21 @@ export class ShareService {
     // Check if any file is malicious with ClamAV
     // Skip ClamAV for E2E encrypted shares (can't scan encrypted content)
     if (!share.isE2EEncrypted) {
-      this.logger.debug(`Scheduling malware scan: shareId=${id}`);
+      this.logger.debug("Scheduling share malware scan");
       void this.clamScanService.checkAndRemove(share.id);
     } else {
-      this.logger.debug(`Skipping malware scan (E2E encrypted): shareId=${id}`);
+      this.logger.debug("Skipping malware scan for E2E-encrypted share");
     }
 
     this.logger.debug(
-      `Share completed: shareId=${id} files=${share.files.length} recipients=${recipientCount} uploadLocked=true`,
+      `Share completed: share=redacted files=${share.files.length} recipients=${recipientCount} uploadLocked=true`,
     );
 
     return completedShareResponse(updatedShare);
   }
 
   async revertComplete(id: string) {
-    this.logger.debug(`Revert completion of share: shareId=${id}`);
+    this.logger.debug("Reverting share completion");
     return this.prisma.share.update({
       where: { id },
       data: {
@@ -789,6 +950,70 @@ export class ShareService {
     };
   }
 
+  /**
+   * SHARE_DEK_V1 key material of a personal share, with its owner for the
+   * ownership check. The wrapped key is opaque to the server.
+   */
+  async getWrappedShareKey(shareId: string) {
+    return this.prisma.share.findUnique({
+      where: { id: shareId },
+      select: {
+        creatorId: true,
+        cryptoScheme: true,
+        wrappedShareKey: true,
+        wrappedShareKeyAlgorithm: true,
+        wrappedShareKeyVersion: true,
+      },
+    });
+  }
+
+  /**
+   * Replace K_share wrapped under the previous K_master by the same K_share
+   * wrapped under the new one. Compare-and-set on the version: a concurrent
+   * rotation from another tab or device can never be silently overwritten.
+   */
+  async updateWrappedShareKey(
+    shareId: string,
+    userId: string,
+    input: { wrappedShareKey: string; expectedVersion: number },
+  ) {
+    const { count } = await this.prisma.share.updateMany({
+      where: {
+        id: shareId,
+        creatorId: userId,
+        cryptoScheme: SHARE_DEK_V1,
+        wrappedShareKeyVersion: input.expectedVersion,
+      },
+      data: {
+        wrappedShareKey: input.wrappedShareKey,
+        wrappedShareKeyVersion: { increment: 1 },
+      },
+    });
+
+    if (count === 1) {
+      this.logger.log(
+        `Share key rewrapped: share=redacted cryptoScheme=SHARE_DEK_V1 version=${input.expectedVersion + 1}`,
+      );
+      return { wrappedShareKeyVersion: input.expectedVersion + 1 };
+    }
+
+    const share = await this.prisma.share.findUnique({
+      where: { id: shareId },
+      select: { creatorId: true, cryptoScheme: true },
+    });
+    if (!share) throw new NotFoundException("Share not found");
+    if (share.creatorId !== userId) {
+      throw new ForbiddenException("Not the share owner");
+    }
+    if (share.cryptoScheme !== SHARE_DEK_V1) {
+      throw new BadRequestException("Share does not use SHARE_DEK_V1");
+    }
+    throw new ConflictException(
+      "The share key was rewrapped concurrently",
+      "share_key_version_conflict",
+    );
+  }
+
   async remove(
     shareId: string,
     isDeleterAdmin = false,
@@ -796,7 +1021,7 @@ export class ShareService {
     anonymousSessionToken?: string,
   ) {
     this.logger.debug(
-      `Removing share: shareId=${shareId} isDeleterAdmin=${isDeleterAdmin}`,
+      `Removing share: share=redacted isDeleterAdmin=${isDeleterAdmin}`,
     );
     const share = await this.prisma.share.findUnique({
       where: { id: shareId },
@@ -804,7 +1029,7 @@ export class ShareService {
     });
 
     if (!share) {
-      this.logger.warn(`Share not found on remove: shareId=${shareId}`);
+      this.logger.warn("Share not found during removal");
       throw new NotFoundException("Share not found");
     }
 
@@ -822,7 +1047,7 @@ export class ShareService {
 
       if (!ownsViaReverseShare && !ownsViaAnonymousSession) {
         this.logger.warn(
-          `Forbidden remove for anonymous share: shareId=${shareId}`,
+          `Forbidden remove for anonymous share: share=redacted`,
         );
         throw new ForbiddenException("Anonymous share ownership not proven");
       }
@@ -831,11 +1056,9 @@ export class ShareService {
     // Delete files first; if it fails, abort DB deletion
     try {
       await this.fileService.deleteAllFiles(shareId);
-      this.logger.debug(`All files deleted: shareId=${shareId}`);
-    } catch (err) {
-      this.logger.error(
-        `File deletion failed: shareId=${shareId} error=${(err as Error).message}`,
-      );
+      this.logger.debug("All share files deleted");
+    } catch {
+      this.logger.error("File deletion failed");
       throw new InternalServerErrorException(
         "Failed to delete all files of the share. Share has not been removed.",
       );
@@ -860,14 +1083,12 @@ export class ShareService {
               folderId: share.teamFolderId,
             },
           })
-          .catch((err) =>
-            this.logger.error(`Failed to log SHARE_DELETE: ${err.message}`),
-          );
+          .catch(() => this.logger.error("Failed to log SHARE_DELETE"));
       }
     }
 
     this.logger.debug(
-      `Share removed: shareId=${shareId} deletedBy=${share.creatorId ? "owner_or_user" : isDeleterAdmin ? "admin" : "unknown"}`,
+      `Share removed: share=redacted deletedBy=${share.creatorId ? "owner_or_user" : isDeleterAdmin ? "admin" : "unknown"}`,
     );
   }
 

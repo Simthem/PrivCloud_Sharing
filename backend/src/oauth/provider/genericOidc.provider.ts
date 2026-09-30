@@ -98,13 +98,15 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
       },
       body,
       signal: AbortSignal.timeout(15_000),
+      redirect: "error",
     });
 
     const token = (await res.json()) as OidcToken;
 
-    if ((token as any).error) {
+    const tokenError = (token as unknown as Record<string, unknown>).error;
+    if (tokenError) {
       this.logger.error(
-        `Token exchange failed: ${JSON.stringify(token, undefined, 2)}`,
+        `Token exchange failed for provider ${this.name}`,
       );
     }
 
@@ -132,7 +134,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
 
     if (!idTokenData) {
       this.logger.error(
-        `Can not get ID Token from response ${JSON.stringify(token.rawToken, undefined, 2)}`,
+        `Cannot extract ID token from OAuth response for provider ${this.name}`,
       );
       throw new InternalServerErrorException();
     }
@@ -145,7 +147,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
 
     if (nonce !== idTokenData.nonce) {
       this.logger.error(
-        `Invalid nonce. Expected ${nonce}, but got ${idTokenData.nonce}`,
+        `ID token nonce validation failed for provider ${this.name}`,
       );
       throw new ErrorPageException("invalid_token");
     }
@@ -167,11 +169,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
         }
       } catch {
         this.logger.warn(
-          `Roles not found at path ${roleConfig.path} in ID Token ${JSON.stringify(
-            idTokenData,
-            undefined,
-            2,
-          )}`,
+          `Roles not found at the configured claim path for provider ${this.name}`,
         );
       }
 
@@ -181,7 +179,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
       ) {
         // Role for general access is configured and the user does not have it
         this.logger.error(
-          `User roles ${roles} do not include ${roleConfig.generalAccess}`,
+          `ID token does not grant general access for provider ${this.name}`,
         );
         throw new ErrorPageException("user_not_allowed");
       }
@@ -193,11 +191,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
 
     if (!username) {
       this.logger.error(
-        `Can not get username from ID Token ${JSON.stringify(
-          idTokenData,
-          undefined,
-          2,
-        )}`,
+        `Cannot resolve a username from the verified ID token for provider ${this.name}`,
       );
       throw new ErrorPageException("cannot_get_user_info", undefined, [
         `provider_${this.name}`,
@@ -283,9 +277,9 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
       });
 
       return payload as unknown as OidcIdToken;
-    } catch (error: any) {
+    } catch {
       this.logger.error(
-        `ID token verification failed: ${error?.message}`,
+        `ID token verification failed for provider ${this.name}`,
       );
       throw new ErrorPageException("invalid_token");
     }

@@ -70,6 +70,11 @@ services:
       - SIGNING_EVIDENCE_RETENTION_YEARS=${SIGNING_EVIDENCE_RETENTION_YEARS:-10}
       # - SIGNING_TSA_URL=https://freetsa.org/tsr  # RFC 3161 TSA (default) -- Prod -> http://timestamp.sectigo.com
       # - SIGNING_TSA_TRUSTED_LIST_URL=https://tsl.digital.gob.es/TSL.xml  # daily check of a qualified TSA, trace e-mailed to admins
+      # -- Optional end-to-end encryption schemes (off by default) --
+      # - SHARE_DEK_V1_WRITE=true                         # random key per personal share
+      # - SHARE_DEK_V1_CANARY_USERS=*                     # user ids or e-mails, * for every account
+      # - FILE_META_V1_WRITE=true                         # also encrypt file names and folder paths
+      # - FILE_META_V1_CANARY_USERS=*                     # accounts must also be selected for SHARE_DEK_V1
     volumes:
       - "./data:/opt/app/backend/data"
       - "./data/images:/opt/app/frontend/public/img"

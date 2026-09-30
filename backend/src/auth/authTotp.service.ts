@@ -111,14 +111,20 @@ export class AuthTotpService {
   // -- Sign in with TOTP -----------------------------------------
 
   async signInTotp(dto: AuthSignInTotpDTO) {
-    const token = await this.prisma.loginToken.findFirst({
-      where: {
-        token: dto.loginToken,
-      },
-      include: {
-        user: true,
-      },
-    });
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(dto.loginToken)
+      .digest("hex");
+    const token =
+      (await this.prisma.loginToken.findFirst({
+        where: { token: tokenHash },
+        include: { user: true },
+      })) ??
+      // Five-minute compatibility window for tokens minted before hashing.
+      (await this.prisma.loginToken.findFirst({
+        where: { token: dto.loginToken },
+        include: { user: true },
+      }));
 
     if (!token || token.used)
       throw new UnauthorizedException("Invalid login token");
@@ -139,11 +145,20 @@ export class AuthTotpService {
       throw new BadRequestException("Invalid code");
     }
 
-    // Set the login token to used
-    await this.prisma.loginToken.update({
-      where: { token: token.token },
+    // Consume the one-time token atomically. Two valid TOTP requests can race;
+    // only the request that changes `used` from false to true may create a
+    // session.
+    const consumed = await this.prisma.loginToken.updateMany({
+      where: {
+        token: token.token,
+        used: false,
+        expiresAt: { gt: new Date() },
+      },
       data: { used: true },
     });
+    if (consumed.count !== 1) {
+      throw new UnauthorizedException("Invalid login token");
+    }
 
     const { refreshToken, refreshTokenId } =
       await this.authService.createRefreshToken(token.user.id);

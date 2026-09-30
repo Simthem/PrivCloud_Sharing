@@ -100,8 +100,8 @@ if (proxyUrl) {
     console.log(
       `[Proxy] globalThis.fetch replaced with undici.fetch -> ${safeProxyUrl}`,
     );
-  } catch (err: any) {
-    console.error(`[Proxy] Failed to load undici: ${err.message}`);
+  } catch {
+    console.error("[Proxy] Failed to load undici");
     console.error(
       `[Proxy] OAuth calls to external providers may fail/timeout.`,
     );

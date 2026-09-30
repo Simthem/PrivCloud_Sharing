@@ -39,8 +39,8 @@ export class PushService implements OnModuleInit {
       webpush.setVapidDetails(subject, publicKey, privateKey);
       this.ready = true;
       this.logger.log("VAPID configured - push notifications ready");
-    } catch (e) {
-      this.logger.error("Failed to configure VAPID", (e as Error).message);
+    } catch {
+      this.logger.error("Failed to configure VAPID");
       this.ready = false;
     }
   }
@@ -102,9 +102,7 @@ export class PushService implements OnModuleInit {
             await this.prisma.pushSubscription.delete({
               where: { id: sub.id },
             });
-            this.logger.debug(
-              `Removed stale push subscription: ${sub.endpoint}`,
-            );
+            this.logger.debug("Removed stale push subscription");
           } else if (
             errCode === "EPROTO" ||
             errCode === "ECONNREFUSED" ||
@@ -116,12 +114,10 @@ export class PushService implements OnModuleInit {
               where: { id: sub.id },
             });
             this.logger.warn(
-              `Removed unreachable push subscription (${errCode}): ${sub.endpoint}`,
+              `Removed unreachable push subscription (${errCode})`,
             );
           } else {
-            this.logger.error(
-              `Push failed for ${sub.endpoint}: ${(err as Error).message}`,
-            );
+            this.logger.error("Push delivery failed");
           }
         }
       }),

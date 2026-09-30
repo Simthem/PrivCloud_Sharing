@@ -695,6 +695,13 @@ export interface SignableFile {
   fileId: string;
   fileName: string;
   isE2EEncrypted: boolean;
+  /** Own FILE_META_V1 files: the name is opened in the browser. */
+  metadataScheme?: number;
+  encryptedMetadata?: string;
+  cryptoScheme?: number | null;
+  wrappedShareKey?: string | null;
+  /** Set once the encrypted name has been opened. */
+  encryptedName?: boolean;
 }
 
 const getSignableFiles = async (): Promise<SignableFile[]> => {

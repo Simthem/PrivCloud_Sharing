@@ -14,6 +14,8 @@ limits are controlled by instance configuration, not by hard-coded tiers.
 - Link-based file sharing with expiration dates, visitor limits and passwords.
 - Authenticated and anonymous reverse shares.
 - Client-side AES-256-GCM encryption before upload.
+- Optional random key per personal share and encrypted file names, both off
+  by default.
 - E2E encrypted reverse-share uploads with per-link keys in URL fragments.
 - Team workspaces with shared folders, member management and access logs.
 - Granular team permissions for folders, files, downloads, deletes, E2E sharing
@@ -69,7 +71,23 @@ Files are encrypted client-side using AES-256-GCM through the Web Crypto API.
 - User uploads create or reuse a per-user master key stored in the browser.
   The server stores only verification metadata, never the cleartext key.
 - Share links carry the decryption key in the URL fragment (`#key=...`), which
-  browsers do not send to the server.
+  browsers do not send to the server. The key only passes through the server
+  when the owner chooses to include it in the recipient e-mail, and for files
+  received through a reverse share, whose link is e-mailed to its creator.
+- A personal share can use its own random key (`SHARE_DEK_V1`, off by
+  default). The browser generates a 256-bit key for the share, the recipient
+  link carries that key only, and the server stores it wrapped by the owner's
+  master key with the share id authenticated. A master key rotation only
+  rewraps it, so files are never re-encrypted and recipient links keep
+  working.
+- On top of that, file names and folder paths can be encrypted with the share
+  key before upload (`FILE_META_V1`, off by default), padded to 64-byte steps
+  and bound to the share and file ids. The server, its logs and its database
+  only see a neutral `encrypted-file-<id>` name, and database triggers refuse
+  any readable name for such a share. Recipients and owners get the real names
+  back in the browser. For a signature request on such a PDF, the owner
+  discloses its name for that request only. Names stay in clear for shares
+  created before, team shares, reverse shares and Companion WebDAV imports.
 - Reverse shares generate a per-reverse-share key. The owner keeps an encrypted
   copy server-side and senders encrypt files with the key from the link
   fragment.
@@ -78,6 +96,20 @@ Files are encrypted client-side using AES-256-GCM through the Web Crypto API.
 - The public crypto layer stores X25519/Ed25519 identity keys and ML-KEM-768
   public-key metadata. Team administrators can explicitly enable hybrid
   ML-KEM/X25519 encryption for notification actions.
+
+Per-share keys and encrypted file names are enabled per account, so an
+instance can try them on a few accounts first. For every account:
+
+```yaml
+- SHARE_DEK_V1_WRITE=true
+- SHARE_DEK_V1_CANARY_USERS=*
+- FILE_META_V1_WRITE=true
+- FILE_META_V1_CANARY_USERS=*
+```
+
+Existing shares keep their key and their file names. Turning a flag off later
+only affects new shares: a share created with encrypted names keeps
+encrypting the names of the files added to it.
 
 ### Public Signing Links
 
@@ -112,7 +144,9 @@ overrides. Current hardening includes:
 - Caddy built from source with patched Go dependencies.
 - Go 1.26.5 builder stages.
 - `golang.org/x/sys@v0.47.0` for CVE-2026-39824 scanner findings.
-- Backend `brace-expansion>=5.0.6` for CVE-2026-45149.
+- `brace-expansion` 5.0.12 in the backend, frontend and docs lockfiles and in
+  the Docker-bundled npm copy, for CVE-2026-45149, CVE-2026-102276,
+  CVE-2026-102277 and CVE-2026-102278.
 - Backend and docs `qs>=6.15.2` for the Dependabot `qs#67` advisory.
 - Pinned overrides for vulnerable transitive packages used by backend,
   frontend, docs and Docker-bundled npm tooling.
@@ -225,6 +259,13 @@ Common environment variables:
 | `SIGNING_TSA_REQUIRE_QUALIFIED_STATUS` | `true` refuses to timestamp unless a recent check confirmed the TSA as a granted qualified service | `false` |
 | `SIGNING_TSA_TRUSTED_LIST_MAX_AGE_DAYS` | Maximum age of that confirmation | `7` |
 | `SIGNING_EVIDENCE_RETENTION_YEARS` | Finalized PDF/evidence retention after source deletion (1-30) | `10` |
+| `SHARE_DEK_V1_WRITE` | `true` lets the selected accounts create personal E2E shares with their own random key | `false` |
+| `SHARE_DEK_V1_CANARY_USERS` | Accounts selected for `SHARE_DEK_V1_WRITE`: comma-separated user ids or e-mail addresses, `*` for all | _(none)_ |
+| `SHARE_DEK_V1_ROLLOUT_PERCENT` | Additional stable share of accounts (0-100), from a hash of their id | `0` |
+| `SHARE_DEK_V1_READ` | `false` stops serving wrapped share keys to owners, recipient links keep working | `true` |
+| `FILE_META_V1_WRITE` | `true` also encrypts file names and folder paths of those shares, for the selected accounts | `false` |
+| `FILE_META_V1_CANARY_USERS` | Accounts selected for `FILE_META_V1_WRITE`, which must also be selected for `SHARE_DEK_V1` | _(none)_ |
+| `FILE_META_V1_ROLLOUT_PERCENT` | Additional stable share of accounts, independent of the `SHARE_DEK_V1` one | `0` |
 | `HTTP_PROXY` / `HTTPS_PROXY` | System proxy for outbound traffic | _(none)_ |
 | `GLOBAL_AGENT_HTTP_PROXY` | Node.js global-agent proxy URL | _(none)_ |
 | `GLOBAL_AGENT_NO_PROXY` / `NO_PROXY` | Hosts that bypass the proxy | _(none)_ |
@@ -273,6 +314,19 @@ well; the application still rejects streams above its configured profile.
 
 For production, also configure SMTP, OIDC/LDAP, storage provider settings,
 ClamAV and legal pages from the admin UI or generated configuration.
+
++Account verification, administrator invitations and team invitations use a
+transactional, encrypted email outbox. Apply the bundled Prisma migrations
+before starting the new backend, and configure every replica with the same
+stable `JWT_SECRET`: it derives the outbox encryption key. Before rotating that
+secret, let rows with `EmailOutbox.sentAt IS NULL` drain or retain the old
+secret until they have been delivered. Delivery is intentionally at-least-once
+with a stable `Message-ID`; after the rare crash between SMTP acceptance and
+the database acknowledgement, a relay that does not deduplicate that ID may
+deliver one duplicate. Monitor the generic `Queued email delivery failed`
+warning and the pending row count; recipient addresses, links and temporary
+passwords remain encrypted in the database.
+
 
 ## Proxy Support
 
@@ -363,12 +417,33 @@ PrivCloud Root CA                  (20 years, keep offline)
 CA_KEY_PASSWORD=change-me ./scripts/generate-signing-cert.sh ./data/signing "$SIGNING_CERTIFICATE_PASSWORD"
 ```
 
-`certificate.p12` holds the seal key and the whole chain, so every CMS seal
-carries it. Publish `root-ca.pem`, the trust anchor verifiers pass with `--ca`,
-and move `ca/root-ca.key` offline. A later run reuses the existing root, so the
-Signing CA and the seal certificate can be renewed without changing the trust
-anchor. Public TLS authorities such as Let's Encrypt only issue server
-certificates and cannot issue this document-signing certificate.
+The similarly named output files have different roles; the two private keys
+are not duplicates:
+
+| File | Private? | Production VM after generation |
+| --- | --- | --- |
+| `certificate.p12` | Yes: document-seal key | **Keep**; this is the only private-key file the running service reads. Protect it with a strong, unique `SIGNING_CERTIFICATE_PASSWORD`. |
+| `ca/root-ca.key` | Yes: root CA key | **Remove after a verified offline backup.** It is needed only on an isolated issuance machine when a new Signing CA must be created. Compromise would allow a new trusted CA chain to be forged. |
+| `ca/signing-ca.key` | Yes: intermediate CA key | **Remove from production too.** Archive it offline if the same intermediate may issue another seal certificate; otherwise destroy it after the P12 and backups have been verified. The current script creates a new intermediate on each run. |
+| `ca/root-ca.pem` | No | Public root certificate used while generating the chain; safe to retain. |
+| `root-ca.pem` | No | Intentional copy of `ca/root-ca.pem`, published as the verifier trust anchor; safe to retain. |
+| `ca/signing-ca.pem` | No | Public intermediate certificate; safe to retain, though runtime signing does not require it separately because it is included in the P12. |
+
+After generation, verify the P12 and chain, copy the CA material to encrypted
+offline media, verify that backup and its recorded root fingerprint, then
+remove both `ca/*.key` files from the production VM. Also remove them from VM
+snapshots, deployment bundles and ordinary backups; deleting the live files
+does not remove existing copies. The runtime needs only `certificate.p12`, its
+password, and optionally the public `root-ca.pem`. `CA_KEY_PASSWORD` is an
+issuance secret and must not be configured in the running application.
+
+Perform renewals on the isolated issuance machine: restore the backed-up
+`ca/root-ca.key` and matching `ca/root-ca.pem`, run the script there, verify
+that the root fingerprint is unchanged, and deploy only the new
+`certificate.p12` plus public certificates. Never regenerate a lost root key
+under the same name: that creates a different trust anchor. Public TLS
+authorities such as Let's Encrypt only issue server certificates and cannot
+issue this document-signing certificate.
 
 Every accepted timestamp is archived with its raw request (`.tsq`) and response
 (`.tsr`). The attestation and the forensic dossier downloads carry these

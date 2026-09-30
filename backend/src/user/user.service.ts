@@ -10,11 +10,11 @@ import * as argon from "argon2";
 import * as crypto from "crypto";
 import { Entry } from "ldapts";
 import { AuthSignInDTO } from "src/auth/dto/authSignIn.dto";
+import { EmailOutboxService } from "src/email/email-outbox.service";
 import { EmailService } from "src/email/email.service";
 import { EmailVerificationService } from "src/emailVerification/emailVerification.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { createUserUniqueConflictResponse } from "src/prisma/prisma-error.util";
-import { inspect } from "util";
 import { ConfigService } from "../config/config.service";
 import { FileService } from "../file/file.service";
 import { CreateUserDTO } from "./dto/createUser.dto";
@@ -30,6 +30,7 @@ export class UserSevice {
     private emailVerificationService: EmailVerificationService,
     private fileService: FileService,
     private configService: ConfigService,
+    private emailOutbox: EmailOutboxService,
   ) {}
 
   async list() {
@@ -65,12 +66,13 @@ export class UserSevice {
       this.emailVerificationService.isDeliveryAvailable();
     const verificationRequiredAt = new Date();
     let hash: string;
+    let randomPassword: string | undefined;
 
     // The password can be undefined if the user is invited by an admin
     if (!dto.password) {
-      const randomPassword = crypto.randomUUID();
+      this.emailVerificationService.assertDeliveryAvailable();
+      randomPassword = crypto.randomUUID();
       hash = await argon.hash(randomPassword);
-      await this.emailService.sendInviteEmail(dto.email, randomPassword);
     } else {
       hash = await argon.hash(dto.password);
     }
@@ -79,27 +81,44 @@ export class UserSevice {
     const { password: _pwd, ...userData } = dto;
 
     try {
-      const user = await this.prisma.user.create({
-        data: {
-          ...userData,
-          password: hash,
-          emailVerificationRequiredAt: verificationRequiredAt,
-          ...(verificationRequired
-            ? {}
-            : { emailVerifiedAt: verificationRequiredAt }),
-        },
+      const user = await this.prisma.$transaction(async (transaction) => {
+        const createdUser = await transaction.user.create({
+          data: {
+            ...userData,
+            password: hash,
+            emailVerificationRequiredAt: verificationRequiredAt,
+            ...(verificationRequired
+              ? {}
+              : { emailVerifiedAt: verificationRequiredAt }),
+          },
+        });
+
+        // Auto-create team for user in the same unit of work.
+        await this.autoCreateTeamForUser(
+          createdUser.id,
+          createdUser.username,
+          createdUser.email,
+          transaction,
+        );
+
+        if (verificationRequired) {
+          await this.emailVerificationService.issueInTransaction(
+            transaction,
+            createdUser,
+          );
+        }
+        if (randomPassword) {
+          await this.emailOutbox.enqueue(
+            transaction,
+            this.emailService.buildInviteEmail(dto.email, randomPassword),
+            `admin-user-invite:${createdUser.id}`,
+          );
+        }
+        return createdUser;
       });
 
-      // Auto-create team for user
-      await this.autoCreateTeamForUser(user.id, user.username, user.email);
-
-      if (verificationRequired) {
-        try {
-          await this.emailVerificationService.issueAndSend(user);
-        } catch (error) {
-          await this.prisma.user.deleteMany({ where: { id: user.id } });
-          throw error;
-        }
+      if (verificationRequired || randomPassword) {
+        await this.emailOutbox.deliverPending();
       }
 
       return user;
@@ -127,14 +146,16 @@ export class UserSevice {
       const reverifyOnEmailChange =
         emailChanged && this.emailVerificationService.isDeliveryAvailable();
       const hash = user.password && (await argon.hash(user.password));
-      const { password: _password, ...userData } = user as Record<string, unknown>;
+      const { password: _password, ...userData } = user as Record<
+        string,
+        unknown
+      >;
 
       // A proven address says nothing about a new one: whatever happens to
 
       // the exemption, the proof accepted by the reinforced signature is lost.
 
       const addressChanged =
-
         !!current && !!user.email && user.email !== current.email;
 
       const verificationData = reverifyOnEmailChange
@@ -242,6 +263,39 @@ export class UserSevice {
     });
   }
 
+  async revokeEncryptionKeyMaterial(userId: string) {
+    const revokedAt = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      await tx.wrappedKey.deleteMany({ where: { userId } });
+      await tx.teamMember.updateMany({
+        where: { userId, wrappedTeamKey: { not: null } },
+        data: {
+          wrappedTeamKey: null,
+          teamKeyVersion: 0,
+          teamKeyUpdatedAt: null,
+        },
+      });
+      await tx.teamKeyRotation.updateMany({
+        where: {
+          startedById: userId,
+          status: { in: ["PREPARING", "REENCRYPTING", "PAUSED"] },
+        },
+        data: {
+          status: "CANCELLED",
+          completedAt: revokedAt,
+          errorMessage: "Abandoned: the initiator revoked their personal key",
+        },
+      });
+      return tx.user.update({
+        where: { id: userId },
+        data: {
+          encryptionKeyHash: null,
+          e2eAutoGenerationDisabledAt: revokedAt,
+        },
+      });
+    });
+  }
+
   // ─── Passkey Wrapped Keys (multi-device sync) ─────────────────
 
   async setWrappedKey(
@@ -307,13 +361,14 @@ export class UserSevice {
       where: { id: userId },
     });
     if (!user?.encryptionKeyHash) return false;
-    const match = user.encryptionKeyHash === keyHash;
+    const storedHash = Buffer.from(user.encryptionKeyHash, "hex");
+    const submittedHash = Buffer.from(keyHash, "hex");
+    const match =
+      storedHash.length === 32 &&
+      submittedHash.length === storedHash.length &&
+      crypto.timingSafeEqual(storedHash, submittedHash);
     if (!match) {
-      this.logger.debug(
-        `[E2E verify] hash mismatch for user ${userId} -- ` +
-          `stored: ${user.encryptionKeyHash.slice(0, 8)}... ` +
-          `submitted: ${keyHash.slice(0, 8)}...`,
-      );
+      this.logger.debug(`[E2E verify] hash mismatch for user ${userId}`);
     }
     return match;
   }
@@ -396,9 +451,9 @@ export class UserSevice {
           .then((newUser) => {
             user.username = newUser.username;
           })
-          .catch((error) => {
+          .catch(() => {
             this.logger.warn(
-              `Failed to update users ${user.id} placeholder username: ${inspect(error)}`,
+              `Failed to update user ${user.id} placeholder username`,
             );
           });
       }
@@ -415,14 +470,12 @@ export class UserSevice {
             },
           })
           .then((newUser) => {
-            this.logger.log(
-              `Updated users ${user.id} email from ldap from ${user.email} to ${userEmail}.`,
-            );
+            this.logger.log(`Updated user ${user.id} email from LDAP`);
             user.email = newUser.email;
           })
-          .catch((error) => {
+          .catch(() => {
             this.logger.error(
-              `Failed to update users ${user.id} email to ${userEmail}: ${inspect(error)}`,
+              `Failed to update user ${user.id} email from LDAP`,
             );
           });
       }
@@ -444,14 +497,15 @@ export class UserSevice {
     userId: string,
     username: string,
     email: string,
+    client: Pick<Prisma.TransactionClient, "team"> = this.prisma,
   ): Promise<void> {
     // Check if user already has a team as owner
-    const existingTeam = await this.prisma.team.findFirst({
+    const existingTeam = await client.team.findFirst({
       where: { ownerId: userId },
     });
     if (existingTeam) {
       if (!existingTeam.isActive) {
-        await this.prisma.team.update({
+        await client.team.update({
           where: { id: existingTeam.id },
           data: { isActive: true },
         });
@@ -476,12 +530,12 @@ export class UserSevice {
     let slug = `${baseSlug}-team`;
 
     let attempt = 0;
-    while (await this.prisma.team.findUnique({ where: { slug } })) {
+    while (await client.team.findUnique({ where: { slug } })) {
       attempt++;
       slug = `${baseSlug}-team-${attempt}`;
     }
 
-    await this.prisma.team.create({
+    await client.team.create({
       data: {
         name: `Team of ${username || email.split("@")[0]}`,
         slug,

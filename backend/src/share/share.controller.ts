@@ -6,7 +6,9 @@ import {
   Get,
   Header,
   HttpCode,
+  Logger,
   Param,
+  Patch,
   Post,
   Req,
   Res,
@@ -41,8 +43,18 @@ import {
   anonymousShareSessionCookieName,
   anonymousShareSessionCookiePath,
 } from "./anonymous-share-session.util";
+import { ShareCryptoEventDTO } from "./dto/shareCryptoEvent.dto";
+import { UpdateWrappedShareKeyDTO } from "./dto/wrappedShareKey.dto";
+import {
+  SHARE_DEK_V1,
+  isShareDekReadEnabled,
+  shareCryptoCounters,
+  shareCryptoSchemeName,
+} from "./share-crypto-scheme";
 @Controller("shares")
 export class ShareController {
+  private readonly logger = new Logger(ShareController.name);
+
   constructor(
     private shareService: ShareService,
     private jwtService: JwtService,
@@ -59,12 +71,41 @@ export class ShareController {
     );
   }
 
+  // Aggregated client crypto outcomes since the process started. Counters
+  // only: no share, user or key information is ever recorded.
+  @Get("crypto-metrics")
+  @Header("Cache-Control", "private, no-store")
+  @UseGuards(JwtGuard, AdministratorGuard)
+  getCryptoMetrics() {
+    return shareCryptoCounters.snapshot();
+  }
+
+  @Post("crypto-events")
+  @HttpCode(204)
+  @Throttle({ default: { limit: 60, ttl: hours(1) } })
+  recordCryptoEvent(@Body() body: ShareCryptoEventDTO) {
+    shareCryptoCounters.record(body);
+    if (body.event !== "rewrap_ok") {
+      this.logger.warn(
+        `Client crypto event: event=${body.event} cryptoScheme=${body.scheme} client=${body.client} clientVersion=${body.clientVersion ?? "unknown"}`,
+      );
+    }
+  }
+
   @Get()
   @UseGuards(JwtGuard)
   async getMyShares(@GetUser() user: User) {
     if (!user) throw new UnauthorizedException();
+    const shares = await this.shareService.getSharesByUser(user.id);
     return new MyShareDTO().fromList(
-      await this.shareService.getSharesByUser(user.id),
+      isShareDekReadEnabled()
+        ? shares
+        : shares.map((share) => ({
+            ...share,
+            wrappedShareKey: null,
+            wrappedShareKeyAlgorithm: null,
+            wrappedShareKeyVersion: null,
+          })),
     );
   }
 
@@ -111,9 +152,29 @@ export class ShareController {
   ) {
     const result = await this.shareService.getEncryptedReverseShareKey(id);
 
-    // Not a reverse share or no encrypted key stored -> client should use K_master
     if (!result) {
-      return { encryptedReverseShareKey: null };
+      // SHARE_DEK_V1: K_share wrapped by K_master, for the owner only. Older
+      // clients read encryptedReverseShareKey alone and keep their behaviour.
+      const material = await this.shareService.getWrappedShareKey(id);
+      if (!material || material.cryptoScheme !== SHARE_DEK_V1) {
+        return { encryptedReverseShareKey: null, cryptoScheme: null };
+      }
+      if (!user || material.creatorId !== user.id) {
+        throw new ForbiddenException("Not the share owner");
+      }
+      if (!isShareDekReadEnabled()) {
+        return { encryptedReverseShareKey: null, cryptoScheme: SHARE_DEK_V1 };
+      }
+      this.logger.debug(
+        `Wrapped share key served: share=redacted cryptoScheme=${shareCryptoSchemeName(material.cryptoScheme)}`,
+      );
+      return {
+        encryptedReverseShareKey: null,
+        cryptoScheme: SHARE_DEK_V1,
+        wrappedShareKey: material.wrappedShareKey,
+        wrappedShareKeyAlgorithm: material.wrappedShareKeyAlgorithm,
+        wrappedShareKeyVersion: material.wrappedShareKeyVersion,
+      };
     }
 
     // Reverse share exists but user is not authenticated or not the owner -> 403
@@ -122,6 +183,25 @@ export class ShareController {
     }
 
     return { encryptedReverseShareKey: result.encryptedReverseShareKey };
+  }
+
+  /**
+   * Store K_share rewrapped under a new K_master after a key rotation. The
+   * encrypted files are not touched, so every recipient link stays valid.
+   */
+  @Patch(":id/wrapped-share-key")
+  @Throttle({ default: { limit: 600, ttl: hours(1) } })
+  @UseGuards(JwtGuard)
+  async updateWrappedShareKey(
+    @Param("id", SafeIdPipe) id: string,
+    @GetUser() user: User,
+    @Body() body: UpdateWrappedShareKeyDTO,
+  ) {
+    if (!user) throw new UnauthorizedException();
+    if (!isShareDekReadEnabled()) {
+      throw new ForbiddenException("SHARE_DEK_V1 is disabled");
+    }
+    return this.shareService.updateWrappedShareKey(id, user.id, body);
   }
 
   @Post()
@@ -140,6 +220,13 @@ export class ShareController {
       user,
       reverse_share_token,
     );
+    if (share.cryptoScheme !== null && share.cryptoScheme !== undefined) {
+      shareCryptoCounters.record({
+        event: "share_created",
+        scheme: shareCryptoSchemeName(share.cryptoScheme),
+        client: "web",
+      });
+    }
 
     if (!share.creatorId) {
       const crypto = await import("crypto");

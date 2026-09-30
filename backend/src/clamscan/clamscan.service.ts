@@ -80,9 +80,7 @@ export class ClamScanService {
         },
       });
 
-      this.logger.warn(
-        `Share ${shareId} deleted because it contained ${infectedFiles.length} malicious file(s)`,
-      );
+      this.logger.warn(`Share deleted because it contained ${infectedFiles.length} malicious file(s)`);
     }
   }
 }

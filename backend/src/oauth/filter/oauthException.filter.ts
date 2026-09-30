@@ -22,10 +22,7 @@ export class OAuthExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse();
     const request = ctx.getRequest();
 
-    this.logger.error(exception.message);
-    this.logger.error(
-      "Request query: " + JSON.stringify(request.query, null, 2),
-    );
+    this.logger.error(`OAuth callback failed with HTTP ${exception.getStatus()}`);
 
     const key = this.errorKeys[request.query.error] || "default";
 

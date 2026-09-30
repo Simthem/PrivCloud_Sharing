@@ -1,16 +1,72 @@
 import { ColorSchemeScript } from "@mantine/core";
 import { createGetInitialProps } from "@mantine/emotion";
 import createEmotionServer from "@emotion/server/create-instance";
-import Document, { Head, Html, Main, NextScript, DocumentContext } from "next/document";
-import emotionCache from "../utils/emotionCache";
+import { randomBytes } from "node:crypto";
+import Document, {
+  Head,
+  Html,
+  Main,
+  NextScript,
+  DocumentContext,
+} from "next/document";
+import {
+  cloneElement,
+  isValidElement,
+  type ComponentType,
+  type ReactElement,
+} from "react";
+import {
+  buildContentSecurityPolicy,
+  shouldEmbedCspMeta,
+} from "../utils/csp.util";
+import { createEmotionCache } from "../utils/emotionCache";
 import { __ssrI18nMessages } from "./_app";
 
-const emotionServer = createEmotionServer(emotionCache);
-const emotionGetInitialProps = createGetInitialProps(Document, emotionServer);
+type PrivCloudDocumentProps = {
+  lang?: string;
+  colorScheme?: "dark" | "light";
+  nonce?: string;
+  contentSecurityPolicy?: string;
+};
 
 export default class _Document extends Document {
   static async getInitialProps(ctx: DocumentContext) {
+    const nonce = randomBytes(18).toString("base64url");
+    const requestEmotionCache = createEmotionCache(nonce);
+    const emotionServer = createEmotionServer(requestEmotionCache);
+    const emotionGetInitialProps = createGetInitialProps(
+      Document,
+      emotionServer,
+    );
+    const originalRenderPage = ctx.renderPage;
+
+    ctx.renderPage = () =>
+      originalRenderPage({
+        enhanceApp: (App) => {
+          const AppWithNonce = App as unknown as ComponentType<
+            Record<string, unknown>
+          >;
+          function NoncedApp(props: Record<string, unknown>) {
+            return (
+              <AppWithNonce
+                {...props}
+                emotionCache={requestEmotionCache}
+                cspNonce={nonce}
+              />
+            );
+          }
+          return NoncedApp;
+        },
+      });
+
     const initialProps = await emotionGetInitialProps(ctx);
+    const initialHead = (initialProps as { head?: ReactElement[] }).head;
+    const noncedHead = initialHead?.map((element) =>
+      isValidElement<{ nonce?: string }>(element) &&
+      (element.type === "script" || element.type === "style")
+        ? cloneElement(element, { nonce })
+        : element,
+    );
 
     // Extract resolved language from cookie (set by _app SSR) or Accept-Language
     let lang = "fr";
@@ -38,12 +94,30 @@ export default class _Document extends Document {
       }
     }
 
-    return { ...initialProps, lang, colorScheme };
+    const contentSecurityPolicy = buildContentSecurityPolicy(nonce);
+    // Next exposes a synthetic response while exporting static HTML. It cannot
+    // preserve response headers, so Capacitor must receive a meta policy.
+    const useMetaCsp = shouldEmbedCspMeta(Boolean(ctx.res));
+    if (!useMetaCsp) {
+      ctx.res?.setHeader("Content-Security-Policy", contentSecurityPolicy);
+      ctx.res?.setHeader("Cache-Control", "private, no-store, max-age=0");
+    }
+
+    return {
+      ...initialProps,
+      ...(noncedHead ? { head: noncedHead } : {}),
+      lang,
+      colorScheme,
+      nonce,
+      contentSecurityPolicy: useMetaCsp ? contentSecurityPolicy : undefined,
+    };
   }
 
   render() {
-    const lang = (this.props as any).lang ?? "fr";
-    const colorScheme = (this.props as any).colorScheme ?? "dark";
+    const props = this.props as PrivCloudDocumentProps;
+    const lang = props.lang ?? "fr";
+    const colorScheme = props.colorScheme ?? "dark";
+    const nonce = props.nonce;
 
     return (
       <Html
@@ -51,9 +125,16 @@ export default class _Document extends Document {
         data-mantine-color-scheme={colorScheme}
         suppressHydrationWarning
       >
-        <Head>
+        <Head nonce={nonce}>
+          {props.contentSecurityPolicy && (
+            <meta
+              httpEquiv="Content-Security-Policy"
+              content={props.contentSecurityPolicy}
+            />
+          )}
+          {nonce && <meta name="csp-nonce" content={nonce} />}
           <meta charSet="utf-8" />
-          <ColorSchemeScript defaultColorScheme="dark" />
+          <ColorSchemeScript defaultColorScheme="dark" nonce={nonce} />
           <link rel="preconnect" href="/" />
           <link rel="dns-prefetch" href="/" />
           <link rel="icon" type="image/x-icon" href="/img/favicon.ico" />
@@ -75,6 +156,7 @@ export default class _Document extends Document {
               serialized into __NEXT_DATA__ (saves ~120 kB in pageProps). */}
           <script
             id="__I18N__"
+            nonce={nonce}
             // eslint-disable-next-line react/no-danger
             dangerouslySetInnerHTML={{
               __html: __ssrI18nMessages
@@ -83,7 +165,7 @@ export default class _Document extends Document {
             }}
           />
           <Main />
-          <NextScript />
+          <NextScript nonce={nonce} />
         </body>
       </Html>
     );

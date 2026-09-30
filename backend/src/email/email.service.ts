@@ -42,6 +42,11 @@ export class EmailService {
       host: this.config.get("smtp.host"),
       port: this.config.get("smtp.port"),
       secure: this.config.get("smtp.port") == 465,
+      // Keep delivery below the outbox claim lease so another replica cannot
+      // retry a message while this SMTP attempt is still hanging.
+      connectionTimeout: 30_000,
+      greetingTimeout: 30_000,
+      socketTimeout: 120_000,
       auth:
         username || password ? { user: username, pass: password } : undefined,
       tls: {
@@ -52,7 +57,12 @@ export class EmailService {
     });
   }
 
-  async sendMail(email: string, subject: string, text: string) {
+  async sendMail(
+    email: string,
+    subject: string,
+    text: string,
+    options: { messageId?: string } = {},
+  ) {
     const replyTo = this.config.get("email.replyToEmail")?.trim() || undefined;
     const senderName =
       this.config.get("email.senderName")?.trim() ||
@@ -64,9 +74,10 @@ export class EmailService {
         to: email,
         subject,
         text,
+        messageId: options.messageId,
       })
-      .catch((e) => {
-        this.logger.error(e);
+      .catch(() => {
+        this.logger.error("Email delivery failed");
         throw new InternalServerErrorException("Failed to send email");
       });
   }
@@ -84,7 +95,9 @@ export class EmailService {
       throw new InternalServerErrorException("Email service disabled");
 
     const baseUrl = `${this.config.get("general.appUrl")}/s/${shareId}`;
-    const shareUrl = e2eKeyFragment ? `${baseUrl}#key=${e2eKeyFragment}` : baseUrl;
+    const shareUrl = e2eKeyFragment
+      ? `${baseUrl}#key=${e2eKeyFragment}`
+      : baseUrl;
 
     await this.sendMail(
       recipientEmail,
@@ -145,31 +158,41 @@ export class EmailService {
     recipientEmail: string,
     token: string,
   ): Promise<void> {
+    const message = this.buildEmailVerificationEmail(recipientEmail, token);
+    await this.sendMail(message.recipient, message.subject, message.text);
+  }
+
+  buildEmailVerificationEmail(recipientEmail: string, token: string) {
     const appUrl = this.config.get("general.appUrl").replace(/\/$/, "");
     // Keep the secret in the fragment: browsers do not send it in HTTP request
     // lines or Referer headers. The verification page removes it immediately.
     const verificationUrl = `${appUrl}/auth/verify-email#token=${token}`;
     const appName = this.config.get("general.appName");
 
-    await this.sendMail(
-      recipientEmail,
-      `Verify your email address for ${appName}`,
-      buildEmailVerificationMessage(appName, verificationUrl),
-    );
+    return {
+      recipient: recipientEmail,
+      subject: `Verify your email address for ${appName}`,
+      text: buildEmailVerificationMessage(appName, verificationUrl),
+    };
   }
 
   async sendInviteEmail(recipientEmail: string, password: string) {
+    const message = this.buildInviteEmail(recipientEmail, password);
+    await this.sendMail(message.recipient, message.subject, message.text);
+  }
+
+  buildInviteEmail(recipientEmail: string, password: string) {
     const loginUrl = `${this.config.get("general.appUrl")}/auth/signIn`;
 
-    await this.sendMail(
-      recipientEmail,
-      this.config.get("email.inviteSubject"),
-      this.config
+    return {
+      recipient: recipientEmail,
+      subject: this.config.get("email.inviteSubject"),
+      text: this.config
         .get("email.inviteMessage")
         .replaceAll("{url}", loginUrl)
         .replaceAll("{password}", password)
         .replaceAll("{email}", recipientEmail),
-    );
+    };
   }
 
   async sendTestMail(recipientEmail: string) {
@@ -182,9 +205,9 @@ export class EmailService {
         subject: "Test email",
         text: "This is a test email",
       })
-      .catch((e) => {
-        this.logger.error(e);
-        throw new InternalServerErrorException(e.message);
+      .catch(() => {
+        this.logger.error("Test email delivery failed");
+        throw new InternalServerErrorException("Failed to send test email");
       });
   }
 

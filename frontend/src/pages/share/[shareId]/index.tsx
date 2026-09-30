@@ -12,12 +12,14 @@ import FileCardGrid from "../../../components/share/FileCardGrid";
 import FileList from "../../../components/share/FileList";
 import showEnterPasswordModal from "../../../components/share/showEnterPasswordModal";
 import useUser from "../../../hooks/user.hook";
+import useDecryptedFileNames from "../../../hooks/useDecryptedFileNames.hook";
 import showCaptchaModal from "../../../components/share/showCaptchaModal";
 import showErrorModal from "../../../components/share/showErrorModal";
 import useTranslate from "../../../hooks/useTranslate.hook";
 import useConfig from "../../../hooks/config.hook";
 import shareService from "../../../services/share.service";
 import { Share as ShareType } from "../../../types/share.type";
+import { FileMetaData } from "../../../types/File.type";
 import toast from "../../../utils/toast.util";
 import { byteToHumanSizeString } from "../../../utils/fileSize.util";
 import {
@@ -28,6 +30,8 @@ import {
   exportKeyToBase64,
 } from "../../../utils/crypto.util";
 import teamService from "../../../services/team.service";
+import { resolveOwnerShareKey } from "../../../utils/shareKey.util";
+import { reportShareCryptoEvent } from "../../../utils/shareCryptoEvents.util";
 import { AxiosError } from "axios";
 
 export function getServerSideProps(context: GetServerSidePropsContext) {
@@ -57,7 +61,8 @@ const Share = ({ shareId }: { shareId: string }) => {
   const captchaEnabled = config.get("altcha.enabled");
 
   // -- E2E : résolution de la clé de déchiffrement --
-  // Priorité : #key= dans l'URL > K_rs unwrappée (reverse share) > K_master (share normal)
+  // Priorité : #key= dans l'URL > K_rs unwrappée (reverse share)
+  //   > K_share unwrappée (SHARE_DEK_V1) > K_master (share legacy)
   const [e2eKey, setE2eKey] = useState<string | null>(null);
   const [keyVersion, setKeyVersion] = useState(0);
 
@@ -79,7 +84,8 @@ const Share = ({ shareId }: { shareId: string }) => {
   // Phase 2 : une fois le share chargé, résoudre la clé si manquante
   // - Reverse share E2E -> unwrap K_rs via backend endpoint
   // - Team share E2E    -> unwrap K_team via team-key endpoint
-  // - Share E2E normal  -> K_master depuis sessionStorage
+  // - SHARE_DEK_V1      -> unwrap K_share via le même endpoint (propriétaire)
+  // - Share E2E legacy  -> K_master depuis sessionStorage
   // - Erreur (non-owner, non-auth) -> laisser e2eKey null -> alerte "clé manquante"
   useEffect(() => {
     if (e2eKey || !share?.isE2EEncrypted) return;
@@ -106,20 +112,24 @@ const Share = ({ shareId }: { shareId: string }) => {
         }
 
         // Endpoint retourne 200 dans tous les cas sauf 403 :
-        //   { encryptedReverseShareKey: null }   -> pas un reverse share -> K_master
         //   { encryptedReverseShareKey: "..." }  -> reverse share -> unwrap K_rs
-        const encrypted = await shareService.getEncryptedE2eKey(shareId);
+        //   { cryptoScheme: 2, wrappedShareKey } -> SHARE_DEK_V1 -> unwrap K_share
+        //   { encryptedReverseShareKey: null }   -> share legacy -> K_master
+        const material = await shareService.getShareKeyMaterial(shareId);
         if (cancelled) return;
 
-        if (encrypted) {
-          // C'est un reverse share : unwrap K_rs avec K_master
-          const masterKey = await importKeyFromBase64(userKeyB64);
-          const rsKey = await unwrapReverseShareKey(encrypted, masterKey);
-          const rsKeyB64 = await exportKeyToBase64(rsKey);
-          if (!cancelled) setE2eKey(rsKeyB64);
-        } else {
-          // Pas un reverse share, pas un team share -> K_master
-          if (!cancelled) setE2eKey(userKeyB64);
+        try {
+          const shareKeyB64 = await resolveOwnerShareKey(
+            shareId,
+            userKeyB64,
+            material,
+          );
+          if (!cancelled) setE2eKey(shareKeyB64);
+        } catch (unwrapError) {
+          if (!material.encryptedReverseShareKey) {
+            reportShareCryptoEvent("unwrap_error", material.cryptoScheme);
+          }
+          throw unwrapError;
         }
       } catch (err) {
         // 403 = reverse share mais pas le propriétaire, ou erreur réseau/déchiffrement.
@@ -135,6 +145,11 @@ const Share = ({ shareId }: { shareId: string }) => {
   }, [share?.isE2EEncrypted, share?.teamId, e2eKey, shareId, keyVersion]);
 
   const isE2EMissingKey = share?.isE2EEncrypted && !e2eKey;
+
+  // FILE_META_V1: the server only holds a placeholder name for each file.
+  const { files: shareFiles, pending: fileNamesPending } =
+    useDecryptedFileNames<FileMetaData>(share?.id, share?.files, e2eKey);
+  const filesLoading = isLoading || (fileNamesPending && !!e2eKey);
 
   const getShareToken = async (password?: string, captchaToken?: string) => {
     await shareService
@@ -229,8 +244,8 @@ const Share = ({ shareId }: { shareId: string }) => {
   }, [error]);
 
   const shouldShowDownloadAll =
-    (share?.files.length ?? 0) > 1 ||
-    !!share?.files.some(
+    (shareFiles?.length ?? 0) > 1 ||
+    !!shareFiles?.some(
       (file: { relativePath?: string | null }) => !!file.relativePath,
     );
 
@@ -281,12 +296,12 @@ const Share = ({ shareId }: { shareId: string }) => {
           )}
         </Box>
 
-        {shouldShowDownloadAll && !isE2EMissingKey && (
+        {shouldShowDownloadAll && !isE2EMissingKey && !filesLoading && (
           <DownloadAllButton
             shareId={shareId}
             isE2EEncrypted={share?.isE2EEncrypted}
             e2eKey={e2eKey}
-            files={share?.files}
+            files={shareFiles}
           />
         )}
       </Group>
@@ -305,9 +320,9 @@ const Share = ({ shareId }: { shareId: string }) => {
       )}
 
       <FileList
-        files={share?.files || []}
+        files={shareFiles || []}
         share={share}
-        isLoading={isLoading}
+        isLoading={filesLoading}
         e2eKey={e2eKey}
       />
 
@@ -324,9 +339,9 @@ const Share = ({ shareId }: { shareId: string }) => {
               />
             </Title>
             <FileCardGrid
-              files={share.files || []}
+              files={shareFiles || []}
               share={share}
-              isLoading={isLoading}
+              isLoading={filesLoading}
               e2eKey={e2eKey}
             />
           </>

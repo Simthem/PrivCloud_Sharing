@@ -55,8 +55,8 @@ export class AccessGrantController {
     const result = await this.grantService.createBulkGrants(user.id, dto);
 
     // Send notifications + emails for successful grants (non-blocking)
-    this.sendGrantNotifications(user, dto, result).catch((err) =>
-      this.logger.error(`Failed to send grant notifications: ${err.message}`),
+    this.sendGrantNotifications(user, dto, result).catch(() =>
+      this.logger.error("Failed to send grant notifications"),
     );
 
     return result;
@@ -117,8 +117,8 @@ export class AccessGrantController {
           folderId: folderId || undefined,
           fileName: fileName || `${successfulRecipients.length} fichier(s) partagé(s) E2E`,
         },
-      }).catch((err) =>
-        this.logger.debug(`Failed to log E2E_SHARE activity: ${err.message}`),
+      }).catch(() =>
+        this.logger.debug("Failed to log E2E_SHARE activity"),
       );
     }
 
@@ -154,8 +154,8 @@ export class AccessGrantController {
                 },
             encryptedMetadata: encryptedNotification || undefined,
           })
-          .catch((err) =>
-            this.logger.debug(`Notification failed for ${recipientUserId}: ${err.message}`),
+          .catch(() =>
+            this.logger.debug(`Notification failed for ${recipientUserId}`),
           );
       }
 
@@ -174,8 +174,8 @@ export class AccessGrantController {
                 recipient.email,
                 teamName || undefined,
               )
-              .catch((err) =>
-                this.logger.debug(`Email failed for ${recipient.email}: ${err.message}`),
+              .catch(() =>
+                this.logger.debug(`Email failed for user ${recipientUserId}`),
               );
           } else if (shareId) {
             // Direct share: include share link
@@ -186,8 +186,8 @@ export class AccessGrantController {
                 actor,
                 fileName || undefined,
               )
-              .catch((err) =>
-                this.logger.debug(`Email failed for ${recipient.email}: ${err.message}`),
+              .catch(() =>
+                this.logger.debug(`Email failed for user ${recipientUserId}`),
               );
           }
         }

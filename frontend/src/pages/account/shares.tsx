@@ -21,7 +21,7 @@ import dayjs from "../../utils/dayjs";
 import Link from "next/link";
 import { TbCopy, TbEdit, TbInfoCircle, TbLock, TbQrcode, TbSignature, TbTrash } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Meta from "../../components/Meta";
 import RequestSignatureModal from "../../components/signing/RequestSignatureModal";
 import showShareInformationsModal from "../../components/account/showShareInformationsModal";
@@ -33,9 +33,15 @@ import useTranslate from "../../hooks/useTranslate.hook";
 import useUser from "../../hooks/user.hook";
 import shareService from "../../services/share.service";
 import { MyShare } from "../../types/share.type";
+import { FileMetaData } from "../../types/File.type";
 import { copyToClipboard } from "../../utils/clipboard.util";
 import toast from "../../utils/toast.util";
-import { getUserKey, buildKeyFragment } from "../../utils/crypto.util";
+import { buildKeyFragment } from "../../utils/crypto.util";
+import useOwnerShareKeys from "../../hooks/useOwnerShareKeys.hook";
+import {
+  decryptShareFileNames,
+  isFileMetaShare,
+} from "../../utils/fileMetadata.util";
 
 const MyShares = () => {
   const modals = useModals();
@@ -55,6 +61,50 @@ const MyShares = () => {
     queryKey: ["myShares"],
     queryFn: shareService.getMyShares,
   });
+  // Legacy shares carry K_master in their link, SHARE_DEK_V1 shares K_share.
+  const ownerShareKey = useOwnerShareKeys(shares);
+  // A blank name falls back to the share id, and the full value stays
+  // readable on hover whatever the column width.
+  const shareDisplayName = (share: MyShare) => share.name?.trim() || share.id;
+
+  // FILE_META_V1: file names are opened with the share key before the PDF
+  // filter of the signature button, the server only knows placeholders.
+  const [fileNames, setFileNames] = useState<Record<string, FileMetaData[]>>(
+    {},
+  );
+  useEffect(() => {
+    const encrypted = (shares ?? []).filter(
+      (share) => isFileMetaShare(share) && !!ownerShareKey(share),
+    );
+    if (encrypted.length === 0) return;
+    let cancelled = false;
+    void Promise.all(
+      encrypted.map(
+        async (share) =>
+          [
+            share.id,
+            await decryptShareFileNames<FileMetaData>(
+              share.id,
+              share.files ?? [],
+              ownerShareKey(share)!,
+            ),
+          ] as const,
+      ),
+    ).then((entries) => {
+      if (!cancelled) setFileNames(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [shares, ownerShareKey]);
+  const signablePdfFiles = (share: MyShare) =>
+    ((fileNames[share.id] ?? share.files ?? []) as FileMetaData[])
+      .filter((f) => !f.metadataUnreadable && /\.pdf$/i.test(f.name || ""))
+      .map((f) => ({
+        id: f.id,
+        name: f.name || f.id,
+        encryptedName: f.metadataScheme != null,
+      }));
 
   const deleteShareMutation = useMutation({
     mutationFn: (shareId: string) => shareService.remove(shareId),
@@ -84,7 +134,7 @@ const MyShares = () => {
   };
 
   // Signature request modal
-  const [sigModalShare, setSigModalShare] = useState<{ id: string; files: { id: string; name: string }[]; isE2E: boolean } | null>(null);
+  const [sigModalShare, setSigModalShare] = useState<{ id: string; files: { id: string; name: string; encryptedName?: boolean }[]; isE2E: boolean; key: string | null } | null>(null);
   const bulkDelete = () => {
     if (selected.size === 0) return;
     const count = selected.size;
@@ -167,10 +217,7 @@ const MyShares = () => {
             // For team shares the encryption key is K_team, not K_master.
             // Don't inject master key in the hash (Phase 2 on the share page)
             // will resolve the correct team key via getTeamKey().
-            const storedKey =
-              share.isE2EEncrypted && !share.teamFolderId
-                ? getUserKey()
-                : null;
+            const storedKey = ownerShareKey(share);
             const keyFragment = storedKey ? buildKeyFragment(storedKey) : "";
             const shareHref = `/share/${share.id}${keyFragment}`;
             return (
@@ -183,14 +230,14 @@ const MyShares = () => {
                       onChange={() => toggleSelect(share.id)}
                     />
                     <Box style={{ minWidth: 0, flex: 1 }}>
-                    <Link href={shareHref} style={{ textDecoration: "none", color: "inherit" }}>
+                    <Link href={shareHref} title={shareDisplayName(share)} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
                       <Text
                         size="sm"
                         fw={600}
-                        lineClamp={1}
-                        style={{ cursor: "pointer", overflowWrap: "anywhere", hyphens: "auto" }}
+                        lineClamp={2}
+                        style={{ cursor: "pointer", overflowWrap: "anywhere", wordBreak: "break-word", hyphens: "auto" }}
                       >
-                        {share.name || share.id}
+                        {shareDisplayName(share)}
                       </Text>
                     </Link>
                     {share.description && (
@@ -221,13 +268,13 @@ const MyShares = () => {
                     </ActionIcon>
                   </Link>
                   <ActionIcon color="blue" variant="light" size={28}
-                    onClick={() => showShareInformationsModal(modals, share, parseInt(config.get("share.maxSize")))}
+                    onClick={() => showShareInformationsModal(modals, share, parseInt(config.get("share.maxSize")), ownerShareKey(share))}
                   >
                     <TbInfoCircle />
                   </ActionIcon>
                   <ActionIcon color="teal" variant="light" size={28}
                     onClick={async () => {
-                      const sk = share.isE2EEncrypted ? getUserKey() : null;
+                      const sk = ownerShareKey(share);
                       const kf = sk ? buildKeyFragment(sk) : "";
                       const link = `${config.get("general.appUrl")}/s/${share.id}${kf}`;
                       const ok = await copyToClipboard(link);
@@ -239,20 +286,18 @@ const MyShares = () => {
                   </ActionIcon>
                   <ActionIcon color="grape" variant="light" size={28}
                     onClick={() => {
-                      const sk = share.isE2EEncrypted ? getUserKey() : null;
+                      const sk = ownerShareKey(share);
                       const kf = sk ? buildKeyFragment(sk) : "";
                       showQrCodeModal(modals, `${config.get("general.appUrl")}/s/${share.id}${kf}`);
                     }}
                   >
                     <TbQrcode />
                   </ActionIcon>
-                  {hasTeamAccess && (share.files || []).some((f: any) => /\.pdf$/i.test(f.name || "")) && (
+                  {hasTeamAccess && signablePdfFiles(share).length > 0 && (
                     <ActionIcon color="violet" variant="light" size={28}
                       onClick={() => {
-                        const fileList = (share.files || [])
-                          .filter((f: any) => /\.pdf$/i.test(f.name || ""))
-                          .map((f: any) => ({ id: f.id, name: f.name || f.id }));
-                        setSigModalShare({ id: share.id, files: fileList, isE2E: !!share.isE2EEncrypted });
+                        const fileList = signablePdfFiles(share);
+                        setSigModalShare({ id: share.id, files: fileList, isE2E: !!share.isE2EEncrypted, key: ownerShareKey(share) });
                       }}
                     >
                       <TbSignature />
@@ -312,9 +357,7 @@ const MyShares = () => {
             </Table.Thead>
             <Table.Tbody>
               {shares.map((share) => {
-                const storedKey = share.isE2EEncrypted
-                  ? getUserKey()
-                  : null;
+                const storedKey = ownerShareKey(share);
                 const keyFragment = storedKey
                   ? buildKeyFragment(storedKey)
                   : "";
@@ -330,9 +373,9 @@ const MyShares = () => {
                   </Table.Td>
                   <Table.Td>
                     <Box style={{ minWidth: 0 }}>
-                        <Link href={shareHref} style={{ textDecoration: "none", color: "inherit" }}>
-                          <Text size="sm" fw={500} lineClamp={1} style={{ cursor: "pointer" }}>
-                            {share.name || share.id}
+                        <Link href={shareHref} title={shareDisplayName(share)} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
+                          <Text size="sm" fw={500} lineClamp={2} style={{ cursor: "pointer", overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                            {shareDisplayName(share)}
                           </Text>
                         </Link>
                         {share.description && (
@@ -340,8 +383,8 @@ const MyShares = () => {
                             {share.description}
                           </Text>
                         )}
-                        {share.name && (
-                          <Text size="xs" c="dimmed">
+                        {share.name?.trim() && (
+                          <Text size="xs" c="dimmed" lineClamp={1} style={{ overflowWrap: "anywhere" }}>
                             {share.id}
                           </Text>
                         )}
@@ -390,6 +433,7 @@ const MyShares = () => {
                             modals,
                             share,
                             parseInt(config.get("share.maxSize")),
+                            ownerShareKey(share),
                           );
                         }}
                       >
@@ -400,9 +444,7 @@ const MyShares = () => {
                         variant="light"
                         size={25}
                         onClick={async () => {
-                          const storedKey = share.isE2EEncrypted
-                            ? getUserKey()
-                            : null;
+                          const storedKey = ownerShareKey(share);
                           const keyFragment = storedKey
                             ? buildKeyFragment(storedKey)
                             : "";
@@ -422,9 +464,7 @@ const MyShares = () => {
                         variant="light"
                         size={25}
                         onClick={() => {
-                          const storedKey = share.isE2EEncrypted
-                            ? getUserKey()
-                            : null;
+                          const storedKey = ownerShareKey(share);
                           const keyFragment = storedKey
                             ? buildKeyFragment(storedKey)
                             : "";
@@ -440,15 +480,13 @@ const MyShares = () => {
                           variant="light"
                           size={25}
                           style={{
-                            display: hasTeamAccess && (share.files || []).some((f: any) => /\.pdf$/i.test(f.name || ""))
+                            display: hasTeamAccess && signablePdfFiles(share).length > 0
                               ? undefined
                               : "none",
                           }}
                           onClick={() => {
-                            const fileList = (share.files || [])
-                              .filter((f: any) => /\.pdf$/i.test(f.name || ""))
-                              .map((f: any) => ({ id: f.id, name: f.name || f.id }));
-                            setSigModalShare({ id: share.id, files: fileList, isE2E: !!share.isE2EEncrypted });
+                            const fileList = signablePdfFiles(share);
+                            setSigModalShare({ id: share.id, files: fileList, isE2E: !!share.isE2EEncrypted, key: ownerShareKey(share) });
                           }}
                         >
                           <TbSignature />
@@ -500,7 +538,7 @@ const MyShares = () => {
           onClose={() => setSigModalShare(null)}
           shareId={sigModalShare.id}
           files={sigModalShare.files}
-          encryptionKey={sigModalShare.isE2E ? getUserKey() : null}
+          encryptionKey={sigModalShare.isE2E ? sigModalShare.key : null}
         />
       )}
     </>

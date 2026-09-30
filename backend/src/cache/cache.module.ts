@@ -47,18 +47,18 @@ const logger = new Logger("AppCacheModule");
               : new KeyvRedis(redisUrl);
             // Attach error handler on the underlying RedisClient
             // to prevent unhandled 'error' event crashing the process.
-            keyvRedis.client.on("error", (err: Error) => {
-              logger.warn(`Redis client error (non-fatal): ${err.message}`);
+            keyvRedis.client.on("error", () => {
+              logger.warn("Redis client error (non-fatal)");
             });
             const redisStore = new Keyv({ store: keyvRedis });
-            redisStore.on("error", (err: Error) => {
-              logger.warn(`Redis Keyv error (non-fatal): ${err.message}`);
+            redisStore.on("error", () => {
+              logger.warn("Redis Keyv error (non-fatal)");
             });
             config.stores = [memoryStore, redisStore];
-            logger.log(`Redis cache store configured: ${redisUrl}`);
-          } catch (err) {
+            logger.log("Redis cache store configured");
+          } catch {
             logger.warn(
-              `Failed to create Redis store, falling back to memory-only: ${err}`,
+              "Failed to create Redis store, falling back to memory-only",
             );
           }
         }

@@ -50,7 +50,7 @@ export default {
 
   // Section comparaison (texte court pour la card 3 colonnes)
   "home.comparison.title": "PrivCloud vs WeTransfer",
-  "home.comparison.text": "Contrairement à WeTransfer, SwissTransfer, Smash ou TransferNow, PrivCloud chiffre vos fichiers directement dans votre navigateur avant qu'ils ne quittent votre appareil. Votre clé de chiffrement n'est jamais transmise à nos serveurs -- même en cas de compromission, vos fichiers restent illisibles. Activez les notifications de téléchargement pour savoir exactement quand quelqu'un accède à votre partage. Aucune publicité, aucun tracking, aucun accès tiers -- un partage de fichiers véritablement privé, hébergé en France, conforme RGPD.",
+  "home.comparison.text": "Contrairement à WeTransfer, SwissTransfer, Smash ou TransferNow, PrivCloud chiffre vos fichiers directement dans votre navigateur avant qu'ils ne quittent votre appareil. Par défaut, votre clé de chiffrement n'est pas transmise à nos serveurs -- même en cas de compromission, vos fichiers restent illisibles. Activez les notifications de téléchargement pour savoir exactement quand quelqu'un accède à votre partage. Aucune publicité, aucun tracking, aucun accès tiers -- un partage de fichiers véritablement privé, hébergé en France, conforme RGPD.",
 
   // Tableau comparatif détaillé
   "home.comparison.table.title": "PrivCloud face à la concurrence",
@@ -86,7 +86,7 @@ export default {
   // Section fonctionnalites
   "home.features.title": "Pourquoi choisir PrivCloud_Sharing ?",
   "home.features.security.title": "Chiffrement de bout en bout AES-256 pour tous vos fichiers",
-  "home.features.security.description": "Seul vous et le destinataire pouvez lire les fichiers. La clé de chiffrement ne quitte jamais votre navigateur - pour nous, vos fichiers sont illisibles.",
+  "home.features.security.description": "Seuls vous et le destinataire pouvez lire les fichiers. Par défaut, la clé de chiffrement n'est pas transmise au serveur - pour nous, vos fichiers sont illisibles.",
   "home.features.privacy.title": "Vos données, vos règles - hébergé en France",
   "home.features.privacy.description": "Hébergé en France, 100% conforme RGPD. Aucun tracking, aucune analytique, aucun accès tiers.",
   "home.features.speed.title": "Fichiers illimités, vitesse de transfert maximale",
@@ -103,7 +103,7 @@ export default {
   "home.howto.step1.desc": "Glissez-déposez vos fichiers (documents, images, archives, vidéos...) ou cliquez pour les sélectionner. Plusieurs fichiers, aucune installation requise -- tout se passe dans votre navigateur.",
   "home.howto.step2.num": "02",
   "home.howto.step2.title": "Chiffrement AES-256 de bout en bout - votre clé reste privée",
-  "home.howto.step2.desc": "Vos fichiers sont chiffrés directement dans votre navigateur avec AES-256-GCM avant de quitter votre appareil. La clé ne transite jamais sur nos serveurs -- architecture zéro-knowledge.",
+  "home.howto.step2.desc": "Vos fichiers sont chiffrés directement dans votre navigateur avec AES-256-GCM avant de quitter votre appareil. Par défaut, la clé ne transite pas par nos serveurs : elle reste dans le lien de partage.",
   "home.howto.step3.num": "03",
   "home.howto.step3.title": "Partagez le lien sécurisé",
   "home.howto.step3.desc": "Copiez le lien de partage et transmettez-le à vos destinataires. Configurez une date d'expiration et un mot de passe optionnel. Recevez une notification à chaque téléchargement.",
@@ -114,7 +114,7 @@ export default {
 
   // Section Sécurité, confidentialité et conformité
   "home.security.title": "Sécurité, confidentialité et conformité RGPD",
-  "home.security.encryption.title": "Chiffrement AES-256-GCM : votre clé ne quitte jamais votre navigateur",
+  "home.security.encryption.title": "Chiffrement AES-256-GCM : votre clé est générée dans votre navigateur",
   "home.security.encryption.text": "Chaque fichier est chiffré localement dans votre navigateur avant d'être envoyé. La clé de chiffrement symétrique AES-256 est générée aléatoirement et intégrée dans le fragment de l'URL (#key=...), une partie qui n'est jamais transmise au serveur par conception du protocole HTTP. Résultat : même en cas de compromission du serveur, vos fichiers restent illisibles. Aucune donnée en clair ne transite sur le réseau ni ne réside sur nos serveurs.",
   "home.security.zeroknowledge.title": "Architecture zero-knowledge vérifiable",
   "home.security.zeroknowledge.text": "Le serveur ne stocke que des blobs chiffrés opaques. Il ne voit jamais votre clé de déchiffrement, ne peut pas lire vos fichiers et ne conserve aucune donnée en clair. Cette promesse est vérifiable : le code source est intégralement ouvert et auditable sur GitHub. Vous n'avez pas à nous faire confiance -- vous pouvez vérifier par vous-même.",
@@ -131,7 +131,7 @@ export default {
   "home.faq.a2": "Oui. Tous les transferts sont chiffrés. Avec le chiffrement de bout en bout activé, vos fichiers sont chiffrés directement dans votre navigateur (AES-256) avant l'envoi. Personne, pas même nous, ne peut lire leur contenu.",
 
   "home.faq.q3": "Comment fonctionne le chiffrement de bout en bout ?",
-  "home.faq.a3": "Le chiffrement est effectué localement dans votre navigateur avant l'envoi. La clé de déchiffrement n'est jamais transmise au serveur : elle est incluse uniquement dans le lien de partage. Sans ce lien complet, les fichiers sont inutilisables.",
+  "home.faq.a3": "Le chiffrement est effectué localement dans votre navigateur avant l'envoi. Par défaut, la clé de déchiffrement n'est pas transmise au serveur : elle est incluse uniquement dans le lien de partage. Elle ne passe par nos serveurs que si vous choisissez de l'envoyer par e-mail, et pour les fichiers reçus par un lien de dépôt. Sans ce lien complet, les fichiers sont inutilisables.",
 
   "home.faq.q4": "Mes fichiers sont-ils stockés définitivement ?",
   "home.faq.a4": "Non. Chaque transfert possède une durée d'expiration configurable. Une fois expirés, les fichiers sont automatiquement supprimés de nos serveurs, sans intervention nécessaire.",
@@ -823,7 +823,7 @@ export default {
   "security.zeroKnowledge.title": "Architecture zéro-knowledge",
   "security.zeroKnowledge.text": "L'architecture zéro-knowledge signifie que notre système est conçu pour qu'il nous soit techniquement impossible d'accéder au contenu de vos fichiers, même si nous le voulions -- ou si nous y étions contraints.",
   "security.zeroKnowledge.point1": "Vos fichiers sont chiffrés avant l'upload",
-  "security.zeroKnowledge.point2": "Votre clé ne transite jamais sur nos serveurs",
+  "security.zeroKnowledge.point2": "Par défaut, votre clé ne transite pas par nos serveurs",
   "security.zeroKnowledge.point3": "Nos logs ne contiennent aucune clé de déchiffrement",
   "security.zeroKnowledge.point4": "Même un accès complet à notre base de données ne permettrait pas de lire vos fichiers",
   "security.sskr.title": "Partage de secret de Shamir (SSKR)",
@@ -1339,7 +1339,7 @@ export default {
 
   // --- Account E2E Section ---
   "account.e2e.title": "Chiffrement de bout en bout (E2E)",
-  "account.e2e.description": "Votre clé de chiffrement AES-256 n'est jamais envoyée au serveur. Elle est conservée dans votre onglet pour la durée de votre session. À la fermeture de l'onglet, elle est automatiquement purgée. À chaque nouvelle session, vous devrez la ressaisir. Conservez-la précieusement dans un gestionnaire de mots de passe.",
+  "account.e2e.description": "Votre clé de chiffrement AES-256 n'est pas envoyée au serveur, sauf si vous choisissez de l'inclure dans l'e-mail envoyé aux destinataires d'un partage. Elle est conservée dans votre onglet pour la durée de votre session. À la fermeture de l'onglet, elle est automatiquement purgée. À chaque nouvelle session, vous devrez la ressaisir. Conservez-la précieusement dans un gestionnaire de mots de passe.",
   "account.e2e.yourKey": "Votre clé :",
   "account.e2e.key.reveal": "Révéler",
   "account.e2e.key.hide": "Masquer",
@@ -1418,7 +1418,7 @@ export default {
   "onboarding.step0.body": "PrivCloud vous permet de partager des fichiers de façon sécurisée, privée et sans intermédiaire. Cette visite rapide vous explique les quelques concepts clés à connaître avant de commencer.",
   "onboarding.step1.title": "Chiffrement de bout en bout (E2E)",
   "onboarding.step1.body": "Avec le chiffrement E2E activé, vos fichiers sont chiffrés dans votre navigateur avant d'atteindre nos serveurs. Personne d'autre que vous et vos destinataires ne peut les lire.",
-  "onboarding.step1.li1": "Votre clé ne quitte jamais votre appareil.",
+  "onboarding.step1.li1": "Par défaut, votre clé n'est pas envoyée à nos serveurs.",
   "onboarding.step1.li2": "Même nous ne pouvons pas accéder à vos fichiers.",
   "onboarding.step1.li3": "Activez le E2E dans votre profil, section \"Chiffrement E2E\".",
   "onboarding.step2.title": "Votre clé de chiffrement",

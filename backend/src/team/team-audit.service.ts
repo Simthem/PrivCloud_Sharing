@@ -39,10 +39,8 @@ export class TeamAuditService {
           window.end,
         );
         if (report.status === "SENT") sent++;
-      } catch (error) {
-        this.logger.error(
-          `Team audit report failed for ${team.id}: ${(error as Error).message}`,
-        );
+      } catch {
+        this.logger.error(`Team audit report failed for ${team.id}`);
       }
     }
     return { eligible: teams.length, sent };
@@ -177,8 +175,8 @@ export class TeamAuditService {
     for (const recipient of recipients) {
       try {
         await this.emailService.sendMail(recipient, subject, body);
-      } catch (error) {
-        failures.push(`${recipient}: ${(error as Error).message}`);
+      } catch {
+        failures.push("Email delivery failed");
       }
     }
 

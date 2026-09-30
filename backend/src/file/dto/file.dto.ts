@@ -17,6 +17,14 @@ export class FileDTO {
   @Expose()
   encryptionChunkSize?: number;
 
+  // FILE_META_V1: `name` is a placeholder, the real name and folder path are
+  // in `encryptedMetadata`, which only the holder of K_share can open.
+  @Expose()
+  metadataScheme?: number | null;
+
+  @Expose()
+  encryptedMetadata?: string | null;
+
   share: ShareDTO;
 
   from(partial: Partial<FileDTO>) {

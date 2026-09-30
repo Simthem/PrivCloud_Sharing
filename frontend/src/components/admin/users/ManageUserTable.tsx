@@ -1,4 +1,15 @@
-import { ActionIcon, Badge, Box, Card, Group, Skeleton, Stack, Table, Text } from "@mantine/core";
+import {
+  ActionIcon,
+  Badge,
+  Box,
+  Card,
+  Group,
+  Skeleton,
+  Stack,
+  Table,
+  Text,
+  Tooltip,
+} from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { useModals } from "@mantine/modals";
 import { TbCheck, TbEdit, TbTrash } from "react-icons/tb";
@@ -31,6 +42,19 @@ const ManageUserTable = ({
   };
 
   const accessColor = () => "green";
+
+  // Each action names the account it targets: in a dense list the buttons of
+  // neighbouring rows must never be mistaken for one another.
+  const editLabel = (user: User) =>
+    intl.formatMessage(
+      { id: "admin.users.edit.update.title" },
+      { username: user.username },
+    );
+  const deleteLabel = (user: User) =>
+    intl.formatMessage(
+      { id: "admin.users.edit.delete.title" },
+      { username: user.username },
+    );
 
   if (isMobile) {
     return (
@@ -79,13 +103,16 @@ const ManageUserTable = ({
                       <Text size="xs" c="dimmed">{fmtDate(user.createdAt)}</Text>
                     </Group>
                   </Box>
-                  <Group gap={6} wrap="nowrap">
+                  <Group gap="sm" wrap="nowrap">
                     {!user.isLdap && (
                       <ActionIcon
                         variant="light"
                         color="blue"
                         size={28}
-                        onClick={() => showUpdateUserModal(modals, user, getUsers)}
+                        aria-label={editLabel(user)}
+                        onClick={() =>
+                          showUpdateUserModal(modals, user, getUsers)
+                        }
                       >
                         <TbEdit />
                       </ActionIcon>
@@ -94,6 +121,7 @@ const ManageUserTable = ({
                       variant="light"
                       color="red"
                       size={28}
+                      aria-label={deleteLabel(user)}
                       onClick={() => deleteUser(user)}
                     >
                       <TbTrash />
@@ -108,7 +136,7 @@ const ManageUserTable = ({
 
   return (
     <Box style={{ display: "block", overflowX: "auto" }}>
-      <Table verticalSpacing="sm">
+      <Table verticalSpacing="sm" highlightOnHover>
         <thead>
           <tr>
             <th style={{ textAlign: "left" }}>
@@ -126,7 +154,7 @@ const ManageUserTable = ({
             <th style={{ textAlign: "left" }}>
               <FormattedMessage id="admin.users.table.admin" />
             </th>
-            <th></th>
+            <th style={{ width: 1 }}></th>
           </tr>
         </thead>
         <tbody>
@@ -162,28 +190,36 @@ const ManageUserTable = ({
                     <Text size="sm">{fmtDate(user.createdAt)}</Text>
                   </td>
                   <td>{user.isAdmin && <TbCheck />}</td>
-                  <td>
-                    <Group justify="right">
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {/* One row, never wrapped: a wrapped delete button would
+                        sit next to the following user's edit button. */}
+                    <Group justify="flex-end" gap="md" wrap="nowrap">
                       {user.isLdap ? null : (
+                        <Tooltip label={editLabel(user)} withArrow>
+                          <ActionIcon
+                            variant="light"
+                            color="blue"
+                            size={28}
+                            aria-label={editLabel(user)}
+                            onClick={() =>
+                              showUpdateUserModal(modals, user, getUsers)
+                            }
+                          >
+                            <TbEdit />
+                          </ActionIcon>
+                        </Tooltip>
+                      )}
+                      <Tooltip label={deleteLabel(user)} withArrow color="red">
                         <ActionIcon
                           variant="light"
-                          color="blue"
-                          size={25}
-                          onClick={() =>
-                            showUpdateUserModal(modals, user, getUsers)
-                          }
+                          color="red"
+                          size={28}
+                          aria-label={deleteLabel(user)}
+                          onClick={() => deleteUser(user)}
                         >
-                          <TbEdit />
+                          <TbTrash />
                         </ActionIcon>
-                      )}
-                      <ActionIcon
-                        variant="light"
-                        color="red"
-                        size={25}
-                        onClick={() => deleteUser(user)}
-                      >
-                        <TbTrash />
-                      </ActionIcon>
+                      </Tooltip>
                     </Group>
                   </td>
                 </tr>

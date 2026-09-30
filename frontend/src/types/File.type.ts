@@ -26,6 +26,11 @@ export type FileMetaData = {
   relativePath?: string | null;
   size: string;
   encryptionChunkSize?: number | null;
+  /** FILE_META_V1: `name` is a placeholder until the client decrypts it. */
+  metadataScheme?: number | null;
+  encryptedMetadata?: string | null;
+  /** Set when the encrypted name could not be opened with the share key. */
+  metadataUnreadable?: boolean;
 };
 
 export type FileListItem = FileUpload | (FileMetaData & { deleted?: boolean });

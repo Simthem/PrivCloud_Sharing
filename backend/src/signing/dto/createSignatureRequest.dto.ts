@@ -152,6 +152,13 @@ export class CreateSignatureRequestDTO {
   @IsUUID()
   fileId: string;
 
+  // Only for a file whose name is encrypted (FILE_META_V1): its real name,
+  // decrypted by the owner and disclosed for this signature request.
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  documentName?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(2000)

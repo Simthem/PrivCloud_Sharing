@@ -205,30 +205,26 @@ export class PdfSigningService {
             timestampContext,
           );
           this.logger.log(
-            `PDF signed with timestamp (PAdES-B-T) for ${signerInfo.email} - ` +
-              `${signedPdf.length} bytes, reason: "${reason}"`,
+            `PDF signed with timestamp (PAdES-B-T): ${signedPdf.length} bytes`,
           );
         } catch (tsaError: any) {
           if (this.tsaRequired) throw tsaError;
           this.logger.warn(
-            `TSA timestamp embedding failed: ${tsaError?.message}. ` +
-              "SIGNING_TSA_REQUIRED=false: PDF remains PAdES-B-B without timestamp.",
+            "TSA timestamp embedding failed; SIGNING_TSA_REQUIRED=false: PDF remains PAdES-B-B without timestamp.",
           );
         }
       } else {
         this.logger.log(
-          `PDF signed (PAdES-B-B, no TSA configured) for ${signerInfo.email} - ` +
-            `${signedPdf.length} bytes, reason: "${reason}"`,
+          `PDF signed (PAdES-B-B, no TSA configured): ${signedPdf.length} bytes`,
         );
       }
 
       return signedPdf;
-    } catch (error: any) {
+    } catch {
       // SECURITY: Fail-closed - do NOT return an unsigned PDF that would be
       // marked as COMPLETED by the caller. Let the caller handle the failure.
-      const msg = `PAdES signing failed: ${error?.message || "Unknown error"}`;
-      this.logger.error(msg);
-      throw new Error(msg);
+      this.logger.error("PAdES signing failed");
+      throw new Error("PAdES signing failed");
     }
   }
 
@@ -267,17 +263,15 @@ export class PdfSigningService {
         } catch (tsaError: any) {
           if (this.tsaRequired) throw tsaError;
           this.logger.warn(
-            `TSA timestamp embedding failed: ${tsaError?.message}. ` +
-              "SIGNING_TSA_REQUIRED=false: CMS remains PAdES-B-B without timestamp.",
+            "TSA timestamp embedding failed; SIGNING_TSA_REQUIRED=false: CMS remains PAdES-B-B without timestamp.",
           );
         }
       }
 
       return cmsDer;
-    } catch (error: any) {
-      const msg = `Detached PAdES signing failed: ${error?.message || "Unknown error"}`;
-      this.logger.error(msg);
-      throw new Error(msg);
+    } catch {
+      this.logger.error("Detached PAdES signing failed");
+      throw new Error("Detached PAdES signing failed");
     }
   }
 
@@ -1054,8 +1048,8 @@ export class PdfSigningService {
         );
         accepted = { tsaUrl, response: tsResponse };
         break;
-      } catch (error: any) {
-        const msg = `TSA ${label} (${tsaUrl}) failed: ${error?.message}`;
+      } catch {
+        const msg = `TSA ${label} failed`;
         errors.push(msg);
         this.logger.warn(msg);
         // Continue to next fallback
@@ -1813,8 +1807,8 @@ export class PdfSigningService {
         `Signing certificate not found at ${this.certificatePath}`,
       );
       return null;
-    } catch (error: any) {
-      this.logger.error(`Failed to load certificate: ${error?.message}`);
+    } catch {
+      this.logger.error("Failed to load certificate");
       return null;
     }
   }
@@ -2606,8 +2600,8 @@ export class PdfSigningService {
     let visual: SignatureVisual;
     try {
       visual = parseSignatureData(signatureData, signatureType);
-    } catch (error: any) {
-      throw new BadRequestException(error?.message || "Invalid signature");
+    } catch {
+      throw new BadRequestException("Invalid signature");
     }
     if (visual.kind === "text") return;
     const { PDFDocument } = await import("pdf-lib");

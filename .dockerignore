@@ -7,3 +7,10 @@ frontend/.next/
 frontend/public/install/beta/
 
 **/.git/
+
+# Local data and secrets never belong in the build context: the SQLite
+# database, uploads and signing CA keys under data/, local environment files.
+/data/
+backend/.env
+backend/.env.*
+frontend/.env*

@@ -31,10 +31,8 @@ module.exports = {
     ],
   },
   async headers() {
-    // CSP is enforced at the upstream nginx reverse proxy level
-    // (share.conf). Do NOT duplicate it here -- browsers enforce the
-    // intersection of multiple CSP headers (most restrictive wins),
-    // which can silently break third-party scripts.
+    // _document emits the request-scoped nonce CSP. Do not duplicate it here
+    // or at the reverse proxy: browsers intersect multiple CSP headers.
     return [
       {
         source: "/(.*)",

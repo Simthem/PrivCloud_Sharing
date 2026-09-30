@@ -1,14 +1,15 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
+import * as crypto from "node:crypto";
 import { UnauthorizedException } from "@nestjs/common";
 import { JwtStrategy } from "src/auth/strategy/jwt.strategy";
 import { createUnitTestRunner } from "./unit-test";
 
 const { testCase, run } = createUnitTestRunner("auth session validation");
 
+const jwtSecret = crypto.randomBytes(32).toString("base64url");
 const config = {
-  get: (key: string) =>
-    key === "internal.jwtSecret" ? "test-jwt-secret" : undefined,
+  get: (key: string) => (key === "internal.jwtSecret" ? jwtSecret : undefined),
 };
 
 testCase(

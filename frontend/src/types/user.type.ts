@@ -20,6 +20,10 @@ type User = {
   emailVerificationSource?: string | null;
   hasTeamMembership?: boolean;
   teamId?: string | null;
+  /** New personal E2E shares use SHARE_DEK_V1 (server-side rollout flag). */
+  shareDekV1Write?: boolean;
+  /** Those shares also encrypt their file names (FILE_META_V1). */
+  fileMetaV1Write?: boolean;
 };
 
 export type CreateUser = {

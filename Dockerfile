@@ -305,17 +305,17 @@ RUN apt-get update && \
     tar xzf /tmp/picomatch.tgz -C "$PICO_DIR" --strip-components=1 && \
     # CVE-2026-33750 / CVE-2026-45149 + GHSA-3jxr-9vmj-r5cp +
     # CVE-2026-14257 / GHSA-mh99-v99m-4gvg:
-    # npm -> minimatch -> brace-expansion < 5.0.9.
-    BRACE_URL=https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz && \
+    # npm -> minimatch -> brace-expansion < 5.0.12.
+    BRACE_URL=https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.12.tgz && \
     curl -fsSL "$BRACE_URL" -o /tmp/brace-expansion.tgz && \
-    echo '49c43822ebc8105d533253fb66dfaf8c9ffff7394f6f64837315b13376e4f2ceade8619d27b28ed5d09c4e274e3c929e3d6df42c4ff6713ef00b23e1a3dfd6c6  /tmp/brace-expansion.tgz' | sha512sum -c - && \
+    echo '628bd0debce168b308ac38cd0cc90d4b4d6d79af77aa11211b9c72f1febe47497e770dca8bee6c0a822823de368ae2d94c75a881692d830543854d3d88d12299  /tmp/brace-expansion.tgz' | sha512sum -c - && \
     find /usr/local/lib/node_modules/npm -path '*/node_modules/brace-expansion' -type d -prune -exec rm -rf {} + && \
     BRACE_DIR=/usr/local/lib/node_modules/npm/node_modules/brace-expansion && \
     mkdir -p "$BRACE_DIR" && \
     tar xzf /tmp/brace-expansion.tgz -C "$BRACE_DIR" --strip-components=1 && \
-    node -e "const fs=require('fs'); const lock='/usr/local/lib/node_modules/npm/package-lock.json'; if (fs.existsSync(lock)) { const data=JSON.parse(fs.readFileSync(lock,'utf8')); const patch=(pkg)=>{ if (!pkg) return; pkg.version='5.0.9'; pkg.resolved='https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz'; pkg.integrity='sha512-ScQ4IuvIEF1TMlP7Zt+vjJ//9zlPb2SDcxWxM3bk8s6t6GGdJ7KO1dCcTidOPJKePW30LE/2cT7wCyPho9/Wxg=='; }; if (data.packages) for (const [name,pkg] of Object.entries(data.packages)) if (name.endsWith('node_modules/brace-expansion')) patch(pkg); if (data.dependencies && data.dependencies['brace-expansion']) patch(data.dependencies['brace-expansion']); fs.writeFileSync(lock, JSON.stringify(data,null,2)+'\n'); }" && \
+    node -e "const fs=require('fs'); const lock='/usr/local/lib/node_modules/npm/package-lock.json'; if (fs.existsSync(lock)) { const data=JSON.parse(fs.readFileSync(lock,'utf8')); const patch=(pkg)=>{ if (!pkg) return; pkg.version='5.0.12'; pkg.resolved='https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.12.tgz'; pkg.integrity='sha512-YovQ3rzhaLMIrDjNDMkNS01tea93qhEhG5xy8f6+R0l+dw3Ki+5sCoIoI942iuLZTHWogWktgwVDhU09iNEimQ=='; }; if (data.packages) for (const [name,pkg] of Object.entries(data.packages)) if (name.endsWith('node_modules/brace-expansion')) patch(pkg); if (data.dependencies && data.dependencies['brace-expansion']) patch(data.dependencies['brace-expansion']); fs.writeFileSync(lock, JSON.stringify(data,null,2)+'\n'); }" && \
     find /usr/local/lib/node_modules/npm -path '*/node_modules/brace-expansion/package.json' \
-      -exec node -e "const fs=require('fs'); const p=process.argv[1]; const v=JSON.parse(fs.readFileSync(p,'utf8')).version; if (v !== '5.0.9') { console.error(p + ': ' + v); process.exit(1); }" {} \;
+      -exec node -e "const fs=require('fs'); const p=process.argv[1]; const v=JSON.parse(fs.readFileSync(p,'utf8')).version; if (v !== '5.0.12') { console.error(p + ': ' + v); process.exit(1); }" {} \;
 
 # ---------------------------
 # Stage 1b: Frontend dependencies

@@ -14,8 +14,15 @@ import useWakeLock from "../../hooks/useWakeLock.hook";
 import configService from "../../services/config.service";
 import shareService from "../../services/share.service";
 import { FileListItem, FileMetaData, FileUpload } from "../../types/File.type";
+import { isFileMetaShare } from "../../utils/fileMetadata.util";
 import toast from "../../utils/toast.util";
 import { getUserKey, importKeyFromBase64 } from "../../utils/crypto.util";
+import {
+  SHARE_DEK_V1,
+  resolveOwnerShareKey,
+  resolveShareCryptoScheme,
+} from "../../utils/shareKey.util";
+import { reportShareCryptoEvent } from "../../utils/shareCryptoEvents.util";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getAdaptiveChunkSize,
@@ -38,12 +45,16 @@ const EditableUpload = ({
   shareId,
   files: savedFiles = [],
   isE2EEncrypted,
+  cryptoScheme,
+  fileMetadataScheme,
 }: {
   maxShareSize?: number;
   isReverseShare?: boolean;
   shareId: string;
   files?: FileMetaData[];
   isE2EEncrypted?: boolean;
+  cryptoScheme?: number | null;
+  fileMetadataScheme?: number | null;
 }) => {
   const t = useTranslate();
   const router = useRouter();
@@ -115,7 +126,32 @@ const EditableUpload = ({
         toast.error(t("share.edit.notify.e2e-key-missing"));
         throw new Error("E2E_KEY_MISSING");
       }
-      keyPromise = importKeyFromBase64(userKey);
+      // Files added to a SHARE_DEK_V1 share must use its K_share, or the
+      // recipient link would no longer open them. Legacy shares keep K_master.
+      let scheme: number;
+      try {
+        scheme = resolveShareCryptoScheme(cryptoScheme);
+      } catch {
+        toast.error(t("share.edit.notify.e2e-key-missing"));
+        throw new Error("E2E_SCHEME_UNSUPPORTED");
+      }
+      keyPromise =
+        scheme === SHARE_DEK_V1
+          ? shareService
+              .getShareKeyMaterial(shareId)
+              .then((material) =>
+                resolveOwnerShareKey(shareId, userKey, {
+                  cryptoScheme: material.cryptoScheme,
+                  wrappedShareKey: material.wrappedShareKey,
+                }),
+              )
+              .then(importKeyFromBase64)
+              .catch((error) => {
+                reportShareCryptoEvent("unwrap_error", SHARE_DEK_V1);
+                toast.error(t("share.edit.notify.e2e-key-missing"));
+                throw error;
+              })
+          : importKeyFromBase64(userKey);
     }
 
     // Crypto preparation and the bounded, cached probe run concurrently.
@@ -210,6 +246,8 @@ const EditableUpload = ({
             file.uploadRelativePath,
             uploadSchedulingProfile.maxParallelLanes,
             uploadSchedulingProfile.fileConcurrency,
+            // Every file of a FILE_META_V1 share, old or new, hides its name.
+            isFileMetaShare({ fileMetadataScheme }),
           );
         } catch (e: any) {
           if (e?.cancelled) return; // user cancelled

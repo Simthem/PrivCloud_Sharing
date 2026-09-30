@@ -75,9 +75,7 @@ export class SigningDownloadService {
             fileName: fileName,
           },
         })
-        .catch((err) =>
-          this.logger.error(`Failed to log DOWNLOAD: ${err.message}`),
-        );
+        .catch(() => this.logger.error("Failed to log DOWNLOAD"));
     }
 
     return { buffer, fileName };
@@ -232,9 +230,7 @@ export class SigningDownloadService {
             fileName: fileName,
           },
         })
-        .catch((err) =>
-          this.logger.error(`Failed to log DOWNLOAD: ${err.message}`),
-        );
+        .catch(() => this.logger.error("Failed to log DOWNLOAD"));
     }
 
     return { buffer, fileName };

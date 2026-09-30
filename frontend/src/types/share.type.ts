@@ -11,6 +11,10 @@ export type Share = {
   size: number;
   hasPassword: boolean;
   isE2EEncrypted: boolean;
+  /** NULL or absent: LEGACY_ACCOUNT_KEY. 2: SHARE_DEK_V1. */
+  cryptoScheme?: number | null;
+  /** NULL or absent: file names in clear. 1: FILE_META_V1 (encrypted). */
+  fileMetadataScheme?: number | null;
   previewEnabled?: boolean;
   encryptedReverseShareKey?: string | null;
   reverseShare?: { id: string; creatorId: string } | null;
@@ -47,6 +51,12 @@ export type CreateShare = {
   expiration: string;
   security: ShareSecurity;
   isE2EEncrypted?: boolean;
+  cryptoScheme?: number;
+  /** SHARE_DEK_V1: K_share wrapped by K_master, never K_share itself. */
+  wrappedShareKey?: string;
+  wrappedShareKeyAlgorithm?: string;
+  /** FILE_META_V1: every file name is encrypted with K_share. */
+  fileMetadataScheme?: number;
   shareE2EKeyViaEmail?: boolean;
   captchaToken?: string;
   senderName?: string;
@@ -76,6 +86,18 @@ export type MyShare = Omit<Share, "hasPassword"> & {
   views: number;
   createdAt: Date;
   security: MyShareSecurity;
+  wrappedShareKey?: string | null;
+  wrappedShareKeyAlgorithm?: string | null;
+  wrappedShareKeyVersion?: number | null;
+};
+
+/** Owner-side key material returned by GET /shares/:id/e2e-key. */
+export type ShareKeyMaterial = {
+  encryptedReverseShareKey: string | null;
+  cryptoScheme?: number | null;
+  wrappedShareKey?: string | null;
+  wrappedShareKeyAlgorithm?: string | null;
+  wrappedShareKeyVersion?: number | null;
 };
 
 export type AdminShare = {

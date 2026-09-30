@@ -92,6 +92,11 @@ export interface CreateSignatureRequestPayload {
   notificationE2EKey?: string;
   shareId: string;
   fileId: string;
+  /**
+   * Encrypted file names (FILE_META_V1) only: the real name, disclosed to the
+   * server for this request so that signers see what they sign.
+   */
+  documentName?: string;
   message?: string;
   signatureLevel?: "STANDARD" | "REINFORCED";
   expiresAt?: string;

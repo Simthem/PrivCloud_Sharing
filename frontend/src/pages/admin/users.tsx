@@ -46,9 +46,15 @@ const Users = () => {
         username: user.username,
       }),
       children: (
-        <Text size="sm">
-          <FormattedMessage id="admin.users.edit.delete.description" />
-        </Text>
+        <>
+          <Text size="sm">
+            <FormattedMessage id="admin.users.edit.delete.description" />
+          </Text>
+          {/* The e-mail identifies the account without ambiguity. */}
+          <Text size="sm" fw={600} mt="xs">
+            {user.email}
+          </Text>
+        </>
       ),
       labels: {
         confirm: t("common.button.delete"),

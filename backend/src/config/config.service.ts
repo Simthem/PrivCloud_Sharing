@@ -10,7 +10,10 @@ import * as argon from "argon2";
 import { EventEmitter } from "events";
 import * as fs from "fs";
 import { PrismaService } from "src/prisma/prisma.service";
-import { stringToTimespan } from "src/utils/date.util";
+import {
+  isValidTimespanString,
+  stringToTimespan,
+} from "src/utils/date.util";
 import { parse as yamlParse } from "yaml";
 import { YamlConfig } from "../../prisma/seed/config.seed";
 import { CONFIG_FILE } from "src/constants";
@@ -186,6 +189,14 @@ export class ConfigService extends EventEmitter {
         `Config variable must be of type ${configVariable.type}`,
       );
     }
+    if (
+      configVariable.type === "timespan" &&
+      !isValidTimespanString(value)
+    ) {
+      throw new BadRequestException(
+        "Config variable must be a non-negative integer followed by a supported time unit",
+      );
+    }
 
     this.validateConfigVariable(key, value);
 
@@ -291,7 +302,6 @@ export class ConfigService extends EventEmitter {
           ["off", "onfocus", "onload", "onsubmit"].includes(value),
         message: "ALTCHA auto mode must be off, onfocus, onload or onsubmit",
       },
-      // TODO add validation for timespan type
     ];
 
     const validation = validations.find((validation) => validation.key == key);

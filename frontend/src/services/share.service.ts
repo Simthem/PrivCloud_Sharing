@@ -39,6 +39,7 @@ import {
   MyShare,
   ReverseShare,
   Share,
+  ShareKeyMaterial,
   ShareMetaData,
 } from "../types/share.type";
 import api from "./api.service";
@@ -1297,6 +1298,46 @@ const getEncryptedE2eKey = async (shareId: string): Promise<string | null> => {
 };
 
 /**
+ * Owner-side key material of a share: the reverse-share key K_rs, or for a
+ * SHARE_DEK_V1 share the wrapped K_share. Both are wrapped by K_master.
+ */
+const getShareKeyMaterial = async (
+  shareId: string,
+): Promise<ShareKeyMaterial> => {
+  const { data } = await api.get(`/shares/${apiPathSegment(shareId)}/e2e-key`);
+  return {
+    encryptedReverseShareKey: data?.encryptedReverseShareKey ?? null,
+    cryptoScheme: data?.cryptoScheme ?? null,
+    wrappedShareKey: data?.wrappedShareKey ?? null,
+    wrappedShareKeyAlgorithm: data?.wrappedShareKeyAlgorithm ?? null,
+    wrappedShareKeyVersion: data?.wrappedShareKeyVersion ?? null,
+  };
+};
+
+/** Store K_share rewrapped under a new K_master (compare-and-set). */
+const updateWrappedShareKey = async (
+  shareId: string,
+  wrappedShareKey: string,
+  expectedVersion: number,
+): Promise<{ wrappedShareKeyVersion: number }> => {
+  const { data } = await api.patch(
+    `/shares/${apiPathSegment(shareId)}/wrapped-share-key`,
+    { wrappedShareKey, expectedVersion },
+  );
+  return data;
+};
+
+/** Anonymous crypto outcome counter. Never carries ids or key material. */
+const reportCryptoEvent = async (event: {
+  event: string;
+  scheme: "LEGACY_ACCOUNT_KEY" | "SHARE_DEK_V1";
+  client: "web" | "unknown";
+  clientVersion?: string;
+}) => {
+  await api.post("/shares/crypto-events", event);
+};
+
+/**
  * Télécharge le ZIP global préparé par le serveur (non-E2E) en streaming
  * avec progression en octets et annulation via AbortSignal.
  *
@@ -1690,6 +1731,9 @@ export default {
   removeReverseShare,
   updateReverseShare,
   getEncryptedE2eKey,
+  getShareKeyMaterial,
+  updateWrappedShareKey,
+  reportCryptoEvent,
   getStoredRecipients,
 };
 

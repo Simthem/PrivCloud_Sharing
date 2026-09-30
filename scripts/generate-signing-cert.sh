@@ -125,7 +125,7 @@ echo "==> Done"
 echo "    Seal P12:       $CERT_DIR/certificate.p12"
 echo "    Trust anchor:   $CERT_DIR/root-ca.pem (publish it, verifiers use --ca)"
 echo "    Fingerprint:    $(openssl x509 -in "$CERT_DIR/root-ca.pem" -noout -fingerprint -sha256)"
-echo "    CA keys:        $CA_DIR (encrypted, move root-ca.key offline)"
+echo "    CA keys:        $CA_DIR (not used at runtime; move both *.key files offline)"
 if [ -n "$CERT_PASSWORD" ]; then
   echo "    P12 password:   set SIGNING_CERTIFICATE_PASSWORD to the value given"
 else

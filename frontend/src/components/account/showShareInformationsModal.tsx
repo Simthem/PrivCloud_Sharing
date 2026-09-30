@@ -13,13 +13,20 @@ const showShareInformationsModal = (
   modals: ReturnType<typeof useModals>,
   share: MyShare,
   maxShareSize: number,
+  // Key the recipient link carries: K_master for a legacy share, K_share for
+  // SHARE_DEK_V1. Left out, the legacy behaviour is kept.
+  linkKey?: string | null,
 ) => {
   const t = translateOutsideContext();
 
   return modals.openModal({
     title: t("account.shares.modal.share-informations"),
     children: (
-      <ShareInformationsContent share={share} maxShareSize={maxShareSize} />
+      <ShareInformationsContent
+        share={share}
+        maxShareSize={maxShareSize}
+        linkKey={linkKey}
+      />
     ),
   });
 };
@@ -27,12 +34,18 @@ const showShareInformationsModal = (
 const ShareInformationsContent = ({
   share,
   maxShareSize,
+  linkKey,
 }: {
   share: MyShare;
   maxShareSize: number;
+  linkKey?: string | null;
 }) => {
   const config = useConfig();
-  const storedKey = share.isE2EEncrypted ? getUserKey() : null;
+  const storedKey = !share.isE2EEncrypted
+    ? null
+    : linkKey !== undefined
+      ? linkKey
+      : getUserKey();
   const keyFragment = storedKey ? buildKeyFragment(storedKey) : "";
   const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
 

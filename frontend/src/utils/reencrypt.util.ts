@@ -20,6 +20,13 @@ import {
   setUploadActive,
 } from "../services/api.service";
 import { MyShare, MyReverseShare } from "../types/share.type";
+import {
+  LEGACY_ACCOUNT_KEY,
+  SHARE_DEK_V1,
+  resolveShareCryptoScheme,
+  rewrapShareKey,
+} from "./shareKey.util";
+import { reportShareCryptoEvent } from "./shareCryptoEvents.util";
 import { uploadReencryptChunkInWorker } from "./reencryptUpload.util";
 import {
   DEFAULT_REENCRYPT_TRANSPORT_CHUNK_SIZE,
@@ -51,7 +58,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 export interface ReencryptProgress {
-  phase: "files" | "reverseShares" | "done";
+  phase: "shareKeys" | "files" | "reverseShares" | "done";
   currentShare?: string;
   currentFile?: string;
   filesTotal: number;
@@ -61,6 +68,9 @@ export interface ReencryptProgress {
   reverseSharesTotal: number;
   reverseSharesDone: number;
   reverseSharesFailed: number;
+  shareKeysTotal: number;
+  shareKeysDone: number;
+  shareKeysFailed: number;
   failedDetails: string[];
 }
 
@@ -69,6 +79,9 @@ export interface ReencryptResult {
   filesSkipped: number;
   filesFailed: number;
   reverseSharesFailed: number;
+  /** SHARE_DEK_V1 shares whose K_share was rewrapped, files untouched. */
+  shareKeysRewrapped: number;
+  shareKeysFailed: number;
   failedDetails: string[];
 }
 
@@ -158,6 +171,53 @@ async function updateReverseShareWithRetry(
       if (attempt >= MAX_RETRIES) throw e;
       await sleep(Math.min(1000 * Math.pow(2, attempt), 16_000));
     }
+  }
+}
+
+/**
+ * Store a rewrapped share key with WAF-aware retry. A 409 means another tab
+ * or device already rewrapped it: never retried, the caller re-reads it.
+ */
+async function updateWrappedShareKeyWithRetry(
+  shareId: string,
+  wrappedShareKey: string,
+  expectedVersion: number,
+): Promise<void> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await shareService.updateWrappedShareKey(
+        shareId,
+        wrappedShareKey,
+        expectedVersion,
+      );
+      return;
+    } catch (e: any) {
+      const status = e?.response?.status ?? e?.status;
+      if (status === 468 && attempt < MAX_RETRIES) {
+        try {
+          await completeSafeLineChallenge();
+        } catch {
+          /* ignore */
+        }
+        continue;
+      }
+      if ((status === 403 || status === 429) && attempt < MAX_RETRIES) {
+        await sleep(Math.min(2000 * Math.pow(2, attempt), 30_000));
+        continue;
+      }
+      if (status === 409 || attempt >= MAX_RETRIES) throw e;
+      await sleep(Math.min(1000 * Math.pow(2, attempt), 16_000));
+    }
+  }
+}
+
+/** Only shares still encrypted with K_master are re-encrypted. */
+function usesAccountKey(share: MyShare): boolean {
+  try {
+    return resolveShareCryptoScheme(share.cryptoScheme) === LEGACY_ACCOUNT_KEY;
+  } catch {
+    // Unknown future scheme: never rewrite its files with a legacy rotation.
+    return false;
   }
 }
 
@@ -265,9 +325,15 @@ export async function reencryptAll(
   }, JWT_REFRESH_INTERVAL_MS);
 
   try {
-    // --- Phase 1: re-encrypt files ---
     const allShares: MyShare[] = await shareService.getMyShares();
-    const e2eShares = allShares.filter((s) => s.isE2EEncrypted);
+    // SHARE_DEK_V1 shares only rewrap K_share: their files and links stay
+    // untouched. Every other E2E share is re-encrypted as before.
+    const dekShares = allShares.filter(
+      (s) => s.isE2EEncrypted && s.cryptoScheme === SHARE_DEK_V1,
+    );
+    const e2eShares = allShares.filter(
+      (s) => s.isE2EEncrypted && usesAccountKey(s),
+    );
 
     // Count total non-empty files across all E2E shares
     let totalFiles = 0;
@@ -286,10 +352,12 @@ export async function reencryptAll(
     let filesSkipped = 0;
     let filesFailed = 0;
     let reverseSharesFailed = 0;
+    let shareKeysRewrapped = 0;
+    let shareKeysFailed = 0;
     const failedDetails: string[] = [];
 
     const progress: ReencryptProgress = {
-      phase: "files",
+      phase: dekShares.length > 0 ? "shareKeys" : "files",
       filesTotal: totalFiles,
       filesDone: 0,
       filesSkipped: 0,
@@ -297,10 +365,56 @@ export async function reencryptAll(
       reverseSharesTotal: e2eReverseShares.length,
       reverseSharesDone: 0,
       reverseSharesFailed: 0,
+      shareKeysTotal: dekShares.length,
+      shareKeysDone: 0,
+      shareKeysFailed: 0,
       failedDetails,
     };
 
     onProgress?.({ ...progress });
+
+    // --- Phase 0: rewrap SHARE_DEK_V1 share keys ---
+    // Done first: it takes milliseconds per share, and an interrupted rotation
+    // then leaves the owner able to open these shares with the new key.
+    for (const share of dekShares) {
+      if (signal?.aborted) {
+        throw new Error("Re-chiffrement annulé par l'utilisateur");
+      }
+      try {
+        if (!share.wrappedShareKey || !share.wrappedShareKeyVersion) {
+          throw new Error("wrapped share key unavailable");
+        }
+        const { wrappedShareKey, alreadyRewrapped } = await rewrapShareKey(
+          share.wrappedShareKey,
+          oldEncodedKey,
+          newEncodedKey,
+          share.id,
+        );
+        if (!alreadyRewrapped) {
+          await updateWrappedShareKeyWithRetry(
+            share.id,
+            wrappedShareKey,
+            share.wrappedShareKeyVersion,
+          );
+        }
+        shareKeysRewrapped++;
+        reportShareCryptoEvent("rewrap_ok", SHARE_DEK_V1);
+      } catch (e: any) {
+        console.error(`[reencrypt] Share key rewrap failed for ${share.id}`);
+        shareKeysFailed++;
+        failedDetails.push(
+          `Share ${share.id}: ${e?.message ?? "unknown error"}`,
+        );
+        reportShareCryptoEvent("rewrap_error", SHARE_DEK_V1);
+      }
+      progress.shareKeysDone++;
+      progress.shareKeysFailed = shareKeysFailed;
+      onProgress?.({ ...progress, failedDetails: [...failedDetails] });
+    }
+
+    // --- Phase 1: re-encrypt files ---
+    progress.phase = "files";
+    onProgress?.({ ...progress, failedDetails: [...failedDetails] });
 
     // Fetch chunkSize from config (same approach as share.service.ts)
     let configChunkSize = 10_000_000;
@@ -504,6 +618,8 @@ export async function reencryptAll(
       filesSkipped,
       filesFailed,
       reverseSharesFailed,
+      shareKeysRewrapped,
+      shareKeysFailed,
       failedDetails,
     };
   } finally {

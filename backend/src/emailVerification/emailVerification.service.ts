@@ -5,7 +5,9 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import * as crypto from "crypto";
+import { Prisma } from "@prisma/client";
 import { ConfigService } from "src/config/config.service";
+import { EmailOutboxService } from "src/email/email-outbox.service";
 import { EmailService } from "src/email/email.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import {
@@ -47,6 +49,7 @@ export class EmailVerificationService {
     private prisma: PrismaService,
     private config: ConfigService,
     private emailService: EmailService,
+    private emailOutbox: EmailOutboxService,
   ) {}
 
   /**
@@ -71,6 +74,21 @@ export class EmailVerificationService {
   }
 
   async issueAndSend(user: VerificationUser): Promise<void> {
+    await this.prisma.$transaction((tx) => this.issueInTransaction(tx, user));
+    await this.emailOutbox.deliverPending();
+  }
+
+  async deliverPending(): Promise<void> {
+    await this.emailOutbox.deliverPending();
+  }
+
+  async issueInTransaction(
+    client: Pick<
+      Prisma.TransactionClient,
+      "emailVerificationToken" | "emailOutbox"
+    >,
+    user: VerificationUser,
+  ): Promise<void> {
     if (
       !user.emailVerificationRequiredAt ||
       user.emailVerifiedAt ||
@@ -85,14 +103,13 @@ export class EmailVerificationService {
     const tokenHash = this.hashToken(rawToken);
     const now = new Date();
     const expiresAt = new Date(
-      now.getTime() +
-        EMAIL_VERIFICATION_TOKEN_TTL_HOURS * 60 * 60 * 1000,
+      now.getTime() + EMAIL_VERIFICATION_TOKEN_TTL_HOURS * 60 * 60 * 1000,
     );
 
     // Never revoke the links still in flight: the recipient must be able to use
     // whichever message reaches the inbox first. Only expired tokens and the
     // oldest ones beyond the cap are dropped.
-    const existing = await this.prisma.emailVerificationToken.findMany({
+    const existing = await client.emailVerificationToken.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
       select: { tokenHash: true, expiresAt: true },
@@ -103,24 +120,26 @@ export class EmailVerificationService {
       ...live.slice(MAX_LIVE_TOKENS_PER_USER - 1),
     ].map((token) => token.tokenHash);
 
-    await this.prisma.$transaction([
-      this.prisma.emailVerificationToken.deleteMany({
-        where: { tokenHash: { in: revoked } },
-      }),
-      this.prisma.emailVerificationToken.create({
-        data: {
-          tokenHash,
-          createdAt: now,
-          expiresAt,
-          email: user.email,
-          userId: user.id,
-        },
-      }),
-    ]);
+    await client.emailVerificationToken.deleteMany({
+      where: { tokenHash: { in: revoked } },
+    });
+    await client.emailVerificationToken.create({
+      data: {
+        tokenHash,
+        createdAt: now,
+        expiresAt,
+        email: user.email,
+        userId: user.id,
+      },
+    });
 
     // The raw token exists only in memory and in the URL fragment. It is never
-    // persisted or logged; only its SHA-256 digest is stored.
-    await this.emailService.sendEmailVerificationEmail(user.email, rawToken);
+    // persisted or logged outside the encrypted outbox payload.
+    await this.emailOutbox.enqueue(
+      client,
+      this.emailService.buildEmailVerificationEmail(user.email, rawToken),
+      `email-verification:${user.id}:${tokenHash}`,
+    );
   }
 
   /**
@@ -205,10 +224,8 @@ export class EmailVerificationService {
 
     try {
       await this.issueAndSend(user);
-    } catch (error) {
-      this.logger.warn(
-        `Could not resend an email-verification message: ${(error as Error).message}`,
-      );
+    } catch {
+      this.logger.warn("Could not resend an email-verification message");
     }
 
     return outcome;

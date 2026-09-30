@@ -114,6 +114,30 @@ model RefreshToken {
   oauthIDToken String? // prefixed with the ID of the issuing OAuth provider, separated by a colon
 }
 
+model RefreshTokenReplay {
+  previousTokenHash String   @id
+  encryptedResult   String?
+  createdAt         DateTime @default(now())
+  expiresAt         DateTime
+
+  @@index([expiresAt])
+}
+
+model EmailOutbox {
+  id               String    @id @default(uuid())
+  deduplicationKey String    @unique
+  encryptedPayload String
+  createdAt        DateTime  @default(now())
+  availableAt      DateTime  @default(now())
+  claimedAt        DateTime?
+  sentAt           DateTime?
+  attempts         Int       @default(0)
+  lastError        String?
+
+  @@index([sentAt, availableAt])
+  @@index([claimedAt])
+}
+
 model LoginToken {
   token     String   @id @default(uuid())
   createdAt DateTime @default(now())
@@ -208,6 +232,23 @@ model Share {
   storageProvider    String              @default("LOCAL")
   isE2EEncrypted     Boolean             @default(false)
 
+  // Personal E2E key scheme. NULL on every row written before this column
+  // existed and means LEGACY_ACCOUNT_KEY (1): files encrypted directly with
+  // the owner's K_master. SHARE_DEK_V1 (2): files encrypted with a random
+  // per-share key K_share, stored here only wrapped by K_master. The server
+  // never receives K_share in clear for such a share.
+  cryptoScheme             Int?
+  // base64url [IV 12 bytes][AES-256-GCM(K_share) 32 bytes + tag 16 bytes],
+  // authenticated with the share id as additional data. Opaque to the server.
+  wrappedShareKey          String?
+  wrappedShareKeyAlgorithm String?
+  // Incremented on every rewrap (K_master rotation). Compare-and-set guard.
+  wrappedShareKeyVersion   Int?
+  // File name scheme of the share. NULL: names stored in clear. FILE_META_V1
+  // (1, SHARE_DEK_V1 shares only): every file of the share stores its name
+  // and folder path encrypted with K_share, next to a fixed placeholder name.
+  fileMetadataScheme       Int?
+
   // E2EE access grants for this share.
   accessGrants AccessGrant[]
 
@@ -266,6 +307,13 @@ model File {
   // Plaintext bytes per independently authenticated AES-GCM record.
   // Nullable keeps legacy E2E files compatible with chunk auto-detection.
   encryptionChunkSize Int?
+  // NULL: `name` and `relativePath` are the real ones. FILE_META_V1 (1):
+  // `name` is "encrypted-file-" followed by the first 8 characters of the id,
+  // `relativePath` is NULL and the real values are in `encryptedMetadata`,
+  // base64url [IV 12 bytes][AES-256-GCM(JSON) + tag 16 bytes] under K_share,
+  // with the share and file ids authenticated. Opaque to the server.
+  metadataScheme      Int?
+  encryptedMetadata   String?
 
   shareId String
   share   Share  @relation(fields: [shareId], references: [id], onDelete: Cascade)

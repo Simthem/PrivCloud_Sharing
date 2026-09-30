@@ -1,5 +1,158 @@
 ## [Unreleased]
 
+### Bug Fixes
+
+- **durable e-mail delivery -- commit account state before SMTP:** account
+  creation, verification links, administrator invitations and team invitations
+  now write an encrypted outbox entry in the same database transaction as the
+  associated state. Delivery runs after commit, retries with bounded backoff
+  and a stable Message-ID, and no longer leaves partially created accounts when
+  SMTP is temporarily unavailable.
+- **storage cleanup -- distinguish an absent object from a failed deletion:**
+  local and S3 cleanup remove the database record when the object is already
+  gone, while preserving it when storage reports a real failure. Interrupted
+  re-encryption keeps its resumable session instead of discarding valid work.
+
+### Security
+
+- **dynamic CSS nonces:** ALTCHA uses the document nonce when trusted lazy
+  scripts have an empty nonce. Reproducible build-time verification keeps the
+  existing workers and translations. Scroll-lock styles use an explicitly
+  declared nonce provider. SSR HTML is private and non-cacheable.
+
+- **content security policy -- request-scoped nonces:** production scripts and
+  style elements require an unpredictable nonce, inline script attributes are
+  refused and `strict-dynamic` propagates trust to Next.js chunks. Emotion uses
+  a request-local cache, Caddy no longer replaces the application policy, and
+  the remaining Mantine compatibility exception is restricted to style
+  attributes, which CSP nonces cannot authorize.
+- **sessions -- replay-safe token rotation:** refresh-token grace results are
+  coordinated through the database and encrypted with AES-256-GCM, so
+  concurrent workers return the exact same access/refresh pair without storing
+  it in clear. Refresh, password-reset and TOTP login tokens are stored as
+  keyed hashes or digests, with bounded compatibility reads for existing rows.
+- **authentication -- close races and enumeration signals:** one-time TOTP
+  tokens are consumed atomically, password changes revoke sessions in the same
+  transaction, password-reset requests return the same public result for
+  unknown and externally managed accounts, and first-user bootstrap remains
+  serialized on SQLite.
+- **logs -- remove credentials, identifiers and key-derived material:** OAuth
+  claims and nonces, LDAP input, cache endpoints, share identifiers, database
+  URLs, mail recipients and raw integration errors are no longer written to
+  logs. End-to-end key comparisons use constant-time equality without logging
+  hash fragments.
+- **validation -- bound untrusted operational input:** notification and team
+  audit pagination is finite, timespan configuration is parsed strictly, and
+  unsafe archive paths and malformed route identifiers are refused before
+  reaching storage.
+- **test-secret hygiene -- generate cryptographic fixtures at runtime:**
+  refresh replay, encrypted outbox and session tests no longer resemble
+  committed JWT, token or HMAC secrets to scanners; cryptographically random
+  values, including 256-bit keys, are generated for every test process.
+
+### Documentation
+
+- **signing PKI -- identify what must leave production:** the README now
+  distinguishes the private root and intermediate CA keys from the two public
+  root-certificate copies, and documents verified offline backup, removal from
+  the VM and renewal on an isolated issuance machine.
+- **operations -- encrypted outbox lifecycle:** the README documents migration
+  ordering, the shared stable JWT secret required to decrypt queued messages,
+  pending-row monitoring and the rare at-least-once duplicate-delivery window.
+
+### Maintenance
+
+- **database -- two additive reliability migrations:**
+  `20260930140000_distributed_refresh_replay` and
+  `20260930150000_email_outbox` add the replay and encrypted mail queues with
+  expiry, delivery and deduplication indexes.
+- **regression coverage -- security and concurrency:** tests cover concurrent
+  refreshes and outbox claims, authenticated encryption, token hashing,
+  account/session atomicity, enumeration resistance, log redaction, bounded
+  pagination, CSP generation and the complete SQLite migration chain.
+
+## [1.26.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.25.0...v1.26.0) (2026-09-29)
+
+### Features
+
+- **end-to-end encryption -- a random key per personal share (SHARE_DEK_V1):**
+  a new personal share can be encrypted with its own AES-256-GCM key K_share
+  instead of the account key. The recipient link carries K_share only, and the
+  server stores it wrapped by K_master with the share id authenticated, so it
+  never receives it in clear. Owners open, copy, edit and request signatures on
+  these shares as before, a key rotation only rewraps K_share and leaves the
+  files and every recipient link untouched, and the server refuses to rewrite
+  their ciphertext. Existing shares keep the account key. The feature is off by
+  default: `SHARE_DEK_V1_WRITE` enables it for a list of accounts or a stable
+  percentage of them (`SHARE_DEK_V1_CANARY_USERS`,
+  `SHARE_DEK_V1_ROLLOUT_PERCENT`), and a creation that meets a disabled flag
+  falls back to the account key on the spot. Anonymous counters of client-side
+  crypto failures are exposed to administrators.
+- **end-to-end encryption -- encrypted file names (FILE_META_V1):** on top of
+  SHARE_DEK_V1, the browser encrypts each file name and folder path with the
+  share key before upload, the share and file ids authenticated and the length
+  padded to 64-byte steps. The server, its logs and its database only see a
+  neutral `encrypted-file-<id>` name, and refuse any readable name for such a
+  share, down to database triggers. Recipients and owners get the real names
+  back for the list, folders, previews, downloads, ZIP archives and signature
+  requests, where the owner discloses the document name for that request only.
+  Off by default behind `FILE_META_V1_WRITE`, with its own account list and
+  percentage, and a creation that meets a disabled flag keeps plain names on
+  the spot. Companion WebDAV imports keep plain names.
+
+### Bug Fixes
+
+- **My shares -- always show the share name or id:** a share without a name
+  shows its full id on up to two lines instead of an ellipsis, a blank name
+  falls back to the id, and the complete value is shown on hover.
+- **user administration -- keep each row's actions together:** the edit and
+  delete buttons stay side by side on their user's row instead of wrapping
+  next to the following user, each names the account it targets, the hovered
+  row is highlighted and the deletion confirmation shows the account e-mail.
+
+### Security
+
+- **dependencies -- brace-expansion 5.0.12:** fixes two uncontrolled
+  recursions and a regular expression denial of service reached through
+  `minimatch` (CVE-2026-102276, CVE-2026-102277, CVE-2026-102278), in the
+  backend, frontend and documentation lockfiles and in the copy bundled with
+  npm in both Dockerfiles, replaced from a tarball whose SHA-512 is checked.
+- **documentation site -- webpack-dev-middleware 8.3.0:** fixes a path
+  traversal through a public path without a trailing slash
+  (GHSA-g84c-rxfj-3j2c) in the development server of the documentation site.
+  Its `memfs` dependencies move to 4.79.0.
+- **dependencies -- js-yaml 5.4.2:** the override moves from 5.2.2 in the
+  backend, frontend and documentation manifests, which fixes unbounded CPU use
+  on empty merge sources (GHSA-r3ph-w7gj-g6xm).
+- **image build -- keep local data and secrets out of the build context:** the
+  SQLite database, uploads and signing CA keys under `data/` and local `.env`
+  files of the backend and frontend are excluded by `.dockerignore`. No
+  instruction copied them into the image, they no longer reach the builder
+  either.
+
+### Dependencies
+
+- **nodemailer 10.0.9.**
+
+### Documentation
+
+- **interface texts -- say when a key passes through the server:** the home
+  page, the account page, the onboarding and the security texts no longer
+  state that the key never reaches the server. They say that it does not by
+  default and name the two exceptions: the key the owner chooses to include in
+  the recipient e-mail, and files received through a reverse share.
+- **README -- per-share keys and encrypted file names:** the security model
+  describes both schemes and what stays in clear, the configuration table
+  lists the `SHARE_DEK_V1_*` and `FILE_META_V1_*` variables, and
+  `docker-compose.yaml` shows them commented out.
+
+### Maintenance
+
+- **upgrade -- two additive migrations:** `20260929120000_add_share_dek_v1`
+  and `20260930120000_add_file_meta_v1` add nullable columns and SQLite
+  triggers that stand in for CHECK constraints. No existing row is rewritten,
+  and both schemes stay off until their variables are set.
+
 ## [1.25.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.24.6...v1.25.0) (2026-09-24)
 
 ### Features

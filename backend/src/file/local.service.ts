@@ -59,7 +59,13 @@ export class LocalFileService {
   async create(
     data: Buffer,
     chunk: { index: number; total: number },
-    file: { id?: string; name: string; relativePath?: string },
+    file: {
+      id?: string;
+      name: string;
+      relativePath?: string;
+      metadataScheme?: number | null;
+      encryptedMetadata?: string | null;
+    },
     shareId: string,
     clientChunkSize?: number,
     share?: any,
@@ -70,16 +76,16 @@ export class LocalFileService {
     if (!file.id) {
       file.id = crypto.randomUUID();
       this.logger.debug(
-        `Upload started: shareId=${shareId} fileId=${file.id} fileName="${file.name}" note="generated fileId"`,
+        `Upload started: share=redacted fileId=${file.id} note="generated fileId"`,
       );
     } else if (!isValidUUID(file.id)) {
       this.logger.warn(
-        `Invalid fileId format on upload: shareId=${shareId} fileId="${originalFileId}"`,
+        `Invalid fileId format on upload: share=redacted fileId="${originalFileId}"`,
       );
       throw new BadRequestException("Invalid file ID format");
     } else {
       this.logger.debug(
-        `Upload continued: shareId=${shareId} fileId=${file.id} fileName="${file.name}"`,
+        `Upload continued: share=redacted fileId=${file.id}`,
       );
     }
 
@@ -93,7 +99,7 @@ export class LocalFileService {
 
     if (share.uploadLocked) {
       this.logger.warn(
-        `Upload rejected, share completed: shareId=${shareId} fileId=${file.id}`,
+        `Upload rejected, share completed: share=redacted fileId=${file.id}`,
       );
       throw new BadRequestException("Share is already completed");
     }
@@ -148,7 +154,7 @@ export class LocalFileService {
 
     if (expectedChunkIndex != chunk.index) {
       this.logger.warn(
-        `Unexpected chunk index: shareId=${shareId} fileId=${file.id} fileName="${file.name}" expected=${expectedChunkIndex} received=${chunk.index}`,
+        `Unexpected chunk index: share=redacted fileId=${file.id} expected=${expectedChunkIndex} received=${chunk.index}`,
       );
       throw new BadRequestException({
         message: "Unexpected chunk received",
@@ -165,7 +171,7 @@ export class LocalFileService {
     const availableSpace = space.bavail * space.bsize;
     if (availableSpace < buffer.byteLength) {
       this.logger.error(
-        `Insufficient disk space: shareId=${shareId} fileId=${file.id} need=${buffer.byteLength} available=${availableSpace}`,
+        `Insufficient disk space: share=redacted fileId=${file.id} need=${buffer.byteLength} available=${availableSpace}`,
       );
       throw new InternalServerErrorException("Not enough space on the server");
     }
@@ -195,7 +201,7 @@ export class LocalFileService {
 
     const isLastChunk = chunk.index == chunk.total - 1;
     this.logger.debug(
-      `Chunk appended: shareId=${shareId} fileId=${file.id} fileName="${file.name}" chunkIndex=${chunk.index} chunkTotal=${chunk.total} last=${isLastChunk}`,
+      `Chunk appended: share=redacted fileId=${file.id} chunkIndex=${chunk.index} chunkTotal=${chunk.total} last=${isLastChunk}`,
     );
     if (isLastChunk) {
       await fs.rename(tmpChunkPath, this.resolveSharePath(shareId, file.id));
@@ -227,6 +233,8 @@ export class LocalFileService {
               id: file.id,
               name: file.name,
               relativePath: file.relativePath,
+              metadataScheme: file.metadataScheme ?? null,
+              encryptedMetadata: file.encryptedMetadata ?? null,
               size: fileSize.toString(),
               encryptionChunkSize: share.isE2EEncrypted
                 ? cryptoRecordSize
@@ -245,7 +253,7 @@ export class LocalFileService {
       }
 
       this.logger.debug(
-        `File uploaded: shareId=${shareId} fileId=${file.id} fileName="${file.name}" size=${fileSize} mimeType=${mime.contentType(file.name.split(".").pop() ?? "") || false}`,
+        `File uploaded: share=redacted fileId=${file.id} size=${fileSize} mimeType=${mime.contentType(file.name.split(".").pop() ?? "") || false}`,
       );
     }
     return file;
@@ -284,7 +292,7 @@ export class LocalFileService {
 
     const isLastChunk = chunk.index === chunk.total - 1;
     this.logger.debug(
-      `Reencrypt chunk: shareId=${shareId} fileId=${fileId} chunkIndex=${chunk.index} chunkTotal=${chunk.total} last=${isLastChunk}`,
+      `Reencrypt chunk: share=redacted fileId=${fileId} chunkIndex=${chunk.index} chunkTotal=${chunk.total} last=${isLastChunk}`,
     );
 
     if (isLastChunk) {
@@ -302,7 +310,7 @@ export class LocalFileService {
         throw new NotFoundException("File not found in this share");
       }
       this.logger.debug(
-        `Reencrypt complete: shareId=${shareId} fileId=${fileId} newSize=${fileSize}`,
+        `Reencrypt complete: share=redacted fileId=${fileId} newSize=${fileSize}`,
       );
     }
   }
@@ -328,7 +336,7 @@ export class LocalFileService {
       : createReadStream(filePath, { highWaterMark: 1_048_576 });
 
     this.logger.debug(
-      `File downloaded: shareId=${shareId} fileId=${fileMetaData.id} fileName="${fileMetaData.name}" size=${fileMetaData.size} range=${range ? `${range.start}-${range.end}` : "full"} mimeType=${mime.contentType(fileMetaData.name.split(".").pop() ?? "") || false}`,
+      `File downloaded: share=redacted fileId=${fileMetaData.id} size=${fileMetaData.size} range=${range ? `${range.start}-${range.end}` : "full"} mimeType=${mime.contentType(fileMetaData.name.split(".").pop() ?? "") || false}`,
     );
 
     return {
@@ -353,18 +361,18 @@ export class LocalFileService {
     } catch (error) {
       if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
       this.logger.warn(
-        `Stored file already absent for shareId=${shareId} fileId=${fileId}; removing the database record`,
+        `Stored file already absent for share=redacted fileId=${fileId}; removing the database record`,
       );
     }
 
     await this.prisma.file.delete({ where: { id: fileId } });
     this.logger.debug(
-      `File deleted: shareId=${shareId} fileId=${fileMetaData.id} fileName="${fileMetaData.name}" size=${fileMetaData.size}`,
+      `File deleted: share=redacted fileId=${fileMetaData.id} size=${fileMetaData.size}`,
     );
   }
 
   async deleteAllFiles(shareId: string) {
-    this.logger.debug(`Delete all files requested: shareId=${shareId}`);
+    this.logger.debug("Delete all share files requested");
     await fs.rm(this.resolveSharePath(shareId), {
       recursive: true,
       force: true,

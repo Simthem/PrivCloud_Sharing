@@ -35,13 +35,20 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
       const res = await reencryptAll(oldKey, newKey, setProgress, ac.signal);
       setResult(res);
       setDone(true);
-      if (res.filesFailed === 0 && res.reverseSharesFailed === 0) {
+      if (
+        res.filesFailed === 0 &&
+        res.reverseSharesFailed === 0 &&
+        res.shareKeysFailed === 0
+      ) {
         onSuccess();
       } else {
         onError(
           intl.formatMessage(
             { id: "reencrypt.error.partial" },
-            { failed: res.filesFailed, rsFailed: res.reverseSharesFailed },
+            {
+              failed: res.filesFailed + res.shareKeysFailed,
+              rsFailed: res.reverseSharesFailed,
+            },
           ),
         );
       }
@@ -83,11 +90,21 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
     run();
   };
 
-  const totalItems = (progress?.filesTotal ?? 0) + (progress?.reverseSharesTotal ?? 0);
-  const doneItems = (progress?.filesDone ?? 0) + (progress?.reverseSharesDone ?? 0);
+  const totalItems =
+    (progress?.filesTotal ?? 0) +
+    (progress?.reverseSharesTotal ?? 0) +
+    (progress?.shareKeysTotal ?? 0);
+  const doneItems =
+    (progress?.filesDone ?? 0) +
+    (progress?.reverseSharesDone ?? 0) +
+    (progress?.shareKeysDone ?? 0);
   const pct = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
 
-  const hasPartialFailures = result && (result.filesFailed > 0 || result.reverseSharesFailed > 0);
+  const hasPartialFailures =
+    result &&
+    (result.filesFailed > 0 ||
+      result.reverseSharesFailed > 0 ||
+      result.shareKeysFailed > 0);
 
   return (
     <Modal
@@ -128,7 +145,8 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
                 id="reencrypt.partial.message"
                 values={{
                   ok: result?.filesReencrypted ?? 0,
-                  failed: result?.filesFailed ?? 0,
+                  failed:
+                    (result?.filesFailed ?? 0) + (result?.shareKeysFailed ?? 0),
                   skipped: result?.filesSkipped ?? 0,
                 }}
               />

@@ -25,6 +25,18 @@ export class MyShareDTO extends OmitType(ShareDTO, [
   @Expose()
   security?: MyShareSecurityDTO;
 
+  // SHARE_DEK_V1 only, for the owner's own list: K_share wrapped by K_master.
+  // Opaque without K_master. Used to rebuild recipient links and to rewrap
+  // the key after a K_master rotation.
+  @Expose()
+  wrappedShareKey?: string | null;
+
+  @Expose()
+  wrappedShareKeyAlgorithm?: string | null;
+
+  @Expose()
+  wrappedShareKeyVersion?: number | null;
+
   from(partial: Partial<MyShareDTO>) {
     return plainToClass(MyShareDTO, partial, { excludeExtraneousValues: true });
   }

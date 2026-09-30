@@ -7,3 +7,5 @@ POLYFILL="node_modules/next/dist/build/polyfills/polyfill-module.js"
 if [ -f "$POLYFILL" ]; then
   printf '// intentionally empty -- modern browsers only\n' > "$POLYFILL"
 fi
+
+node scripts/patch-altcha-csp.mjs

@@ -20,12 +20,14 @@ import {
   normalizeUploadRelativePath,
   resolveStoragePath,
 } from "./file-path.util";
+import { resolveUploadFileMetadata } from "./file-metadata-scheme";
 import { touchShareUploadActivity } from "src/share/upload-activity.util";
 
 type MultipartUploadRequest = {
   id: string;
   name: string;
   relativePath?: string;
+  encryptedMetadata?: string;
   totalChunks: number;
   fileSize: number;
   chunkSize: number;
@@ -80,14 +82,6 @@ export class FileService {
     request: MultipartUploadRequest,
     shareId: string,
   ) {
-    const file = {
-      id: request.id,
-      name: assertSafeFileName(request.name),
-      relativePath: normalizeUploadRelativePath(
-        request.relativePath,
-        request.name,
-      ),
-    };
     const [share, existingFile] = await Promise.all([
       this.prisma.share.findUnique({
         where: { id: shareId },
@@ -102,6 +96,7 @@ export class FileService {
       }),
     ]);
     if (!share) throw new NotFoundException("Share not found");
+    const file = this.resolveUploadedFile(share, request);
     if (existingFile?.shareId === shareId) {
       this.s3FileService.unregisterUploadFlow(shareId, request.id);
       return {
@@ -192,8 +187,7 @@ export class FileService {
     } catch (error) {
       if (error instanceof HttpException) throw error;
       this.logger.error(
-        `Multipart initialization failed: shareId=${shareId} fileId=${request.id}`,
-        error instanceof Error ? error.stack : error,
+        `Multipart initialization failed: share=redacted fileId=${request.id}`,
       );
       throw new HttpException(
         "S3 upload temporarily unavailable",
@@ -393,14 +387,6 @@ export class FileService {
     request: MultipartUploadRequest,
     shareId: string,
   ) {
-    const file = {
-      id: request.id,
-      name: assertSafeFileName(request.name),
-      relativePath: normalizeUploadRelativePath(
-        request.relativePath,
-        request.name,
-      ),
-    };
     const [share, existingFile] = await Promise.all([
       this.prisma.share.findUnique({
         where: { id: shareId },
@@ -415,6 +401,7 @@ export class FileService {
       }),
     ]);
     if (!share) throw new NotFoundException("Share not found");
+    const file = this.resolveUploadedFile(share, request);
     if (existingFile?.shareId === shareId) {
       this.s3FileService.unregisterUploadFlow(shareId, request.id);
       return {
@@ -467,6 +454,7 @@ export class FileService {
       id?: string;
       name: string;
       relativePath?: string;
+      encryptedMetadata?: string;
     },
     shareId: string,
     clientChunkSize?: number,
@@ -487,6 +475,50 @@ export class FileService {
     );
   }
 
+  /**
+   * Validate the display name and optional logical folder path of an upload,
+   * or, for a share with encrypted file names, the ciphertext that replaces
+   * them. Physical storage always uses the file id only.
+   */
+  private resolveUploadedFile<T extends { id?: string }>(
+    share: { id: string; fileMetadataScheme: number | null },
+    request: T & {
+      name: string;
+      relativePath?: string;
+      encryptedMetadata?: string;
+    },
+  ) {
+    let metadata: ReturnType<typeof resolveUploadFileMetadata>;
+    try {
+      metadata = resolveUploadFileMetadata(share.fileMetadataScheme, {
+        id: request.id,
+        name: request.name,
+        relativePath: request.relativePath,
+        encryptedMetadata: request.encryptedMetadata,
+      });
+    } catch (error) {
+      // Logged without any name: the refused value may be a readable one.
+      const code =
+        error instanceof BadRequestException
+          ? (error.getResponse() as { error?: string }).error
+          : undefined;
+      if (code?.startsWith("file_metadata_")) {
+        this.logger.warn(
+          `Upload file name refused: share=redacted reason=${code}`,
+        );
+      }
+      throw error;
+    }
+    const name = assertSafeFileName(metadata.name);
+    return {
+      id: request.id as T["id"],
+      name,
+      relativePath: normalizeUploadRelativePath(metadata.relativePath, name),
+      metadataScheme: metadata.metadataScheme,
+      encryptedMetadata: metadata.encryptedMetadata,
+    };
+  }
+
   async createStream(
     data: Readable,
     contentLength: number,
@@ -495,6 +527,7 @@ export class FileService {
       id?: string;
       name: string;
       relativePath?: string;
+      encryptedMetadata?: string;
     },
     shareId: string,
     clientChunkSize?: number,
@@ -517,24 +550,16 @@ export class FileService {
     chunkBytes: number,
     streaming: boolean,
     chunk: { index: number; total: number },
-    file: {
+    uploadedFile: {
       id?: string;
       name: string;
       relativePath?: string;
+      encryptedMetadata?: string;
     },
     shareId: string,
     clientChunkSize?: number,
     encryptionChunkSize?: number,
   ) {
-    // Validate the display filename and optional logical folder path.
-    // Physical storage still uses file.id only; relativePath is metadata for
-    // UI display and safe ZIP entry names.
-    file.name = assertSafeFileName(file.name);
-    file.relativePath = normalizeUploadRelativePath(
-      file.relativePath,
-      file.name,
-    );
-
     // Fetch the share with related data for all common validations
     const share = await this.prisma.share.findUnique({
       where: { id: shareId },
@@ -548,9 +573,14 @@ export class FileService {
       throw new NotFoundException("Share not found");
     }
 
+    // Validate the display filename and optional logical folder path, or
+    // their ciphertext. relativePath is metadata for UI display and safe ZIP
+    // entry names.
+    const file = this.resolveUploadedFile(share, uploadedFile);
+
     // Reject uploads to already-completed shares (was missing for S3)
     if (share.uploadLocked) {
-      this.logger.warn(`Upload rejected, share completed: shareId=${shareId}`);
+      this.logger.warn("Upload rejected because the share is completed");
       throw new BadRequestException("Share is already completed");
     }
     await touchShareUploadActivity(this.prisma, share);
@@ -579,7 +609,7 @@ export class FileService {
 
     if (fileSizeSum + chunkBytes > effectiveLimit) {
       this.logger.warn(
-        `Max share size exceeded: shareId=${shareId} current=${fileSizeSum} ` +
+        `Max share size exceeded: share=redacted current=${fileSizeSum} ` +
           `chunk=${chunkBytes} limit=${effectiveLimit}`,
       );
       throw new HttpException(
@@ -751,8 +781,7 @@ export class FileService {
       // Keep the session so a transient network/S3 failure can retry the same
       // chunk. A deliberate restart at chunk zero replaces a stale session.
       this.logger.error(
-        `replaceFileContent failed (session retained): shareId=${shareId} fileId=${fileId} chunk=${chunk.index}/${chunk.total}`,
-        error instanceof Error ? error.stack : error,
+        `replaceFileContent failed (session retained): share=redacted fileId=${fileId} chunk=${chunk.index}/${chunk.total}`,
       );
       throw error;
     }

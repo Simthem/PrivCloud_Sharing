@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -27,6 +28,7 @@ import { CreateShareGuard } from "src/share/guard/createShare.guard";
 import { ShareOwnerGuard } from "src/share/guard/shareOwner.guard";
 import { DownloadNotificationService } from "src/downloadNotification/downloadNotification.service";
 import { PrismaService } from "src/prisma/prisma.service";
+import { SHARE_DEK_V1 } from "src/share/share-crypto-scheme";
 import { TeamNotificationService } from "src/teamNotification/teamNotification.service";
 import { FileService } from "./file.service";
 import { FileSecurityGuard } from "./guard/fileSecurity.guard";
@@ -46,6 +48,7 @@ type MultipartInitializationBody = {
   id?: unknown;
   name?: unknown;
   relativePath?: unknown;
+  encryptedMetadata?: unknown;
   totalChunks?: unknown;
   fileSize?: unknown;
   chunkSize?: unknown;
@@ -68,6 +71,7 @@ type ParsedMultipartInitialization = {
   id: string;
   name: string;
   relativePath?: string;
+  encryptedMetadata?: string;
   totalChunks: number;
   fileSize: number;
   chunkSize: number;
@@ -288,6 +292,7 @@ export class FileController {
     },
     @Headers("x-file-name") headerFileName: string | undefined,
     @Headers("x-file-relative-path") headerRelativePath: string | undefined,
+    @Headers("x-file-metadata") headerEncryptedMetadata: string | undefined,
     @Headers("content-length") contentLength: string | undefined,
     @Body() body: Buffer | undefined,
     @Param("shareId", SafeIdPipe) shareId: string,
@@ -301,6 +306,9 @@ export class FileController {
     const relativePath = headerRelativePath
       ? this.decodeHeaderValue(headerRelativePath, "file relative path")
       : query.relativePath;
+    // FILE_META_V1: base64url ciphertext, never URL-encoded and never sent in
+    // the query string, where it would reach access logs.
+    const encryptedMetadata = headerEncryptedMetadata || undefined;
     const maxChunkBytes = getUploadChunkLimit(!!req.user);
     const {
       id,
@@ -325,7 +333,7 @@ export class FileController {
         req,
         parsedContentLength,
         { index: parsedChunkIndex, total: parsedTotalChunks },
-        { id, name, relativePath },
+        { id, name, relativePath, encryptedMetadata },
         shareId,
         parsedChunkSize,
         parsedEncryptionChunkSize,
@@ -343,7 +351,7 @@ export class FileController {
     return await this.fileService.create(
       body!,
       { index: parsedChunkIndex, total: parsedTotalChunks },
-      { id, name, relativePath },
+      { id, name, relativePath, encryptedMetadata },
       shareId,
       parsedChunkSize,
       parsedEncryptionChunkSize,
@@ -366,6 +374,7 @@ export class FileController {
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-file-name") headerFileName: string | undefined,
     @Headers("x-file-relative-path") headerRelativePath: string | undefined,
+    @Headers("x-file-metadata") headerEncryptedMetadata: string | undefined,
     @Body() body: Buffer,
     @Param("shareId", SafeIdPipe) shareId: string,
   ) {
@@ -378,6 +387,9 @@ export class FileController {
     const relativePath = headerRelativePath
       ? this.decodeHeaderValue(headerRelativePath, "file relative path")
       : query.relativePath;
+    // FILE_META_V1: base64url ciphertext, never URL-encoded and never sent in
+    // the query string, where it would reach access logs.
+    const encryptedMetadata = headerEncryptedMetadata || undefined;
     const {
       id,
       parsedChunkIndex,
@@ -395,7 +407,7 @@ export class FileController {
     return await this.fileService.create(
       body,
       { index: parsedChunkIndex, total: parsedTotalChunks },
-      { id, name, relativePath },
+      { id, name, relativePath, encryptedMetadata },
       shareId,
       parsedChunkSize,
       parsedEncryptionChunkSize,
@@ -421,6 +433,7 @@ export class FileController {
       id,
       name,
       relativePath,
+      encryptedMetadata,
       totalChunks,
       fileSize,
       chunkSize,
@@ -436,6 +449,13 @@ export class FileController {
       typeof relativePath !== "string"
     ) {
       throw new BadRequestException("Invalid multipart relative path");
+    }
+    if (
+      encryptedMetadata !== undefined &&
+      encryptedMetadata !== null &&
+      typeof encryptedMetadata !== "string"
+    ) {
+      throw new BadRequestException("Invalid multipart file metadata");
     }
     if (
       !Number.isSafeInteger(fileSize) ||
@@ -482,6 +502,7 @@ export class FileController {
       id,
       name,
       relativePath: typeof relativePath === "string" ? relativePath : undefined,
+      ...(typeof encryptedMetadata === "string" && { encryptedMetadata }),
       totalChunks: totalChunks as number,
       fileSize: fileSize as number,
       chunkSize: chunkSize as number,
@@ -657,9 +678,7 @@ export class FileController {
                 folderId: share.teamFolderId,
               },
             })
-            .catch((err) =>
-              this.logger.error(`Failed to log DOWNLOAD (zip): ${err.message}`),
-            );
+            .catch(() => this.logger.error("Failed to log DOWNLOAD (zip)"));
         }
       }
     }
@@ -881,9 +900,7 @@ export class FileController {
     const isRegistered = !!(req as unknown as { user?: User }).user;
     void this.downloadNotificationService
       .onDownload(share, isRegistered)
-      .catch((err) =>
-        this.logger.error(`Failed to record download: ${err.message}`),
-      );
+      .catch(() => this.logger.error("Failed to record download"));
 
     // Audit I/O must not delay authorization or the first response byte.
     if (share.teamFolderId) {
@@ -906,9 +923,7 @@ export class FileController {
             },
           });
         }
-      })().catch((err) =>
-        this.logger.error(`Failed to log DOWNLOAD: ${err.message}`),
-      );
+      })().catch(() => this.logger.error("Failed to log DOWNLOAD"));
     }
   }
 
@@ -944,9 +959,7 @@ export class FileController {
               folderId: share.teamFolderId,
             },
           })
-          .catch((err) =>
-            this.logger.error(`Failed to log FILE_DELETE: ${err.message}`),
-          );
+          .catch(() => this.logger.error("Failed to log FILE_DELETE"));
 
         // Notify team members about the deletion
         if (share.creatorId) {
@@ -958,10 +971,8 @@ export class FileController {
               `Un fichier "${file.name}" a été supprimé`,
               { folderId: share.teamFolderId! },
             )
-            .catch((err) =>
-              this.logger.error(
-                `Failed to notify team on file delete: ${err.message}`,
-              ),
+            .catch(() =>
+              this.logger.error("Failed to notify team on file delete"),
             );
         }
       }
@@ -1041,6 +1052,20 @@ export class FileController {
     }
     if (body.byteLength > maxReencryptPayloadBytes) {
       throw new BadRequestException("Chunk payload too large");
+    }
+
+    // A K_master rotation only rewraps K_share: SHARE_DEK_V1 ciphertext must
+    // stay byte-identical so that recipient links keep working. Refuse any
+    // client, current or older, that tries to rewrite it.
+    const shareScheme = await this.prisma.share.findUnique({
+      where: { id: shareId },
+      select: { cryptoScheme: true },
+    });
+    if (shareScheme?.cryptoScheme === SHARE_DEK_V1) {
+      throw new ConflictException(
+        "SHARE_DEK_V1 files are never re-encrypted",
+        "share_dek_reencrypt_refused",
+      );
     }
 
     await this.fileService.replaceFileContent(

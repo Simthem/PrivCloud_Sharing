@@ -64,14 +64,10 @@ export class AdminStatsService {
     try {
       const day = toDayKey(new Date());
       await this.captureSnapshot(day, await this.currentTotals(true));
-    } catch (error) {
+    } catch {
       // A missing data point degrades a chart; it must never take down the
       // scheduler or the instance around it.
-      this.logger.warn(
-        `Could not record the daily usage snapshot: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      this.logger.warn("Could not record the daily usage snapshot");
     }
   }
 
@@ -140,12 +136,8 @@ export class AdminStatsService {
   private async writeSnapshot(day: string, totals: UsageTotals) {
     try {
       await this.captureSnapshot(day, totals);
-    } catch (error) {
-      this.logger.warn(
-        `Could not record today's usage snapshot: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+    } catch {
+      this.logger.warn("Could not record today's usage snapshot");
     }
   }
 

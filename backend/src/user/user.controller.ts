@@ -29,6 +29,8 @@ import { UpdateUserDto } from "./dto/updateUser.dto";
 import { UserDTO } from "./dto/user.dto";
 import { UserSevice } from "./user.service";
 import { AuthTotpService } from "src/auth/authTotp.service";
+import { isShareDekWriteEnabledFor } from "src/share/share-crypto-scheme";
+import { isFileMetaWriteEnabledFor } from "src/file/file-metadata-scheme";
 
 @Controller("users")
 export class UserController {
@@ -58,6 +60,10 @@ export class UserController {
     return {
       ...userDTO,
       hasTeamMembership: !!teamMembership,
+      // Whether new personal E2E shares of this account use SHARE_DEK_V1.
+      shareDekV1Write: isShareDekWriteEnabledFor(user),
+      // Whether those shares also encrypt their file names (FILE_META_V1).
+      fileMetaV1Write: isFileMetaWriteEnabledFor(user),
       teamId: teamMembership?.teamId || null,
     };
   }
@@ -135,10 +141,7 @@ export class UserController {
   @UseGuards(JwtGuard)
   async removeEncryptionKey(@GetUser() user: User) {
     if (!user?.id) throw new UnauthorizedException();
-    await this.userService.removeEncryptionKeyHash(user.id);
-    // Also purge all wrapped keys - they reference the revoked E2E key
-    await this.userService.removeAllWrappedKeys(user.id);
-    await this.userService.removeTeamKeyMaterial(user.id);
+    await this.userService.revokeEncryptionKeyMaterial(user.id);
   }
 
   @Post("me/encryption-key/verify")
@@ -212,7 +215,7 @@ export class UserController {
   @UseGuards(JwtGuard, AdministratorGuard)
   async adminDisableTotp(@Param("id") id: string, @GetUser() admin: User) {
     await this.authTotpService.adminDisableTotp(id);
-    this.logger.warn(`Administrator ${admin.email} reset the 2FA of user ${id}`);
+    this.logger.warn(`Administrator ${admin.id} reset the 2FA of user ${id}`);
   }
 
   /**
@@ -228,7 +231,7 @@ export class UserController {
   ) {
     const user = await this.userService.adminMarkEmailVerified(id);
     this.logger.warn(
-      `Administrator ${admin.email} marked the e-mail address of user ${id} as verified`,
+      `Administrator ${admin.id} marked the e-mail address of user ${id} as verified`,
     );
     return new UserDTO().from(user);
   }

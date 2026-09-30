@@ -13,7 +13,10 @@ import { useColorScheme } from "@mantine/hooks";
 import { ModalsProvider } from "@mantine/modals";
 import { Notifications } from "@mantine/notifications";
 import { emotionTransform, MantineEmotionProvider } from "@mantine/emotion";
+import type { EmotionCache } from "@emotion/cache";
+import { CacheProvider } from "@emotion/react";
 import emotionCache from "../utils/emotionCache";
+import { readDocumentCspNonce } from "../utils/csp.util";
 import axios from "axios";
 import { getCookie, setCookie } from "cookies-next";
 import { setDayjsLocale } from "../utils/dayjs";
@@ -99,7 +102,19 @@ const contrastResolver: CSSVariablesResolver = () => ({
 
 const excludeDefaultLayoutRoutes = ["/admin/config/[category]"];
 
-function App({ Component, pageProps }: AppProps) {
+type PrivCloudAppProps = AppProps & {
+  emotionCache?: EmotionCache;
+  cspNonce?: string;
+};
+
+function App({
+  Component,
+  pageProps,
+  emotionCache: requestEmotionCache,
+  cspNonce,
+}: PrivCloudAppProps) {
+  const activeCspNonce = cspNonce ?? readDocumentCspNonce();
+  const activeEmotionCache = requestEmotionCache ?? emotionCache;
   // Use the cookie value for the initial render to avoid SSR hydration mismatch.
   // useColorScheme uses window.matchMedia which is not available on the server,
   // so the server always renders with the cookie value. We must match that on the client.
@@ -617,7 +632,7 @@ function App({ Component, pageProps }: AppProps) {
             Safari zooms when a focused input has font-size < 16px.
             maximum-scale in viewport meta is ignored since iOS 10.
             This CSS override is the only reliable method. */}
-        <style>{`
+        <style nonce={activeCspNonce}>{`
           @supports (-webkit-touch-callout: none) {
             input, textarea, select, .mantine-Input-input {
               font-size: 16px !important;
@@ -640,75 +655,78 @@ function App({ Component, pageProps }: AppProps) {
               defaultColorScheme="dark"
               stylesTransform={emotionTransform}
               cssVariablesResolver={contrastResolver}
+              getStyleNonce={activeCspNonce ? () => activeCspNonce : undefined}
             >
-              <MantineEmotionProvider cache={emotionCache}>
-                <GlobalStyle />
-                <Notifications />
-                <ConfigContext.Provider
-                  value={{
-                    configVariables,
-                    refresh: async () => {
-                      setConfigVariables(await configService.list());
-                    },
-                  }}
-                >
-                  <ModalsProvider modalProps={{ lockScroll: false }}>
-                    <UserContext.Provider
-                      value={{
-                        user,
-                        refreshUser: async (options) => {
-                          const user =
-                            await userService.getCurrentUser(options);
-                          setUser(user);
-                          return user;
-                        },
-                      }}
-                    >
-                      {excludeDefaultLayoutRoutes.includes(route) ? (
-                        <Component {...pageProps} />
-                      ) : (
-                        <>
-                          <Stack
-                            justify="space-between"
-                            style={{ minHeight: "100vh" }}
-                          >
-                            <div>
-                              <Header />
-                              <main style={{ paddingTop: mainOffset }}>
-                                {user && (
-                                  <EmailVerificationNotice user={user} />
-                                )}
-                                <Container
-                                  fluid={route === "/"}
-                                  px={route === "/" ? 0 : undefined}
-                                  style={
-                                    route === "/"
-                                      ? { overflowX: "hidden" }
-                                      : undefined
-                                  }
-                                >
-                                  <Component {...pageProps} />
-                                </Container>
-                              </main>
-                            </div>
-                            <Footer />
-                          </Stack>
-                          <CookieConsent />
-                          <PwaInstallPrompt />
-                          {user && (
-                            <E2EKeyPrompt
-                              opened={showE2EPrompt}
-                              onClose={() => setShowE2EPrompt(false)}
-                              userId={user.id}
-                            />
-                          )}
-                          {user && <TeamStatusChecker />}
-                        </>
-                      )}
-                    </UserContext.Provider>
-                  </ModalsProvider>
-                </ConfigContext.Provider>
-              </MantineEmotionProvider>
+              <CacheProvider value={activeEmotionCache}>
+                <MantineEmotionProvider cache={activeEmotionCache}>
+                  <GlobalStyle />
+                  <Notifications />
+                  <ConfigContext.Provider
+                    value={{
+                      configVariables,
+                      refresh: async () => {
+                        setConfigVariables(await configService.list());
+                      },
+                    }}
+                  >
+                    <ModalsProvider modalProps={{ lockScroll: false }}>
+                      <UserContext.Provider
+                        value={{
+                          user,
+                          refreshUser: async (options) => {
+                            const user =
+                              await userService.getCurrentUser(options);
+                            setUser(user);
+                            return user;
+                          },
+                        }}
+                      >
+                        {excludeDefaultLayoutRoutes.includes(route) ? (
+                          <Component {...pageProps} />
+                        ) : (
+                          <>
+                            <Stack
+                              justify="space-between"
+                              style={{ minHeight: "100vh" }}
+                            >
+                              <div>
+                                <Header />
+                                <main style={{ paddingTop: mainOffset }}>
+                                  {user && (
+                                    <EmailVerificationNotice user={user} />
+                                  )}
+                                  <Container
+                                    fluid={route === "/"}
+                                    px={route === "/" ? 0 : undefined}
+                                    style={
+                                      route === "/"
+                                        ? { overflowX: "hidden" }
+                                        : undefined
+                                    }
+                                  >
+                                    <Component {...pageProps} />
+                                  </Container>
+                                </main>
+                              </div>
+                              <Footer />
+                            </Stack>
+                            <CookieConsent />
+                            <PwaInstallPrompt />
+                            {user && (
+                              <E2EKeyPrompt
+                                opened={showE2EPrompt}
+                                onClose={() => setShowE2EPrompt(false)}
+                                userId={user.id}
+                              />
+                            )}
+                            {user && <TeamStatusChecker />}
+                          </>
+                        )}
+                      </UserContext.Provider>
+                    </ModalsProvider>
+                  </ConfigContext.Provider>
+                </MantineEmotionProvider>
+              </CacheProvider>
             </MantineProvider>
           </IntlProvider>
         </HydrationBoundary>

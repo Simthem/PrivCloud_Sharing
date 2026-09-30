@@ -67,6 +67,8 @@ import {
 interface FileOption {
   id: string;
   name: string;
+  /** FILE_META_V1: the server only knows a placeholder for this file. */
+  encryptedName?: boolean;
 }
 
 interface Props {
@@ -509,6 +511,9 @@ export default function RequestSignatureModal({
       notificationE2EKey: encryptionKey || undefined,
       shareId,
       fileId: values.fileId,
+      documentName: files.find(
+        (file) => file.id === values.fileId && file.encryptedName,
+      )?.name,
       message: values.message || undefined,
       signatureLevel: values.signatureLevel,
       addApprovalField: values.addApprovalField,

@@ -51,6 +51,26 @@ const timespanUnitAliases: Record<string, Timespan["unit"]> = {
   years: "years",
 };
 
+/**
+ * Validate an administrator-supplied timespan before it reaches persistent
+ * configuration. Keep this strict: stringToTimespan remains deliberately
+ * tolerant when reading historical values, but silently turning a typo into
+ * `0 days` could disable an expiration limit or immediately expire sessions.
+ */
+export function isValidTimespanString(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^(\d+)\s+(\S+)$/u.exec(value.trim().toLowerCase());
+  if (!match) return false;
+
+  const amount = Number(match[1]);
+  return (
+    Number.isSafeInteger(amount) &&
+    amount >= 0 &&
+    amount <= 999_999 &&
+    Object.prototype.hasOwnProperty.call(timespanUnitAliases, match[2])
+  );
+}
+
 export function stringToTimespan(value: string): Timespan {
   const [time, rawUnit = "days"] = value.trim().toLowerCase().split(/\s+/);
   const unit = timespanUnitAliases[rawUnit] ?? "days";

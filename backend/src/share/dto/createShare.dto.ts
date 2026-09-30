@@ -4,6 +4,8 @@ import {
   IsArray,
   IsBoolean,
   IsEmail,
+  IsIn,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
@@ -12,6 +14,13 @@ import {
   MaxLength,
   ValidateNested,
 } from "class-validator";
+import {
+  LEGACY_ACCOUNT_KEY,
+  SHARE_DEK_V1,
+  SHARE_KEY_WRAP_ALGORITHM,
+  WRAPPED_SHARE_KEY_PATTERN,
+} from "../share-crypto-scheme";
+import { FILE_META_V1 } from "../../file/file-metadata-scheme";
 import { ShareSecurityDTO } from "./shareSecurity.dto";
 
 export class CreateShareDTO {
@@ -46,6 +55,29 @@ export class CreateShareDTO {
   @IsOptional()
   @IsBoolean()
   isE2EEncrypted: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @IsIn([LEGACY_ACCOUNT_KEY, SHARE_DEK_V1])
+  cryptoScheme?: number;
+
+  // K_share wrapped by K_master in the browser. Never K_share itself.
+  @IsOptional()
+  @IsString()
+  @Matches(WRAPPED_SHARE_KEY_PATTERN, {
+    message: "wrappedShareKey must be a 60-byte base64url value",
+  })
+  wrappedShareKey?: string;
+
+  @IsOptional()
+  @IsIn([SHARE_KEY_WRAP_ALGORITHM])
+  wrappedShareKeyAlgorithm?: string;
+
+  // FILE_META_V1: the browser encrypts every file name with K_share.
+  @IsOptional()
+  @IsInt()
+  @IsIn([FILE_META_V1])
+  fileMetadataScheme?: number;
 
   @IsOptional()
   @IsString()

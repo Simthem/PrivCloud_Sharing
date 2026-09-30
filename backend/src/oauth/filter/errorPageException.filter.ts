@@ -9,13 +9,7 @@ export class ErrorPageExceptionFilter implements ExceptionFilter {
   constructor(private config: ConfigService) {}
 
   catch(exception: ErrorPageException, host: ArgumentsHost) {
-    this.logger.error(
-      JSON.stringify({
-        error: exception.key,
-        params: exception.params,
-        redirect: exception.redirect,
-      }),
-    );
+    this.logger.error(`OAuth flow failed with error key ${exception.key}`);
 
     const ctx = host.switchToHttp();
     const response = ctx.getResponse();

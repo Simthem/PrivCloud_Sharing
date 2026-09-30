@@ -27,19 +27,17 @@ import { UserSevice } from "../user/user.service";
 import { AuthRegisterDTO } from "./dto/authRegister.dto";
 import { AuthSignInDTO } from "./dto/authSignIn.dto";
 import { LdapService } from "./ldap.service";
+import { LoginBackoffPolicy, nextLoginFailureState } from "./loginBackoff.util";
 import {
-  LoginBackoffPolicy,
-  nextLoginFailureState,
-} from "./loginBackoff.util";
+  decryptRefreshReplay,
+  encryptRefreshReplay,
+  RefreshReplayTokens,
+} from "./refresh-replay.util";
 
 @Injectable()
 export class AuthService {
   private signUpQueue: Promise<void> = Promise.resolve();
   private readonly refreshReplayGraceMs = 15_000;
-  private readonly rotatedRefreshTokens = new Map<
-    string,
-    { accessToken: string; refreshToken: string; expiresAt: number }
-  >();
 
   constructor(
     private prisma: PrismaService,
@@ -55,7 +53,7 @@ export class AuthService {
 
   async signUp(
     dto: AuthRegisterDTO,
-    ip: string,
+    _ip: string,
     isAdmin?: boolean,
     emailAlreadyVerified = false,
   ) {
@@ -80,31 +78,34 @@ export class AuthService {
         // The public distribution uses SQLite and a single backend process.
         // Serialize bootstrap registrations in-process so only one request can
         // observe an empty user table and receive administrator privileges.
-        const isFirstUser = (await this.prisma.user.count()) === 0;
-        user = await this.prisma.user.create({
-          data: {
-            email: dto.email,
-            username: dto.username,
-            password: hash,
-            isAdmin: isAdmin ?? isFirstUser,
-            emailVerificationRequiredAt: verificationRequiredAt,
-            emailVerifiedAt: verificationRequired
-              ? null
-              : verificationRequiredAt,
-          },
+        user = await this.prisma.$transaction(async (transaction) => {
+          const isFirstUser = (await transaction.user.count()) === 0;
+          const createdUser = await transaction.user.create({
+            data: {
+              email: dto.email,
+              username: dto.username,
+              password: hash,
+              isAdmin: isAdmin ?? isFirstUser,
+              emailVerificationRequiredAt: verificationRequiredAt,
+              emailVerifiedAt: verificationRequired
+                ? null
+                : verificationRequiredAt,
+            },
+          });
+          if (verificationRequired) {
+            await this.emailVerificationService.issueInTransaction(
+              transaction,
+              createdUser,
+            );
+          }
+          return createdUser;
         });
       } finally {
         releaseQueue();
       }
 
       if (verificationRequired) {
-        try {
-          await this.emailVerificationService.issueAndSend(user);
-        } catch (error) {
-          // Do not leave an account that can never receive its mandatory link.
-          await this.prisma.user.deleteMany({ where: { id: user.id } });
-          throw error;
-        }
+        await this.emailVerificationService.deliverPending();
       }
 
       const { refreshToken, refreshTokenId } = await this.createRefreshToken(
@@ -112,7 +113,7 @@ export class AuthService {
       );
       const accessToken = await this.createAccessToken(user, refreshTokenId);
 
-      this.logger.log(`User ${user.email} signed up from IP ${ip}`);
+      this.logger.log(`User ${user.id} signed up`);
       // SECURITY: Strip sensitive fields before returning
       const { password: _pw, ...safeUser } = user;
       return { accessToken, refreshToken, user: safeUser };
@@ -155,7 +156,7 @@ export class AuthService {
     );
   }
 
-  async signIn(dto: AuthSignInDTO, ip: string) {
+  async signIn(dto: AuthSignInDTO, _ip: string) {
     if (!dto.email && !dto.username) {
       throw new BadRequestException("Email or username is required");
     }
@@ -173,7 +174,7 @@ export class AuthService {
     // Check lockout
     if (targetUser?.lockedUntil && targetUser.lockedUntil > new Date()) {
       this.logger.warn(
-        `Locked account login attempt for ${dto.email || dto.username} from IP ${ip}`,
+        `Locked account login attempt for user ${targetUser.id}`,
       );
       throw this.lockedLogin(targetUser.lockedUntil);
     }
@@ -194,16 +195,14 @@ export class AuthService {
             },
           });
         }
-        this.logger.log(
-          `Successful password login for user ${targetUser.email} from IP ${ip}`,
-        );
+        this.logger.log(`Successful password login for user ${targetUser.id}`);
         return this.generateToken(targetUser);
       }
     }
 
     if (this.config.get("ldap.enabled")) {
       const ldapUsername = dto.username || dto.email;
-      this.logger.debug(`Trying LDAP login for user ${ldapUsername}`);
+      this.logger.debug("Trying LDAP login");
       const ldapUser = await this.ldapService.authenticateUser(
         ldapUsername,
         dto.password,
@@ -221,9 +220,7 @@ export class AuthService {
             },
           });
         }
-        this.logger.log(
-          `Successful LDAP login for user ${ldapUsername} (${user.id}) from IP ${ip}`,
-        );
+        this.logger.log(`Successful LDAP login for user ${user.id}`);
         return this.generateToken(user);
       }
     }
@@ -248,15 +245,13 @@ export class AuthService {
 
       if (failure.lockedUntil) {
         this.logger.warn(
-          `Account ${targetUser.email} locked after ${failure.attempts} failed attempts from IP ${ip}`,
+          `Account ${targetUser.id} locked after ${failure.attempts} failed attempts`,
         );
         throw this.lockedLogin(failure.lockedUntil);
       }
     }
 
-    this.logger.log(
-      `Failed login attempt for user ${dto.email || dto.username} from IP ${ip}`,
-    );
+    this.logger.log("Failed login attempt");
     throw new UnauthorizedException("Wrong email or password");
   }
 
@@ -294,12 +289,10 @@ export class AuthService {
     if (!user) return;
 
     if (user.ldapDN) {
-      this.logger.log(
-        `Failed password reset request for user ${email} because it is an LDAP user`,
-      );
-      throw new BadRequestException(
-        "This account can't reset its password here. Please contact your administrator.",
-      );
+      // Keep the public response indistinguishable from an unknown address.
+      // Revealing that an account exists (and is LDAP-managed) would turn the
+      // reset endpoint into an account-enumeration oracle.
+      return;
     }
 
     // Delete old reset password token
@@ -309,42 +302,70 @@ export class AuthService {
       });
     }
 
-    const { token } = await this.prisma.resetPasswordToken.create({
+    const rawToken = crypto.randomBytes(32).toString("base64url");
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(rawToken)
+      .digest("hex");
+    await this.prisma.resetPasswordToken.create({
       data: {
+        token: tokenHash,
         expiresAt: moment().add(1, "hour").toDate(),
         user: { connect: { id: user.id } },
       },
     });
 
-    this.emailService.sendResetPasswordEmail(user.email, token);
+    try {
+      await this.emailService.sendResetPasswordEmail(user.email, rawToken);
+    } catch {
+      // Keep the anonymous 202 response identical for registered and unknown
+      // addresses, while ensuring SMTP failures cannot become unhandled
+      // promise rejections.
+      this.logger.warn("Could not send a password-reset message");
+    }
   }
 
   async resetPassword(token: string, newPassword: string) {
     if (this.config.get("oauth.disablePassword"))
       throw new ForbiddenException("Password sign in is disabled");
 
-    const resetToken = await this.prisma.resetPasswordToken.findUnique({
-      where: { token },
-      include: { user: true },
-    });
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const resetToken =
+      (await this.prisma.resetPasswordToken.findUnique({
+        where: { token: tokenHash },
+        include: { user: true },
+      })) ??
+      // One-hour compatibility window for links created before hashed storage.
+      (await this.prisma.resetPasswordToken.findUnique({
+        where: { token },
+        include: { user: true },
+      }));
 
     if (!resetToken) throw new BadRequestException("Token invalid or expired");
 
     if (resetToken.expiresAt < new Date()) {
-      await this.prisma.resetPasswordToken.delete({ where: { token } });
-      throw new BadRequestException("Token expired. Please request a new password reset.");
+      await this.prisma.resetPasswordToken.delete({
+        where: { token: resetToken.token },
+      });
+      throw new BadRequestException(
+        "Token expired. Please request a new password reset.",
+      );
     }
 
     const newPasswordHash = await argon.hash(newPassword);
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.resetPasswordToken.delete({ where: { token } });
+      await tx.resetPasswordToken.delete({
+        where: { token: resetToken.token },
+      });
       await tx.user.update({
         where: { id: resetToken.user.id },
         data: { password: newPasswordHash },
       });
       // Invalidate all sessions on password reset
-      await tx.refreshToken.deleteMany({ where: { userId: resetToken.user.id } });
+      await tx.refreshToken.deleteMany({
+        where: { userId: resetToken.user.id },
+      });
     });
   }
 
@@ -360,13 +381,14 @@ export class AuthService {
 
     const hash = await argon.hash(newPassword);
 
-    await this.prisma.refreshToken.deleteMany({
-      where: { userId: user.id },
-    });
-
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { password: hash },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: { password: hash },
+      });
+      await tx.refreshToken.deleteMany({
+        where: { userId: user.id },
+      });
     });
   }
 
@@ -486,97 +508,158 @@ export class AuthService {
 
   async refreshAccessToken(refreshToken: string) {
     const hashedToken = this.hashRefreshToken(refreshToken);
+    const now = new Date();
 
-    // Try hashed lookup first (new tokens stored as HMAC-SHA256)
-    let refreshTokenMetaData = await this.prisma.refreshToken.findUnique({
-      where: { token: hashedToken },
-      include: { user: true },
+    await this.prisma.refreshTokenReplay.deleteMany({
+      where: { expiresAt: { lt: now } },
     });
 
-    const replay = this.getRotatedRefreshToken(hashedToken);
-    if (!refreshTokenMetaData && replay) {
-      return {
-        accessToken: replay.accessToken,
-        refreshToken: replay.refreshToken,
-      };
-    }
-
-    // Fallback: legacy tokens stored as raw values (pre-migration)
-    let isLegacyToken = false;
-    if (!refreshTokenMetaData) {
-      refreshTokenMetaData = await this.prisma.refreshToken.findUnique({
-        where: { token: refreshToken },
-        include: { user: true },
-      });
-      isLegacyToken = !!refreshTokenMetaData;
-    }
-
-    if (!refreshTokenMetaData || refreshTokenMetaData.expiresAt < new Date())
+    const metadata = await this.findRefreshToken(
+      this.prisma,
+      refreshToken,
+      hashedToken,
+    );
+    if (!metadata || metadata.expiresAt <= now) {
       throw new UnauthorizedException();
+    }
+    assertEmailVerificationAccess(metadata.user);
 
-    assertEmailVerificationAccess(refreshTokenMetaData.user);
+    const existingReplay = await this.prisma.refreshTokenReplay.findUnique({
+      where: { previousTokenHash: hashedToken },
+    });
+    if (existingReplay?.expiresAt && existingReplay.expiresAt > now) {
+      return this.readRefreshReplay(existingReplay.encryptedResult);
+    }
 
-    // Rotate: delete old token and create new one (new token will be hashed)
-    const deleteToken = isLegacyToken ? refreshToken : hashedToken;
-    await this.prisma.refreshToken.delete({ where: { token: deleteToken } });
-
-    const { refreshToken: newRefreshToken, refreshTokenId } =
-      await this.createRefreshToken(
-        refreshTokenMetaData.user.id,
-        refreshTokenMetaData.oauthIDToken,
-      );
-
-    const accessToken = await this.createAccessToken(
-      refreshTokenMetaData.user,
-      refreshTokenId,
+    const replayGraceExpiresAt = new Date(
+      Math.min(
+        metadata.expiresAt.getTime(),
+        Date.now() + this.refreshReplayGraceMs,
+      ),
     );
 
-    this.rememberRotatedRefreshToken(hashedToken, {
-      accessToken,
-      refreshToken: newRefreshToken,
-    });
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const current = await this.findRefreshToken(
+          tx,
+          refreshToken,
+          hashedToken,
+        );
+        if (!current || current.expiresAt <= new Date()) {
+          throw new UnauthorizedException();
+        }
 
-    return { accessToken, refreshToken: newRefreshToken };
-  }
+        const replay = await tx.refreshTokenReplay.findUnique({
+          where: { previousTokenHash: hashedToken },
+        });
+        if (replay?.expiresAt && replay.expiresAt > new Date()) {
+          return this.readRefreshReplay(replay.encryptedResult);
+        }
 
-  private rememberRotatedRefreshToken(
-    previousHashedToken: string,
-    tokens: { accessToken: string; refreshToken: string },
-  ) {
-    const expiresAt = Date.now() + this.refreshReplayGraceMs;
-    this.rotatedRefreshTokens.set(previousHashedToken, {
-      ...tokens,
-      expiresAt,
-    });
+        await tx.refreshTokenReplay.create({
+          data: {
+            previousTokenHash: hashedToken,
+            expiresAt: replayGraceExpiresAt,
+          },
+        });
 
-    setTimeout(() => {
-      const current = this.rotatedRefreshTokens.get(previousHashedToken);
-      if (current?.expiresAt === expiresAt) {
-        this.rotatedRefreshTokens.delete(previousHashedToken);
+        const { refreshToken: newRefreshToken, refreshTokenId } =
+          await this.createRefreshTokenWithClient(
+            tx,
+            current.user.id,
+            current.oauthIDToken,
+          );
+        const accessToken = await this.createAccessToken(
+          current.user,
+          refreshTokenId,
+        );
+        const result = {
+          accessToken,
+          refreshToken: newRefreshToken,
+        };
+
+        await tx.refreshToken.update({
+          where: { token: current.token },
+          data: { expiresAt: replayGraceExpiresAt },
+        });
+        await tx.refreshTokenReplay.update({
+          where: { previousTokenHash: hashedToken },
+          data: {
+            encryptedResult: encryptRefreshReplay(result, this.jwtSecret()),
+          },
+        });
+
+        return result;
+      });
+    } catch (error) {
+      if (!this.isUniqueConstraintError(error)) throw error;
+
+      const replay = await this.prisma.refreshTokenReplay.findUnique({
+        where: { previousTokenHash: hashedToken },
+      });
+      if (replay?.expiresAt && replay.expiresAt > new Date()) {
+        return this.readRefreshReplay(replay.encryptedResult);
       }
-    }, this.refreshReplayGraceMs).unref?.();
+      throw new UnauthorizedException();
+    }
   }
 
-  private getRotatedRefreshToken(previousHashedToken: string) {
-    const cached = this.rotatedRefreshTokens.get(previousHashedToken);
-    if (!cached) return null;
+  private async findRefreshToken(
+    client: Pick<Prisma.TransactionClient, "refreshToken">,
+    rawToken: string,
+    hashedToken: string,
+  ) {
+    return (
+      (await client.refreshToken.findUnique({
+        where: { token: hashedToken },
+        include: { user: true },
+      })) ??
+      (await client.refreshToken.findUnique({
+        where: { token: rawToken },
+        include: { user: true },
+      }))
+    );
+  }
 
-    if (cached.expiresAt < Date.now()) {
-      this.rotatedRefreshTokens.delete(previousHashedToken);
-      return null;
+  private readRefreshReplay(
+    encryptedResult: string | null,
+  ): RefreshReplayTokens {
+    if (!encryptedResult) throw new UnauthorizedException();
+    try {
+      return decryptRefreshReplay(encryptedResult, this.jwtSecret());
+    } catch {
+      this.logger.warn("Rejected an invalid refresh replay record");
+      throw new UnauthorizedException();
     }
+  }
 
-    return cached;
+  private isUniqueConstraintError(error: unknown): boolean {
+    return (
+      (error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002") ||
+      (!!error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "P2002")
+    );
   }
 
   async createRefreshToken(userId: string, idToken?: string) {
+    return this.createRefreshTokenWithClient(this.prisma, userId, idToken);
+  }
+
+  private async createRefreshTokenWithClient(
+    client: Pick<Prisma.TransactionClient, "refreshToken">,
+    userId: string,
+    idToken?: string,
+  ) {
     const sessionDuration = this.config.get("general.sessionDuration");
     // SECURITY: Generate a cryptographically random token and store only
     // its HMAC-SHA256 hash in the DB. If the DB leaks, tokens are unusable.
     const rawToken = crypto.randomBytes(32).toString("hex");
     const hashedToken = this.hashRefreshToken(rawToken);
 
-    const { id } = await this.prisma.refreshToken.create({
+    const { id } = await client.refreshToken.create({
       data: {
         token: hashedToken,
         userId,
@@ -592,23 +675,37 @@ export class AuthService {
 
   /** Compute HMAC-SHA256 of a refresh token using the JWT secret as key. */
   private hashRefreshToken(token: string): string {
-    const secret = this.config.get("internal.jwtSecret") || process.env.JWT_SECRET;
+    return crypto
+      .createHmac("sha256", this.jwtSecret())
+      .update(token)
+      .digest("hex");
+  }
+
+  private jwtSecret(): string {
+    const secret =
+      this.config.get("internal.jwtSecret") || process.env.JWT_SECRET;
     if (!secret) {
       throw new Error(
         "FATAL: No JWT secret configured. Set internal.jwtSecret in config or JWT_SECRET env var.",
       );
     }
-    return crypto.createHmac("sha256", secret).update(token).digest("hex");
+    return secret;
   }
 
   async createLoginToken(userId: string) {
-    const loginToken = (
-      await this.prisma.loginToken.create({
-        data: { userId, expiresAt: moment().add(5, "minutes").toDate() },
-      })
-    ).token;
-
-    return loginToken;
+    const rawToken = crypto.randomBytes(32).toString("base64url");
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(rawToken)
+      .digest("hex");
+    await this.prisma.loginToken.create({
+      data: {
+        token: tokenHash,
+        userId,
+        expiresAt: moment().add(5, "minutes").toDate(),
+      },
+    });
+    return rawToken;
   }
 
   addTokensToResponse(
@@ -678,7 +775,10 @@ export class AuthService {
 
   async verifyPassword(user: User, password: string) {
     if (!user.password && this.config.get("ldap.enabled")) {
-      const ldapUser = await this.ldapService.authenticateUser(user.username, password);
+      const ldapUser = await this.ldapService.authenticateUser(
+        user.username,
+        password,
+      );
       return !!ldapUser;
     }
 

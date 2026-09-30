@@ -1,10 +1,11 @@
 {
   "name": "privcloud-sharing-frontend",
-  "version": "1.25.0",
+  "version": "1.26.0",
   "scripts": {
     "dev": "node scripts/copy-pdf-worker.mjs && next dev",
     "prebuild": "node scripts/copy-pdf-worker.mjs && sh scripts/strip-legacy-polyfills.sh",
     "build": "next build",
+    "postbuild": "node scripts/check-altcha-csp.mjs",
     "start": "next start",
     "lint": "eslint src/",
     "format": "prettier --end-of-line=auto --write \"src/**/*.ts*\""
@@ -31,6 +32,7 @@
     "cookies-next": "^4.2.1",
     "dayjs": "^1.11.20",
     "fflate": "^0.8.2",
+    "get-nonce": "1.0.1",
     "global-agent": "3.0.0",
     "isomorphic-dompurify": "^3.12.0",
     "jwt-decode": "^4.0.0",
@@ -74,9 +76,9 @@
     "serialize-javascript": "^7.0.3",
     "tar": "^7.5.10",
     "diff": "^8.0.3",
-    "js-yaml": "5.2.2",
+    "js-yaml": "5.4.2",
     "minimatch@^10.0.0": {
-      "brace-expansion": "5.0.9"
+      "brace-expansion": "5.0.12"
     },
     "picomatch": ">=4.0.4",
     "axios": "1.18.1",

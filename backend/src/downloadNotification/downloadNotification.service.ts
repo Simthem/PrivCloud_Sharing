@@ -105,11 +105,8 @@ export class DownloadNotificationService {
         dateStr,
         shareUrl,
       );
-    } catch (e) {
-      this.logger.error(
-        `Failed to send instant download notification for share ${share.id}`,
-        (e as Error).message,
-      );
+    } catch {
+      this.logger.error("Failed to send instant download notification");
       return;
     }
 
@@ -219,11 +216,8 @@ export class DownloadNotificationService {
           digestLines.join("\n"),
           "weekly",
         );
-      } catch (e) {
-        this.logger.error(
-          `Failed to send weekly summary to ${email}`,
-          (e as Error).message,
-        );
+        } catch {
+      this.logger.error("Failed to send weekly download summary");
         continue;
       }
 
@@ -258,11 +252,8 @@ export class DownloadNotificationService {
         digestLine,
         "digest",
       );
-    } catch (e) {
-      this.logger.error(
-        `Failed to send digest for share ${share.id}`,
-        (e as Error).message,
-      );
+    } catch {
+      this.logger.error("Failed to send download-notification digest");
       return;
     }
 

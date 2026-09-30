@@ -138,7 +138,7 @@ export class OAuthController {
         }
       }
     } catch (error) {
-      this.logger.error(`OAuth callback error: ${error?.message || error}`);
+      this.logger.error("OAuth callback failed");
       // Re-throw HttpException / ErrorPageException so NestJS filters handle them
       if (error instanceof Error && (error as any).status) {
         throw error;

@@ -32,6 +32,16 @@ export class ShareDTO {
   @Expose()
   isE2EEncrypted: boolean;
 
+  // NULL means LEGACY_ACCOUNT_KEY. Not a secret: it only tells the owner's
+  // client how to resolve the key, the recipient always uses the link.
+  @Expose()
+  cryptoScheme?: number | null;
+
+  // NULL: file names in clear. FILE_META_V1 (1): every file carries its name
+  // encrypted with K_share, readable only with the link key.
+  @Expose()
+  fileMetadataScheme?: number | null;
+
   @Expose()
   previewEnabled?: boolean;
 
