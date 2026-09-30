@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-backend",
-  "version": "1.26.0",
+  "version": "1.25.1",
   "scripts": {
     "build": "nest build",
     "postinstall": "patch-package --error-on-fail && ([ -f prisma/schema.prisma ] && prisma generate || true)",
@@ -108,7 +108,7 @@
     "fast-uri": "3.1.8",
     "find-my-way": "9.7.0",
     "ip-address": "10.5.0",
-    "axios": "1.18.1",
+    "axios": "1.20.0",
     "fast-xml-parser": "5.7.2",
     "effect": "^3.20.0",
     "glob": "^13.0.6",

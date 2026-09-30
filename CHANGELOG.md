@@ -71,6 +71,25 @@
   account/session atomicity, enumeration resistance, log redaction, bounded
   pagination, CSP generation and the complete SQLite migration chain.
 
+## [1.25.1] (2026-10-01)
+
+### Security
+
+- Pin Next.js and its ESLint plugin to 16.3.6, including the upstream
+  security fix for Node.js ImageResponse SVG rendering.
+- Pin Axios to 1.20.0 in the frontend and backend dependency overrides.
+- Pin DOMPurify to 3.4.16 to retain the updated sanitization protections.
+- Align the documentation fast-uri override with the fixed 3.1.8 release.
+- Regenerate dependency lockfiles and verify the minimum security versions
+  with regression tests.
+
+### Deployment
+
+- Rebuild application images from these lockfiles and validate preproduction
+  before switching traffic. This patch adds no database migration.
+- Keep the existing CSP nonce handling, cookie policy and encrypted-sharing
+  compatibility unchanged.
+
 ## [1.26.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.25.0...v1.26.0) (2026-09-29)
 
 ### Features

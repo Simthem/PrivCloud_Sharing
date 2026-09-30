@@ -1,6 +1,6 @@
 {
   "name": "pingvindocs",
-  "version": "1.26.0",
+  "version": "1.25.1",
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
@@ -53,7 +53,7 @@
     "sirv": ">=3.0.2",
     "lodash": ">=4.18.1",
     "uuid": ">=14.0.0",
-    "fast-uri": "3.1.7",
+    "fast-uri": "3.1.8",
     "postcss": ">=8.5.23",
     "@babel/plugin-transform-modules-systemjs": ">=7.29.4",
     "http-proxy-middleware": "^3.0.6",
