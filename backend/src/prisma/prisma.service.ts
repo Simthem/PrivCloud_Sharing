@@ -27,7 +27,27 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
     await super.$connect();
     this.logger.log(`Connected to the database (${this.dbPath})`);
     await this.ensureSignatureDocumentCompatibilityColumns();
+    await this.verifyFileRequestSchema();
     await this.logStartupIntegrity();
+  }
+
+  private async verifyFileRequestSchema() {
+    await Promise.all([
+      this.teamFileRequest.findFirst({
+        select: {
+          id: true,
+          folderId: true,
+          expiresAt: true,
+          submissionNotification: true,
+          recipientScope: true,
+          sendEmail: true,
+        },
+      }),
+      this.teamFileRequestRecipient.findFirst({
+        select: { requestId: true, userId: true },
+      }),
+      this.share.findFirst({ select: { teamFileRequestId: true } }),
+    ]);
   }
 
   private async logStartupIntegrity() {

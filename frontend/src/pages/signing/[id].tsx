@@ -61,6 +61,7 @@ import {
   resolveSignatureSlots,
 } from "../../utils/signatureSlots.util";
 import toast from "../../utils/toast.util";
+import { saveBlobToDevice } from "../../utils/saveBlob.util";
 import useUser from "../../hooks/user.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import {
@@ -153,8 +154,14 @@ const SigningDetailPage = () => {
 
   // E2E key resolution state
   const [e2eKeyB64, setE2eKeyB64] = useState<string | null>(null);
+  // Set once every resolution path has been tried, so a missing key is only
+  // reported after the lookup, not while it is still running.
+  const [e2eKeyLookupDone, setE2eKeyLookupDone] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [autoFinalizeTriggered, setAutoFinalizeTriggered] = useState(false);
+  const [downloadingProof, setDownloadingProof] = useState<
+    "signed" | "evidence" | "forensic" | null
+  >(null);
 
   const { data: doc, isLoading } = useQuery({
     queryKey: ["signing.document", docId],
@@ -175,7 +182,10 @@ const SigningDetailPage = () => {
         recipient.isCurrentUser && recipient.wrappedE2EKey,
     )?.wrappedE2EKey;
     // Need at least one resolution path
-    if (!ownWrappedKey && !typedDoc?.teamId && !typedDoc?.shareId) return;
+    if (!ownWrappedKey && !typedDoc?.teamId && !typedDoc?.shareId) {
+      setE2eKeyLookupDone(true);
+      return;
+    }
 
     (async () => {
       try {
@@ -214,6 +224,8 @@ const SigningDetailPage = () => {
         }
       } catch {
         // Key resolution failed - user may not have access
+      } finally {
+        setE2eKeyLookupDone(true);
       }
     })();
   }, [
@@ -887,7 +899,17 @@ const SigningDetailPage = () => {
     onError: () => toast.error(t("signing.toast.reminder-error")),
   });
 
+  // Once its "where to save" prompt has been dismissed for good, a mobile
+  // browser saves without any visible sign, so the reader is told where the
+  // file went instead of seeing nothing happen.
+  const saveProof = async (blob: Blob, fileName: string) => {
+    if (await saveBlobToDevice(blob, fileName)) {
+      toast.success(t("signing.toast.download-started"));
+    }
+  };
+
   const handleDownload = async () => {
+    setDownloadingProof("signed");
     try {
       const blob = await signingService.downloadSigned(docId);
       let finalBlob = blob;
@@ -904,42 +926,44 @@ const SigningDetailPage = () => {
         finalBlob = new Blob([decryptedBuf], { type: "application/pdf" });
       }
 
-      const url = URL.createObjectURL(finalBlob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${(doc as any)?.fileName || "document"}_signe.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await saveProof(
+        finalBlob,
+        `${(doc as any)?.fileName || "document"}_signe.pdf`,
+      );
     } catch {
       toast.error(t("signing.toast.download-error"));
+    } finally {
+      setDownloadingProof(null);
     }
   };
 
   const handleOwnForensicDownload = async () => {
+    setDownloadingProof("forensic");
     try {
       const blob = await signingService.downloadOwnForensicRecord(docId);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${(doc as any)?.fileName?.replace(/\.pdf$/i, "") || "document"}.my-forensic-record.json`;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      await saveProof(
+        blob,
+        `${(doc as any)?.fileName?.replace(/\.pdf$/i, "") || "document"}.my-forensic-record.json`,
+      );
     } catch {
       toast.error(t("signing.toast.forensic-error"));
+    } finally {
+      setDownloadingProof(null);
     }
   };
 
   const handleEvidenceDownload = async () => {
+    setDownloadingProof("evidence");
     try {
       const blob = await signingService.downloadEvidence(docId);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${(doc as any)?.fileName?.replace(/\.pdf$/i, "") || "document"}.attestation.json`;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      await saveProof(
+        blob,
+        `${(doc as any)?.fileName?.replace(/\.pdf$/i, "") || "document"}.attestation.json`,
+      );
     } catch {
       toast.error(t("signing.toast.evidence-error"));
+    } finally {
+      setDownloadingProof(null);
     }
   };
 
@@ -1046,6 +1070,7 @@ const SigningDetailPage = () => {
             <Button
               leftSection={<TbDownload size={16} />}
               onClick={handleDownload}
+              loading={downloadingProof === "signed"}
               disabled={typedDoc.isE2EEncrypted && !e2eKeyB64}
               title={
                 typedDoc.isE2EEncrypted && !e2eKeyB64
@@ -1066,11 +1091,24 @@ const SigningDetailPage = () => {
                 {t("signing.detail.download.e2e-open-link")}
               </Text>
             )}
+          {/* The disabled button's title never shows on a touch screen. */}
+          {typedDoc.status === "COMPLETED" &&
+            typedDoc.isE2EEncrypted &&
+            !e2eKeyB64 &&
+            e2eKeyLookupDone &&
+            !typedDoc.recipients?.some(
+              (recipient: SignatureRecipient) => recipient.isCurrentUser,
+            ) && (
+              <Text size="xs" c="dimmed" w="100%">
+                {t("signing.detail.finalize.e2e-unavailable")}
+              </Text>
+            )}
           {typedDoc.status === "COMPLETED" && (
             <Button
               variant="light"
               leftSection={<TbShieldCheck size={16} />}
               onClick={handleEvidenceDownload}
+              loading={downloadingProof === "evidence"}
             >
               {t("signing.detail.evidence.download")}
             </Button>
@@ -1083,6 +1121,7 @@ const SigningDetailPage = () => {
               variant="subtle"
               leftSection={<TbLock size={16} />}
               onClick={handleOwnForensicDownload}
+              loading={downloadingProof === "forensic"}
             >
               {t("signing.detail.forensic.download")}
             </Button>

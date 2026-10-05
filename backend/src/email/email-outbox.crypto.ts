@@ -4,6 +4,8 @@ export type OutboxEmail = {
   recipient: string;
   subject: string;
   text: string;
+  /** Optional expiry for time-limited service messages. */
+  expiresAt?: string;
 };
 
 const VERSION = "v1";
@@ -72,7 +74,10 @@ export function decryptOutboxEmail(
     !decoded.recipient ||
     typeof decoded.subject !== "string" ||
     !decoded.subject ||
-    typeof decoded.text !== "string"
+    typeof decoded.text !== "string" ||
+    (decoded.expiresAt !== undefined &&
+      (typeof decoded.expiresAt !== "string" ||
+        !Number.isFinite(new Date(decoded.expiresAt).getTime())))
   ) {
     throw new Error("Invalid email outbox payload");
   }
@@ -80,5 +85,6 @@ export function decryptOutboxEmail(
     recipient: decoded.recipient,
     subject: decoded.subject,
     text: decoded.text,
+    ...(decoded.expiresAt ? { expiresAt: decoded.expiresAt } : {}),
   };
 }

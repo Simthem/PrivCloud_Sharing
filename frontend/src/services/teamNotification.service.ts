@@ -13,9 +13,9 @@ export interface TeamNotification {
   actorId?: string;
   metadata?: string;
   encryptedMetadata?: string;
-  team?: { id: string; name: string; slug: string };
-  teamFile?: { id: string; name: string };
-  folder?: { id: string; name: string };
+  team?: { id: string; name?: string; slug?: string };
+  teamFile?: { id: string; name?: string };
+  folder?: { id: string; name?: string };
 }
 
 export interface NotificationResponse {

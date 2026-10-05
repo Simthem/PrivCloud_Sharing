@@ -1,6 +1,7 @@
 import User from "./user.type";
 
 export type Share = {
+  uploadPending?: boolean;
   id: string;
   name?: string;
   files: any;
@@ -15,6 +16,8 @@ export type Share = {
   cryptoScheme?: number | null;
   /** NULL or absent: file names in clear. 1: FILE_META_V1 (encrypted). */
   fileMetadataScheme?: number | null;
+  /** FILE_META_V1 only: title and description, encrypted with the share key. */
+  encryptedInfo?: string | null;
   previewEnabled?: boolean;
   encryptedReverseShareKey?: string | null;
   reverseShare?: { id: string; creatorId: string } | null;
@@ -25,6 +28,8 @@ export type Share = {
 export type ReverseShare = {
   id: string;
   name?: string;
+  /** Name encrypted with K_rs, opened with the key of the link. */
+  encryptedName?: string | null;
   maxShareSize: string;
   /** min(creator configured limit, RS maxShareSize) -- computed by the API */
   effectiveMaxShareSize?: string;
@@ -32,6 +37,8 @@ export type ReverseShare = {
   token: string;
   simplified: boolean;
   isE2EEncrypted: boolean;
+  /** Uploads encrypt their file names and title with K_rs (FILE_META_V1). */
+  fileMetaV1Write?: boolean;
 };
 
 export type CompletedShare = Share & {
@@ -44,6 +51,7 @@ export type CompletedShare = Share & {
 };
 
 export type CreateShare = {
+  teamFileRequestId?: string;
   id: string;
   name?: string;
   description?: string;
@@ -55,8 +63,10 @@ export type CreateShare = {
   /** SHARE_DEK_V1: K_share wrapped by K_master, never K_share itself. */
   wrappedShareKey?: string;
   wrappedShareKeyAlgorithm?: string;
-  /** FILE_META_V1: every file name is encrypted with K_share. */
+  /** FILE_META_V1: every file name is encrypted with the content key. */
   fileMetadataScheme?: number;
+  /** FILE_META_V1 only: title and description, sent instead of the readable ones. */
+  encryptedInfo?: string;
   shareE2EKeyViaEmail?: boolean;
   captchaToken?: string;
   senderName?: string;
@@ -74,6 +84,8 @@ export type CreateReverseShare = {
   simplified: boolean;
   publicAccess: boolean;
   encryptedReverseShareKey?: string;
+  /** Name encrypted with K_rs, sent instead of `name`. */
+  encryptedName?: string;
 };
 
 export type ShareMetaData = {
@@ -110,12 +122,14 @@ export type AdminShare = {
   size: number;
   fileCount: number;
   isE2EEncrypted: boolean;
-  status: "READY" | "UPLOADING";
+  status: "READY" | "UNFINISHED" | "INACTIVE" | "UPLOADING";
 };
 
 export type MyReverseShare = {
   id: string;
   name?: string;
+  /** Name encrypted with K_rs, opened once K_rs is unwrapped. */
+  encryptedName?: string | null;
   maxShareSize: string;
   shareExpiration: Date;
   remainingUses: number;
@@ -133,4 +147,14 @@ export type ShareSecurity = {
 export type MyShareSecurity = {
   passwordProtected: boolean;
   maxViews: number;
+};
+
+export type PendingUpload = {
+  id: string;
+  createdAt: Date;
+  expiration: Date;
+  teamFolderId?: string | null;
+  canResume: boolean;
+  fileCount: number;
+  size: number;
 };

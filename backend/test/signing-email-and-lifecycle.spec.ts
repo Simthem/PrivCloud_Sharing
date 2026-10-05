@@ -223,6 +223,50 @@ testCase(
   },
 );
 
+testCase(
+  "keeps a signer's link to a completed request after source deletion",
+  async () => {
+    const { recipient, service } = createOtpHarness();
+    recipient.status = "SIGNED";
+    recipient.document.status = "COMPLETED";
+    recipient.document.fileId = null;
+    recipient.document.fileDeletedAt = new Date();
+    recipient.document.expiresAt = new Date(Date.now() - 60_000);
+    recipient.document.fields = [];
+    recipient.document.creator = null;
+
+    const page = await service.getSigningPage("token-1");
+    assert.equal(page.alreadySigned, true);
+    assert.equal(page.documentStatus, "COMPLETED");
+    assert.deepEqual(page.fields, []);
+  },
+);
+
+testCase(
+  "still closes every other link once the source is deleted",
+  async () => {
+    const { recipient, service } = createOtpHarness();
+    recipient.document.fileId = null;
+    recipient.document.fileDeletedAt = new Date();
+    recipient.document.fields = [];
+    recipient.document.creator = null;
+
+    recipient.status = "SIGNED";
+    recipient.document.status = "PARTIAL";
+    await assert.rejects(
+      () => service.getSigningPage("token-1"),
+      /source file was deleted/,
+    );
+
+    recipient.status = "VIEWED";
+    recipient.document.status = "COMPLETED";
+    await assert.rejects(
+      () => service.getSigningPage("token-1"),
+      /source file was deleted/,
+    );
+  },
+);
+
 testCase("keeps a tombstoned request in the owner audit listing", async () => {
   const tombstone = {
     id: "document-1",

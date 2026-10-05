@@ -1,4 +1,19 @@
-import { Button, Group, Text } from "@mantine/core";
+import { synchronizeCompletedUpload } from "../../utils/uploadStateCache.util";
+import { prepareSafeLineRetry } from "../../utils/safelineChallenge.util";
+import {
+  readUploadResumeEntries,
+  matchUploadResumeEntry,
+  type UploadResumeEntry,
+} from "../../utils/uploadResume.util";
+import { startUploadSessionMaintenance } from "../../utils/uploadSessionMaintenance.util";
+import {
+  isUploadActive,
+  setUploadActive,
+  completeSafeLineChallenge,
+} from "../../services/api.service";
+import { finalizeUpload } from "../../utils/uploadCompletion.util";
+import useConfirmLeave from "../../hooks/confirm-leave.hook";
+import { Alert, Button, Group, Text } from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import { cleanNotifications } from "@mantine/notifications";
 import { useRouter } from "next/router";
@@ -42,6 +57,8 @@ let errorToastShown = false;
 
 const EditableUpload = ({
   maxShareSize,
+  ownerKey,
+  uploadPending,
   shareId,
   files: savedFiles = [],
   isE2EEncrypted,
@@ -49,6 +66,8 @@ const EditableUpload = ({
   fileMetadataScheme,
 }: {
   maxShareSize?: number;
+  ownerKey?: string | null;
+  uploadPending?: boolean;
   isReverseShare?: boolean;
   shareId: string;
   files?: FileMetaData[];
@@ -64,6 +83,37 @@ const EditableUpload = ({
   const wakeLock = useWakeLock();
   const { user } = useUser();
   const uploadAbortRef = useRef<AbortController | null>(null);
+  const maintenanceRef = useRef<(() => void) | null>(null);
+  const [pendingFinalization, setPendingFinalization] = useState(false);
+  const [resumeEntries, setResumeEntries] = useState<UploadResumeEntry[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    if (ownerKey)
+      void importKeyFromBase64(ownerKey)
+        .then((key) => readUploadResumeEntries(shareId, key))
+        .then((entries) => {
+          if (!cancelled)
+            setResumeEntries(
+              entries.filter(
+                (entry) => !savedFiles.some((file) => file.id === entry.fileId),
+              ),
+            );
+        })
+        .catch(() => {
+          if (!cancelled) setResumeEntries([]);
+        });
+    return () => {
+      cancelled = true;
+    };
+  }, [ownerKey, shareId, savedFiles]);
+  useEffect(
+    () => () => {
+      uploadAbortRef.current?.abort();
+      maintenanceRef.current?.();
+      setUploadActive(false);
+    },
+    [],
+  );
 
   const chunkSize = useRef(parseInt(config.get("share.chunkSize")));
 
@@ -71,6 +121,10 @@ const EditableUpload = ({
     useState<Array<FileMetaData & { deleted?: boolean }>>(savedFiles);
   const [uploadingFiles, setUploadingFiles] = useState<FileUpload[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  useConfirmLeave({
+    message: t("upload.notify.confirm-leave"),
+    enabled: isUploading || pendingFinalization,
+  });
 
   useEffect(() => {
     prewarmUploadBandwidth();
@@ -135,8 +189,9 @@ const EditableUpload = ({
         toast.error(t("share.edit.notify.e2e-key-missing"));
         throw new Error("E2E_SCHEME_UNSUPPORTED");
       }
-      keyPromise =
-        scheme === SHARE_DEK_V1
+      keyPromise = ownerKey
+        ? importKeyFromBase64(ownerKey)
+        : scheme === SHARE_DEK_V1
           ? shareService
               .getShareKeyMaterial(shareId)
               .then((material) =>
@@ -221,8 +276,8 @@ const EditableUpload = ({
         const effectiveChunkSize = effectiveChunkSizes[fileIndex];
         const setFileProgress = (progress: number) => {
           setUploadingFiles((files) =>
-            files.map((f, i) => {
-              if (i === fileIndex) f.uploadingProgress = progress;
+            files.map((f) => {
+              if (f === file) f.uploadingProgress = progress;
               return f;
             }),
           );
@@ -239,7 +294,7 @@ const EditableUpload = ({
             e2eCryptoKey,
             (_chunkIndex, _totalChunks, _fileId, uploadedBytes) => {
               setFileProgress(
-                Math.min(100, (uploadedBytes / Math.max(file.size, 1)) * 100),
+                Math.min(99, (uploadedBytes / Math.max(file.size, 1)) * 100),
               );
             },
             abortCtrl.signal,
@@ -249,8 +304,13 @@ const EditableUpload = ({
             // Every file of a FILE_META_V1 share, old or new, hides its name.
             isFileMetaShare({ fileMetadataScheme }),
           );
+          setFileProgress(100);
+          return true;
         } catch (e: any) {
-          if (e?.cancelled) return; // user cancelled
+          if (e?.cancelled) {
+            setFileProgress(-1);
+            return false;
+          }
           if (e?.status === 413 || e?.sizeLimit) {
             if (!errorToastShown) {
               toast.error(e?.message || "Configured size limit exceeded");
@@ -258,11 +318,14 @@ const EditableUpload = ({
             }
           }
           setFileProgress(-1);
+          return false;
         }
       }),
     );
 
-    await Promise.all(fileUploadPromises);
+    // React may defer progress updates. Only worker results decide completion.
+    const results = await Promise.all(fileUploadPromises);
+    return results.every(Boolean);
   };
 
   const removeFiles = async () => {
@@ -284,7 +347,11 @@ const EditableUpload = ({
   };
 
   const completeShare = async () => {
-    return await shareService.completeShare(shareId);
+    return await finalizeUpload(
+      () => shareService.completeShare(shareId),
+      () => shareService.getFromOwner(shareId),
+      shareId,
+    );
   };
 
   const save = async () => {
@@ -317,42 +384,43 @@ const EditableUpload = ({
       return;
     }
 
+    try {
+      await prepareSafeLineRetry();
+    } catch {
+      toast.error(t("share.edit.notify.generic-error"));
+      return;
+    }
     errorToastShown = false;
     setIsUploading(true);
     await wakeLock.acquire();
     let reverted = false;
-    let uploadHeartbeat: ReturnType<typeof setInterval> | null = null;
-    let uploadHeartbeatInFlight = false;
 
     try {
       await revertComplete();
       reverted = true;
-      uploadHeartbeat = setInterval(() => {
-        if (uploadHeartbeatInFlight) return;
-        uploadHeartbeatInFlight = true;
-        void shareService
-          .keepUploadAlive(shareId)
-          .catch(() => {})
-          .finally(() => {
-            uploadHeartbeatInFlight = false;
-          });
-      }, 2 * 60_000);
+      setUploadActive(true);
+      maintenanceRef.current?.();
+      maintenanceRef.current = startUploadSessionMaintenance({
+        isActive: isUploadActive,
+        heartbeat: () => shareService.keepUploadAlive(shareId),
+        resolveChallenge: completeSafeLineChallenge,
+      });
 
-      await uploadFiles(uploadingFiles);
-
-      const hasFailed = uploadingFiles.some(
-        (file) => file.uploadingProgress == -1,
-      );
+      const hasFailed = !(await uploadFiles(
+        uploadingFiles.filter((file) => file.uploadingProgress !== 100),
+      ));
 
       if (!hasFailed) {
         await removeFiles();
       }
 
+      if (hasFailed) throw new Error("UPLOAD_INCOMPLETE");
       await completeShare();
+      await synchronizeCompletedUpload(queryClient, shareId);
       reverted = false;
+      setPendingFinalization(false);
 
       if (!hasFailed) {
-        queryClient.invalidateQueries({ queryKey: ["share", shareId] });
         toast.success(t("share.edit.notify.save-success"));
         router.back();
       }
@@ -361,14 +429,14 @@ const EditableUpload = ({
         toast.error(t("share.edit.notify.generic-error"));
       }
     } finally {
-      if (uploadHeartbeat) clearInterval(uploadHeartbeat);
-
       // Restore the published state immediately when possible. The persistent
       // completion marker remains the final safety net if this request cannot
       // reach the backend: cleanup will re-lock the edit without deleting it.
-      if (reverted) {
+      if (reverted && !uploadPending) {
         try {
           await completeShare();
+          await synchronizeCompletedUpload(queryClient, shareId);
+          reverted = false;
         } catch {
           // completeShare may fail (e.g. share has 0 files after all
           // uploads failed). The completion marker ensures the inactivity
@@ -376,14 +444,55 @@ const EditableUpload = ({
           // best-effort call fails.
         }
       }
+      setPendingFinalization(reverted);
+      if (!reverted) {
+        maintenanceRef.current?.();
+        maintenanceRef.current = null;
+        setUploadActive(false);
+      }
       setIsUploading(false);
       wakeLock.release();
     }
   };
 
-  const appendFiles = (appendingFiles: FileUpload[]) => {
+  const appendFiles = async (appendingFiles: FileUpload[]) => {
     if (appendingFiles.length > 0) prewarmUploadBandwidth(true);
-    setUploadingFiles([...appendingFiles, ...uploadingFiles]);
+    const additions: FileUpload[] = [];
+    for (const file of appendingFiles) {
+      if (
+        existingFiles.some(
+          (saved) =>
+            !saved.deleted &&
+            !saved.metadataUnreadable &&
+            saved.name === file.name &&
+            Number(saved.size) ===
+              file.size +
+                (isE2EEncrypted
+                  ? Math.ceil(
+                      file.size / (saved.encryptionChunkSize || 1_000_000),
+                    ) * 28
+                  : 0) &&
+            (saved.relativePath || "") === (file.uploadRelativePath || ""),
+        )
+      )
+        continue;
+      const resumed = await matchUploadResumeEntry(
+        file,
+        file.uploadRelativePath,
+        resumeEntries,
+      );
+      if (
+        !resumed &&
+        resumeEntries.some(
+          (entry) =>
+            entry.name === file.name &&
+            (entry.relativePath || "") === (file.uploadRelativePath || ""),
+        )
+      )
+        toast.error(t("upload.pending.fileChanged"));
+      additions.push(file);
+    }
+    setUploadingFiles((previous) => [...additions, ...previous]);
   };
 
   const cancelUpload = () => {
@@ -449,6 +558,16 @@ const EditableUpload = ({
 
   return (
     <>
+      {(uploadPending || pendingFinalization || resumeEntries.length > 0) && (
+        <Alert title={t("upload.pending.title")} color="orange" mb="lg">
+          <Text size="sm">{t("upload.pending.resumeHelp")}</Text>
+          {resumeEntries.length > 0 && (
+            <Text size="sm" mt="xs">
+              {resumeEntries.map((entry) => entry.name).join(", ")}
+            </Text>
+          )}
+        </Alert>
+      )}
       <Group justify="right" mb={20} gap="xs">
         {isUploading && (
           <Button size="sm" color="red" variant="subtle" onClick={cancelUpload}>
@@ -458,7 +577,11 @@ const EditableUpload = ({
             />
           </Button>
         )}
-        <Button loading={isUploading} disabled={!dirty} onClick={() => save()}>
+        <Button
+          loading={isUploading}
+          disabled={!dirty && !uploadPending && !pendingFinalization}
+          onClick={() => save()}
+        >
           <FormattedMessage id="common.button.save" />
         </Button>
       </Group>

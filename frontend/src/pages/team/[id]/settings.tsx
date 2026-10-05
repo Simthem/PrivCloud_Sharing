@@ -274,7 +274,7 @@ const TeamSettings = () => {
 
   if (isLoading || !teamIdStr) {
     return (
-      <Container size="sm" mt="xl" px={0}>
+      <Container size="sm" px={0}>
         <Box ta="center" py="xl">
           <Loader size="lg" />
         </Box>
@@ -284,7 +284,7 @@ const TeamSettings = () => {
 
   if (!team) {
     return (
-      <Container size="sm" mt="xl" px={0}>
+      <Container size="sm" px={0}>
         <Alert color="red">{t("team.settings.notFound")}</Alert>
       </Container>
     );
@@ -292,7 +292,7 @@ const TeamSettings = () => {
 
   if (!isTeamAdmin && myRole !== "MEMBER") {
     return (
-      <Container size="sm" mt="xl" px={0}>
+      <Container size="sm" px={0}>
         <Alert color="orange">{t("team.settings.noPermission")}</Alert>
       </Container>
     );
@@ -356,8 +356,8 @@ const TeamSettings = () => {
   return (
     <>
       <Meta title={t("team.settings.metaTitle", { name: team.name })} />
-      <Container size="sm" mt="xl" mb="xl" px={0}>
-        <Group mb="lg">
+      <Container size="sm" mb="xl" px={0}>
+        <Group mb="sm">
           <Button
             variant="subtle"
             leftSection={<TbArrowLeft size={16} />}

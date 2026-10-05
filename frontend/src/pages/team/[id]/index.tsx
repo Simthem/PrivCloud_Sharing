@@ -1,8 +1,18 @@
+import { rotateTeamMetadata } from "../../../utils/teamRotationMetadata.util";
+import TeamEncryptionStatus from "../../../components/team/TeamEncryptionStatus";
+import TeamDashboardMetrics from "../../../components/team/TeamDashboardMetrics";
+import dashboardStyles from "../../../components/team/TeamDashboard.module.css";
 import "@mantine/core/styles/RingProgress.css";
 import "@mantine/core/styles/Tabs.css";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
-import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
+import {
+  type KeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActionIcon,
   Alert,
@@ -21,7 +31,6 @@ import {
   Paper,
   Pagination,
   Progress,
-  RingProgress,
   Select,
   Stack,
   Table,
@@ -54,6 +63,7 @@ import {
   TbUserDown,
   TbUserPlus,
   TbFileDescription,
+  TbSignature,
   TbFileOff,
   TbSearch,
   TbAdjustmentsHorizontal,
@@ -61,8 +71,9 @@ import {
   TbX,
 } from "react-icons/tb";
 import { useIntl } from "react-intl";
+import TeamFileRequests from "../../../components/team/TeamFileRequests";
 import Meta from "../../../components/Meta";
-import teamService from "../../../services/team.service";
+import teamService, { TeamSearchIndex } from "../../../services/team.service";
 import signingService from "../../../services/signing.service";
 import {
   generateEncryptionKey,
@@ -81,10 +92,13 @@ import {
 } from "../../../utils/reencrypt.util";
 import { getTeamShares } from "../../../services/crypto.service";
 import toast from "../../../utils/toast.util";
+import { saveBlobToDevice } from "../../../utils/saveBlob.util";
 import useUser from "../../../hooks/user.hook";
 import useTranslate from "../../../hooks/useTranslate.hook";
+import useTeamKey from "../../../hooks/useTeamKey.hook";
 import {
   buildTeamSearchResults,
+  openSearchIndexNames,
   TeamSearchKind,
 } from "../../../utils/teamSearch.util";
 import searchStyles from "./TeamSearchPanel.module.css";
@@ -100,15 +114,9 @@ const signatureStatusTranslationKeys: Record<string, string> = {
   SIGNING_FAILED: "signing.status.signing-failed",
 };
 
-const formatBytes = (bytes: number) => {
-  if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
-  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
-  if (bytes >= 1_000) return `${(bytes / 1_000).toFixed(0)} KB`;
-  return `${bytes} B`;
-};
-
 const VALID_TABS = [
   "members",
+  "requests",
   "folders",
   "search",
   "shares",
@@ -126,6 +134,7 @@ const TeamDashboard = () => {
   const rawTab = Array.isArray(queryTab) ? queryTab[0] : queryTab;
   const user = useUser();
   const isMobile = useMediaQuery("(max-width: 680px)");
+  const tabsViewport = useRef<HTMLDivElement>(null);
 
   // Authentication is the only global gate in the public OSS edition.
   useEffect(() => {
@@ -429,6 +438,13 @@ const TeamDashboard = () => {
         failedFiles: 0,
         status: "REENCRYPTING",
       });
+      await rotateTeamMetadata(
+        teamIdStr,
+        rotationId,
+        await importKeyFromBase64(oldTeamKeyB64),
+        newTeamKey,
+        ac.signal,
+      );
       await teamService.completeKeyRotation(teamIdStr, rotationId);
       setMyWrappedTeamKey(newWrapped);
 
@@ -531,12 +547,25 @@ const TeamDashboard = () => {
   );
 
   const activeTab = useMemo(() => {
+    if (router.query.fileRequests === "1") return "requests";
     if (!rawTab || !(VALID_TABS as readonly string[]).includes(rawTab))
       return "members";
     if (rawTab === "activity" && !canViewActivity) return "members";
     if (rawTab === "signatures" && !canViewSignatures) return "members";
     return rawTab;
-  }, [rawTab, canViewActivity, canViewSignatures]);
+  }, [rawTab, router.query.fileRequests, canViewActivity, canViewSignatures]);
+
+  useEffect(() => {
+    const viewport = tabsViewport.current;
+    const selected = viewport?.querySelector<HTMLElement>(
+      '[role="tab"][data-active]',
+    );
+    if (isMobile && viewport && selected) {
+      viewport.scrollLeft +=
+        selected.getBoundingClientRect().left -
+        viewport.getBoundingClientRect().left;
+    }
+  }, [activeTab, isMobile, teamLoading]);
 
   // Fetch metrics
   const { data: metrics } = useQuery({
@@ -545,14 +574,6 @@ const TeamDashboard = () => {
     enabled: !!teamIdStr,
     staleTime: 30_000,
   });
-  const storagePercentage = metrics?.storage.percentage ?? 0;
-  const storageProgressValue = Math.min(Math.max(storagePercentage, 0), 100);
-  const storageColor =
-    storagePercentage > 90 ? "red" : storagePercentage > 70 ? "yellow" : "blue";
-  const quotaStorageUsed = metrics?.storage.used ?? 0;
-  const folderStorageUsed = metrics?.storage.folderUsed ?? quotaStorageUsed;
-  const showStorageBreakdown =
-    !!metrics && folderStorageUsed !== quotaStorageUsed;
 
   // Fetch folders
   const { data: folders } = useQuery({
@@ -739,18 +760,21 @@ const TeamDashboard = () => {
       <Meta title={t("team.dashboard.meta.title", { name: team.name })} />
       <Container size="lg" mb="xl" px={0}>
         {/* Header */}
-        <Group justify="space-between" mb="lg">
+        <Group justify="space-between" mb={isMobile ? "sm" : "lg"} gap="xs">
           <Stack gap={2}>
-            <Title order={2}>{team.name}</Title>
+            <Title order={2} size={isMobile ? "h3" : undefined}>
+              {team.name}
+            </Title>
             {team.description && (
               <Text c="dimmed" size="sm">
                 {team.description}
               </Text>
             )}
           </Stack>
-          <Group>
+          <Group gap={isMobile ? 4 : "md"}>
             {isTeamAdmin && (
               <Button
+                size={isMobile ? "compact-sm" : "sm"}
                 variant="light"
                 leftSection={<TbUserPlus size={16} />}
                 onClick={openInvite}
@@ -760,6 +784,7 @@ const TeamDashboard = () => {
             )}
             {isTeamAdmin && (
               <Button
+                size={isMobile ? "compact-sm" : "sm"}
                 variant="subtle"
                 leftSection={<TbSettings size={16} />}
                 onClick={() => router.push(`/team/${teamIdStr}/settings`)}
@@ -769,6 +794,7 @@ const TeamDashboard = () => {
             )}
             {!isTeamAdmin && myRole === "MEMBER" && (
               <Button
+                size={isMobile ? "compact-sm" : "sm"}
                 variant="subtle"
                 leftSection={<TbSettings size={16} />}
                 onClick={() => router.push(`/team/${teamIdStr}/settings`)}
@@ -779,221 +805,7 @@ const TeamDashboard = () => {
           </Group>
         </Group>
 
-        {/* Metrics cards */}
-        {metrics && (
-          <Grid mb="lg" gutter={isMobile ? "xs" : "md"}>
-            <Grid.Col span={{ base: 6, sm: 6, md: 3 }}>
-              <Card
-                withBorder
-                padding={isMobile ? "sm" : "md"}
-                style={{
-                  height: "100%",
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-              >
-                <Text
-                  size="xs"
-                  c="dimmed"
-                  tt="uppercase"
-                  fw={700}
-                  lineClamp={1}
-                >
-                  {t("team.dashboard.metrics.storage")}
-                </Text>
-                <Stack
-                  justify="space-between"
-                  align={isMobile ? "center" : "stretch"}
-                  style={{ flex: 1, marginTop: 8 }}
-                >
-                  {isMobile ? (
-                    <>
-                      <RingProgress
-                        size={70}
-                        thickness={6}
-                        sections={[
-                          {
-                            value: storageProgressValue,
-                            color: storageColor,
-                          },
-                        ]}
-                        label={
-                          <Text ta="center" fw={700} size="sm">
-                            {storagePercentage}%
-                          </Text>
-                        }
-                      />
-                      {showStorageBreakdown ? (
-                        <Stack gap={2} align="center">
-                          <Text size="xs" c="dimmed" ta="center">
-                            {t("team.dashboard.metrics.folderStorage", {
-                              size: formatBytes(folderStorageUsed),
-                            })}
-                          </Text>
-                          <Text size="xs" c="dimmed" ta="center">
-                            {t("team.dashboard.metrics.quotaStorage", {
-                              used: formatBytes(quotaStorageUsed),
-                              limit: formatBytes(metrics.storage.limit),
-                            })}
-                          </Text>
-                        </Stack>
-                      ) : (
-                        <Text size="xs" c="dimmed" ta="center">
-                          {formatBytes(quotaStorageUsed)} /{" "}
-                          {formatBytes(metrics.storage.limit)}
-                        </Text>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <Group justify="space-between">
-                        <Text fw={700} size="xl">
-                          {storagePercentage}%
-                        </Text>
-                        <RingProgress
-                          size={50}
-                          thickness={5}
-                          sections={[
-                            {
-                              value: storageProgressValue,
-                              color: storageColor,
-                            },
-                          ]}
-                        />
-                      </Group>
-                      {showStorageBreakdown ? (
-                        <Stack gap={2}>
-                          <Text size="xs" c="dimmed">
-                            {t("team.dashboard.metrics.folderStorage", {
-                              size: formatBytes(folderStorageUsed),
-                            })}
-                          </Text>
-                          <Text size="xs" c="dimmed">
-                            {t("team.dashboard.metrics.quotaStorage", {
-                              used: formatBytes(quotaStorageUsed),
-                              limit: formatBytes(metrics.storage.limit),
-                            })}
-                          </Text>
-                        </Stack>
-                      ) : (
-                        <Text size="xs" c="dimmed">
-                          {formatBytes(quotaStorageUsed)} /{" "}
-                          {formatBytes(metrics.storage.limit)}
-                        </Text>
-                      )}
-                    </>
-                  )}
-                </Stack>
-              </Card>
-            </Grid.Col>
-
-            <Grid.Col span={{ base: 6, sm: 6, md: 3 }}>
-              <Card
-                withBorder
-                padding={isMobile ? "sm" : "md"}
-                style={{
-                  height: "100%",
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-              >
-                <Text
-                  size="xs"
-                  c="dimmed"
-                  tt="uppercase"
-                  fw={700}
-                  lineClamp={1}
-                >
-                  {t("team.dashboard.metrics.members")}
-                </Text>
-                <Stack
-                  justify="space-between"
-                  style={{ flex: 1, marginTop: 8 }}
-                >
-                  <Text fw={700} size={isMobile ? "lg" : "xl"}>
-                    {metrics.team.membersCount} / {metrics.team.maxMembers}
-                  </Text>
-                  <Text size="xs" c="dimmed" lineClamp={2}>
-                    {t("team.dashboard.metrics.membersRemaining", {
-                      n: metrics.team.maxMembers - metrics.team.membersCount,
-                    })}
-                  </Text>
-                </Stack>
-              </Card>
-            </Grid.Col>
-
-            <Grid.Col span={{ base: 6, sm: 6, md: 3 }}>
-              <Card
-                withBorder
-                padding={isMobile ? "sm" : "md"}
-                style={{
-                  height: "100%",
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-              >
-                <Text
-                  size="xs"
-                  c="dimmed"
-                  tt="uppercase"
-                  fw={700}
-                  lineClamp={1}
-                >
-                  {t("team.dashboard.metrics.downloads30d")}
-                </Text>
-                <Stack
-                  justify="space-between"
-                  style={{ flex: 1, marginTop: 8 }}
-                >
-                  <Text fw={700} size={isMobile ? "lg" : "xl"}>
-                    {metrics.activity.downloads}
-                  </Text>
-                  <Group gap={4}>
-                    <TbDownload size={12} />
-                    <Text size="xs" c="dimmed">
-                      {metrics.activity.uploads} uploads
-                    </Text>
-                  </Group>
-                </Stack>
-              </Card>
-            </Grid.Col>
-
-            <Grid.Col span={{ base: 6, sm: 6, md: 3 }}>
-              <Card
-                withBorder
-                padding={isMobile ? "sm" : "md"}
-                style={{
-                  height: "100%",
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-              >
-                <Text
-                  size="xs"
-                  c="dimmed"
-                  tt="uppercase"
-                  fw={700}
-                  lineClamp={1}
-                >
-                  {t("team.dashboard.metrics.files")}
-                </Text>
-                <Stack
-                  justify="space-between"
-                  style={{ flex: 1, marginTop: 8 }}
-                >
-                  <Text fw={700} size={isMobile ? "lg" : "xl"}>
-                    {metrics.activity.totalFiles}
-                  </Text>
-                  <Text size="xs" c="dimmed" lineClamp={2}>
-                    {t("team.dashboard.metrics.foldersCount", {
-                      n: metrics.team.foldersCount,
-                    })}
-                  </Text>
-                </Stack>
-              </Card>
-            </Grid.Col>
-          </Grid>
-        )}
+        {metrics && <TeamDashboardMetrics metrics={metrics} />}
 
         {/* E2E banner */}
         {isTeamAdmin && keyRotationStatus?.activeRotation && (
@@ -1146,27 +958,7 @@ const TeamDashboard = () => {
             {t("team.dashboard.e2e.banner.missingDesc")}
           </Alert>
         ) : myWrappedTeamKey ? (
-          <Alert
-            icon={<TbLockOpen size={18} />}
-            color="green"
-            mb="md"
-            title={t("team.dashboard.e2e.banner.activeTitle")}
-          >
-            <Text size="sm" mb={isTeamAdmin ? "sm" : undefined}>
-              {t("team.dashboard.e2e.banner.activeDesc")}
-            </Text>
-            {isTeamAdmin && (
-              <Button
-                size="compact-sm"
-                color="orange"
-                variant="light"
-                leftSection={<TbKey size={14} />}
-                onClick={openRotate}
-              >
-                {t("team.dashboard.e2e.rotateButton")}
-              </Button>
-            )}
-          </Alert>
+          <TeamEncryptionStatus canRotate={isTeamAdmin} onRotate={openRotate} />
         ) : null}
 
         {/* Tabs: Members, Folders, Activity */}
@@ -1176,6 +968,7 @@ const TeamDashboard = () => {
           onChange={(tab) => {
             if (tab && tab !== activeTab) {
               const nextQuery = { ...router.query };
+              delete nextQuery.fileRequests;
               if (tab === "members") {
                 delete nextQuery.tab;
               } else {
@@ -1190,56 +983,67 @@ const TeamDashboard = () => {
             }
           }}
         >
-          <Tabs.List mb="md" style={{ flexWrap: "wrap", rowGap: 4 }}>
-            <Tabs.Tab
-              value="members"
-              leftSection={isMobile ? undefined : <TbUsers size={16} />}
-            >
-              {t("team.dashboard.tabs.members")}
-            </Tabs.Tab>
-            <Tabs.Tab
-              value="folders"
-              leftSection={isMobile ? undefined : <TbFolder size={16} />}
-            >
-              {t("team.dashboard.tabs.folders")}
-            </Tabs.Tab>
-            <Tabs.Tab
-              value="search"
-              leftSection={isMobile ? undefined : <TbSearch size={16} />}
-            >
-              {t("team.dashboard.tabs.search")}
-            </Tabs.Tab>
-            <Tabs.Tab
-              value="shares"
-              leftSection={isMobile ? undefined : <TbShare size={16} />}
-            >
-              {t("team.dashboard.tabs.shares")}
-            </Tabs.Tab>
-            {canViewActivity && (
+          <div className={dashboardStyles.tabsViewport} ref={tabsViewport}>
+            <Tabs.List className={dashboardStyles.tabs}>
               <Tabs.Tab
-                value="activity"
-                leftSection={isMobile ? undefined : <TbChartBar size={16} />}
+                value="members"
+                leftSection={isMobile ? undefined : <TbUsers size={16} />}
               >
-                {t("team.dashboard.tabs.activity")}
+                {t("team.dashboard.tabs.members")}
               </Tabs.Tab>
-            )}
-            {canViewSignatures && (
               <Tabs.Tab
-                value="signatures"
+                value="folders"
+                leftSection={isMobile ? undefined : <TbFolder size={16} />}
+              >
+                {t("team.dashboard.tabs.folders")}
+              </Tabs.Tab>
+              <Tabs.Tab
+                value="search"
+                leftSection={isMobile ? undefined : <TbSearch size={16} />}
+              >
+                {t("team.dashboard.tabs.search")}
+              </Tabs.Tab>
+              <Tabs.Tab
+                value="shares"
+                leftSection={isMobile ? undefined : <TbShare size={16} />}
+              >
+                {t("team.dashboard.tabs.shares")}
+              </Tabs.Tab>
+              {canViewActivity && (
+                <Tabs.Tab
+                  value="activity"
+                  leftSection={isMobile ? undefined : <TbChartBar size={16} />}
+                >
+                  {t("team.dashboard.tabs.activity")}
+                </Tabs.Tab>
+              )}
+              {canViewSignatures && (
+                <Tabs.Tab
+                  value="signatures"
+                  leftSection={isMobile ? undefined : <TbSignature size={16} />}
+                >
+                  {t("team.dashboard.tabs.signatures")}
+                  {teamSignaturesData &&
+                    teamSignaturesData.pagination.total > 0 && (
+                      <Badge size="xs" variant="filled" ml={6}>
+                        {teamSignaturesData.pagination.total}
+                      </Badge>
+                    )}
+                </Tabs.Tab>
+              )}
+              <Tabs.Tab
+                value="requests"
                 leftSection={
                   isMobile ? undefined : <TbFileDescription size={16} />
                 }
               >
-                {t("team.dashboard.tabs.signatures")}
-                {teamSignaturesData &&
-                  teamSignaturesData.pagination.total > 0 && (
-                    <Badge size="xs" variant="filled" ml={6}>
-                      {teamSignaturesData.pagination.total}
-                    </Badge>
-                  )}
+                {t("team.dashboard.tabs.requests")}
               </Tabs.Tab>
-            )}
-          </Tabs.List>
+            </Tabs.List>
+          </div>
+          <Tabs.Panel value="requests">
+            <TeamFileRequests key={teamIdStr} teamId={teamIdStr} />
+          </Tabs.Panel>
 
           {/* Members tab */}
           <Tabs.Panel value="members">
@@ -2265,12 +2069,10 @@ const TeamDashboard = () => {
                                       await signingService.downloadSigned(
                                         doc.id,
                                       );
-                                    const url = URL.createObjectURL(blob);
-                                    const a = document.createElement("a");
-                                    a.href = url;
-                                    a.download = `${doc.title || doc.fileName || "document"}_signe.pdf`;
-                                    a.click();
-                                    URL.revokeObjectURL(url);
+                                    await saveBlobToDevice(
+                                      blob,
+                                      `${doc.title || doc.fileName || "document"}_signe.pdf`,
+                                    );
                                   } catch {
                                     toast.error(
                                       t(
@@ -2478,14 +2280,10 @@ const TeamDashboard = () => {
                                               await signingService.downloadSigned(
                                                 doc.id,
                                               );
-                                            const url =
-                                              URL.createObjectURL(blob);
-                                            const a =
-                                              document.createElement("a");
-                                            a.href = url;
-                                            a.download = `${doc.title || doc.fileName || "document"}_signe.pdf`;
-                                            a.click();
-                                            URL.revokeObjectURL(url);
+                                            await saveBlobToDevice(
+                                              blob,
+                                              `${doc.title || doc.fileName || "document"}_signe.pdf`,
+                                            );
                                           } catch {
                                             toast.error(
                                               t(
@@ -2764,7 +2562,6 @@ const TeamDashboard = () => {
               )}
             </Tabs.Panel>
           )}
-
         </Tabs>
       </Container>
 
@@ -3161,12 +2958,33 @@ const TeamSearchPanel = ({
   const [resultPage, setResultPage] = useState(1);
   const [filtersOpened, { toggle: toggleFilters }] = useDisclosure(false);
 
-  const { data: index, isLoading } = useQuery({
+  const { data: serverIndex, isLoading } = useQuery({
     queryKey: ["team.searchIndex", teamId],
     queryFn: () => teamService.getSearchIndex(teamId),
     enabled: active && !!teamId,
     staleTime: 60_000,
   });
+  // FILE_META_V1: names encrypted with K_team are opened in the browser
+  // before matching, the server only sent placeholders for them.
+  const teamKey = useTeamKey(teamId, active);
+  const [openedIndex, setOpenedIndex] = useState<{
+    source: TeamSearchIndex;
+    index: TeamSearchIndex;
+  } | null>(null);
+  useEffect(() => {
+    if (!serverIndex || !teamKey) return;
+    let cancelled = false;
+    void openSearchIndexNames(serverIndex, teamKey).then((opened) => {
+      if (!cancelled) setOpenedIndex({ source: serverIndex, index: opened });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [serverIndex, teamKey]);
+  const index =
+    openedIndex && openedIndex.source === serverIndex
+      ? openedIndex.index
+      : serverIndex;
 
   const authorOptions = useMemo(() => {
     if (!index) return [];

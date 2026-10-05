@@ -38,6 +38,7 @@ import signingService, {
 import toast from "../../utils/toast.util";
 import useUser from "../../hooks/user.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
+import { saveBlobToDevice } from "../../utils/saveBlob.util";
 
 const statusColors: Record<string, string> = {
   PENDING: "yellow",
@@ -122,12 +123,10 @@ const SigningIndexPage = () => {
     }
     try {
       const blob = await signingService.downloadSigned(doc.id);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${doc.title || doc.fileName || "document"}_signe.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await saveBlobToDevice(
+        blob,
+        `${doc.title || doc.fileName || "document"}_signe.pdf`,
+      );
     } catch {
       toast.error(t("signing.toast.download-error"));
     }

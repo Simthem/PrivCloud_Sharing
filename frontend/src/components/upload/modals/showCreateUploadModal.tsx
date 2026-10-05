@@ -56,6 +56,7 @@ const showCreateUploadModal = (
     simplified: boolean;
     captchaEnabled?: boolean;
     preselectedTeamFolderId?: string;
+    teamFileRequestId?: string;
   },
   files: FileUpload[],
   uploadCallback: (_createShare: CreateShare, _files: FileUpload[]) => void,
@@ -136,6 +137,7 @@ const CreateUploadModalBody = ({
     shareIdLength: number;
     captchaEnabled?: boolean;
     preselectedTeamFolderId?: string;
+    teamFileRequestId?: string;
   };
   pastRecipients?: string[];
 }) => {
@@ -198,19 +200,21 @@ const CreateUploadModalBody = ({
       .number()
       .transform((value) => value || undefined)
       .min(1),
-    senderName: !options.isUserSignedIn && !options.isReverseShare
-      ? yup
-          .string()
-          .required(t("common.error.field-required"))
-          .min(2, t("common.error.too-short", { length: 2 }))
-          .max(100, t("common.error.too-long", { length: 100 }))
-      : yup.string().optional(),
-    senderEmail: !options.isUserSignedIn && !options.isReverseShare
-      ? yup
-          .string()
-          .required(t("common.error.field-required"))
-          .email(t("upload.modal.accordion.email.invalid-email"))
-      : yup.string().optional(),
+    senderName:
+      !options.isUserSignedIn && !options.isReverseShare
+        ? yup
+            .string()
+            .required(t("common.error.field-required"))
+            .min(2, t("common.error.too-short", { length: 2 }))
+            .max(100, t("common.error.too-long", { length: 100 }))
+        : yup.string().optional(),
+    senderEmail:
+      !options.isUserSignedIn && !options.isReverseShare
+        ? yup
+            .string()
+            .required(t("common.error.field-required"))
+            .email(t("upload.modal.accordion.email.invalid-email"))
+        : yup.string().optional(),
   });
 
   const [storedRecipients, setStoredRecipients] =
@@ -235,10 +239,7 @@ const CreateUploadModalBody = ({
           if (!storedRecipients.includes(value)) {
             setStoredRecipients((prev) => [...prev, value]);
           }
-          form.setFieldValue("recipients", [
-            ...form.values.recipients,
-            value,
-          ]);
+          form.setFieldValue("recipients", [...form.values.recipients, value]);
           form.setFieldError("recipients", null);
           (e.target as HTMLInputElement).value = "";
           setEmailSearch("");
@@ -254,7 +255,11 @@ const CreateUploadModalBody = ({
   const recipientOptions = useMemo(() => {
     const options = [...storedRecipients];
     const trimmed = emailSearch.trim();
-    if (trimmed && trimmed.match(/^\S+@\S+\.\S+$/) && !options.includes(trimmed)) {
+    if (
+      trimmed &&
+      trimmed.match(/^\S+@\S+\.\S+$/) &&
+      !options.includes(trimmed)
+    ) {
       options.push(trimmed);
     }
     return options;
@@ -275,7 +280,8 @@ const CreateUploadModalBody = ({
       senderName: "",
       senderEmail: "",
       notifyOnDownload: false,
-      teamFolderId: options.preselectedTeamFolderId || (undefined as string | undefined),
+      teamFolderId:
+        options.preselectedTeamFolderId || (undefined as string | undefined),
     },
     validate: yupResolver(validationSchema),
   });
@@ -332,10 +338,7 @@ const CreateUploadModalBody = ({
 
       const expirationDate = dayjs().add(
         form.values.expiration_num,
-        form.values.expiration_unit.replace(
-          "-",
-          "",
-        ) as ManipulateType,
+        form.values.expiration_unit.replace("-", "") as ManipulateType,
       );
 
       let expirationExceeded = false;
@@ -385,6 +388,9 @@ const CreateUploadModalBody = ({
           ...(values.senderEmail && { senderEmail: values.senderEmail }),
           notifyOnDownload: values.notifyOnDownload,
           ...(values.teamFolderId && { teamFolderId: values.teamFolderId }),
+          ...(options.teamFileRequestId && {
+            teamFileRequestId: options.teamFileRequestId,
+          }),
         },
         files,
       );
@@ -553,7 +559,10 @@ const CreateUploadModalBody = ({
                 </Stack>
               </Accordion.Panel>
             </Accordion.Item>
-            <Accordion.Item value="description" style={{ borderBottom: "none" }}>
+            <Accordion.Item
+              value="description"
+              style={{ borderBottom: "none" }}
+            >
               <Accordion.Control>
                 <FormattedMessage id="upload.modal.accordion.name-and-description.title" />
               </Accordion.Control>
@@ -581,106 +590,127 @@ const CreateUploadModalBody = ({
                third-party recipients. Only the reverse share creator
                should receive the completed share link. */}
             {options.enableEmailRecepients && !options.isReverseShare && (
-              <Accordion.Item value="recipients" style={{ borderBottom: "none" }}>
+              <Accordion.Item
+                value="recipients"
+                style={{ borderBottom: "none" }}
+              >
                 <Accordion.Control>
                   <FormattedMessage id="upload.modal.accordion.email.title" />
                 </Accordion.Control>
                 <Accordion.Panel>
                   <div ref={recipientWrapperRef}>
-                  <MultiSelect
-                    data={recipientOptions}
-                    placeholder={t("upload.modal.accordion.email.placeholder")}
-                    searchable
-                    id="recipient-emails"
-                    inputMode="email"
-                    searchValue={emailSearch}
-                    onSearchChange={setEmailSearch}
-                    {...form.getInputProps("recipients")}
-                    onOptionSubmit={(value) => {
-                      if (!storedRecipients.includes(value)) {
-                        setStoredRecipients((prev) => [...prev, value]);
-                      }
-                      if (!form.values.recipients.includes(value)) {
-                        form.setFieldValue("recipients", [
-                          ...form.values.recipients,
-                          value,
-                        ]);
-                      }
-                      form.setFieldError("recipients", null);
-                      setEmailSearch("");
-                    }}
-                    onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
-                      if (e.key === "," || e.key === ";") {
-                        e.preventDefault();
-                        const inputValue = (
-                          e.target as HTMLInputElement
-                        ).value.trim();
-                        if (inputValue.match(/^\S+@\S+\.\S+$/)) {
-                          if (!storedRecipients.includes(inputValue)) {
-                            setStoredRecipients((prev) => [...prev, inputValue]);
-                          }
+                    <MultiSelect
+                      data={recipientOptions}
+                      placeholder={t(
+                        "upload.modal.accordion.email.placeholder",
+                      )}
+                      searchable
+                      id="recipient-emails"
+                      inputMode="email"
+                      searchValue={emailSearch}
+                      onSearchChange={setEmailSearch}
+                      {...form.getInputProps("recipients")}
+                      onOptionSubmit={(value) => {
+                        if (!storedRecipients.includes(value)) {
+                          setStoredRecipients((prev) => [...prev, value]);
+                        }
+                        if (!form.values.recipients.includes(value)) {
                           form.setFieldValue("recipients", [
                             ...form.values.recipients,
-                            inputValue,
+                            value,
                           ]);
-                          form.setFieldError("recipients", null);
-                          setEmailSearch("");
                         }
-                      } else if (e.key === " ") {
-                        e.preventDefault();
-                      }
-                    }}
-                  />
+                        form.setFieldError("recipients", null);
+                        setEmailSearch("");
+                      }}
+                      onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                        if (e.key === "," || e.key === ";") {
+                          e.preventDefault();
+                          const inputValue = (
+                            e.target as HTMLInputElement
+                          ).value.trim();
+                          if (inputValue.match(/^\S+@\S+\.\S+$/)) {
+                            if (!storedRecipients.includes(inputValue)) {
+                              setStoredRecipients((prev) => [
+                                ...prev,
+                                inputValue,
+                              ]);
+                            }
+                            form.setFieldValue("recipients", [
+                              ...form.values.recipients,
+                              inputValue,
+                            ]);
+                            form.setFieldError("recipients", null);
+                            setEmailSearch("");
+                          }
+                        } else if (e.key === " ") {
+                          e.preventDefault();
+                        }
+                      }}
+                    />
                   </div>
                 </Accordion.Panel>
               </Accordion.Item>
             )}
 
             {/* Team folder selector: only shown when user is signed in, not a reverse share, has team folders, and no preselected folder */}
-            {options.isUserSignedIn && !options.isReverseShare && !options.preselectedTeamFolderId && teamFolderOptions.length > 0 && (
-              <Accordion.Item value="team-folder" style={{ borderBottom: "none" }}>
-                <Accordion.Control>
-                  <FormattedMessage id="upload.modal.team-folder.title" />
-                </Accordion.Control>
-                <Accordion.Panel>
-                  <Stack align="stretch">
-                    <Select
-                      variant="filled"
-                      label={t("upload.modal.team-folder.label")}
-                      placeholder={t("upload.modal.team-folder.placeholder")}
-                      data={teamFolderOptions}
-                      clearable
-                      searchable
-                      {...form.getInputProps("teamFolderId")}
-                    />
-                    <Text size="xs" c="dimmed">
-                      <FormattedMessage id="upload.modal.team-folder.description" />
-                    </Text>
-                  </Stack>
-                </Accordion.Panel>
-              </Accordion.Item>
-            )}
+            {options.isUserSignedIn &&
+              !options.isReverseShare &&
+              !options.preselectedTeamFolderId &&
+              teamFolderOptions.length > 0 && (
+                <Accordion.Item
+                  value="team-folder"
+                  style={{ borderBottom: "none" }}
+                >
+                  <Accordion.Control>
+                    <FormattedMessage id="upload.modal.team-folder.title" />
+                  </Accordion.Control>
+                  <Accordion.Panel>
+                    <Stack align="stretch">
+                      <Select
+                        variant="filled"
+                        label={t("upload.modal.team-folder.label")}
+                        placeholder={t("upload.modal.team-folder.placeholder")}
+                        data={teamFolderOptions}
+                        clearable
+                        searchable
+                        {...form.getInputProps("teamFolderId")}
+                      />
+                      <Text size="xs" c="dimmed">
+                        <FormattedMessage id="upload.modal.team-folder.description" />
+                      </Text>
+                    </Stack>
+                  </Accordion.Panel>
+                </Accordion.Item>
+              )}
 
             {/* Info: user has teams but no writable folders yet */}
-            {options.isUserSignedIn && !options.isReverseShare && teamFolderOptions.length === 0 && myTeams && myTeams.length > 0 && (
-              <Accordion.Item value="team-folder-info" style={{ borderBottom: "none" }}>
-                <Accordion.Control>
-                  <FormattedMessage id="upload.modal.team-folder.title" />
-                </Accordion.Control>
-                <Accordion.Panel>
-                  <Alert
-                    icon={<TbAlertCircle size={16} />}
-                    color="blue"
-                    variant="light"
-                  >
-                    Vous faites partie d'une équipe mais aucun dossier n'y est
-                    encore créé. Pour envoyer des fichiers dans votre équipe,
-                    rendez-vous d'abord sur la page de l'équipe et créez un
-                    dossier dans l'onglet « Dossiers ».
-                  </Alert>
-                </Accordion.Panel>
-              </Accordion.Item>
-            )}
+            {options.isUserSignedIn &&
+              !options.isReverseShare &&
+              teamFolderOptions.length === 0 &&
+              myTeams &&
+              myTeams.length > 0 && (
+                <Accordion.Item
+                  value="team-folder-info"
+                  style={{ borderBottom: "none" }}
+                >
+                  <Accordion.Control>
+                    <FormattedMessage id="upload.modal.team-folder.title" />
+                  </Accordion.Control>
+                  <Accordion.Panel>
+                    <Alert
+                      icon={<TbAlertCircle size={16} />}
+                      color="blue"
+                      variant="light"
+                    >
+                      Vous faites partie d'une équipe mais aucun dossier n'y est
+                      encore créé. Pour envoyer des fichiers dans votre équipe,
+                      rendez-vous d'abord sur la page de l'équipe et créez un
+                      dossier dans l'onglet « Dossiers ».
+                    </Alert>
+                  </Accordion.Panel>
+                </Accordion.Item>
+              )}
 
             <Accordion.Item value="security" style={{ borderBottom: "none" }}>
               <Accordion.Control>
@@ -707,7 +737,9 @@ const CreateUploadModalBody = ({
                       placeholder={t(
                         "upload.modal.accordion.security.max-views.placeholder",
                       )}
-                      label={t("upload.modal.accordion.security.max-views.label")}
+                      label={t(
+                        "upload.modal.accordion.security.max-views.label",
+                      )}
                       {...form.getInputProps("maxViews")}
                     />
                   )}

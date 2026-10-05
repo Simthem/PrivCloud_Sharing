@@ -1,4 +1,127 @@
 export default {
+  "upload.pending.fileChanged": "Ce fichier ne correspond pas à celui de l'envoi interrompu. Son transfert recommencera depuis le début.",
+
+  "admin.shares.status.inactive": "Envoi inactif",
+  "admin.shares.status.unfinished": "Non finalisé",
+
+  "upload.pending.resume": "Reprendre ou finaliser",
+  "upload.pending.resumeHelp": "Sélectionnez à nouveau les fichiers manquants pour reprendre cet envoi. Les fichiers déjà enregistrés sont conservés. Cliquez sur Enregistrer pour terminer avec les fichiers affichés. La reprise des morceaux nécessite la mémoire locale de cet envoi et les mêmes fichiers d'origine.",
+
+  "upload.pending.title": "Envois non finalisés",
+  "upload.pending.body": "Certains envois ne sont pas finalisés. Vous pouvez consulter et télécharger les fichiers déjà enregistrés.",
+  "upload.pending.summary": "{date} : {count, plural, one {# fichier enregistré} other {# fichiers enregistrés}} ({size})",
+  "upload.pending.open": "Ouvrir les fichiers enregistrés",
+  "upload.pending.detail": "Cet envoi n'est pas finalisé. Les fichiers affichés sont déjà sauvegardés et restent accessibles depuis votre compte. Les autres fichiers de cet envoi peuvent être manquants.",
+
+  "upload.cancel.confirm":
+    "L'envoi en cours sera interrompu et le partage incomplet supprimé. Continuer ?",
+  "upload.finalization.pending.retry": "Réessayer la finalisation",
+  "upload.finalization.pending.body": "La finalisation n'a pas été confirmée. Les fichiers déjà sauvegardés sont conservés. Réessayez pour obtenir le lien du partage.",
+  "upload.finalization.pending.title": "Finalisation à reprendre",
+  "upload.modal.completed.partial-body": "Le partage contient les fichiers sauvegardés par le serveur. L'envoi de {count} fichier(s) n'a pas pu être confirmé. Vérifiez le contenu du partage avant de renvoyer les fichiers manquants.",
+  "upload.modal.completed.share-incomplete": "Partage incomplet",
+  "upload.modal.completed.partial-title": "Fichiers transférés conservés",
+  "bridge.error.localNetworkPermissionRequired": "Connectez le Companion Android et autorisez l'accès aux applications locales lorsque le navigateur le demande.",
+  "bridge.error.localNetworkPermissionDenied": "Le navigateur bloque le Companion Android. Autorisez le réseau local dans les paramètres du site, puis reconnectez-le.",
+  "bridge.error.extensionRequired": "Installez ou activez l'extension PrivCloud Companion pour connecter le Companion.",
+  "bridge.error.originDenied": "Cette page n'est pas autorisée à utiliser le Companion.",
+  "bridge.error.sessionExpired": "Reconnectez le Companion pour renouveler l'autorisation.",
+  "bridge.error.downloadExpired": "Le téléchargement a expiré. Relancez l'import.",
+  "bridge.error.busy": "Le Companion est occupé. Réessayez dans un instant.",
+  "bridge.error.timeout": "Le Companion n'a pas répondu à temps. Vérifiez son état avant de relancer l'opération.",
+  "bridge.error.messageTooLarge": "Cette réponse dépasse la taille prise en charge par le Companion.",
+  "bridge.error.secureContextRequired": "Ouvrez PrivCloud en HTTPS pour connecter le Companion.",
+
+  "team.dashboard.metrics.availableSeats":
+    "{count, plural, one {# libre} other {# libres}}",
+  "team.dashboard.metrics.downloadsShort": "Téléch. (30 j)",
+  "team.dashboard.e2e.details": "Détails",
+  "team.dashboard.e2e.rotateShort": "Regénérer",
+  "team.dashboard.metrics.uploadCount":
+    "{count, plural, one {# dépôt} other {# dépôts}}",
+  "team.dashboard.tabs.requests": "Demandes",
+  "team.fileRequest.title": "Demandes de fichiers",
+  "team.fileRequest.create": "Demander des fichiers",
+  "team.fileRequest.subject": "Que demandez-vous ?",
+  "team.fileRequest.subject.placeholder": "Photos ou documents à compléter",
+  "team.fileRequest.team": "Équipe",
+  "team.fileRequest.destination": "Destination de téléversement",
+  "team.fileRequest.recipients": "Destinataires",
+  "team.fileRequest.scope.selected": "Un ou plusieurs membres",
+  "team.fileRequest.scope.all": "Toute l'équipe",
+  "team.fileRequest.note": "Ajouter une note",
+  "team.fileRequest.note.placeholder": "Précisions pour les destinataires",
+  "team.fileRequest.deadline": "Échéance (facultatif)",
+  "team.fileRequest.deadline.hint": "30 jours par défaut, 365 jours maximum",
+  "team.fileRequest.email": "Envoyer aussi la demande par e-mail",
+  "team.fileRequest.email.hint":
+    "Chaque destinataire recevra un message individuel, sans sujet détaillé, note, fichier ni clé de chiffrement. Le lien exige une connexion au compte.",
+  "team.fileRequest.metadata.hint":
+    "Le sujet et la note ne sont pas chiffrés de bout en bout. Évitez d'y inclure des informations confidentielles.",
+  "team.fileRequest.rights.hint":
+    "Les destinataires doivent pouvoir écrire dans le dossier choisi. Les fichiers déposés gardent les droits d'accès et le chiffrement de ce dossier.",
+  "team.fileRequest.notifications.hint":
+    "La demande reste dans votre espace d'équipe. Les alertes chiffrées sont envoyées aux membres qui ont choisi « Tous les fichiers ». Les membres qui ont choisi « Partages directs uniquement » retrouvent la demande dans leur espace d'équipe.",
+  "team.fileRequest.empty": "Aucune demande envoyée ou reçue.",
+  "team.fileRequest.noFolders":
+    "Aucun dossier accessible en écriture. Un administrateur d'équipe peut créer un dossier ou adapter les droits.",
+  "team.fileRequest.noRecipients":
+    "Aucun autre membre actif ne dispose d'un accès en écriture à ce dossier.",
+  "team.fileRequest.allRights":
+    "Pour demander à toute l'équipe, choisissez un dossier où tous les autres membres ont un accès en écriture.",
+  "team.fileRequest.status.open": "Ouverte",
+  "team.fileRequest.status.expired": "Expirée",
+  "team.fileRequest.status.closed": "Clôturée",
+  "team.fileRequest.sent": "Envoyée",
+  "team.fileRequest.from": "De {name}",
+  "team.fileRequest.deletedFolder": "Dossier supprimé",
+  "team.fileRequest.details": "{sender}. Dossier : {folder}. Échéance : {date}",
+  "team.fileRequest.files":
+    "{name} : {count, plural, one {# fichier} other {# fichiers}}",
+  "team.fileRequest.upload": "Déposer des fichiers",
+  "team.fileRequest.openFolder": "Ouvrir le dossier",
+  "team.fileRequest.close": "Clôturer",
+  "team.fileRequest.close.title": "Clôturer la demande",
+  "team.fileRequest.close.hint":
+    "Les nouveaux dépôts et la finalisation des dépôts en cours seront refusés. Les fichiers déjà déposés resteront dans le dossier.",
+  "team.fileRequest.cancel": "Annuler",
+  "team.fileRequest.submit": "Envoyer la demande",
+  "team.fileRequest.retry": "Réessayer",
+  "team.fileRequest.previous": "Précédent",
+  "team.fileRequest.next": "Suivant",
+  "team.fileRequest.range": "{start} à {end} sur {total}",
+  "team.fileRequest.success": "Demande envoyée aux membres sélectionnés",
+  "team.fileRequest.error.create":
+    "Impossible de créer la demande. Vérifiez les droits, l'échéance et les destinataires.",
+  "team.fileRequest.error.close": "Impossible de clôturer cette demande",
+  "team.fileRequest.error.list": "Impossible de charger les demandes.",
+  "team.fileRequest.error.teams": "Impossible de charger les équipes.",
+  "team.fileRequest.error.destinations":
+    "Impossible de charger les destinations.",
+  "team.fileRequest.error.keys":
+    "Les membres souhaitant recevoir ces notifications doivent configurer leurs clés de chiffrement.",
+  "team.fileRequest.error.upload":
+    "Le dépôt est indisponible. Les droits d'accès ont pu changer.",
+  "team.fileRequest.error.destinationChanged":
+    "Cette demande est indisponible ou sa destination a changé.",
+  "team.fileRequest.error.return":
+    "Cette demande est indisponible. Revenez aux demandes de votre équipe.",
+  "team.fileRequest.loading": "Chargement de la demande",
+  "team.fileRequest.upload.hint":
+    "Destination : {folder}. Les fichiers suivent les droits du dossier de l'équipe.",
+  "team.fileRequest.upload.unavailable":
+    "Demande indisponible, clôturée, expirée ou accès révoqué. Le dépôt est désactivé.",
+  "team.fileRequest.notification.request.subject":
+    "Demande de fichiers : {subject}",
+  "team.fileRequest.notification.request":
+    "Une demande de fichiers vous attend",
+  "team.fileRequest.notification.submitted.subject":
+    "Fichiers reçus : {subject}",
+  "team.fileRequest.notification.submitted":
+    "Des fichiers ont été déposés pour votre demande",
+  "team.fileRequest.notification.opening":
+    "Ouverture de la notification chiffrée",
+
   // Navbar
   "navbar.upload": "Téléverser",
   "navbar.signin": "Se connecter",
@@ -15,13 +138,13 @@ export default {
   // END navbar
   // /
   // "home.title": "Une plateforme de partage de fichiers <h>auto-hébergée</h>.",
-  "home.title": "Partage de fichiers <h>sécurisé et chiffré de bout en bout</h>",
+  "home.title": "Une plateforme de partage de fichiers <h>auto-hébergée</h>.",
   "home.meta.title": "Alternative WeTransfer sécurisée (chiffrement E2E)",
 
   "home.meta.description": "Transfert de fichiers sécurisé, chiffrement AES-256 de bout en bout. Sans publicité ni traçage, hébergé en France. Alternative privée à WeTransfer.",
 
   //"home.description": "Voulez-vous vraiment remettre vos fichiers personnels dans les mains de tiers comme WeTransfer ?",
-  "home.description": "Vos fichiers restent privés. Même nous ne pouvons pas les lire - enfin une véritable alternative sécurisée à WeTransfer",
+  "home.description": "Voulez-vous vraiment remettre vos fichiers personnels dans les mains de tiers comme WeTransfer ?",
   "home.bullet.a.name": "Auto-hébergé",
   "home.bullet.a.description": "Hébergez PrivCloud_Sharing sur votre propre machine.",
   "home.bullet.b.name": "Confidentialité",
@@ -36,12 +159,12 @@ export default {
   "home.hero.seo": "PrivCloud est une alternative sécurisée à WeTransfer, SwissTransfer et TransferNow -- avec chiffrement de bout en bout AES-256 côté navigateur. Vos fichiers sont chiffrés avant de quitter votre appareil : le serveur ne stocke jamais de données en clair. Que vous partagiez des contrats, des dossiers médicaux ou de volumineuses données : vos fichiers restent protégés de l'envoi au téléchargement.",
 
   // Trust / references externes
-  "home.trust.text": "Construit sur le standard de chiffrement <aes>AES-256</aes>, conforme au <gdpr>RGPD</gdpr>, et protégé par le schéma de <shamir>partage de secret de Shamir</shamir>.",
+  "home.trust.text": "Construit sur le standard de chiffrement <aes>AES-256</aes>, conforme au <gdpr>RGPD</gdpr>, avec une récupération de clé facultative par <shamir>partage de secret de Shamir</shamir>.",
 
   // Section différenciation
   "home.diff.title": "Ce qui rend PrivCloud différent",
   "home.diff.encryption": "Chiffrement de bout en bout AES-256",
-  "home.diff.zeroKnowledge": "Architecture zéro-knowledge -- nous ne voyons jamais votre clé",
+  "home.diff.zeroKnowledge": "Architecture zéro-knowledge -- par défaut, nous ne voyons pas votre clé",
   "home.diff.noAccount": "Aucun compte requis pour les transferts",
   "home.diff.openSource": "Open source et entièrement auditable",
   "home.diff.gdpr": "Hébergé en France, 100% conforme RGPD",
@@ -93,7 +216,7 @@ export default {
   "home.features.speed.description": "Infrastructure optimisée pour une vitesse de transfert maximale. Aucune limite de nombre de fichiers, aucun throttling.",
   "home.features.open.title": "Open source",
   "home.features.open.description": "Code entièrement auditable. La transparence n'est pas optionnelle.",
-  "home.features.subtitle": "PrivCloud combine chiffrement de bout en bout AES-256, hébergement en France et transparence open source pour offrir un transfert de fichiers réellement sécurisé et conforme RGPD. Contrairement aux services classiques, vos fichiers ne sont jamais lisibles par le serveur.",
+  "home.features.subtitle": "PrivCloud combine chiffrement de bout en bout AES-256, hébergement en France et transparence open source pour offrir un transfert de fichiers sécurisé et conforme aux obligations RGPD applicables au service. Pour les partages E2E, le serveur ne reçoit pas la clé de contenu par défaut et ne peut pas lire les fichiers.",
 
   // Section Comment ça marche
   "home.howto.title": "Comment envoyer des fichiers chiffrés en 3 étapes",
@@ -110,14 +233,14 @@ export default {
 
   // Section Pourquoi PrivCloud
   "home.whyprivcloud.title": "Ce qui distingue PrivCloud des autres services de transfert",
-  "home.whyprivcloud.subtitle": "WeTransfer, SwissTransfer, TransferNow, Smash : la plupart des services de transfert de fichiers chiffrent vos données au repos sur leurs serveurs, mais conservent la clé. Ils peuvent techniquement lire vos fichiers. PrivCloud adopte une approche fondamentalement différente : le chiffrement de bout en bout AES-256 est effectué dans votre navigateur, et la clé ne quitte jamais votre appareil. Architecture zero-knowledge, hébergement en France, conformité RGPD totale.",
+  "home.whyprivcloud.subtitle": "WeTransfer, SwissTransfer, TransferNow, Smash : la plupart des services de transfert de fichiers chiffrent vos données au repos sur leurs serveurs, mais conservent la clé. Ils peuvent techniquement lire vos fichiers. PrivCloud adopte une approche fondamentalement différente : le chiffrement de bout en bout AES-256 est effectué dans votre navigateur, et par défaut la clé ne parvient jamais à nos serveurs. Architecture zero-knowledge conçue pour répondre aux exigences du RGPD.",
 
   // Section Sécurité, confidentialité et conformité
   "home.security.title": "Sécurité, confidentialité et conformité RGPD",
   "home.security.encryption.title": "Chiffrement AES-256-GCM : votre clé est générée dans votre navigateur",
-  "home.security.encryption.text": "Chaque fichier est chiffré localement dans votre navigateur avant d'être envoyé. La clé de chiffrement symétrique AES-256 est générée aléatoirement et intégrée dans le fragment de l'URL (#key=...), une partie qui n'est jamais transmise au serveur par conception du protocole HTTP. Résultat : même en cas de compromission du serveur, vos fichiers restent illisibles. Aucune donnée en clair ne transite sur le réseau ni ne réside sur nos serveurs.",
+  "home.security.encryption.text": "Chaque fichier est chiffré localement dans votre navigateur avant d'être envoyé. La clé de chiffrement symétrique AES-256 est générée aléatoirement et intégrée dans le fragment de l'URL (#key=...), une partie qui n'est jamais transmise au serveur par conception du protocole HTTP. Résultat : même en cas de compromission du serveur, vos fichiers restent illisibles. Leur contenu ne transite jamais en clair sur le réseau et ne réside jamais en clair sur nos serveurs.",
   "home.security.zeroknowledge.title": "Architecture zero-knowledge vérifiable",
-  "home.security.zeroknowledge.text": "Le serveur ne stocke que des blobs chiffrés opaques. Il ne voit jamais votre clé de déchiffrement, ne peut pas lire vos fichiers et ne conserve aucune donnée en clair. Cette promesse est vérifiable : le code source est intégralement ouvert et auditable sur GitHub. Vous n'avez pas à nous faire confiance -- vous pouvez vérifier par vous-même.",
+  "home.security.zeroknowledge.text": "Le chiffrement de bout en bout est activé par défaut pour le contenu des fichiers. Dans le format E2E actuel, les noms, chemins, titres et descriptions des partages sont aussi protégés côté client avec la même clé. Le serveur conserve des données chiffrées, des libellés neutres, la taille et les dates des fichiers. Le code source est ouvert et auditable sur GitHub.",
   "home.security.gdpr.title": "Hébergement en France et conformité RGPD",
   "home.security.gdpr.text": "Vos fichiers chiffrés sont stockés sur une infrastructure sécurisée en France, en conformité totale avec le Règlement Général sur la Protection des Données (RGPD) et les recommandations de la CNIL. Aucun transfert vers des pays tiers, aucun tracking, aucune publicité, aucune analytique tierce. Vos données restent sous juridiction européenne, protégées par les standards de sécurité les plus stricts.",
 
@@ -159,9 +282,9 @@ export default {
   "home.threat.intro": "Une plateforme honnête vous dit exactement contre quoi elle vous protège -- et ce qui reste de votre responsabilité.",
   "home.threat.protects.title": "Ce contre quoi nous vous protégeons",
   "home.threat.protects.serverBreach": "Compromission du serveur / de la BDD -- les fichiers chiffrés sont illisibles sans votre clé.",
-  "home.threat.protects.s3Provider": "Espionnage par le fournisseur S3 -- avec le E2E activé, il ne voit que du chiffrement opaque.",
+  "home.threat.protects.s3Provider": "Espionnage par le fournisseur S3 -- avec le E2E activé, il ne voit que du contenu chiffré, sous des identifiants aléatoires.",
   "home.threat.protects.networkSniffing": "Interception réseau -- TLS 1.3 en transit, AES-256 au repos et côté client.",
-  "home.threat.protects.operator": "L'opérateur de la plateforme (nous) -- architecture zéro-knowledge : nous ne voyons jamais votre clé.",
+  "home.threat.protects.operator": "L'opérateur de la plateforme (nous) -- architecture zéro-knowledge : par défaut, nous ne voyons pas votre clé.",
   "home.threat.protects.sskrRecovery": "Perte partielle de fragments SSKR -- grâce au schéma de Shamir, un seuil minimal de fragments suffit à reconstruire votre clé.",
   "home.threat.notProtects.title": "Ce qui reste de votre responsabilité",
   "home.threat.notProtects.keyLoss": "Perdre votre clé E2E sans avoir généré de fragments SSKR -- sans clé ni fragments, vos partages chiffrés sont définitivement inaccessibles.",
@@ -455,7 +578,7 @@ export default {
   "admin.stats.history.partial":
     "Chaque courbe est mise à l'échelle sur son propre maximum. Les totaux quotidiens sont disponibles depuis le {date}. Les parties en pointillés sont reconstituées à partir des dates de création des comptes, partages et fichiers encore présents. L'historique des vues ne peut pas être reconstitué car seul leur total cumulé était conservé.",
   "admin.stats.history.empty":
-    "Aucun relevé quotidien n'a encore été enregistré. Les courbes des partages, vues et du stockage se remplissent à partir du premier relevé ; celle des utilisateurs est reconstituée à partir des dates de création des comptes.",
+    "Aucun relevé quotidien n'a encore été enregistré. Les courbes des partages, vues et du stockage se remplissent à partir du premier relevé, celle des utilisateurs est reconstituée à partir des dates de création des comptes.",
   // END /admin
   // /admin/users
   "admin.users.title": "Gestion des utilisateurs",
@@ -535,7 +658,7 @@ export default {
   "admin.shares.status.ready": "Prêt",
   "admin.shares.status.uploading": "Téléversement",
   "admin.shares.privacy.title": "Inventaire protégé",
-  "admin.shares.privacy.description": "Les liens publics, titres, descriptions, destinataires et noms de fichiers sont masqués. Les privilèges d'administration ne donnent jamais accès au contenu utilisateur ; la suppression utilise uniquement une référence d'audit opaque.",
+  "admin.shares.privacy.description": "Les liens publics, titres, descriptions, destinataires et noms de fichiers sont masqués. Les privilèges d'administration ne donnent jamais accès au contenu utilisateur, la suppression utilise uniquement une référence d'audit opaque.",
   "admin.shares.edit.delete.title": "Supprimer le partage : {id}",
   "admin.shares.edit.delete.description": "Voulez-vous vraiment supprimer ce partage ?",
   "admin.shares.select-all": "Tout sélectionner",
@@ -598,8 +721,7 @@ export default {
     "Créez votre clé E2E personnelle pour protéger les nouveaux partages avec le chiffrement de bout en bout.",
   "upload.cancel.button": "Annuler",
   "upload.cancel.title": "Annuler l'envoi",
-  "upload.cancel.confirm":
-    "L'envoi en cours sera interrompu et le partage incomplet supprimé. Continuer ?",
+  "upload.cancel.discard-confirm": "Tous les fichiers de cet envoi, y compris ceux déjà transférés, seront supprimés. Continuer ?",
   // showCreateUploadModal.tsx
   "upload.modal.title": "Créer un partage",
   "upload.modal.link.error.invalid": "Ne peut contenir que des lettres, des chiffres, des tirets bas et des traits d'union",
@@ -685,7 +807,7 @@ export default {
   "bridge.pair.confirm": "Valider",
   "bridge.toast.paired": "PrivCloud Companion activé",
   "bridge.error.updateRequired":
-    "PrivCloud Companion est détecté, mais cette version ne prend pas encore en charge l'activation en un clic. Réinstallez le Companion depuis la page Intégrations puis redémarrez-le.",
+    "Mettez à jour le Companion et l'extension depuis la page Intégrations, puis rechargez PrivCloud pour utiliser leur connexion native.",
   "bridge.error.openSourceUpdateRequired":
     "Cette ancienne version du Companion n'est pas compatible avec l'édition open source. Réinstallez le Companion depuis la page Intégrations puis redémarrez-le.",
   "bridge.error.companionRequired":
@@ -706,7 +828,7 @@ export default {
   "bridge.error.tooManyJobs":
     "Trop de transferts Bridge sont déjà actifs. Attendez la fin d'un transfert en cours puis réessayez.",
   "bridge.error.unavailable":
-    "PrivCloud Companion est indisponible. Démarrez-le ou réinstallez-le, puis réessayez.",
+    "Le Companion ne répond pas. Vérifiez que l'extension est active et que son connecteur natif est installé, puis reconnectez-le depuis la page Intégrations.",
   "webdav.endpoint.label": "URL WebDAV",
   "webdav.username.label": "Utilisateur",
   "webdav.password.label": "Mot de passe applicatif",
@@ -804,32 +926,32 @@ export default {
   "security.hero.title": "Sécurité de PrivCloud Sharing",
   "security.hero.subtitle": "Chez PrivCloud, la sécurité n'est pas une fonctionnalité -- c'est l'architecture.",
   "security.overview.title": "Vue d'ensemble",
-  "security.overview.text": "PrivCloud Sharing est conçu selon le principe du zéro-knowledge : ni nos serveurs, ni notre équipe, ni notre fournisseur de stockage ne peuvent lire vos fichiers. Le chiffrement est effectué dans votre navigateur, avant même que vos données ne quittent votre appareil. Cette page décrit de manière transparente les mécanismes cryptographiques, les choix d'infrastructure et les limites honnêtes du système.",
+  "security.overview.text": "PrivCloud Sharing est conçu selon le principe du zéro-knowledge : ni nos serveurs, ni notre équipe, ni notre fournisseur de stockage ne peuvent lire le contenu de vos fichiers chiffrés de bout en bout, le mode par défaut de tout compte. Le chiffrement est effectué dans votre navigateur, avant même que vos données ne quittent votre appareil. Cette page décrit de manière transparente les mécanismes cryptographiques, les choix d'infrastructure et les limites honnêtes du système.",
   "security.e2ee.title": "Chiffrement de bout en bout (E2EE)",
   "security.e2ee.howItWorks.title": "Comment ça fonctionne",
   "security.e2ee.howItWorks.step1": "Une clé AES-256 est générée localement dans votre navigateur via l'API Web Crypto.",
   "security.e2ee.howItWorks.step2": "Vos fichiers sont chiffrés côté client avant l'upload -- nous ne recevons que du texte chiffré opaque.",
   "security.e2ee.howItWorks.step3": "La clé de déchiffrement est intégrée dans le lien de partage sous la forme d'un fragment d'URL (#key=...). Par définition du protocole HTTP, ce fragment n'est jamais transmis au serveur -- il reste dans votre navigateur et n'apparaît dans aucun log de notre infrastructure.",
-  "security.e2ee.howItWorks.step4": "Le destinataire déchiffre directement dans son navigateur, sans que la clé transite par notre infrastructure.",
+  "security.e2ee.howItWorks.step4": "Le destinataire déchiffre directement dans son navigateur. Par défaut, la clé ne transite pas par notre infrastructure : elle n'y passe que si vous choisissez de l'envoyer par e-mail, ou pour les fichiers que vous recevez par un lien de dépôt.",
   "security.e2ee.algorithms.title": "Algorithmes utilisés",
   "security.e2ee.algorithms.col.component": "Composant",
   "security.e2ee.algorithms.col.standard": "Standard",
   "security.e2ee.algorithms.row.fileEncryption": "Chiffrement des fichiers",
   "security.e2ee.algorithms.row.transport": "Transport réseau",
   "security.e2ee.algorithms.row.storageAtRest": "Stockage au repos",
-  "security.e2ee.algorithms.row.keySharing": "Partage de clé",
+  "security.e2ee.algorithms.row.keySharing": "Récupération de clé (facultative)",
   "security.e2ee.whyGCM.title": "Pourquoi AES-256-GCM ?",
   "security.e2ee.whyGCM.text": "Le mode GCM (Galois/Counter Mode) apporte non seulement la confidentialité (personne ne peut lire), mais aussi l'authenticité (personne ne peut altérer les données chiffrées sans que cela soit détecté). C'est le standard utilisé par les gouvernements et les institutions financières pour la protection des données classifiées.",
   "security.zeroKnowledge.title": "Architecture zéro-knowledge",
-  "security.zeroKnowledge.text": "L'architecture zéro-knowledge signifie que notre système est conçu pour qu'il nous soit techniquement impossible d'accéder au contenu de vos fichiers, même si nous le voulions -- ou si nous y étions contraints.",
-  "security.zeroKnowledge.point1": "Vos fichiers sont chiffrés avant l'upload",
+  "security.zeroKnowledge.text": "L'architecture zéro-knowledge signifie que notre système est conçu pour qu'il nous soit techniquement impossible d'accéder au contenu de vos fichiers chiffrés de bout en bout, même si nous le voulions -- ou si nous y étions contraints.",
+  "security.zeroKnowledge.point1": "Les fichiers de votre compte sont chiffrés avant l'upload",
   "security.zeroKnowledge.point2": "Par défaut, votre clé ne transite pas par nos serveurs",
   "security.zeroKnowledge.point3": "Nos logs ne contiennent aucune clé de déchiffrement",
   "security.zeroKnowledge.point4": "Même un accès complet à notre base de données ne permettrait pas de lire vos fichiers",
   "security.sskr.title": "Partage de secret de Shamir (SSKR)",
-  "security.sskr.intro": "Pour éviter la perte définitive d'accès à vos fichiers en cas d'oubli de clé, PrivCloud intègre le Shamir's Secret Sharing (implémenté via SSKR -- Sharded Secret Key Reconstruction).",
+  "security.sskr.intro": "Le partage de secret de Shamir sert uniquement à récupérer votre clé E2E si vous la perdez. Il est facultatif : sans fragments ni coffre passkey, une clé perdue rend vos fichiers chiffrés définitivement illisibles, et personne, pas même PrivCloud, ne peut la retrouver. PrivCloud utilise sa propre implémentation, exécutée entièrement dans votre navigateur : les fragments sont affichés sur votre écran et ne sont jamais envoyés au serveur.",
   "security.sskr.principle.title": "Principe",
-  "security.sskr.principle.text": "Votre clé E2E est fractionnée en plusieurs fragments (par exemple 3 fragments dont 2 suffisent à reconstituer la clé). Chaque fragment seul est inutilisable -- seule la combinaison d'un nombre minimal de fragments permet la reconstruction.",
+  "security.sskr.principle.text": "À la création, vous choisissez le nombre de fragments et le seuil nécessaire pour reconstituer la clé (par exemple 3 fragments dont 2 suffisent). Avec moins de fragments que ce seuil, il est mathématiquement impossible de retrouver la clé : ils ne révèlent rien d'elle.",
   "security.sskr.whyImportant.title": "Pourquoi c'est important",
   "security.sskr.table.col.scenario": "Scénario",
   "security.sskr.table.col.withoutSSKR": "Sans SSKR",
@@ -840,8 +962,8 @@ export default {
   "security.sskr.table.row.shardTheft": "Vol d'un fragment",
   "security.sskr.table.row.shardTheft.with": "Inutilisable seul",
   "security.sskr.table.row.serverCompromise": "Serveur compromis",
-  "security.sskr.table.row.serverCompromise.without": "Clé exposée si centralisée",
-  "security.sskr.table.row.serverCompromise.with": "Aucun fragment complet présent",
+  "security.sskr.table.row.serverCompromise.without": "Rien à y trouver : la clé n'y est jamais envoyée",
+  "security.sskr.table.row.serverCompromise.with": "Rien à y trouver : les fragments n'y sont jamais envoyés",
   "security.sskr.bestPractice.label": "Bonne pratique :",
   "security.sskr.bestPractice.text": "Stockez vos fragments dans des emplacements distincts et sécurisés (gestionnaire de mots de passe, support chiffré hors ligne, coffre physique).",
   "security.infra.title": "Infrastructure & conformité",
@@ -853,7 +975,7 @@ export default {
   "security.infra.zeroTracking.title": "Zéro tracking, zéro analytics",
   "security.infra.zeroTracking.text": "PrivCloud ne collecte aucune donnée comportementale. Aucun cookie de tracking, aucun pixel publicitaire, aucun outil d'analytics tiers n'est chargé sur nos pages. Ce que vous partagez ne nous regarde pas -- littéralement.",
   "security.infra.s3.title": "Fournisseur de stockage objet (S3-compatible)",
-  "security.infra.s3.text": "Même notre fournisseur de stockage objet ne peut pas lire vos fichiers. Avec le E2E activé, il ne stocke que du chiffrement opaque -- sans contexte, sans métadonnées lisibles, sans possibilité de déchiffrement.",
+  "security.infra.s3.text": "Notre fournisseur de stockage ne peut pas lire vos fichiers chiffrés de bout en bout. Il stocke leur contenu chiffré sous des identifiants aléatoires et voit la taille des objets et les transferts. Les liens de téléchargement direct utilisent un identifiant neutre et un type générique pour chaque fichier E2E.",
   "security.links.title": "Sécurité des liens de partage",
   "security.links.expiration.label": "Expiration automatique :",
   "security.links.expiration.text": "chaque lien a une durée de vie configurable. Passé ce délai, le lien est révoqué et les fichiers supprimés.",
@@ -990,7 +1112,7 @@ export default {
   "admin.config.email.share-recipients-subject": "Sujet d'un partage",
   "admin.config.email.share-recipients-subject.description": "Intitulé du courriel envoyé aux destinataires d'un partage.",
   "admin.config.email.share-recipients-message": "Message d'un partage",
-  "admin.config.email.share-recipients-message.description": "Contenu du courriel qui est envoyé aux destinataires du partage. Variables possibles :\n '{creator}' - Le nom d'utilisateur du créateur du partage\n '{creatorEmail}' - L'adresse mail du créateur du partage\n '{shareUrl}' - L'URL du partage\n '{desc}' - La description du partage\n '{expires}' - La date d'expiration du partage.\n Ces variables seront remplacées par leur valeur effective.",
+  "admin.config.email.share-recipients-message.description": "Contenu du courriel qui est envoyé aux destinataires du partage. Variables possibles :\n '{creator}' - Le nom d'utilisateur du créateur du partage\n '{creatorEmail}' - L'adresse mail du créateur du partage\n '{shareUrl}' - L'URL du partage\n '{desc}' - La description du partage\n '{expires}' - La date d'expiration du partage.\n Ces variables seront remplacées par leur valeur effective.",
   "admin.config.email.reverse-share-subject": "Sujet d'un partage inversé",
   "admin.config.email.reverse-share-subject.description": "Intitulé du courriel envoyé lorsque quelqu'un a partagé des fichiers depuis votre partage inversé.",
   "admin.config.email.reverse-share-message": "Message d'un partage inversé",
@@ -1202,16 +1324,16 @@ export default {
     "PBKDF2/SHA-256 est recommandé : il est intégré, largement compatible et plus rapide que SHA-384 ou SHA-512 pour cet usage.",
   "admin.config.altcha.cost": "Coût",
   "admin.config.altcha.cost.description":
-    "Coût PBKDF2 par tentative. 5000 est le défaut recommandé ; la fluidité se règle surtout avec l'effort.",
+    "Coût PBKDF2 par tentative. 5000 est le défaut recommandé, la fluidité se règle surtout avec l'effort.",
   "admin.config.altcha.effort": "Effort",
   "admin.config.altcha.effort.description":
-    "Nombre moyen de compteurs que le navigateur doit tester. 250 est un bon défaut ; augmentez progressivement si vous voulez plus de résistance.",
+    "Nombre moyen de compteurs que le navigateur doit tester. 250 est un bon défaut, augmentez progressivement si vous voulez plus de résistance.",
   "admin.config.altcha.expires-in-seconds": "Expiration du challenge",
   "admin.config.altcha.expires-in-seconds.description":
     "Durée de validité du challenge en secondes. Une durée courte limite la fenêtre de réutilisation d'un jeton.",
   "admin.config.altcha.hmac-key": "Clé HMAC",
   "admin.config.altcha.hmac-key.description":
-    "Secret côté serveur utilisé pour signer et vérifier les challenges. Une clé forte est générée automatiquement ; à remplacer seulement en cas de rotation volontaire.",
+    "Secret côté serveur utilisé pour signer et vérifier les challenges. Une clé forte est générée automatiquement, à remplacer seulement en cas de rotation volontaire.",
   "admin.config.altcha.type": "Type d'interaction",
   "admin.config.altcha.type.description":
     "Contrôle d'interaction du widget : checkbox, checkbox native ou switch.",
@@ -1237,7 +1359,7 @@ export default {
   "404.button.home": "Retour à l'accueil",
   // error
   "error.title": "Erreur",
-  "error.description": "Oups !",
+  "error.description": "Oups !",
   "error.button.back": "Retour",
   "error.msg.default": "Quelque chose a mal tourné.",
   "error.msg.access_denied": "Vous avez annulé le processus d'authentification, veuillez réessayer.",
@@ -1528,7 +1650,7 @@ export default {
   "signing.option.e2e-key-email":
     "Envoyer la clé E2E dans un second email",
   "signing.option.e2e-key-email.desc":
-    "Le lien principal reste sans clé. La clé est envoyée séparément aux signataires et approbateurs ; pratique, mais moins cloisonné qu'un autre canal sécurisé.",
+    "Le lien principal reste sans clé. La clé est envoyée séparément aux signataires et approbateurs, pratique, mais moins cloisonné qu'un autre canal sécurisé.",
 
   // Pages signature - index
   "signing.my-signatures": "Mes signatures",
@@ -1566,6 +1688,8 @@ export default {
   "signing.detail.forensic.download": "Mes données probatoires",
   "signing.toast.forensic-error": "Vos données probatoires ne sont pas disponibles",
   "signing.toast.evidence-error": "Le dossier de preuve n'est pas disponible",
+  "signing.toast.download-started":
+    "Téléchargement lancé : le fichier se trouve dans les téléchargements de votre navigateur.",
   "signing.received": "Documents reçus",
   "signing.received.empty": "Aucun document reçu pour signature.",
   "signing.empty.eidas": "Créez votre première demande pour faire signer vos documents PDF conformément au règlement eIDAS.",
@@ -2041,7 +2165,7 @@ export default {
   "team.e2e.share.success":
     "{files, plural, one {# fichier partagé} other {# fichiers partagés}} via {grants, plural, one {# autorisation d'accès} other {# autorisations d'accès}}.",
   "team.e2e.share.partial":
-    "{success, plural, one {# autorisation créée} other {# autorisations créées}} ; {failed, plural, one {# échec} other {# échecs}}.",
+    "{success, plural, one {# autorisation créée} other {# autorisations créées}}, {failed, plural, one {# échec} other {# échecs}}.",
   "team.e2e.share.error": "Impossible de partager les fichiers chiffrés.",
   "team.dashboard.e2e.initButton": "Initialiser le chiffrement E2E",
   "team.dashboard.e2e.rotateButton": "Régénérer la clé E2E",
@@ -2059,7 +2183,7 @@ export default {
   "team.dashboard.e2e.noKeyForInvite": "L'équipe n'a pas de clé E2E. Initialisez d'abord le chiffrement E2E.",
   "team.dashboard.e2e.staleKey.title": "Clé E2E d'équipe illisible",
   "team.dashboard.e2e.staleKey.desc": "Votre copie de la clé E2E de cette équipe a été scellée avec une clé personnelle qui n'existe plus.",
-  "team.dashboard.e2e.staleKey.adminHint": "Abandonnez cette copie obsolète, puis demandez à un membre qui détient encore la clé de vous la repartager. Si plus personne ne l'a, vous pouvez initialiser une nouvelle clé ; les anciens fichiers resteront illisibles.",
+  "team.dashboard.e2e.staleKey.adminHint": "Abandonnez cette copie obsolète, puis demandez à un membre qui détient encore la clé de vous la repartager. Si plus personne ne l'a, vous pouvez initialiser une nouvelle clé - les anciens fichiers resteront illisibles.",
   "team.dashboard.e2e.staleKey.memberHint": "Abandonnez cette copie obsolète, puis demandez à un administrateur de vous repartager la clé d'équipe.",
   "team.dashboard.e2e.staleKey.clearButton": "Abandonner cette clé obsolète",
   "team.dashboard.e2e.staleKey.cleared": "Clé obsolète abandonnée. Vous pouvez de nouveau recevoir la clé d'équipe.",
@@ -2067,7 +2191,7 @@ export default {
   "team.dashboard.e2e.staleKey.toast": "Votre clé personnelle n'ouvre pas la clé E2E de cette équipe. Abandonnez la copie obsolète et faites-vous repartager la clé.",
   "team.dashboard.e2e.banner.notInitTitle": "Chiffrement E2E non initialisé",
   "team.dashboard.e2e.banner.notInitDesc": "Aucune clé E2E n'est configurée pour cette équipe. Initialisez-la pour protéger les fichiers.",
-  "team.dashboard.e2e.banner.askResharDesc": "Vous ne détenez plus la clé E2E de cette équipe, mais d'autres membres l'ont encore. Demandez-leur de vous la repartager ; générer une nouvelle clé rendrait les fichiers existants illisibles.",
+  "team.dashboard.e2e.banner.askResharDesc": "Vous ne détenez plus la clé E2E de cette équipe, mais d'autres membres l'ont encore. Demandez-leur de vous la repartager - générer une nouvelle clé rendrait les fichiers existants illisibles.",
   "team.dashboard.e2e.banner.missingTitle": "Clé E2E manquante",
   "team.dashboard.e2e.banner.missingDesc": "Vous n'avez pas encore reçu la clé E2E de cette équipe. Demandez à votre administrateur de vous la partager.",
   "team.dashboard.e2e.banner.activeTitle": "Chiffrement E2E actif",
@@ -2383,7 +2507,7 @@ export default {
   "signing.sign.unavailable.title": "Lien de signature indisponible",
   "signing.sign.unavailable.description": "Le fichier source ou la demande de signature a été supprimé, annulé ou a expiré. Ce lien ne permet plus de consulter ni de signer le document.",
   "signing.preview.unavailable.title": "Document indisponible",
-  "signing.preview.unavailable.description": "Le fichier ne peut plus être chargé. Il a peut-être été supprimé ; aucune signature n'est possible.",
+  "signing.preview.unavailable.description": "Le fichier ne peut plus être chargé. Il a peut-être été supprimé, aucune signature n'est possible.",
   "signing.sign.legal.standard-short": "Ce contrôle prouve l'accès actuel à l'adresse e-mail destinataire, pas l'identité civile de la personne qui saisit le code.",
   "signing.sign.legal.reinforced-short": "Le profil renforcé de PrivCloud met en œuvre une signature électronique avancée conformément aux exigences de l'article 26 du règlement eIDAS : assertion WebAuthn transactionnelle, compte attribué, consentement explicite et scellement cryptographique CMS/PDF du dossier de preuve par PrivCloud. Ce parcours n'est pas une signature qualifiée (QES).",
   "signing.sign.assurance.standard": "Niveau standard : l'accès actuel à l'adresse e-mail destinataire a été confirmé par un code à usage unique. Cette preuve de contrôle de messagerie ne vérifie pas l'identité civile.",
@@ -2436,4 +2560,15 @@ export default {
   "team.settings.pqNotifications.title": "Notifications post-quantiques",
   "team.settings.pqNotifications.enabled": "Utiliser le chiffrement hybride ML-KEM-768 pour les notifications de l'équipe",
   "team.settings.pqNotifications.help": "Une fois activées, les notifications des membres disposant d'une clé ML-KEM utilisent X25519 + ML-KEM-768. Les autres membres conservent le chiffrement X25519 existant.",
+  "team.fileRequest.metadata.encryptedHint": "Le sujet et la note sont chiffrés de bout en bout avec la clé de l'équipe. Seuls les membres qui la détiennent peuvent les lire.",
+  "team.fileRequest.encryptedSubject": "Demande chiffrée",
+  "team.notification.generic.FILE_SHARED": "Un fichier a été partagé avec vous",
+  "team.notification.generic.FILE_UPLOADED": "Nouveau contenu dans un dossier de votre équipe",
+  "team.notification.generic.FILE_DELETED": "Des fichiers ont été supprimés dans votre équipe",
+  "team.notification.generic.GRANT_RECEIVED": "Un accès vous a été accordé",
+  "team.notification.generic.GRANT_REVOKED": "Un de vos accès a été retiré",
+  "team.notification.generic.KEY_ROTATED": "La clé de votre équipe a été renouvelée",
+  "team.notification.generic.MEMBER_JOINED": "Un membre a rejoint votre équipe",
+  "team.notification.generic.MEMBER_LEFT": "Un membre a quitté votre équipe",
+  "account.reverseShares.error.encryption": "Impossible de chiffrer le lien de dépôt. Veuillez réessayer.",
 };

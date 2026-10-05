@@ -14,12 +14,8 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import {
-  TbFolder,
-  TbPlus,
-  TbUsers,
-  TbUsersGroup,
-} from "react-icons/tb";
+import { TbFolder, TbPlus, TbUsers, TbUsersGroup } from "react-icons/tb";
+import TeamFileRequests from "../../components/team/TeamFileRequests";
 import Meta from "../../components/Meta";
 import useUser from "../../hooks/user.hook";
 import teamService from "../../services/team.service";
@@ -32,7 +28,7 @@ const TeamsIndexPage = () => {
     if (user === null) {
       router.replace("/auth/signIn?redirect=/team");
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const { data: teams, isLoading } = useQuery({
@@ -58,6 +54,8 @@ const TeamsIndexPage = () => {
             Créer une équipe
           </Button>
         </Group>
+
+        {!!teams?.length && <TeamFileRequests />}
 
         {isLoading && (
           <Box ta="center" py="xl">
@@ -95,7 +93,12 @@ const TeamsIndexPage = () => {
                   padding="lg"
                   radius="md"
                   withBorder
-                  style={{ cursor: "pointer", height: "100%", display: "flex", flexDirection: "column" }}
+                  style={{
+                    cursor: "pointer",
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
                   onClick={() => router.push(`/team/${team.id}`)}
                 >
                   <Stack gap="sm" style={{ flex: 1 }}>

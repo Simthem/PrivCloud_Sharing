@@ -9,7 +9,6 @@ import {
   decodeCredentialPublicKey,
   verifySignature,
 } from "@simplewebauthn/server/helpers";
-import forge from "node-forge";
 import xmlCrypto from "xml-crypto";
 import xmldom from "@xmldom/xmldom";
 import { PDFDocument, PDFDict, PDFName, PDFArray, PDFRawStream, PDFString, PDFHexString, decodePDFRawStream } from "pdf-lib";
@@ -98,18 +97,99 @@ function withTempDir(action) {
   }
 }
 
-const asn1Of = (bytes) =>
-  forge.asn1.fromDer(forge.util.createBuffer(bytes.toString("binary")), {
-    strict: false,
-    decodeBitStrings: false,
-  });
-const derOf = (node) => Buffer.from(forge.asn1.toDer(node).getBytes(), "binary");
+const UNIVERSAL = 0x00;
+const CONTEXT_SPECIFIC = 0x80;
+const INTEGER = 2;
+const OCTET_STRING = 4;
+
+/** BER/DER reader, bounded by its parent value and by a nesting limit. */
+function readAsn1(bytes, start, limit, depth) {
+  if (depth > 64) fail("ASN.1 nesting is too deep");
+  let offset = start;
+  const take = () => (offset < limit ? bytes[offset++] : fail("Truncated ASN.1 value"));
+  const first = take();
+  let type = first & 0x1f;
+  if (type === 0x1f) {
+    type = 0;
+    for (let byte = 0x80; byte & 0x80; ) {
+      byte = take();
+      type = type * 128 + (byte & 0x7f);
+    }
+  }
+  const node = {
+    tagClass: first & 0xc0,
+    type,
+    constructed: Boolean(first & 0x20),
+    identifier: bytes.subarray(start, offset),
+  };
+  let length = take();
+  if (length === 0x80) {
+    if (!node.constructed) fail("Indefinite length on a primitive ASN.1 value");
+    node.value = [];
+    for (;;) {
+      if (offset + 2 > limit) fail("Truncated ASN.1 value");
+      if (bytes[offset] === 0 && bytes[offset + 1] === 0) break;
+      const child = readAsn1(bytes, offset, limit, depth + 1);
+      node.value.push(child.node);
+      offset = child.end;
+    }
+    return { node, end: offset + 2 };
+  }
+  if (length & 0x80) {
+    const count = length & 0x7f;
+    if (count > 4) fail("ASN.1 length is too large");
+    length = 0;
+    for (let i = 0; i < count; i++) length = length * 256 + take();
+  }
+  const end = offset + length;
+  if (end > limit) fail("Truncated ASN.1 value");
+  if (!node.constructed) {
+    node.value = bytes.subarray(offset, end);
+    return { node, end };
+  }
+  node.value = [];
+  while (offset < end) {
+    const child = readAsn1(bytes, offset, end, depth + 1);
+    node.value.push(child.node);
+    offset = child.end;
+  }
+  return { node, end };
+}
+const asn1Of = (bytes) => {
+  const { node, end } = readAsn1(bytes, 0, bytes.length, 0);
+  if (end !== bytes.length) fail("Unparsed bytes remain after the ASN.1 value");
+  return node;
+};
+/** DER re-encoding (definite lengths), as the seal embeds the TSA token. */
+function derOf(node) {
+  const content = Array.isArray(node.value)
+    ? Buffer.concat(node.value.map(derOf))
+    : Buffer.from(node.value);
+  const length = [];
+  for (let rest = content.length; rest > 0; rest = Math.floor(rest / 256)) {
+    length.unshift(rest % 256);
+  }
+  const header = content.length < 0x80 ? [content.length] : [0x80 | length.length, ...length];
+  return Buffer.concat([node.identifier, Buffer.from(header), content]);
+}
 const isContext = (node, type) =>
-  node.tagClass === forge.asn1.Class.CONTEXT_SPECIFIC && node.type === type;
+  node.tagClass === CONTEXT_SPECIFIC && node.type === type;
+const isUniversal = (node, type) => node.tagClass === UNIVERSAL && node.type === type;
 const octets = (node) =>
-  Array.isArray(node.value)
-    ? Buffer.concat(node.value.map(octets))
-    : Buffer.from(node.value, "binary");
+  Array.isArray(node.value) ? Buffer.concat(node.value.map(octets)) : Buffer.from(node.value);
+function oidOf(node) {
+  const arcs = [];
+  let arc = 0n;
+  for (const byte of node.value) {
+    arc = (arc << 7n) | BigInt(byte & 0x7f);
+    if (!(byte & 0x80)) {
+      arcs.push(arc);
+      arc = 0n;
+    }
+  }
+  const first = arcs[0] < 80n ? arcs[0] / 40n : 2n;
+  return [first, arcs[0] - first * 40n, ...arcs.slice(1)].join(".");
+}
 
 /** Subject, fingerprint, validity and extended key usage of a certificate. */
 function certificateDetails(der) {
@@ -152,7 +232,7 @@ function pemCertificates(path) {
 }
 
 /** Integer node as hex, without the sign padding byte. */
-const integerHex = (node) => Buffer.from(node.value, "binary").toString("hex").replace(/^00(?=[0-9a-f]{2})/, "");
+const integerHex = (node) => Buffer.from(node.value).toString("hex").replace(/^00(?=[0-9a-f]{2})/, "");
 
 /** Certificates, signature value and RFC 3161 token of a CMS SignedData. */
 function cmsStructure(cms) {
@@ -161,15 +241,11 @@ function cmsStructure(cms) {
     .map(derOf);
   const signerInfo = signedData.value[signedData.value.length - 1].value[0];
   const signatureValue = octets(
-    signerInfo.value.find(
-      (node) =>
-        node.tagClass === forge.asn1.Class.UNIVERSAL &&
-        node.type === forge.asn1.Type.OCTETSTRING,
-    ),
+    signerInfo.value.find((node) => isUniversal(node, OCTET_STRING)),
   );
   let timestampToken = null;
   for (const attribute of signerInfo.value.find((node) => isContext(node, 1))?.value || []) {
-    if (forge.asn1.derToOid(attribute.value[0].value) === OID_TIMESTAMP_TOKEN) {
+    if (oidOf(attribute.value[0]) === OID_TIMESTAMP_TOKEN) {
       timestampToken = derOf(attribute.value[1].value[0]);
     }
   }
@@ -183,14 +259,14 @@ function timestampInfo(token) {
     .map(derOf);
   const tstInfo = asn1Of(octets(signedData.value[2].value[1].value[0]));
   const imprint = tstInfo.value[2];
-  const genTime = String(tstInfo.value[4].value);
+  const genTime = Buffer.from(tstInfo.value[4].value).toString("latin1");
   const nonceNode = tstInfo.value
     .slice(5)
-    .find((node) => node.tagClass === forge.asn1.Class.UNIVERSAL && node.type === forge.asn1.Type.INTEGER);
+    .find((node) => isUniversal(node, INTEGER));
   return {
     certificates,
-    policy: forge.asn1.derToOid(tstInfo.value[1].value),
-    algorithm: HASH_BY_OID[forge.asn1.derToOid(imprint.value[0].value[0].value)],
+    policy: oidOf(tstInfo.value[1]),
+    algorithm: HASH_BY_OID[oidOf(imprint.value[0].value[0])],
     hashed: octets(imprint.value[1]),
     serial: integerHex(tstInfo.value[3]),
     nonce: nonceNode ? integerHex(nonceNode) : null,
@@ -204,7 +280,7 @@ function timestampInfo(token) {
 function requestNonce(request) {
   const node = asn1Of(request)
     .value.slice(2)
-    .find((child) => child.tagClass === forge.asn1.Class.UNIVERSAL && child.type === forge.asn1.Type.INTEGER);
+    .find((child) => isUniversal(child, INTEGER));
   return node ? integerHex(node) : null;
 }
 

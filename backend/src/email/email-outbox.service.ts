@@ -116,12 +116,16 @@ export class EmailOutboxService {
         this.secret(),
         row.deduplicationKey,
       );
-      await this.emailService.sendMail(
-        message.recipient,
-        message.subject,
-        message.text,
-        { messageId: `<${row.id}@privcloud-outbox.local>` },
-      );
+      if (
+        !message.expiresAt ||
+        new Date(message.expiresAt).getTime() > Date.now()
+      )
+        await this.emailService.sendMail(
+          message.recipient,
+          message.subject,
+          message.text,
+          { messageId: `<${row.id}@privcloud-outbox.local>` },
+        );
       await this.prisma.emailOutbox.updateMany({
         where: { id: row.id, claimedAt: row.claimedAt, sentAt: null },
         data: { sentAt: new Date(), claimedAt: null, lastError: null },

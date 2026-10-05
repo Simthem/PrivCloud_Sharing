@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   Logger,
+  OnModuleInit,
   Optional,
 } from "@nestjs/common";
 import { PrismaService } from "src/prisma/prisma.service";
@@ -26,6 +27,24 @@ import {
 import { pdfSafeText } from "./pdf-text.util";
 import { parseSignatureData, SignatureVisual } from "./signature-data.util";
 import { consentSha256For } from "./signing-evidence.util";
+import {
+  asn1,
+  Asn1Node,
+  Asn1Type,
+  children,
+  encodeDer,
+  isContext,
+  isUniversal,
+  ParsedCertificate,
+  parseCertificate,
+  parseDer,
+  parseDerPrefix,
+  readOctets,
+  readOid,
+  readSmallInteger,
+  readTime,
+} from "./asn1-der.util";
+import { readPkcs12 } from "./pkcs12.util";
 import type { PDFDocument } from "pdf-lib";
 
 /**
@@ -51,7 +70,7 @@ export type TimestampContext = {
   webauthnCredentialId?: string;
 };
 @Injectable()
-export class PdfSigningService {
+export class PdfSigningService implements OnModuleInit {
   private readonly logger = new Logger(PdfSigningService.name);
 
   private certificatePath: string;
@@ -126,10 +145,31 @@ export class PdfSigningService {
   }
 
   /**
+   * Report at startup a seal file the signing path would refuse, such as a
+   * P12 still protected by the legacy SHA-1 schemes, instead of failing at
+   * the first signature. Startup itself is never blocked.
+   */
+  onModuleInit() {
+    if (!fs.existsSync(this.certificatePath)) return;
+    try {
+      readPkcs12(
+        fs.readFileSync(this.certificatePath),
+        this.certificatePassword,
+      );
+    } catch {
+      this.logger.error(
+        `Signing certificate ${this.certificatePath} cannot be used: it needs ` +
+          "PBES2 AES with a SHA-256 MAC and the configured password. " +
+          "Re-export it with scripts/convert-signing-p12.sh.",
+      );
+    }
+  }
+
+  /**
    * Sign a PDF buffer with a PAdES-B-B signature and upgrade it to PAdES-B-T
    * when an RFC 3161 signature time-stamp token is configured and validated.
    * Uses @signpdf/placeholder-pdf-lib for the /Sig placeholder, then builds
-   * a full CMS/PKCS#7 SignedData manually (node-forge) with:
+   * a full CMS/PKCS#7 SignedData manually (node:crypto signature) with:
    * - signingCertificateV2 (OID 1.2.840.113549.1.9.16.2.47) in signed attributes
    * - Full certificate chain from the P12
    * - Proper ByteRange handling and ETSI.CAdES.detached SubFilter
@@ -393,37 +433,23 @@ export class PdfSigningService {
 
   /** Build a detached CMS/PKCS#7 SignedData from a SHA-256 content digest. */
   private buildPadesCms(messageDigest: Buffer, p12Buffer: Buffer): Buffer {
-    const forge = require("node-forge");
-    const p12Asn1 = forge.asn1.fromDer(p12Buffer.toString("binary"));
-    const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, this.certificatePassword);
-
-    const keyBags = p12.getBags({
-      bagType: forge.pki.oids.pkcs8ShroudedKeyBag,
-    });
-    let privateKey = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag]?.[0]?.key;
-    if (!privateKey) {
-      const fallbackKeyBags = p12.getBags({ bagType: forge.pki.oids.keyBag });
-      privateKey = fallbackKeyBags[forge.pki.oids.keyBag]?.[0]?.key;
-    }
+    const { privateKey, certificates } = readPkcs12(
+      p12Buffer,
+      this.certificatePassword,
+    );
     if (!privateKey) {
       throw new Error("No private key found in P12 certificate");
     }
-
-    const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
-    const allCerts: any[] = (certBags[forge.pki.oids.certBag] || [])
-      .map((bag: any) => bag.cert)
-      .filter((cert: any) => cert != null);
-    if (allCerts.length === 0) {
+    if (privateKey.asymmetricKeyType !== "rsa") {
+      throw new Error("The P12 signing key must be an RSA key");
+    }
+    if (certificates.length === 0) {
       throw new Error("No certificates found in P12 file");
     }
 
-    const signingCert = allCerts.find((cert: any) => {
+    const signingCert = certificates.find((cert) => {
       try {
-        const certPublicKey = forge.pki.publicKeyToPem(cert.publicKey);
-        const privatePublicKey = forge.pki.publicKeyToPem(
-          forge.pki.rsa.setPublicKey(privateKey.n, privateKey.e),
-        );
-        return certPublicKey === privatePublicKey;
+        return cert.x509.checkPrivateKey(privateKey);
       } catch {
         return false;
       }
@@ -434,377 +460,82 @@ export class PdfSigningService {
       );
     }
 
-    const chainCerts = this.buildCertChain(signingCert, allCerts);
+    const chainCerts = this.buildCertChain(signingCert, certificates);
+    const commonName = signingCert.x509.subject.match(/^CN=(.*)$/m)?.[1];
     this.logger.log(
-      `P12 loaded: signing cert "${signingCert.subject.getField("CN")?.value}", ` +
+      `P12 loaded: signing cert "${commonName}", ` +
         `chain depth: ${chainCerts.length}`,
     );
 
-    const signingCertDer = Buffer.from(
-      forge.asn1.toDer(forge.pki.certificateToAsn1(signingCert)).getBytes(),
-      "binary",
-    );
     const certHash = crypto
       .createHash("sha256")
-      .update(signingCertDer)
+      .update(signingCert.der)
       .digest();
 
-    const essCertIdV2 = forge.asn1.create(
-      forge.asn1.Class.UNIVERSAL,
-      forge.asn1.Type.SEQUENCE,
-      true,
-      [
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SEQUENCE,
-          true,
-          [
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.OID,
-              false,
-              forge.asn1.oidToDer("2.16.840.1.101.3.4.2.1").getBytes(),
-            ),
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.NULL,
-              false,
-              "",
-            ),
-          ],
-        ),
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.OCTETSTRING,
-          false,
-          certHash.toString("binary"),
-        ),
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SEQUENCE,
-          true,
-          [
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.SEQUENCE,
-              true,
-              [
-                forge.asn1.create(forge.asn1.Class.CONTEXT_SPECIFIC, 4, true, [
-                  this.dnToAsn1(signingCert.issuer),
-                ]),
-              ],
-            ),
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.INTEGER,
-              false,
-              forge.util.hexToBytes(signingCert.serialNumber),
-            ),
-          ],
-        ),
-      ],
-    );
+    // ESSCertIDv2 with the SHA-256 algorithm written out, and IssuerSerial
+    // pointing at the signing certificate.
+    const essCertIdV2 = asn1.sequence([
+      asn1.algorithm("2.16.840.1.101.3.4.2.1"),
+      asn1.octetString(certHash),
+      asn1.sequence([
+        asn1.sequence([asn1.context(4, [signingCert.issuer])]),
+        asn1.integer(signingCert.serial),
+      ]),
+    ]);
+    const signingCertificateV2Value = asn1.sequence([
+      asn1.sequence([essCertIdV2]),
+    ]);
 
-    const signingCertificateV2Value = forge.asn1.create(
-      forge.asn1.Class.UNIVERSAL,
-      forge.asn1.Type.SEQUENCE,
-      true,
-      [
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SEQUENCE,
-          true,
-          [essCertIdV2],
-        ),
-      ],
-    );
+    const attribute = (oid: string, value: Asn1Node) =>
+      asn1.sequence([asn1.oid(oid), asn1.set([value])]);
+    const signedAttributes = [
+      attribute("1.2.840.113549.1.9.3", asn1.oid("1.2.840.113549.1.7.1")),
+      attribute("1.2.840.113549.1.9.5", asn1.utcTime(new Date())),
+      attribute("1.2.840.113549.1.9.4", asn1.octetString(messageDigest)),
+      attribute("1.2.840.113549.1.9.16.2.47", signingCertificateV2Value),
+    ];
 
-    const signedAttrs = forge.asn1.create(
-      forge.asn1.Class.CONTEXT_SPECIFIC,
-      0,
-      true,
-      [
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SEQUENCE,
-          true,
-          [
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.OID,
-              false,
-              forge.asn1.oidToDer("1.2.840.113549.1.9.3").getBytes(),
-            ),
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.SET,
-              true,
-              [
-                forge.asn1.create(
-                  forge.asn1.Class.UNIVERSAL,
-                  forge.asn1.Type.OID,
-                  false,
-                  forge.asn1.oidToDer("1.2.840.113549.1.7.1").getBytes(),
-                ),
-              ],
-            ),
-          ],
-        ),
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SEQUENCE,
-          true,
-          [
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.OID,
-              false,
-              forge.asn1.oidToDer("1.2.840.113549.1.9.5").getBytes(),
-            ),
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.SET,
-              true,
-              [
-                forge.asn1.create(
-                  forge.asn1.Class.UNIVERSAL,
-                  forge.asn1.Type.UTCTIME,
-                  false,
-                  this.dateToUtcTime(new Date()),
-                ),
-              ],
-            ),
-          ],
-        ),
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SEQUENCE,
-          true,
-          [
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.OID,
-              false,
-              forge.asn1.oidToDer("1.2.840.113549.1.9.4").getBytes(),
-            ),
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.SET,
-              true,
-              [
-                forge.asn1.create(
-                  forge.asn1.Class.UNIVERSAL,
-                  forge.asn1.Type.OCTETSTRING,
-                  false,
-                  messageDigest.toString("binary"),
-                ),
-              ],
-            ),
-          ],
-        ),
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SEQUENCE,
-          true,
-          [
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.OID,
-              false,
-              forge.asn1.oidToDer("1.2.840.113549.1.9.16.2.47").getBytes(),
-            ),
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.SET,
-              true,
-              [signingCertificateV2Value],
-            ),
-          ],
-        ),
-      ],
-    );
+    // The signature covers the attributes encoded as a SET (RFC 5652 5.4).
+    const signedAttrsDer = encodeDer(asn1.set(signedAttributes));
+    const signature = crypto.sign("sha256", signedAttrsDer, privateKey);
 
-    const signedAttrsForDigest = forge.asn1.create(
-      forge.asn1.Class.UNIVERSAL,
-      forge.asn1.Type.SET,
-      true,
-      signedAttrs.value,
-    );
-    const signedAttrsDer = Buffer.from(
-      forge.asn1.toDer(signedAttrsForDigest).getBytes(),
-      "binary",
-    );
-    const md = forge.md.sha256.create();
-    md.update(signedAttrsDer.toString("binary"));
-    const signature = privateKey.sign(md, "RSASSA-PKCS1-V1_5");
-    const certsAsn1 = chainCerts.map((cert: any) =>
-      forge.pki.certificateToAsn1(cert),
-    );
+    const signerInfo = asn1.sequence([
+      asn1.integer(1),
+      asn1.sequence([signingCert.issuer, asn1.integer(signingCert.serial)]),
+      asn1.algorithm("2.16.840.1.101.3.4.2.1"),
+      asn1.context(0, signedAttributes),
+      asn1.algorithm("1.2.840.113549.1.1.11"),
+      asn1.octetString(signature),
+    ]);
 
-    const signerInfoAsn1 = forge.asn1.create(
-      forge.asn1.Class.UNIVERSAL,
-      forge.asn1.Type.SEQUENCE,
-      true,
-      [
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.INTEGER,
-          false,
-          forge.asn1.integerToDer(1).getBytes(),
-        ),
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SEQUENCE,
-          true,
-          [
-            this.dnToAsn1(signingCert.issuer),
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.INTEGER,
-              false,
-              forge.util.hexToBytes(signingCert.serialNumber),
-            ),
-          ],
-        ),
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SEQUENCE,
-          true,
-          [
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.OID,
-              false,
-              forge.asn1.oidToDer("2.16.840.1.101.3.4.2.1").getBytes(),
-            ),
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.NULL,
-              false,
-              "",
-            ),
-          ],
-        ),
-        signedAttrs,
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SEQUENCE,
-          true,
-          [
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.OID,
-              false,
-              forge.asn1.oidToDer("1.2.840.113549.1.1.11").getBytes(),
-            ),
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.NULL,
-              false,
-              "",
-            ),
-          ],
-        ),
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.OCTETSTRING,
-          false,
-          signature,
-        ),
-      ],
-    );
+    const signedData = asn1.sequence([
+      asn1.integer(1),
+      asn1.set([asn1.algorithm("2.16.840.1.101.3.4.2.1")]),
+      asn1.sequence([asn1.oid("1.2.840.113549.1.7.1")]),
+      asn1.context(
+        0,
+        chainCerts.map((cert) => parseDer(cert.der)),
+      ),
+      asn1.set([signerInfo]),
+    ]);
 
-    const signedData = forge.asn1.create(
-      forge.asn1.Class.UNIVERSAL,
-      forge.asn1.Type.SEQUENCE,
-      true,
-      [
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.INTEGER,
-          false,
-          forge.asn1.integerToDer(1).getBytes(),
-        ),
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SET,
-          true,
-          [
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.SEQUENCE,
-              true,
-              [
-                forge.asn1.create(
-                  forge.asn1.Class.UNIVERSAL,
-                  forge.asn1.Type.OID,
-                  false,
-                  forge.asn1.oidToDer("2.16.840.1.101.3.4.2.1").getBytes(),
-                ),
-                forge.asn1.create(
-                  forge.asn1.Class.UNIVERSAL,
-                  forge.asn1.Type.NULL,
-                  false,
-                  "",
-                ),
-              ],
-            ),
-          ],
-        ),
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SEQUENCE,
-          true,
-          [
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.OID,
-              false,
-              forge.asn1.oidToDer("1.2.840.113549.1.7.1").getBytes(),
-            ),
-          ],
-        ),
-        forge.asn1.create(
-          forge.asn1.Class.CONTEXT_SPECIFIC,
-          0,
-          true,
-          certsAsn1,
-        ),
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SET,
-          true,
-          [signerInfoAsn1],
-        ),
-      ],
+    return encodeDer(
+      asn1.sequence([
+        asn1.oid("1.2.840.113549.1.7.2"),
+        asn1.context(0, [signedData]),
+      ]),
     );
-
-    const contentInfo = forge.asn1.create(
-      forge.asn1.Class.UNIVERSAL,
-      forge.asn1.Type.SEQUENCE,
-      true,
-      [
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.OID,
-          false,
-          forge.asn1.oidToDer("1.2.840.113549.1.7.2").getBytes(),
-        ),
-        forge.asn1.create(forge.asn1.Class.CONTEXT_SPECIFIC, 0, true, [
-          signedData,
-        ]),
-      ],
-    );
-
-    return Buffer.from(forge.asn1.toDer(contentInfo).getBytes(), "binary");
   }
 
   /**
    * Build an ordered certificate chain from signingCert up to root.
    * Returns [signingCert, intermediate(s)..., root] if available.
    */
-  private buildCertChain(signingCert: any, allCerts: any[]): any[] {
-    const chain: any[] = [signingCert];
+  private buildCertChain(
+    signingCert: ParsedCertificate,
+    allCerts: ParsedCertificate[],
+  ): ParsedCertificate[] {
+    const chain: ParsedCertificate[] = [signingCert];
     const maxDepth = 10;
 
     let current = signingCert;
@@ -813,39 +544,17 @@ export class PdfSigningService {
       const issuer = allCerts.find(
         (c) =>
           c !== current &&
-          c.subject.hash === current.issuer.hash &&
+          c.subjectDer.equals(current.issuerDer) &&
           !chain.includes(c),
       );
       if (!issuer) break;
       chain.push(issuer);
       // Self-signed root = stop
-      if (issuer.subject.hash === issuer.issuer.hash) break;
+      if (issuer.subjectDer.equals(issuer.issuerDer)) break;
       current = issuer;
     }
 
     return chain;
-  }
-
-  /**
-   * Convert a forge Distinguished Name to ASN.1 (for use in IssuerSerial).
-   */
-  private dnToAsn1(dn: any): any {
-    const forge = require("node-forge");
-    // forge provides a utility to convert a DN to ASN.1
-    return forge.pki.distinguishedNameToAsn1(dn);
-  }
-
-  /**
-   * Format a Date as ASN.1 UTCTime string (YYMMDDHHMMSSZ).
-   */
-  private dateToUtcTime(date: Date): string {
-    const y = date.getUTCFullYear().toString().slice(-2);
-    const m = (date.getUTCMonth() + 1).toString().padStart(2, "0");
-    const d = date.getUTCDate().toString().padStart(2, "0");
-    const h = date.getUTCHours().toString().padStart(2, "0");
-    const min = date.getUTCMinutes().toString().padStart(2, "0");
-    const s = date.getUTCSeconds().toString().padStart(2, "0");
-    return `${y}${m}${d}${h}${min}${s}Z`;
   }
 
   /**
@@ -882,16 +591,7 @@ export class PdfSigningService {
     // CMS from placeholder padding. Trimming 0x00 bytes would be unsafe: a
     // legitimate signature value may itself end with 0x00.
     const derWithPadding = Buffer.from(hexSignature, "hex");
-    const forge = require("node-forge");
-    const derReader = forge.util.createBuffer(
-      derWithPadding.toString("binary"),
-    );
-    forge.asn1.fromDer(derReader, {
-      strict: true,
-      parseAllBytes: false,
-      decodeBitStrings: true,
-    });
-    const cmsLength = derWithPadding.length - derReader.length();
+    const { length: cmsLength } = parseDerPrefix(derWithPadding);
     if (cmsLength <= 0) throw new Error("Empty CMS in PDF /Contents");
     const derCms = derWithPadding.subarray(0, cmsLength);
 
@@ -930,26 +630,20 @@ export class PdfSigningService {
     derCms: Buffer,
     timestampContext?: TimestampContext,
   ): Promise<Buffer> {
-    const forge = require("node-forge");
-    const contentInfo = forge.asn1.fromDer(derCms.toString("binary"));
-    const signedDataContent = contentInfo.value[1];
-    const signedData = signedDataContent.value[0];
-    const signerInfosSet = signedData.value[signedData.value.length - 1];
-    const signerInfo = signerInfosSet.value[0];
+    const contentInfo = parseDer(derCms);
+    const signedData = children(children(contentInfo)[1])[0];
+    const signerInfos = children(signedData);
+    const signerInfo = children(signerInfos[signerInfos.length - 1])[0];
+    const signerInfoFields = children(signerInfo);
 
-    let signatureValue: any = null;
-    for (let i = 0; i < signerInfo.value.length; i++) {
-      const item = signerInfo.value[i];
-      if (item.type === forge.asn1.Type.OCTETSTRING && i >= 4) {
-        signatureValue = item;
-        break;
-      }
-    }
+    const signatureValue = signerInfoFields.find(
+      (item, index) => index >= 4 && isUniversal(item, Asn1Type.OCTETSTRING),
+    );
     if (!signatureValue) {
       throw new Error("Cannot find signature value in CMS SignerInfo");
     }
 
-    const signatureBytes = Buffer.from(signatureValue.value, "binary");
+    const signatureBytes = readOctets(signatureValue);
     const messageImprint = crypto
       .createHash("sha256")
       .update(signatureBytes)
@@ -962,51 +656,28 @@ export class PdfSigningService {
       throw new Error("TSA returned no response");
     }
 
-    const tsaAsn1 = forge.asn1.fromDer(tsaResponse.toString("binary"));
-    const statusInfo = tsaAsn1.value[0];
-    const statusValue = forge.asn1.derToInteger(statusInfo.value[0].value);
+    const tsaAsn1 = children(parseDer(tsaResponse));
+    const statusValue = readSmallInteger(children(tsaAsn1[0])[0]);
     if (statusValue !== 0 && statusValue !== 1) {
       throw new Error(`TSA returned non-granted status: ${statusValue}`);
     }
-    if (tsaAsn1.value.length < 2) {
+    if (tsaAsn1.length < 2) {
       throw new Error("TSA response missing TimeStampToken");
     }
 
-    const timestampAttr = forge.asn1.create(
-      forge.asn1.Class.UNIVERSAL,
-      forge.asn1.Type.SEQUENCE,
-      true,
-      [
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.OID,
-          false,
-          forge.asn1.oidToDer("1.2.840.113549.1.9.16.2.14").getBytes(),
-        ),
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SET,
-          true,
-          [tsaAsn1.value[1]],
-        ),
-      ],
-    );
+    const timestampAttr = asn1.sequence([
+      asn1.oid("1.2.840.113549.1.9.16.2.14"),
+      asn1.set([tsaAsn1[1]]),
+    ]);
 
-    const lastItem = signerInfo.value[signerInfo.value.length - 1];
-    const hasUnsignedAttrs =
-      lastItem.tagClass === forge.asn1.Class.CONTEXT_SPECIFIC &&
-      lastItem.type === 1;
-    if (hasUnsignedAttrs) {
-      lastItem.value.push(timestampAttr);
+    const lastItem = signerInfoFields[signerInfoFields.length - 1];
+    if (isContext(lastItem, 1)) {
+      children(lastItem).push(timestampAttr);
     } else {
-      signerInfo.value.push(
-        forge.asn1.create(forge.asn1.Class.CONTEXT_SPECIFIC, 1, true, [
-          timestampAttr,
-        ]),
-      );
+      signerInfoFields.push(asn1.context(1, [timestampAttr]));
     }
 
-    return Buffer.from(forge.asn1.toDer(contentInfo).getBytes(), "binary");
+    return encodeDer(contentInfo);
   }
 
   /**
@@ -1143,86 +814,24 @@ export class PdfSigningService {
       );
     }
 
-    const forge = require("node-forge");
     const nonce = crypto.randomBytes(8);
     // DER INTEGER is signed; keep this random 64-bit nonce positive and
     // non-zero so the exact value can be compared with TSTInfo.nonce.
     nonce[0] &= 0x7f;
     if (nonce.every((byte) => byte === 0)) nonce[nonce.length - 1] = 1;
 
-    const messageImprintAsn1 = forge.asn1.create(
-      forge.asn1.Class.UNIVERSAL,
-      forge.asn1.Type.SEQUENCE,
-      true,
-      [
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SEQUENCE,
-          true,
-          [
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.OID,
-              false,
-              forge.asn1.oidToDer("2.16.840.1.101.3.4.2.1").getBytes(),
-            ),
-            forge.asn1.create(
-              forge.asn1.Class.UNIVERSAL,
-              forge.asn1.Type.NULL,
-              false,
-              "",
-            ),
-          ],
-        ),
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.OCTETSTRING,
-          false,
-          messageImprint.toString("binary"),
-        ),
-      ],
-    );
-    const tsReq = forge.asn1.create(
-      forge.asn1.Class.UNIVERSAL,
-      forge.asn1.Type.SEQUENCE,
-      true,
-      [
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.INTEGER,
-          false,
-          forge.asn1.integerToDer(1).getBytes(),
-        ),
-        messageImprintAsn1,
-        ...(this.tsaPolicyOid
-          ? [
-              forge.asn1.create(
-                forge.asn1.Class.UNIVERSAL,
-                forge.asn1.Type.OID,
-                false,
-                forge.asn1.oidToDer(this.tsaPolicyOid).getBytes(),
-              ),
-            ]
-          : []),
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.INTEGER,
-          false,
-          nonce.toString("binary"),
-        ),
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.BOOLEAN,
-          false,
-          String.fromCharCode(0xff),
-        ),
-      ],
-    );
+    const tsReq = asn1.sequence([
+      asn1.integer(1),
+      asn1.sequence([
+        asn1.algorithm("2.16.840.1.101.3.4.2.1"),
+        asn1.octetString(messageImprint),
+      ]),
+      ...(this.tsaPolicyOid ? [asn1.oid(this.tsaPolicyOid)] : []),
+      asn1.integer(nonce),
+      asn1.boolean(true),
+    ]);
 
-    return {
-      body: Buffer.from(forge.asn1.toDer(tsReq).getBytes(), "binary"),
-      nonce,
-    };
+    return { body: encodeDer(tsReq), nonce };
   }
 
   /**
@@ -1242,58 +851,51 @@ export class PdfSigningService {
     generatedAt: Date;
     certificateFingerprintSha256: string;
   } {
-    const forge = require("node-forge");
-    const asn1 = forge.asn1.fromDer(response.toString("binary"), true);
+    const timeStampResp = parseDer(response);
+    const respFields = children(timeStampResp);
     if (
-      asn1.tagClass !== forge.asn1.Class.UNIVERSAL ||
-      asn1.type !== forge.asn1.Type.SEQUENCE ||
-      !Array.isArray(asn1.value) ||
-      asn1.value.length !== 2
+      !isUniversal(timeStampResp, Asn1Type.SEQUENCE) ||
+      respFields.length !== 2
     ) {
       throw new Error("Invalid RFC 3161 TimeStampResp structure");
     }
 
-    const statusInfo = asn1.value[0];
-    const status = forge.asn1.derToInteger(statusInfo.value?.[0]?.value);
+    const status = readSmallInteger(children(respFields[0])[0]);
     if (status !== 0 && status !== 1) {
       throw new Error(`TSA returned non-granted status: ${status}`);
     }
 
-    const contentInfo = asn1.value[1];
-    const contentType = this.asn1Oid(contentInfo.value?.[0]);
-    if (contentType !== "1.2.840.113549.1.7.2") {
+    const contentInfo = children(respFields[1]);
+    if (readOid(contentInfo[0]) !== "1.2.840.113549.1.7.2") {
       throw new Error("TimeStampToken is not CMS SignedData");
     }
 
-    const signedData = contentInfo.value?.[1]?.value?.[0];
-    if (!signedData || !Array.isArray(signedData.value)) {
+    const signedData = children(children(contentInfo[1])[0]);
+    if (signedData.length === 0) {
       throw new Error("TimeStampToken SignedData is missing");
     }
 
-    const encapContentInfo = signedData.value[2];
-    if (
-      this.asn1Oid(encapContentInfo?.value?.[0]) !== "1.2.840.113549.1.9.16.1.4"
-    ) {
+    const encapContentInfo = children(signedData[2]);
+    if (readOid(encapContentInfo[0]) !== "1.2.840.113549.1.9.16.1.4") {
       throw new Error("TimeStampToken eContentType is not id-ct-TSTInfo");
     }
-    const eContent = encapContentInfo?.value?.[1]?.value?.[0];
-    const tstInfoDer = this.asn1Octets(eContent);
+    const tstInfoDer = readOctets(children(encapContentInfo[1])[0]);
     if (tstInfoDer.length === 0)
       throw new Error("TimeStampToken TSTInfo is empty");
 
-    const tstInfo = forge.asn1.fromDer(tstInfoDer.toString("binary"), true);
-    if (forge.asn1.derToInteger(tstInfo.value?.[0]?.value) !== 1) {
+    const tstInfo = children(parseDer(tstInfoDer));
+    if (readSmallInteger(tstInfo[0]) !== 1) {
       throw new Error("Unsupported TSTInfo version");
     }
-    const policyOid = this.asn1Oid(tstInfo.value?.[1]);
+    const policyOid = readOid(tstInfo[1]);
     if (this.tsaPolicyOid && policyOid !== this.tsaPolicyOid) {
       throw new Error(
         `TSTInfo policy ${policyOid} does not match requested policy ${this.tsaPolicyOid}`,
       );
     }
-    const imprint = tstInfo.value?.[2];
-    const imprintAlgorithm = this.asn1Oid(imprint?.value?.[0]?.value?.[0]);
-    const returnedImprint = this.asn1Octets(imprint?.value?.[1]);
+    const imprint = children(tstInfo[2]);
+    const imprintAlgorithm = readOid(children(imprint[0])[0]);
+    const returnedImprint = readOctets(imprint[1]);
     if (imprintAlgorithm !== "2.16.840.1.101.3.4.2.1") {
       throw new Error(
         `Unexpected TSTInfo messageImprint algorithm: ${imprintAlgorithm}`,
@@ -1306,26 +908,18 @@ export class PdfSigningService {
       throw new Error("TSTInfo messageImprint does not match the request");
     }
 
-    const serialNumber = this.normalizedIntegerHex(tstInfo.value?.[3]?.value);
-    const generatedAt = forge.asn1.generalizedTimeToDate(
-      tstInfo.value?.[4]?.value,
-    );
-    if (!(generatedAt instanceof Date) || Number.isNaN(generatedAt.getTime())) {
+    const serialNumber = this.normalizedIntegerHex(readOctets(tstInfo[3]));
+    if (!isUniversal(tstInfo[4], Asn1Type.GENERALIZEDTIME)) {
       throw new Error("Invalid TSTInfo genTime");
     }
+    const generatedAt = readTime(tstInfo[4]);
 
-    const nonceNode = (tstInfo.value as any[])
+    const nonceNode = tstInfo
       .slice(5)
-      .find(
-        (node: any) =>
-          node.tagClass === forge.asn1.Class.UNIVERSAL &&
-          node.type === forge.asn1.Type.INTEGER,
-      );
+      .find((node) => isUniversal(node, Asn1Type.INTEGER));
     if (!nonceNode) throw new Error("TSTInfo nonce is missing");
-    const returnedNonce = this.normalizedIntegerBytes(nonceNode.value);
-    const normalizedExpectedNonce = this.normalizedIntegerBytes(
-      expectedNonce.toString("binary"),
-    );
+    const returnedNonce = this.normalizedIntegerBytes(readOctets(nonceNode));
+    const normalizedExpectedNonce = this.normalizedIntegerBytes(expectedNonce);
     if (
       returnedNonce.length !== normalizedExpectedNonce.length ||
       !crypto.timingSafeEqual(returnedNonce, normalizedExpectedNonce)
@@ -1333,43 +927,36 @@ export class PdfSigningService {
       throw new Error("TSTInfo nonce does not match the request");
     }
 
-    const signerInfos = signedData.value[signedData.value.length - 1];
+    const signerInfos = signedData[signedData.length - 1];
     if (
-      signerInfos?.tagClass !== forge.asn1.Class.UNIVERSAL ||
-      signerInfos?.type !== forge.asn1.Type.SET ||
-      signerInfos.value?.length !== 1
+      !isUniversal(signerInfos, Asn1Type.SET) ||
+      children(signerInfos).length !== 1
     ) {
       throw new Error("TimeStampToken must contain exactly one TSA signature");
     }
 
-    const certificates = signedData.value.find(
-      (node: any, index: number) =>
-        index > 2 &&
-        node.tagClass === forge.asn1.Class.CONTEXT_SPECIFIC &&
-        node.type === 0,
+    const certificates = signedData.find(
+      (node, index) =>
+        index > 2 && isContext(node, 0) && Array.isArray(node.value),
     );
-    if (!certificates || !Array.isArray(certificates.value)) {
+    if (!certificates) {
       throw new Error("TSA certificate is missing despite certReq=true");
     }
 
-    const signerInfo = signerInfos.value[0];
-    const signedAttributes = signerInfo.value?.[3];
-    if (
-      signedAttributes?.tagClass !== forge.asn1.Class.CONTEXT_SPECIFIC ||
-      signedAttributes?.type !== 0
-    ) {
+    const signerInfo = children(children(signerInfos)[0]);
+    const signedAttributes = signerInfo[3];
+    if (!isContext(signedAttributes, 0)) {
       throw new Error("TSA SignerInfo signed attributes are missing");
     }
 
-    const digestAlgorithmOid = this.asn1Oid(signerInfo.value?.[2]?.value?.[0]);
+    const digestAlgorithmOid = readOid(children(signerInfo[2])[0]);
     const digestName = this.digestNameForOid(digestAlgorithmOid);
     const contentTypeAttribute = this.findCmsAttribute(
       signedAttributes,
       "1.2.840.113549.1.9.3",
     );
     if (
-      this.asn1Oid(contentTypeAttribute?.value?.[0]) !==
-      "1.2.840.113549.1.9.16.1.4"
+      readOid(children(contentTypeAttribute)[0]) !== "1.2.840.113549.1.9.16.1.4"
     ) {
       throw new Error("TSA signed content-type attribute is invalid");
     }
@@ -1377,9 +964,7 @@ export class PdfSigningService {
       signedAttributes,
       "1.2.840.113549.1.9.4",
     );
-    const signedMessageDigest = this.asn1Octets(
-      messageDigestAttribute?.value?.[0],
-    );
+    const signedMessageDigest = readOctets(children(messageDigestAttribute)[0]);
     const expectedContentDigest = crypto
       .createHash(digestName)
       .update(tstInfoDer)
@@ -1391,72 +976,43 @@ export class PdfSigningService {
       throw new Error("TSA signed message-digest attribute is invalid");
     }
 
-    const certificateEntries = certificates.value.filter(
-      (node: any) =>
-        node.tagClass === forge.asn1.Class.UNIVERSAL &&
-        node.type === forge.asn1.Type.SEQUENCE,
-    );
+    const certificateEntries = children(certificates)
+      .filter((node) => isUniversal(node, Asn1Type.SEQUENCE))
+      .map((node) => parseCertificate(encodeDer(node)));
     if (certificateEntries.length === 0)
       throw new Error("No X.509 TSA certificate found");
 
-    const sid = signerInfo.value?.[1];
+    const sid = signerInfo[1];
     let candidates = certificateEntries;
-    let sidSerial = "";
-    if (
-      sid?.tagClass === forge.asn1.Class.UNIVERSAL &&
-      sid?.type === forge.asn1.Type.SEQUENCE &&
-      sid.value?.[1]
-    ) {
-      sidSerial = this.normalizedIntegerHex(sid.value[1].value);
-      candidates = certificateEntries.filter((certificateAsn1: any) => {
-        const certificate = forge.pki.certificateFromAsn1(certificateAsn1);
-        // Compare ASN.1 INTEGER values byte-for-byte after removing only
-        // sign-padding bytes. Do not strip hexadecimal characters: a valid
-        // serial such as 01ab... must not become 1ab....
-        const certificateSerial = this.normalizedIntegerHex(
-          forge.util.hexToBytes(certificate.serialNumber),
-        );
-        return certificateSerial === sidSerial;
-      });
+    if (isUniversal(sid, Asn1Type.SEQUENCE) && children(sid)[1]) {
+      // Compare ASN.1 INTEGER values byte-for-byte after removing only
+      // sign-padding bytes. Do not strip hexadecimal characters: a valid
+      // serial such as 01ab... must not become 1ab....
+      const sidSerial = this.normalizedIntegerHex(readOctets(children(sid)[1]));
+      candidates = certificateEntries.filter(
+        (certificate) =>
+          this.normalizedIntegerHex(certificate.serial) === sidSerial,
+      );
     }
     if (candidates.length === 0)
       throw new Error("TSA signing certificate not found");
 
-    const signedAttributesDer = Buffer.from(
-      forge.asn1
-        .toDer(
-          forge.asn1.create(
-            forge.asn1.Class.UNIVERSAL,
-            forge.asn1.Type.SET,
-            true,
-            signedAttributes.value,
-          ),
-        )
-        .getBytes(),
-      "binary",
-    );
-    const signatureAlgorithmOid = this.asn1Oid(
-      signerInfo.value?.[4]?.value?.[0],
-    );
-    const signature = this.asn1Octets(signerInfo.value?.[5]);
+    const signedAttributesDer = encodeDer(asn1.set(children(signedAttributes)));
+    const signatureAlgorithmOid = readOid(children(signerInfo[4])[0]);
+    const signature = readOctets(signerInfo[5]);
 
-    let verifiedCertificateAsn1: any = null;
-    let verifiedCertificate: any = null;
+    let verifiedCertificate: ParsedCertificate | null = null;
     for (const candidate of candidates) {
-      const certificateDer = Buffer.from(
-        forge.asn1.toDer(candidate).getBytes(),
-        "binary",
-      );
-      const x509 = new crypto.X509Certificate(certificateDer);
-      if (this.hasUnsafeRsaPublicExponent(x509.publicKey)) continue;
+      const publicKey = candidate.x509.publicKey;
+      if (this.hasUnsafeRsaPublicExponent(publicKey)) continue;
       const verificationKey =
         signatureAlgorithmOid === "1.2.840.113549.1.1.10"
           ? {
-              key: x509.publicKey,
+              key: publicKey,
               padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
               saltLength: crypto.constants.RSA_PSS_SALTLEN_AUTO,
             }
-          : x509.publicKey;
+          : publicKey;
       if (
         crypto.verify(
           digestName,
@@ -1465,50 +1021,45 @@ export class PdfSigningService {
           signature,
         )
       ) {
-        if (verifiedCertificateAsn1) {
+        if (verifiedCertificate) {
           throw new Error("Ambiguous TSA signing certificate");
         }
-        verifiedCertificateAsn1 = candidate;
-        verifiedCertificate = forge.pki.certificateFromAsn1(candidate);
+        verifiedCertificate = candidate;
       }
     }
-    if (!verifiedCertificateAsn1 || !verifiedCertificate) {
+    if (!verifiedCertificate) {
       throw new Error("TSA CMS signature verification failed");
     }
 
+    const timeStampingEku = "1.3.6.1.5.5.7.3.8";
     const ekuExtensions = verifiedCertificate.extensions.filter(
-      (extension: any) => extension.name === "extKeyUsage",
+      (extension) => extension.oid === "2.5.29.37",
     );
     const eku = ekuExtensions[0];
-    const ekuPurposes = eku
-      ? Object.entries(eku)
-          .filter(([key, value]) => value === true && key !== "critical")
-          .map(([key]) => key)
-      : [];
+    const ekuPurposes = eku ? children(parseDer(eku.value)).map(readOid) : [];
     if (
       ekuExtensions.length !== 1 ||
       eku.critical !== true ||
-      eku.timeStamping !== true ||
-      ekuPurposes.some((purpose: string) => purpose !== "timeStamping")
+      !ekuPurposes.includes(timeStampingEku) ||
+      ekuPurposes.some((purpose) => purpose !== timeStampingEku)
     ) {
       throw new Error(
         "TSA certificate lacks the exclusive critical timeStamping EKU",
       );
     }
     if (
-      generatedAt < verifiedCertificate.validity.notBefore ||
-      generatedAt > verifiedCertificate.validity.notAfter
+      generatedAt < verifiedCertificate.notBefore ||
+      generatedAt > verifiedCertificate.notAfter
     ) {
       throw new Error(
         "TSTInfo genTime is outside the TSA certificate validity period",
       );
     }
 
-    const certificateDer = Buffer.from(
-      forge.asn1.toDer(verifiedCertificateAsn1).getBytes(),
-      "binary",
+    this.verifyEssCertificateIdentifier(
+      signedAttributes,
+      verifiedCertificate.der,
     );
-    this.verifyEssCertificateIdentifier(signedAttributes, certificateDer);
     this.verifyTimestampCertificateTrust(
       verifiedCertificate,
       certificateEntries,
@@ -1521,48 +1072,40 @@ export class PdfSigningService {
       generatedAt,
       certificateFingerprintSha256: crypto
         .createHash("sha256")
-        .update(certificateDer)
+        .update(verifiedCertificate.der)
         .digest("hex"),
     };
   }
 
   private verifyTimestampCertificateTrust(
-    signerCertificate: any,
-    certificateEntries: any[],
+    signerCertificate: ParsedCertificate,
+    certificates: ParsedCertificate[],
     generatedAt: Date,
   ): void {
     if (this.tsaTrustedCertFingerprints.size === 0) return;
 
-    const forge = require("node-forge");
-    const certificates = certificateEntries.map((entry: any) =>
-      forge.pki.certificateFromAsn1(entry),
-    );
     let current = signerCertificate;
     const visited = new Set<string>();
 
     for (let depth = 0; depth < 10; depth++) {
-      const der = Buffer.from(
-        forge.asn1.toDer(forge.pki.certificateToAsn1(current)).getBytes(),
-        "binary",
-      );
-      const fingerprint = crypto.createHash("sha256").update(der).digest("hex");
+      const fingerprint = crypto
+        .createHash("sha256")
+        .update(current.der)
+        .digest("hex");
       if (visited.has(fingerprint)) break;
       visited.add(fingerprint);
 
-      if (
-        generatedAt < current.validity.notBefore ||
-        generatedAt > current.validity.notAfter
-      ) {
+      if (generatedAt < current.notBefore || generatedAt > current.notAfter) {
         throw new Error(
           "TSA certificate chain was not valid at TSTInfo genTime",
         );
       }
       if (this.tsaTrustedCertFingerprints.has(fingerprint)) return;
 
-      const issuer = certificates.find((candidate: any) => {
+      const issuer = certificates.find((candidate) => {
         if (
           candidate === current ||
-          candidate.subject.hash !== current.issuer.hash
+          !candidate.subjectDer.equals(current.issuerDer)
         ) {
           return false;
         }
@@ -1578,31 +1121,18 @@ export class PdfSigningService {
   }
 
   /**
-   * Never use node-forge's PKCS#1 v1.5 verifier here. CVE-2026-85393 allows
-   * forged signatures for RSA keys whose public exponent is 3. OpenSSL both
-   * performs strict DigestInfo validation and gives us a second explicit
-   * policy boundary against low-exponent RSA certificates.
+   * Certificate signatures are checked by OpenSSL, whose PKCS#1 v1.5 verifier
+   * rejects malformed DigestInfo values (the CVE-2026-85393 forgery shape).
+   * RSA keys whose public exponent is 3 are refused as a second, explicit
+   * policy boundary against low-exponent forgeries.
    */
   private verifyCertificateSignatureWithOpenSsl(
-    certificate: any,
-    issuer: any,
+    certificate: ParsedCertificate,
+    issuer: ParsedCertificate,
   ): boolean {
-    const forge = require("node-forge");
     try {
-      const certificateX509 = new crypto.X509Certificate(
-        Buffer.from(
-          forge.asn1.toDer(forge.pki.certificateToAsn1(certificate)).getBytes(),
-          "binary",
-        ),
-      );
-      const issuerX509 = new crypto.X509Certificate(
-        Buffer.from(
-          forge.asn1.toDer(forge.pki.certificateToAsn1(issuer)).getBytes(),
-          "binary",
-        ),
-      );
-      if (this.hasUnsafeRsaPublicExponent(issuerX509.publicKey)) return false;
-      return certificateX509.verify(issuerX509.publicKey);
+      if (this.hasUnsafeRsaPublicExponent(issuer.x509.publicKey)) return false;
+      return certificate.x509.verify(issuer.x509.publicKey);
     } catch {
       return false;
     }
@@ -1616,54 +1146,53 @@ export class PdfSigningService {
     );
   }
 
-  private findCmsAttribute(signedAttributes: any, oid: string): any {
-    const attribute = signedAttributes.value?.find(
-      (candidate: any) => this.asn1Oid(candidate.value?.[0]) === oid,
+  private findCmsAttribute(signedAttributes: Asn1Node, oid: string): Asn1Node {
+    const attribute = children(signedAttributes).find(
+      (candidate) => readOid(children(candidate)[0]) === oid,
     );
-    if (!attribute?.value?.[1])
-      throw new Error(`Required CMS attribute missing: ${oid}`);
-    return attribute.value[1];
+    const values = children(attribute)[1];
+    if (!values) throw new Error(`Required CMS attribute missing: ${oid}`);
+    return values;
   }
 
   private verifyEssCertificateIdentifier(
-    signedAttributes: any,
+    signedAttributes: Asn1Node,
     certificateDer: Buffer,
   ): void {
-    const forge = require("node-forge");
-    const v1 = signedAttributes.value?.find(
-      (candidate: any) =>
-        this.asn1Oid(candidate.value?.[0]) === "1.2.840.113549.1.9.16.2.12",
-    );
-    const v2 = signedAttributes.value?.find(
-      (candidate: any) =>
-        this.asn1Oid(candidate.value?.[0]) === "1.2.840.113549.1.9.16.2.47",
-    );
+    const attribute = (oid: string) =>
+      children(signedAttributes).find(
+        (candidate) => readOid(children(candidate)[0]) === oid,
+      );
+    const v1 = attribute("1.2.840.113549.1.9.16.2.12");
+    const v2 = attribute("1.2.840.113549.1.9.16.2.47");
     if (!v1 && !v2)
       throw new Error("TSA SigningCertificate/ESSCertID attribute is missing");
 
+    // Attribute -> SET -> SigningCertificate(V2) -> certs -> first ESSCertID.
+    const firstEssCertId = (signingCertificate: Asn1Node) =>
+      children(children(children(children(signingCertificate)[1])[0])[0])[0];
+
     let hashName = "sha1";
-    let hashNode: any;
+    let hashNode: Asn1Node | undefined;
     if (v2) {
-      const essCertId = v2.value?.[1]?.value?.[0]?.value?.[0]?.value?.[0];
-      if (!essCertId)
+      const essCertId = children(firstEssCertId(v2));
+      if (essCertId.length === 0)
         throw new Error("Malformed TSA SigningCertificateV2 attribute");
-      if (essCertId.value?.[0]?.type === forge.asn1.Type.SEQUENCE) {
-        hashName = this.digestNameForOid(
-          this.asn1Oid(essCertId.value[0].value?.[0]),
-        );
-        hashNode = essCertId.value[1];
+      if (essCertId[0]?.type === Asn1Type.SEQUENCE) {
+        hashName = this.digestNameForOid(readOid(children(essCertId[0])[0]));
+        hashNode = essCertId[1];
       } else {
         hashName = "sha256";
-        hashNode = essCertId.value?.[0];
+        hashNode = essCertId[0];
       }
     } else {
-      const essCertId = v1.value?.[1]?.value?.[0]?.value?.[0]?.value?.[0];
-      if (!essCertId)
+      const essCertId = children(firstEssCertId(v1));
+      if (essCertId.length === 0)
         throw new Error("Malformed TSA SigningCertificate attribute");
-      hashNode = essCertId.value?.[0];
+      hashNode = essCertId[0];
     }
 
-    const returnedHash = this.asn1Octets(hashNode);
+    const returnedHash = readOctets(hashNode);
     const expectedHash = crypto
       .createHash(hashName)
       .update(certificateDer)
@@ -1691,32 +1220,13 @@ export class PdfSigningService {
     return digestName;
   }
 
-  private asn1Oid(node: any): string {
-    if (!node || typeof node.value !== "string") return "";
-    const forge = require("node-forge");
-    return forge.asn1.derToOid(node.value);
-  }
-
-  private asn1Octets(node: any): Buffer {
-    if (!node) return Buffer.alloc(0);
-    if (typeof node.value === "string")
-      return Buffer.from(node.value, "binary");
-    if (Array.isArray(node.value)) {
-      return Buffer.concat(
-        node.value.map((child: any) => this.asn1Octets(child)),
-      );
-    }
-    return Buffer.alloc(0);
-  }
-
-  private normalizedIntegerBytes(value: string): Buffer {
-    const bytes = Buffer.from(value || "", "binary");
+  private normalizedIntegerBytes(value: Buffer): Buffer {
     let offset = 0;
-    while (offset < bytes.length - 1 && bytes[offset] === 0) offset++;
-    return bytes.subarray(offset);
+    while (offset < value.length - 1 && value[offset] === 0) offset++;
+    return value.subarray(offset);
   }
 
-  private normalizedIntegerHex(value: string): string {
+  private normalizedIntegerHex(value: Buffer): string {
     return this.normalizedIntegerBytes(value).toString("hex").toLowerCase();
   }
 

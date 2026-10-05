@@ -443,7 +443,7 @@ export default {
   "admin.config.oauth.oidc-discovery-uri": "OpenID Connect Discovery URI",
   "admin.config.oauth.oidc-discovery-uri.description": "URI di scoperta dell'app OAuth di OpenID Connect",
   "admin.config.oauth.oidc-sign-out": "Esci da OpenID Connect",
-  "admin.config.oauth.oidc-sign-out.description": "Se premuto, il pulsante “Disconnettersi” disconnetterà dal provider OpenID Connect",
+  "admin.config.oauth.oidc-sign-out.description": "Se premuto, il pulsante 'Disconnettersi' disconnetterà dal provider OpenID Connect",
   "admin.config.oauth.oidc-scope": "Ambito di OpenID Connect",
   "admin.config.oauth.oidc-scope.description": "Ambiti che dovrebbero essere richiesti al provider OpenID.",
   "admin.config.oauth.oidc-username-claim": "Richiesta nome utente OpenID Connect",
@@ -472,7 +472,7 @@ export default {
   "admin.config.ldap.search-query": "Interrogazione utente",
   "admin.config.ldap.search-query.description": "La query utente verrà utilizzata per cercare la 'base utente' per l'utente LDAP. %username% può essere usato come segnaposto per l'input dato dall'utente.",
   "admin.config.ldap.admin-groups": "Gruppo di amministrazione",
-  "admin.config.ldap.admin-groups.description": "Gruppo richiesto per l’accesso amministrativo.",
+  "admin.config.ldap.admin-groups.description": "Gruppo richiesto per l'accesso amministrativo.",
   "admin.config.ldap.field-name-member-of": "Nome dell'attributo per il gruppo utenti",
   "admin.config.ldap.field-name-member-of.description": "Nome attributo LDAP per i gruppi, di cui un utente è membro. Questo viene utilizzato per controllare il gruppo amministratore.",
   "admin.config.ldap.field-name-email": "Nome dell'attributo email dell'utente",
@@ -529,16 +529,16 @@ export default {
     "PBKDF2/SHA-256 is recommended: it is bundled, broadly compatible, and faster than SHA-384 or SHA-512 for this use case.",
   "admin.config.altcha.cost": "Cost",
   "admin.config.altcha.cost.description":
-    "PBKDF2 cost per attempt. 5000 is the recommended default; tune user friction mostly with effort.",
+    "PBKDF2 cost per attempt. 5000 is the recommended default, tune user friction mostly with effort.",
   "admin.config.altcha.effort": "Effort",
   "admin.config.altcha.effort.description":
-    "Average number of counters the browser must test. 250 is a good default; increase gradually if you need more resistance.",
+    "Average number of counters the browser must test. 250 is a good default, increase gradually if you need more resistance.",
   "admin.config.altcha.expires-in-seconds": "Challenge expiration",
   "admin.config.altcha.expires-in-seconds.description":
     "Challenge validity in seconds. Short lifetimes limit token reuse windows.",
   "admin.config.altcha.hmac-key": "HMAC key",
   "admin.config.altcha.hmac-key.description":
-    "Server-side secret used to sign and verify challenges. A strong key is generated automatically; rotate only when needed.",
+    "Server-side secret used to sign and verify challenges. A strong key is generated automatically, rotate only when needed.",
   "admin.config.altcha.type": "Interaction type",
   "admin.config.altcha.type.description":
     "Widget interaction control: checkbox, native checkbox, or switch.",

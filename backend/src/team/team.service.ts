@@ -1,4 +1,12 @@
 import {
+  coveredRotationMetadata,
+  readRotationMetadataUpdates,
+} from "./team-rotation-metadata.util";
+import {
+  isValidEncryptedShareInfo,
+  isValidEncryptedFileRequestInfo,
+} from "src/file/file-metadata-scheme";
+import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -27,6 +35,7 @@ import {
   CreateGuestLinkDTO,
   StartTeamKeyRotationDTO,
   UpdateTeamKeyRotationProgressDTO,
+  RotateTeamMetadataDTO,
 } from "./dto/team.dto";
 
 export const parseConfiguredLimit = (
@@ -94,6 +103,38 @@ if (
   throw new Error(
     "Team limit environment variables must be valid non-negative numbers",
   );
+}
+
+// Team files keep their name encrypted with K_team when uploaded under
+// FILE_META_V1: the client needs the ciphertext to show and filter them.
+const TEAM_FILE_SELECT = {
+  id: true,
+  name: true,
+  size: true,
+  metadataScheme: true,
+  encryptedMetadata: true,
+} as const;
+
+type TeamFileRow = {
+  name: string;
+  metadataScheme: number | null;
+  encryptedMetadata: string | null;
+};
+
+/** A PDF by its readable name, or any file whose name only the client reads. */
+function isSignableCandidate(file: TeamFileRow) {
+  return file.metadataScheme === FILE_META_V1
+    ? !!file.encryptedMetadata
+    : file.name.toLowerCase().endsWith(".pdf");
+}
+
+function encryptedNameOf(file: TeamFileRow) {
+  return file.metadataScheme === FILE_META_V1 && file.encryptedMetadata
+    ? {
+        metadataScheme: FILE_META_V1,
+        encryptedMetadata: file.encryptedMetadata,
+      }
+    : {};
 }
 
 @Injectable()
@@ -566,10 +607,10 @@ export class TeamService {
           transaction,
           {
             recipient: email,
-            subject: `Invitation to join "${team.name}" - PrivCloud Sharing`,
+            subject: "Invitation to join a team - PrivCloud Sharing",
             text:
               `Hello,\n\n` +
-              `You have been invited to join "${team.name}" on PrivCloud Sharing.\n\n` +
+              "You have been invited to join a team on PrivCloud Sharing.\n\n" +
               `Role: ${dto.role || "MEMBER"}\n\n` +
               `Open this link to accept the invitation:\n${inviteUrl}\n\n` +
               `This invitation expires in 7 days.\n\n` +
@@ -846,7 +887,8 @@ export class TeamService {
       select: {
         id: true,
         isE2EEncrypted: true,
-        files: { select: { id: true, name: true, size: true } },
+        fileMetadataScheme: true,
+        files: { select: TEAM_FILE_SELECT },
       },
     });
   }
@@ -876,8 +918,9 @@ export class TeamService {
       fileId: string;
       fileName: string;
       isE2EEncrypted: boolean;
-      // Own shares with encrypted file names only: the client opens the name
-      // with the share key and keeps the PDF files itself.
+      // Files with encrypted names only: the client opens the name with the
+      // share key (own shares) or K_team (Team folders) and keeps the PDF
+      // files itself.
       metadataScheme?: number;
       encryptedMetadata?: string;
       cryptoScheme?: number | null;
@@ -914,13 +957,20 @@ export class TeamService {
               isE2EEncrypted: true,
               teamFolderId: true,
               teamFolder: { select: { name: true } },
-              files: { select: { id: true, name: true } },
+              files: {
+                select: {
+                  id: true,
+                  name: true,
+                  metadataScheme: true,
+                  encryptedMetadata: true,
+                },
+              },
             },
           });
 
           for (const share of shares) {
             for (const file of share.files) {
-              if (file.name.toLowerCase().endsWith(".pdf")) {
+              if (isSignableCandidate(file)) {
                 results.push({
                   teamId: membership.teamId,
                   teamName: membership.team.name,
@@ -930,6 +980,7 @@ export class TeamService {
                   fileId: file.id,
                   fileName: file.name,
                   isE2EEncrypted: share.isE2EEncrypted,
+                  ...encryptedNameOf(file),
                 });
               }
             }
@@ -965,13 +1016,20 @@ export class TeamService {
               id: true,
               isE2EEncrypted: true,
               teamFolderId: true,
-              files: { select: { id: true, name: true } },
+              files: {
+                select: {
+                  id: true,
+                  name: true,
+                  metadataScheme: true,
+                  encryptedMetadata: true,
+                },
+              },
             },
           });
 
           for (const share of shares) {
             for (const file of share.files) {
-              if (file.name.toLowerCase().endsWith(".pdf")) {
+              if (isSignableCandidate(file)) {
                 results.push({
                   teamId: membership.teamId,
                   teamName: membership.team.name,
@@ -981,6 +1039,7 @@ export class TeamService {
                   fileId: file.id,
                   fileName: file.name,
                   isE2EEncrypted: share.isE2EEncrypted,
+                  ...encryptedNameOf(file),
                 });
               }
             }
@@ -1000,6 +1059,8 @@ export class TeamService {
               select: {
                 id: true,
                 name: true,
+                metadataScheme: true,
+                encryptedMetadata: true,
                 share: {
                   select: {
                     id: true,
@@ -1016,7 +1077,7 @@ export class TeamService {
         for (const access of fileAccess) {
           const file = access.file;
           if (
-            file.name.toLowerCase().endsWith(".pdf") &&
+            isSignableCandidate(file) &&
             file.share?.teamFolderId &&
             !results.some((r) => r.fileId === file.id)
           ) {
@@ -1029,6 +1090,7 @@ export class TeamService {
               fileId: file.id,
               fileName: file.name,
               isE2EEncrypted: file.share.isE2EEncrypted,
+              ...encryptedNameOf(file),
             });
           }
         }
@@ -1124,6 +1186,11 @@ export class TeamService {
 
     const team = await this.prisma.team.findUnique({ where: { id: teamId } });
     if (!team) throw new NotFoundException("Team not found");
+    const metadata = await this.getTeamRotationMetadata(teamId, userId);
+    if (metadata.shares.length || metadata.requests.length)
+      throw new ConflictException(
+        "Encrypted team metadata requires the resumable key rotation workflow",
+      );
     const nextVersion = team.keyVersion + 1;
 
     // Legacy one-shot rotation endpoint. New clients use the resumable workflow.
@@ -1286,6 +1353,83 @@ export class TeamService {
     };
   }
 
+  async getTeamRotationMetadata(teamId: string, userId: string) {
+    await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
+    const [shares, requests] = await Promise.all([
+      this.prisma.share.findMany({
+        where: {
+          teamFolder: { teamId },
+          isE2EEncrypted: true,
+          encryptedInfo: { not: null },
+        },
+        select: { id: true, encryptedInfo: true },
+      }),
+      this.prisma.teamFileRequest.findMany({
+        where: { teamId, encryptedInfo: { not: null } },
+        select: { id: true, encryptedInfo: true },
+      }),
+    ]);
+    return { shares, requests };
+  }
+
+  async stageTeamRotationMetadata(
+    teamId: string,
+    rotationId: string,
+    userId: string,
+    dto: RotateTeamMetadataDTO,
+  ) {
+    await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
+    const rotation = await this.prisma.teamKeyRotation.findFirst({
+      where: { id: rotationId, teamId },
+    });
+    if (
+      !rotation ||
+      rotation.startedById !== userId ||
+      !["PREPARING", "REENCRYPTING", "PAUSED"].includes(rotation.status)
+    ) {
+      throw new ForbiddenException(
+        "Only the active rotation initiator can stage metadata",
+      );
+    }
+    const valid =
+      dto.kind === "SHARE"
+        ? isValidEncryptedShareInfo
+        : isValidEncryptedFileRequestInfo;
+    if (!valid(dto.expectedEncryptedInfo) || !valid(dto.encryptedInfo)) {
+      throw new BadRequestException("Invalid encrypted rotation metadata");
+    }
+    const row =
+      dto.kind === "SHARE"
+        ? await this.prisma.share.findFirst({
+            where: { id: dto.id, teamFolder: { teamId }, isE2EEncrypted: true },
+            select: { encryptedInfo: true },
+          })
+        : await this.prisma.teamFileRequest.findFirst({
+            where: { id: dto.id, teamId },
+            select: { encryptedInfo: true },
+          });
+    if (!row || row.encryptedInfo !== dto.expectedEncryptedInfo) {
+      throw new ConflictException("Team metadata changed during rotation");
+    }
+    const updates = readRotationMetadataUpdates(
+      rotation.encryptedMetadataUpdates,
+    ).filter((u) => u.kind !== dto.kind || u.id !== dto.id);
+    updates.push(dto);
+    const written = await this.prisma.teamKeyRotation.updateMany({
+      where: {
+        id: rotationId,
+        encryptedMetadataUpdates: rotation.encryptedMetadataUpdates,
+        status: rotation.status,
+      },
+      data: { encryptedMetadataUpdates: JSON.stringify(updates) },
+    });
+    if (written.count !== 1)
+      throw new ConflictException(
+        "Rotation metadata changed concurrently, resume the rotation",
+      );
+    return { success: true };
+  }
+
   async updateTeamKeyRotationProgress(
     teamId: string,
     rotationId: string,
@@ -1374,32 +1518,83 @@ export class TeamService {
     if (!callerMember) throw new NotFoundException("Team member not found");
     const now = new Date();
 
-    await this.prisma.$transaction([
-      this.prisma.teamMember.updateMany({
-        where: { teamId, userId: { not: userId }, isActive: true },
-        data: { wrappedTeamKey: null },
-      }),
-      this.prisma.teamMember.update({
-        where: { id: callerMember.id },
-        data: {
-          wrappedTeamKey: rotation.initiatorWrappedKey,
-          teamKeyVersion: rotation.toVersion,
-          teamKeyUpdatedAt: now,
-        },
-      }),
-      this.prisma.team.update({
-        where: { id: teamId },
-        data: {
-          keyVersion: rotation.toVersion,
-          keyRotatedAt: now,
-          lastKeyRotationReminderAt: null,
-        },
-      }),
-      this.prisma.teamKeyRotation.update({
-        where: { id: rotation.id },
-        data: { status: "COMPLETED", completedAt: now, failedFiles: 0 },
-      }),
-    ]);
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`UPDATE "Team" SET "id" = "id" WHERE "id" = ${teamId}`;
+        const current = await tx.teamKeyRotation.findUnique({
+          where: { id: rotationId },
+        });
+        if (
+          !current ||
+          current.status === "COMPLETED" ||
+          current.status === "CANCELLED" ||
+          current.failedFiles > 0 ||
+          current.processedFiles < current.totalFiles
+        )
+          throw new ConflictException("Rotation is no longer active");
+        const staged = readRotationMetadataUpdates(
+          current.encryptedMetadataUpdates,
+        );
+        const shares = await tx.share.findMany({
+          where: {
+            teamFolder: { teamId },
+            isE2EEncrypted: true,
+            encryptedInfo: { not: null },
+          },
+          select: { id: true, encryptedInfo: true },
+        });
+        const requests = await tx.teamFileRequest.findMany({
+          where: { teamId, encryptedInfo: { not: null } },
+          select: { id: true, encryptedInfo: true },
+        });
+        const updates = [
+          ...coveredRotationMetadata(shares, "SHARE", staged),
+          ...coveredRotationMetadata(requests, "REQUEST", staged),
+        ];
+        for (const update of updates) {
+          const where = {
+            id: update.id,
+            encryptedInfo: update.expectedEncryptedInfo,
+          };
+          const data = { encryptedInfo: update.encryptedInfo };
+          const changed =
+            update.kind === "SHARE"
+              ? await tx.share.updateMany({ where, data })
+              : await tx.teamFileRequest.updateMany({ where, data });
+          if (changed.count !== 1)
+            throw new ConflictException(
+              "Team metadata changed during rotation",
+            );
+        }
+        await Promise.all([
+          tx.teamMember.updateMany({
+            where: { teamId, userId: { not: userId }, isActive: true },
+            data: { wrappedTeamKey: null },
+          }),
+          tx.teamMember.update({
+            where: { id: callerMember.id },
+            data: {
+              wrappedTeamKey: rotation.initiatorWrappedKey,
+              teamKeyVersion: rotation.toVersion,
+              teamKeyUpdatedAt: now,
+            },
+          }),
+          tx.team.update({
+            where: { id: teamId },
+            data: {
+              keyVersion: rotation.toVersion,
+              keyRotatedAt: now,
+              lastKeyRotationReminderAt: null,
+            },
+          }),
+          tx.teamKeyRotation.update({
+            where: { id: rotation.id },
+            data: { status: "COMPLETED", completedAt: now, failedFiles: 0 },
+          }),
+        ]);
+      },
+      { timeout: 30000 },
+    );
 
     const actor = await this.prisma.user.findUnique({ where: { id: userId } });
     await this.logAccess(teamId, "KEY_ROTATED", actor?.email || userId, {
@@ -1477,8 +1672,8 @@ export class TeamService {
         try {
           await this.emailService.sendMail(
             member.user.email,
-            `[${team.name}] Rotation de clé E2E ${now >= dueAt ? "requise" : "à prévoir"}`,
-            `La clé E2E de l'équipe ${team.name} doit être renouvelée au plus tard le ${dueAt.toLocaleDateString("fr-FR")}.
+            `Rotation de clé E2E de votre équipe ${now >= dueAt ? "requise" : "à prévoir"}`,
+            `La clé E2E de votre équipe doit être renouvelée au plus tard le ${dueAt.toLocaleDateString("fr-FR")}.
 
 Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pour lancer la rotation assistée. Le serveur n'accède jamais à la clé en clair.`,
           );
@@ -1913,13 +2108,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
 
     // Notify team members
     this.teamNotificationService
-      .notifyTeamMembers(
-        teamId,
-        userId,
-        "FILE_UPLOADED",
-        `${creatorUser?.username || creatorUser?.email || "A team member"} created folder "${dto.name}"`,
-        { folderId: folder.id },
-      )
+      .notifyTeamMembers(teamId, userId, "FILE_UPLOADED", {
+        folderId: folder.id,
+      })
       .catch(() => this.logger.error("Failed to notify team on folder create"));
 
     return {
@@ -1933,6 +2124,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     };
   }
 
+  // "*" lists all accessible levels for destination selectors. Other calls keep the existing hierarchy.
   async getFolders(teamId: string, userId: string, parentId?: string) {
     await this.assertTeamMembership(teamId, userId);
 
@@ -1943,7 +2135,10 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     // Owners and admins see all folders with full access
     if (member?.role === "OWNER" || member?.role === "ADMIN") {
       const folders = await this.prisma.teamFolder.findMany({
-        where: { teamId, parentId: parentId || null },
+        where: {
+          teamId,
+          ...(parentId === "*" ? {} : { parentId: parentId || null }),
+        },
         include: {
           _count: {
             select: {
@@ -1974,7 +2169,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     const allFolders = await this.prisma.teamFolder.findMany({
       where: {
         teamId,
-        parentId: parentId || null,
+        ...(parentId === "*" ? {} : { parentId: parentId || null }),
         OR: [
           { accessRules: { none: {} } },
           { accessRules: { some: { memberId: member!.id } } },
@@ -2270,6 +2465,8 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
         createdAt: true,
         expiration: true,
         isE2EEncrypted: true,
+        fileMetadataScheme: true,
+        encryptedInfo: true,
         files: {
           select: {
             id: true,
@@ -2277,6 +2474,8 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
             relativePath: true,
             size: true,
             createdAt: true,
+            metadataScheme: true,
+            encryptedMetadata: true,
           },
         },
         creator: { select: { id: true, username: true, email: true } },
@@ -2489,7 +2688,15 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
             user: { select: { id: true, username: true, email: true } },
           },
         },
-        file: { select: { id: true, name: true } },
+        file: {
+          select: {
+            id: true,
+            name: true,
+            shareId: true,
+            metadataScheme: true,
+            encryptedMetadata: true,
+          },
+        },
       },
     });
 
@@ -2497,6 +2704,10 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       id: r.id,
       fileId: r.fileId,
       fileName: r.file.name,
+      // FILE_META_V1: `fileName` is the placeholder, opened with K_team.
+      shareId: r.file.shareId,
+      metadataScheme: r.file.metadataScheme,
+      encryptedMetadata: r.file.encryptedMetadata,
       memberId: r.memberId,
       permission: r.permission,
       canRequestSignature: r.canRequestSignature,
@@ -2548,13 +2759,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     // Notify team members
     if (deletedCount > 0) {
       this.teamNotificationService
-        .notifyTeamMembers(
-          teamId,
-          userId,
-          "FILE_DELETED",
-          `${actor?.username || actor?.email || "A team member"} deleted ${deletedCount} file(s)`,
-          { folderId },
-        )
+        .notifyTeamMembers(teamId, userId, "FILE_DELETED", { folderId })
         .catch(() => this.logger.error("Failed to notify team on bulk delete"));
     }
 
@@ -2675,6 +2880,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
             select: {
               id: true,
               name: true,
+              encryptedInfo: true,
               expiration: true,
               isE2EEncrypted: true,
               teamFolderId: true,
@@ -2686,6 +2892,8 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
                   relativePath: true,
                   size: true,
                   createdAt: true,
+                  metadataScheme: true,
+                  encryptedMetadata: true,
                 },
               },
             },
@@ -2777,6 +2985,11 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
                 : null,
               name: file.name,
               relativePath: file.relativePath,
+              // FILE_META_V1: `name` is the placeholder, the client opens the
+              // real name and path with K_team before indexing them.
+              metadataScheme: file.metadataScheme,
+              encryptedMetadata: file.encryptedMetadata,
+              shareEncryptedInfo: share.encryptedInfo,
               size: file.size,
               createdAt: file.createdAt,
               expiresAt: share.expiration,

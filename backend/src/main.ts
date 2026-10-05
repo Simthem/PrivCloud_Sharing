@@ -13,6 +13,7 @@ import { NextFunction, Request, Response } from "express";
 import helmet from "helmet";
 import * as fs from "fs";
 import { AppModule } from "./app.module";
+import { collectValidationIssues } from "./validation-error.util";
 import {
   isProbeRequest,
   PROBE_MAX_BODY_BYTES,
@@ -143,27 +144,15 @@ async function bootstrap() {
       transform: true,
       exceptionFactory: (errors) => {
         const logger = new Logger("ValidationPipe");
+        const issues = collectValidationIssues(errors);
         logger.warn(
           `Validation failed: ${JSON.stringify(
-            errors.map((e) => ({
-              property: e.property,
-              constraints: e.constraints,
-              children: e.children?.map((c) => ({
-                property: c.property,
-                constraints: c.constraints,
-              })),
-            })),
+            issues.map(({ property, codes }) => ({ property, constraints: codes })),
           )}`,
         );
-        const messages = errors
-          .map((e) => {
-            const own = Object.values(e.constraints || {});
-            const nested = (e.children || []).flatMap((c) =>
-              Object.values(c.constraints || {}),
-            );
-            return [...own, ...nested];
-          })
-          .flat();
+        const messages = issues.flatMap(({ property, messages }) =>
+          messages.map((message) => `${property}: ${message}`),
+        );
         return new HttpException(
           { statusCode: 400, message: messages, error: "Bad Request" },
           400,

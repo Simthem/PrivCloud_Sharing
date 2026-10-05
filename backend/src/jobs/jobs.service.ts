@@ -83,19 +83,23 @@ export class JobsService {
         },
       });
 
+      let deletedShares = 0;
       for (const expiredShare of expiredShares) {
         try {
-          await this.fileService.deleteAllFiles(expiredShare.id);
+          await this.fileService.deleteAllFiles(expiredShare.id, expiredShare.storageProvider);
         } catch {
           this.logger.warn("Failed to delete files for an expired share");
+          // Retain the database reference when storage deletion failed.
+          continue;
         }
-        await this.prisma.share.deleteMany({
+        const deleted = await this.prisma.share.deleteMany({
           where: { id: expiredShare.id },
         });
+        deletedShares += deleted.count;
       }
 
-      if (expiredShares.length > 0) {
-        this.logger.log(`Deleted ${expiredShares.length} expired shares`);
+      if (deletedShares > 0) {
+        this.logger.log(`Deleted ${deletedShares} expired shares`);
       }
     });
   }
@@ -134,6 +138,7 @@ export class JobsService {
           uploadCleanupStartedAt: null,
           uploadLocked: false,
         },
+        include: { _count: { select: { files: true } } },
       });
       let deletedShares = 0;
       let relockedShares = 0;
@@ -157,10 +162,20 @@ export class JobsService {
           continue;
         }
 
+        // Preserve files even when the browser never acknowledged completion.
+        if ((unfinishedShare._count?.files || 0) > 0) continue;
+        // A WAF challenge can stop the first init before any part exists. An
+        // authenticated owner's S3 share must remain discoverable for retry.
+        if (unfinishedShare.creatorId && unfinishedShare.storageProvider === "S3") continue;
+
         // Protect transfers still handled by an older pre-heartbeat process.
         // S3 multipart timestamps and local file mtimes remain authoritative
         // even when the old backend cannot update the Share row.
         try {
+          if (await this.fileService.hasPendingMultipartUpload(unfinishedShare.id, unfinishedShare.storageProvider)) continue;
+          if (await this.fileService.hasCompletedUploadData(
+            unfinishedShare.id, unfinishedShare.storageProvider,
+          )) continue;
           const storageActivity =
             await this.fileService.getRecentUploadActivity(
               unfinishedShare.id,
@@ -195,6 +210,7 @@ export class JobsService {
             uploadLocked: false,
             uploadCleanupStartedAt: null,
             uploadLastActivityAt: { lt: inactivityCutoff },
+            files: { none: {} },
           },
           data: { uploadCleanupStartedAt: cleanupStartedAt },
         });
@@ -203,6 +219,21 @@ export class JobsService {
         // Delete files FIRST, then DB record. If file deletion fails
         // the DB record survives and we can retry next cycle.
         try {
+          if (await this.fileService.hasPendingMultipartUpload(unfinishedShare.id, unfinishedShare.storageProvider)) {
+            await this.prisma.share.updateMany({ where: { id: unfinishedShare.id, uploadCleanupStartedAt: cleanupStartedAt }, data: { uploadCleanupStartedAt: null } });
+            continue;
+          }
+          // Recheck S3 after the database claim. Completion can have raced the
+          // first probe, or succeeded before its database response was lost.
+          if (await this.fileService.hasCompletedUploadData(
+            unfinishedShare.id, unfinishedShare.storageProvider,
+          )) {
+            await this.prisma.share.updateMany({
+              where: { id: unfinishedShare.id, uploadCleanupStartedAt: cleanupStartedAt },
+              data: { uploadCleanupStartedAt: null },
+            });
+            continue;
+          }
           await this.fileService.deleteAllFiles(
             unfinishedShare.id,
             unfinishedShare.storageProvider,
@@ -287,8 +318,7 @@ export class JobsService {
   }
 
   /**
-   * Purge stale S3 multipart uploads that have been abandoned for
-   * more than 2 hours (e.g. after server restart or network failure).
+   * Purge old S3 multipart uploads whose share no longer exists.
    * This catches uploads that the in-memory cleanup in S3FileService
    * cannot track because the process was restarted.
    */

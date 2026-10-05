@@ -371,7 +371,7 @@ export default {
   "admin.config.share.max-size": "Maksimum boyut",
   "admin.config.share.max-size.description": "Maksimum paylaşım boyutu",
   "admin.config.share.zip-compression-level": "Zip sıkıştırma seviyesi",
-  "admin.config.share.zip-compression-level.description": "Dosya boyutu ve sıkıştırma hızı arasında denge kurmak için seviyeyi ayarlayın. Geçerli değerler 0 ile 9 arasındadır; 0 sıkıştırma yok, 9 ise maksimum sıkıştırma anlamına gelir.",
+  "admin.config.share.zip-compression-level.description": "Dosya boyutu ve sıkıştırma hızı arasında denge kurmak için seviyeyi ayarlayın. Geçerli değerler 0 ile 9 arasındadır: 0 sıkıştırma yok, 9 ise maksimum sıkıştırma anlamına gelir.",
   "admin.config.share.chunk-size": "Parça boyutu",
   "admin.config.share.chunk-size.description": "İnternet bağlantınıza göre verimlilik ve güvenilirlik arasında denge kurmak için yüklemeleriniz için parça boyutunu ayarlayın. Daha küçük parçalar, kararsız bağlantılarda başarı oranlarını artırabilirken, daha büyük parçalar kararlı bağlantılarda yüklemeleri hızlandırır.",
   "admin.config.share.auto-open-share-modal": "Paylaşım oluşturma penceresini otomatik aç",
@@ -432,7 +432,7 @@ export default {
   "admin.config.oauth.oidc-discovery-uri": "OpenID Connect Keşif URI'si",
   "admin.config.oauth.oidc-discovery-uri.description": "OpenID Connect OAuth uygulamasının Keşif URI'si",
   "admin.config.oauth.oidc-sign-out": "OpenID Connect'ten çıkış yap",
-  "admin.config.oauth.oidc-sign-out.description": "“Çıkış Yap” düğmesinin OpenID Connect sağlayıcısından da çıkış yapıp yapmayacağı",
+  "admin.config.oauth.oidc-sign-out.description": "'Çıkış Yap' düğmesinin OpenID Connect sağlayıcısından da çıkış yapıp yapmayacağı",
   "admin.config.oauth.oidc-scope": "OpenID Connect kapsamı",
   "admin.config.oauth.oidc-scope.description": "OpenID Connect sağlayıcısından istenmesi gereken kapsamlar.",
   "admin.config.oauth.oidc-username-claim": "OpenID Connect kullanıcı adı talebi",
@@ -518,16 +518,16 @@ export default {
     "PBKDF2/SHA-256 is recommended: it is bundled, broadly compatible, and faster than SHA-384 or SHA-512 for this use case.",
   "admin.config.altcha.cost": "Cost",
   "admin.config.altcha.cost.description":
-    "PBKDF2 cost per attempt. 5000 is the recommended default; tune user friction mostly with effort.",
+    "PBKDF2 cost per attempt. 5000 is the recommended default, tune user friction mostly with effort.",
   "admin.config.altcha.effort": "Effort",
   "admin.config.altcha.effort.description":
-    "Average number of counters the browser must test. 250 is a good default; increase gradually if you need more resistance.",
+    "Average number of counters the browser must test. 250 is a good default, increase gradually if you need more resistance.",
   "admin.config.altcha.expires-in-seconds": "Challenge expiration",
   "admin.config.altcha.expires-in-seconds.description":
     "Challenge validity in seconds. Short lifetimes limit token reuse windows.",
   "admin.config.altcha.hmac-key": "HMAC key",
   "admin.config.altcha.hmac-key.description":
-    "Server-side secret used to sign and verify challenges. A strong key is generated automatically; rotate only when needed.",
+    "Server-side secret used to sign and verify challenges. A strong key is generated automatically, rotate only when needed.",
   "admin.config.altcha.type": "Interaction type",
   "admin.config.altcha.type.description":
     "Widget interaction control: checkbox, native checkbox, or switch.",

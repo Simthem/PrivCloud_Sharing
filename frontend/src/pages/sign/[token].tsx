@@ -1,5 +1,5 @@
 import { useRouter } from "next/router";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useIntl } from "react-intl";
 import {
@@ -57,6 +57,7 @@ import {
   wrapReverseShareKey,
 } from "../../utils/crypto.util";
 import { sha256Hex } from "../../services/pades-client.service";
+import { saveBlobToDevice } from "../../utils/saveBlob.util";
 
 const readableDangerAlertStyles = {
   root: {
@@ -221,6 +222,42 @@ const SignPage = () => {
       : signingService.getPreviewUrl(tokenStr)
     : "";
 
+  // Fetches the signed PDF through this link. An E2E result is decrypted
+  // locally with the key carried by the link fragment.
+  const downloadSignedDocument = useCallback(async () => {
+    if (!signingData) return;
+    setDownloadingSignedPdf(true);
+    try {
+      const downloadedBlob = isReinforced
+        ? await signingService.downloadSignedByTokenAuthenticated(tokenStr)
+        : await signingService.downloadSignedByToken(tokenStr);
+      let blob = downloadedBlob;
+      if (signingData.document.isE2EEncrypted && e2eKey) {
+        const decrypted = await decryptFileAuto(
+          await downloadedBlob.arrayBuffer(),
+          await importKeyFromBase64(e2eKey),
+          5_000_000,
+        );
+        blob = new Blob([decrypted], { type: "application/pdf" });
+      }
+      const saved = await saveBlobToDevice(
+        blob,
+        `${signingData.document.fileName.replace(/\.pdf$/i, "")}_signed.pdf`,
+      );
+      if (saved) {
+        toast.success(
+          intl.formatMessage({ id: "signing.toast.download-started" }),
+        );
+      }
+    } catch {
+      toast.error(
+        intl.formatMessage({ id: "signing.sign.download-not-ready" }),
+      );
+    } finally {
+      setDownloadingSignedPdf(false);
+    }
+  }, [e2eKey, intl, isReinforced, signingData, tokenStr]);
+
   // A final encrypted team notification resolves here with ?download=1. Do
   // not make the signer hunt through the document list: download immediately
   // once finalization is complete. E2E results are decrypted locally with the
@@ -236,34 +273,8 @@ const SignPage = () => {
     )
       return;
     directDownloadDoneRef.current = true;
-    void (async () => {
-      setDownloadingSignedPdf(true);
-      try {
-        const downloadedBlob = isReinforced
-          ? await signingService.downloadSignedByTokenAuthenticated(tokenStr)
-          : await signingService.downloadSignedByToken(tokenStr);
-        let blob = downloadedBlob;
-        if (signingData.document.isE2EEncrypted && e2eKey) {
-          const decrypted = await decryptFileAuto(
-            await downloadedBlob.arrayBuffer(),
-            await importKeyFromBase64(e2eKey),
-            5_000_000,
-          );
-          blob = new Blob([decrypted], { type: "application/pdf" });
-        }
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = `${signingData.document.fileName.replace(/\.pdf$/i, "")}_signed.pdf`;
-        anchor.click();
-        URL.revokeObjectURL(url);
-      } catch {
-        toast.error("Le document signé n'est pas encore disponible.");
-      } finally {
-        setDownloadingSignedPdf(false);
-      }
-    })();
-  }, [e2eKey, isReinforced, router.query.download, signingData, tokenStr]);
+    void downloadSignedDocument();
+  }, [downloadSignedDocument, e2eKey, router.query.download, signingData]);
 
   useEffect(() => {
     if (!signingData || step >= 3) return;
@@ -564,11 +575,30 @@ const SignPage = () => {
 
   // Already completed
   if (recipient.status === "SIGNED") {
+    // The finalized PDF stays reachable from this link, even once the source
+    // file is deleted. An E2E result needs the key carried by the fragment.
+    const canDownloadSigned =
+      signingData.documentStatus === "COMPLETED" &&
+      (!sigDoc.isE2EEncrypted || !!e2eKey) &&
+      (!isReinforced || isAssignedAccount);
     return (
       <Container size="sm" mt="xl">
         <Alert color="green" icon={<TbCheck />} title="Déjà signé">
           Vous avez déjà signé ce document.
         </Alert>
+        {canDownloadSigned && (
+          <Group justify="center" mt="md">
+            <Button
+              variant="light"
+              color="green"
+              leftSection={<TbDownload size={16} />}
+              loading={downloadingSignedPdf}
+              onClick={downloadSignedDocument}
+            >
+              {intl.formatMessage({ id: "signing.sign.download-signed" })}
+            </Button>
+          </Group>
+        )}
       </Container>
     );
   }
@@ -1299,30 +1329,7 @@ const SignPage = () => {
                   color="green"
                   leftSection={<TbDownload size={16} />}
                   loading={downloadingSignedPdf}
-                  onClick={async () => {
-                    setDownloadingSignedPdf(true);
-                    try {
-                      const blob = isReinforced
-                        ? await signingService.downloadSignedByTokenAuthenticated(
-                            tokenStr,
-                          )
-                        : await signingService.downloadSignedByToken(tokenStr);
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `${sigDoc.fileName?.replace(".pdf", "") || "document"}_signed.pdf`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    } catch {
-                      toast.error(
-                        intl.formatMessage({
-                          id: "signing.sign.download-not-ready",
-                        }),
-                      );
-                    } finally {
-                      setDownloadingSignedPdf(false);
-                    }
-                  }}
+                  onClick={downloadSignedDocument}
                 >
                   {intl.formatMessage({ id: "signing.sign.download-signed" })}
                 </Button>

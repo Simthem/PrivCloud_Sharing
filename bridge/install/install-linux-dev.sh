@@ -21,7 +21,7 @@ case "$NODE_BIN" in
     ;;
 esac
 
-if ! "$NODE_BIN" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)' \
+if ! NODE_OPTIONS= "$NODE_BIN" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)' \
   >/dev/null 2>&1
 then
   echo "Node.js 20 or newer is required (found $(NODE_OPTIONS= "$NODE_BIN" --version))." >&2
@@ -73,14 +73,24 @@ STATE_DIR="$HOME/.privcloud-bridge"
 # Keep the final .mjs extension: Node.js 24 resolves the module format before
 # running --check and rejects generic .tmp files as unknown modules.
 SOURCE_TMP="$APP_DIR/privcloud-companion.tmp.mjs"
+TRANSPORT_TMP="$APP_DIR/native-transport.tmp.mjs"
+DIRECT_TMP="$APP_DIR/direct-upload.tmp.mjs"
 
 mkdir -p "$APP_DIR" "$BIN_DIR" "$DESKTOP_DIR" "$SYSTEMD_DIR" "$STATE_DIR"
 chmod 0700 "$STATE_DIR"
-trap 'rm -f "$SOURCE_TMP"' EXIT HUP INT TERM
+trap 'rm -f "$SOURCE_TMP" "$TRANSPORT_TMP" "$DIRECT_TMP"' EXIT HUP INT TERM
 
 curl -fsSL "$BASE_URL/install/companion/privcloud-companion.mjs" \
   -o "$SOURCE_TMP"
+curl -fsSL "$BASE_URL/install/companion/native-transport.mjs" -o "$TRANSPORT_TMP"
+curl -fsSL "$BASE_URL/install/companion/direct-upload.mjs" -o "$DIRECT_TMP"
+NODE_OPTIONS= "$NODE_BIN" --check "$DIRECT_TMP"
+NODE_OPTIONS= "$NODE_BIN" --check "$TRANSPORT_TMP"
 NODE_OPTIONS= "$NODE_BIN" --check "$SOURCE_TMP"
+chmod 0644 "$DIRECT_TMP"
+mv "$DIRECT_TMP" "$APP_DIR/direct-upload.mjs"
+chmod 0644 "$TRANSPORT_TMP"
+mv "$TRANSPORT_TMP" "$APP_DIR/native-transport.mjs"
 chmod 0755 "$SOURCE_TMP"
 mv "$SOURCE_TMP" "$APP_DIR/privcloud-companion.mjs"
 
@@ -88,6 +98,16 @@ cat > "$BIN_PATH" <<EOF
 #!/bin/sh
 export PRIVCLOUD_BRIDGE_ORIGINS='$BASE_URL'
 export PRIVCLOUD_COMPANION_NATIVE_ORIGINS='$BASE_URL'
+# Instrumentation preloads may write to stdout and corrupt native framing.
+for argument in "\$@"; do
+  case "\$argument" in
+    --native-messaging|chrome-extension://*|moz-extension://*|companion@privcloud.fr)
+      export NODE_OPTIONS=''
+      set -- --native-messaging "\$@"
+      break
+      ;;
+  esac
+done
 exec '$NODE_BIN' '$APP_DIR/privcloud-companion.mjs' "\$@"
 EOF
 chmod 0755 "$BIN_PATH"

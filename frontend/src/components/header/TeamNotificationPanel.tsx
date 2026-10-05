@@ -1,3 +1,5 @@
+import useTranslate from "../../hooks/useTranslate.hook";
+import { useIntl } from "react-intl";
 import {
   ActionIcon,
   Badge,
@@ -30,6 +32,7 @@ import {
   TbUserMinus,
   TbUserPlus,
 } from "react-icons/tb";
+import { isSafeFileRequestNotificationAction } from "../../utils/teamFileRequest.util";
 import { isSafeSigningNotificationAction } from "../../utils/signingNotification.util";
 import {
   getTeamNotifications,
@@ -44,6 +47,8 @@ import { getUserKey, importKeyFromBase64 } from "../../utils/crypto.util";
 import { useStyles } from "./Header.styles";
 
 const NOTIFICATION_ICONS: Record<string, React.ReactNode> = {
+  FILE_REQUESTED: <TbFile size={16} />,
+  FILE_REQUEST_SUBMITTED: <TbFile size={16} />,
   FILE_SHARED: <TbShare size={16} />,
   FILE_UPLOADED: <TbFile size={16} />,
   FILE_DELETED: <TbTrash size={16} />,
@@ -312,6 +317,17 @@ const TeamNotificationPanel = () => {
 // Individual notification item
 // ============================================================
 
+const GENERIC_NOTIFICATION_TYPES = new Set([
+  "FILE_SHARED",
+  "FILE_UPLOADED",
+  "FILE_DELETED",
+  "GRANT_RECEIVED",
+  "GRANT_REVOKED",
+  "KEY_ROTATED",
+  "MEMBER_JOINED",
+  "MEMBER_LEFT",
+]);
+
 const NotificationItem = ({
   notification,
   decryptedMeta,
@@ -323,6 +339,8 @@ const NotificationItem = ({
   onMarkRead: (_id: string) => void;
   onNavigate: (_path: string) => void;
 }) => {
+  const t = useTranslate();
+  const intl = useIntl();
   const icon = NOTIFICATION_ICONS[notification.type] || <TbBell size={16} />;
   const isEncrypted = !!notification.encryptedMetadata;
   const isDecrypted = !!decryptedMeta;
@@ -331,6 +349,18 @@ const NotificationItem = ({
   const displayTitle = (() => {
     if (isEncrypted && isDecrypted) {
       switch (decryptedMeta.action) {
+        case "FILE_REQUEST":
+          return typeof decryptedMeta.subject === "string"
+            ? t("team.fileRequest.notification.request.subject", {
+                subject: decryptedMeta.subject,
+              })
+            : t("team.fileRequest.notification.request");
+        case "FILE_REQUEST_SUBMITTED":
+          return typeof decryptedMeta.subject === "string"
+            ? t("team.fileRequest.notification.submitted.subject", {
+                subject: decryptedMeta.subject,
+              })
+            : t("team.fileRequest.notification.submitted");
         case "SIGN":
           return "Une signature est attendue de votre part";
         case "TRACK":
@@ -342,6 +372,13 @@ const NotificationItem = ({
       const fileName = (decryptedMeta.fileName as string) || "un fichier";
       return `${sender} a partagé "${fileName}"`;
     }
+    if (notification.type === "FILE_REQUESTED")
+      return t("team.fileRequest.notification.request");
+    if (notification.type === "FILE_REQUEST_SUBMITTED")
+      return t("team.fileRequest.notification.submitted");
+    // Server-written notifications only carry the generic text of their type.
+    if (GENERIC_NOTIFICATION_TYPES.has(notification.type))
+      return t(`team.notification.generic.${notification.type}`);
     return notification.title;
   })();
 
@@ -359,6 +396,8 @@ const NotificationItem = ({
 
     // Signature events have no TeamNotification relation to a document, so
     // their durable navigation target is carried in the metadata.
+    if (isSafeFileRequestNotificationAction(decryptedMeta?.actionUrl))
+      return decryptedMeta.actionUrl;
     if (isSafeSigningNotificationAction(decryptedMeta?.actionUrl)) {
       return decryptedMeta.actionUrl;
     }
@@ -366,6 +405,14 @@ const NotificationItem = ({
       return `/signing/${metadata.signingDocumentId}`;
     }
 
+    if (
+      ["FILE_REQUESTED", "FILE_REQUEST_SUBMITTED"].includes(
+        notification.type,
+      ) &&
+      notification.team
+    ) {
+      return `/team/${notification.team.id}?fileRequests=1`;
+    }
     if (notification.team && notification.folder) {
       const base = `/team/${notification.team.id}/folder/${notification.folder.id}`;
       // Try teamFile.id first, then decrypted metadata, then plaintext metadata
@@ -435,12 +482,12 @@ const NotificationItem = ({
                 {isDecrypted ? "E2E" : "Chiffré"}
               </Badge>
             )}
-            {notification.team && (
+            {notification.team?.name && (
               <Badge size="xs" variant="light" color="gray">
                 {notification.team.name}
               </Badge>
             )}
-            {notification.folder && (
+            {notification.folder?.name && (
               <Badge
                 size="xs"
                 variant="light"
@@ -474,7 +521,16 @@ const NotificationItem = ({
               )}
           </Group>
           <Text size="xs" c="dimmed" mt={2}>
-            {formatTimeAgo(notification.createdAt)}
+            {["FILE_REQUESTED", "FILE_REQUEST_SUBMITTED"].includes(
+              notification.type,
+            )
+              ? intl.formatDate(notification.createdAt) +
+                " " +
+                intl.formatTime(notification.createdAt, {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : formatTimeAgo(notification.createdAt)}
           </Text>
         </Box>
         {!notification.isRead && (

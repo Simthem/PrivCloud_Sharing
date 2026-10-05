@@ -1,0 +1,9 @@
+{
+  "name": "@privcloud/disabled-update-notifier",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline update-notifier interface for the Docusaurus CLI",
+  "type": "module",
+  "exports": "./index.js",
+  "license": "BSD-2-Clause"
+}

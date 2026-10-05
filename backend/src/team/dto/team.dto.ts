@@ -99,6 +99,26 @@ export class UpdateTeamKeyRotationProgressDTO {
   errorMessage?: string;
 }
 
+export class RotateTeamMetadataDTO {
+  @IsIn(["SHARE", "REQUEST"])
+  kind: "SHARE" | "REQUEST";
+
+  @IsString()
+  @MaxLength(128)
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  id: string;
+
+  @IsString()
+  @MaxLength(22000)
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  expectedEncryptedInfo: string;
+
+  @IsString()
+  @MaxLength(22000)
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  encryptedInfo: string;
+}
+
 export class InviteMemberDTO {
   @IsEmail({}, { message: "A valid email address is required" })
   @MaxLength(254)

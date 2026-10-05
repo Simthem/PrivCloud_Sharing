@@ -1,3 +1,5 @@
+import { isTrustedWorkerResultEvent } from "./reencryptWorkerMessage.util";
+
 interface ReencryptUploadRequest {
   shareId: string;
   fileId: string;
@@ -6,16 +8,8 @@ interface ReencryptUploadRequest {
   rotationId?: string;
   encryptionChunkSize: number;
   sessionId?: string;
-}
-
-interface WorkerResult {
-  type: "result";
-  requestId: number;
-  ok: boolean;
-  status?: number;
-  message?: string;
-  data?: unknown;
-  chunk?: ArrayBuffer;
+  /** Last chunk of a FILE_META_V1 file: its name under the new key. */
+  encryptedMetadata?: string;
 }
 
 interface PendingUpload {
@@ -35,24 +29,6 @@ let worker: Worker | null = null;
 let nextRequestId = 1;
 const pendingUploads = new Map<number, PendingUpload>();
 
-const isWorkerResult = (value: unknown): value is WorkerResult => {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Partial<WorkerResult>;
-  return (
-    candidate.type === "result" &&
-    Number.isSafeInteger(candidate.requestId) &&
-    Number(candidate.requestId) > 0 &&
-    typeof candidate.ok === "boolean" &&
-    (candidate.status === undefined ||
-      (Number.isInteger(candidate.status) &&
-        candidate.status >= 0 &&
-        candidate.status <= 599)) &&
-    (candidate.message === undefined ||
-      typeof candidate.message === "string") &&
-    (candidate.chunk === undefined || candidate.chunk instanceof ArrayBuffer)
-  );
-};
-
 const rejectPendingUploads = (message: string) => {
   for (const pending of pendingUploads.values()) {
     if (pending.abortHandler) {
@@ -69,26 +45,18 @@ const getWorker = (): Worker => {
     throw new Error("Web Worker is unavailable for key rotation");
   }
 
-  const activeWorker = new Worker("/reencrypt-worker.js?v=20260714-1", {
+  const activeWorker = new Worker("/reencrypt-worker.js?v=20261002-1", {
     name: "privcloud-reencrypt-upload",
   });
   worker = activeWorker;
   activeWorker.addEventListener("message", (event: MessageEvent<unknown>) => {
-    // Check the sender's origin before anything else. A dedicated Worker
-    // delivers an empty MessageEvent.origin by standard, and the worker script
-    // is same-origin, so those are the only two values that may legitimately
-    // appear here; anything sent by another document is rejected outright.
-    if (event.origin !== "" && event.origin !== window.location.origin) {
-      return;
-    }
-    // Defence in depth: binding to the exact Worker object, requiring a trusted
-    // browser event and validating the full payload keep window or synthetic
-    // MessageEvent data out of the upload state machine.
+    // Dedicated Worker messages use an empty MessageEvent.origin by standard.
+    // Binding the listener to the exact Worker object, requiring a trusted
+    // browser event and validating the full payload prevents window or custom
+    // MessageEvent data from entering the upload state machine.
     if (
-      !event.isTrusted ||
-      event.currentTarget !== activeWorker ||
-      event.target !== activeWorker ||
-      !isWorkerResult(event.data)
+      event.origin !== "" ||
+      !isTrustedWorkerResultEvent(event, activeWorker)
     ) {
       return;
     }

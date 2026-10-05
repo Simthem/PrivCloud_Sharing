@@ -7,7 +7,12 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "src/prisma/prisma.service";
-import { CreateAccessGrantDTO, BulkCreateGrantsDTO } from "./dto/crypto.dto";
+import {
+  CreateAccessGrantDTO,
+  BulkCreateGrantsDTO,
+  GRANT_ALGORITHM_HYBRID,
+  GRANT_ALGORITHM_X25519,
+} from "./dto/crypto.dto";
 
 @Injectable()
 export class AccessGrantService {
@@ -21,8 +26,10 @@ export class AccessGrantService {
    *
    * Flow:
    * 1. Client fetches recipient's public key via /crypto/identity/keys/user/:id
-   * 2. Client performs X25519 ECDH -> shared secret -> AES-256-GCM(DEK)
-   * 3. Client sends the encrypted DEK, ephemeral PK, and nonce here
+   * 2. Client performs X25519 ECDH -> shared secret -> AES-256-GCM(DEK),
+   *    combined with ML-KEM-768 when the recipient has an active PQ key
+   * 3. Client sends the encrypted DEK, ephemeral PK, nonce (and the ML-KEM
+   *    ciphertext of a hybrid grant) here
    * 4. Server stores blindly - never sees the DEK
    */
   async createGrant(grantorId: string, dto: CreateAccessGrantDTO) {
@@ -54,6 +61,9 @@ export class AccessGrantService {
       );
     }
 
+    const algorithm = dto.algorithm || GRANT_ALGORITHM_X25519;
+    const kemCiphertext = await this.resolveKemCiphertext(dto, algorithm);
+
     // Validate grantor has access to the resource
     await this.validateGrantorAccess(grantorId, dto);
 
@@ -76,7 +86,8 @@ export class AccessGrantService {
           encryptedFileKey: dto.encryptedFileKey,
           ephemeralPublicKey: dto.ephemeralPublicKey,
           nonce: dto.nonce,
-          algorithm: dto.algorithm || "x25519-aes256gcm",
+          algorithm,
+          kemCiphertext,
           grantorId,
           dekVersion: existingGrant.dekVersion + 1,
         },
@@ -98,7 +109,8 @@ export class AccessGrantService {
         encryptedFileKey: dto.encryptedFileKey,
         ephemeralPublicKey: dto.ephemeralPublicKey,
         nonce: dto.nonce,
-        algorithm: dto.algorithm || "x25519-aes256gcm",
+        algorithm,
+        kemCiphertext,
         grantorId,
         userId: dto.recipientUserId,
         fileId: dto.fileId,
@@ -114,6 +126,37 @@ export class AccessGrantService {
     void this.logTeamGrantEvent(grantorId, dto, "E2E_SHARE", grant.id);
 
     return { id: grant.id, action: "created", dekVersion: grant.dekVersion };
+  }
+
+  /**
+   * A hybrid grant carries its ML-KEM-768 ciphertext, and only a hybrid one
+   * does. The recipient must hold an active ML-KEM key to open it.
+   */
+  private async resolveKemCiphertext(
+    dto: CreateAccessGrantDTO,
+    algorithm: string,
+  ): Promise<string | null> {
+    if (algorithm !== GRANT_ALGORITHM_HYBRID) {
+      if (dto.kemCiphertext) {
+        throw new BadRequestException(
+          "kemCiphertext is only accepted with the hybrid algorithm",
+        );
+      }
+      return null;
+    }
+    if (!dto.kemCiphertext) {
+      throw new BadRequestException(
+        "A hybrid grant needs its ML-KEM ciphertext",
+      );
+    }
+    const pqKey = await this.prisma.userPQKey.findFirst({
+      where: { userId: dto.recipientUserId, isActive: true },
+      select: { id: true },
+    });
+    if (!pqKey) {
+      throw new BadRequestException("Recipient has no active ML-KEM key");
+    }
+    return dto.kemCiphertext;
   }
 
   /**
@@ -171,6 +214,7 @@ export class AccessGrantService {
         ephemeralPublicKey: true,
         nonce: true,
         algorithm: true,
+        kemCiphertext: true,
         dekVersion: true,
         fileId: true,
         teamFileId: true,
@@ -203,6 +247,7 @@ export class AccessGrantService {
         ephemeralPublicKey: true,
         nonce: true,
         algorithm: true,
+        kemCiphertext: true,
         dekVersion: true,
       },
     });
@@ -229,6 +274,7 @@ export class AccessGrantService {
         ephemeralPublicKey: true,
         nonce: true,
         algorithm: true,
+        kemCiphertext: true,
         dekVersion: true,
       },
     });

@@ -34,6 +34,7 @@ import {
   CreateGuestLinkDTO,
   StartTeamKeyRotationDTO,
   UpdateTeamKeyRotationProgressDTO,
+  RotateTeamMetadataDTO,
 } from "./dto/team.dto";
 
 @Controller("teams")
@@ -321,6 +322,23 @@ export class TeamController {
     @GetUser() user: User,
   ) {
     return this.teamService.getKeyRotationStatus(teamId, user.id);
+  }
+
+  @Get(":teamId/key-rotation/metadata")
+  @UseGuards(JwtGuard)
+  getKeyRotationMetadata(@Param("teamId") teamId: string, @GetUser() user: User) {
+    return this.teamService.getTeamRotationMetadata(teamId, user.id);
+  }
+
+  @Post(":teamId/key-rotation/:rotationId/metadata")
+  @UseGuards(JwtGuard)
+  stageKeyRotationMetadata(
+    @Param("teamId") teamId: string,
+    @Param("rotationId") rotationId: string,
+    @Body() dto: RotateTeamMetadataDTO,
+    @GetUser() user: User,
+  ) {
+    return this.teamService.stageTeamRotationMetadata(teamId, rotationId, user.id, dto);
   }
 
   @Post(":teamId/key-rotation/start")

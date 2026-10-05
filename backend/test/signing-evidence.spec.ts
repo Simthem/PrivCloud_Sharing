@@ -19,7 +19,6 @@ import {
   transactionChallengeBytes,
 } from "src/signing/signing-evidence.util";
 import { generateAuthenticationOptions } from "@simplewebauthn/server";
-import * as forge from "node-forge";
 import { SignedXml } from "xml-crypto";
 import {
   evaluatePinnedTsa,
@@ -32,6 +31,7 @@ import {
   toVisibleAuditEvent,
   toVisibleRecipient,
 } from "src/signing/signing-exposure.util";
+import { createTestCertificate } from "./signing-certificate.fixture";
 import { createUnitTestRunner } from "./unit-test";
 
 const { testCase, run } = createUnitTestRunner("signing evidence");
@@ -436,17 +436,7 @@ testCase("lets an account remove only its own signing passkeys", async () => {
 });
 
 testCase("reads a Trusted List only through its verified XML signature", () => {
-  const keys = forge.pki.rsa.generateKeyPair(2048);
-  const certificate = forge.pki.createCertificate();
-  certificate.publicKey = keys.publicKey;
-  certificate.serialNumber = "01";
-  certificate.validity.notBefore = new Date("2026-01-01T00:00:00Z");
-  certificate.validity.notAfter = new Date("2036-01-01T00:00:00Z");
-  const name = [{ name: "commonName", value: "Test Scheme Operator" }];
-  certificate.setSubject(name);
-  certificate.setIssuer(name);
-  certificate.sign(keys.privateKey, forge.md.sha256.create());
-  const certificatePem = forge.pki.certificateToPem(certificate);
+  const operator = createTestCertificate({ commonName: "Test Scheme Operator" });
   const list =
     '<TrustServiceStatusList xmlns="http://uri.etsi.org/02231/v2#"><SchemeInformation>' +
     "<TSLSequenceNumber>7</TSLSequenceNumber><SchemeTerritory>FR</SchemeTerritory>" +
@@ -454,8 +444,8 @@ testCase("reads a Trusted List only through its verified XML signature", () => {
     "<ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>" +
     "</ServiceInformation></TSPService></TrustServiceStatusList>";
   const signer = new SignedXml({
-    privateKey: forge.pki.privateKeyToPem(keys.privateKey),
-    publicCert: certificatePem,
+    privateKey: operator.privateKey.export({ type: "pkcs8", format: "pem" }),
+    publicCert: operator.pem,
     canonicalizationAlgorithm: "http://www.w3.org/2001/10/xml-exc-c14n#",
     signatureAlgorithm: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
   });

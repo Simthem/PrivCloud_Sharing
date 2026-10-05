@@ -11,6 +11,12 @@ function collectSpecs(directory: string): string[] {
 }
 
 const specs = [
+  "test/upload-auth-renewal.spec.ts",
+  "test/multipart-lifecycle.spec.ts",
+  "test/pending-upload-access.spec.ts",
+  "test/share-completion-recovery.spec.ts",
+  "test/upload-preservation.spec.ts",
+  "test/signing-request-validation.spec.ts",
   ...collectSpecs(path.resolve("src")),
   ...collectSpecs(path.resolve("test")),
   path.resolve("..", "scripts", "docker", "entrypoint.test.mjs"),

@@ -72,7 +72,6 @@ export class AccessGrantController {
     // Determine team context from the first grant's teamFileId
     const firstGrant = dto.grants[0];
     let teamId: string | null = null;
-    let teamName: string | null = null;
     const teamFileId: string | null = firstGrant?.teamFileId || null;
     let folderId: string | null = null;
     let fileName: string | null = null;
@@ -85,7 +84,6 @@ export class AccessGrantController {
       });
       if (teamFile) {
         teamId = teamFile.folder.teamId;
-        teamName = teamFile.folder.team.name;
         folderId = teamFile.folderId;
         fileName = teamFile.name;
       }
@@ -97,7 +95,6 @@ export class AccessGrantController {
       if (file) {
         fileName = file.name;
         teamId = file.share?.teamFolder?.teamId || null;
-        teamName = file.share?.teamFolder?.team?.name || null;
         folderId = file.share?.teamFolderId || null;
         shareId = file.share?.id || shareId;
       }
@@ -134,11 +131,8 @@ export class AccessGrantController {
         this.teamNotificationService
           .notify({
             type: "FILE_SHARED",
-            title: encryptedNotification
-              ? "Nouveau partage dans votre équipe"
-              : fileName
-                ? `${actor.username || actor.email} a partagé "${fileName}"`
-                : `${actor.username || actor.email} a partagé un fichier`,
+            // Replaced by the generic text of the type, see notify().
+            title: "",
             teamId,
             userId: recipientUserId,
             actorId: actor.id,
@@ -147,8 +141,6 @@ export class AccessGrantController {
             metadata: encryptedNotification
               ? undefined
               : {
-                  senderName: actor.username || actor.email,
-                  fileName: fileName || undefined,
                   shareId: shareId || undefined,
                   highlightFileId: firstGrant?.fileId || teamFileId || undefined,
                 },
@@ -170,10 +162,7 @@ export class AccessGrantController {
             // Team share: generic, zero-knowledge notification without share link.
             // RGPD / E2E: never expose sender name or file name in the email.
             this.emailService
-              .sendTeamShareNotificationEmail(
-                recipient.email,
-                teamName || undefined,
-              )
+              .sendTeamShareNotificationEmail(recipient.email)
               .catch(() =>
                 this.logger.debug(`Email failed for user ${recipientUserId}`),
               );
@@ -184,7 +173,8 @@ export class AccessGrantController {
                 recipient.email,
                 shareId,
                 actor,
-                fileName || undefined,
+                // The file of an E2E grant is never named in the email.
+                undefined,
               )
               .catch(() =>
                 this.logger.debug(`Email failed for user ${recipientUserId}`),

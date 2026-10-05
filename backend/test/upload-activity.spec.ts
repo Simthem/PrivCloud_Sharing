@@ -112,6 +112,8 @@ testCase(
         prisma,
         {} as never,
         {
+          hasCompletedUploadData: async () => false,
+          hasPendingMultipartUpload: async () => false,
           getRecentUploadActivity: async () => storageActivity,
           deleteAllFiles: async () => {
             storageDeletes++;

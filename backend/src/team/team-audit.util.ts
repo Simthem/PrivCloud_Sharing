@@ -154,6 +154,21 @@ export function buildTeamAuditSummary(
   };
 }
 
+/**
+ * Anomaly line of the audit email. The stored report keeps the member address
+ * for the Team space, the email does not name anyone.
+ */
+export function auditEmailAnomalyLine(anomaly: TeamAuditAnomaly): string {
+  switch (anomaly.code) {
+    case "DOWNLOAD_BURST":
+      return "Un membre a effectué un grand nombre de téléchargements sur la période";
+    case "PERMISSION_CHURN":
+      return "Un membre a modifié de nombreux droits sur la période";
+    default:
+      return anomaly.description;
+  }
+}
+
 export function getScheduledAuditWindow(
   frequency: string,
   now = new Date(),

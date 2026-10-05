@@ -11,6 +11,7 @@ import {
   Patch,
   Post,
   Req,
+  Query,
   Res,
   UnauthorizedException,
   UseGuards,
@@ -93,6 +94,7 @@ export class ShareController {
   }
 
   @Get()
+  @Header("Cache-Control", "private, no-store")
   @UseGuards(JwtGuard)
   async getMyShares(@GetUser() user: User) {
     if (!user) throw new UnauthorizedException();
@@ -116,13 +118,22 @@ export class ShareController {
     return await this.shareService.getStoredRecipientsByUser(user.id);
   }
 
+  @Get("pending-uploads")
+  @Header("Cache-Control", "private, no-store")
+  @UseGuards(JwtGuard)
+  async getPendingUploads(@GetUser() user: User) {
+    if (!user) throw new UnauthorizedException();
+    return this.shareService.getPendingUploadsByUser(user.id);
+  }
+
   @Get(":id")
   @UseGuards(ShareSecurityGuard)
-  async get(@Param("id", SafeIdPipe) id: string) {
-    return new ShareDTO().from(await this.shareService.get(id));
+  async get(@Param("id", SafeIdPipe) id: string, @GetUser() user?: User) {
+    return new ShareDTO().from(await this.shareService.get(id, user?.id));
   }
 
   @Get(":id/from-owner")
+  @Header("Cache-Control", "private, no-store")
   @UseGuards(ShareOwnerGuard)
   async getFromOwner(@Param("id", SafeIdPipe) id: string) {
     return new ShareDTO().from(await this.shareService.getForOwner(id));
@@ -249,6 +260,7 @@ export class ShareController {
   }
 
   @Post(":id/complete")
+  @Header("Cache-Control", "private, no-store")
   @HttpCode(202)
   @UseGuards(CreateShareGuard, ShareOwnerGuard)
   async complete(
@@ -283,6 +295,7 @@ export class ShareController {
   }
 
   @Delete(":id/complete")
+  @Header("Cache-Control", "private, no-store")
   @UseGuards(ShareOwnerGuard)
   async revertComplete(@Param("id", SafeIdPipe) id: string) {
     return new ShareDTO().from(await this.shareService.revertComplete(id));
@@ -294,6 +307,7 @@ export class ShareController {
     @Param("id", SafeIdPipe) id: string,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
+    @Query("discardUploadedFiles") discardUploadedFiles?: string,
   ) {
     const anonymousCookieName = anonymousShareSessionCookieName(id);
     await this.shareService.remove(
@@ -301,6 +315,7 @@ export class ShareController {
       false,
       request.cookies?.reverse_share_token,
       request.cookies?.[anonymousCookieName],
+      discardUploadedFiles === "true",
     );
     response.clearCookie(anonymousCookieName, {
       path: anonymousShareSessionCookiePath(id),

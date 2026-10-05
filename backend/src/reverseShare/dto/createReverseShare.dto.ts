@@ -3,7 +3,9 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
   Max,
+  MaxLength,
   Min,
 } from "class-validator";
 
@@ -35,4 +37,11 @@ export class CreateReverseShareDTO {
   @IsOptional()
   @IsString()
   encryptedReverseShareKey?: string;
+
+  // Name encrypted with K_rs (base64url), sent instead of `name`.
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  @Matches(/^[A-Za-z0-9_-]+$/, { message: "encryptedName must be base64url" })
+  encryptedName?: string;
 }

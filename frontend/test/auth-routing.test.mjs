@@ -114,7 +114,7 @@ test("accepts same-origin return paths and rejects open redirects", () => {
 });
 
 test("never moves a Team E2E key fragment into the sign-in request URL", () => {
-  const secret = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-";
+  const secret = randomBytes(32).toString("base64url");
   const signInPath = buildSignInRedirectPath(
     `/team/invite/token?source=email#teamKey=${secret}&version=2`,
   );
@@ -131,7 +131,7 @@ test("never moves a Team E2E key fragment into the sign-in request URL", () => {
 
 test("marks an expired-session redirect without exposing a URL fragment", () => {
   const path = buildExpiredSessionSignInPath(
-    "/team/acme?tab=files#teamKey=AbCdEfGhIjKlMnOp&version=1",
+    `/team/acme?tab=files#teamKey=${randomBytes(32).toString("base64url")}&version=1`,
   );
   const parsed = new URL(path, "https://privcloud.example");
 
@@ -153,7 +153,7 @@ test("keeps a Team E2E fragment in per-tab storage and restores it once", () => 
   };
 
   try {
-    const secret = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-";
+    const secret = randomBytes(32).toString("base64url");
     const target = `/team/invite/token#teamKey=${secret}&version=3`;
 
     rememberPostAuthRedirectTarget(target);

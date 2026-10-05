@@ -1,4 +1,122 @@
 export default {
+  "upload.pending.fileChanged": "This file does not match the interrupted upload. It will be uploaded again from the beginning.",
+
+  "admin.shares.status.inactive": "Inactive upload",
+  "admin.shares.status.unfinished": "Not finalized",
+
+  "upload.pending.resume": "Resume or finalize",
+  "upload.pending.resumeHelp": "Select the missing files again to resume this upload. Saved files are kept. Click Save to finish with the files shown. Resuming parts requires the local upload record and the same original files.",
+
+  "upload.pending.title": "Unfinished uploads",
+  "upload.pending.body": "Some uploads have not been finalized. You can view and download the files already saved.",
+  "upload.pending.summary": "{date}: {count, plural, one {# saved file} other {# saved files}} ({size})",
+  "upload.pending.open": "Open saved files",
+  "upload.pending.detail": "This upload has not been finalized. The files shown are already saved and remain accessible from your account. Other files from this upload may be missing.",
+
+  "upload.cancel.confirm":
+    "The current upload will be interrupted and the incomplete share deleted. Continue?",
+  "upload.finalization.pending.retry": "Retry finalization",
+  "upload.finalization.pending.body": "Finalization has not been confirmed. Files already saved are preserved. Retry to obtain the share link.",
+  "upload.finalization.pending.title": "Finalization pending",
+  "upload.modal.completed.partial-body": "The share contains files saved by the server. The upload of {count} file(s) could not be confirmed. Check the share before uploading missing files again.",
+  "upload.modal.completed.share-incomplete": "Incomplete share",
+  "upload.modal.completed.partial-title": "Transferred files preserved",
+  "bridge.error.localNetworkPermissionRequired": "Connect the Android Companion and allow local application access when the browser asks.",
+  "bridge.error.localNetworkPermissionDenied": "The browser blocks the Android Companion. Allow local network access in site settings, then reconnect it.",
+  "bridge.error.extensionRequired": "Install or enable the PrivCloud Companion extension to connect the Companion.",
+  "bridge.error.originDenied": "This page is not authorized to use the Companion.",
+  "bridge.error.sessionExpired": "Reconnect the Companion to renew authorization.",
+  "bridge.error.downloadExpired": "The download expired. Restart the import.",
+  "bridge.error.busy": "The Companion is busy. Please try again shortly.",
+  "bridge.error.timeout": "The Companion did not respond in time. Check its status before restarting the operation.",
+  "bridge.error.messageTooLarge": "This response exceeds the size supported by the Companion.",
+  "bridge.error.secureContextRequired": "Open PrivCloud over HTTPS to connect the Companion.",
+
+  "team.dashboard.metrics.availableSeats": "{count} free",
+  "team.dashboard.metrics.downloadsShort": "Downloads (30d)",
+  "team.dashboard.e2e.details": "Details",
+  "team.dashboard.e2e.rotateShort": "Regenerate",
+  "team.dashboard.metrics.uploadCount":
+    "{count, plural, one {# upload} other {# uploads}}",
+  "team.dashboard.tabs.requests": "Requests",
+  "team.fileRequest.title": "File requests",
+  "team.fileRequest.create": "Request files",
+  "team.fileRequest.subject": "What are you requesting?",
+  "team.fileRequest.subject.placeholder": "Photos or documents to complete",
+  "team.fileRequest.team": "Team",
+  "team.fileRequest.destination": "Upload destination",
+  "team.fileRequest.recipients": "Recipients",
+  "team.fileRequest.scope.selected": "One or more members",
+  "team.fileRequest.scope.all": "Whole team",
+  "team.fileRequest.note": "Add a note",
+  "team.fileRequest.note.placeholder": "Details for the recipients",
+  "team.fileRequest.deadline": "Deadline (optional)",
+  "team.fileRequest.deadline.hint": "30 days by default, up to 365 days",
+  "team.fileRequest.email": "Also send the request by email",
+  "team.fileRequest.email.hint":
+    "Each recipient will receive an individual message without the request subject, note, files or encryption keys. Opening the link requires signing in.",
+  "team.fileRequest.metadata.hint":
+    "The subject and note are not end-to-end encrypted. Avoid including confidential information.",
+  "team.fileRequest.rights.hint":
+    "Recipients need write access to the selected folder. Uploaded files keep that folder's access rights and encryption.",
+  "team.fileRequest.notifications.hint":
+    "The request remains in your team space. Encrypted alerts are sent to members who selected 'All files'. Members who selected 'Direct shares only' can find the request in their team space.",
+  "team.fileRequest.empty": "No sent or received requests.",
+  "team.fileRequest.noFolders":
+    "No folders are available with write access. A team administrator can create a folder or update its permissions.",
+  "team.fileRequest.noRecipients":
+    "No other active member has write access to this folder.",
+  "team.fileRequest.allRights":
+    "To request files from the whole team, choose a folder where every other member has write access.",
+  "team.fileRequest.status.open": "Open",
+  "team.fileRequest.status.expired": "Expired",
+  "team.fileRequest.status.closed": "Closed",
+  "team.fileRequest.sent": "Sent",
+  "team.fileRequest.from": "From {name}",
+  "team.fileRequest.deletedFolder": "Deleted folder",
+  "team.fileRequest.details": "{sender}. Folder: {folder}. Deadline: {date}",
+  "team.fileRequest.files":
+    "{name}: {count, plural, one {# file} other {# files}}",
+  "team.fileRequest.upload": "Upload files",
+  "team.fileRequest.openFolder": "Open folder",
+  "team.fileRequest.close": "Close",
+  "team.fileRequest.close.title": "Close request",
+  "team.fileRequest.close.hint":
+    "New uploads and completion of ongoing uploads will be refused. Files already uploaded will remain in the folder.",
+  "team.fileRequest.cancel": "Cancel",
+  "team.fileRequest.submit": "Send request",
+  "team.fileRequest.retry": "Retry",
+  "team.fileRequest.previous": "Previous",
+  "team.fileRequest.next": "Next",
+  "team.fileRequest.range": "{start} to {end} of {total}",
+  "team.fileRequest.success": "Request sent to the selected members",
+  "team.fileRequest.error.create":
+    "Could not create the request. Check permissions, the deadline and the recipients.",
+  "team.fileRequest.error.close": "Could not close this request",
+  "team.fileRequest.error.list": "Could not load requests.",
+  "team.fileRequest.error.teams": "Could not load teams.",
+  "team.fileRequest.error.destinations": "Could not load destinations.",
+  "team.fileRequest.error.keys":
+    "Members who want to receive these notifications need to set up their encryption keys.",
+  "team.fileRequest.error.upload":
+    "Uploading is unavailable. Access permissions may have changed.",
+  "team.fileRequest.error.destinationChanged":
+    "This request is unavailable or its destination has changed.",
+  "team.fileRequest.error.return":
+    "This request is unavailable. Return to your team's requests.",
+  "team.fileRequest.loading": "Loading request",
+  "team.fileRequest.upload.hint":
+    "Destination: {folder}. Files follow the team folder's access permissions.",
+  "team.fileRequest.upload.unavailable":
+    "The request is unavailable, closed or expired, or access has been revoked. Uploading is disabled.",
+  "team.fileRequest.notification.request.subject": "File request: {subject}",
+  "team.fileRequest.notification.request": "A file request is waiting for you",
+  "team.fileRequest.notification.submitted.subject":
+    "Files received: {subject}",
+  "team.fileRequest.notification.submitted":
+    "Files have been uploaded for your request",
+  "team.fileRequest.notification.opening": "Opening encrypted notification",
+
   // Navbar
   "navbar.upload": "Upload",
   "navbar.shares": "Shares",
@@ -18,7 +136,7 @@ export default {
 
   // /
   // "home.title": "A <h>secure, self-hosted</h> file sharing platform.",
-  "home.title": "Share your files with confidence, <h>end-to-end encrypted</h>",
+  "home.title": "A <h>secure, self-hosted</h> file sharing platform.",
   "home.meta.title": "WeTransfer Alternative (End-to-End Encrypted)",
 
   "home.meta.description": "Secure file transfer with end-to-end AES-256 encryption. Share sensitive data privately, no ads or tracking. Hosted in France, alternative to WeTransfer.",
@@ -43,12 +161,12 @@ export default {
   "home.hero.seo": "PrivCloud is a secure alternative to WeTransfer, SwissTransfer, and TransferNow -- with AES-256 end-to-end encryption performed in your browser. Your files are encrypted before leaving your device: the server never stores unencrypted data. Whether you are sharing contracts, medical records, or large datasets: your files stay protected from upload to download.",
 
   // Trust / external references
-  "home.trust.text": "Built on the <aes>AES-256</aes> encryption standard, <gdpr>GDPR</gdpr> compliant, and secured with <shamir>Shamir's Secret Sharing</shamir> scheme.",
+  "home.trust.text": "Built on the <aes>AES-256</aes> encryption standard, <gdpr>GDPR</gdpr> compliant, with optional key recovery through <shamir>Shamir's Secret Sharing</shamir>.",
 
   // Differentiation section
   "home.diff.title": "Why PrivCloud is Different",
   "home.diff.encryption": "End-to-end AES-256 encryption",
-  "home.diff.zeroKnowledge": "Zero-knowledge architecture -- we never see your key",
+  "home.diff.zeroKnowledge": "Zero-knowledge architecture -- by default, we never see your key",
   "home.diff.noAccount": "No account required for transfers",
   "home.diff.openSource": "Open source and fully auditable",
   "home.diff.gdpr": "Hosted in France, 100% GDPR compliant",
@@ -98,7 +216,7 @@ export default {
   "home.features.speed.description": "Optimized infrastructure for maximum transfer speed. No file count limit, no throttling.",
   "home.features.open.title": "Open source",
   "home.features.open.description": "Fully auditable code. Transparency is not optional.",
-  "home.features.subtitle": "PrivCloud combines end-to-end AES-256 encryption, hosting in France, and full open-source transparency to deliver truly secure, GDPR-compliant file transfers. Unlike mainstream services, your files are never readable by the server.",
+  "home.features.subtitle": "PrivCloud combines end-to-end AES-256 encryption, hosting in France, and open-source transparency to deliver secure file transfers in accordance with the GDPR obligations that apply to the service. For E2E shares, the server does not receive the content key by default and cannot read the files.",
 
   // How it works section
   "home.howto.title": "How to send encrypted files in 3 steps",
@@ -115,14 +233,14 @@ export default {
 
   // Why PrivCloud section
   "home.whyprivcloud.title": "What sets PrivCloud apart from other file transfer services",
-  "home.whyprivcloud.subtitle": "WeTransfer, SwissTransfer, TransferNow, Smash: most file transfer services encrypt your data at rest on their servers but retain the key. They can technically read your files. PrivCloud takes a fundamentally different approach: AES-256 end-to-end encryption is performed in your browser, and the key never leaves your device. Zero-knowledge architecture, hosted in France, fully GDPR compliant.",
+  "home.whyprivcloud.subtitle": "WeTransfer, SwissTransfer, TransferNow, Smash: most file transfer services encrypt your data at rest on their servers but retain the key. They can technically read your files. PrivCloud takes a fundamentally different approach: AES-256 end-to-end encryption is performed in your browser, and by default the key never reaches our servers. Zero-knowledge architecture designed to meet GDPR requirements.",
 
   // Security, privacy and compliance section
   "home.security.title": "Security, privacy and GDPR compliance",
   "home.security.encryption.title": "AES-256-GCM encryption: your key is generated in your browser",
-  "home.security.encryption.text": "Every file is encrypted locally in your browser before being uploaded. The AES-256 symmetric encryption key is randomly generated and embedded in the URL fragment (#key=...), a part that is never transmitted to the server by HTTP protocol design. Result: even if the server is compromised, your files remain unreadable. No plaintext data ever transits the network or resides on our servers.",
+  "home.security.encryption.text": "Every file is encrypted locally in your browser before being uploaded. The AES-256 symmetric encryption key is randomly generated and embedded in the URL fragment (#key=...), a part that is never transmitted to the server by HTTP protocol design. Result: even if the server is compromised, your files remain unreadable. Their content never transits the network or resides on our servers in plaintext.",
   "home.security.zeroknowledge.title": "Verifiable zero-knowledge architecture",
-  "home.security.zeroknowledge.text": "The server only stores opaque encrypted blobs. It never sees your decryption key, cannot read your files, and retains no plaintext data. This promise is verifiable: the full source code is open and auditable on GitHub. You do not have to trust us -- you can verify for yourself.",
+  "home.security.zeroknowledge.text": "End-to-end encryption is enabled by default for file content. In the current E2E format, file names, paths, share titles and descriptions are also protected on the client with the same key. The server keeps encrypted data, neutral labels, file sizes and dates. The source code is open and auditable on GitHub.",
   "home.security.gdpr.title": "Hosted in France, GDPR compliant",
   "home.security.gdpr.text": "Your encrypted files are stored on secure infrastructure in France, in full compliance with the General Data Protection Regulation (GDPR) and CNIL recommendations. No transfers to third countries, no tracking, no advertising, no third-party analytics. Your data stays under European jurisdiction, protected by the strictest security standards.",
 
@@ -164,9 +282,9 @@ export default {
   "home.threat.intro": "We believe honest platforms tell you exactly what they protect against -- and what remains your responsibility.",
   "home.threat.protects.title": "What we protect against",
   "home.threat.protects.serverBreach": "Server / database compromise -- encrypted files are unreadable without your key.",
-  "home.threat.protects.s3Provider": "S3 storage provider snooping -- with E2E enabled, they only see opaque ciphertext.",
+  "home.threat.protects.s3Provider": "S3 storage provider snooping -- with E2E enabled, they only see encrypted content, under random identifiers.",
   "home.threat.protects.networkSniffing": "Network interception -- TLS 1.3 in transit, AES-256 at rest and client-side.",
-  "home.threat.protects.operator": "Platform operator (us) -- zero-knowledge design: we never see your key.",
+  "home.threat.protects.operator": "Platform operator (us) -- zero-knowledge design: by default, we never see your key.",
   "home.threat.protects.sskrRecovery": "Partial loss of SSKR fragments -- thanks to Shamir's scheme, a minimum threshold of fragments is enough to reconstruct your key.",
   "home.threat.notProtects.title": "What stays your responsibility",
   "home.threat.notProtects.keyLoss": "Losing your E2E key without having generated SSKR fragments -- without the key or fragments, your encrypted shares are permanently inaccessible.",
@@ -512,7 +630,7 @@ export default {
   "admin.stats.history.partial":
     "Each curve is scaled to its own maximum. Daily totals are available since {date}. Dashed portions were rebuilt from surviving account, share and file creation dates. Historical views cannot be rebuilt because only their cumulative total was stored.",
   "admin.stats.history.empty":
-    "No daily snapshot has been recorded yet. Share, view and storage curves start filling in from the first recording; users are rebuilt from account creation dates.",
+    "No daily snapshot has been recorded yet. Share, view and storage curves start filling in from the first recording, users are rebuilt from account creation dates.",
   // END /admin
 
   // /admin/users
@@ -598,7 +716,7 @@ export default {
   "admin.shares.status.uploading": "Uploading",
   "admin.shares.privacy.title": "Privacy-protected inventory",
   "admin.shares.privacy.description":
-    "Public links, titles, descriptions, recipients and file names are hidden. Administrator privileges never grant access to user content; deletion uses only an opaque audit reference.",
+    "Public links, titles, descriptions, recipients and file names are hidden. Administrator privileges never grant access to user content, deletion uses only an opaque audit reference.",
 
   "admin.shares.edit.delete.title": "Delete share: {id}",
   "admin.shares.edit.delete.description":
@@ -674,8 +792,7 @@ export default {
     "Create your personal E2E key to protect new shares with end-to-end encryption.",
   "upload.cancel.button": "Cancel",
   "upload.cancel.title": "Cancel upload",
-  "upload.cancel.confirm":
-    "The current upload will be interrupted and the incomplete share deleted. Continue?",
+  "upload.cancel.discard-confirm": "All files in this upload, including those already transferred, will be deleted. Continue?",
 
   // showCreateUploadModal.tsx
   "upload.modal.title": "Create Share",
@@ -774,7 +891,7 @@ export default {
   "bridge.pair.confirm": "Confirm",
   "bridge.toast.paired": "PrivCloud Companion enabled",
   "bridge.error.updateRequired":
-    "PrivCloud Companion is detected, but this version does not support one-click enablement yet. Reinstall Companion from the Integrations page, then restart it.",
+    "Update both the Companion and the browser extension from the Integrations page, then reload PrivCloud to use their native connection.",
   "bridge.error.openSourceUpdateRequired":
     "This older Companion is not compatible with the open-source edition. Reinstall Companion from the Integrations page, then restart it.",
   "bridge.error.companionRequired":
@@ -795,7 +912,7 @@ export default {
   "bridge.error.tooManyJobs":
     "Too many Bridge transfers are already active. Wait for an active transfer to finish, then try again.",
   "bridge.error.unavailable":
-    "PrivCloud Companion is unavailable. Start or reinstall it, then try again.",
+    "The Companion is unavailable. Check that the extension is enabled and its native connector is installed, then reconnect from the Integrations page.",
   "webdav.endpoint.label": "WebDAV URL",
   "webdav.username.label": "Username",
   "webdav.password.label": "App password",
@@ -911,32 +1028,32 @@ export default {
   "security.hero.title": "PrivCloud Sharing Security",
   "security.hero.subtitle": "At PrivCloud, security isn't a feature -- it's the architecture.",
   "security.overview.title": "Overview",
-  "security.overview.text": "PrivCloud Sharing is built on the zero-knowledge principle: neither our servers, nor our team, nor our storage provider can read your files. Encryption happens in your browser, before your data even leaves your device. This page transparently describes the cryptographic mechanisms, infrastructure choices and honest limitations of the system.",
+  "security.overview.text": "PrivCloud Sharing is built on the zero-knowledge principle: neither our servers, nor our team, nor our storage provider can read the content of your end-to-end encrypted files, the default mode of every account. Encryption happens in your browser, before your data even leaves your device. This page transparently describes the cryptographic mechanisms, infrastructure choices and honest limitations of the system.",
   "security.e2ee.title": "End-to-End Encryption (E2EE)",
   "security.e2ee.howItWorks.title": "How it works",
   "security.e2ee.howItWorks.step1": "An AES-256 key is generated locally in your browser via the Web Crypto API.",
   "security.e2ee.howItWorks.step2": "Your files are encrypted client-side before upload -- we only receive opaque ciphertext.",
   "security.e2ee.howItWorks.step3": "The decryption key is embedded in the share link as a URL fragment (#key=...). By HTTP protocol definition, this fragment is never sent to the server -- it stays in your browser and never appears in any of our infrastructure logs.",
-  "security.e2ee.howItWorks.step4": "The recipient decrypts directly in their browser, without the key passing through our infrastructure.",
+  "security.e2ee.howItWorks.step4": "The recipient decrypts directly in their browser. By default, the key does not pass through our infrastructure: it only does when you choose to send it by e-mail, or for files you receive through an upload link.",
   "security.e2ee.algorithms.title": "Algorithms used",
   "security.e2ee.algorithms.col.component": "Component",
   "security.e2ee.algorithms.col.standard": "Standard",
   "security.e2ee.algorithms.row.fileEncryption": "File encryption",
   "security.e2ee.algorithms.row.transport": "Network transport",
   "security.e2ee.algorithms.row.storageAtRest": "Storage at rest",
-  "security.e2ee.algorithms.row.keySharing": "Key sharing",
+  "security.e2ee.algorithms.row.keySharing": "Key recovery (optional)",
   "security.e2ee.whyGCM.title": "Why AES-256-GCM?",
   "security.e2ee.whyGCM.text": "GCM (Galois/Counter Mode) provides not only confidentiality (nobody can read) but also authenticity (nobody can tamper with encrypted data without detection). It's the standard used by governments and financial institutions to protect classified data.",
   "security.zeroKnowledge.title": "Zero-knowledge architecture",
-  "security.zeroKnowledge.text": "Zero-knowledge architecture means our system is designed so that it is technically impossible for us to access your file contents, even if we wanted to -- or were compelled to.",
-  "security.zeroKnowledge.point1": "Your files are encrypted before upload",
+  "security.zeroKnowledge.text": "Zero-knowledge architecture means our system is designed so that it is technically impossible for us to access the contents of your end-to-end encrypted files, even if we wanted to -- or were compelled to.",
+  "security.zeroKnowledge.point1": "Your account's files are encrypted before upload",
   "security.zeroKnowledge.point2": "By default, your key does not pass through our servers",
   "security.zeroKnowledge.point3": "Our logs contain no decryption keys",
   "security.zeroKnowledge.point4": "Even full access to our database would not allow reading your files",
   "security.sskr.title": "Shamir's Secret Sharing (SSKR)",
-  "security.sskr.intro": "To prevent permanent loss of access to your files if you lose your key, PrivCloud implements Shamir's Secret Sharing (via SSKR -- Sharded Secret Key Reconstruction).",
+  "security.sskr.intro": "Shamir's Secret Sharing is only used to recover your E2E key if you lose it. It is optional: without fragments or a passkey vault, a lost key leaves your encrypted files permanently unreadable, and nobody, PrivCloud included, can recover it. PrivCloud uses its own implementation, running entirely in your browser: the fragments are shown on your screen and are never sent to the server.",
   "security.sskr.principle.title": "Principle",
-  "security.sskr.principle.text": "Your E2E key is split into multiple fragments (e.g. 3 fragments of which 2 are sufficient to reconstruct the key). Each fragment alone is useless -- only the combination of a minimum number of fragments allows reconstruction.",
+  "security.sskr.principle.text": "When you create them, you choose the number of fragments and the threshold needed to rebuild the key (for example 3 fragments of which 2 are enough). With fewer fragments than this threshold, recovering the key is mathematically impossible: they reveal nothing about it.",
   "security.sskr.whyImportant.title": "Why it matters",
   "security.sskr.table.col.scenario": "Scenario",
   "security.sskr.table.col.withoutSSKR": "Without SSKR",
@@ -947,8 +1064,8 @@ export default {
   "security.sskr.table.row.shardTheft": "Theft of one fragment",
   "security.sskr.table.row.shardTheft.with": "Useless on its own",
   "security.sskr.table.row.serverCompromise": "Server compromised",
-  "security.sskr.table.row.serverCompromise.without": "Key exposed if centralized",
-  "security.sskr.table.row.serverCompromise.with": "No complete fragment present",
+  "security.sskr.table.row.serverCompromise.without": "Nothing to find: the key is never sent there",
+  "security.sskr.table.row.serverCompromise.with": "Nothing to find: the fragments are never sent there",
   "security.sskr.bestPractice.label": "Best practice:",
   "security.sskr.bestPractice.text": "Store your fragments in separate, secure locations (password manager, offline encrypted media, physical safe).",
   "security.infra.title": "Infrastructure & compliance",
@@ -960,7 +1077,7 @@ export default {
   "security.infra.zeroTracking.title": "Zero tracking, zero analytics",
   "security.infra.zeroTracking.text": "PrivCloud does not collect any behavioral data. No tracking cookies, no advertising pixels, no third-party analytics tools are loaded on our pages. What you share is none of our business -- literally.",
   "security.infra.s3.title": "Object storage provider (S3-compatible)",
-  "security.infra.s3.text": "Even our object storage provider cannot read your files. With E2E enabled, it only stores opaque ciphertext -- no context, no readable metadata, no possibility of decryption.",
+  "security.infra.s3.text": "Our object storage provider cannot read your end-to-end encrypted files. It stores encrypted content under random identifiers and sees object sizes and transfers. Direct download links use a neutral identifier and a generic content type for every E2E file.",
   "security.links.title": "Share link security",
   "security.links.expiration.label": "Automatic expiration:",
   "security.links.expiration.text": "each link has a configurable lifetime. After expiry, the link is revoked and files deleted.",
@@ -1405,16 +1522,16 @@ export default {
     "PBKDF2/SHA-256 is recommended: it is bundled, broadly compatible, and faster than SHA-384 or SHA-512 for this use case.",
   "admin.config.altcha.cost": "Cost",
   "admin.config.altcha.cost.description":
-    "PBKDF2 cost per attempt. 5000 is the recommended default; tune user friction mostly with effort.",
+    "PBKDF2 cost per attempt. 5000 is the recommended default, tune user friction mostly with effort.",
   "admin.config.altcha.effort": "Effort",
   "admin.config.altcha.effort.description":
-    "Average number of counters the browser must test. 250 is a good default; increase gradually if you need more resistance.",
+    "Average number of counters the browser must test. 250 is a good default, increase gradually if you need more resistance.",
   "admin.config.altcha.expires-in-seconds": "Challenge expiration",
   "admin.config.altcha.expires-in-seconds.description":
     "Challenge validity in seconds. Short lifetimes limit token reuse windows.",
   "admin.config.altcha.hmac-key": "HMAC key",
   "admin.config.altcha.hmac-key.description":
-    "Server-side secret used to sign and verify challenges. A strong key is generated automatically; rotate only when needed.",
+    "Server-side secret used to sign and verify challenges. A strong key is generated automatically, rotate only when needed.",
   "admin.config.altcha.type": "Interaction type",
   "admin.config.altcha.type.description":
     "Widget interaction control: checkbox, native checkbox, or switch.",
@@ -1739,7 +1856,7 @@ export default {
   "signing.modal.notify.error": "Failed to send signature request",
   "signing.option.e2e-key-email": "Send the E2E key in a second email",
   "signing.option.e2e-key-email.desc":
-    "The main link stays keyless. The key is sent separately to signers and approvers; convenient, but less isolated than another secure channel.",
+    "The main link stays keyless. The key is sent separately to signers and approvers, convenient, but less isolated than another secure channel.",
 
   // Signing pages - index
   "signing.my-signatures": "My signatures",
@@ -1776,6 +1893,8 @@ export default {
   "signing.detail.forensic.download": "My evidence data",
   "signing.toast.forensic-error": "Your evidence data is not available",
   "signing.toast.evidence-error": "The evidence bundle is not available",
+  "signing.toast.download-started":
+    "Download started: the file is in your browser's downloads.",
   "signing.received": "Received documents",
   "signing.received.empty": "No documents received for signature.",
   "signing.empty.eidas": "Create your first request to have your PDF documents signed in compliance with eIDAS regulation.",
@@ -2251,7 +2370,7 @@ export default {
   "team.e2e.share.success":
     "Shared {files, plural, one {# file} other {# files}} through {grants, plural, one {# access grant} other {# access grants}}.",
   "team.e2e.share.partial":
-    "{success, plural, one {# access grant created} other {# access grants created}}; {failed, plural, one {# failed} other {# failed}}.",
+    "{success, plural, one {# access grant created} other {# access grants created}}, {failed, plural, one {# failed} other {# failed}}.",
   "team.e2e.share.error": "Unable to share the encrypted files.",
   "team.dashboard.e2e.initButton": "Initialize E2E encryption",
   "team.dashboard.e2e.rotateButton": "Regenerate E2E key",
@@ -2269,7 +2388,7 @@ export default {
   "team.dashboard.e2e.noKeyForInvite": "Team has no E2E key. Initialize E2E encryption first.",
   "team.dashboard.e2e.staleKey.title": "Team E2E key unreadable",
   "team.dashboard.e2e.staleKey.desc": "Your copy of this team's E2E key was sealed with a personal key that no longer exists.",
-  "team.dashboard.e2e.staleKey.adminHint": "Drop this obsolete copy, then ask another member who still holds the key to share it with you. If nobody has it anymore, you can initialize a new team key; files encrypted with the old key will stay unreadable.",
+  "team.dashboard.e2e.staleKey.adminHint": "Drop this obsolete copy, then ask another member who still holds the key to share it with you. If nobody has it anymore, you can initialize a new team key - files encrypted with the old key will stay unreadable.",
   "team.dashboard.e2e.staleKey.memberHint": "Drop this obsolete copy, then ask an administrator to share the team key with you again.",
   "team.dashboard.e2e.staleKey.clearButton": "Drop this obsolete key",
   "team.dashboard.e2e.staleKey.cleared": "Obsolete key dropped. You can now receive the team key again.",
@@ -2277,7 +2396,7 @@ export default {
   "team.dashboard.e2e.staleKey.toast": "Your personal key cannot open this team's E2E key. Drop the obsolete copy and have the key shared with you again.",
   "team.dashboard.e2e.banner.notInitTitle": "E2E encryption not initialized",
   "team.dashboard.e2e.banner.notInitDesc": "No E2E key is configured for this team. Initialize it to protect files.",
-  "team.dashboard.e2e.banner.askResharDesc": "You no longer hold this team's E2E key, but other members still do. Ask one of them to share it with you again; generating a new key would make existing files unreadable.",
+  "team.dashboard.e2e.banner.askResharDesc": "You no longer hold this team's E2E key, but other members still do. Ask one of them to share it with you again - generating a new key would make existing files unreadable.",
   "team.dashboard.e2e.banner.missingTitle": "E2E key missing",
   "team.dashboard.e2e.banner.missingDesc": "You haven't received this team's E2E key yet. Ask your administrator to share it.",
   "team.dashboard.e2e.banner.activeTitle": "E2E encryption active",
@@ -2593,7 +2712,7 @@ export default {
   "signing.sign.unavailable.title": "Signing link unavailable",
   "signing.sign.unavailable.description": "The source file or signing request was deleted, cancelled, or expired. This link can no longer display or sign the document.",
   "signing.preview.unavailable.title": "Document unavailable",
-  "signing.preview.unavailable.description": "The file can no longer be loaded. It may have been deleted; signing is not possible.",
+  "signing.preview.unavailable.description": "The file can no longer be loaded. It may have been deleted, signing is not possible.",
   "signing.sign.legal.standard-short": "This check proves current access to the recipient email address, not the civil identity of the person entering the code.",
   "signing.sign.legal.reinforced-short": "PrivCloud's reinforced profile implements an advanced electronic signature in accordance with the requirements of Article 26 of the eIDAS Regulation: transactional WebAuthn assertion, assigned account, explicit consent and a CMS/PDF cryptographic seal of the evidence by PrivCloud. This is not a qualified electronic signature (QES).",
   "signing.sign.assurance.standard": "Standard level: current access to the recipient email address was confirmed with a one-time code. Mailbox control does not verify civil identity.",
@@ -2646,4 +2765,15 @@ export default {
   "team.settings.pqNotifications.title": "Post-quantum notifications",
   "team.settings.pqNotifications.enabled": "Use hybrid ML-KEM-768 encryption for Team notifications",
   "team.settings.pqNotifications.help": "When enabled, notifications for members with an ML-KEM key use X25519 + ML-KEM-768. Members without a PQ key keep the existing X25519 encryption.",
+  "team.fileRequest.metadata.encryptedHint": "The subject and note are end-to-end encrypted with the team key. Only the members who hold it can read them.",
+  "team.fileRequest.encryptedSubject": "Encrypted request",
+  "team.notification.generic.FILE_SHARED": "A file was shared with you",
+  "team.notification.generic.FILE_UPLOADED": "New content in one of your team folders",
+  "team.notification.generic.FILE_DELETED": "Files were deleted in your team",
+  "team.notification.generic.GRANT_RECEIVED": "You were granted access",
+  "team.notification.generic.GRANT_REVOKED": "One of your accesses was removed",
+  "team.notification.generic.KEY_ROTATED": "Your team key was renewed",
+  "team.notification.generic.MEMBER_JOINED": "A member joined your team",
+  "team.notification.generic.MEMBER_LEFT": "A member left your team",
+  "account.reverseShares.error.encryption": "Unable to encrypt the upload link. Please try again.",
 };

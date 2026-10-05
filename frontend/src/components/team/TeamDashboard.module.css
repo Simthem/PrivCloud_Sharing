@@ -1,0 +1,168 @@
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--mantine-spacing-md);
+  margin-bottom: var(--mantine-spacing-lg);
+}
+
+.metric {
+  min-width: 0;
+  min-height: 140px;
+  padding: var(--mantine-spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.value {
+  font-size: var(--mantine-font-size-xl);
+  font-weight: 700;
+  flex: 1;
+}
+
+.storage {
+  position: relative;
+}
+
+.storageValues {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.storage .label {
+  min-height: 74px;
+  padding-right: 86px;
+}
+
+.storageGauge {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  flex-shrink: 0;
+}
+
+.tabs [role="tab"] {
+  padding-inline: 8px;
+}
+
+.activeEncryption {
+  margin-bottom: var(--mantine-spacing-md);
+}
+
+.encryptionActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-sm);
+  flex-wrap: wrap;
+}
+
+.encryptionDescription {
+  flex: 1 1 260px;
+}
+
+.encryptionDetails,
+.mobileOnly {
+  display: none;
+}
+
+.encryptionDetails summary {
+  cursor: pointer;
+  font-size: var(--mantine-font-size-xs);
+}
+
+.tabs {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  margin-bottom: var(--mantine-spacing-md);
+}
+
+@media (max-width: 680px) {
+  .metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .metric {
+    min-height: 0;
+    padding: 10px;
+    gap: 4px;
+  }
+
+  .label {
+    font-size: 10px;
+    min-height: 28px;
+  }
+
+  .value {
+    font-size: var(--mantine-font-size-lg);
+  }
+
+  .storage {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .storageGauge {
+    position: static;
+    align-self: center;
+  }
+
+  .storage .label {
+    padding-right: 0;
+    min-height: 0;
+    margin-bottom: 4px;
+  }
+
+  .activeEncryption {
+    padding: 10px 12px;
+    margin-bottom: 12px;
+  }
+
+  .encryptionActions {
+    gap: 6px;
+  }
+
+  .encryptionDescription {
+    display: none;
+  }
+
+  .encryptionDetails,
+  .mobileOnly {
+    display: block;
+  }
+
+  .desktopOnly {
+    display: none;
+  }
+
+  .tabsViewport {
+    overflow-x: auto;
+    scrollbar-width: thin;
+    overscroll-behavior-x: contain;
+  }
+
+  .tabs {
+    flex-wrap: nowrap;
+    width: max-content;
+    min-width: 100%;
+    gap: 0;
+    margin-bottom: 12px;
+  }
+}

@@ -1,8 +1,18 @@
+import { fileRequestServiceMessage } from "src/teamFileRequest/team-file-request-i18n";
 import { Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "src/prisma/prisma.service";
 import { PushService } from "src/push/push.service";
+import {
+  GenericTeamNotificationType,
+  isGenericTeamNotificationType,
+  navigationMetadata,
+  TEAM_NOTIFICATION_PUSH_BODY,
+  teamNotificationTitle,
+} from "./team-notification-messages";
 
 export type TeamNotificationType =
+  | "FILE_REQUESTED"
+  | "FILE_REQUEST_SUBMITTED"
   | "FILE_SHARED"
   | "FILE_UPLOADED"
   | "FILE_DELETED"
@@ -41,6 +51,7 @@ interface CreateNotificationParams {
   // Used only for non-sensitive legacy notifications. Encrypted notifications
   // always use an opaque resolver URL instead.
   url?: string;
+  // Only navigation identifiers are kept, see navigationMetadata().
   metadata?: Record<string, unknown>;
   encryptedMetadata?: string;
 }
@@ -54,25 +65,47 @@ export class TeamNotificationService {
     private pushService: PushService,
   ) {}
 
+  /** Requests insert their notification in the same transaction as the action.
+   * Deliver only generic text outside that transaction. The stored notification remains
+   * available if push delivery fails or the process stops here. */
+  deliverFileRequestNotification(notification: {
+    id: string;
+    userId: string;
+    title: string;
+    teamId: string;
+  }) {
+    const url = `/notifications/open/${notification.id}`;
+    const payload = {
+      title: notification.title,
+      body: fileRequestServiceMessage("pushBody"),
+      url,
+    };
+    void this.pushService.sendToUser(notification.userId, payload).catch(() => {
+      this.logger.debug("File request push delivery failed");
+    });
+  }
+
   /**
    * Create a notification for a specific team member.
    * Also sends a push notification if the user has push enabled.
    */
   async notify(params: CreateNotificationParams) {
+    const title = isGenericTeamNotificationType(params.type)
+      ? teamNotificationTitle(params.type)
+      : params.title;
+    const metadata = params.encryptedMetadata
+      ? undefined
+      : navigationMetadata(params.metadata);
     const notification = await this.prisma.teamNotification.create({
       data: {
         type: params.type,
-        title: params.title,
+        title,
         teamId: params.teamId,
         userId: params.userId,
         actorId: params.actorId,
         teamFileId: params.teamFileId,
         folderId: params.folderId,
-        metadata: params.encryptedMetadata
-          ? null
-          : params.metadata
-            ? JSON.stringify(params.metadata)
-            : null,
+        metadata: metadata ? JSON.stringify(metadata) : null,
         encryptedMetadata: params.encryptedMetadata || null,
       },
     });
@@ -83,17 +116,15 @@ export class TeamNotificationService {
     // redirects immediately to the signature, tracking page or download.
     const url = params.encryptedMetadata
       ? `/notifications/open/${notification.id}`
-      : this.buildNavigationUrl(params);
+      : this.buildNavigationUrl({ ...params, metadata });
 
-    // Push notification body: generic when E2E encrypted, detailed when plaintext
-    const pushBody = params.encryptedMetadata
-      ? "Vous avez reçu une nouvelle notification chiffrée"
-      : this.buildPushBody(params);
+    // Push services and lock screens only ever get generic text.
+    const pushBody = TEAM_NOTIFICATION_PUSH_BODY;
 
     // Send push notification (non-blocking)
     this.pushService
       .sendToUser(params.userId, {
-        title: params.title,
+        title,
         body: pushBody,
         url,
       })
@@ -105,7 +136,8 @@ export class TeamNotificationService {
   }
 
   /**
-   * Notify all team members (except the actor) about an event.
+   * Notify all team members (except the actor) about an event. The text is
+   * the generic one of the event type, see team-notification-messages.ts.
    * Respects pushNotifMode: SHARES_ONLY members only get push for
    * FILE_SHARED, GRANT_RECEIVED types. All types create DB records
    * (for email digest) regardless.
@@ -113,8 +145,7 @@ export class TeamNotificationService {
   async notifyTeamMembers(
     teamId: string,
     actorId: string,
-    type: TeamNotificationType,
-    title: string,
+    type: GenericTeamNotificationType,
     opts?: {
       teamFileId?: string;
       folderId?: string;
@@ -149,6 +180,9 @@ export class TeamNotificationService {
 
     if (eligibleMembers.length === 0) return [];
 
+    const title = teamNotificationTitle(type);
+    const metadata = navigationMetadata(opts?.metadata);
+
     // Determine if this is a "direct share" type (for SHARES_ONLY filtering)
     const isDirectShareType =
       type === "FILE_SHARED" || type === "GRANT_RECEIVED";
@@ -171,7 +205,7 @@ export class TeamNotificationService {
       actorId,
       teamFileId: opts?.teamFileId || null,
       folderId: opts?.folderId || null,
-      metadata: opts?.metadata ? JSON.stringify(opts.metadata) : null,
+      metadata: metadata ? JSON.stringify(metadata) : null,
     }));
 
     await this.prisma.teamNotification.createMany({ data: notifData });
@@ -185,24 +219,17 @@ export class TeamNotificationService {
       actorId,
       teamFileId: opts?.teamFileId,
       folderId: opts?.folderId,
-      metadata: opts?.metadata,
+      metadata,
     });
 
     // Send push notifications in parallel (all notifiable members already filtered)
-    const pushBody = this.buildPushBody({
-      type,
-      title,
-      teamId,
-      userId: "",
-      actorId,
-      metadata: opts?.metadata,
-    });
+    const pushBody = TEAM_NOTIFICATION_PUSH_BODY;
 
     const pushPromises = notifiableMembers.map((m) =>
       this.pushService
         .sendToUser(m.userId, { title, body: pushBody, url })
-          .catch(() => {
-            this.logger.debug(`Push failed for ${m.userId}`);
+        .catch(() => {
+          this.logger.debug(`Push failed for ${m.userId}`);
         }),
     );
 
@@ -240,9 +267,9 @@ export class TeamNotificationService {
         take: pagination.limit,
         skip: pagination.offset,
         include: {
-          team: { select: { id: true, name: true, slug: true } },
-          teamFile: { select: { id: true, name: true } },
-          folder: { select: { id: true, name: true } },
+          team: { select: { id: true } },
+          teamFile: { select: { id: true } },
+          folder: { select: { id: true } },
         },
       }),
       this.prisma.teamNotification.count({ where }),
@@ -267,9 +294,9 @@ export class TeamNotificationService {
     return this.prisma.teamNotification.findFirst({
       where: { id: notificationId, userId },
       include: {
-        team: { select: { id: true, name: true, slug: true } },
-        teamFile: { select: { id: true, name: true } },
-        folder: { select: { id: true, name: true } },
+        team: { select: { id: true } },
+        teamFile: { select: { id: true } },
+        folder: { select: { id: true } },
       },
     });
   }
@@ -360,35 +387,5 @@ export class TeamNotificationService {
       return `/team/${params.teamId}`;
     }
     return `/team?tab=notifications`;
-  }
-
-  private buildPushBody(params: CreateNotificationParams): string {
-    const meta = params.metadata || {};
-    switch (params.type) {
-      case "FILE_SHARED":
-        return `${meta.senderName || "Un membre"} a partagé "${meta.fileName || "un fichier"}" avec vous`;
-      case "FILE_UPLOADED":
-        return `${meta.senderName || "Un membre"} a uploadé "${meta.fileName || "un fichier"}"`;
-      case "FILE_DELETED":
-        return `"${meta.fileName || "Un fichier"}" a été supprimé`;
-      case "GRANT_RECEIVED":
-        return `Vous avez reçu l'accès à "${meta.fileName || "un fichier"}"`;
-      case "GRANT_REVOKED":
-        return `Votre accès à "${meta.fileName || "un fichier"}" a été révoqué`;
-      case "KEY_ROTATED":
-        return `Les clés de l'équipe ont été renouvelées`;
-      case "MEMBER_JOINED":
-        return `${meta.memberName || "Un nouveau membre"} a rejoint l'équipe`;
-      case "MEMBER_LEFT":
-        return `${meta.memberName || "Un membre"} a quitté l'équipe`;
-      case "SIGNATURE_REQUESTED":
-        return `${meta.actorName || "Un membre"} a demandé la signature de "${meta.fileName || "un document"}"`;
-      case "SIGNATURE_SIGNED":
-        return `${meta.signerName || "Un signataire"} a signé "${meta.fileName || "un document"}"${meta.signedCount && meta.totalSigners ? ` (${meta.signedCount}/${meta.totalSigners})` : ""}`;
-      case "SIGNATURE_COMPLETED":
-        return `Le document "${meta.fileName || ""}" est prêt au téléchargement`;
-      default:
-        return params.title;
-    }
   }
 }

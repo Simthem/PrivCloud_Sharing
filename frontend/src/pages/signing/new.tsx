@@ -1,3 +1,4 @@
+import { isValidSigningRecipientEmail } from "../../utils/signingEmail.util";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { AxiosError } from "axios";
@@ -176,13 +177,33 @@ const NewSigningRequestPage = () => {
     for (const f of encrypted) {
       byShare.set(f.shareId, [...(byShare.get(f.shareId) ?? []), f]);
     }
+    // Team files open their names with K_team, own files with their share key.
+    const teamKeys = new Map<string, Promise<CryptoKey>>();
+    const teamKey = (teamId: string) => {
+      if (!teamKeys.has(teamId)) {
+        teamKeys.set(
+          teamId,
+          (async () => {
+            const { wrappedTeamKey } = await teamService.getTeamKey(teamId);
+            if (!wrappedTeamKey) throw new Error("Team E2E key is missing");
+            return unwrapReverseShareKey(
+              wrappedTeamKey,
+              await importKeyFromBase64(userKeyB64),
+            );
+          })(),
+        );
+      }
+      return teamKeys.get(teamId)!;
+    };
     void Promise.all(
       [...byShare.entries()].map(async ([shareId, entries]) => {
         try {
-          const key = await resolveOwnerShareKey(shareId, userKeyB64, {
-            cryptoScheme: entries[0].cryptoScheme,
-            wrappedShareKey: entries[0].wrappedShareKey,
-          });
+          const key = entries[0].teamId
+            ? await teamKey(entries[0].teamId)
+            : await resolveOwnerShareKey(shareId, userKeyB64, {
+                cryptoScheme: entries[0].cryptoScheme,
+                wrappedShareKey: entries[0].wrappedShareKey,
+              });
           const opened = await decryptShareFileNames<
             SignableFile & {
               id: string;
@@ -270,7 +291,7 @@ const NewSigningRequestPage = () => {
         name: (val: string) =>
           !val ? t("signing.new.validate.name-required") : null,
         email: (val: string) =>
-          !val || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)
+          !isValidSigningRecipientEmail(val)
             ? t("signing.new.validate.email-invalid")
             : null,
       },

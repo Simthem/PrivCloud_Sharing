@@ -1,6 +1,6 @@
 {
   "name": "pingvindocs",
-  "version": "1.25.1",
+  "version": "1.25.2",
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
@@ -29,7 +29,9 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "typescript": "~5.6.2",
-    "patch-package": "^8.0.1"
+    "patch-package": "^8.0.1",
+    "braces": "file:./vendor/brace-patterns",
+    "update-notifier": "file:./vendor/disabled-update-notifier"
   },
   "browserslist": {
     "production": [
@@ -69,7 +71,9 @@
     "undici": "7.29.0",
     "nanoid": "5.1.16",
     "browserslist": "4.28.8",
-    "image-size": "^2.0.4"
+    "image-size": "^2.0.4",
+    "braces": "$braces",
+    "update-notifier": "$update-notifier"
   },
   "allowScripts": {
     "core-js@3.49.0": true,

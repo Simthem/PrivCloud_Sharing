@@ -13,7 +13,13 @@ import {
   encryptFileMetadata,
   normalizeFileMetadata,
   encryptedFilePlaceholderName,
+  encryptShareInfo,
+  decryptShareInfo,
+  openShareInfo,
+  openSharesWithKey,
+  openFileName,
 } from "../src/utils/fileMetadata.util.ts";
+import { openSearchIndexNames } from "../src/utils/teamSearch.util.ts";
 
 const SHARE = "share_A-1";
 const FILE = "7352aeee-e01b-4dcc-a812-90d9e1647bed";
@@ -181,4 +187,150 @@ test("an unknown scheme is shown as unreadable, not as a name", async () => {
   );
   assert.equal(row.metadataUnreadable, true);
   assert.equal(row.name, encryptedFilePlaceholderName(FILE));
+});
+
+test("share title and description round trip under the share key", async () => {
+  const key = await generateEncryptionKey();
+  const info = { name: "Bilan été 2026", description: "Pour le comptable" };
+  const encrypted = await encryptShareInfo(key, SHARE, info);
+  assert.ok(serverAccepts(encrypted));
+  assert.doesNotMatch(encrypted, /Bilan|comptable/);
+  assert.deepEqual(await decryptShareInfo(key, SHARE, encrypted), info);
+  assert.deepEqual(
+    await decryptShareInfo(
+      key,
+      SHARE,
+      await encryptShareInfo(key, SHARE, { name: "Seul titre" }),
+    ),
+    { name: "Seul titre" },
+  );
+  // Nothing to hide: the share simply has no title.
+  assert.equal(await encryptShareInfo(key, SHARE, {}), undefined);
+  assert.equal(
+    await encryptShareInfo(key, SHARE, { name: "", description: "" }),
+    undefined,
+  );
+  await assert.rejects(
+    encryptShareInfo(key, SHARE, { name: "x".repeat(91) }),
+    InvalidFileMetadataError,
+  );
+});
+
+test("a share title is bound to its share and to its key", async () => {
+  const key = await generateEncryptionKey();
+  const encrypted = await encryptShareInfo(key, SHARE, { name: "Contrat" });
+  await assert.rejects(decryptShareInfo(key, "other-share", encrypted));
+  await assert.rejects(
+    decryptShareInfo(await generateEncryptionKey(), SHARE, encrypted),
+  );
+  // A title is never mistaken for a file name of the same share.
+  await assert.rejects(decryptFileMetadata(key, SHARE, FILE, encrypted));
+  assert.deepEqual(
+    await openShareInfo({ id: SHARE, encryptedInfo: encrypted }, null),
+    { infoUnreadable: true },
+  );
+  assert.deepEqual(
+    await openShareInfo(
+      { id: SHARE, encryptedInfo: encrypted },
+      await generateEncryptionKey(),
+    ),
+    { infoUnreadable: true },
+  );
+  assert.deepEqual(
+    await openShareInfo(
+      { id: SHARE, name: "Lisible", description: null },
+      null,
+    ),
+    { name: "Lisible" },
+  );
+});
+
+test("Team folder shares open names, titles and descriptions with K_team", async () => {
+  const teamKey = await generateEncryptionKey();
+  const teamKeyB64 = await exportKeyToBase64(teamKey);
+  const encryptedShare = {
+    id: SHARE,
+    name: null,
+    description: null,
+    encryptedInfo: await encryptShareInfo(teamKey, SHARE, {
+      name: "RH",
+      description: "Dossiers 2026",
+    }),
+    files: [
+      {
+        id: FILE,
+        name: encryptedFilePlaceholderName(FILE),
+        relativePath: null,
+        metadataScheme: FILE_META_V1,
+        encryptedMetadata: await encryptFileMetadata(
+          teamKey,
+          SHARE,
+          FILE,
+          "paie.pdf",
+          "Paie/paie.pdf",
+        ),
+      },
+    ],
+  };
+  const plainShare = {
+    id: "plain",
+    name: "Public",
+    files: [{ id: OTHER_FILE, name: "lisible.txt" }],
+  };
+  const [opened, plain] = await openSharesWithKey(
+    [encryptedShare, plainShare],
+    teamKeyB64,
+  );
+  assert.equal(opened.name, "RH");
+  assert.equal(opened.description, "Dossiers 2026");
+  assert.equal(opened.files[0].name, "paie.pdf");
+  assert.equal(opened.files[0].relativePath, "Paie/paie.pdf");
+  assert.deepEqual(plain, plainShare);
+  // Without encrypted rows the server list is returned as it is.
+  const untouched = [plainShare];
+  assert.equal(await openSharesWithKey(untouched, teamKeyB64), untouched);
+});
+
+test("search index and access rules show real names, never guesses", async () => {
+  const teamKey = await generateEncryptionKey();
+  const encryptedMetadata = await encryptFileMetadata(
+    teamKey,
+    SHARE,
+    FILE,
+    "budget.xlsx",
+  );
+  const index = {
+    files: [
+      {
+        id: FILE,
+        shareId: SHARE,
+        shareName: null,
+        shareEncryptedInfo: await encryptShareInfo(teamKey, SHARE, {
+          name: "Finance",
+        }),
+        name: encryptedFilePlaceholderName(FILE),
+        relativePath: null,
+        metadataScheme: FILE_META_V1,
+        encryptedMetadata,
+      },
+    ],
+  };
+  const opened = await openSearchIndexNames(
+    index,
+    await exportKeyToBase64(teamKey),
+  );
+  assert.equal(opened.files[0].name, "budget.xlsx");
+  assert.equal(opened.files[0].shareName, "Finance");
+
+  const rule = {
+    shareId: SHARE,
+    fileId: FILE,
+    name: encryptedFilePlaceholderName(FILE),
+    metadataScheme: FILE_META_V1,
+    encryptedMetadata,
+  };
+  assert.deepEqual(await openFileName(rule, teamKey), { name: "budget.xlsx" });
+  assert.deepEqual(await openFileName(rule, await generateEncryptionKey()), {
+    name: encryptedFilePlaceholderName(FILE),
+  });
 });

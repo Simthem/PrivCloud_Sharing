@@ -26,7 +26,6 @@ import { SigningModule } from "./signing/signing.module";
 import { TeamModule } from "./team/team.module";
 import { TeamNotificationModule } from "./teamNotification/teamNotification.module";
 import { UserModule } from "./user/user.module";
-import { WebDavModule } from "./webdav/webdav.module";
 
 @Module({
   imports: [
@@ -65,7 +64,6 @@ import { WebDavModule } from "./webdav/webdav.module";
     TeamModule,
     TeamNotificationModule,
     CryptoModule,
-    WebDavModule,
   ],
   controllers: [AppController],
   providers: [

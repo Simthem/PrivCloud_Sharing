@@ -75,6 +75,8 @@ services:
       # - SHARE_DEK_V1_CANARY_USERS=*                     # user ids or e-mails, * for every account
       # - FILE_META_V1_WRITE=true                         # also encrypt file names and folder paths
       # - FILE_META_V1_CANARY_USERS=*                     # accounts must also be selected for SHARE_DEK_V1
+      # - FILE_META_V1_TEAM_WRITE=true                    # also encrypt team folder upload names (team key)
+      # - FILE_META_V1_REVERSE_SHARE_WRITE=true           # also encrypt reverse-share upload names (link key)
     volumes:
       - "./data:/opt/app/backend/data"
       - "./data/images:/opt/app/frontend/public/img"

@@ -1,3 +1,5 @@
+import { PendingUpload } from "../types/share.type";
+import { finalizeUpload } from "../utils/uploadCompletion.util";
 import { deleteCookie, setCookie } from "cookies-next";
 import { Zip, ZipPassThrough } from "fflate";
 import mime from "mime-types";
@@ -60,12 +62,22 @@ const create = async (share: CreateShare, isReverseShare = false) => {
 };
 
 const completeShare = async (id: string, e2eKey?: string) => {
-  const response = (
-    await api.post(
-      `shares/${apiPathSegment(id)}/complete`,
-      e2eKey ? { e2eKey } : {},
-    )
-  ).data;
+  const response = await finalizeUpload(
+    async () =>
+      (
+        await api.post(
+          `shares/${apiPathSegment(id)}/complete`,
+          e2eKey ? { e2eKey } : {},
+        )
+      ).data,
+    async () =>
+      (
+        await api.get(`shares/${apiPathSegment(id)}/from-owner`, {
+          params: { _state: Date.now() },
+        })
+      ).data,
+    id,
+  );
   deleteCookie("reverse_share_token");
   return response;
 };
@@ -94,19 +106,31 @@ const get = async (id: string): Promise<Share> => {
 };
 
 const getFromOwner = async (id: string): Promise<Share> => {
-  return (await api.get(`shares/${apiPathSegment(id)}/from-owner`)).data;
+  return (
+    await api.get(`shares/${apiPathSegment(id)}/from-owner`, {
+      params: { _state: Date.now() },
+    })
+  ).data;
 };
 
 const getMetaData = async (id: string): Promise<ShareMetaData> => {
   return (await api.get(`shares/${apiPathSegment(id)}/metaData`)).data;
 };
 
-const remove = async (id: string) => {
-  await api.delete(`shares/${apiPathSegment(id)}`);
+const remove = async (id: string, discardUploadedFiles = false) => {
+  await api.delete(`shares/${apiPathSegment(id)}`, {
+    params: discardUploadedFiles ? { discardUploadedFiles: true } : undefined,
+  });
+};
+
+const getPendingUploads = async (): Promise<PendingUpload[]> => {
+  return (
+    await api.get("shares/pending-uploads", { params: { _state: Date.now() } })
+  ).data;
 };
 
 const getMyShares = async (): Promise<MyShare[]> => {
-  return (await api.get("shares")).data;
+  return (await api.get("shares", { params: { _state: Date.now() } })).data;
 };
 
 const getStoredRecipients = async (): Promise<Array<string>> => {
@@ -1698,6 +1722,7 @@ const downloadSelectedAsZipE2E = async (
 };
 
 export default {
+  getPendingUploads,
   list,
   removeFromAdminInventory,
   create,

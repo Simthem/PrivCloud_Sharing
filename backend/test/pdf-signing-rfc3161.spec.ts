@@ -1,209 +1,105 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
 import * as crypto from "node:crypto";
+import {
+  asn1,
+  Asn1Class,
+  Asn1Node,
+  Asn1Type,
+  children,
+  encodeDer,
+  parseCertificate,
+  parseDer,
+  readOctets,
+  readOid,
+  readSmallInteger,
+} from "src/signing/asn1-der.util";
 import { PdfSigningService } from "src/signing/pdf-signing.service";
+import {
+  createTestCertificate,
+  createTestPkcs12,
+  TestCertificate,
+} from "./signing-certificate.fixture";
 import { createUnitTestRunner } from "./unit-test";
 
-const forge = require("node-forge");
 const { testCase, run } = createUnitTestRunner("RFC 3161 PDF timestamping");
-
-const oid = (value: string) =>
-  forge.asn1.create(
-    forge.asn1.Class.UNIVERSAL,
-    forge.asn1.Type.OID,
-    false,
-    forge.asn1.oidToDer(value).getBytes(),
-  );
-const sequence = (value: any[]) =>
-  forge.asn1.create(
-    forge.asn1.Class.UNIVERSAL,
-    forge.asn1.Type.SEQUENCE,
-    true,
-    value,
-  );
-const set = (value: any[]) =>
-  forge.asn1.create(
-    forge.asn1.Class.UNIVERSAL,
-    forge.asn1.Type.SET,
-    true,
-    value,
-  );
-const integer = (value: number | Buffer) =>
-  forge.asn1.create(
-    forge.asn1.Class.UNIVERSAL,
-    forge.asn1.Type.INTEGER,
-    false,
-    Buffer.isBuffer(value)
-      ? value.toString("binary")
-      : forge.asn1.integerToDer(value).getBytes(),
-  );
-const octets = (value: Buffer) =>
-  forge.asn1.create(
-    forge.asn1.Class.UNIVERSAL,
-    forge.asn1.Type.OCTETSTRING,
-    false,
-    value.toString("binary"),
-  );
-const algorithm = (algorithmOid: string) =>
-  sequence([
-    oid(algorithmOid),
-    forge.asn1.create(
-      forge.asn1.Class.UNIVERSAL,
-      forge.asn1.Type.NULL,
-      false,
-      "",
-    ),
-  ]);
 
 const createCertificate = (
   commonName: string,
   timeStamping = false,
   publicExponent = 0x10001,
-) => {
-  const keys = forge.pki.rsa.generateKeyPair({ bits: 2048, e: publicExponent });
-  const certificate = forge.pki.createCertificate();
-  certificate.publicKey = keys.publicKey;
-  // X.509 serial numbers are positive ASN.1 INTEGERs. Prefixing the random
-  // tail with 01 both keeps the fixture DER-valid and continuously exercises
-  // the historical 01ab... serial comparison edge case.
-  const serial = crypto.randomBytes(8);
-  serial[0] = 1;
-  certificate.serialNumber = serial.toString("hex");
-  certificate.validity.notBefore = new Date("2025-01-01T00:00:00.000Z");
-  certificate.validity.notAfter = new Date("2030-01-01T00:00:00.000Z");
-  const attributes = [{ name: "commonName", value: commonName }];
-  certificate.setSubject(attributes);
-  certificate.setIssuer(attributes);
-  certificate.setExtensions([
-    { name: "basicConstraints", cA: true, critical: true },
-    {
-      name: "keyUsage",
-      digitalSignature: true,
-      keyCertSign: true,
-      critical: true,
-    },
-    ...(timeStamping
-      ? [{ name: "extKeyUsage", timeStamping: true, critical: true }]
-      : []),
-  ]);
-  certificate.sign(keys.privateKey, forge.md.sha256.create());
-  return { certificate, privateKey: keys.privateKey };
-};
+) => createTestCertificate({ commonName, timeStamping, publicExponent });
 
 const createTimestampResponse = (
   imprint: Buffer,
   nonce: Buffer,
-  tsa: ReturnType<typeof createCertificate>,
+  tsa: TestCertificate,
+  signAttributes = (attributesDer: Buffer) =>
+    crypto.sign("sha256", attributesDer, tsa.privateKey),
 ) => {
   const sha256Oid = "2.16.840.1.101.3.4.2.1";
   const tstInfoOid = "1.2.840.113549.1.9.16.1.4";
-  const tstInfo = sequence([
-    integer(1),
-    oid("1.2.3.4.5.6"),
-    sequence([algorithm(sha256Oid), octets(imprint)]),
-    integer(Buffer.from("0102030405", "hex")),
-    forge.asn1.create(
-      forge.asn1.Class.UNIVERSAL,
-      forge.asn1.Type.GENERALIZEDTIME,
+  const tstInfo = asn1.sequence([
+    asn1.integer(1),
+    asn1.oid("1.2.3.4.5.6"),
+    asn1.sequence([asn1.algorithm(sha256Oid), asn1.octetString(imprint)]),
+    asn1.integer(Buffer.from("0102030405", "hex")),
+    asn1.create(
+      Asn1Class.UNIVERSAL,
+      Asn1Type.GENERALIZEDTIME,
       false,
-      "20260902100000Z",
+      Buffer.from("20260902100000Z", "latin1"),
     ),
-    integer(nonce),
+    asn1.integer(nonce),
   ]);
-  const tstInfoDer = Buffer.from(
-    forge.asn1.toDer(tstInfo).getBytes(),
-    "binary",
-  );
-  const certificateAsn1 = forge.pki.certificateToAsn1(tsa.certificate);
-  const certificateDer = Buffer.from(
-    forge.asn1.toDer(certificateAsn1).getBytes(),
-    "binary",
-  );
+  const tstInfoDer = encodeDer(tstInfo);
 
-  const attribute = (attributeOid: string, value: any) =>
-    sequence([oid(attributeOid), set([value])]);
-  const signingCertificateV2 = sequence([
-    sequence([
-      sequence([
-        octets(crypto.createHash("sha256").update(certificateDer).digest()),
+  const attribute = (attributeOid: string, value: Asn1Node) =>
+    asn1.sequence([asn1.oid(attributeOid), asn1.set([value])]);
+  const signingCertificateV2 = asn1.sequence([
+    asn1.sequence([
+      asn1.sequence([
+        asn1.octetString(crypto.createHash("sha256").update(tsa.der).digest()),
       ]),
     ]),
   ]);
-  const signedAttributes = forge.asn1.create(
-    forge.asn1.Class.CONTEXT_SPECIFIC,
-    0,
-    true,
-    [
-      attribute("1.2.840.113549.1.9.3", oid(tstInfoOid)),
-      attribute(
-        "1.2.840.113549.1.9.4",
-        octets(crypto.createHash("sha256").update(tstInfoDer).digest()),
-      ),
-      attribute("1.2.840.113549.1.9.16.2.47", signingCertificateV2),
-    ],
-  );
-  const attributesDer = Buffer.from(
-    forge.asn1
-      .toDer(
-        forge.asn1.create(
-          forge.asn1.Class.UNIVERSAL,
-          forge.asn1.Type.SET,
-          true,
-          signedAttributes.value,
-        ),
-      )
-      .getBytes(),
-    "binary",
-  );
-  const digest = forge.md.sha256.create();
-  digest.update(attributesDer.toString("binary"));
-  const signature = Buffer.from(
-    tsa.privateKey.sign(digest, "RSASSA-PKCS1-V1_5"),
-    "binary",
-  );
-  const signerInfo = sequence([
-    integer(1),
-    sequence([
-      forge.pki.distinguishedNameToAsn1(tsa.certificate.issuer),
-      integer(Buffer.from(tsa.certificate.serialNumber, "hex")),
-    ]),
-    algorithm(sha256Oid),
-    signedAttributes,
-    algorithm("1.2.840.113549.1.1.11"),
-    octets(signature),
+  const signedAttributes = [
+    attribute("1.2.840.113549.1.9.3", asn1.oid(tstInfoOid)),
+    attribute(
+      "1.2.840.113549.1.9.4",
+      asn1.octetString(crypto.createHash("sha256").update(tstInfoDer).digest()),
+    ),
+    attribute("1.2.840.113549.1.9.16.2.47", signingCertificateV2),
+  ];
+  const signature = signAttributes(encodeDer(asn1.set(signedAttributes)));
+  const signerInfo = asn1.sequence([
+    asn1.integer(1),
+    asn1.sequence([tsa.name, asn1.integer(tsa.serial)]),
+    asn1.algorithm(sha256Oid),
+    asn1.context(0, signedAttributes),
+    asn1.algorithm("1.2.840.113549.1.1.11"),
+    asn1.octetString(signature),
   ]);
-  const signedData = sequence([
-    integer(3),
-    set([algorithm(sha256Oid)]),
-    sequence([
-      oid(tstInfoOid),
-      forge.asn1.create(forge.asn1.Class.CONTEXT_SPECIFIC, 0, true, [
-        octets(tstInfoDer),
-      ]),
+  const signedData = asn1.sequence([
+    asn1.integer(3),
+    asn1.set([asn1.algorithm(sha256Oid)]),
+    asn1.sequence([
+      asn1.oid(tstInfoOid),
+      asn1.context(0, [asn1.octetString(tstInfoDer)]),
     ]),
-    forge.asn1.create(forge.asn1.Class.CONTEXT_SPECIFIC, 0, true, [
-      certificateAsn1,
-    ]),
-    set([signerInfo]),
+    asn1.context(0, [parseDer(tsa.der)]),
+    asn1.set([signerInfo]),
   ]);
-  const token = sequence([
-    oid("1.2.840.113549.1.7.2"),
-    forge.asn1.create(forge.asn1.Class.CONTEXT_SPECIFIC, 0, true, [signedData]),
+  const token = asn1.sequence([
+    asn1.oid("1.2.840.113549.1.7.2"),
+    asn1.context(0, [signedData]),
   ]);
-  const response = sequence([sequence([integer(0)]), token]);
-  return Buffer.from(forge.asn1.toDer(response).getBytes(), "binary");
+  const response = asn1.sequence([asn1.sequence([asn1.integer(0)]), token]);
+  return encodeDer(response);
 };
 
-const certificateFingerprint = (certificate: any) =>
-  crypto
-    .createHash("sha256")
-    .update(
-      Buffer.from(
-        forge.asn1.toDer(forge.pki.certificateToAsn1(certificate)).getBytes(),
-        "binary",
-      ),
-    )
-    .digest("hex");
+const certificateFingerprint = (certificate: TestCertificate) =>
+  crypto.createHash("sha256").update(certificate.der).digest("hex");
 
 const requireBuffer = (value: unknown, label: string): Buffer => {
   if (!Buffer.isBuffer(value)) {
@@ -214,10 +110,10 @@ const requireBuffer = (value: unknown, label: string): Buffer => {
 
 const requestValues = (body: unknown) => {
   const safeBody = requireBuffer(body, "RFC 3161 request body");
-  const request = forge.asn1.fromDer(safeBody.toString("binary"), true);
+  const request = children(parseDer(safeBody));
   return {
-    imprint: Buffer.from(request.value[1].value[1].value, "binary"),
-    nonce: Buffer.from(request.value[2].value, "binary"),
+    imprint: readOctets(children(request[1])[1]),
+    nonce: readOctets(request[2]),
   };
 };
 
@@ -231,11 +127,11 @@ testCase(
       .digest();
     const request = service.buildTimestampRequest(imprint);
     const requestBody = requireBuffer(request.body, "RFC 3161 request body");
-    const parsed = forge.asn1.fromDer(requestBody.toString("binary"), true);
+    const parsed = children(parseDer(requestBody));
 
-    assert.equal(forge.asn1.derToInteger(parsed.value[0].value), 1);
+    assert.equal(readSmallInteger(parsed[0]), 1);
     assert.equal(
-      forge.asn1.derToOid(parsed.value[1].value[0].value[0].value),
+      readOid(children(children(parsed[1])[0])[0]),
       "2.16.840.1.101.3.4.2.1",
     );
     assert.deepEqual(requestValues(requestBody).imprint, imprint);
@@ -322,9 +218,7 @@ testCase(
     const nonce = Buffer.from("2233445566778899", "hex");
     const response = createTimestampResponse(imprint, nonce, tsa);
 
-    service.tsaTrustedCertFingerprints = new Set([
-      certificateFingerprint(tsa.certificate),
-    ]);
+    service.tsaTrustedCertFingerprints = new Set([certificateFingerprint(tsa)]);
     assert.doesNotThrow(() =>
       service.validateTimestampResponse(response, imprint, nonce),
     );
@@ -341,30 +235,69 @@ testCase(
   "uses OpenSSL for certificate signatures and rejects RSA exponent 3",
   () => {
     const service = new PdfSigningService() as any;
-    const safe = createCertificate("OpenSSL verification control");
-    safe.certificate.verify = () => {
-      throw new Error("node-forge certificate verification must not be called");
-    };
+    const safe = parseCertificate(
+      createCertificate("OpenSSL verification control").der,
+    );
     assert.equal(
-      service.verifyCertificateSignatureWithOpenSsl(
-        safe.certificate,
-        safe.certificate,
-      ),
+      service.verifyCertificateSignatureWithOpenSsl(safe, safe),
       true,
     );
 
-    const lowExponent = createCertificate(
-      "Unsafe exponent certificate",
-      false,
-      3,
+    const lowExponent = parseCertificate(
+      createCertificate("Unsafe exponent certificate", false, 3).der,
     );
     assert.equal(
-      service.verifyCertificateSignatureWithOpenSsl(
-        lowExponent.certificate,
-        lowExponent.certificate,
-      ),
+      service.verifyCertificateSignatureWithOpenSsl(lowExponent, lowExponent),
       false,
     );
+  },
+);
+
+testCase(
+  "rejects CVE-2026-85393 signatures with extra DigestAlgorithm fields",
+  () => {
+    // PKCS#1 v1.5 padding around a DigestInfo whose AlgorithmIdentifier
+    // carries an extra NULL: the shape node-forge accepted up to 1.4.0.
+    const forgedSignature =
+      (tsa: TestCertificate) => (attributesDer: Buffer) => {
+        const digestInfo = encodeDer(
+          asn1.sequence([
+            asn1.sequence([
+              asn1.oid("2.16.840.1.101.3.4.2.1"),
+              asn1.null(),
+              asn1.null(),
+            ]),
+            asn1.octetString(
+              crypto.createHash("sha256").update(attributesDer).digest(),
+            ),
+          ]),
+        );
+        return crypto.privateEncrypt(
+          { key: tsa.privateKey, padding: crypto.constants.RSA_PKCS1_PADDING },
+          digestInfo,
+        );
+      };
+
+    const service = new PdfSigningService() as any;
+    for (const publicExponent of [0x10001, 3]) {
+      const tsa = createTestCertificate({
+        commonName: `Forged DigestInfo TSA e=${publicExponent}`,
+        timeStamping: true,
+        publicExponent,
+      });
+      const imprint = crypto.randomBytes(32);
+      const nonce = Buffer.from("3344556677889900", "hex");
+      const forged = createTimestampResponse(
+        imprint,
+        nonce,
+        tsa,
+        forgedSignature(tsa),
+      );
+      assert.throws(
+        () => service.validateTimestampResponse(forged, imprint, nonce),
+        /TSA CMS signature verification failed/,
+      );
+    }
   },
 );
 
@@ -380,31 +313,24 @@ testCase(
       const service = new PdfSigningService() as any;
       const tsa = createCertificate("PrivCloud embedding test TSA", true);
       const seal = createCertificate("PrivCloud test PDF seal", false);
-      const p12 = forge.pkcs12.toPkcs12Asn1(
-        seal.privateKey,
-        [seal.certificate],
-        "",
-        { algorithm: "3des" },
-      );
-      service.loadCertificate = async () =>
-        Buffer.from(forge.asn1.toDer(p12).getBytes(), "binary");
+      const p12 = createTestPkcs12(seal.privateKey, [seal.der], "");
+      service.loadCertificate = async () => p12;
       service.requestTsa = async (_url: string, body: Buffer) => {
         const { imprint, nonce } = requestValues(body);
         return createTimestampResponse(imprint, nonce, tsa);
       };
 
       const cms = await service.signDigest(crypto.randomBytes(32));
-      const contentInfo = forge.asn1.fromDer(cms.toString("binary"), true);
-      const signedData = contentInfo.value[1].value[0];
-      const signerInfo = signedData.value[signedData.value.length - 1].value[0];
-      const unsignedAttributes = signerInfo.value[signerInfo.value.length - 1];
-      assert.equal(
-        unsignedAttributes.tagClass,
-        forge.asn1.Class.CONTEXT_SPECIFIC,
+      const signedData = children(children(parseDer(cms))[1])[0];
+      const signerInfos = children(signedData);
+      const signerInfo = children(
+        children(signerInfos[signerInfos.length - 1])[0],
       );
+      const unsignedAttributes = signerInfo[signerInfo.length - 1];
+      assert.equal(unsignedAttributes.tagClass, Asn1Class.CONTEXT_SPECIFIC);
       assert.equal(unsignedAttributes.type, 1);
       assert.equal(
-        forge.asn1.derToOid(unsignedAttributes.value[0].value[0].value),
+        readOid(children(children(unsignedAttributes)[0])[0]),
         "1.2.840.113549.1.9.16.2.14",
       );
     } finally {

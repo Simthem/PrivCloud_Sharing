@@ -432,7 +432,7 @@ export default {
   "admin.config.oauth.oidc-discovery-uri": "OpenID Connect URI za odkrivanje",
   "admin.config.oauth.oidc-discovery-uri.description": "URI za odkrivanje OpenID Connect OAuth aplikacije",
   "admin.config.oauth.oidc-sign-out": "Sign out from OpenID Connect",
-  "admin.config.oauth.oidc-sign-out.description": "Whether the “Sign out” button will sign out from the OpenID Connect provider",
+  "admin.config.oauth.oidc-sign-out.description": "Whether the 'Sign out' button will sign out from the OpenID Connect provider",
   "admin.config.oauth.oidc-scope": "OpenID Connect scope",
   "admin.config.oauth.oidc-scope.description": "Scopes which should be requested from the OpenID Connect provider.",
   "admin.config.oauth.oidc-username-claim": "OpenID Connect zahteva za uporabniško ime",
@@ -440,9 +440,9 @@ export default {
   "admin.config.oauth.oidc-role-path": "Path to roles in OpenID Connect token",
   "admin.config.oauth.oidc-role-path.description": "Must be a valid JMES path referencing an array of roles. " + "Managing access rights using OpenID Connect roles is only recommended if no other identity provider is configured and password login is disabled. " + "Leave it blank if you don't know what this config is.",
   "admin.config.oauth.oidc-role-general-access": "OpenID Connect role for general access",
-  "admin.config.oauth.oidc-role-general-access.description": "Role required for general access. Must be present in a user’s roles for them to log in. " + "Leave it blank if you don't know what this config is.",
+  "admin.config.oauth.oidc-role-general-access.description": "Role required for general access. Must be present in a user's roles for them to log in. " + "Leave it blank if you don't know what this config is.",
   "admin.config.oauth.oidc-role-admin-access": "OpenID Connect role for admin access",
-  "admin.config.oauth.oidc-role-admin-access.description": "Role required for administrative access. Must be present in a user’s roles for them to access the admin panel. " + "Leave it blank if you don't know what this config is.",
+  "admin.config.oauth.oidc-role-admin-access.description": "Role required for administrative access. Must be present in a user's roles for them to access the admin panel. " + "Leave it blank if you don't know what this config is.",
   "admin.config.oauth.oidc-client-id": "OpenID Connect ID klienta",
   "admin.config.oauth.oidc-client-id.description": "ID Klienta OpenID Connect OAuth aplikacije",
   "admin.config.oauth.oidc-client-secret": "OpenID Connect skrivnost klienta",
@@ -518,16 +518,16 @@ export default {
     "PBKDF2/SHA-256 is recommended: it is bundled, broadly compatible, and faster than SHA-384 or SHA-512 for this use case.",
   "admin.config.altcha.cost": "Cost",
   "admin.config.altcha.cost.description":
-    "PBKDF2 cost per attempt. 5000 is the recommended default; tune user friction mostly with effort.",
+    "PBKDF2 cost per attempt. 5000 is the recommended default, tune user friction mostly with effort.",
   "admin.config.altcha.effort": "Effort",
   "admin.config.altcha.effort.description":
-    "Average number of counters the browser must test. 250 is a good default; increase gradually if you need more resistance.",
+    "Average number of counters the browser must test. 250 is a good default, increase gradually if you need more resistance.",
   "admin.config.altcha.expires-in-seconds": "Challenge expiration",
   "admin.config.altcha.expires-in-seconds.description":
     "Challenge validity in seconds. Short lifetimes limit token reuse windows.",
   "admin.config.altcha.hmac-key": "HMAC key",
   "admin.config.altcha.hmac-key.description":
-    "Server-side secret used to sign and verify challenges. A strong key is generated automatically; rotate only when needed.",
+    "Server-side secret used to sign and verify challenges. A strong key is generated automatically, rotate only when needed.",
   "admin.config.altcha.type": "Interaction type",
   "admin.config.altcha.type.description":
     "Widget interaction control: checkbox, native checkbox, or switch.",

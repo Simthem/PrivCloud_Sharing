@@ -22,8 +22,20 @@ const ConfigurationHeader = ({
   const config = useConfig();
   const theme = useMantineTheme();
   return (
-    <Box component="header" h={60} p="md">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: "100%" }}>
+    <Box
+      component="header"
+      h="100%"
+      px="md"
+      style={{ display: "flex", alignItems: "center" }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          width: "100%",
+        }}
+      >
         <Link href="/" passHref>
           <Group>
             <Logo height={35} width={35} />
@@ -31,15 +43,15 @@ const ConfigurationHeader = ({
           </Group>
         </Link>
         <Button variant="light" component={Link} href="/admin" visibleFrom="sm">
-            <FormattedMessage id="common.button.go-back" />
+          <FormattedMessage id="common.button.go-back" />
         </Button>
         <Burger
-            opened={isMobileNavBarOpened}
-            onClick={() => setIsMobileNavBarOpened((o) => !o)}
-            size="sm"
-            color={theme.colors.gray[6]}
-            aria-label="Toggle navigation menu"
-            hiddenFrom="sm"
+          opened={isMobileNavBarOpened}
+          onClick={() => setIsMobileNavBarOpened((o) => !o)}
+          size="sm"
+          color={theme.colors.gray[6]}
+          aria-label="Toggle navigation menu"
+          hiddenFrom="sm"
         />
       </div>
     </Box>

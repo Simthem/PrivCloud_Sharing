@@ -2,6 +2,7 @@ import {
   ExecutionContext,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from "@nestjs/common";
 import { User } from "@prisma/client";
 import { Request } from "express";
@@ -43,8 +44,8 @@ export class ShareOwnerGuard extends JwtGuard {
     if (!request.user) {
       try {
         await super.canActivate(context);
-      } catch {
-        // passport strategy error - user stays null
+      } catch (error) {
+        if (!(error instanceof UnauthorizedException)) throw error;
       }
     }
     const user = request.user as User | undefined;
@@ -86,7 +87,7 @@ export class ShareOwnerGuard extends JwtGuard {
     }
 
     // If not signed in, deny access
-    if (!user) return false;
+    if (!user) throw new UnauthorizedException();
 
     if (share.teamFolderId) {
       await this.teamShareAccess.assertCanManageShare(shareId, user);

@@ -1,3 +1,7 @@
+import { getAdminUploadStatus } from "./admin-upload-status.util";
+import { TeamShareAccessService } from "./team-share-access.service";
+import { TeamNotificationService } from "src/teamNotification/teamNotification.service";
+import { fileRequestServiceMessage } from "src/teamFileRequest/team-file-request-i18n";
 import {
   BadRequestException,
   ConflictException,
@@ -21,12 +25,18 @@ import { FileService } from "src/file/file.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { PushService } from "src/push/push.service";
 import { ReverseShareService } from "src/reverseShare/reverseShare.service";
-import { parseRelativeDateToAbsolute } from "src/utils/date.util";
+import {
+  NEVER_EXPIRES_CUTOFF_DATE,
+  parseRelativeDateToAbsolute,
+} from "src/utils/date.util";
 import { SHARE_DIRECTORY } from "../constants";
 import { getArchiveEntryName } from "../file/file-path.util";
 import {
   FILE_META_V1,
   isFileMetaWriteEnabledFor,
+  isReverseShareFileMetaWriteEnabledFor,
+  isTeamFileMetaWriteEnabledFor,
+  isValidEncryptedShareInfo,
 } from "../file/file-metadata-scheme";
 import { createZipArchive } from "../utils/archive.util";
 import { CreateShareDTO } from "./dto/createShare.dto";
@@ -40,6 +50,8 @@ import {
   shareCryptoSchemeName,
 } from "./share-crypto-scheme";
 import { normalizeShareRecipients } from "./share-recipient.util";
+import { wantsFileRequestNotification } from "src/teamFileRequest/team-file-request-notification";
+import { assertFileRequestUpload } from "src/teamFileRequest/team-file-request-access";
 import { touchShareUploadActivity } from "./upload-activity.util";
 
 @Injectable()
@@ -56,6 +68,8 @@ export class ShareService {
     private reverseShareService: ReverseShareService,
     private clamScanService: ClamScanService,
     private pushService: PushService,
+    private teamNotificationService?: TeamNotificationService,
+    private teamShareAccessService?: TeamShareAccessService,
   ) {}
 
   /**
@@ -63,6 +77,11 @@ export class ShareService {
    * columns to store. Only an authenticated owner's personal E2E share can
    * use SHARE_DEK_V1: team shares keep K_team and reverse-share uploads keep
    * K_rs. Clients that send nothing keep the historical NULL value.
+   *
+   * FILE_META_V1 (encrypted file names, title and description) is accepted
+   * on any E2E share whose readers hold the key that encrypts it: SHARE_DEK_V1
+   * personal shares (K_share), Team folder uploads (K_team) and uploads to an
+   * E2E reverse share (K_rs), each behind its own flag.
    */
   resolveCreateCryptoData(
     share: Pick<
@@ -73,16 +92,24 @@ export class ShareService {
       | "wrappedShareKey"
       | "wrappedShareKeyAlgorithm"
       | "fileMetadataScheme"
+      | "encryptedInfo"
+      | "name"
+      | "description"
     >,
     user: Pick<User, "id" | "email"> | undefined,
     isReverseShareUpload: boolean,
     isTeamShare: boolean,
+    reverseShare?: {
+      encryptedReverseShareKey: string | null;
+      owner: Pick<User, "id" | "email"> | null;
+    },
   ): {
     cryptoScheme: number | null;
     wrappedShareKey: string | null;
     wrappedShareKeyAlgorithm: string | null;
     wrappedShareKeyVersion: number | null;
     fileMetadataScheme: number | null;
+    encryptedInfo: string | null;
   } {
     const keyData = this.resolveCreateKeyData(
       share,
@@ -94,28 +121,81 @@ export class ShareService {
       share.fileMetadataScheme === undefined ||
       share.fileMetadataScheme === null
     ) {
-      return { ...keyData, fileMetadataScheme: null };
+      if (share.encryptedInfo !== undefined && share.encryptedInfo !== null) {
+        throw new BadRequestException(
+          "An encrypted share title requires encrypted file names",
+          "share_info_not_allowed",
+        );
+      }
+      return { ...keyData, fileMetadataScheme: null, encryptedInfo: null };
     }
     if (share.fileMetadataScheme !== FILE_META_V1) {
       throw new BadRequestException(
         `Unsupported file metadata scheme: ${share.fileMetadataScheme}`,
       );
     }
-    if (keyData.cryptoScheme !== SHARE_DEK_V1) {
-      throw new BadRequestException(
-        "Encrypted file names require cryptoScheme SHARE_DEK_V1",
-      );
+
+    let scope: "personal" | "team" | "reverse_share";
+    let enabled: boolean;
+    if (isTeamShare) {
+      if (!share.isE2EEncrypted) {
+        throw new BadRequestException(
+          "Encrypted file names require an end-to-end encrypted Team upload",
+        );
+      }
+      scope = "team";
+      enabled = isTeamFileMetaWriteEnabledFor(user);
+    } else if (isReverseShareUpload) {
+      if (!share.isE2EEncrypted || !reverseShare?.encryptedReverseShareKey) {
+        throw new BadRequestException(
+          "Encrypted file names require an end-to-end encrypted reverse share",
+        );
+      }
+      scope = "reverse_share";
+      enabled = isReverseShareFileMetaWriteEnabledFor(reverseShare.owner);
+    } else {
+      if (keyData.cryptoScheme !== SHARE_DEK_V1) {
+        throw new BadRequestException(
+          "Encrypted file names require cryptoScheme SHARE_DEK_V1",
+        );
+      }
+      scope = "personal";
+      enabled = isFileMetaWriteEnabledFor(user);
     }
-    if (!isFileMetaWriteEnabledFor(user)) {
+    if (!enabled) {
       this.logger.warn(
-        `Share file names refused: share=redacted fileMetadataScheme=FILE_META_V1 reason=write_disabled`,
+        `Share file names refused: share=redacted fileMetadataScheme=FILE_META_V1 scope=${scope} reason=write_disabled`,
       );
       throw new ConflictException(
         "Encrypted file names are not enabled for this account",
         "file_metadata_scheme_unavailable",
       );
     }
-    return { ...keyData, fileMetadataScheme: FILE_META_V1 };
+
+    if (share.encryptedInfo === undefined || share.encryptedInfo === null) {
+      return {
+        ...keyData,
+        fileMetadataScheme: FILE_META_V1,
+        encryptedInfo: null,
+      };
+    }
+    // The title and description travel encrypted, never next to a readable
+    // copy: a row is either fully readable or fully opaque.
+    if (
+      !isValidEncryptedShareInfo(share.encryptedInfo) ||
+      (share.name !== undefined && share.name !== null) ||
+      (share.description !== undefined && share.description !== null)
+    ) {
+      throw new BadRequestException(
+        "An encrypted share title replaces the readable title and description",
+        "share_info_invalid",
+      );
+    }
+    return {
+      ...keyData,
+      fileMetadataScheme: FILE_META_V1,
+      encryptedInfo: share.encryptedInfo,
+    };
   }
 
   private resolveCreateKeyData(
@@ -207,6 +287,18 @@ export class ShareService {
     this.logger.debug(
       `Creating share: share=redacted userId=${user?.id ?? "anonymous"} reverseShareToken=${reverseShareToken ? "provided" : "none"}`,
     );
+
+    if (
+      share.teamFileRequestId &&
+      (!user ||
+        !share.teamFolderId ||
+        reverseShareToken ||
+        share.isE2EEncrypted !== true)
+    ) {
+      throw new ForbiddenException(
+        "File requests require an authenticated team-folder upload",
+      );
+    }
 
     const hasSecurity =
       !!share.security && Object.keys(share.security).length > 0;
@@ -377,70 +469,101 @@ export class ShareService {
 
     const {
       teamFolderId: _tfId,
+      teamFileRequestId: _requestId,
       cryptoScheme: _requestedScheme,
       wrappedShareKey: _wrappedShareKey,
       wrappedShareKeyAlgorithm: _wrappedShareKeyAlgorithm,
       fileMetadataScheme: _fileMetadataScheme,
+      encryptedInfo: _encryptedInfo,
       ...shareData
     } = share;
+    const reverseShareOwner =
+      reverseShare && share.fileMetadataScheme === FILE_META_V1
+        ? await this.prisma.user.findUnique({
+            where: { id: reverseShare.creatorId },
+            select: { id: true, email: true },
+          })
+        : null;
     const cryptoData = this.resolveCreateCryptoData(
       share,
       user,
       !!reverseShare,
       !!teamFolderConnect,
+      reverseShare
+        ? {
+            encryptedReverseShareKey: reverseShare.encryptedReverseShareKey,
+            owner: reverseShareOwner,
+          }
+        : undefined,
     );
 
     const shareTuple = await this.prisma.$transaction(async (tx) => {
-        fs.mkdirSync(`${SHARE_DIRECTORY}/${share.id}`, {
-          recursive: true,
-        });
-        this.logger.debug(
-          `Ensured share directory: share=redacted`,
+      if (share.teamFileRequestId) {
+        await assertFileRequestUpload(
+          tx,
+          share.teamFileRequestId,
+          user?.id,
+          share.teamFolderId,
         );
+      }
+      fs.mkdirSync(`${SHARE_DIRECTORY}/${share.id}`, {
+        recursive: true,
+      });
+      this.logger.debug(`Ensured share directory: share=redacted`);
 
-        const createdShare = await tx.share.create({
+      const createdShare = await tx.share.create({
+        data: {
+          ...shareData,
+          expiration: expirationDate,
+          uploadLastActivityAt: new Date(),
+          creator: { connect: user ? { id: user.id } : undefined },
+          security: { create: share.security },
+          recipients: {
+            create: share.recipients
+              ? share.recipients.map((email) => ({ email }))
+              : [],
+          },
+          storageProvider,
+          ...cryptoData,
+          ...(share.teamFileRequestId && {
+            teamFileRequest: { connect: { id: share.teamFileRequestId } },
+          }),
+          ...(teamFolderConnect && {
+            teamFolder: { connect: teamFolderConnect },
+          }),
+        },
+      });
+
+      if (reverseShare) {
+        await tx.reverseShare.update({
+          where: { token: reverseShareToken },
           data: {
-            ...shareData,
-            expiration: expirationDate,
-            uploadLastActivityAt: new Date(),
-            creator: { connect: user ? { id: user.id } : undefined },
-            security: { create: share.security },
-            recipients: {
-              create: share.recipients
-                ? share.recipients.map((email) => ({ email }))
-                : [],
+            shares: {
+              connect: { id: createdShare.id },
             },
-            storageProvider,
-            ...cryptoData,
-            ...(teamFolderConnect && {
-              teamFolder: { connect: teamFolderConnect },
-            }),
           },
         });
+      }
 
-        if (reverseShare) {
-          await tx.reverseShare.update({
-            where: { token: reverseShareToken },
-            data: {
-              shares: {
-                connect: { id: createdShare.id },
-              },
-            },
-          });
-        }
-
-        return createdShare;
+      return createdShare;
     });
 
     this.logger.debug(
       `Share created: share=redacted userId=${user?.id ?? "anonymous"} recipients=${share.recipients?.length ?? 0} storage=${storageProvider} expires=${expirationDate.toISOString()}`,
     );
-    if (cryptoData.cryptoScheme !== null) {
+    if (
+      cryptoData.cryptoScheme !== null ||
+      cryptoData.fileMetadataScheme !== null
+    ) {
       this.logger.log(
-        `Share crypto: share=redacted cryptoScheme=${shareCryptoSchemeName(cryptoData.cryptoScheme)}` +
+        "Share crypto: share=redacted" +
+          (cryptoData.cryptoScheme !== null
+            ? ` cryptoScheme=${shareCryptoSchemeName(cryptoData.cryptoScheme)}`
+            : "") +
           (cryptoData.fileMetadataScheme === FILE_META_V1
             ? " fileMetadataScheme=FILE_META_V1"
-            : ""),
+            : "") +
+          (cryptoData.encryptedInfo ? " shareInfo=encrypted" : ""),
       );
     }
 
@@ -539,6 +662,7 @@ export class ShareService {
       : undefined;
     const completedShareResponse = (completedShare: Share) => ({
       ...completedShare,
+      uploadPending: false,
       notifyReverseShareCreator,
     });
 
@@ -557,7 +681,18 @@ export class ShareService {
 
     // Claim completion before email, push and archive side effects. The
     // compare-and-set makes concurrent browser effects idempotent.
+    let requestNotification:
+      | { id: string; userId: string; title: string; teamId: string }
+      | undefined;
     const updatedShare = await this.prisma.$transaction(async (tx) => {
+      const fileRequest = share.teamFileRequestId
+        ? await assertFileRequestUpload(
+            tx,
+            share.teamFileRequestId,
+            share.creatorId ?? undefined,
+            share.teamFolderId,
+          )
+        : undefined;
       const claimed = await tx.share.updateMany({
         where: { id, uploadLocked: false },
         data: { uploadLocked: true, hasBeenCompleted: true },
@@ -577,6 +712,26 @@ export class ShareService {
         }
       }
 
+      if (
+        fileRequest?.submissionNotification &&
+        wantsFileRequestNotification(
+          fileRequest.folder!.team.members.find(
+            (m) => m.userId === fileRequest.creatorId,
+          )!.pushNotifMode,
+        )
+      ) {
+        requestNotification = await tx.teamNotification.create({
+          data: {
+            teamId: fileRequest.teamId,
+            userId: fileRequest.creatorId,
+            actorId: share.creatorId,
+            type: "FILE_REQUEST_SUBMITTED",
+            title: fileRequestServiceMessage("submitted"),
+            encryptedMetadata: fileRequest.submissionNotification,
+            metadata: null,
+          },
+        });
+      }
       return tx.share.findUniqueOrThrow({ where: { id } });
     });
 
@@ -584,6 +739,11 @@ export class ShareService {
       this.logger.warn("Share was completed concurrently");
       throw new BadRequestException("Share already completed");
     }
+
+    if (requestNotification)
+      this.teamNotificationService?.deliverFileRequestNotification(
+        requestNotification,
+      );
 
     const shouldCreateZip =
       share.files.length > 1 || share.files.some((file) => !!file.relativePath);
@@ -667,17 +827,17 @@ export class ShareService {
       const appName = this.config.get("general.appName");
       void this.pushService.sendToUser(share.reverseShare.creatorId, {
         title: appName,
-        body: `A new share "${share.name || id}" was uploaded via your reverse share link.`,
+        body: "A new share was uploaded via one of your upload links.",
         url: `/share/${id}`,
       });
     }
 
     // Send push notification to share creator (for regular shares)
-    if (share.creatorId && !share.reverseShare) {
+    if (share.creatorId && !share.reverseShare && !share.teamFileRequestId) {
       const appName = this.config.get("general.appName");
       void this.pushService.sendToUser(share.creatorId, {
         title: appName,
-        body: `Your share "${share.name || id}" is ready.`,
+        body: "Your share is ready.",
         url: `/share/${id}`,
       });
     }
@@ -721,6 +881,7 @@ export class ShareService {
         createdAt: true,
         expiration: true,
         uploadLocked: true,
+        uploadLastActivityAt: true,
         isE2EEncrypted: true,
         views: true,
         creator: { select: { username: true } },
@@ -735,7 +896,7 @@ export class ShareService {
       expiration: share.expiration,
       views: share.views,
       isE2EEncrypted: share.isE2EEncrypted,
-      status: share.uploadLocked ? ("READY" as const) : ("UPLOADING" as const),
+      status: getAdminUploadStatus(share),
       fileCount: share.files.length,
       size: share.files.reduce((acc, file) => acc + parseInt(file.size), 0),
     }));
@@ -771,6 +932,67 @@ export class ShareService {
     });
 
     return recipients.map((recipient) => recipient.email);
+  }
+
+  /** Discover stored uploads after losing the original browser tab. */
+  async getPendingUploadsByUser(userId: string) {
+    const shares = await this.prisma.share.findMany({
+      where: {
+        creatorId: userId,
+        uploadLocked: false,
+        removedReason: null,
+        OR: [
+          { expiration: { gt: new Date() } },
+          { expiration: { lt: NEVER_EXPIRES_CUTOFF_DATE } },
+        ],
+      },
+      select: {
+        id: true,
+        createdAt: true,
+        expiration: true,
+        teamFolderId: true,
+        files: { select: { size: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    const visible = [];
+    for (const share of shares) {
+      let canResume = true;
+      if (share.teamFolderId) {
+        try {
+          if (!this.teamShareAccessService)
+            throw new InternalServerErrorException();
+          await this.teamShareAccessService.assertCanAccessShare(share.id, {
+            id: userId,
+          } as User);
+          try {
+            await this.teamShareAccessService.assertCanManageShare(share.id, {
+              id: userId,
+            } as User);
+          } catch (error) {
+            if (!(error instanceof ForbiddenException)) throw error;
+            canResume = false;
+          }
+        } catch (error) {
+          if (
+            error instanceof ForbiddenException ||
+            error instanceof NotFoundException
+          )
+            continue;
+          throw error;
+        }
+      }
+      visible.push({
+        id: share.id,
+        createdAt: share.createdAt,
+        expiration: share.expiration,
+        teamFolderId: share.teamFolderId,
+        canResume,
+        fileCount: share.files.length,
+        size: share.files.reduce((sum, file) => sum + Number(file.size), 0),
+      });
+    }
+    return visible;
   }
 
   async getSharesByUser(userId: string) {
@@ -841,7 +1063,7 @@ export class ShareService {
     );
   }
 
-  async get(id: string): Promise<unknown> {
+  async get(id: string, recoveringUserId?: string): Promise<unknown> {
     const share = await this.prisma.share.findUnique({
       where: { id },
       include: {
@@ -860,13 +1082,19 @@ export class ShareService {
     if (share.removedReason)
       throw new NotFoundException(share.removedReason, "share_removed");
 
-    if (!share || !share.uploadLocked)
+    // Only the authenticated uploader may inspect an unfinished share. The
+    // controller retains ShareSecurityGuard, including password, expiration
+    // and Team/file access checks. Recipient links remain unpublished.
+    const recoveringOwnUpload =
+      share && !!recoveringUserId && share.creatorId === recoveringUserId;
+    if (!share || (!share.uploadLocked && !recoveringOwnUpload))
       throw new NotFoundException("Share not found");
 
     const previewEnabled = true;
 
     return {
       ...share,
+      uploadPending: !share.uploadLocked,
       hasPassword: !!share.security?.password,
       previewEnabled,
       // Expose the encrypted reverse share key (K_rs wrapped by K_master).
@@ -907,6 +1135,7 @@ export class ShareService {
 
     return {
       ...share,
+      uploadPending: !share.uploadLocked,
       hasPassword: !!share.security?.password,
       previewEnabled,
       encryptedReverseShareKey:
@@ -1019,13 +1248,17 @@ export class ShareService {
     isDeleterAdmin = false,
     reverseShareToken?: string,
     anonymousSessionToken?: string,
+    discardUploadedFiles = false,
   ) {
     this.logger.debug(
       `Removing share: share=redacted isDeleterAdmin=${isDeleterAdmin}`,
     );
     const share = await this.prisma.share.findUnique({
       where: { id: shareId },
-      include: { reverseShare: { select: { token: true } } },
+      include: {
+        reverseShare: { select: { token: true } },
+        _count: { select: { files: true } },
+      },
     });
 
     if (!share) {
@@ -1053,9 +1286,27 @@ export class ShareService {
       }
     }
 
+    // Older clients may publish a partial share at byte progress 100%, then
+    // try deleting it after the last worker fails. Require explicit discard
+    // for every share containing data, including already published shares.
+    if (!isDeleterAdmin && !discardUploadedFiles) {
+      const hasFiles =
+        (share._count?.files || 0) > 0 ||
+        (await this.fileService.hasCompletedUploadData(
+          shareId,
+          share.storageProvider,
+        ));
+      if (hasFiles) {
+        throw new ConflictException(
+          "Uploaded files are preserved. Complete the share or explicitly confirm discarding its files.",
+          "uploaded_files_preserved",
+        );
+      }
+    }
+
     // Delete files first; if it fails, abort DB deletion
     try {
-      await this.fileService.deleteAllFiles(shareId);
+      await this.fileService.deleteAllFiles(shareId, share.storageProvider);
       this.logger.debug("All share files deleted");
     } catch {
       this.logger.error("File deletion failed");

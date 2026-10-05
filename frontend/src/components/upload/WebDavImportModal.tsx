@@ -27,13 +27,7 @@ import {
   TbSelectAll,
 } from "react-icons/tb";
 import useTranslate from "../../hooks/useTranslate.hook";
-import {
-  downloadWebDavViaProxy,
-  isLocalOrPrivateWebDavTarget,
-  listWebDavViaProxy,
-  WebDavCredentials,
-  WebDavEntry,
-} from "../../services/webdav.service";
+import { WebDavCredentials, WebDavEntry } from "../../services/webdav.service";
 import {
   authorizeBridge,
   BridgeHealth,
@@ -338,7 +332,7 @@ const WebDavImportModal = ({
     setPairingBusy(true);
     setError("");
     try {
-      const health = await getBridgeHealth();
+      const health = await getBridgeHealth({ requestLocalAccess: true });
       setBridgeHealth(health);
       if (!health?.capabilities.webdav) {
         throw new Error("bridge.status.unavailable");
@@ -365,9 +359,6 @@ const WebDavImportModal = ({
     setError("");
     try {
       let result;
-      const requiresBridge = isLocalOrPrivateWebDavTarget(
-        url || credentials.endpoint,
-      );
       let bridgeError: unknown;
       if (useBridge && hasBridgeToken()) {
         const health = await getBridgeHealth();
@@ -377,9 +368,7 @@ const WebDavImportModal = ({
         if (health && !isOpenSourceBridgeCompatible(health)) {
           forgetBridgeToken();
           setUseBridge(false);
-          if (requiresBridge) {
-            throw new Error("bridge.error.openSourceUpdateRequired");
-          }
+          throw new Error("bridge.error.openSourceUpdateRequired");
         } else if (health) {
           try {
             result = await listWebDavDirectoryViaBridge(credentials, url);
@@ -390,10 +379,7 @@ const WebDavImportModal = ({
       }
 
       if (!result) {
-        if (requiresBridge) {
-          throw bridgeError || new Error("bridge.error.localNetworkRequired");
-        }
-        result = await listWebDavViaProxy(credentials, url);
+        throw bridgeError || new Error("bridge.error.localNetworkRequired");
       }
       if (!url) {
         setHistory([]);
@@ -469,9 +455,6 @@ const WebDavImportModal = ({
           const entry = selectedEntries[i];
           let file: File | undefined;
           let bridgeError: unknown;
-          const requiresBridge = isLocalOrPrivateWebDavTarget(
-            entry.href || credentials.endpoint,
-          );
           if (bridgeEnabled) {
             try {
               file = await downloadWebDavFileViaBridge(credentials, entry);
@@ -480,12 +463,7 @@ const WebDavImportModal = ({
             }
           }
           if (!file) {
-            if (requiresBridge) {
-              throw (
-                bridgeError || new Error("bridge.error.localNetworkRequired")
-              );
-            }
-            file = await downloadWebDavViaProxy(credentials, entry);
+            throw bridgeError || new Error("bridge.error.localNetworkRequired");
           }
           imported.push(asUploadFile(file));
           setImportProgress(

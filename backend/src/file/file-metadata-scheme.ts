@@ -11,11 +11,17 @@ import {
  * NULL: the file name and its folder path are stored in clear, as on every
  * row written before `File.metadataScheme` existed.
  *
- * FILE_META_V1 (1): the browser encrypts `{ name, relativePath }` with K_share
- * before upload. The server stores the ciphertext in `File.encryptedMetadata`,
- * a fixed placeholder in `File.name` and no folder path. Only SHARE_DEK_V1
- * shares can use it, because K_share is the only key their recipients hold
- * besides the file bytes themselves.
+ * FILE_META_V1 (1): the browser encrypts `{ name, relativePath }` with the key
+ * that already encrypts the file bytes, before upload. The server stores the
+ * ciphertext in `File.encryptedMetadata`, a fixed placeholder in `File.name`
+ * and no folder path. Three kinds of E2E share can use it, each with the only
+ * key its readers hold: K_share for a SHARE_DEK_V1 personal share, K_team for
+ * a Team folder upload and K_rs for an upload to a reverse share.
+ *
+ * The share title and description of such a share may travel the same way,
+ * in `Share.encryptedInfo`, see `isValidEncryptedShareInfo`. So may the name
+ * of an E2E reverse share (K_rs) and the subject and note of a Team file
+ * request (K_team), under the same flags as the uploads of their kind.
  */
 export const FILE_META_V1 = 1;
 
@@ -42,16 +48,23 @@ function decodedBase64UrlLength(value: string): number | null {
   return Math.floor((value.length * 3) / 4);
 }
 
-export function isValidEncryptedMetadata(value: unknown): value is string {
+function isValidEnvelope(
+  value: unknown,
+  maxPlaintextBytes: number,
+): value is string {
   if (typeof value !== "string" || !BASE64URL.test(value)) return false;
   const bytes = decodedBase64UrlLength(value);
   if (bytes === null) return false;
   const plaintext = bytes - IV_BYTES - TAG_BYTES;
   return (
     plaintext >= FILE_META_PADDING_BYTES &&
-    plaintext <= FILE_META_MAX_PLAINTEXT_BYTES &&
+    plaintext <= maxPlaintextBytes &&
     plaintext % FILE_META_PADDING_BYTES === 0
   );
+}
+
+export function isValidEncryptedMetadata(value: unknown): value is string {
+  return isValidEnvelope(value, FILE_META_MAX_PLAINTEXT_BYTES);
 }
 
 /**
@@ -117,31 +130,93 @@ export function resolveUploadFileMetadata(
   };
 }
 
-// ----- Feature flag -------------------------------------------------------
+/**
+ * Share title and description encrypted with the same key as the file names:
+ * base64url [IV 12][AES-256-GCM(JSON padded to 64 bytes) + tag 16], with the
+ * share id authenticated. Only a FILE_META_V1 share may carry it, and then
+ * stores no readable title or description next to it.
+ */
+export function isValidEncryptedShareInfo(value: unknown): value is string {
+  return isValidEncryptedMetadata(value);
+}
+
+/** Upload link name, encrypted with K_rs in the same envelope. */
+export function isValidEncryptedReverseShareName(
+  value: unknown,
+): value is string {
+  return isValidEnvelope(value, 512);
+}
+
+// Subject (120 characters) and note (2000 characters) of a file request: up
+// to 4 bytes per character once encoded, plus the JSON around them.
+export const FILE_REQUEST_INFO_MAX_PLAINTEXT_BYTES = 16384;
+
+/** File request subject and note, encrypted with K_team. */
+export function isValidEncryptedFileRequestInfo(
+  value: unknown,
+): value is string {
+  return isValidEnvelope(value, FILE_REQUEST_INFO_MAX_PLAINTEXT_BYTES);
+}
+
+// ----- Feature flags ------------------------------------------------------
 //
 // FILE_META_V1_WRITE (default false): new SHARE_DEK_V1 shares may encrypt
-//   their file names, for the users selected below only. Shares already
-//   created with FILE_META_V1 keep accepting files whatever the flag says.
+//   their file names, title and description, for the users selected below
+//   only. Shares already created with FILE_META_V1 keep accepting files
+//   whatever the flags say.
 // FILE_META_V1_CANARY_USERS: comma-separated user ids or e-mail addresses,
 //   or "*" for every user. Empty selects nobody, even with WRITE=true.
 // FILE_META_V1_ROLLOUT_PERCENT (0-100, default 0): additionally selects a
 //   stable share of users, from a hash of their id.
+// FILE_META_V1_TEAM_WRITE (default false): E2E Team folder uploads by a
+//   selected user also encrypt their names with K_team.
+// FILE_META_V1_REVERSE_SHARE_WRITE (default false): uploads to an E2E reverse
+//   share whose owner is selected also encrypt their names with K_rs.
 //
-// A user must also be selected for SHARE_DEK_V1, whose key encrypts the names.
+// For personal shares, a user must also be selected for SHARE_DEK_V1, whose
+// key encrypts the names. Team and reverse-share uploads keep their own key.
 
 type FlagEnv = Record<string, string | undefined>;
+type FlagUser = { id: string; email?: string | null } | null | undefined;
 
-export function isFileMetaWriteEnabledFor(
-  user: { id: string; email?: string | null } | null | undefined,
-  env: FlagEnv = process.env,
-) {
+function isSelectedForFileMeta(user: FlagUser, env: FlagEnv) {
   if (!user) return false;
-  if (!isShareDekWriteEnabledFor(user, env)) return false;
   if (!parseFlagBoolean(env.FILE_META_V1_WRITE, false)) return false;
   return isUserSelectedForRollout(
     user,
     env.FILE_META_V1_CANARY_USERS,
     env.FILE_META_V1_ROLLOUT_PERCENT,
     "file-meta-v1",
+  );
+}
+
+export function isFileMetaWriteEnabledFor(
+  user: FlagUser,
+  env: FlagEnv = process.env,
+) {
+  return (
+    isShareDekWriteEnabledFor(user, env) && isSelectedForFileMeta(user, env)
+  );
+}
+
+/** Team folder uploads of this user, encrypted with K_team. */
+export function isTeamFileMetaWriteEnabledFor(
+  user: FlagUser,
+  env: FlagEnv = process.env,
+) {
+  return (
+    parseFlagBoolean(env.FILE_META_V1_TEAM_WRITE, false) &&
+    isSelectedForFileMeta(user, env)
+  );
+}
+
+/** Uploads to a reverse share owned by this user, encrypted with K_rs. */
+export function isReverseShareFileMetaWriteEnabledFor(
+  owner: FlagUser,
+  env: FlagEnv = process.env,
+) {
+  return (
+    parseFlagBoolean(env.FILE_META_V1_REVERSE_SHARE_WRITE, false) &&
+    isSelectedForFileMeta(owner, env)
   );
 }

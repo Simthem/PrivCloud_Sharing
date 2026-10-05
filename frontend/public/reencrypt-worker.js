@@ -51,10 +51,17 @@ async function uploadChunk(message) {
     url += "&sessionId=" + encodeURIComponent(message.sessionId);
   }
 
+  var headers = { "Content-Type": "application/octet-stream" };
+  // FILE_META_V1 Team rotation: the last chunk carries the file name
+  // re-encrypted with the new key, as base64url ciphertext only.
+  if (message.encryptedMetadata) {
+    headers["X-File-Metadata"] = message.encryptedMetadata;
+  }
+
   try {
     var response = await fetch(url, {
       method: "PUT",
-      headers: { "Content-Type": "application/octet-stream" },
+      headers: headers,
       body: chunk,
       credentials: "include",
       signal: controller.signal,

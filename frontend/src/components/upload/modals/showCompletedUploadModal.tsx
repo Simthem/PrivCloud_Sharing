@@ -1,8 +1,8 @@
-import { Button, Stack, Text, ThemeIcon } from "@mantine/core";
+import { Alert, Button, Stack, Text, ThemeIcon } from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import dayjs from "../../../utils/dayjs";
 import { useRouter } from "next/router";
-import { TbCircleCheck } from "react-icons/tb";
+import { TbAlertTriangle, TbCircleCheck } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import useTranslate, {
   translateOutsideContext,
@@ -17,18 +17,24 @@ const showCompletedUploadModal = (
   share: CompletedShare,
   e2eKeyEncoded?: string | null,
   requiresE2EBackup = false,
+  failedFileCount = 0,
 ) => {
   const t = translateOutsideContext();
   return modals.openModal({
     closeOnClickOutside: false,
     withCloseButton: false,
     closeOnEscape: false,
-    title: t("upload.modal.completed.share-ready"),
+    title: t(
+      failedFileCount > 0
+        ? "upload.modal.completed.share-incomplete"
+        : "upload.modal.completed.share-ready",
+    ),
     children: (
       <Body
         share={share}
         e2eKeyEncoded={e2eKeyEncoded}
         requiresE2EBackup={requiresE2EBackup}
+        failedFileCount={failedFileCount}
       />
     ),
   });
@@ -38,10 +44,12 @@ const Body = ({
   share,
   e2eKeyEncoded,
   requiresE2EBackup,
+  failedFileCount,
 }: {
   share: CompletedShare;
   e2eKeyEncoded?: string | null;
   requiresE2EBackup: boolean;
+  failedFileCount: number;
 }) => {
   const modals = useModals();
   const router = useRouter();
@@ -61,15 +69,24 @@ const Body = ({
   return (
     <Stack align="stretch">
       <ThemeIcon
-        color="green"
+        color={failedFileCount > 0 ? "yellow" : "green"}
         variant="light"
         size="xl"
         radius="xl"
         style={{ alignSelf: "center" }}
       >
-        <TbCircleCheck size={24} />
+        {failedFileCount > 0 ? (
+          <TbAlertTriangle size={24} />
+        ) : (
+          <TbCircleCheck size={24} />
+        )}
       </ThemeIcon>
       <CopyTextField link={link} />
+      {failedFileCount > 0 && (
+        <Alert color="yellow" title={t("upload.modal.completed.partial-title")}>
+          {t("upload.modal.completed.partial-body", { count: failedFileCount })}
+        </Alert>
+      )}
       {share.notifyReverseShareCreator === true && (
         <Text size="sm" c="dimmed">
           {t("upload.modal.completed.notified-reverse-share-creator")}

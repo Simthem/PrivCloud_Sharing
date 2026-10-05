@@ -1,4 +1,8 @@
-import axios from "axios";
+import {
+  completeSafeLineChallenge,
+  validateSafeLineSession,
+} from "../utils/safelineChallenge.util";
+import axios, { type AxiosInstance, type AxiosResponse } from "axios";
 import {
   isUploadActive,
   isUploadCoolingDown,
@@ -11,7 +15,7 @@ import {
   rememberPostAuthRedirectTarget,
 } from "../utils/authRedirect.util";
 import {
-  AuthRefreshResult,
+  type AuthRefreshResult,
   refreshAfterPossibleCookieRotation,
 } from "../utils/authRefresh.util";
 
@@ -21,245 +25,62 @@ const api = axios.create({
 
 export { isUploadActive, setUploadActive };
 
-// Guard against SafeLine reload loops on non-upload pages.
-let _lastSafelineReload = 0;
-const SAFELINE_RELOAD_COOLDOWN_MS = 30_000; // 30s between reloads
-
-// --- SafeLine 468 challenge -------------------------------------------------
-// SafeLine WAF returns 468 when an anti-bot challenge is required.
-// The challenge is a JavaScript verification that sets a session cookie.
-// Strategy (ordered by reliability):
-//   1. IFRAME (invisible): Create a hidden iframe to '/'. SafeLine
-//      intercepts and serves its JS challenge. The JS executes
-//      automatically (no user gesture needed), sets the cookie, and
-//      redirects to our app. We detect completion by polling
-//      validateSafeLineSession(). This is the PRIMARY method because
-//      it works 100% of the time without user interaction.
-//   2. POPUP (fallback): If iframe fails after 30s (e.g. X-Frame-Options
-//      or network issue), try a popup. May be blocked by the browser
-//      if no recent user gesture.
-//   3. NOTIFICATION (last resort): Show a clickable notification so the
-//      user can manually trigger the popup with a click (user gesture).
-let safelineChallengeInFlight: Promise<void> | null = null;
-const SAFELINE_BROADCAST_CHANNEL = "safeline-challenge";
-
-/**
- * Validate that the SafeLine session cookie is active by making a
- * lightweight fetch.  Returns true if the response is NOT 468.
- */
-export async function validateSafeLineSession(): Promise<boolean> {
-  try {
-    const resp = await fetch("/?_sl_validate=" + Date.now(), {
-      credentials: "include",
-      cache: "no-store",
-      mode: "same-origin",
-    });
-    const valid = resp.status !== 468;
-    resp.body?.cancel();
-    return valid;
-  } catch {
-    // Network error - assume session is valid (don't block on transient issues)
-    return true;
-  }
-}
-
-/**
- * Attempt to solve SafeLine challenge via a hidden iframe.
- * The iframe loads '/', SafeLine intercepts with its JS challenge,
- * the challenge executes and sets the session cookie.
- * We poll validateSafeLineSession() until it passes.
- * Returns true if solved, false if timed out.
- */
-async function resolveChallengeViaIframe(timeoutMs = 45_000): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
-    const iframe = document.createElement("iframe");
-    iframe.style.cssText =
-      "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;border:none;";
-    iframe.src = "/?_sl_iframe=" + Date.now();
-    // No sandbox: SafeLine's challenge JS may need full capabilities
-    // (navigation, form submission, cookie access). Since we load our
-    // own origin, this is safe.
-
-    let resolved = false;
-    let pollTimer: ReturnType<typeof setInterval> | null = null;
-    let hardTimeout: ReturnType<typeof setTimeout> | null = null;
-
-    const cleanup = () => {
-      if (resolved) return;
-      resolved = true;
-      if (pollTimer) clearInterval(pollTimer);
-      if (hardTimeout) clearTimeout(hardTimeout);
-      try {
-        iframe.remove();
-      } catch {
-        /* */
-      }
-    };
-
-    // Poll every 2s to see if the cookie is now valid
-    const startTime = Date.now();
-    pollTimer = setInterval(async () => {
-      // Don't poll until at least 3s have passed (give iframe time to load)
-      if (Date.now() - startTime < 3000) return;
-      try {
-        const valid = await validateSafeLineSession();
-        if (valid) {
-          cleanup();
-          resolve(true);
-        }
-      } catch {
-        /* ignore poll errors */
-      }
-    }, 2000);
-
-    // Hard timeout
-    hardTimeout = setTimeout(() => {
-      cleanup();
-      resolve(false);
-    }, timeoutMs);
-
-    // Also listen for BroadcastChannel signal (if _app.tsx loads in iframe)
-    try {
-      const bc = new BroadcastChannel(SAFELINE_BROADCAST_CHANNEL);
-      bc.onmessage = (e) => {
-        if (e.data?.type === "safeline-challenge-complete") {
-          bc.close();
-          // Give 1s for cookie to propagate
-          setTimeout(async () => {
-            cleanup();
-            resolve(true);
-          }, 1000);
-        }
-      };
-      // Close BC on timeout
-      setTimeout(() => {
-        try {
-          bc.close();
-        } catch {
-          /* ignore */
-        }
-      }, timeoutMs);
-    } catch {
-      /* BC not supported */
-    }
-
-    document.body.appendChild(iframe);
-  });
-}
-
-const completeSafeLineChallenge = (): Promise<void> => {
-  if (safelineChallengeInFlight) return safelineChallengeInFlight;
-
-  safelineChallengeInFlight = (async () => {
-    // --- Layer 1: Invisible iframe (no user gesture needed) ---
-    try {
-      const iframeOk = await resolveChallengeViaIframe(45_000);
-      if (iframeOk) {
-        safelineChallengeInFlight = null;
-        return;
-      }
-    } catch {
-      // iframe failed - continue to popup
-    }
-
-    // --- Layer 2: Popup (needs user gesture OR permissive browser settings) ---
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const popup = window.open(
-          window.location.origin + "/",
-          "safeline_challenge",
-          "popup,width=900,height=650,left=200,top=100",
-        );
-
-        if (!popup) {
-          reject(new Error("popup-blocked"));
-          return;
-        }
-
-        let bc: BroadcastChannel | null = null;
-        let pollClosed: ReturnType<typeof setInterval> | null = null;
-        let timeout: ReturnType<typeof setTimeout> | null = null;
-        let resolved = false;
-
-        const cleanup = () => {
-          if (resolved) return;
-          resolved = true;
-          if (timeout !== null) clearTimeout(timeout);
-          if (pollClosed !== null) clearInterval(pollClosed);
-          if (bc) {
-            bc.close();
-            bc = null;
-          }
-          window.removeEventListener("message", onLegacyMessage);
-          try {
-            popup.close();
-          } catch {
-            /* already closed */
-          }
-        };
-
-        const onChallengeSignal = () => {
-          if (resolved) return;
-          cleanup();
-          resolve();
-        };
-
-        try {
-          bc = new BroadcastChannel(SAFELINE_BROADCAST_CHANNEL);
-          bc.onmessage = (e) => {
-            if (e.data?.type === "safeline-challenge-complete") {
-              onChallengeSignal();
-            }
-          };
-        } catch {
-          /* BC not supported */
-        }
-
-        const onLegacyMessage = (e: MessageEvent) => {
-          if (e.origin !== window.location.origin) return;
-          if (e.data?.type === "safeline-challenge-complete") {
-            onChallengeSignal();
-          }
-        };
-        window.addEventListener("message", onLegacyMessage);
-
-        pollClosed = setInterval(() => {
-          if (popup.closed) onChallengeSignal();
-        }, 800);
-
-        timeout = setTimeout(() => {
-          cleanup();
-          reject(new Error("SafeLine challenge timeout"));
-        }, 120_000);
-      });
-      safelineChallengeInFlight = null;
-      return;
-    } catch {
-      // popup also failed
-    }
-
-    // --- Layer 3: Reject (caller will show notification to user) ---
-    safelineChallengeInFlight = null;
-    throw new Error("popup-blocked");
-  })();
-
-  return safelineChallengeInFlight;
-};
-
-// Exported so the upload page can attempt the iframe challenge from
-// its own 468 handler (fetch bypasses axios interceptors).
-export { completeSafeLineChallenge };
+// The API and upload workers share one verified browser challenge flow.
+export { completeSafeLineChallenge, validateSafeLineSession };
 
 // --- Dedicated axios instance for token refresh -----------------------------
-// Uses ONLY the SafeLine 468 interceptor so the refresh call can solve a
-// challenge transparently.  Does NOT have the 401/403 interceptor to
-// avoid infinite recursion (refresh getting 401 -> try refresh -> ...).
+// Verifies WAF challenges without invoking account-token renewal recursively.
+// JSON authentication failures propagate to the shared refresh coordinator.
 const refreshApi = axios.create({});
 
+async function verifyApiResponse(
+  response: AxiosResponse,
+  client: AxiosInstance,
+): Promise<AxiosResponse> {
+  const contentType = String(
+    response.headers["content-type"] || "",
+  ).toLowerCase();
+  if (!contentType.includes("text/html") || typeof response.data !== "string")
+    return response;
+  const original = response.config as typeof response.config & {
+    _safelineRetried?: boolean;
+  };
+  const challengeError = new axios.AxiosError(
+    "WAF session verification is required",
+    "ERR_BAD_RESPONSE",
+    original,
+    undefined,
+    { ...response, status: 468 },
+  );
+  if (!original._safelineRetried) {
+    original._safelineRetried = true;
+    try {
+      await completeSafeLineChallenge();
+    } catch {
+      // Preserve the page and report an unresolved challenge to the caller.
+      throw challengeError;
+    }
+    return client(original);
+  }
+  throw challengeError;
+}
+
 refreshApi.interceptors.response.use(
-  (response) => response,
+  (response) => verifyApiResponse(response, refreshApi),
   async (error) => {
     const original = error.config;
+
+    const response = error.response;
+    if (
+      response &&
+      [401, 403].includes(response.status) &&
+      typeof response.data === "string" &&
+      String(response.headers?.["content-type"] || "")
+        .toLowerCase()
+        .includes("text/html")
+    ) {
+      return verifyApiResponse(response, refreshApi);
+    }
 
     if (
       error.response?.status === 403 &&
@@ -274,25 +95,13 @@ refreshApi.interceptors.response.use(
       }
       return Promise.reject(error);
     }
-    if (error.response?.status === 468 && !original._safelineRetried) {
+    if (error.response?.status === 468 && original && !original._safelineRetried) {
       original._safelineRetried = true;
-      // During upload: popup challenge (Worker may need cookie set).
-      if (isUploadActive()) {
-        try {
-          await completeSafeLineChallenge();
-          return refreshApi(original);
-        } catch {
-          // popup failed -- fall through to reject
-        }
-      } else {
-        // Non-upload: silent page reload triggers SafeLine challenge
-        // naturally as a normal page load.
-        const now = Date.now();
-        if (now - _lastSafelineReload > SAFELINE_RELOAD_COOLDOWN_MS) {
-          _lastSafelineReload = now;
-          window.location.reload();
-          return new Promise(() => {}); // never resolves (page reloading)
-        }
+      try {
+        await completeSafeLineChallenge();
+        return refreshApi(original);
+      } catch {
+        // A failed WAF verification preserves the page and authentication state.
       }
     }
     return Promise.reject(error);
@@ -377,9 +186,21 @@ export function refreshTokenOnce(): Promise<AuthRefreshResult> {
 // This closes the race window between cookie expiry and the periodic
 // refresh interval, so the caller never sees the 401.
 api.interceptors.response.use(
-  (response) => response,
+  (response) => verifyApiResponse(response, api),
   async (error) => {
     const original = error.config;
+
+    const response = error.response;
+    if (
+      response &&
+      [401, 403].includes(response.status) &&
+      typeof response.data === "string" &&
+      String(response.headers?.["content-type"] || "")
+        .toLowerCase()
+        .includes("text/html")
+    ) {
+      return verifyApiResponse(response, api);
+    }
 
     if (
       error.response?.status === 403 &&
@@ -395,26 +216,15 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // SafeLine anti-bot challenge
+    // Resolve 468 inside a separate browser context and replay the request.
+    // Control-plane requests need recovery even while direct S3 PUTs continue.
     if (error.response?.status === 468) {
-      // During upload: skip -- the chunk upload Worker handles 468
-      // with its own retry loop and user-visible notification.
-      if (isUploadActive()) {
-        return Promise.reject(error);
-      }
-
-      // Non-upload requests: trigger a page reload so SafeLine serves
-      // its challenge as a normal page load (transparent to the user).
-      // A 30s cooldown prevents reload loops if the user is truly
-      // rate-limited/banned.
-      if (!original._safelineRetried) {
+      if (original && !original._safelineRetried) {
         original._safelineRetried = true;
-        const now = Date.now();
-        if (now - _lastSafelineReload > SAFELINE_RELOAD_COOLDOWN_MS) {
-          _lastSafelineReload = now;
-          window.location.reload();
-          return new Promise(() => {}); // never resolves (page reloading)
-        }
+        try {
+          await completeSafeLineChallenge();
+          return api(original);
+        } catch { /* Preserve the upload and propagate the original 468. */ }
       }
       return Promise.reject(error);
     }

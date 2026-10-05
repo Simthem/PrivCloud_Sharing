@@ -44,13 +44,29 @@ const ProtectionBadge = ({ share }: { share: AdminShare }) =>
   );
 
 const Status = ({ status }: { status: AdminShare["status"] }) => (
-  <Badge variant="outline" color={status === "READY" ? "green" : "orange"}>
+  <Badge
+    variant="outline"
+    color={status === "READY" ? "green" : "orange"}
+    styles={{
+      label: {
+        whiteSpace: "normal",
+        overflow: "visible",
+        textOverflow: "clip",
+      },
+    }}
+  >
     {status === "READY" ? (
       <FormattedMessage id="admin.shares.status.ready" defaultMessage="Ready" />
     ) : (
       <FormattedMessage
-        id="admin.shares.status.uploading"
-        defaultMessage="Uploading"
+        id={
+          status === "INACTIVE"
+            ? "admin.shares.status.inactive"
+            : "admin.shares.status.unfinished"
+        }
+        defaultMessage={
+          status === "INACTIVE" ? "Inactive upload" : "Not finalized"
+        }
       />
     )}
   </Badge>
@@ -87,12 +103,7 @@ const ManageShareTable = ({
               </Card>
             ))
           : sortedShares.map((share) => (
-              <Card
-                key={share.reference}
-                withBorder
-                padding="sm"
-                radius="md"
-              >
+              <Card key={share.reference} withBorder padding="sm" radius="md">
                 <Group justify="space-between" wrap="nowrap" mb={6}>
                   <Box style={{ minWidth: 0 }}>
                     <Tooltip label={share.reference}>

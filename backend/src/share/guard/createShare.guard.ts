@@ -18,20 +18,19 @@ export class CreateShareGuard extends JwtGuard {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    if (await super.canActivate(context)) return true;
+    try {
+      if (await super.canActivate(context)) return true;
+    } catch (error) {
+      if (!(error instanceof UnauthorizedException)) throw error;
+    }
 
     const request: Request = context.switchToHttp().getRequest();
     const reverseShareTokenId = request.cookies.reverse_share_token;
 
     if (!reverseShareTokenId) {
-      // JwtGuard returned false (token absent or expired) and there
-      // is no reverse share fallback.  If an access_token cookie was
-      // present the token likely just expired -- throw 401 so the
-      // client can refresh it instead of receiving a generic 403.
-      if (request.cookies?.access_token) {
-        throw new UnauthorizedException();
-      }
-      return false;
+      // The browser removes expired access cookies. A refresh cookie can
+      // still renew the account, so missing authentication must return 401.
+      throw new UnauthorizedException();
     }
 
     const isReverseShareTokenValid =

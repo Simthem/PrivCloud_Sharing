@@ -92,4 +92,39 @@ testCase(
   },
 );
 
+
+testCase("batch S3 errors inside HTTP 200 prevent successful share deletion", async () => {
+  const service: any = Object.create(S3FileService.prototype);
+  service.logger = silentLogger; service.config = { get: () => "bucket" };
+  service.getSharePrefix = () => "share-1/"; service.abortShareMultipartUploads = async () => {};
+  let sends = 0;
+  service.getS3Instance = () => ({ send: async () => ++sends === 1 ? { Contents: [{ Key: "share-1/file-1" }] } : { Errors: [{ Code: "AccessDenied", Key: "share-1/file-1" }] } });
+  await assert.rejects(service.deleteAllFiles("share-1"), /Could not delete all files from S3/);
+});
+testCase("multipart abort errors propagate while already absent uploads remain idempotent", async () => {
+  for (const code of ["AccessDenied", "NoSuchUpload"]) {
+    const service: any = Object.create(S3FileService.prototype);
+    service.logger = silentLogger; service.config = { get: () => "bucket" };
+    service.getSharePrefix = () => "share-1/"; service.multipartUploads = new Map();
+    let sends = 0;
+    service.getS3Instance = () => ({ send: async () => { if (++sends === 1) return { Uploads: [{ Key: "share-1/file-1", UploadId: "upload" }] }; throw Object.assign(new Error("fixture"), { name: code }); } });
+    if (code === "AccessDenied") await assert.rejects(service.abortShareMultipartUploads("share-1"), /Could not abort all multipart/);
+    else await service.abortShareMultipartUploads("share-1");
+  }
+});
+testCase("multipart cancellation paginates before acknowledging deletion", async () => {
+  const service: any = Object.create(S3FileService.prototype);
+  service.logger = silentLogger; service.config = { get: () => "bucket" };
+  service.getSharePrefix = () => "share-1/"; service.multipartUploads = new Map();
+  const queries: any[] = [];
+  service.getS3Instance = () => ({ send: async (command: any) => {
+    queries.push(command.input);
+    if (command.constructor.name === "AbortMultipartUploadCommand") return {};
+    return command.input.KeyMarker ? { Uploads: [{ Key: "share-1/file-2", UploadId: "u2" }] } : { Uploads: [{ Key: "share-1/file-1", UploadId: "u1" }], IsTruncated: true, NextKeyMarker: "share-1/file-1", NextUploadIdMarker: "u1" };
+  } });
+  await service.abortShareMultipartUploads("share-1");
+  assert.equal(queries.filter(query => query.UploadId).length, 2);
+  assert.ok(queries.some(query => query.KeyMarker === "share-1/file-1" && query.UploadIdMarker === "u1"));
+});
+
 run();

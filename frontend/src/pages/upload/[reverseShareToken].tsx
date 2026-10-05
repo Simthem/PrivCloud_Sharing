@@ -1,7 +1,7 @@
 import { LoadingOverlay } from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import { GetServerSidePropsContext } from "next";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Upload from ".";
 import showErrorModal from "../../components/share/showErrorModal";
@@ -9,6 +9,8 @@ import shareService from "../../services/share.service";
 import useTranslate from "../../hooks/useTranslate.hook";
 import { ReverseShare } from "../../types/share.type";
 import { AxiosError } from "axios";
+import { extractKeyFromHash } from "../../utils/crypto.util";
+import { openReverseShareName } from "../../utils/fileMetadata.util";
 
 export function getServerSideProps(context: GetServerSidePropsContext) {
   return {
@@ -29,6 +31,22 @@ const Share = ({ reverseShareToken }: { reverseShareToken: string }) => {
     queryFn: () => shareService.getReverseShare(reverseShareToken),
     retry: false,
   });
+
+  // The name of an E2E link may be encrypted with its K_rs, which only the
+  // holders of the link have, in the URL fragment.
+  const [openedName, setOpenedName] = useState<string>();
+  useEffect(() => {
+    if (!reverseShare?.encryptedName) return;
+    let cancelled = false;
+    void openReverseShareName(reverseShare, extractKeyFromHash()).then(
+      (name) => {
+        if (!cancelled) setOpenedName(name);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [reverseShare]);
 
   useEffect(() => {
     if (!(error instanceof AxiosError) || !error.response) {
@@ -59,7 +77,8 @@ const Share = ({ reverseShareToken }: { reverseShareToken: string }) => {
     <Upload
       isReverseShare
       isE2EEncrypted={reverseShare?.isE2EEncrypted || false}
-      name={reverseShare?.name}
+      fileMetaV1Write={reverseShare?.fileMetaV1Write || false}
+      name={reverseShare?.encryptedName ? openedName : reverseShare?.name}
       maxShareSize={parsedMaxShareSize}
       simplified={reverseShare?.simplified || false}
     />

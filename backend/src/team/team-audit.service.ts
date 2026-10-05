@@ -4,9 +4,11 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { ConfigService } from "src/config/config.service";
 import { EmailService } from "src/email/email.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import {
+  auditEmailAnomalyLine,
   buildTeamAuditSummary,
   getScheduledAuditWindow,
   TeamAuditSummary,
@@ -19,6 +21,7 @@ export class TeamAuditService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
+    private readonly config: ConfigService,
   ) {}
 
   async dispatchScheduledReports(now = new Date()) {
@@ -169,8 +172,15 @@ export class TeamAuditService {
       });
     }
 
-    const subject = `[${team.name}] Rapport d'audit ${this.frequencyLabel(frequency)}`;
-    const body = this.formatEmail(team.name, periodStart, periodEnd, summary);
+    // The mail provider never sees the team name nor member addresses: the
+    // email carries counters and points to the report in the Team space.
+    const subject = `Rapport d'audit ${this.frequencyLabel(frequency)} de votre équipe`;
+    const body = this.formatEmail(
+      `${this.config.get("general.appUrl")}/team/${teamId}`,
+      periodStart,
+      periodEnd,
+      summary,
+    );
     const failures: string[] = [];
     for (const recipient of recipients) {
       try {
@@ -191,14 +201,14 @@ export class TeamAuditService {
   }
 
   private formatEmail(
-    teamName: string,
+    teamUrl: string,
     start: Date,
     end: Date,
     summary: TeamAuditSummary,
   ) {
     const t = summary.totals;
     const lines = [
-      `Rapport d'audit de l'équipe ${teamName}`,
+      "Rapport d'audit de votre équipe",
       `Période : ${start.toLocaleDateString("fr-FR")} - ${end.toLocaleDateString("fr-FR")}`,
       "",
       `Événements : ${t.events}`,
@@ -215,8 +225,10 @@ export class TeamAuditService {
       `Clés Team : ${summary.keyHealth.current} à jour, ${summary.keyHealth.pending} en attente, ${summary.keyHealth.missing} manquante(s)`,
       "",
       summary.anomalies.length > 0
-        ? `Points d'attention :\n${summary.anomalies.map((a) => `- ${a.description}`).join("\n")}`
+        ? `Points d'attention :\n${summary.anomalies.map((a) => `- ${auditEmailAnomalyLine(a)}`).join("\n")}`
         : "Aucune anomalie détectée selon les seuils automatiques.",
+      "",
+      `Détail dans l'espace d'équipe : ${teamUrl}`,
       "",
       "Ce rapport ne contient ni contenu de fichier ni clé de chiffrement.",
     ];

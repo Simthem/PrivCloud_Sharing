@@ -45,6 +45,7 @@ export interface AccessGrant {
   ephemeralPublicKey: string;
   nonce: string;
   algorithm: string;
+  kemCiphertext?: string | null;
   dekVersion: number;
   fileId?: string;
   teamFileId?: string;
@@ -475,6 +476,7 @@ export const createAccessGrant = async (data: {
   nonce: string;
   recipientUserId: string;
   algorithm?: string;
+  kemCiphertext?: string;
   fileId?: string;
   teamFileId?: string;
   shareId?: string;
@@ -492,6 +494,7 @@ export const createBulkGrants = async (
     nonce: string;
     recipientUserId: string;
     algorithm?: string;
+    kemCiphertext?: string;
     encryptedNotification?: string;
     fileId?: string;
     teamFileId?: string;
@@ -683,24 +686,39 @@ export async function grantFileAccess(
   recipientUserId: string,
   target: { fileId?: string; teamFileId?: string; shareId?: string },
 ): Promise<GrantResult> {
-  // Fetch recipient's public key
-  const pubKeys = await getUserPublicKeys(recipientUserId);
-  const x25519Key = pubKeys.find((k) => k.keyType === "X25519");
+  return grantFileAccessHybrid(dekRaw, recipientUserId, target);
+}
 
-  if (!x25519Key) {
-    throw new Error("Le destinataire n'a pas configuré ses clés E2EE (X25519)");
+/**
+ * Wrap a key for one recipient: X25519 combined with ML-KEM-768 when the
+ * recipient has an ML-KEM key (generated automatically with the E2E keys),
+ * X25519 alone otherwise.
+ */
+export async function wrapKeyForRecipient(
+  dekRaw: Uint8Array,
+  recipient: {
+    x25519: { publicKey: string };
+    pqKey?: { publicKey: string; variant?: string } | null;
+  },
+): Promise<{
+  encryptedFileKey: string;
+  ephemeralPublicKey: string;
+  nonce: string;
+  algorithm: string;
+  kemCiphertext?: string;
+}> {
+  if (
+    recipient.pqKey?.publicKey &&
+    (recipient.pqKey.variant ?? "ML-KEM-768") === "ML-KEM-768"
+  ) {
+    return hybridWrapDEK(
+      dekRaw,
+      recipient.x25519.publicKey,
+      recipient.pqKey.publicKey,
+    );
   }
-
-  // Wrap DEK for recipient
-  const wrapped = await wrapDEKForRecipient(dekRaw, x25519Key.publicKey);
-
-  // Create grant on server
-  return createAccessGrant({
-    ...wrapped,
-    recipientUserId,
-    algorithm: "x25519-aes256gcm",
-    ...target,
-  });
+  const wrapped = await wrapDEKForRecipient(dekRaw, recipient.x25519.publicKey);
+  return { ...wrapped, algorithm: "x25519-aes256gcm" };
 }
 
 /**
@@ -724,6 +742,7 @@ export async function grantFileAccessToTeam(
     nonce: string;
     recipientUserId: string;
     algorithm: string;
+    kemCiphertext?: string;
     encryptedNotification?: string;
     fileId?: string;
     teamFileId?: string;
@@ -733,7 +752,10 @@ export async function grantFileAccessToTeam(
   for (const entry of pubKeysMap) {
     if (!entry.x25519) continue; // Skip members without keys
 
-    const wrapped = await wrapDEKForRecipient(dekRaw, entry.x25519.publicKey);
+    const wrapped = await wrapKeyForRecipient(dekRaw, {
+      x25519: entry.x25519,
+      pqKey: entry.pqKey,
+    });
 
     // ML-KEM is a Team-level opt-in. Members without a PQ key always retain
     // the established X25519 notification path.
@@ -756,7 +778,6 @@ export async function grantFileAccessToTeam(
     grants.push({
       ...wrapped,
       recipientUserId: entry.userId,
-      algorithm: "x25519-aes256gcm",
       encryptedNotification,
       ...target,
     });
@@ -1192,19 +1213,10 @@ export async function grantFileAccessHybrid(
     throw new Error("Le destinataire n'a pas configuré ses clés E2EE (X25519)");
   }
 
-  let wrapped: any;
-  if (entry.pqKey) {
-    // Hybrid mode: X25519 + ML-KEM-768
-    wrapped = await hybridWrapDEK(
-      dekRaw,
-      entry.x25519.publicKey,
-      entry.pqKey.publicKey,
-    );
-  } else {
-    // Classical mode: X25519 only
-    wrapped = await wrapDEKForRecipient(dekRaw, entry.x25519.publicKey);
-    wrapped.algorithm = "x25519-aes256gcm";
-  }
+  const wrapped = await wrapKeyForRecipient(dekRaw, {
+    x25519: entry.x25519,
+    pqKey: entry.pqKey,
+  });
 
   return createAccessGrant({
     ...wrapped,

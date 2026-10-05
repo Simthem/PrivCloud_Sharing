@@ -1,4 +1,5 @@
 import api from "./api.service";
+import { createInflightRequest } from "../utils/inflightRequest.util";
 import { apiPathSegment } from "../utils/apiPath.util";
 
 export interface Team {
@@ -122,6 +123,10 @@ export interface TeamSearchIndex {
     folderName?: string | null;
     name: string;
     relativePath?: string | null;
+    /** FILE_META_V1: `name` is the placeholder, opened with K_team. */
+    metadataScheme?: number | null;
+    encryptedMetadata?: string | null;
+    shareEncryptedInfo?: string | null;
     size: string;
     createdAt: string;
     expiresAt: string;
@@ -235,6 +240,12 @@ const acceptInvitation = async (
   ).data;
 };
 
+const readTeamKey = createInflightRequest<{
+  wrappedTeamKey: string | null;
+  keyVersion: number;
+  memberKeyVersion: number;
+}>();
+
 const getTeamKey = async (
   teamId: string,
 ): Promise<{
@@ -242,7 +253,11 @@ const getTeamKey = async (
   keyVersion: number;
   memberKeyVersion: number;
 }> => {
-  return (await api.get(`teams/${apiPathSegment(teamId)}/team-key`)).data;
+  return readTeamKey(
+    teamId,
+    async () =>
+      (await api.get(`teams/${apiPathSegment(teamId)}/team-key`)).data,
+  );
 };
 
 const setTeamKey = async (
@@ -263,7 +278,15 @@ const clearTeamKey = async (teamId: string): Promise<void> => {
 export interface TeamShare {
   id: string;
   isE2EEncrypted: boolean;
-  files: { id: string; name: string; size: string }[];
+  fileMetadataScheme?: number | null;
+  files: {
+    id: string;
+    name: string;
+    size: string;
+    /** FILE_META_V1: the name is encrypted with K_team and rotates with it. */
+    metadataScheme?: number | null;
+    encryptedMetadata?: string | null;
+  }[];
 }
 
 const getTeamShares = async (teamId: string): Promise<TeamShare[]> => {
@@ -334,6 +357,31 @@ const updateKeyRotationProgress = async (
   (
     await api.patch(
       `teams/${apiPathSegment(teamId)}/key-rotation/${apiPathSegment(rotationId)}/progress`,
+      data,
+    )
+  ).data;
+
+const getKeyRotationMetadata = async (
+  teamId: string,
+): Promise<{
+  shares: { id: string; encryptedInfo: string }[];
+  requests: { id: string; encryptedInfo: string }[];
+}> =>
+  (await api.get(`teams/${apiPathSegment(teamId)}/key-rotation/metadata`)).data;
+
+const stageKeyRotationMetadata = async (
+  teamId: string,
+  rotationId: string,
+  data: {
+    kind: "SHARE" | "REQUEST";
+    id: string;
+    expectedEncryptedInfo: string;
+    encryptedInfo: string;
+  },
+) =>
+  (
+    await api.post(
+      `teams/${apiPathSegment(teamId)}/key-rotation/${apiPathSegment(rotationId)}/metadata`,
       data,
     )
   ).data;
@@ -525,12 +573,17 @@ const getFolderShares = async (
     createdAt: string;
     expiration?: string;
     isE2EEncrypted: boolean;
+    /** FILE_META_V1: names, title and description encrypted with K_team. */
+    fileMetadataScheme?: number | null;
+    encryptedInfo?: string | null;
     files: {
       id: string;
       name: string;
       relativePath?: string | null;
       size: string;
       createdAt: string;
+      metadataScheme?: number | null;
+      encryptedMetadata?: string | null;
     }[];
     creator?: { id: string; username: string; email: string };
   }[];
@@ -586,6 +639,10 @@ const getFileAccess = async (
     id: string;
     fileId: string;
     fileName: string;
+    /** FILE_META_V1: `fileName` is the placeholder, opened with K_team. */
+    shareId: string;
+    metadataScheme?: number | null;
+    encryptedMetadata?: string | null;
     memberId: string;
     permission: string;
     canRequestSignature: boolean;
@@ -663,7 +720,7 @@ const getMyWritableFolders = async (): Promise<
     [];
   const settled = await Promise.allSettled(
     teams.map(async (team) => {
-      const folders = await getFolders(team.id);
+      const folders = await getFolders(team.id, "*");
       return { team, folders };
     }),
   );
@@ -745,6 +802,8 @@ const teamService = {
   startKeyRotation,
   updateKeyRotationProgress,
   completeKeyRotation,
+  getKeyRotationMetadata,
+  stageKeyRotationMetadata,
   cancelKeyRotation,
   getSignableFiles,
   getAuditReports,

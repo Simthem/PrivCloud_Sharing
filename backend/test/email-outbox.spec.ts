@@ -177,4 +177,56 @@ testCase(
   },
 );
 
+testCase(
+  "does not send expired service messages and preserves the encrypted deadline",
+  async () => {
+    const message = {
+      recipient: "recipient@example.test",
+      subject: "Request",
+      text: "Authenticated link",
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
+    };
+    const encryptedPayload = encryptOutboxEmail(
+      message,
+      "test-secret",
+      "test-key",
+    );
+    assert.deepEqual(
+      decryptOutboxEmail(encryptedPayload, "test-secret", "test-key"),
+      message,
+    );
+    let sent = 0;
+    let terminal = false;
+    const row = {
+      id: "expired",
+      deduplicationKey: "test-key",
+      encryptedPayload,
+      claimedAt: new Date(),
+      attempts: 1,
+    };
+    const prisma = {
+      emailOutbox: {
+        updateMany: async ({ data }: any) => {
+          terminal = data.sentAt instanceof Date;
+          return { count: 1 };
+        },
+      },
+    };
+    const service = new EmailOutboxService(
+      prisma as never,
+      { get: () => "test-secret" } as never,
+      {
+        sendMail: async () => {
+          sent++;
+        },
+      } as never,
+    );
+    await (
+      service as unknown as { deliver: (row: unknown) => Promise<void> }
+    ).deliver(row);
+    assert.equal(sent, 0);
+    assert.equal(terminal, true);
+  },
+);
+
 void run();

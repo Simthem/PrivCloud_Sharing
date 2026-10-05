@@ -5,8 +5,16 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { Readable } from "node:stream";
+import { runNativeTransport } from "./native-transport.mjs";
+import {
+  uploadDirectFile,
+  createUploadSlots,
+  runParallelFiles,
+} from "./direct-upload.mjs";
 
-const VERSION = "1.25.1";
+const acquireUploadSlot = createUploadSlots(2);
+
+const VERSION = "1.25.2";
 const NATIVE_HOST_NAME = "fr.privcloud.companion";
 const HOST = process.env.PRIVCLOUD_BRIDGE_HOST || "127.0.0.1";
 const PORT = Number(process.env.PRIVCLOUD_BRIDGE_PORT || "47631");
@@ -16,6 +24,7 @@ const STATE_DIR =
 const STATE_FILE = path.join(STATE_DIR, "state.json");
 const MAX_JSON_BODY = 256 * 1024;
 const MAX_PROPFIND_XML = 5 * 1024 * 1024;
+const WEBDAV_RESUME_MAX_ATTEMPTS = 6;
 const MAX_ACTIVE_JOBS = 64;
 const MAX_FILES_PER_JOB = 1000;
 const JOB_RETENTION_MS = 10 * 60 * 1000;
@@ -87,6 +96,11 @@ const pendingPairings = new Map();
 const jobs = new Map();
 const PUBLIC_ERROR_MESSAGES = {
   bad_request: "bridge.error.badRequest",
+  native_origin_denied: "bridge.error.originDenied",
+  native_session_expired: "bridge.error.sessionExpired",
+  native_download_expired: "bridge.error.downloadExpired",
+  native_busy: "bridge.error.busy",
+  message_too_large: "bridge.error.messageTooLarge",
   bridge_file_selection_limit: "bridge.error.fileSelectionLimit",
   bridge_too_many_jobs: "bridge.error.tooManyJobs",
   https_required: "webdav.error.https",
@@ -288,13 +302,8 @@ async function readJson(req) {
 function authenticate(req) {
   pruneTokens();
   const header = req.headers.authorization;
-  const parts =
-    typeof header === "string" ? header.trim().split(/\s+/u) : [];
-  if (
-    parts.length !== 2 ||
-    parts[0].toLowerCase() !== "bearer" ||
-    !parts[1]
-  ) {
+  const parts = typeof header === "string" ? header.trim().split(/\s+/u) : [];
+  if (parts.length !== 2 || parts[0].toLowerCase() !== "bearer" || !parts[1]) {
     const err = new Error("Missing bridge bearer token");
     err.statusCode = 401;
     throw err;
@@ -374,7 +383,7 @@ function resolveWebDavHref(endpoint, href) {
   return target;
 }
 
-function normalizePrivCloudBaseUrl(value) {
+function normalizePrivCloudBaseUrl(value, origin) {
   let url;
   try {
     url = new URL(String(value || ""));
@@ -407,6 +416,12 @@ function normalizePrivCloudBaseUrl(value) {
   url.hash = "";
   url.username = "";
   url.password = "";
+  if (origin && url.origin !== origin) {
+    throw Object.assign(
+      new Error("PrivCloud API must match the requesting origin"),
+      { statusCode: 403, code: "native_origin_denied" },
+    );
+  }
   return url.origin;
 }
 
@@ -625,8 +640,107 @@ function throwIfCancelled(job) {
   throw err;
 }
 
-async function* readPlaintextChunks(stream, chunkSize, job, declaredSize) {
-  const reader = stream?.getReader();
+function transportErrorCode(err) {
+  return String(err?.cause?.code || err?.code || "").replace(
+    /[^A-Za-z0-9_.-]/g,
+    "",
+  );
+}
+
+// undici attaches the dead socket to SocketError: its peer tells whether the
+// WebDAV server or PrivCloud closed the connection.
+function socketSummary(err) {
+  const socket = err?.cause?.socket || err?.socket;
+  if (!socket || typeof socket !== "object") return "";
+  const remote = String(socket.remoteAddress || "?").replace(
+    /[^0-9A-Fa-f.:]/g,
+    "",
+  );
+  const port = Number(socket.remotePort) || "?";
+  const sent = Number(socket.bytesWritten) || 0;
+  const received = Number(socket.bytesRead) || 0;
+  return ` remote=${remote}:${port} sent=${sent} received=${received}`;
+}
+
+function webDavContentChanged(fileName) {
+  const err = new Error(`WebDAV file changed while reading ${fileName}`);
+  err.statusCode = 409;
+  err.resumable = false;
+  return err;
+}
+
+function sameEntityTag(a, b) {
+  const strip = (value) => String(value).replace(/^W\//i, "");
+  return strip(a) === strip(b);
+}
+
+// Reopens a WebDAV download at `offset` after the previous connection died.
+// The file is read at the pace of the PrivCloud upload, so the WebDAV
+// connection stays open for as long as the whole transfer and sits idle while
+// each chunk is sent: reverse proxies and PHP time limits close it well before
+// a large file is done. Returns the new body and how many leading bytes to
+// drop when the server ignores Range and restarts from zero.
+async function reopenWebDavBody({ webdav, file, job, offset, original }) {
+  const { response } = await webDavFetch({
+    endpoint: webdav.endpoint,
+    username: webdav.username,
+    password: webdav.password,
+    href: file.href,
+    method: "GET",
+    headers: { "Accept-Encoding": "identity", Range: `bytes=${offset}-` },
+    signal: job.abortController.signal,
+  });
+
+  const encoding = String(
+    response.headers.get("content-encoding") || "identity",
+  )
+    .trim()
+    .toLowerCase();
+  const etag = response.headers.get("etag");
+  const lastModified = response.headers.get("last-modified");
+  const changed =
+    encoding !== "identity" ||
+    (original.etag && etag && !sameEntityTag(original.etag, etag)) ||
+    (!original.etag &&
+      original.lastModified &&
+      lastModified &&
+      original.lastModified !== lastModified);
+  if (changed) {
+    await discardResponseBody(response);
+    throw webDavContentChanged(file.name);
+  }
+
+  if (response.status === 206) {
+    const range = /^bytes\s+(\d+)-\d+\/(\d+|\*)$/i.exec(
+      response.headers.get("content-range") || "",
+    );
+    if (
+      !range ||
+      Number(range[1]) !== offset ||
+      (range[2] !== "*" && Number(range[2]) !== original.size)
+    ) {
+      await discardResponseBody(response);
+      throw webDavContentChanged(file.name);
+    }
+    return { body: response.body, skip: 0 };
+  }
+
+  const length = response.headers.get("content-length");
+  if (length !== null && Number(length) !== original.size) {
+    await discardResponseBody(response);
+    throw webDavContentChanged(file.name);
+  }
+  return { body: response.body, skip: offset };
+}
+
+async function* readPlaintextChunks(
+  stream,
+  chunkSize,
+  job,
+  declaredSize,
+  reopen,
+) {
+  let reader = stream?.getReader();
   if (!reader) {
     const err = new Error("WebDAV response has no body");
     err.statusCode = 502;
@@ -637,13 +751,89 @@ async function* readPlaintextChunks(stream, chunkSize, job, declaredSize) {
   let fill = 0;
   let bytesRead = 0;
   let yielded = false;
+  let skip = 0;
+  let failures = 0;
+
+  // Bytes already copied into `buffer` are kept, so the download resumes at
+  // bytesRead rather than at the last uploaded chunk boundary.
+  const resume = async (cause) => {
+    let lastError = cause;
+    for (;;) {
+      throwIfCancelled(job);
+      if (
+        !reopen ||
+        bytesRead >= declaredSize ||
+        failures >= WEBDAV_RESUME_MAX_ATTEMPTS
+      ) {
+        throw lastError;
+      }
+      failures += 1;
+      const code = transportErrorCode(lastError);
+      console.error(
+        `[Bridge] Upload job ${job.id}: WebDAV download interrupted at ` +
+          `${bytesRead}/${declaredSize} bytes` +
+          (code ? ` (${code})` : "") +
+          socketSummary(lastError) +
+          `, resume attempt ${failures}/${WEBDAV_RESUME_MAX_ATTEMPTS}`,
+      );
+      await cancellableSleep(
+        Math.min(1000 * 2 ** (failures - 1), 15_000),
+        job.abortController.signal,
+      );
+      try {
+        const reopened = await reopen(bytesRead);
+        if (!reopened.body) {
+          const err = new Error("WebDAV response has no body");
+          err.statusCode = 502;
+          throw err;
+        }
+        return reopened;
+      } catch (err) {
+        throwIfCancelled(job);
+        const retryable =
+          err?.resumable !== false &&
+          (!err?.statusCode || err.code === "webdav_upstream_error");
+        if (!retryable) throw err;
+        lastError = err;
+      }
+    }
+  };
 
   try {
     for (;;) {
       throwIfCancelled(job);
-      const { done, value } = await reader.read();
-      if (done) break;
-      const incoming = Buffer.from(value);
+      let result;
+      try {
+        result = await reader.read();
+      } catch (err) {
+        throwIfCancelled(job);
+        const reopened = await resume(err);
+        reader.releaseLock();
+        reader = reopened.body.getReader();
+        skip = reopened.skip;
+        continue;
+      }
+      const { done, value } = result;
+      if (done) {
+        if (skip > 0 || (reopen && bytesRead < declaredSize)) {
+          const err = new Error("WebDAV response ended early");
+          err.cause = { code: "WEBDAV_SHORT_BODY" };
+          const reopened = await resume(err);
+          reader.releaseLock();
+          reader = reopened.body.getReader();
+          skip = reopened.skip;
+          continue;
+        }
+        break;
+      }
+      let incoming = Buffer.from(value);
+      if (skip > 0) {
+        const dropped = Math.min(skip, incoming.length);
+        skip -= dropped;
+        incoming = incoming.subarray(dropped);
+        if (incoming.length === 0) continue;
+      }
+      failures = 0;
       bytesRead += incoming.length;
       let offset = 0;
       while (offset < incoming.length) {
@@ -668,8 +858,28 @@ async function* readPlaintextChunks(stream, chunkSize, job, declaredSize) {
       yield Buffer.alloc(0);
     }
   } finally {
+    await reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
+}
+
+function encryptFileName(key, shareId, fileId, name) {
+  const json = Buffer.from(JSON.stringify({ v: 1, n: name }));
+  if (json.length > 4096) throw new Error("File name is too long to encrypt");
+  const plain = Buffer.alloc(
+    Math.max(64, Math.ceil(json.length / 64) * 64),
+    32,
+  );
+  json.copy(plain);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  cipher.setAAD(Buffer.from(`privcloud:file-meta:v1:${shareId}:${fileId}`));
+  return Buffer.concat([
+    iv,
+    cipher.update(plain),
+    cipher.final(),
+    cipher.getAuthTag(),
+  ]).toString("base64url");
 }
 
 function buildBridgeUploadUrl(
@@ -700,6 +910,7 @@ async function uploadPrivCloudChunk({
   shareId,
   uploadToken,
   fileName,
+  encryptedMetadata,
   fileId,
   chunkIndex,
   totalChunks,
@@ -731,6 +942,7 @@ async function uploadPrivCloudChunk({
           Authorization: `Bearer ${uploadToken}`,
           "Content-Type": "application/octet-stream",
           "X-File-Name": encodeURIComponent(fileName),
+          ...(encryptedMetadata && { "X-File-Metadata": encryptedMetadata }),
           "X-PrivCloud-Bridge": state.bridgeId,
           "User-Agent": `PrivCloud-Bridge/${VERSION}`,
         },
@@ -804,17 +1016,21 @@ function touchJob(job) {
 }
 
 async function runWebDavUploadJob(job, payload) {
-  job.state = "running";
-  touchJob(job);
-
-  try {
-    for (let index = 0; index < payload.files.length; index++) {
+  const uploadFile = async (index) => {
+    let releaseSlot;
+    let phase = "start";
+    let webDavInfo = "";
+    try {
+      releaseSlot = await acquireUploadSlot(job.abortController.signal);
+      job.state = "running";
       throwIfCancelled(job);
       const selected = payload.files[index];
       const fileState = job.files[index];
       fileState.state = "running";
       job.currentFileName = fileState.name;
       touchJob(job);
+      phase = `WebDAV GET file ${index + 1}/${payload.files.length}`;
+      webDavInfo = "";
 
       const { response } = await webDavFetch({
         endpoint: payload.webdav.endpoint,
@@ -822,12 +1038,30 @@ async function runWebDavUploadJob(job, payload) {
         password: payload.webdav.password,
         href: selected.href,
         method: "GET",
+        // fetch() transparently decodes gzip/br, so a compressed response
+        // yields more bytes than its Content-Length. Ask for the raw file.
+        headers: { "Accept-Encoding": "identity" },
         signal: job.abortController.signal,
       });
 
-      const declaredSize = Number(
-        response.headers.get("content-length") || selected.size || 0,
-      );
+      // Content-Length describes the encoded body. When the server compresses
+      // anyway, only the PROPFIND size matches the bytes read below.
+      const contentEncoding = String(
+        response.headers.get("content-encoding") || "identity",
+      )
+        .trim()
+        .toLowerCase();
+      const contentLength =
+        contentEncoding === "identity"
+          ? response.headers.get("content-length")
+          : null;
+      const declaredSize = Number(contentLength || selected.size || 0);
+      webDavInfo =
+        ` webdav=[HTTP ${response.status}` +
+        ` content-length=${response.headers.get("content-length") ?? "none"}` +
+        ` content-encoding=${contentEncoding}` +
+        ` transfer-encoding=${response.headers.get("transfer-encoding") ?? "none"}` +
+        ` listed-size=${selected.size}]`;
       if (!Number.isFinite(declaredSize) || declaredSize < 0) {
         throw new Error(`Unknown size for ${fileState.name}`);
       }
@@ -835,49 +1069,108 @@ async function runWebDavUploadJob(job, payload) {
         job.totalBytes += declaredSize - fileState.size;
         fileState.size = declaredSize;
       }
-      const totalChunks = Math.max(
-        1,
-        Math.ceil(declaredSize / payload.chunkSize),
+      const chunkSize = Math.min(
+        payload.chunkSize,
+        32 * 1024 * 1024,
+        Math.max(8 * 1024 * 1024, Math.ceil(declaredSize / 10000)),
       );
+      const totalChunks = Math.max(1, Math.ceil(declaredSize / chunkSize));
       if (totalChunks > 10000) {
         throw new Error(`Too many chunks for ${fileState.name}`);
       }
 
-      let fileId;
+      let fileId = crypto.randomUUID();
+      const uploadName =
+        payload.fileMetadataScheme === 1
+          ? `encrypted-file-${fileId.slice(0, 8)}`
+          : fileState.name;
+      const encryptedMetadata =
+        payload.fileMetadataScheme === 1
+          ? encryptFileName(
+              payload.e2eMaterial,
+              payload.shareId,
+              fileId,
+              fileState.name,
+            )
+          : undefined;
       let chunkIndex = 0;
       let bytesRead = 0;
-      for await (const plainChunk of readPlaintextChunks(
+      phase = `WebDAV read chunk 1/${totalChunks}`;
+      const original = {
+        size: declaredSize,
+        etag: response.headers.get("etag"),
+        lastModified: response.headers.get("last-modified"),
+      };
+      const chunks = readPlaintextChunks(
         response.body,
-        payload.chunkSize,
+        chunkSize,
         job,
         declaredSize,
-      )) {
-        throwIfCancelled(job);
-        const uploadBody = payload.encryptionKey
-          ? encryptChunk(plainChunk, payload.encryptionKey)
-          : plainChunk;
-        const result = await uploadPrivCloudChunk({
-          appBaseUrl: payload.appBaseUrl,
-          shareId: payload.shareId,
-          uploadToken: payload.uploadToken,
-          fileName: fileState.name,
-          fileId,
-          chunkIndex,
-          totalChunks,
-          chunkSize: payload.chunkSize,
-          encryptionChunkSize: payload.encryptionKey
-            ? payload.chunkSize
-            : undefined,
-          body: uploadBody,
-          job,
-        });
-        fileId = result.id;
-        chunkIndex += 1;
-        bytesRead += plainChunk.length;
-        fileState.uploadedBytes = Math.min(bytesRead, declaredSize);
-        job.uploadedBytes += plainChunk.length;
-        touchJob(job);
-      }
+        (offset) =>
+          reopenWebDavBody({
+            webdav: payload.webdav,
+            file: { href: selected.href, name: fileState.name },
+            job,
+            offset,
+            original,
+          }),
+      );
+      phase = "S3 direct upload";
+      const direct = await uploadDirectFile({
+        appBaseUrl: payload.appBaseUrl,
+        shareId: payload.shareId,
+        uploadToken: payload.uploadToken,
+        metadata: {
+          id: fileId,
+          name: uploadName,
+          ...(encryptedMetadata && { encryptedMetadata }),
+        },
+        fileSize: declaredSize,
+        chunkSize: chunkSize,
+        encrypted: !!payload.e2eMaterial,
+        chunks,
+        signal: job.abortController.signal,
+        cancelSource: (error) => job.abortController.abort(error),
+        transform: (plain) =>
+          payload.e2eMaterial
+            ? encryptChunk(plain, payload.e2eMaterial)
+            : plain,
+        onProgress: (size) => {
+          bytesRead += size;
+          fileState.uploadedBytes = Math.min(bytesRead, declaredSize);
+          job.uploadedBytes += size;
+          touchJob(job);
+        },
+      });
+      if (!direct)
+        for await (const plainChunk of chunks) {
+          throwIfCancelled(job);
+          const uploadBody = payload.e2eMaterial
+            ? encryptChunk(plainChunk, payload.e2eMaterial)
+            : plainChunk;
+          phase = `PrivCloud upload chunk ${chunkIndex + 1}/${totalChunks}`;
+          const result = await uploadPrivCloudChunk({
+            appBaseUrl: payload.appBaseUrl,
+            shareId: payload.shareId,
+            uploadToken: payload.uploadToken,
+            fileName: uploadName,
+            encryptedMetadata,
+            fileId,
+            chunkIndex,
+            totalChunks,
+            chunkSize: chunkSize,
+            encryptionChunkSize: payload.e2eMaterial ? chunkSize : undefined,
+            body: uploadBody,
+            job,
+          });
+          fileId = result.id;
+          chunkIndex += 1;
+          bytesRead += plainChunk.length;
+          fileState.uploadedBytes = Math.min(bytesRead, declaredSize);
+          job.uploadedBytes += plainChunk.length;
+          touchJob(job);
+          phase = `WebDAV read chunk ${chunkIndex + 1}/${totalChunks}`;
+        }
 
       if (bytesRead !== declaredSize) {
         throw new Error(`WebDAV size changed while reading ${fileState.name}`);
@@ -887,8 +1180,21 @@ async function runWebDavUploadJob(job, payload) {
       fileState.uploadedBytes = declaredSize;
       job.completedFiles += 1;
       touchJob(job);
+    } catch (error) {
+      error.bridgePhase = phase;
+      error.bridgeWebDavInfo = webDavInfo;
+      throw error;
+    } finally {
+      releaseSlot?.();
+      job.currentFileName =
+        job.files.find((file) => file.state === "running")?.name || null;
+      touchJob(job);
     }
+  };
 
+  try {
+    await runParallelFiles(payload.files.length, uploadFile, job.abortController);
+    throwIfCancelled(job);
     job.currentFileName = null;
     job.state = "completed";
     touchJob(job);
@@ -896,6 +1202,9 @@ async function runWebDavUploadJob(job, payload) {
     if (err?.code === "job_cancelled" || job.cancelled) {
       job.state = "cancelled";
       job.error = "Job cancelled";
+      for (const file of job.files) {
+        if (file.state !== "completed") file.state = "cancelled";
+      }
     } else {
       job.state = "failed";
       job.error =
@@ -903,10 +1212,21 @@ async function runWebDavUploadJob(job, payload) {
         (err?.statusCode && err.statusCode < 500
           ? "bridge.error.badRequest"
           : "bridge.error.internal");
-      const current = job.files.find((file) => file.state === "running");
-      if (current) {
-        current.state = "failed";
-        current.error = job.error;
+      // The page only receives a translation key. Keep the real cause in the
+      // local service log, like request errors in publicErrorFrom().
+      const causeCode = transportErrorCode(err);
+      console.error(
+        `[Bridge] Upload job ${job.id} failed during ${err.bridgePhase || "start"}: ` +
+          `${err?.message || err}` +
+          (causeCode ? ` (${causeCode})` : "") +
+          socketSummary(err) +
+          (err.bridgeWebDavInfo || ""),
+      );
+      for (const file of job.files) {
+        if (file.state !== "completed") {
+          file.state = "failed";
+          file.error = job.error;
+        }
       }
     }
     job.currentFileName = null;
@@ -919,7 +1239,7 @@ function cleanupJobs() {
   const activeCutoff = now() - ACTIVE_JOB_STALE_MS;
   for (const [id, job] of jobs) {
     if (
-      !["completed", "failed", "cancelled"].includes(job.state) &&
+      !["queued", "completed", "failed", "cancelled"].includes(job.state) &&
       Date.parse(job.updatedAt) < activeCutoff
     ) {
       job.cancelled = true;
@@ -954,6 +1274,8 @@ function bridgeHealthPayload() {
       webdav: true,
       directBrowserImport: true,
       managedEncryptedUpload: true,
+      fileMetadataV1: true,
+      directS3Upload: true,
       localTokenAuthorization: true,
       openSourceLocalAuthorization: true,
       nativeMessaging: true,
@@ -971,168 +1293,81 @@ function bridgeHealthPayload() {
   };
 }
 
-function assertNativeOrigin(origin) {
-  if (
-    typeof origin === "string" &&
-    (origin.startsWith("chrome-extension://") ||
-      origin.startsWith("moz-extension://"))
-  ) {
-    return;
-  }
-  if (!origin || NATIVE_ALLOWED_ORIGINS.has(origin)) return;
-  const err = new Error("Origin is not allowed");
-  err.statusCode = 403;
-  throw err;
-}
-
-async function handleNativeMessage(message) {
-  const id = message?.id || crypto.randomUUID();
-  try {
-    assertNativeOrigin(message?.origin);
-    const payload = message?.payload || {};
-    let result;
-
-    switch (message?.type) {
-      case "health":
-        result = bridgeHealthPayload();
-        break;
-      case "webdav.list": {
-        const endpointUrl = directoryUrl(
-          resolveWebDavHref(payload.endpoint, payload.href),
-        );
-        const propfindBody =
-          '<?xml version="1.0" encoding="utf-8" ?>' +
-          '<d:propfind xmlns:d="DAV:"><d:prop>' +
-          "<d:displayname /><d:resourcetype /><d:getcontentlength />" +
-          "<d:getcontenttype /><d:getlastmodified />" +
-          "</d:prop></d:propfind>";
-        const { response, target } = await webDavFetch({
-          endpoint: payload.endpoint,
-          username: payload.username,
-          password: payload.password,
-          href: endpointUrl.href,
-          method: "PROPFIND",
-          body: propfindBody,
-          headers: {
-            Depth: "1",
-            "Content-Type": "application/xml; charset=utf-8",
-            Accept: "application/xml,text/xml",
-          },
-        });
-        const xml = await readLimitedText(response, MAX_PROPFIND_XML);
-        result = {
-          url: target.href,
-          entries: parseWebDavMultiStatus(xml, target.href),
-        };
-        break;
-      }
-      case "webdav.upload.start":
-        result = createWebDavUploadJob(payload, message.origin);
-        break;
-      case "jobs.get": {
-        const job = jobs.get(String(payload.jobId || ""));
-        if (!job) {
-          const err = new Error("Bridge job not found");
-          err.statusCode = 404;
-          err.code = "job_not_found";
-          throw err;
-        }
-        result = publicJob(job);
-        break;
-      }
-      case "jobs.cancel": {
-        const job = jobs.get(String(payload.jobId || ""));
-        if (!job) {
-          const err = new Error("Bridge job not found");
-          err.statusCode = 404;
-          err.code = "job_not_found";
-          throw err;
-        }
-        if (!["completed", "failed", "cancelled"].includes(job.state)) {
-          job.cancelled = true;
-          job.abortController.abort();
-          job.state = "cancelled";
-          job.error = "Job cancelled";
-          touchJob(job);
-        }
-        result = publicJob(job);
-        break;
-      }
-      default: {
-        const err = new Error("Unknown native command");
-        err.statusCode = 400;
-        throw err;
-      }
-    }
-
-    return { id, ok: true, result };
-  } catch (err) {
-    return {
-      id,
-      ok: false,
-      error: {
-        code: err?.code || "native_error",
-        statusCode: Number(err?.statusCode || 500),
-        message: err?.message || "Native command failed",
-      },
-    };
-  }
-}
-
-function writeNativeMessage(message) {
-  const body = Buffer.from(JSON.stringify(message), "utf8");
-  const header = Buffer.alloc(4);
-  header.writeUInt32LE(body.length, 0);
-  process.stdout.write(Buffer.concat([header, body]));
-}
-
 async function runNativeMessaging() {
-  const input = process.stdin;
-  let buffer = Buffer.alloc(0);
-
-  input.on("data", async (chunk) => {
-    buffer = Buffer.concat([buffer, chunk]);
-    while (buffer.length >= 4) {
-      const length = buffer.readUInt32LE(0);
-      if (length > 64 * 1024 * 1024) {
-        writeNativeMessage({
-          id: null,
-          ok: false,
-          error: {
-            code: "message_too_large",
-            statusCode: 413,
-            message: "Native message too large",
-          },
-        });
-        process.exit(1);
-      }
-      if (buffer.length < 4 + length) return;
-      const raw = buffer.subarray(4, 4 + length);
-      buffer = buffer.subarray(4 + length);
-      let message;
-      try {
-        message = JSON.parse(raw.toString("utf8"));
-      } catch {
-        writeNativeMessage({
-          id: null,
-          ok: false,
-          error: {
-            code: "invalid_json",
-            statusCode: 400,
-            message: "Invalid native JSON message",
-          },
-        });
-        continue;
-      }
-      writeNativeMessage(await handleNativeMessage(message));
-    }
-  });
-
-  input.on("end", () => {
-    process.exit(0);
-  });
-
   process.stderr.write(`PrivCloud Companion native host ${VERSION} ready\n`);
+  await runNativeTransport({
+    allowedOrigins: NATIVE_ALLOWED_ORIGINS,
+    health: bridgeHealthPayload,
+    authorize: async (payload, origin) => {
+      return Date.now() + 20 * 60_000;
+    },
+    list: async (payload, signal) => {
+      const endpointUrl = directoryUrl(
+        resolveWebDavHref(payload.endpoint, payload.href),
+      );
+      const propfindBody =
+        '<?xml version="1.0" encoding="utf-8" ?>' +
+        '<d:propfind xmlns:d="DAV:"><d:prop>' +
+        "<d:displayname /><d:resourcetype /><d:getcontentlength />" +
+        "<d:getcontenttype /><d:getlastmodified />" +
+        "</d:prop></d:propfind>";
+      const { response, target } = await webDavFetch({
+        endpoint: payload.endpoint,
+        username: payload.username,
+        password: payload.password,
+        href: endpointUrl.href,
+        method: "PROPFIND",
+        signal,
+        body: propfindBody,
+        headers: {
+          Depth: "1",
+          "Content-Type": "application/xml; charset=utf-8",
+          Accept: "application/xml,text/xml",
+        },
+      });
+      const xml = await readLimitedText(response, MAX_PROPFIND_XML);
+      return {
+        url: target.href,
+        entries: parseWebDavMultiStatus(xml, target.href),
+      };
+    },
+    download: async (payload, signal) => {
+      const { response } = await webDavFetch({
+        endpoint: payload.endpoint,
+        username: payload.username,
+        password: payload.password,
+        href: payload.href,
+        method: "GET",
+        signal,
+      });
+      return response;
+    },
+    createJob: createWebDavUploadJob,
+    hasJob: (id) => jobs.has(id),
+    job: (id, cancel) => {
+      const job = jobs.get(id);
+      if (!job)
+        throw Object.assign(new Error("Job not found"), {
+          code: "job_not_found",
+          statusCode: 404,
+        });
+      if (cancel && !["completed", "failed", "cancelled"].includes(job.state)) {
+        job.cancelled = true;
+        job.abortController.abort();
+        job.state = "cancelled";
+        job.error = "Job cancelled";
+        touchJob(job);
+      }
+      return publicJob(job);
+    },
+    error: (err) => {
+      const safe = publicErrorFrom(err);
+      return { ...safe, message: PUBLIC_ERROR_MESSAGES[safe.code] };
+    },
+    shutdown: () => {
+      for (const job of jobs.values()) job.abortController.abort();
+    },
+  });
 }
 
 async function handleHealth(req, res) {
@@ -1342,7 +1577,8 @@ function createWebDavUploadJob(body, _origin) {
     shareId,
     uploadToken,
     chunkSize,
-    encryptionKey: body.isE2EEncrypted
+    fileMetadataScheme: body.fileMetadataScheme === 1 ? 1 : null,
+    e2eMaterial: body.isE2EEncrypted
       ? decodeBase64UrlKey(body.encryptionKey)
       : null,
     webdav: {
@@ -1352,6 +1588,12 @@ function createWebDavUploadJob(body, _origin) {
     },
     files,
   };
+
+  if (payload.fileMetadataScheme === 1 && !payload.e2eMaterial) {
+    const err = new Error("Encrypted file names require an E2E content key");
+    err.statusCode = 400;
+    throw err;
+  }
 
   normalizeWebDavUrl(
     payload.webdav.endpoint,
@@ -1492,7 +1734,18 @@ function cleanupPairings() {
 await loadState();
 setInterval(cleanupJobs, 60_000).unref();
 
-if (process.argv.includes("--native-messaging")) {
+// Browsers pass the calling extension as an argument, not our CLI mode flag.
+// Firefox additionally passes the registered extension ID after its manifest.
+const nativeInvocation = process.argv
+  .slice(2)
+  .some(
+    (argument) =>
+      argument === "--native-messaging" ||
+      argument === "companion@privcloud.fr" ||
+      /^chrome-extension:\/\/[a-p]{32}\/?$/.test(argument) ||
+      /^moz-extension:\/\/[a-zA-Z0-9-]+\/?$/.test(argument),
+  );
+if (nativeInvocation) {
   await runNativeMessaging();
 } else {
   assertLoopbackBindHost(HOST);
@@ -1500,7 +1753,7 @@ if (process.argv.includes("--native-messaging")) {
 
   // This endpoint is deliberately HTTP on a literal loopback address. Browser
   // trust stores reject ad-hoc localhost certificates, so self-signed TLS would
-  // break the web integration without authenticating the Companion. The bind
+  // break legacy clients without authenticating the Companion. The bind
   // and every accepted peer are both restricted to loopback; exact Origin
   // validation and bearer authentication protect application operations.
   const server = createLoopbackHttpServer((req, res) => {

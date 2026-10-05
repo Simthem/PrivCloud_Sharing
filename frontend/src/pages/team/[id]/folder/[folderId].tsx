@@ -1,3 +1,4 @@
+import PendingUploads from "../../../../components/upload/PendingUploads";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -57,6 +58,8 @@ import {
 import Meta from "../../../../components/Meta";
 import RequestSignatureModal from "../../../../components/signing/RequestSignatureModal";
 import E2EShareModal from "../../../../components/team/E2EShareModal";
+import useOpenedShares from "../../../../hooks/useOpenedShares.hook";
+import { openFileName } from "../../../../utils/fileMetadata.util";
 import teamService from "../../../../services/team.service";
 import shareService from "../../../../services/share.service";
 import showFilePreviewModal from "../../../../components/share/modals/showFilePreviewModal";
@@ -194,11 +197,24 @@ const TeamFolderPage = () => {
     return () => { cancelled = true; };
   }, [teamIdStr]);
 
-  const { data, isLoading } = useQuery({
+  const { data: serverData, isLoading } = useQuery({
     queryKey: ["team.folder.shares", teamIdStr, folderIdStr],
     queryFn: () => teamService.getFolderShares(teamIdStr, folderIdStr),
     enabled: !!teamIdStr && !!folderIdStr,
   });
+  // FILE_META_V1: names, titles and descriptions encrypted with K_team are
+  // opened once the key is known, the server only holds placeholders.
+  const { shares: openedShares } = useOpenedShares(
+    serverData?.shares,
+    teamKeyB64,
+  );
+  const data = useMemo(
+    () =>
+      serverData && openedShares
+        ? { ...serverData, shares: openedShares }
+        : serverData,
+    [serverData, openedShares],
+  );
 
   // Scroll to highlighted file once data is loaded
   useEffect(() => {
@@ -229,11 +245,51 @@ const TeamFolderPage = () => {
   });
 
   // Get file-level access rules (only for admin/owner)
-  const { data: fileAccessRules } = useQuery({
+  const { data: serverFileAccessRules } = useQuery({
     queryKey: ["team.folder.fileAccess", teamIdStr, folderIdStr],
     queryFn: () => teamService.getFileAccess(teamIdStr, folderIdStr),
     enabled: !!teamIdStr && !!folderIdStr && isTeamAdmin,
   });
+  // FILE_META_V1: rule file names are opened with K_team like the listing.
+  const [openedRuleNames, setOpenedRuleNames] = useState<{
+    source: typeof serverFileAccessRules;
+    names: Record<string, string>;
+  } | null>(null);
+  useEffect(() => {
+    if (
+      !serverFileAccessRules?.some((rule) => rule.metadataScheme != null) ||
+      !teamKeyB64
+    ) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const key = await importKeyFromBase64(teamKeyB64);
+      const names: Record<string, string> = {};
+      for (const rule of serverFileAccessRules) {
+        if (rule.metadataScheme == null || names[rule.fileId]) continue;
+        names[rule.fileId] = (
+          await openFileName({ ...rule, name: rule.fileName }, key)
+        ).name;
+      }
+      if (!cancelled) {
+        setOpenedRuleNames({ source: serverFileAccessRules, names });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [serverFileAccessRules, teamKeyB64]);
+  const fileAccessRules = useMemo(
+    () =>
+      openedRuleNames && openedRuleNames.source === serverFileAccessRules
+        ? serverFileAccessRules?.map((rule) => ({
+            ...rule,
+            fileName: openedRuleNames.names[rule.fileId] ?? rule.fileName,
+          }))
+        : serverFileAccessRules,
+    [serverFileAccessRules, openedRuleNames],
+  );
 
   // Determine folder-level write permission for the current user
   const myFolderAccess = accessRules?.find(
@@ -323,7 +379,7 @@ const TeamFolderPage = () => {
   });
 
   const deleteShareMutation = useMutation({
-    mutationFn: (shareId: string) => shareService.remove(shareId),
+    mutationFn: (shareId: string) => shareService.remove(shareId, true),
     onSuccess: () => {
       toast.success(t("team.folder.toast.shareDeleted"));
       invalidateFolderContentQueries();
@@ -645,6 +701,7 @@ const TeamFolderPage = () => {
 
   return (
     <>
+      <PendingUploads teamFolderId={folderIdStr} />
       <Meta title={`${t("team.folder.breadcrumb.folders")} - ${folder.name}`} />
       <Container size="lg" mt="xl" px={0}>
         <Breadcrumbs mb="md">

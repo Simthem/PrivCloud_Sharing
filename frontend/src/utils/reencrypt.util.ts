@@ -29,6 +29,11 @@ import {
 import { reportShareCryptoEvent } from "./shareCryptoEvents.util";
 import { uploadReencryptChunkInWorker } from "./reencryptUpload.util";
 import {
+  decryptFileMetadata,
+  encryptFileMetadata,
+  FILE_META_V1,
+} from "./fileMetadata.util";
+import {
   DEFAULT_REENCRYPT_TRANSPORT_CHUNK_SIZE,
   getRuntimeReencryptChunkSize,
 } from "./reencryptChunk.util";
@@ -234,6 +239,7 @@ async function uploadChunkWithRetry(
   sessionId?: string,
   encryptionChunkSize = REENCRYPT_CRYPTO_RECORD_SIZE,
   signal?: AbortSignal,
+  encryptedMetadata?: string,
 ): Promise<void> {
   let pendingChunk = chunk;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -248,6 +254,7 @@ async function uploadChunkWithRetry(
           rotationId,
           encryptionChunkSize,
           sessionId,
+          encryptedMetadata,
         },
         pendingChunk,
         signal,
@@ -629,6 +636,75 @@ export async function reencryptAll(
   }
 }
 
+/**
+ * FILE_META_V1 name of a Team file re-encrypted from the old K_team to the
+ * new one, with the same share and file ids authenticated.
+ */
+async function rotateEncryptedFileName(
+  shareId: string,
+  file: {
+    id: string;
+    metadataScheme?: number | null;
+    encryptedMetadata?: string | null;
+  },
+  oldKey: CryptoKey,
+  newKey: CryptoKey,
+): Promise<string> {
+  if (file.metadataScheme !== FILE_META_V1 || !file.encryptedMetadata) {
+    throw new Error("unsupported encrypted name");
+  }
+  const metadata = await decryptFileMetadata(
+    oldKey,
+    shareId,
+    file.id,
+    file.encryptedMetadata,
+  );
+  return encryptFileMetadata(
+    newKey,
+    shareId,
+    file.id,
+    metadata.name,
+    metadata.relativePath,
+  );
+}
+
+/** Empty files have no content to re-encrypt: only their name moves. */
+async function updateEmptyFileNameWithRetry(
+  shareId: string,
+  fileId: string,
+  encryptedMetadata: string,
+  rotationId: string | undefined,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!rotationId) throw new Error("Team key rotation context is missing");
+  const url =
+    `/api/shares/${encodeURIComponent(shareId)}/files/` +
+    `${encodeURIComponent(fileId)}/reencrypt-name` +
+    `?rotationId=${encodeURIComponent(rotationId)}`;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    signal?.throwIfAborted();
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: { "X-File-Metadata": encryptedMetadata },
+      credentials: "include",
+      signal,
+    });
+    if (response.ok) return;
+    if (response.status === 401 && attempt < MAX_RETRIES) {
+      await refreshTokenOnce().catch(() => undefined);
+      continue;
+    }
+    if (
+      (response.status === 403 || response.status === 429) &&
+      attempt < MAX_RETRIES
+    ) {
+      await sleep(Math.min(2000 * Math.pow(2, attempt), 30_000));
+      continue;
+    }
+    throw new Error(`HTTP ${response.status}`);
+  }
+}
+
 export interface TeamReencryptProgress {
   filesTotal: number;
   filesDone: number;
@@ -738,7 +814,51 @@ export async function reencryptTeam(
         progress.currentFile = file.name ?? file.id;
         onProgress?.({ ...progress, failedDetails: [...failedDetails] });
 
+        // FILE_META_V1: the name moves to the new key together with the
+        // content. A name that cannot be opened fails the file, it would be
+        // lost under the new key.
+        let rotatedName: string | undefined;
+        if (file.metadataScheme != null) {
+          try {
+            rotatedName = await rotateEncryptedFileName(
+              share.id,
+              file,
+              oldKey,
+              newKey,
+            );
+          } catch (e: any) {
+            filesFailed++;
+            filesDone++;
+            failedDetails.push(
+              `${file.id}: ${e?.message ?? "encrypted name unreadable"}`,
+            );
+            progress.filesDone = filesDone;
+            progress.filesFailed = filesFailed;
+            onProgress?.({ ...progress, failedDetails: [...failedDetails] });
+            continue;
+          }
+        }
+
         const fileSize = parseInt(file.size ?? "0", 10);
+        if (fileSize <= 0 && rotatedName) {
+          try {
+            await updateEmptyFileNameWithRetry(
+              share.id,
+              file.id,
+              rotatedName,
+              options?.rotationId,
+              signal,
+            );
+          } catch (e: any) {
+            filesFailed++;
+            filesDone++;
+            failedDetails.push(`${file.id}: ${e?.message ?? "rename failed"}`);
+            progress.filesDone = filesDone;
+            progress.filesFailed = filesFailed;
+            onProgress?.({ ...progress, failedDetails: [...failedDetails] });
+            continue;
+          }
+        }
         if (fileSize <= 0) {
           filesSkipped++;
           filesDone++;
@@ -803,6 +923,7 @@ export async function reencryptTeam(
                   reencryptSessionId,
                   chunkSize,
                   signal,
+                  index === total - 1 ? rotatedName : undefined,
                 ),
             });
 

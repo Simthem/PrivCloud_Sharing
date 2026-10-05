@@ -1,3 +1,4 @@
+import useTranslate from "../../../hooks/useTranslate.hook";
 import { Center, Loader, Text } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/router";
@@ -9,6 +10,7 @@ import {
   markNotificationRead,
 } from "../../../services/teamNotification.service";
 import { getUserKey, importKeyFromBase64 } from "../../../utils/crypto.util";
+import { isSafeFileRequestNotificationAction } from "../../../utils/teamFileRequest.util";
 import { isSafeSigningNotificationAction } from "../../../utils/signingNotification.util";
 
 /**
@@ -17,6 +19,7 @@ import { isSafeSigningNotificationAction } from "../../../utils/signingNotificat
  * intended signing action; no action URL is exposed to the push provider.
  */
 export default function OpenEncryptedNotification() {
+  const t = useTranslate();
   const router = useRouter();
   const { user } = useUser();
   const id = typeof router.query.id === "string" ? router.query.id : "";
@@ -47,7 +50,10 @@ export default function OpenEncryptedNotification() {
             notification.encryptedMetadata,
             await importKeyFromBase64(storedKey),
           );
-          if (isSafeSigningNotificationAction(metadata?.actionUrl)) {
+          if (
+            isSafeSigningNotificationAction(metadata?.actionUrl) ||
+            isSafeFileRequestNotificationAction(metadata?.actionUrl)
+          ) {
             void markNotificationRead(notification.id);
             await router.replace(metadata.actionUrl);
             return;
@@ -66,7 +72,7 @@ export default function OpenEncryptedNotification() {
   return (
     <Center mih="50vh">
       <Loader size="sm" />
-      <Text ml="sm">Ouverture de la notification chiffrée...</Text>
+      <Text ml="sm">{t("team.fileRequest.notification.opening")}</Text>
     </Center>
   );
 }

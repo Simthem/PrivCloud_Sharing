@@ -14,6 +14,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { Fragment, ReactNode, useEffect, useState } from "react";
 import useConfig from "../../hooks/config.hook";
+import useIdleMount from "../../hooks/idleMount.hook";
 import useUser from "../../hooks/user.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import teamService from "../../services/team.service";
@@ -40,6 +41,13 @@ const Header = () => {
   const t = useTranslate();
 
   const [opened, toggleOpened] = useDisclosure(false);
+  // The mobile menu is built hidden once the page is idle, so the first tap
+  // on the burger only has to reveal it. Building it on that tap ran inside
+  // the transition's first animation frame and made the very first opening
+  // visibly late on phones. It is rebuilt after each closing, so every
+  // opening still starts with its submenus folded.
+  const menuPrimed = useIdleMount();
+  const [menuGeneration, setMenuGeneration] = useState(0);
 
   const [homeLink, setHomeLink] = useState("/upload");
   const [isTeamUser, setIsTeamUser] = useState(false);
@@ -191,10 +199,18 @@ const Header = () => {
           </Group>
       </Container>
       <Portal>
-        <Transition transition="pop-top-right" duration={200} mounted={opened}>
+        <Transition
+          transition="pop-top-right"
+          duration={200}
+          mounted={opened}
+          keepMounted={menuPrimed}
+          onExited={() => setMenuGeneration((generation) => generation + 1)}
+        >
           {(styles) => (
             <Paper className={classes.dropdown} withBorder style={styles}>
-              <Stack gap={0}>{mobileItems}</Stack>
+              <Stack gap={0} key={menuGeneration}>
+                {mobileItems}
+              </Stack>
             </Paper>
           )}
         </Transition>

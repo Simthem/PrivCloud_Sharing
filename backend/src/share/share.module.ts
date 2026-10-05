@@ -1,3 +1,4 @@
+import { TeamNotificationModule } from "src/teamNotification/teamNotification.module";
 import { forwardRef, Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import { AltchaModule } from "src/altcha/altcha.module";
@@ -13,6 +14,7 @@ import { TeamShareAccessService } from "./team-share-access.service";
 
 @Module({
   imports: [
+    TeamNotificationModule,
     JwtModule.register({}),
     AltchaModule,
     BridgeUploadModule,

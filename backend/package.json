@@ -1,9 +1,9 @@
 {
   "name": "privcloud-sharing-backend",
-  "version": "1.25.1",
+  "version": "1.25.2",
   "scripts": {
     "build": "nest build",
-    "postinstall": "patch-package --error-on-fail && ([ -f prisma/schema.prisma ] && prisma generate || true)",
+    "postinstall": "[ -f prisma/schema.prisma ] && prisma generate || true",
     "dev": "cross-env NODE_ENV=development nest start --watch",
     "db:prepare": "node scripts/ensure-sqlite-database.mjs",
     "prod": "npm run db:prepare && prisma migrate deploy && prisma db seed && node dist/src/main",
@@ -12,7 +12,8 @@
     "test": "npm run test:unit",
     "test:unit": "NODE_PATH=. node -r ts-node/register test/unit-runner.ts",
     "verify:evidence": "node scripts/verify-signing-evidence.mjs",
-    "test:system": "node test/run-system-tests.mjs"
+    "test:system": "node test/run-system-tests.mjs",
+    "test:team-file-requests": "NODE_PATH=. node -r ts-node/register test/team-file-request.integration.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.787.0",
@@ -31,7 +32,6 @@
     "@prisma/adapter-pg": "7.9.1",
     "@prisma/client": "7.9.1",
     "@signpdf/placeholder-pdf-lib": "^3.3.0",
-    "@signpdf/signer-p12": "^3.3.0",
     "@signpdf/signpdf": "^3.3.0",
     "@simplewebauthn/server": "^13.3.2",
     "@types/jmespath": "^0.15.2",
@@ -50,14 +50,12 @@
     "global-agent": "3.0.0",
     "helmet": "^8.1.0",
     "https-proxy-agent": "7.0.6",
-    "ipaddr.js": "2.2.0",
     "jmespath": "^0.16.0",
     "jose": "^4.15.5",
     "ldapts": "^7.4.0",
     "mime-types": "^3.0.1",
     "moment": "^2.31.0",
     "nanoid": "^5.1.16",
-    "node-forge": "^1.4.0",
     "nodemailer": "10.0.9",
     "otplib": "^13.0.0",
     "passport": "^0.7.0",
@@ -95,7 +93,6 @@
     "cross-env": "^7.0.3",
     "eslint": "^9.24.0",
     "eslint-config-prettier": "^10.1.2",
-    "patch-package": "^8.0.1",
     "prettier": "^3.5.3",
     "typescript-eslint": "^8.57.1",
     "wait-on": "^8.0.3"
@@ -118,7 +115,6 @@
     "serialize-javascript": "^7.0.3",
     "qs": "6.16.0",
     "validator": "^13.15.22",
-    "node-forge": "$node-forge",
     "undici": "7.29.1",
     "lodash": "^4.18.1",
     "ajv": "^8.18.0",

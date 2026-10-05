@@ -24,6 +24,10 @@ import { FILE_META_V1 } from "../../file/file-metadata-scheme";
 import { ShareSecurityDTO } from "./shareSecurity.dto";
 
 export class CreateShareDTO {
+  @IsOptional()
+  @IsUUID()
+  teamFileRequestId?: string;
+
   @IsString()
   @Matches("^[a-zA-Z0-9_-]*$", undefined, {
     message: "ID can only contain letters, numbers, underscores and hyphens",
@@ -73,11 +77,19 @@ export class CreateShareDTO {
   @IsIn([SHARE_KEY_WRAP_ALGORITHM])
   wrappedShareKeyAlgorithm?: string;
 
-  // FILE_META_V1: the browser encrypts every file name with K_share.
+  // FILE_META_V1: the browser encrypts every file name with the key of the
+  // share's content (K_share, K_team or K_rs).
   @IsOptional()
   @IsInt()
   @IsIn([FILE_META_V1])
   fileMetadataScheme?: number;
+
+  // FILE_META_V1 only: title and description encrypted with the same key,
+  // sent instead of `name` and `description`. Opaque to the server.
+  @IsOptional()
+  @IsString()
+  @MaxLength(6000)
+  encryptedInfo?: string;
 
   @IsOptional()
   @IsString()

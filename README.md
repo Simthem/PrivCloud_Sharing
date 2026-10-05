@@ -14,8 +14,9 @@ limits are controlled by instance configuration, not by hard-coded tiers.
 - Link-based file sharing with expiration dates, visitor limits and passwords.
 - Authenticated and anonymous reverse shares.
 - Client-side AES-256-GCM encryption before upload.
-- Optional random key per personal share and encrypted file names, both off
-  by default.
+- Optional random key per personal share and encrypted file names and share
+  titles, also available for team folders and reverse shares, all off by
+  default.
 - E2E encrypted reverse-share uploads with per-link keys in URL fragments.
 - Team workspaces with shared folders, member management and access logs.
 - Granular team permissions for folders, files, downloads, deletes, E2E sharing
@@ -34,11 +35,9 @@ limits are controlled by instance configuration, not by hard-coded tiers.
   fifteen in total before the sender has to send a new invitation.
 - E2E signing links keep their decryption key in the URL fragment, including
   encrypted Team notification actions and final signed-file downloads.
-- WebDAV/Nextcloud import from the upload page for authenticated users.
-- Server-side HTTPS WebDAV proxy for browsers and mobile devices blocked by
-  CORS or Private Network Access restrictions.
-- Optional local PrivCloud Companion for managed WebDAV uploads and Native
-  Messaging integrations.
+- WebDAV/Nextcloud import through local PrivCloud Companion.
+- Local PrivCloud Companion for managed WebDAV uploads and Native Messaging
+  integrations.
 - Browser, Thunderbird, Outlook, Google Workspace and desktop integration
   scaffolds.
 - OIDC and LDAP authentication.
@@ -82,17 +81,29 @@ Files are encrypted client-side using AES-256-GCM through the Web Crypto API.
   working.
 - On top of that, file names and folder paths can be encrypted with the share
   key before upload (`FILE_META_V1`, off by default), padded to 64-byte steps
-  and bound to the share and file ids. The server, its logs and its database
-  only see a neutral `encrypted-file-<id>` name, and database triggers refuse
-  any readable name for such a share. Recipients and owners get the real names
-  back in the browser. For a signature request on such a PDF, the owner
-  discloses its name for that request only. Names stay in clear for shares
-  created before, team shares, reverse shares and Companion WebDAV imports.
+  and bound to the share and file ids. The share title and description are
+  then encrypted the same way. The server, its logs and its database only see
+  a neutral `encrypted-file-<id>` name and no title, and database triggers
+  refuse a readable name for such a file or a readable title next to an
+  encrypted one. Recipients and owners get the real values back in the
+  browser. For a signature request on such a PDF, the owner discloses its
+  name for that request only.
+- The same encryption can cover team folder uploads, with the team key
+  (`FILE_META_V1_TEAM_WRITE`), and uploads to an encrypted reverse share, with
+  its key (`FILE_META_V1_REVERSE_SHARE_WRITE`). Both are off by default. A team
+  key rotation re-encrypts each name together with its file.
+- Names stay readable for existing shares and uploads made without these
+  flags. The updated Companion encrypts names for FILE_META_V1 imports on
+  direct S3 and relay routes. An older Companion is refused before the job.
+- Team and folder names remain readable. Reverse-link names can be encrypted
+  with K_rs, and team request subjects and notes with K_team, using the same
+  respective metadata flags. Existing readable labels are not converted.
 - Reverse shares generate a per-reverse-share key. The owner keeps an encrypted
   copy server-side and senders encrypt files with the key from the link
   fragment.
-- Team sharing uses encrypted access grants so each recipient receives an
-  encrypted copy of the file key.
+- Access grants carry encrypted key material for the recipient, using X25519
+  and ML-KEM-768 when an active compatible recipient PQ key is available.
+  Other recipients keep the classical X25519 format.
 - The public crypto layer stores X25519/Ed25519 identity keys and ML-KEM-768
   public-key metadata. Team administrators can explicitly enable hybrid
   ML-KEM/X25519 encryption for notification actions.
@@ -105,11 +116,48 @@ instance can try them on a few accounts first. For every account:
 - SHARE_DEK_V1_CANARY_USERS=*
 - FILE_META_V1_WRITE=true
 - FILE_META_V1_CANARY_USERS=*
+- FILE_META_V1_TEAM_WRITE=true
+- FILE_META_V1_REVERSE_SHARE_WRITE=true
 ```
 
 Existing shares keep their key and their file names. Turning a flag off later
 only affects new shares: a share created with encrypted names keeps
 encrypting the names of the files added to it.
+
+### Encrypted Metadata And Notifications
+
+`FILE_META_V1_WRITE` and its account selection remain disabled by default.
+Personal shares additionally require `SHARE_DEK_V1_WRITE`. With encrypted file
+names, the share title and description also travel encrypted. Team uploads and
+file request subjects and notes use `K_team` when `FILE_META_V1_TEAM_WRITE` is
+selected for their creator. Upload link names and incoming file names use
+`K_rs` when `FILE_META_V1_REVERSE_SHARE_WRITE` is selected for the link owner.
+Existing readable metadata is not automatically converted.
+
+The server still reads account and recipient addresses, team membership, team
+and team folder names, sizes, counts and dates, and document names explicitly
+submitted for signing. Server-generated team alerts, push messages and team
+audit emails use generic text and opaque navigation identifiers. Browser-
+encrypted notification details are opened only by their recipients. Team access
+logs do not record an IP address. Authentication and signature evidence retain
+their own IP handling.
+
+Access grants combine X25519 and ML-KEM-768 when the recipient has an active
+ML-KEM-768 key. Recipients without that key keep the X25519 path. This grant
+choice is independent from the team's optional hybrid notification setting.
+Old grants remain readable. Team key rotation stages encrypted share titles
+and request subjects and commits them atomically with the new key. A failed or
+incomplete metadata rotation prevents completion and can be resumed.
+
+Direct S3 download URLs are temporary authorizations to fetch an object.
+They are unrelated to electronic document signatures. For E2E files they
+contain a neutral file identifier and a generic content type, never a readable
+file name or decryption key. The storage provider still sees sizes and transfers.
+
+Deploy migrations `20261002120000_extend_file_meta_v1` and
+`20261002140000_e2e_metadata_hardening` before starting the updated backend.
+The latter also replaces names in older server-generated team notifications
+with generic text. Convert any legacy signing P12 as documented before deployment.
 
 ### Public Signing Links
 
@@ -123,11 +171,22 @@ exportable, platform-signed evidence bundle. It is not a qualified electronic
 signature (QES). Signing API and PDF responses set no-store and noindex headers
 to reduce accidental indexing and caching.
 
+### Direct WebDAV Transfers
+
+Companion can upload file bytes directly to S3 using the existing direct-upload
+configuration and a share-scoped token. The API checks authorization, quotas,
+part lengths and finalization. It does not receive the WebDAV credentials or
+the E2E key. File names are encrypted locally when FILE_META_V1 is selected.
+Local storage and older or relay-only servers retain the established upload
+route. Small WebDAV download packets are combined into bounded native frames.
+
+Install the updated Companion together with the updated API. Package builders
+and Linux installers include its new `direct-upload.mjs` runtime module.
+
 ### WebDAV And Companion
 
-The server-side WebDAV proxy requires authentication, accepts HTTPS targets only,
-rejects credentials embedded in URLs, refuses explicit private IP literals and
-keeps target resources on the configured WebDAV origin.
+WebDAV imports run locally through PrivCloud Companion. The application server
+never contacts the WebDAV target and never receives its credentials.
 
 PrivCloud Companion runs locally on the user's device. It receives a local
 browser token and a short-lived share-scoped Bridge upload token, never the web
@@ -266,6 +325,8 @@ Common environment variables:
 | `FILE_META_V1_WRITE` | `true` also encrypts file names and folder paths of those shares, for the selected accounts | `false` |
 | `FILE_META_V1_CANARY_USERS` | Accounts selected for `FILE_META_V1_WRITE`, which must also be selected for `SHARE_DEK_V1` | _(none)_ |
 | `FILE_META_V1_ROLLOUT_PERCENT` | Additional stable share of accounts, independent of the `SHARE_DEK_V1` one | `0` |
+| `FILE_META_V1_TEAM_WRITE` | `true` also encrypts the names of E2E team folder uploads with the team key, when the uploader is selected for `FILE_META_V1_WRITE` | `false` |
+| `FILE_META_V1_REVERSE_SHARE_WRITE` | `true` also encrypts the names of uploads to an E2E reverse share with its key, when its owner is selected for `FILE_META_V1_WRITE` | `false` |
 | `HTTP_PROXY` / `HTTPS_PROXY` | System proxy for outbound traffic | _(none)_ |
 | `GLOBAL_AGENT_HTTP_PROXY` | Node.js global-agent proxy URL | _(none)_ |
 | `GLOBAL_AGENT_NO_PROXY` / `NO_PROXY` | Hosts that bypass the proxy | _(none)_ |
@@ -357,9 +418,8 @@ build:
 
 The upload page can import files from WebDAV/Nextcloud accounts.
 
-- The server-side WebDAV proxy works across desktop and mobile browsers.
-- PrivCloud Companion is optional and runs locally on the client device for
-  managed large imports, local encryption and Native Messaging integrations.
+- PrivCloud Companion runs locally on the client device for WebDAV imports,
+  local encryption and Native Messaging integrations.
 - The Docker image exposes install assets under `/install/...` when built with
   the integration sources.
 
@@ -444,6 +504,19 @@ that the root fingerprint is unchanged, and deploy only the new
 under the same name: that creates a different trust anchor. Public TLS
 authorities such as Let's Encrypt only issue server certificates and cannot
 issue this document-signing certificate.
+
+The backend reads only a P12 protected by PBES2 with AES and a SHA-256 (or
+stronger) MAC, which is the profile the script exports. A P12 made by an
+earlier version of the script (PBE-SHA1-3DES with a SHA-1 MAC) or by another
+tool with RC2 is refused, and the backend reports it at startup. Convert it
+once, keeping its password, key and chain:
+
+```bash
+SIGNING_CERTIFICATE_PASSWORD=change-me ./scripts/convert-signing-p12.sh ./data/signing/certificate.p12 ./data/signing/certificate-aes.p12
+```
+
+Then point `SIGNING_CERTIFICATE_PATH` at the new file, or replace the old file
+with it, and restart the backend.
 
 Every accepted timestamp is archived with its raw request (`.tsq`) and response
 (`.tsr`). The attestation and the forensic dossier downloads carry these
@@ -615,7 +688,7 @@ so handwritten or uploaded signatures never overlap.
 
 | Path | Purpose |
 |---|---|
-| `backend/` | NestJS API, Prisma schema, signing, teams, WebDAV proxy and storage services |
+| `backend/` | NestJS API, Prisma schema, signing, teams and storage services |
 | `frontend/` | Next.js web app |
 | `bridge/` | Local PrivCloud Companion source and Native Messaging templates |
 | `integrations/` | Browser, mail and desktop integration scaffolds |

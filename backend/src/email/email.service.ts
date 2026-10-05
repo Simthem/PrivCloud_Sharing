@@ -229,10 +229,7 @@ export class EmailService {
     );
   }
 
-  async sendTeamShareNotificationEmail(
-    recipientEmail: string,
-    teamName?: string,
-  ) {
+  async sendTeamShareNotificationEmail(recipientEmail: string) {
     const appUrl = this.config.get("general.appUrl");
     const subject = this.config.get("email.teamShareNotificationSubject");
 
@@ -243,7 +240,7 @@ export class EmailService {
       .replaceAll("\\n", "\n")
       .replaceAll("{sender}", "A team member")
       .replaceAll("{fileName}", "an encrypted file")
-      .replaceAll("{teamName}", teamName || "your team")
+      .replaceAll("{teamName}", "your team")
       .replaceAll("{appUrl}", appUrl);
 
     await this.sendMail(recipientEmail, subject, body);

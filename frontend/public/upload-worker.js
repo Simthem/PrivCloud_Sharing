@@ -43,18 +43,45 @@
 var UPLOAD_CLIENT_REVISION = "multipath-origin-pool-v9";
 var IV_LENGTH = 12;
 var aborted = false;
-var safelineResolved = false;
-var safelineFailed = false;
 // Token refresh flags -- main thread handles the actual fetch because
 // Safari does NOT send HttpOnly cookies in fetch() from Web Workers
 // (long-standing WebKit bug).  The Worker posts 'need-token-refresh' and
 // waits; the main thread replies 'token-refresh-done' or 'token-refresh-failed'.
-var tokenRefreshDone = false;
 var tokenRefreshFailed = false;
+var tokenRefreshFailureStatus = 0;
 var coordinatorRequestSequence = 0;
 var directSlotWaiters = new Map();
 var relaySlotWaiters = new Map();
 var coordinatorWindowUpdate = 0;
+var onCoordinatorWindowChange = null;
+
+var controlReplyWaiters = new Map();
+
+function settleControlReply(kind, ok) {
+  var waiter = controlReplyWaiters.get(kind);
+  if (waiter && (!waiter.successOnly || ok)) waiter.release(ok);
+}
+
+function cancelControlReplies() {
+  controlReplyWaiters.forEach(function (waiter) { waiter.release(false); });
+}
+
+// A reply is an event. Only the deadline needs a timer, so a verified session
+// wakes a hidden worker immediately instead of waiting for a polling tick.
+function waitForControlReply(kind, timeoutMs, successOnly) {
+  if (aborted || timeoutMs <= 0) return Promise.resolve(false);
+  return new Promise(function (resolve) {
+    var waiter = { timer: null, successOnly: successOnly === true, release: null };
+    waiter.release = function (ok) {
+      if (controlReplyWaiters.get(kind) !== waiter) return;
+      controlReplyWaiters.delete(kind);
+      if (waiter.timer !== null) clearTimeout(waiter.timer);
+      resolve(ok);
+    };
+    controlReplyWaiters.set(kind, waiter);
+    waiter.timer = setTimeout(function () { waiter.release(false); }, timeoutMs);
+  });
+}
 
 function rejectCoordinatorWaiters(message) {
   var error = new Error(message || "Upload coordination cancelled");
@@ -73,6 +100,7 @@ self.onmessage = function (e) {
 
   if (msg.type === "abort") {
     aborted = true;
+    cancelControlReplies();
     rejectCoordinatorWaiters("Upload aborted");
     return;
   }
@@ -81,6 +109,7 @@ self.onmessage = function (e) {
     var updatedWindow = Number(msg.maxParallel);
     if (Number.isFinite(updatedWindow) && updatedWindow >= 1) {
       coordinatorWindowUpdate = Math.max(1, Math.floor(updatedWindow));
+      if (onCoordinatorWindowChange) onCoordinatorWindowChange();
     }
     return;
   }
@@ -109,33 +138,34 @@ self.onmessage = function (e) {
   }
 
   if (msg.type === "safeline-resolved") {
-    safelineResolved = true;
+    settleControlReply("safeline", true);
     return;
   }
 
   if (msg.type === "safeline-failed") {
-    safelineFailed = true;
+    settleControlReply("safeline", false);
     return;
   }
 
   if (msg.type === "token-refresh-done") {
-    tokenRefreshDone = true;
+    settleControlReply("token", true);
     return;
   }
 
   if (msg.type === "token-refresh-failed") {
     tokenRefreshFailed = true;
+    tokenRefreshFailureStatus = Number(msg.status) || 0;
+    settleControlReply("token", false);
     return;
   }
 
   if (msg.type === "start") {
+    cancelControlReplies();
     aborted = false;
-    safelineResolved = false;
-    safelineFailed = false;
-    tokenRefreshDone = false;
     tokenRefreshFailed = false;
     rejectCoordinatorWaiters("Starting a new upload");
     coordinatorWindowUpdate = 0;
+    onCoordinatorWindowChange = null;
     runBatch(msg).catch(function (error) {
       self.postMessage({
         type: "error",
@@ -642,6 +672,16 @@ async function runBatch(opts) {
   var initialWindowPrewarmed = false;
   var plannedFlowPopulationReached = plannedFileConcurrency <= 1;
 
+  onCoordinatorWindowChange = function () {
+    if (!browserOriginPoolMode || directUploadUnavailable) return;
+    serverParallelCap = Math.max(1, Math.min(
+      directMaxConcurrency, browserParallelCap,
+      coordinatorWindowUpdate || directMaxConcurrency,
+    ));
+    MAX_PARALLEL = serverParallelCap;
+    fillUploadWindow();
+  };
+
   function applyDirectPoolConfig(result) {
     if (!result || result.uploadWindowMode !== "browser-origin-pool") {
       return false;
@@ -686,7 +726,7 @@ async function runBatch(opts) {
       ),
     );
     browserOriginPoolMode = true;
-    PREFETCH_AHEAD = 0;
+    PREFETCH_AHEAD = isE2E && opts.preparedBodyLookahead !== false ? 1 : 0;
     serverGlobalCap = directMaxConcurrency;
     serverParallelCap = Math.max(
       1,
@@ -777,26 +817,47 @@ async function runBatch(opts) {
   // ---- Token refresh dedup ----
   // Only one refresh runs at a time; parallel chunks reuse the result.
   var refreshPromise = null;
+  var refreshCompletedAt = null;
   async function ensureTokenRefreshed() {
-    if (refreshPromise) return refreshPromise;
+    if (refreshPromise &&
+        (refreshCompletedAt === null || Date.now() - refreshCompletedAt < 2000)) {
+      return refreshPromise;
+    }
+    refreshCompletedAt = null;
     refreshPromise = (async function () {
-      tokenRefreshDone = false;
       tokenRefreshFailed = false;
-      self.postMessage({ type: "need-token-refresh" });
-      var waited = 0;
-      while (!tokenRefreshDone && !tokenRefreshFailed && waited < 30000) {
-        await sleep(500);
-        waited += 500;
+      tokenRefreshFailureStatus = 0;
+      var tokenDeadline = Date.now() + 240000;
+      var transientRefreshRetries = 0;
+      while (!aborted && Date.now() < tokenDeadline) {
+        tokenRefreshFailed = false;
+        var reply = waitForControlReply("token", tokenDeadline - Date.now());
+        self.postMessage({ type: "need-token-refresh" });
+        if (await reply) {
+          self.postMessage({ type: "token-refreshed" });
+          return true;
+        }
+        if (aborted || !tokenRefreshFailed ||
+            tokenRefreshFailureStatus === 401 || transientRefreshRetries >= 3) break;
+        transientRefreshRetries++;
+        await sleep(5000 * transientRefreshRetries);
       }
-      var ok = tokenRefreshDone;
-      if (ok) self.postMessage({ type: "token-refreshed" });
-      // Keep result for 2 s so rapid duplicate 401s skip the refresh
-      setTimeout(function () {
-        refreshPromise = null;
-      }, 2000);
-      return ok;
-    })();
+      return false;
+    })().finally(function () { refreshCompletedAt = Date.now(); });
     return refreshPromise;
+  }
+
+  function postTokenRefreshFailure(data) {
+    var status = tokenRefreshFailureStatus || 503;
+    self.postMessage({
+      type: "error",
+      message:
+        status === 401
+          ? "Session expired. Please log in again and retry the upload."
+          : "Session renewal is temporarily unavailable. The upload can be retried.",
+      status: status,
+      data: data,
+    });
   }
 
   // ---- SafeLine challenge dedup ----
@@ -807,51 +868,30 @@ async function runBatch(opts) {
     safelinePromise = (async function () {
       if (safelineChallengeAttempts < MAX_SAFELINE_IFRAME_ATTEMPTS) {
         safelineChallengeAttempts++;
+        var reply = waitForControlReply("safeline", 240000);
         self.postMessage({ type: "need-safeline-challenge" });
-        safelineResolved = false;
-        safelineFailed = false;
-        var waited = 0;
-        while (!safelineResolved && !safelineFailed && waited < 120000) {
-          await sleep(500);
-          waited += 500;
-        }
-        if (safelineResolved) {
-          safelineResolved = false;
-          await sleep(2000);
-          setTimeout(function () {
-            safelinePromise = null;
-          }, 1000);
+        if (await reply) {
           return true;
         }
-        safelineFailed = false;
       }
-      if (!safeline468Shown) {
-        safeline468Shown = true;
-        self.postMessage({ type: "safeline-failed-show-notification" });
-      }
+      if (aborted) return false;
       var safeBackoff = Math.min(
         SAFELINE_BACKOFF_BASE * Math.pow(1.5, safeline468Retries - 1),
         SAFELINE_BACKOFF_MAX,
       );
-      safelineResolved = false;
-      var waitedBack = 0;
-      while (waitedBack < safeBackoff && !safelineResolved) {
-        await sleep(500);
-        waitedBack += 500;
+      var resolved = waitForControlReply("safeline", safeBackoff, true);
+      if (!safeline468Shown) {
+        safeline468Shown = true;
+        self.postMessage({ type: "safeline-failed-show-notification" });
       }
-      var resolved = safelineResolved;
-      if (resolved) {
-        safelineResolved = false;
+      if (await resolved) {
         safeline468Retries = 0;
         safelineChallengeAttempts = 0;
         safeline468Shown = false;
-        await sleep(1000);
+        return true;
       }
-      setTimeout(function () {
-        safelinePromise = null;
-      }, 1000);
-      return resolved;
-    })();
+      return false;
+    })().finally(function () { safelinePromise = null; });
     return safelinePromise;
   }
 
@@ -871,6 +911,25 @@ async function runBatch(opts) {
 
   function getMultipartControlPayload() {
     return JSON.stringify(getMultipartControlPayloadObject());
+  }
+
+  function isChallengeResponse(response, data) {
+    var contentType = String(
+      response.headers && typeof response.headers.get === "function"
+        ? response.headers.get("content-type") || ""
+        : "",
+    ).toLowerCase();
+    return (
+      response.status === 468 ||
+      (response.ok && data === null) ||
+      ([401, 403].includes(response.status) && contentType.includes("text/html"))
+    );
+  }
+
+  function confirmApiSession() {
+    safeline468Retries = 0;
+    safelineChallengeAttempts = 0;
+    safeline468Shown = false;
   }
 
   async function initializeMultipartSession() {
@@ -914,7 +973,21 @@ async function runBatch(opts) {
           } catch {}
         }
 
-        if (response.ok) {
+        if (isChallengeResponse(response, data)) {
+          safeline468Retries++;
+          if (safeline468Retries >= MAX_SAFELINE_468_RETRIES) break;
+          await handleSafelineOnce();
+          continue;
+        }
+        if (response.ok && data) {
+          confirmApiSession();
+          if (data && data.uploadComplete === true) {
+            self.postMessage({ type: "progress", chunkIndex: totalChunks - 1, totalChunks: totalChunks, fileId: data.id || fileId, uploadedBytes: file.size,
+            });
+            self.postMessage({ type: "batch-complete", fileId: data.id || fileId, nextChunk: endChunk,
+            });
+            return { ready: false, fatal: true };
+          }
           if (
             data &&
             (data.uploadTransport === "stream" ||
@@ -942,13 +1015,7 @@ async function runBatch(opts) {
         }
         if (response.status === 401) {
           if (await ensureTokenRefreshed()) continue;
-          self.postMessage({
-            type: "error",
-            message:
-              "Session expired. Please log in again and retry the upload.",
-            status: 401,
-            data: data,
-          });
+          postTokenRefreshFailure(data);
           return { ready: false, fatal: true };
         }
         if (response.status === 468) {
@@ -1107,19 +1174,22 @@ async function runBatch(opts) {
           } catch {}
         }
 
-        if (response.ok) {
-          fileId = (data && data.id) || fileId;
+        if (response.ok &&
+          data && data.uploadComplete === true &&
+          data.id === fileId
+        ) {
+          confirmApiSession();
           return true;
+        }
+        if (isChallengeResponse(response, data)) {
+          safeline468Retries++;
+          if (safeline468Retries >= MAX_SAFELINE_468_RETRIES) break;
+          await handleSafelineOnce();
+          continue;
         }
         if (response.status === 401) {
           if (await ensureTokenRefreshed()) continue;
-          self.postMessage({
-            type: "error",
-            message:
-              "Session expired. Please log in again and retry the upload.",
-            status: 401,
-            data: data,
-          });
+          postTokenRefreshFailure(data);
           return false;
         }
         if (response.status === 413) {
@@ -1283,17 +1353,18 @@ async function runBatch(opts) {
           typeof data.url === "string" &&
           data.contentLength === contentLength
         ) {
+          confirmApiSession();
           return { ok: true, data: data };
+        }
+        if (isChallengeResponse(response, data)) {
+          safeline468Retries++;
+          if (safeline468Retries >= MAX_SAFELINE_468_RETRIES) break;
+          await handleSafelineOnce();
+          continue;
         }
         if (response.status === 401) {
           if (await ensureTokenRefreshed()) continue;
-          self.postMessage({
-            type: "error",
-            message:
-              "Session expired. Please log in again and retry the upload.",
-            status: 401,
-            data: data,
-          });
+          postTokenRefreshFailure(data);
           return { fatal: true };
         }
         if (response.status === 468) {
@@ -1367,7 +1438,7 @@ async function runBatch(opts) {
           data: data,
         });
         return { fatal: true };
-      } catch {
+      } catch (error) {
         if (aborted) return { fatal: true };
         if (attempt < 2) {
           await sleep(250);
@@ -1457,6 +1528,7 @@ async function runBatch(opts) {
             return { fatal: true };
           }
           applyDirectPoolConfig(data);
+          confirmApiSession();
           byIndex.forEach(function (authorization, index) {
             directAuthorizationCache.set(index, authorization);
           });
@@ -1472,18 +1544,12 @@ async function runBatch(opts) {
           batchAuthorizationUnsupported = true;
           return { fallbackLegacy: true };
         }
-        if (response.status === 401) {
+        if (response.status === 401 && !isChallengeResponse(response, data)) {
           if (await ensureTokenRefreshed()) continue;
-          self.postMessage({
-            type: "error",
-            message:
-              "Session expired. Please log in again and retry the upload.",
-            status: 401,
-            data: data,
-          });
+          postTokenRefreshFailure(data);
           return { fatal: true };
         }
-        if (response.status === 468) {
+        if (isChallengeResponse(response, data)) {
           safeline468Retries++;
           if (safeline468Retries >= MAX_SAFELINE_468_RETRIES) {
             self.postMessage({
@@ -1587,23 +1653,45 @@ async function runBatch(opts) {
     return { fatal: true };
   }
 
+  function prefetchDirectAuthorizationWindow(chunkIndex) {
+    if (!browserOriginPoolMode || batchAuthorizationUnsupported || aborted) return;
+    var nextBatch = (Math.floor(chunkIndex / DIRECT_AUTH_BATCH_SIZE) + 1) * DIRECT_AUTH_BATCH_SIZE;
+    if (nextBatch >= endChunk ||
+        chunkIndex < nextBatch - MAX_PARALLEL - 2 ||
+        directAuthorizationCache.has(nextBatch) || directAuthorizationInflight.has(nextBatch)) return;
+    var nextBatchEnd = Math.min(endChunk, nextBatch + DIRECT_AUTH_BATCH_SIZE);
+    while (nextBatch < nextBatchEnd && completedProgressChunks.has(nextBatch)) nextBatch++;
+    if (nextBatch >= nextBatchEnd || directAuthorizationCache.has(nextBatch) ||
+        directAuthorizationInflight.has(nextBatch)) return;
+    // Authorize one following batch while cached parts still transfer. Keep its
+    // deadline independent of the part that triggered it and never warm recursively.
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, 300000);
+    requestDirectPartAuthorization(nextBatch, getExpectedBodyBytes(nextBatch), controller.signal, true)
+      .catch(function () {})
+      .finally(function () { clearTimeout(timer); });
+  }
+
   async function requestDirectPartAuthorization(
     chunkIndex,
     contentLength,
     signal,
+    prefetchOnly,
   ) {
     if (browserOriginPoolMode && !batchAuthorizationUnsupported) {
       var cached = directAuthorizationCache.get(chunkIndex);
       if (cached && Number(cached.contentLength) === contentLength) {
+        if (!prefetchOnly) prefetchDirectAuthorizationWindow(chunkIndex);
         return { ok: true, data: cached };
       }
       var inflight = directAuthorizationInflight.get(chunkIndex);
       if (!inflight) {
         var indexes = [];
+        var batchStart = Math.floor(chunkIndex / DIRECT_AUTH_BATCH_SIZE) * DIRECT_AUTH_BATCH_SIZE;
+        var batchEnd = Math.min(endChunk, batchStart + DIRECT_AUTH_BATCH_SIZE);
         for (
-          var candidateIndex = chunkIndex;
-          candidateIndex < endChunk &&
-          indexes.length < DIRECT_AUTH_BATCH_SIZE;
+          var candidateIndex = Math.max(startChunk, batchStart);
+          candidateIndex < batchEnd;
           candidateIndex++
         ) {
           if (
@@ -1626,10 +1714,11 @@ async function runBatch(opts) {
         });
       }
       var batchResult = await inflight;
-      if (batchResult.fatal) return batchResult;
+      if (batchResult.fatal || (prefetchOnly && batchResult.fallbackLegacy)) return batchResult;
       if (!batchResult.fallbackLegacy) {
         var authorized = directAuthorizationCache.get(chunkIndex);
         if (authorized && Number(authorized.contentLength) === contentLength) {
+          if (!prefetchOnly) prefetchDirectAuthorizationWindow(chunkIndex);
           return { ok: true, data: authorized };
         }
         return { fatal: true };
@@ -1931,6 +2020,7 @@ async function runBatch(opts) {
                 response.body.cancel();
             } catch {}
           }
+          if (isChallengeResponse(response, respData)) httpStatus = 468;
           response = null;
           console.warn(
             "[upload] chunk request failed -> chunk=" +
@@ -1999,13 +2089,7 @@ async function runBatch(opts) {
           if (httpStatus === 401) {
             var refreshOk = await ensureTokenRefreshed();
             if (!refreshOk) {
-              self.postMessage({
-                type: "error",
-                message:
-                  "Session expired. Please log in again and retry the upload.",
-                status: 401,
-                data: null,
-              });
+              postTokenRefreshFailure(null);
               return { ok: false };
             }
             continue;
@@ -2042,13 +2126,7 @@ async function runBatch(opts) {
               localRefresh403++;
               var refreshOk403 = await ensureTokenRefreshed();
               if (!refreshOk403) {
-                self.postMessage({
-                  type: "error",
-                  message:
-                    "Session expired. Please log in again and retry the upload.",
-                  status: 403,
-                  data: null,
-                });
+                postTokenRefreshFailure(null);
                 return { ok: false };
               }
               continue;
@@ -2488,6 +2566,21 @@ async function runBatch(opts) {
     // The multipart ID already exists on S3: part 1 no longer blocks the rest
     // of the data window. Preparation remains bounded independently.
     initialWindowPrewarmed = true;
+    // ListParts is authoritative. Only complete parts with the expected size
+    // count as saved, including the AES-GCM record overhead.
+    var savedParts = initialization.data.uploadedParts || [];
+    savedParts.forEach(function (part) {
+      var idx = part.partNumber - 1;
+      if (!Number.isInteger(idx) || idx < startChunk || idx >= endChunk || completedProgressChunks.has(idx)) return;
+      var bounds = getChunkBounds(idx);
+      var plainSize = bounds.to - bounds.from;
+      var expectedSize = plainSize + (isE2E ? Math.ceil(plainSize / cryptoChunkSize) * 28 : 0);
+      if (part.size !== expectedSize) return;
+      completedProgressChunks.add(idx);
+      uploadedPlainBytes += plainSize;
+    });
+    if (uploadedPlainBytes > 0) self.postMessage({ type: "progress", chunkIndex: startChunk, totalChunks: totalChunks, fileId: fileId, uploadedBytes: uploadedPlainBytes,
+      });
     nextIdx = startChunk;
     console.info(
       "[upload] init -> protocol=preinitialized transport=" +
@@ -2577,6 +2670,7 @@ async function runBatch(opts) {
   var activeChunks = new Map(); // idx -> Promise<{idx, ok}>
 
   function launchChunk(idx) {
+    if (completedProgressChunks.has(idx)) return;
     var p = sendSingleChunk(idx).then(function (r) {
       releasePreparedBody(idx);
       return { idx: idx, ok: r.ok };
@@ -2587,15 +2681,20 @@ async function runBatch(opts) {
   function prefetchAhead() {
     for (var k = 0; k < PREFETCH_AHEAD; k++) {
       var idx = nextIdx + k;
-      if (idx < endChunk) getPreparedBody(idx);
+      if (idx < endChunk && !completedProgressChunks.has(idx) &&
+          preparedBodies.size < memoryLaneCap) getPreparedBody(idx);
     }
   }
 
-  // Fill initial window
-  while (activeChunks.size < MAX_PARALLEL && nextIdx < endChunk) {
-    launchChunk(nextIdx++);
+  function fillUploadWindow() {
+    if (!activeChunks || !Number.isInteger(nextIdx) || aborted) return;
+    while (activeChunks.size < MAX_PARALLEL && nextIdx < endChunk) {
+      launchChunk(nextIdx++);
+    }
+    prefetchAhead();
   }
-  prefetchAhead();
+
+  fillUploadWindow();
 
   while (activeChunks.size > 0) {
     var completed = await Promise.race(activeChunks.values());
@@ -2606,11 +2705,7 @@ async function runBatch(opts) {
       return;
     }
 
-    // Fill window
-    while (activeChunks.size < MAX_PARALLEL && nextIdx < endChunk) {
-      launchChunk(nextIdx++);
-    }
-    prefetchAhead();
+    fillUploadWindow();
   }
 
   if (initialization.ready && !(await finalizeMultipartSession())) {

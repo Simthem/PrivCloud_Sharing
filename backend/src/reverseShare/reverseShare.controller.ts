@@ -21,6 +21,7 @@ import { ReverseShareDTO } from "./dto/reverseShare.dto";
 import { ReverseShareTokenWithShares } from "./dto/reverseShareTokenWithShares";
 import { ReverseShareOwnerGuard } from "./guards/reverseShareOwner.guard";
 import { ReverseShareService } from "./reverseShare.service";
+import { isReverseShareFileMetaWriteEnabledFor } from "src/file/file-metadata-scheme";
 
 @Controller("reverseShares")
 export class ReverseShareController {
@@ -33,7 +34,11 @@ export class ReverseShareController {
   @UseGuards(JwtGuard)
   async create(@Body() body: CreateReverseShareDTO, @GetUser() user: User) {
     if (!user) throw new UnauthorizedException();
-    const token = await this.reverseShareService.create(body, user.id);
+    const token = await this.reverseShareService.create(
+      body,
+      user.id,
+      isReverseShareFileMetaWriteEnabledFor(user),
+    );
 
     const link = `${this.config.get("general.appUrl")}/upload/${token}`;
 
@@ -52,9 +57,16 @@ export class ReverseShareController {
 
     if (!isValid) throw new NotFoundException("Reverse share token not found");
 
-    return new ReverseShareDTO().from(
-      await this.reverseShareService.getByToken(reverseShareToken),
-    );
+    const rs = await this.reverseShareService.getByToken(reverseShareToken);
+    const dto = new ReverseShareDTO().from(rs);
+    // Whether uploads to this E2E reverse share encrypt their file names and
+    // title with K_rs (FILE_META_V1), as decided for its owner.
+    dto.fileMetaV1Write =
+      dto.isE2EEncrypted &&
+      isReverseShareFileMetaWriteEnabledFor(
+        await this.reverseShareService.getCreatorIdentity(rs.creatorId),
+      );
+    return dto;
   }
 
   @Get()

@@ -1,6 +1,366 @@
-## [Unreleased]
+## [1.25.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.25.1...v1.25.2) (2026-10-05)
+
+### Signing Evidence Downloads On Mobile
+
+- Keep a signer's link to a completed request open after its source file or
+  share is deleted, and after the signing deadline. The completion
+  notification, the E2E key recovery and the signed PDF download all go
+  through that link. Every unfinished request still closes it.
+- Offer the signed PDF again on that link once the request is completed,
+  decrypted locally when the link carries the E2E key.
+- Show a loading state on the signed PDF and evidence buttons, then say where
+  the file went. Once its download prompt is turned off, mobile Chrome saves
+  a JSON file without any visible sign, which looked like a dead button.
+- Explain on screen why an end-to-end encrypted PDF cannot be downloaded
+  instead of relying on a tooltip that touch screens never show.
+- Release web blob URLs once the download has started, as shared files
+  already do.
+
+### Mobile Menu Opening
+
+- Build the mobile menu hidden once the page is idle, so the first tap only
+  reveals it. Building it on that tap blocked the first animation frame and
+  made the first opening visibly late on phones. Submenus still start folded
+  on every opening.
+
+### Upload Clock Message Validation
+
+- Accept deadline replies only from the active dedicated worker through a
+  trusted event with the expected empty origin, target, source and port list.
+- Validate exact message fields, positive safe-integer IDs and pending
+  deadlines before using a reply. Apply command validation inside the worker.
+- Reject forged events, foreign origins, retired workers and malformed payloads.
+  Verify genuine worker replies with document timers delayed by one minute.
+
+### Continuous Transfer Pipeline And Background Deadlines
+
+- Authorize the next S3 part batch while cached parts still transfer. Align
+  batches when resuming and skip confirmed parts without extra reads or PUTs.
+- Prepare one following E2E body within the existing browser memory ceiling.
+- Wake upload workers directly on verified token and WAF replies. Remove
+  polling delays and the extra pause after successful verification.
+- Share a temporary deadline worker for upload cooldowns, retry waits, session
+  checks and proactive token renewal. Release it when no deadlines remain,
+  with ordinary timers available if workers cannot start.
+- Verify encrypted transfers in an actual hidden Chrome tab with six shared
+  sockets and delayed API replies. Cover clamped timers, saved parts, bounded
+  preparation, cancellation and real application authorization refusals.
+
+### E2E Metadata And Transfer Completion
+
+- Verify the real extension and curl installer in Chrome 155.0.8040.2,
+  including native download, encrypted upload labels and cancellation.
+  Direct S3 tests verify ciphertext, share-token scope and API control calls.
+- Encrypt reverse-link names with K_rs and team request subjects and notes
+  with K_team behind the existing account selection and opt-in flags.
+  Requests refuse creation during an active key rotation. Encryption errors
+  do not silently send the readable reverse-link name or request text.
+- Store the ML-KEM-768 ciphertext in hybrid X25519 access grants and preserve
+  the classical format for recipients without an active compatible PQ key.
+  This recipient capability check is independent of the optional hybrid
+  notification setting. Shamir shards remain optional local key recovery.
+- Replace server-generated team notification titles, push text and audit mail
+  details with generic messages. Notification responses select related IDs
+  without team, folder, member or file names. Sanitize existing readable team
+  alerts while preserving encrypted envelopes. E2E download URLs use an opaque
+  file identifier and application/octet-stream.
+- Rotate encrypted share titles and request text before retiring K_team.
+  Stage ciphertext replacements, require complete coverage and compare current
+  values before committing metadata and the new key in one transaction.
+- Deploy `20261002140000_e2e_metadata_hardening` after the preceding metadata
+  migration. PostgreSQL adjusts the subject constraint. SQLite rebuilds the
+  request table transactionally while preserving recipients, indexes and
+  submitted-share references. Existing readable labels remain readable.
+- Remove the unused backend WebDAV proxy. Companion uploads file bytes directly
+  to S3 through token-authorized multipart control calls, including nonempty
+  small files. Preserve storage quotas, bounded concurrency, local encryption,
+  progress, retry and cancellation. Bound live jobs across browser tabs too.
+  Older APIs and local or relay-only storage retain the established upload
+  route.
+- Encrypt Companion file-name metadata on both transfer routes. Ship the direct
+  transfer module in Docker, package builders and the Linux installer.
+  Combine small WebDAV download packets into native frames of at most 192 KiB.
+- Share simultaneous team-key reads between panels. Cache only wrapped keys
+  under the current account and invalidate them with team changes, including
+  rotation. Keep decrypted keys local to the components that need them.
+- Align the encryption descriptions and server-visible metadata in the
+  interface and the README. Team and team-folder names remain readable.
+  Hashing non-E2E file names remains a future proposal rather than a feature.
+
+### Companion Native Messaging
+
+- Fix Linux NVM runtime selection: package launchers validate Node 20+ and
+  support a private per-user pinned path with `--configure-runtime`. Reusable
+  package launchers accept an explicitly configured external runtime.
+- Register native hosts in Chromium Flatpak's own profile directory. Run the
+  connector inside the existing sandbox without adding host-execution rights.
+  Correct the packaged launcher path and preserve exact extension-ID checks.
+- Test Node 19 rejection, NVM startup under a restricted browser PATH, and the
+  real curl installer in Chromium 154.0.8037.57, including Flatpak and complete
+  WebDAV transfers.
+- Desktop WebDAV now uses a persistent browser-extension Native Messaging port
+  for health, authorization, listing, bounded downloads, encrypted uploads,
+  progress and cancellation. There is no browser HTTP loopback fallback.
+- Validate sender origins, command allowlists, message sizes and concurrency.
+  Native sessions remain in memory, expire and isolate job/download ownership.
+  Disconnect aborts active work. Authorization renewal does not replay mutations.
+- Detect native-host launches from actual Chrome/Firefox arguments and isolate
+  stdout from instrumentation preloads in the installed launchers.
+- Update installer payloads, native-host registration and browser extension.
+  Older desktop transports require an update. Android browsers keep the
+  permission-guarded loopback transport, which desktop never selects. Package
+  checks include the new native transport module.
+- The real extension/Companion smoke test passes in Chrome 154.0.8037.57,
+  with local-network access denied and granted. It verifies a download above
+  1 MiB and decrypts uploaded chunks to the source bytes.
+  Any console error, failed browser request or DevTools audit fails the check.
+  Add session/origin isolation, framing, transfer cleanup and cancellation tests.
+
+### Dependency Hardening
+
+- Replace upstream braces with an iterative local pattern implementation for
+  micromatch, fast-glob and chokidar. Bound nesting, groups, expansion counts
+  and output allocation for GHSA-vfj7-8cjw-p6xm, which has no patched release.
+- Remove the optional Docusaurus CLI update checker and its vulnerable
+  http-cache-semantics dependency for GHSA-ch52-4w7c-c8xp. Preserve documentation
+  builds, the supported Node.js check and live Markdown/MDX watching.
+- Keep the existing Next.js and ESLint plugin versions. Copy local dependencies
+  before Docker npm ci and test fresh installs and malicious brace patterns.
+
+### Transfer Test Security
+
+- Use TLS 1.2 or later for simulated S3, WebDAV and application services in
+  the real Companion direct-upload integration test. Trust only its temporary
+  certificate in the child process, without disabling certificate verification.
+- Require canonical UUID v4 file identifiers in the browser upload fixture,
+  escape HTML characters in JSON and reject malicious URL identifiers without
+  reflecting them in the response. Preserve the encrypted upload contract.
+- Keep Chrome debugging in a separate temporary user data directory and copy
+  the installer-generated native host manifest into that isolated profile.
+
+### Security Copy
+
+- Remove the unused obsolete anonymous-upload item from the French and English
+  Security translations. Describe optional client-side encryption of file names,
+  share titles and descriptions in the home page translations.
+- Use simple punctuation in integration page copy and translations, retaining
+  code and command syntax.
+
+### End-to-End Encryption Copy
+
+- Describe file names, paths, share titles and descriptions as protected by
+  end-to-end encryption with the same key, without a separate user setting
+  or a distinction between old and new shares.
+
+### Companion Upload Concurrency And Nested Validation
+
+- Process two WebDAV files per job, with two source streams and four S3 PUTs
+  shared across jobs. Preserve API concurrency limits, encrypted records,
+  bounded working buffers, cancellation and retry accounting.
+- Report the full path and rule for nested validation failures. Keep submitted
+  values out of validation logs and show a fallback for empty signing errors.
+- Reject malformed signer email domains, including consecutive dots, in both
+  signing creation forms before sending the request.
+
+### S3 Upload Preservation And WAF Recovery
+
+- Wait for all upload workers and retries before finalizing a share. Keep byte
+  progress below 100 percent until storage completion is acknowledged.
+- Preserve stored files after a partial failure. Finalize successful files with
+  a warning, or let the user retry share finalization without resending them.
+  Recover a completed share through its owner route after a lost response.
+- Require an explicit discard parameter before owner deletion of stored files,
+  including shares prematurely published by an older upload client. Preserve
+  ownership checks and confirmed deletion from account and Team views.
+- Keep committed database files and completed S3 objects out of abandoned-upload
+  cleanup. Verify storage activity and fail closed when its probe is unavailable.
+  Claim only shares without files and check S3 again after claiming cleanup.
+- Verify a successful JSON API response before resuming after a WAF challenge.
+  Poll popup sessions and close marked challenge windows even when COOP severs
+  their opener. Manual closure and network failures never validate a session.
+- Cover preservation, deletion authorization, finalization recovery and WAF
+  behavior with regression tests and an isolated HTTPS Chrome fixture.
+
+### Automatic WAF Renewal And Resumable S3 Uploads
+
+- Resolve HTTP 468 WAF challenges without navigating or reloading the upload
+  tab, including API control calls and token refresh. Keep session maintenance
+  active through pending finalization and immediately verify on browser wake-up
+  events.
+- Restrict the hidden challenge iframe's navigation and verify both document
+  and JSON API routes before resuming. Preserve authentication rotation,
+  authorization and upload limits.
+- Discover unfinished uploads from the owner account and Team folder views.
+  Allow the uploader to read saved files, reselect missing files and finalize
+  the same share. Preserve password, expiry and Team/file permissions.
+- Keep encrypted local resume records with stable file IDs and chunk layouts.
+  Validate reselected files before reusing a record. Skip only S3-confirmed
+  parts of the expected size and acknowledge files already committed in storage.
+- Preserve inactive multipart sessions while their share exists. Only expiry,
+  confirmed deletion or cleanup of orphaned sessions discards their parts.
+- Retain database references after S3 deletion errors, including individual
+  errors inside a successful batch response. Paginate multipart cancellation.
+- Show unfinished and inactive uploads separately from ready shares in the
+  admin inventory without exposing links, names, recipients or encryption keys.
+- Add WAF, resume, authorization and deletion regressions plus automatic HTTPS
+  Chrome checks.
+
+- Preserve a real retry click's user activation after a blocked WAF popup,
+  including a challenge already waiting in a background iframe. Test manual
+  recovery with the browser's standard popup-blocking policy.
+
+- Keep authenticated S3 uploads discoverable even when a WAF challenge blocks
+  the first multipart init. Release their reservation only after actual deletion.
+
+- Provide a read-only upload diagnostic through the application container,
+  using its database connection without installing a host PostgreSQL server.
+  Support opaque audit prefixes and retain PostgreSQL/SQLite boundaries.
+
+### Upload Diagnostic SQL Parameters
+
+- Bind audit-prefix length and reference as SQL values in PostgreSQL and SQLite.
+  Resolve the PostgreSQL schema through a bound, quoted search path instead of
+  inserting it into statements. Preserve read-only transactions and redaction.
+- Test unchanged SQL text across input lengths, schema names and letter case,
+  plus rejection of malicious input before database access.
+
+### Persisted Completion And Owner List Refresh
+
+- Confirm the matching share is finalized before clearing upload state. Recover
+  lost acknowledgements through the owner endpoint and reject HTTP 200 challenge
+  pages that do not confirm completion. Preserve pending uploads on failure.
+- Cancel old pending-list requests before removing the acknowledged upload, then
+  refresh pending, published and owner-detail queries. Scope published-list
+  caches to the account and prevent caching of owner upload-state responses.
+- Test recipient-free finalization with SMTP enabled and disabled, SMTP failures,
+  empty-share rejection and delayed pending-list responses.
+
+### Large S3 Uploads And Automatic Session Renewal
+
+- Keep multipart state while its share is unfinished and unexpired, including
+  WAF pauses longer than one hour. Eviction messages omit share and upload IDs.
+- Let authentication renewal finish its verified background challenge before
+  stopping a worker. Retry transient refresh failures in the same worker and
+  renew the challenge budget after confirmed API responses.
+- Treat HTML challenge responses with HTTP 200 as a verification request.
+  Require the matching file ID and storage completion marker before success.
+- Read session probe responses to completion instead of cancelling upstream
+  requests. Keep the upload tab, selected files and encryption key in place.
+- Recover paginated multipart state after a process restart and persist a
+  completed object after a lost S3 or database response.
+- Add simulated 361.7 GB worker and storage regressions, repeated automatic
+  challenges, expired-session rejection and streamed HTTPS browser probes.
+
+### Continuous Browser Uploads And Shared Connections
+
+- Return HTTP 401 when an owned upload loses its access cookie so the existing
+  refresh cookie can renew authentication automatically. Preserve HTTP 403 for
+  real permission denials and anonymous ownership proofs.
+- Treat HTML challenges with HTTP 401 or 403 through the verified WAF flow on
+  both API clients and upload workers. Preserve structured backend refusals.
+- Lend unused S3 connections to ready files while siblings await authorization
+  or finish their last part. Rebalance queued demand within the existing origin,
+  global concurrency and browser memory ceilings.
+- Apply connection-window changes immediately, including when part URLs are
+  already cached. Retry interrupted files while healthy transfers continue,
+  retain confirmed progress and stop retry waits on explicit cancellation.
+- Label an incomplete share explicitly and show a warning icon when files
+  remain unconfirmed, while preserving files already stored.
+- Cover cookie expiry, challenge response formats, idle and partially used
+  connections, background renewal and overlapping retries in automated tests.
+
+### Features
+
+- **E2E -- encrypted share titles, team and upload-link file names:** a share
+  with encrypted file names (`FILE_META_V1`) now also encrypts its title and
+  description with the same key, and the server stores neither. The same name
+  encryption covers E2E team folder uploads with the team key
+  (`FILE_META_V1_TEAM_WRITE`) and uploads to an E2E reverse share with its key
+  (`FILE_META_V1_REVERSE_SHARE_WRITE`). Both flags are off by default and use
+  the `FILE_META_V1` account selection, of the uploader for a team and of the
+  link owner for a reverse share. Team folders, team search, file access
+  rules, the new signature page, My shares and the reverse shares page open
+  the names in the browser. A team key rotation re-encrypts each name with the
+  last chunk of its file, or alone for an empty file. The additive migration
+  `20261002120000_extend_file_meta_v1` adds `Share.encryptedInfo` and widens
+  the database triggers to team and reverse-share uploads, never to
+  LEGACY_ACCOUNT_KEY shares.
+- **Team file requests:** authenticated members can request files from selected
+  members or the whole active team, with a writable nested destination folder,
+  subject, optional note and deadline. Requests track completed files per
+  recipient, can be closed, and recheck team membership and folder write access
+  during creation and upload completion. Request metadata is removed after
+  90 days, preserving submitted files.
+- **Encrypted request notifications and optional emails:** request and deposit
+  notifications use per-recipient X25519 envelopes and the existing opt-in
+  ML-KEM policy. Notification preferences remain enforced. Optional individual
+  service emails use the encrypted transactional outbox and generic authenticated
+  links. Expired pending emails are discarded. French and English catalogues
+  cover the interface and service messages.
+- **Team dashboard:** requests have a dedicated tab opened by notification
+  links. Mobile storage metrics are compact, tabs scroll on one row, and the
+  encryption explanation can be expanded while key regeneration remains
+  available. Desktop storage gauges center the percentage. Team settings and
+  the administrator configuration header use consistent spacing.
+
+### Upgrade Notes
+
+- Apply the additive SQLite migration `20261002120000_extend_file_meta_v1`
+  before starting the updated backend (container startup applies it). It adds
+  `Share.encryptedInfo` and replaces the `FILE_META_V1` triggers by wider ones
+  that still refuse encrypted names on LEGACY_ACCOUNT_KEY shares. No row is
+  rewritten.
+- Apply the additive SQLite migration
+  `20261001120000_add_team_file_requests` before starting the updated backend.
+  Container startup applies it automatically. It adds two tables and a nullable
+  share relation without rebuilding the Share table or replacing its existing
+  encryption triggers. Back up the database before upgrading. Rollback to the
+  previous application keeps these additive tables and column.
+- SQLite transactions acquire the writer lock before checking request limits
+  and accepting deposits. The integration fixture uses a fresh temporary
+  database with the full migration history, simulated SMTP/push, and checks
+  concurrency, permissions, encrypted notifications and retention.
+- Convert the PDF seal file before starting the updated backend if it was
+  created by an earlier `generate-signing-cert.sh` or protected with SHA-1 or
+  RC2: run `scripts/convert-signing-p12.sh` as described in the README, then
+  point `SIGNING_CERTIFICATE_PATH` at the new file. Until then, signing fails
+  closed and startup logs the reason.
 
 ### Bug Fixes
+
+- **Real Companion HTTP browser diagnostics:** exercise the actual Companion
+  process on an isolated ephemeral port and state directory, including granted
+  permissions, authenticated WebDAV and both loopback aliases. Correlate
+  Chromium denial audits with their request IDs and HTTP success responses,
+  distinguishing browser misreports from actual network failures. Keep a strict
+  zero-audit mode for checking browser fixes. The TLS mock remains separate.
+  Enable the Network domain as well as Audits, which is necessary to observe
+  the false denial reports in both HTTP and HTTPS. Successful connections are
+  verified independently. These browser audits are reported rather than hidden.
+
+- **Companion browser test fixtures:** both mock servers use HTTPS with a
+  temporary certificate pinned only to the isolated Chrome profile. Explicit
+  resource routes return trusted JavaScript or a fixed text-only 404. Request
+  URLs are never reflected in response bodies. A strict CSP and nosniff protect
+  the fixture page. Test passwords are generated at runtime. TLS routing
+  regression checks cover encoded script paths and unexpected query strings.
+  Existing public authentication and WebDAV fixtures also generate their keys,
+  tokens and passwords at runtime while retaining the original assertions.
+
+- **Companion local network access:** check the browser's loopback permission
+  before health, authorization, WebDAV and upload-job requests. Automatic checks
+  do not trigger permission prompts, and denied/revoked access stops local
+  traffic instead of retrying both localhost aliases. Explicit connection and
+  refresh actions can ask Chrome for permission. Local requests declare their
+  address space when supported, omit cookies and reject redirects. French and
+  English errors explain HTTPS and site-permission requirements. Regression
+  and isolated HTTPS Chrome tests cover denied, prompt, granted and revoked
+  permission states, including console and local-network audit issues.
+
+- **Browser smoke tests:** the file request fixture uses HTTPS with a temporary
+  loopback certificate pinned only in the isolated Chrome profile. Chrome
+  protocol messages use child-process pipes. Regression coverage checks command
+  framing, partial replies and fragmented UTF-8.
 
 - **durable e-mail delivery -- commit account state before SMTP:** account
   creation, verification links, administrator invitations and team invitations
@@ -14,6 +374,31 @@
   re-encryption keeps its resumable session instead of discarding valid work.
 
 ### Security
+
+- **PDF seal -- remove `node-forge` (GHSA-86w9-cpqp-85rv, CVE-2026-85393):**
+  no fixed `node-forge` release exists and a local patch cannot clear the
+  advisory, so `node-forge` and `@signpdf/signer-p12` are no longer installed.
+  PAdES CMS, RFC 3161 requests and timestamp checks use an internal DER codec,
+  while signatures, digests and ciphers stay in Node.js/OpenSSL. Seals and
+  timestamped CMS are identical byte for byte to the previous output and
+  verify with OpenSSL. The evidence verifier parses CMS and tokens without
+  `node-forge`. The `patch-package` step, its Docker copies and both Snyk
+  exceptions are removed. A regression test rejects TSA signatures with extra
+  DigestAlgorithm fields for RSA exponents 65537 and 3.
+- **PDF seal -- refuse SHA-1 protected P12 files (CWE-916):** the seal file is
+  read only with PBES2 (PBKDF2-HMAC-SHA-2 and AES-CBC), an HMAC-SHA-2
+  integrity MAC, an encrypted private key and at least 2048 iterations.
+  PBE-SHA1-3DES, RC2 and SHA-1 MACs, the format written by earlier versions of
+  `generate-signing-cert.sh`, are refused, and the backend reports such a file
+  at startup instead of failing at the first signature.
+  `scripts/convert-signing-p12.sh` re-exports an existing file without any
+  prompt, keeping its password, key and chain. New files from
+  `generate-signing-cert.sh` use AES-256-CBC with a SHA-256 MAC.
+- **key rotation worker -- stricter message checks:** the re-encryption upload
+  listener only accepts trusted events from the exact dedicated Worker, with
+  the empty origin the browser sets for it and a validated result payload.
+  Same-origin window messages are no longer accepted. The check lives in its
+  own module, covered by a frontend test.
 
 - **dynamic CSS nonces:** ALTCHA uses the document nonce when trusted lazy
   scripts have an empty nonce. Reproducible build-time verification keeps the
@@ -47,11 +432,14 @@
   reaching storage.
 - **test-secret hygiene -- generate cryptographic fixtures at runtime:**
   refresh replay, encrypted outbox and session tests no longer resemble
-  committed JWT, token or HMAC secrets to scanners; cryptographically random
+  committed JWT, token or HMAC secrets to scanners. Cryptographically random
   values, including 256-bit keys, are generated for every test process.
 
 ### Documentation
 
+- **E2E model -- README:** describes encrypted share titles, name encryption
+  for team folders and reverse shares with their flags, what stays readable by
+  the server, and the team key carried by access grants.
 - **signing PKI -- identify what must leave production:** the README now
   distinguishes the private root and intermediate CA keys from the two public
   root-certificate copies, and documents verified offline backup, removal from
@@ -62,6 +450,10 @@
 
 ### Maintenance
 
+- **translations -- plain punctuation:** the 29 interface catalogues use
+  straight apostrophes and quotes, ASCII dashes and ordinary spaces, and no
+  sentence is split with a semicolon any more. English and translated wording
+  is otherwise unchanged.
 - **database -- two additive reliability migrations:**
   `20260930140000_distributed_refresh_replay` and
   `20260930150000_email_outbox` add the replay and encrypted mail queues with
@@ -70,8 +462,6 @@
   refreshes and outbox claims, authenticated encryption, token hashing,
   account/session atomicity, enumeration resistance, log redaction, bounded
   pagination, CSP generation and the complete SQLite migration chain.
-
-## [1.25.1] (2026-10-01)
 
 ### Security
 
@@ -90,7 +480,7 @@
 - Keep the existing CSP nonce handling, cookie policy and encrypted-sharing
   compatibility unchanged.
 
-## [1.26.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.25.0...v1.26.0) (2026-09-29)
+## [1.25.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.25.0...v1.25.1) (2026-09-29)
 
 ### Features
 

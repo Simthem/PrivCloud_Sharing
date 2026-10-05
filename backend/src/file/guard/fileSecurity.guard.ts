@@ -61,6 +61,12 @@ export class FileSecurityGuard extends ShareSecurityGuard {
       throw new NotFoundException("File not found");
     }
 
+    if (share.uploadLocked === false) {
+      await this.softAuthenticate(context);
+      const user = request.user as User | undefined;
+      if (!user || share.creatorId !== user.id) throw new NotFoundException("File not found");
+    }
+
     // The controller can reuse the share already loaded for authorization.
     // This avoids another database round-trip before opening the file stream.
     (

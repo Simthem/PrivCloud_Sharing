@@ -7,6 +7,9 @@ export class ShareDTO {
   id: string;
 
   @Expose()
+  uploadPending?: boolean;
+
+  @Expose()
   name?: string;
 
   @Expose()
@@ -38,9 +41,14 @@ export class ShareDTO {
   cryptoScheme?: number | null;
 
   // NULL: file names in clear. FILE_META_V1 (1): every file carries its name
-  // encrypted with K_share, readable only with the link key.
+  // encrypted with the share's content key, readable only with that key.
   @Expose()
   fileMetadataScheme?: number | null;
+
+  // FILE_META_V1 only: title and description encrypted with the same key.
+  // `name` and `description` are then NULL.
+  @Expose()
+  encryptedInfo?: string | null;
 
   @Expose()
   previewEnabled?: boolean;

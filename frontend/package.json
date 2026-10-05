@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-frontend",
-  "version": "1.25.1",
+  "version": "1.25.2",
   "scripts": {
     "dev": "node scripts/copy-pdf-worker.mjs && next dev",
     "prebuild": "node scripts/copy-pdf-worker.mjs && sh scripts/strip-legacy-polyfills.sh",
@@ -8,7 +8,10 @@
     "postbuild": "node scripts/check-altcha-csp.mjs",
     "start": "next start",
     "lint": "eslint src/",
-    "format": "prettier --end-of-line=auto --write \"src/**/*.ts*\""
+    "format": "prettier --end-of-line=auto --write \"src/**/*.ts*\"",
+    "test:companion-browser": "node test/bridge-local-network-browser-smoke.cjs",
+    "test:companion-browser:real": "node test/bridge-local-network-browser-smoke.cjs --real-companion",
+    "test:security": "node --test test/dependency-security.test.mjs test/brace-patterns-security.test.mjs"
   },
   "dependencies": {
     "@emotion/cache": "^11.14.0",
@@ -68,7 +71,8 @@
     "eslint-plugin-react-hooks": "7.1.1",
     "postcss": "8.5.25",
     "prettier": "^3.3.3",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "braces": "file:./vendor/brace-patterns"
   },
   "overrides": {
     "browserslist": "4.28.8",
@@ -86,7 +90,8 @@
     "sharp": "$sharp",
     "nanoid": "5.1.16",
     "dompurify": "3.4.16",
-    "undici": "7.29.1"
+    "undici": "7.29.1",
+    "braces": "$braces"
   },
   "browserslist": [
     "last 2 Chrome versions",

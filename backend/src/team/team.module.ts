@@ -1,3 +1,4 @@
+import { TeamFileRequestModule } from "src/teamFileRequest/team-file-request.module";
 import { Module } from "@nestjs/common";
 import { TeamController } from "./team.controller";
 import { TeamService } from "./team.service";
@@ -8,7 +9,14 @@ import { FileModule } from "src/file/file.module";
 import { TeamNotificationModule } from "src/teamNotification/teamNotification.module";
 import { TeamAuditService } from "./team-audit.service";
 @Module({
-  imports: [PrismaModule, EmailModule, ConfigModule, FileModule, TeamNotificationModule],
+  imports: [
+    TeamFileRequestModule,
+    PrismaModule,
+    EmailModule,
+    ConfigModule,
+    FileModule,
+    TeamNotificationModule,
+  ],
   controllers: [TeamController],
   providers: [TeamService, TeamAuditService],
   exports: [TeamService, TeamAuditService],

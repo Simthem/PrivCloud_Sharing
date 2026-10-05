@@ -9,6 +9,57 @@ const CANDIDATES = [
 
 const flushPromises = () => new Promise((resolve) => setImmediate(resolve));
 
+test("a ready file borrows idle slots while sibling workers wait for authentication", async () => {
+  const coordinator = new UploadBatchCoordinator();
+  const windows = [];
+  const healthy = coordinator.registerFlow((window) => windows.push(window));
+  const waiting = coordinator.registerFlow();
+  coordinator.registerFlow();
+  coordinator.registerFlow();
+  coordinator.configure({ originCount: 1, connectionsPerOrigin: 6, maxConcurrency: 6 });
+  const grants = [];
+  const requests = Array.from({ length: 6 }, () => coordinator.acquireDirect(healthy, [CANDIDATES[0]])
+    .then((grant) => { grants.push(grant); }, () => {}));
+  try {
+    await flushPromises();
+    assert.equal(coordinator.activeDirectCount, 6, "idle workers reserved usable sockets");
+    assert.equal(windows.at(-1), 6);
+    const siblingGrants = [];
+    for (let i = 0; i < 3; i++) {
+      requests.push(coordinator.acquireDirect(waiting, [CANDIDATES[0]]).then((grant) => { siblingGrants.push(grant); }, () => {}));
+    }
+    for (const grant of grants.slice(0, 3)) coordinator.releaseDirect(grant.leaseId);
+    await flushPromises();
+    assert.equal(siblingGrants.length, 3, "a resumed sibling was starved by the borrowing file");
+    assert.equal(coordinator.activeDirectCount, 6);
+    assert.equal(windows.at(-1), 3);
+  } finally {
+    coordinator.close();
+    await Promise.all(requests);
+  }
+});
+
+test("a ready file also borrows spare slots while a sibling has its last part in flight", async () => {
+  const coordinator = new UploadBatchCoordinator();
+  const windows = [];
+  const tail = coordinator.registerFlow();
+  const healthy = coordinator.registerFlow((window) => windows.push(window));
+  coordinator.configure({ originCount: 1, connectionsPerOrigin: 6, maxConcurrency: 6 });
+  await coordinator.acquireDirect(tail, [CANDIDATES[0]]);
+  const grants = [];
+  const requests = Array.from({ length: 5 }, () => coordinator.acquireDirect(healthy, [CANDIDATES[0]])
+    .then((grant) => { grants.push(grant); }, () => {}));
+  try {
+    await flushPromises();
+    assert.equal(grants.length, 5, "the last sibling part reserved empty sockets");
+    assert.equal(coordinator.activeDirectCount, 6);
+    assert.equal(windows.at(-1), 5);
+  } finally {
+    coordinator.close();
+    await Promise.all(requests);
+  }
+});
+
 test("bounds and fairly drains 100 upload flows across two origins", async () => {
   const coordinator = new UploadBatchCoordinator();
   coordinator.configure({

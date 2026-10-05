@@ -652,7 +652,14 @@ export class SigningService {
       throw new NotFoundException("Invalid or expired signing link");
     }
 
-    this.assertSourceAvailable(recipient.document);
+    // Once the request is completed, a signer's link only serves the result.
+    // The signed PDF and its evidence outlive the source file and the signing
+    // deadline, so neither may turn that link into a dead end: the completion
+    // notification and the E2E key recovery both go through it.
+    const resultOnly =
+      recipient.document.status === "COMPLETED" &&
+      recipient.status === "SIGNED";
+    if (!resultOnly) this.assertSourceAvailable(recipient.document);
 
     if (recipient.document.status === "CANCELLED") {
       throw new BadRequestException(
@@ -674,6 +681,7 @@ export class SigningService {
     );
 
     if (
+      !resultOnly &&
       recipient.document.expiresAt &&
       new Date() > recipient.document.expiresAt
     ) {

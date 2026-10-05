@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsArray,
   IsJSON,
+  Length,
   Matches,
   Max,
   MaxLength,
@@ -12,6 +13,10 @@ import {
   ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
+
+export const GRANT_ALGORITHM_X25519 = "x25519-aes256gcm";
+// X25519 and ML-KEM-768 shared secrets combined through HKDF-SHA-256.
+export const GRANT_ALGORITHM_HYBRID = "x25519-mlkem768-aes256gcm";
 
 export class RegisterIdentityKeyDTO {
   @IsIn(["X25519", "Ed25519"])
@@ -76,8 +81,15 @@ export class CreateAccessGrantDTO {
   recipientUserId: string;
 
   @IsOptional()
-  @IsIn(["x25519-aes256gcm", "x25519-ml-kem-768-aes256gcm"])
+  @IsIn([GRANT_ALGORITHM_X25519, GRANT_ALGORITHM_HYBRID])
   algorithm?: string;
+
+  // Hybrid grants only: the ML-KEM-768 ciphertext (1088 bytes, base64url).
+  @IsOptional()
+  @IsString()
+  @Length(1451, 1451)
+  @Matches(/^[A-Za-z0-9_-]+$/, { message: "kemCiphertext must be base64url" })
+  kemCiphertext?: string;
 
   @IsOptional()
   @IsString()

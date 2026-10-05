@@ -1,3 +1,4 @@
+import useTranslate from "../../hooks/useTranslate.hook";
 import {
   ActionIcon,
   Alert,
@@ -35,6 +36,8 @@ import {
 } from "../../services/privcloudBridge.service";
 
 const IntegrationsPage = () => {
+  const t = useTranslate();
+  const [permissionError, setPermissionError] = useState<string | null>(null);
   const intl = useIntl();
   const isFr = intl.locale?.startsWith("fr") ?? true;
   const [bridgeHealth, setBridgeHealth] = useState<BridgeHealth | null>(null);
@@ -52,10 +55,18 @@ const IntegrationsPage = () => {
   const installPath = "/install/companion/install/install-linux-dev.sh";
   const installCommand = `curl -fsSL '${siteOrigin}${installPath}' | PRIVCLOUD_BASE_URL='${siteOrigin}' sh`;
 
-  const refresh = async () => {
+  const refresh = async (requestLocalAccess = false) => {
     setChecking(true);
+    setPermissionError(null);
     try {
-      setBridgeHealth(await getBridgeHealth());
+      setBridgeHealth(await getBridgeHealth({ requestLocalAccess }));
+    } catch (error) {
+      setBridgeHealth(null);
+      setPermissionError(
+        error instanceof Error && error.message.startsWith("bridge.")
+          ? error.message
+          : "bridge.error.unavailable",
+      );
     } finally {
       setChecking(false);
     }
@@ -116,7 +127,7 @@ const IntegrationsPage = () => {
             <ActionIcon
               variant="light"
               size="lg"
-              onClick={refresh}
+              onClick={() => void refresh(true)}
               loading={checking}
               aria-label={isFr ? "Actualiser" : "Refresh"}
             >
@@ -126,6 +137,11 @@ const IntegrationsPage = () => {
         </Group>
 
         <Card withBorder radius="md" p="md" mb="xl">
+          {permissionError && (
+            <Alert color="yellow" mb="md">
+              {t(permissionError)}
+            </Alert>
+          )}
           <Group justify="space-between" align="center">
             <Group gap="sm">
               <TbPlugConnected size={22} />
@@ -178,6 +194,12 @@ const IntegrationsPage = () => {
           {isFr
             ? "Le script est servi par votre propre instance et configure explicitement son origine. Il remplace une éventuelle ancienne installation puis redémarre le service utilisateur. Node.js 20 ou supérieur est requis."
             : "The script is served by your own instance and explicitly configures its origin. It replaces any older installation and restarts the user service. Node.js 20 or newer is required."}
+        </Alert>
+
+        <Alert color="blue" variant="light" mb="xl">
+          {isFr
+            ? "Sur ordinateur, l'import WebDAV utilise l'extension PrivCloud Companion et son connecteur natif. Mettez les deux à jour, activez l'extension sur cette instance et enregistrez son ID exact dans le connecteur natif. Le réseau local du navigateur n'est plus sollicité."
+            : "Desktop WebDAV import uses the PrivCloud Companion extension and its native connector. Update both, enable the extension on this instance and register its exact ID with the native connector. The browser no longer makes local-network requests."}
         </Alert>
 
         <Title order={2} size="h3" mb="md" c="bright">
@@ -261,8 +283,8 @@ const IntegrationsPage = () => {
                 </Text>
                 <Text size="sm" c="dimmed">
                   {isFr
-                    ? "Sans Companion pour un endpoint HTTPS public ; avec Companion pour une adresse privée, locale ou VPN."
-                    : "No Companion needed for a public HTTPS endpoint; Companion is used for private, local or VPN addresses."}
+                    ? "Sans Companion pour un endpoint HTTPS public, avec Companion pour une adresse privée, locale ou VPN."
+                    : "No Companion needed for a public HTTPS endpoint, Companion is used for private, local or VPN addresses."}
                 </Text>
               </Stack>
             </Group>

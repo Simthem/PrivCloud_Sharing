@@ -29,6 +29,7 @@ import { ShareOwnerGuard } from "src/share/guard/shareOwner.guard";
 import { DownloadNotificationService } from "src/downloadNotification/downloadNotification.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { SHARE_DEK_V1 } from "src/share/share-crypto-scheme";
+import { FILE_META_V1, isValidEncryptedMetadata } from "./file-metadata-scheme";
 import { TeamNotificationService } from "src/teamNotification/teamNotification.service";
 import { FileService } from "./file.service";
 import { FileSecurityGuard } from "./guard/fileSecurity.guard";
@@ -214,7 +215,20 @@ export class FileController {
     @Req() req: Request,
   ) {
     const maxChunkBytes = getUploadChunkLimit(!!req.user);
-    const request = this.parseMultipartInitialization(body, maxChunkBytes);
+    return this.authorizeMultipartParts(body, shareId, maxChunkBytes);
+  }
+
+  private async authorizeMultipartParts(
+    body: MultipartPartsAuthorizationBody | undefined,
+    shareId: string,
+    maxChunkBytes: number,
+    allowSinglePart = false,
+  ) {
+    const request = this.parseMultipartInitialization(
+      body,
+      maxChunkBytes,
+      allowSinglePart,
+    );
     if (
       !Array.isArray(body?.parts) ||
       body.parts.length < 1 ||
@@ -358,6 +372,64 @@ export class FileController {
     );
   }
 
+  // Companion only receives a share-scoped token, never the owner's web session.
+  @Post("bridge/multipart/init")
+  @Throttle({ default: { limit: 10_000, ttl: hours(1) } })
+  async initializeMultipartViaBridge(
+    @Body() body: MultipartInitializationBody | undefined,
+    @Param("shareId", SafeIdPipe) shareId: string,
+    @Headers("authorization") authorization: string | undefined,
+  ) {
+    await this.bridgeUploadTokenService.validateToken(
+      shareId,
+      this.getBearerToken(authorization),
+    );
+    const request = this.parseMultipartInitialization(
+      body,
+      MAX_UPLOAD_CHUNK_BYTES,
+      true,
+    );
+    return this.fileService.initializeMultipartUpload(request, shareId);
+  }
+
+  @Post("bridge/multipart/part-urls")
+  @Throttle({ default: { limit: 10_000, ttl: hours(1) } })
+  async authorizeMultipartPartsViaBridge(
+    @Body() body: MultipartPartsAuthorizationBody | undefined,
+    @Param("shareId", SafeIdPipe) shareId: string,
+    @Headers("authorization") authorization: string | undefined,
+  ) {
+    await this.bridgeUploadTokenService.validateToken(
+      shareId,
+      this.getBearerToken(authorization),
+    );
+    return this.authorizeMultipartParts(
+      body,
+      shareId,
+      MAX_UPLOAD_CHUNK_BYTES,
+      true,
+    );
+  }
+
+  @Post("bridge/multipart/complete")
+  @Throttle({ default: { limit: 10_000, ttl: hours(1) } })
+  async completeMultipartViaBridge(
+    @Body() body: MultipartInitializationBody | undefined,
+    @Param("shareId", SafeIdPipe) shareId: string,
+    @Headers("authorization") authorization: string | undefined,
+  ) {
+    await this.bridgeUploadTokenService.validateToken(
+      shareId,
+      this.getBearerToken(authorization),
+    );
+    const request = this.parseMultipartInitialization(
+      body,
+      MAX_UPLOAD_CHUNK_BYTES,
+      true,
+    );
+    return this.fileService.completeMultipartUpload(request, shareId);
+  }
+
   @Post("bridge")
   @Throttle({ default: { limit: 10_000, ttl: hours(1) } })
   async createViaBridge(
@@ -425,6 +497,7 @@ export class FileController {
   private parseMultipartInitialization(
     body: MultipartInitializationBody | undefined,
     maxChunkBytes: number,
+    allowSinglePart = false,
   ): ParsedMultipartInitialization {
     if (!body || typeof body !== "object") {
       throw new BadRequestException("Missing multipart initialization body");
@@ -457,6 +530,11 @@ export class FileController {
     ) {
       throw new BadRequestException("Invalid multipart file metadata");
     }
+    const singlePart =
+      allowSinglePart &&
+      totalChunks === 1 &&
+      (fileSize as number) <= (chunkSize as number) &&
+      initialChunkSize === chunkSize;
     if (
       !Number.isSafeInteger(fileSize) ||
       (fileSize as number) <= 0 ||
@@ -466,9 +544,9 @@ export class FileController {
       !Number.isSafeInteger(initialChunkSize) ||
       (initialChunkSize as number) < S3_MIN_MULTIPART_PART_BYTES ||
       (initialChunkSize as number) > (chunkSize as number) ||
-      (fileSize as number) <= (initialChunkSize as number) ||
+      (!singlePart && (fileSize as number) <= (initialChunkSize as number)) ||
       !Number.isSafeInteger(totalChunks) ||
-      (totalChunks as number) < 2 ||
+      (totalChunks as number) < (singlePart ? 1 : 2) ||
       (totalChunks as number) > 10_000
     ) {
       throw new BadRequestException("Invalid multipart layout");
@@ -964,13 +1042,9 @@ export class FileController {
         // Notify team members about the deletion
         if (share.creatorId) {
           this.teamNotificationService
-            .notifyTeamMembers(
-              folder.teamId,
-              share.creatorId,
-              "FILE_DELETED",
-              `Un fichier "${file.name}" a été supprimé`,
-              { folderId: share.teamFolderId! },
-            )
+            .notifyTeamMembers(folder.teamId, share.creatorId, "FILE_DELETED", {
+              folderId: share.teamFolderId!,
+            })
             .catch(() =>
               this.logger.error("Failed to notify team on file delete"),
             );
@@ -997,6 +1071,7 @@ export class FileController {
     @Param("shareId", SafeIdPipe) shareId: string,
     @Param("fileId", SafeIdPipe) fileId: string,
     @Req() req: Request,
+    @Headers("x-file-metadata") headerEncryptedMetadata?: string,
   ) {
     const parseUnsignedInteger = (value: unknown): number =>
       typeof value === "string" && /^(?:0|[1-9][0-9]*)$/u.test(value)
@@ -1068,6 +1143,32 @@ export class FileController {
       );
     }
 
+    // A Team key rotation also rewrites an encrypted file name: the last
+    // chunk carries it under the new key, so the name and the content switch
+    // keys together. Readable names never travel here.
+    const isLastChunk = chunkIndex === totalChunks - 1;
+    const fileScheme = await this.prisma.file.findFirst({
+      where: { id: fileId, shareId },
+      select: { metadataScheme: true },
+    });
+    const rewritesName = fileScheme?.metadataScheme === FILE_META_V1;
+    if (headerEncryptedMetadata && !rewritesName) {
+      throw new BadRequestException(
+        "Encrypted file names are not enabled for this file",
+        "file_metadata_not_allowed",
+      );
+    }
+    if (
+      rewritesName &&
+      isLastChunk &&
+      !isValidEncryptedMetadata(headerEncryptedMetadata)
+    ) {
+      throw new BadRequestException(
+        "The re-encrypted file name is required with the last chunk",
+        "file_metadata_required",
+      );
+    }
+
     await this.fileService.replaceFileContent(
       body,
       { index: chunkIndex, total: totalChunks },
@@ -1077,6 +1178,13 @@ export class FileController {
       reencryptSessionId,
     );
 
+    if (rewritesName && isLastChunk) {
+      await this.prisma.file.update({
+        where: { id: fileId },
+        data: { encryptedMetadata: headerEncryptedMetadata },
+      });
+    }
+
     if (query.rotationId && chunkIndex === totalChunks - 1) {
       await this.recordTeamRotationFile(
         query.rotationId,
@@ -1085,6 +1193,52 @@ export class FileController {
         (req as unknown as { user?: User }).user?.id,
       );
     }
+  }
+
+  /**
+   * Team key rotation of an empty FILE_META_V1 file: there is no content to
+   * re-encrypt, only its name moves to the new key. Files with content take
+   * their new name with their last re-encrypted chunk instead.
+   */
+  @Put(":fileId/reencrypt-name")
+  @Throttle({ default: { limit: 10_000, ttl: hours(1) } })
+  @UseGuards(ShareOwnerGuard)
+  async reencryptName(
+    @Query() query: { rotationId?: string },
+    @Param("shareId", SafeIdPipe) shareId: string,
+    @Param("fileId", SafeIdPipe) fileId: string,
+    @Req() req: Request,
+    @Headers("x-file-metadata") headerEncryptedMetadata?: string,
+  ) {
+    if (typeof query.rotationId !== "string") {
+      throw new BadRequestException("Invalid Team key rotation context");
+    }
+    const file = await this.prisma.file.findFirst({
+      where: { id: fileId, shareId },
+      select: { metadataScheme: true, size: true },
+    });
+    if (file?.metadataScheme !== FILE_META_V1 || file.size !== "0") {
+      throw new BadRequestException(
+        "Only an empty file with an encrypted name is renamed alone",
+        "file_metadata_not_allowed",
+      );
+    }
+    if (!isValidEncryptedMetadata(headerEncryptedMetadata)) {
+      throw new BadRequestException(
+        "The re-encrypted file name is required",
+        "file_metadata_required",
+      );
+    }
+    await this.recordTeamRotationFile(
+      query.rotationId,
+      shareId,
+      fileId,
+      (req as unknown as { user?: User }).user?.id,
+    );
+    await this.prisma.file.update({
+      where: { id: fileId },
+      data: { encryptedMetadata: headerEncryptedMetadata },
+    });
   }
 
   private async recordTeamRotationFile(

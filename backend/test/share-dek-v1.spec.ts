@@ -162,6 +162,7 @@ testCase("clients that send no scheme keep the historical NULL", () => {
     wrappedShareKeyAlgorithm: null,
     wrappedShareKeyVersion: null,
     fileMetadataScheme: null,
+    encryptedInfo: null,
   });
 });
 
@@ -246,6 +247,7 @@ testCase("SHARE_DEK_V1 creation honours the write flag", () => {
           wrappedShareKeyAlgorithm: SHARE_KEY_WRAP_ALGORITHM,
           wrappedShareKeyVersion: 1,
           fileMetadataScheme: null,
+          encryptedInfo: null,
         },
       );
       // Reverse-share uploads, team shares, anonymous and plaintext shares

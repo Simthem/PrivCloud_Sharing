@@ -42,6 +42,8 @@ export function databaseWithMigrations(...names: string[]): SqliteDatabase {
   db.exec(`
     CREATE TABLE "Share" (
       "id" TEXT NOT NULL PRIMARY KEY,
+      "name" TEXT,
+      "description" TEXT,
       "isE2EEncrypted" BOOLEAN NOT NULL DEFAULT false
     );
     CREATE TABLE "File" (

@@ -1,3 +1,7 @@
+import { synchronizeCompletedUpload } from "../../utils/uploadStateCache.util";
+import { prepareSafeLineRetry } from "../../utils/safelineChallenge.util";
+import { startUploadSessionMaintenance } from "../../utils/uploadSessionMaintenance.util";
+import { hasSettledUpload } from "../../utils/uploadCompletion.util";
 import {
   Button,
   Group,
@@ -10,7 +14,8 @@ import {
 import { useModals } from "@mantine/modals";
 import { cleanNotifications, showNotification } from "@mantine/notifications";
 import pLimit from "p-limit";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { runUploadQueue } from "../../utils/uploadQueue.util";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { FormattedMessage } from "react-intl";
 import { TbInfoCircle, TbFolder, TbKey } from "react-icons/tb";
 import { TbCloudDownload, TbCloudUpload } from "react-icons/tb";
@@ -24,6 +29,8 @@ import useConfig from "../../hooks/config.hook";
 import useConfirmLeave from "../../hooks/confirm-leave.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import useUser from "../../hooks/user.hook";
+import useTeamKey from "../../hooks/useTeamKey.hook";
+import useFileRequestInfos from "../../hooks/useFileRequestInfos.hook";
 import useWakeLock from "../../hooks/useWakeLock.hook";
 import configService from "../../services/config.service";
 import shareService from "../../services/share.service";
@@ -53,11 +60,18 @@ import {
   createShareDek,
 } from "../../utils/shareKey.util";
 import { reportShareCryptoEvent } from "../../utils/shareCryptoEvents.util";
-import { FILE_META_V1, isFileMetaShare } from "../../utils/fileMetadata.util";
+import {
+  FILE_META_V1,
+  encryptShareInfo,
+  isFileMetaShare,
+} from "../../utils/fileMetadata.util";
 import userService from "../../services/user.service";
+import teamFileRequestService from "../../services/teamFileRequest.service";
+import { canUploadToFileRequest } from "../../utils/teamFileRequest.util";
 import teamService from "../../services/team.service";
 import {
   setUploadActive,
+  isUploadActive,
   completeSafeLineChallenge,
 } from "../../services/api.service";
 import { useRouter } from "next/router";
@@ -119,6 +133,8 @@ type UploadProps = {
   maxShareSize?: number;
   isReverseShare: boolean;
   isE2EEncrypted?: boolean;
+  /** Reverse share only: uploads encrypt their names with K_rs. */
+  fileMetaV1Write?: boolean;
   simplified: boolean;
   name?: string;
 };
@@ -127,6 +143,7 @@ const Upload = ({
   maxShareSize,
   isReverseShare = false,
   isE2EEncrypted = false,
+  fileMetaV1Write = false,
   simplified,
   name,
 }: UploadProps) => {
@@ -145,6 +162,35 @@ const Upload = ({
     typeof router.query.teamFolderId === "string"
       ? router.query.teamFolderId
       : undefined;
+  const qRequestId =
+    typeof router.query.teamFileRequestId === "string"
+      ? router.query.teamFileRequestId
+      : undefined;
+  const qRequestTeamId =
+    typeof router.query.teamId === "string" ? router.query.teamId : undefined;
+  const fileRequest = useQuery({
+    queryKey: ["team.file-request", qRequestTeamId, qRequestId],
+    queryFn: () => teamFileRequestService.get(qRequestTeamId!, qRequestId!),
+    enabled: !!user && !!qRequestId && !!qRequestTeamId,
+    retry: false,
+    staleTime: 0,
+  });
+  // FILE_META_V1: the subject and note may be encrypted with K_team.
+  const requestTeamKey = useTeamKey(
+    fileRequest.data?.teamId,
+    !!fileRequest.data?.encryptedInfo,
+  );
+  const requestRows = useMemo(
+    () => (fileRequest.data ? [fileRequest.data] : undefined),
+    [fileRequest.data],
+  );
+  const requestInfo = useFileRequestInfos(requestRows, requestTeamKey)[
+    fileRequest.data?.id ?? ""
+  ];
+  const requestUploadAllowed =
+    !qRequestId ||
+    (!fileRequest.isError &&
+      canUploadToFileRequest(fileRequest.data, qRequestTeamId, qTeamFolderId));
   const { data: writableFolders } = useQuery({
     queryKey: ["myWritableFolders"],
     queryFn: teamService.getMyWritableFolders,
@@ -156,6 +202,10 @@ const Upload = ({
     : undefined;
   const [files, setFiles] = useState<FileUpload[]>([]);
   const [isUploading, setisUploading] = useState(false);
+  const [uploadWorkersFinished, setUploadWorkersFinished] = useState(false);
+  const [completionRetry, setCompletionRetry] = useState(0);
+  const hasPendingFinalization =
+    uploadWorkersFinished && !!createdShare?.id && files.length > 0;
   const [webDavOpened, setWebDavOpened] = useState(false);
   const [hasLocalE2EKey, setHasLocalE2EKey] = useState(false);
   const [localE2EKeyResolved, setLocalE2EKeyResolved] = useState(false);
@@ -358,7 +408,7 @@ const Upload = ({
 
   useConfirmLeave({
     message: t("upload.notify.confirm-leave"),
-    enabled: isUploading,
+    enabled: isUploading || hasPendingFinalization,
   });
 
   // Detect tab discard: Chromium browsers (Chrome/Opera/Edge) can kill
@@ -385,6 +435,8 @@ const Upload = ({
   // when the user forces navigation past the confirm-leave dialog).
   useEffect(() => {
     return () => {
+      keepaliveRef.current?.();
+      keepaliveRef.current = null;
       setUploadActive(false);
       webLockReleaseRef.current?.();
       webLockReleaseRef.current = null;
@@ -414,7 +466,7 @@ const Upload = ({
   });
 
   const chunkSize = useRef(parseInt(config.get("share.chunkSize")));
-  const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const keepaliveRef = useRef<(() => void) | null>(null);
 
   // Reverse-share pages pass their configured limit; normal uploads use the
   // self-hosted instance limit.
@@ -430,6 +482,16 @@ const Upload = ({
   const webLockReleaseRef = useRef<(() => void) | null>(null);
 
   const uploadFiles = async (share: CreateShare, files: FileUpload[]) => {
+    if (
+      qRequestId &&
+      (!requestUploadAllowed ||
+        share.teamFileRequestId !== qRequestId ||
+        share.teamFolderId !== fileRequest.data?.folderId)
+    ) {
+      toast.error(t("team.fileRequest.error.destinationChanged"));
+      return;
+    }
+
     const uploadChunkProfile = {
       isAuthenticated: !!user,
     };
@@ -460,10 +522,25 @@ const Upload = ({
     // K_master of a personal share, kept to fall back to the legacy scheme if
     // the server stops accepting SHARE_DEK_V1 while this page is open.
     let personalMasterKeyEncoded: string | null = null;
+    // Readable title and description replaced by `encryptedInfo`, restored if
+    // the server stops accepting encrypted names while this page is open.
+    let readableShareInfo: { name?: string; description?: string } | null =
+      null;
+    const restoreReadableShareInfo = () => {
+      delete share.encryptedInfo;
+      if (readableShareInfo) {
+        share.name = readableShareInfo.name;
+        share.description = readableShareInfo.description;
+        readableShareInfo = null;
+      }
+    };
     delete share.cryptoScheme;
     delete share.wrappedShareKey;
     delete share.wrappedShareKeyAlgorithm;
     delete share.fileMetadataScheme;
+    delete share.encryptedInfo;
+    // The updated Companion encrypts labels too. Its capability is checked
+    // before it receives an encrypted-label job, so these flags cover WebDAV.
 
     try {
       if (isReverseShare) {
@@ -475,6 +552,10 @@ const Upload = ({
           cryptoKey = await importKeyFromBase64(rsKeyEncoded);
           e2eKeyEncoded = rsKeyEncoded;
           share.isE2EEncrypted = true;
+          // FILE_META_V1 with K_rs, as decided for the reverse share's owner.
+          if (fileMetaV1Write) {
+            share.fileMetadataScheme = FILE_META_V1;
+          }
         } else {
           share.isE2EEncrypted = false;
         }
@@ -504,6 +585,11 @@ const Upload = ({
         cryptoKey = await unwrapReverseShareKey(wrappedTeamKey, masterKey);
         e2eKeyEncoded = await exportKeyToBase64(cryptoKey);
         share.isE2EEncrypted = true;
+        // FILE_META_V1 with K_team: every member opens the names with the
+        // key they already use for the content.
+        if (user.fileMetaV1TeamWrite) {
+          share.fileMetadataScheme = FILE_META_V1;
+        }
       } else if (user) {
         const keyAction = resolvePersonalE2EKeyAction(
           !!storedKey,
@@ -545,12 +631,7 @@ const Upload = ({
               share.wrappedShareKey = dek.wrappedShareKey;
               share.wrappedShareKeyAlgorithm = dek.wrappedShareKeyAlgorithm;
               // FILE_META_V1: file names are encrypted with the same key.
-              // WebDAV Bridge imports are uploaded by the local Bridge, which
-              // only sends plain names, so such batches keep them in clear.
-              if (
-                user.fileMetaV1Write &&
-                !files.some(isBridgeWebDavUploadFile)
-              ) {
+              if (user.fileMetaV1Write) {
                 share.fileMetadataScheme = FILE_META_V1;
               }
             } catch (dekError) {
@@ -567,6 +648,23 @@ const Upload = ({
       }
       if (share.isE2EEncrypted && !cryptoKey) {
         throw new Error("E2E upload key resolution returned no key");
+      }
+      // A share with encrypted file names hides its title and description
+      // with the same key: the server only stores the ciphertext.
+      if (share.fileMetadataScheme === FILE_META_V1 && cryptoKey) {
+        const encryptedInfo = await encryptShareInfo(cryptoKey, share.id, {
+          name: share.name,
+          description: share.description,
+        });
+        if (encryptedInfo) {
+          readableShareInfo = {
+            name: share.name,
+            description: share.description,
+          };
+          share.encryptedInfo = encryptedInfo;
+          delete share.name;
+          delete share.description;
+        }
       }
     } catch (error) {
       console.warn("[E2E] Upload key resolution failed:", error);
@@ -588,6 +686,8 @@ const Upload = ({
       return;
     }
 
+    setUploadWorkersFinished(false);
+    completingShareRef.current = null;
     setisUploading(true);
     setUploadActive(true);
     shouldShareE2EKeyViaEmail = !!share.shareE2EKeyViaEmail;
@@ -631,6 +731,7 @@ const Upload = ({
           // Encrypted names were switched off since this page loaded: the
           // share keeps its own key and stores the names in clear.
           delete share.fileMetadataScheme;
+          restoreReadableShareInfo();
           createdShare = await shareService.create(share, isReverseShare);
         }
       } catch (createError: any) {
@@ -648,6 +749,7 @@ const Upload = ({
         delete share.wrappedShareKey;
         delete share.wrappedShareKeyAlgorithm;
         delete share.fileMetadataScheme;
+        restoreReadableShareInfo();
         cryptoKey = await importKeyFromBase64(personalMasterKeyEncoded);
         e2eKeyEncoded = personalMasterKeyEncoded;
         createdShare = await shareService.create(share, isReverseShare);
@@ -689,9 +791,7 @@ const Upload = ({
         );
       } catch (e) {
         toast.axiosError(e);
-        await shareService
-          .remove(createdShare.id)
-          .catch(() => undefined);
+        await shareService.remove(createdShare.id).catch(() => undefined);
         setisUploading(false);
         setUploadActive(false);
         webLockReleaseRef.current?.();
@@ -724,63 +824,14 @@ const Upload = ({
     );
     const uploadLimit = pLimit(uploadSchedulingProfile.fileConcurrency);
 
-    // Proactive SafeLine keepalive: periodically GET the main page
-    // to keep the WAF session cookie alive during long uploads.
-    // If the cookie is still valid, SafeLine passes the request
-    // through and may extend the session.  60s interval keeps the
-    // session fresh even for multi-hour uploads.
-    //
-    // STRATEGY: Ping every 30s (SafeLine default session is typically
-    // 30-60 min, but we don't control it).  On 468, immediately solve
-    // via iframe (no popup needed = no user gesture needed = 100% silent).
-    // This makes the challenge invisible to the user in most cases.
-    let safelineKeepaliveResolving = false;
-    let uploadHeartbeatInFlight = false;
-    let lastUploadHeartbeatAt = 0;
-    keepaliveRef.current = setInterval(async () => {
-      const now = Date.now();
-      if (
-        createdShare?.id &&
-        !uploadHeartbeatInFlight &&
-        now - lastUploadHeartbeatAt >= 2 * 60_000
-      ) {
-        uploadHeartbeatInFlight = true;
-        shareService
-          .keepUploadAlive(createdShare.id)
-          .then(() => {
-            lastUploadHeartbeatAt = Date.now();
-          })
-          .catch(() => {})
-          .finally(() => {
-            uploadHeartbeatInFlight = false;
-          });
-      }
-
-      if (safelineKeepaliveResolving) return; // already resolving
-      try {
-        const r = await fetch("/?_sl=" + Date.now(), {
-          credentials: "include",
-          cache: "no-store",
-          // 10s timeout: don't let keepalive hang if network is saturated
-          signal: AbortSignal.timeout(10_000),
-        });
-        if (r.status === 468) {
-          // Session expired - resolve silently via iframe
-          safelineKeepaliveResolving = true;
-          try {
-            await completeSafeLineChallenge();
-          } catch {
-            // iframe + popup both failed - worker retry will handle it
-          } finally {
-            safelineKeepaliveResolving = false;
-          }
-        } else {
-          r.body?.cancel();
-        }
-      } catch {
-        // Network/timeout error - ignore, chunk requests will handle it
-      }
-    }, 30_000); // every 30s - aggressive enough to catch any session TTL
+    // Maintain WAF verification and the upload heartbeat until success or
+    // explicit cancellation, including while finalization awaits a retry.
+    keepaliveRef.current?.();
+    keepaliveRef.current = startUploadSessionMaintenance({
+      isActive: isUploadActive,
+      heartbeat: () => shareService.keepUploadAlive(createdShare.id),
+      resolveChallenge: completeSafeLineChallenge,
+    });
 
     // --- Upload via dedicated Web Worker ---
     // The entire slice + encrypt + fetch loop runs inside a Worker
@@ -789,13 +840,8 @@ const Upload = ({
     // the Worker and never accumulate on the main renderer process.
     // This is the primary fix for OOM/SIGTRAP during >10 GB uploads.
 
-    // --- File upload with skip-and-retry ---
-    // Strategy: process all files through pLimit.  If a file fails with
-    // a retryable error, it releases its pLimit slot immediately (so
-    // other queued files can start) and is pushed to a retry queue.
-    // After all first-attempt files complete, retry the failed ones
-    // sequentially with increasing delays.  This prevents cascade
-    // failures: if SafeLine blocks one file, the others don't wait.
+    // Retry interrupted files alongside healthy transfers. A waiting retry
+    // releases its file slot, then rejoins the same bounded upload pool.
     const MAX_FILE_RETRIES = 3;
     const FILE_RETRY_DELAYS = [30_000, 60_000, 120_000]; // 30s, 60s, 2min
 
@@ -814,8 +860,6 @@ const Upload = ({
     };
 
     const fileAttempts = new Map<number, number>();
-    const retryQueue: Array<{ file: (typeof files)[0]; fileIndex: number }> =
-      [];
     const bridgeBatches = new Map<
       string,
       Array<{ file: (typeof files)[0]; fileIndex: number }>
@@ -851,7 +895,7 @@ const Upload = ({
         );
       };
 
-      setFileProgress(0);
+      if (attempt === 0) setFileProgress(0);
 
       try {
         if (isBridgeWebDavUploadFile(file)) {
@@ -882,6 +926,7 @@ const Upload = ({
             chunkSize: effectiveChunkSize,
             isE2EEncrypted: share.isE2EEncrypted ?? false,
             encryptionKey: share.isE2EEncrypted ? e2eKeyEncoded : undefined,
+            fileMetadataScheme: createdShare.fileMetadataScheme,
             webdav: {
               endpoint: source.endpoint,
               username: source.username,
@@ -948,7 +993,7 @@ const Upload = ({
             cryptoKey,
             (_chunkIndex, _totalChunks, _fileId, uploadedBytes) => {
               setFileProgress(
-                Math.min(100, (uploadedBytes / Math.max(file.size, 1)) * 100),
+                Math.min(99, (uploadedBytes / Math.max(file.size, 1)) * 100),
               );
             },
             abortCtrl.signal,
@@ -1001,13 +1046,11 @@ const Upload = ({
           setFileProgress(-1);
           return "failed";
         }
-        // Mark as retryable - slot will be freed
-        setFileProgress(0);
+        // Keep the confirmed progress visible while this file waits to resume.
         return "retryable";
       }
     };
 
-    // Phase 1: initial pass - all files through pLimit
     const scheduledFiles = files
       .map((file, fileIndex) => ({ file, fileIndex }))
       .filter(({ file, fileIndex }) => {
@@ -1033,78 +1076,38 @@ const Upload = ({
         return left.fileIndex - right.fileIndex;
       });
     }
-    const fileUploadPromises = scheduledFiles.map(({ file, fileIndex }) =>
-      uploadLimit(async () => {
-        if (abortCtrl.signal.aborted) return;
-        const result = await uploadSingleFile(file, fileIndex);
-        if (result === "retryable") {
-          retryQueue.push({ file, fileIndex });
-        }
-      }),
-    );
+    await runUploadQueue(scheduledFiles, {
+      signal: abortCtrl.signal,
+      schedule: (attempt) => uploadLimit(attempt),
+      upload: ({ file, fileIndex }) => uploadSingleFile(file, fileIndex),
+      onRetry: ({ file, fileIndex }) => {
+        const attempt = fileAttempts.get(fileIndex) ?? 1;
+        const delay = FILE_RETRY_DELAYS[attempt - 1] ?? 120_000;
+        console.warn(
+          `[UPLOAD] "${file.name}" retry ${attempt}/${MAX_FILE_RETRIES}, waiting ${delay / 1000}s...`,
+        );
+        showNotification({
+          id: `file-retry-${fileIndex}`,
+          title: t("upload.notify.fileRetry.title", {
+            defaultMessage: "Retry fichier",
+          }),
+          message: t("upload.notify.fileRetry.message", {
+            defaultMessage: `${file.name} - tentative ${attempt + 1}/${MAX_FILE_RETRIES + 1} dans ${delay / 1000}s`,
+            name: file.name,
+            delay: delay / 1000,
+            attempt: attempt + 1,
+            max: MAX_FILE_RETRIES + 1,
+          }),
+          color: "yellow",
+          autoClose: delay,
+        });
+        return delay;
+      },
+    }).catch(() => {});
 
-    await Promise.all(fileUploadPromises).catch(() => {});
-
-    // Phase 2: retry failed files sequentially with delays
-    // By this point, the SafeLine iframe auto-resolver has had time
-    // to fix any session issues.  Retrying sequentially prevents
-    // overwhelming a just-recovered backend.
-    for (let i = 0; i < retryQueue.length; i++) {
-      if (abortCtrl.signal.aborted) break;
-      const { file, fileIndex } = retryQueue[i];
-
-      const attempt = fileAttempts.get(fileIndex) ?? 1;
-      const delay = FILE_RETRY_DELAYS[attempt - 1] ?? 120_000;
-
-      console.warn(
-        `[UPLOAD] "${file.name}" retry ${attempt}/${MAX_FILE_RETRIES}, waiting ${delay / 1000}s...`,
-      );
-      showNotification({
-        id: `file-retry-${fileIndex}`,
-        title: t("upload.notify.fileRetry.title", {
-          defaultMessage: "Retry fichier",
-        }),
-        message: t("upload.notify.fileRetry.message", {
-          defaultMessage: `${file.name} - tentative ${attempt + 1}/${MAX_FILE_RETRIES + 1} dans ${delay / 1000}s`,
-          name: file.name,
-          delay: delay / 1000,
-          attempt: attempt + 1,
-          max: MAX_FILE_RETRIES + 1,
-        }),
-        color: "yellow",
-        autoClose: delay,
-      });
-      await new Promise((r) => setTimeout(r, delay));
-      if (abortCtrl.signal.aborted) break;
-
-      const result = await uploadSingleFile(file, fileIndex);
-      if (result === "retryable") {
-        // Push back for another round if we haven't exceeded max
-        const nextAttempt = fileAttempts.get(fileIndex) ?? 2;
-        if (nextAttempt <= MAX_FILE_RETRIES) {
-          retryQueue.push({ file, fileIndex });
-        } else {
-          toast.error(
-            `${file.name}: échec définitif après ${nextAttempt} tentatives`,
-          );
-          setFiles((prev) =>
-            prev.map((f, idx) => {
-              if (idx === fileIndex) f.uploadingProgress = -1;
-              return f;
-            }),
-          );
-        }
-      }
-    }
-
-    // Cleanup: stop keepalive, mark upload as inactive.
-    // The useEffect watching file progress handles completion (all 100%)
-    // or failure (some -1) states and triggers the appropriate UI.
-    if (keepaliveRef.current) {
-      clearInterval(keepaliveRef.current);
-      keepaliveRef.current = null;
-    }
-    setUploadActive(false);
+    // Finalization, including partial success, owns the keepalive until the
+    // server has acknowledged which files are stored. Never purge on failure.
+    if (!abortCtrl.signal.aborted) setUploadWorkersFinished(true);
   };
 
   const cancelUpload = () => {
@@ -1113,8 +1116,8 @@ const Upload = ({
       children: (
         <Text size="sm">
           <FormattedMessage
-            id="upload.cancel.confirm"
-            defaultMessage="L'envoi en cours sera interrompu et le partage incomplet supprimé. Continuer ?"
+            id="upload.cancel.discard-confirm"
+            defaultMessage="Tous les fichiers de cet envoi, y compris ceux déjà transférés, seront supprimés. Continuer ?"
           />
         </Text>
       ),
@@ -1124,20 +1127,20 @@ const Upload = ({
       },
       confirmProps: { color: "red" },
       onConfirm: () => {
+        setUploadWorkersFinished(false);
+        completingShareRef.current = null;
         // 1. Abort all in-flight uploads
         uploadAbortRef.current?.abort();
         uploadAbortRef.current = null;
 
         // 2. Delete the incomplete share (best-effort)
         if (createdShare?.id) {
-          shareService
-            .remove(createdShare.id)
-            .catch(() => {});
+          shareService.remove(createdShare.id, true).catch(() => {});
         }
 
         // 3. Reset state
         if (keepaliveRef.current) {
-          clearInterval(keepaliveRef.current);
+          keepaliveRef.current();
           keepaliveRef.current = null;
         }
         wakeLock.release();
@@ -1166,6 +1169,11 @@ const Upload = ({
   };
 
   const showCreateUploadModalCallback = (files: FileUpload[]) => {
+    if (!requestUploadAllowed) {
+      toast.error(t("team.fileRequest.error.return"));
+      return;
+    }
+
     showCreateUploadModal(
       modals,
       {
@@ -1184,7 +1192,8 @@ const Upload = ({
         maxExpiration: config.get("share.maxExpiration"),
         anonymousMaxExpiration: config.get("share.anonymousMaxExpiration"),
         shareIdLength: config.get("share.shareIdLength"),
-        simplified,
+        simplified: simplified && !qRequestId,
+        teamFileRequestId: qRequestId,
         captchaEnabled: !user && config.get("altcha.enabled"),
         preselectedTeamFolderId: qTeamFolderId,
       },
@@ -1232,9 +1241,7 @@ const Upload = ({
 
     // Complete share
     if (
-      files.length > 0 &&
-      files.every((file) => file.uploadingProgress >= 100) &&
-      fileErrorCount == 0 &&
+      hasSettledUpload(files, uploadWorkersFinished) &&
       createdShare?.id &&
       completingShareRef.current !== createdShare.id
     ) {
@@ -1250,9 +1257,10 @@ const Upload = ({
       completingShareRef.current = completingShareId;
       shareService
         .completeShare(completingShareId, e2eKeyForComplete)
-        .then((share) => {
+        .then(async (share) => {
+          await synchronizeCompletedUpload(queryClient, completingShareId);
           if (keepaliveRef.current) {
-            clearInterval(keepaliveRef.current);
+            keepaliveRef.current();
             keepaliveRef.current = null;
           }
           wakeLock.release();
@@ -1265,6 +1273,7 @@ const Upload = ({
             share,
             e2eKeyEncoded,
             isUserKeyBackupRequired(),
+            fileErrorCount,
           );
           queryClient.invalidateQueries({
             queryKey: ["share.pastRecipients"],
@@ -1274,50 +1283,80 @@ const Upload = ({
           e2eKeyEncoded = null;
           shouldShareE2EKeyViaEmail = false;
         })
-        .catch(() => {
-          if (completingShareRef.current === completingShareId) {
-            completingShareRef.current = null;
-          }
-          toast.error(t("upload.notify.generic-error"));
+        .catch((error) => {
+          completingShareRef.current = null;
+          // Retain the WAF/session guard and keepalive while the saved share
+          // is still pending. A failed finalization is not an ended upload.
+          wakeLock.release();
+          setisUploading(false);
+          setUploadActive(true);
+          webLockReleaseRef.current?.();
+          webLockReleaseRef.current = null;
+          toast.axiosError(error);
         });
     }
 
-    // All files finished but some (or all) failed -- reset upload state
-    // so the UI is no longer stuck in "uploading" mode.
-    // Also delete the incomplete share to clean up any S3 objects that were
-    // already committed for the files that did succeed (partial multi-file
-    // upload failure). Without this, those S3 objects are orphaned until the
-    // inactivity cleanup catches any leftovers within one hour.
-    const allFilesDone =
-      files.length > 0 &&
-      isUploading &&
-      files.every(
-        (f) => f.uploadingProgress >= 100 || f.uploadingProgress === -1,
-      );
-    if (allFilesDone && fileErrorCount > 0) {
-      if (keepaliveRef.current) {
-        clearInterval(keepaliveRef.current);
-        keepaliveRef.current = null;
-      }
-      wakeLock.release();
-      setisUploading(false);
-      setUploadActive(false);
-      webLockReleaseRef.current?.();
-      webLockReleaseRef.current = null;
-      // Best-effort cleanup: delete the incomplete share (S3 prefix purge +
-      // DB record). Ignore errors - the cron will catch any leftovers.
-      if (createdShare?.id) {
-        shareService
-          .remove(createdShare.id)
-          .catch(() => {});
-      }
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [files]);
+  }, [files, uploadWorkersFinished, completionRetry]);
 
   return (
     <>
       <Meta title={t("upload.title")} noIndex />
+      {hasPendingFinalization && !isUploading && (
+        <Alert
+          my="md"
+          color="yellow"
+          title={t("upload.finalization.pending.title")}
+        >
+          <Text size="sm">{t("upload.finalization.pending.body")}</Text>
+          <Button
+            mt="sm"
+            onClick={async () => {
+              try {
+                await prepareSafeLineRetry();
+                setisUploading(true);
+                setUploadActive(true);
+                setCompletionRetry((value) => value + 1);
+              } catch (error) {
+                toast.axiosError(error);
+              }
+            }}
+          >
+            {t("upload.finalization.pending.retry")}
+          </Button>
+          <Button
+            mt="sm"
+            ml="sm"
+            color="red"
+            variant="subtle"
+            onClick={cancelUpload}
+          >
+            {t("upload.cancel.button")}
+          </Button>
+        </Alert>
+      )}
+      {qRequestId && (
+        <Alert
+          my="md"
+          color={requestUploadAllowed ? "blue" : "yellow"}
+          title={requestInfo?.subject || t("team.fileRequest.title")}
+        >
+          {fileRequest.isLoading
+            ? t("team.fileRequest.loading")
+            : requestUploadAllowed
+              ? t("team.fileRequest.upload.hint", {
+                  folder:
+                    fileRequest.data?.folder?.name ||
+                    t("team.fileRequest.deletedFolder"),
+                })
+              : t("team.fileRequest.upload.unavailable")}
+          {requestUploadAllowed && requestInfo?.note && (
+            <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+              {requestInfo.note}
+            </Text>
+          )}
+        </Alert>
+      )}
       <Title
         order={1}
         visually-hidden
@@ -1454,7 +1493,7 @@ const Upload = ({
             <Button
               variant="light"
               leftSection={<TbCloudDownload size={16} />}
-              disabled={isUploading}
+              disabled={isUploading || hasPendingFinalization}
               onClick={() => setWebDavOpened(true)}
             >
               <FormattedMessage id="webdav.button.import" />
@@ -1462,7 +1501,7 @@ const Upload = ({
           )}
           <Button
             loading={isUploading}
-            disabled={files.length <= 0}
+            disabled={files.length <= 0 || hasPendingFinalization}
             onClick={() => showCreateUploadModalCallback(files)}
           >
             <FormattedMessage id="common.button.share" />
@@ -1485,7 +1524,7 @@ const Upload = ({
         maxShareSize={effectiveMaxShareSize}
         existingFilesSize={files.reduce((sum, f) => sum + f.size, 0)}
         onFilesChanged={handleDropzoneFilesChanged}
-        isUploading={isUploading}
+        isUploading={isUploading || hasPendingFinalization}
       />
       {/* Configured size gauge - visible after files are added, before sharing */}
       {files.length > 0 &&
@@ -1661,7 +1700,7 @@ const Upload = ({
         <FileList<FileUpload>
           files={files}
           setFiles={setFiles}
-          isUploading={isUploading}
+          isUploading={isUploading || hasPendingFinalization}
         />
       )}
     </>

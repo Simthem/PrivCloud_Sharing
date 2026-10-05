@@ -35,6 +35,7 @@ import {
   getUserKey,
   wrapReverseShareKey,
 } from "../../../utils/crypto.util";
+import { encryptReverseShareName } from "../../../utils/fileMetadata.util";
 
 const showCreateReverseShareModal = (
   modals: ReturnType<typeof useModals>,
@@ -42,6 +43,7 @@ const showCreateReverseShareModal = (
   maxExpiration: Timespan,
   getReverseShares: () => void,
   planMaxShareSize?: number,
+  encryptName = false,
 ) => {
   const t = translateOutsideContext();
   return modals.openModal({
@@ -52,6 +54,7 @@ const showCreateReverseShareModal = (
         getReverseShares={getReverseShares}
         maxExpiration={maxExpiration}
         planMaxShareSize={planMaxShareSize}
+        encryptName={encryptName}
       />
     ),
   });
@@ -62,11 +65,14 @@ const Body = ({
   showSendEmailNotificationOption,
   maxExpiration: _maxExpiration,
   planMaxShareSize,
+  encryptName,
 }: {
   getReverseShares: () => void;
   showSendEmailNotificationOption: boolean;
   maxExpiration: Timespan;
   planMaxShareSize?: number;
+  /** FILE_META_V1: the name of an E2E link is encrypted with its K_rs. */
+  encryptName: boolean;
 }) => {
   const modals = useModals();
   const t = useTranslate();
@@ -114,6 +120,7 @@ const Body = ({
     // ---- E2E : générer K_rs et chiffrer avec K_master ----
     let rsKeyEncoded: string | null = null;
     let wrappedKey: string | undefined;
+    let encryptedName: string | undefined;
     const masterKeyEncoded = getUserKey();
 
     if (masterKeyEncoded) {
@@ -122,13 +129,16 @@ const Body = ({
         rsKeyEncoded = await exportKeyToBase64(rsKey);
         const masterKey = await importKeyFromBase64(masterKeyEncoded);
         wrappedKey = await wrapReverseShareKey(rsKey, masterKey);
+        if (encryptName && values.name) {
+          encryptedName = await encryptReverseShareName(rsKey, values.name);
+        }
       } catch (e) {
         console.error(
           "Erreur lors de la génération de la clé E2E reverse share",
           e,
         );
-        rsKeyEncoded = null;
-        wrappedKey = undefined;
+        toast.error(t("account.reverseShares.error.encryption"));
+        return;
       }
     }
 
@@ -142,6 +152,7 @@ const Body = ({
             : values.expiration_num + values.expiration_unit,
         maxShareSize: values.maxShareSize.toString(),
         encryptedReverseShareKey: wrappedKey,
+        ...(encryptedName && { name: undefined, encryptedName }),
       })
       .then(({ link }) => {
         const finalLink = rsKeyEncoded ? `${link}#key=${rsKeyEncoded}` : link;

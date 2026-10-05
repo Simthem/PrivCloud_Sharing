@@ -66,6 +66,11 @@ import {
   exportKeyToBase64,
   unwrapReverseShareKey,
 } from "../../utils/crypto.util";
+import {
+  openReverseShareName,
+  openShareInfo,
+} from "../../utils/fileMetadata.util";
+import useUser from "../../hooks/user.hook";
 
 // -- K_rs display component (similar to master key in E2E settings) --
 const RsKeyDisplay = ({ rsKey }: { rsKey: string }) => {
@@ -261,6 +266,7 @@ const MyShares = () => {
   const [expandedRs, setExpandedRs] = useState<string | null>(null);
 
   const config = useConfig();
+  const { user } = useUser();
 
   const {
     data: reverseShares,
@@ -293,7 +299,7 @@ const MyShares = () => {
   });
 
   const deleteShareMutation = useMutation({
-    mutationFn: (shareId: string) => shareService.remove(shareId),
+    mutationFn: (shareId: string) => shareService.remove(shareId, true),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["myReverseShares"] });
       toast.success(t("account.shares.notify.deleted-success"));
@@ -369,6 +375,71 @@ const MyShares = () => {
     },
     [rsKeyCache],
   );
+
+  // FILE_META_V1: titles of received shares encrypted with K_rs, opened once
+  // the key of their reverse share is known.
+  const [receivedTitles, setReceivedTitles] = useState<
+    Record<string, string | undefined>
+  >({});
+  useEffect(() => {
+    if (!reverseShares) return;
+    const pending = reverseShares.flatMap((rs) =>
+      rsKeyCache[rs.id]
+        ? rs.shares
+            .filter(
+              (share) => share.encryptedInfo && !(share.id in receivedTitles),
+            )
+            .map((share) => ({ share, key: rsKeyCache[rs.id] }))
+        : [],
+    );
+    if (pending.length === 0) return;
+    let cancelled = false;
+    void Promise.all(
+      pending.map(
+        async ({ share, key }) =>
+          [share.id, (await openShareInfo(share, key)).name] as const,
+      ),
+    ).then((entries) => {
+      if (!cancelled) {
+        setReceivedTitles((prev) => ({
+          ...prev,
+          ...Object.fromEntries(entries),
+        }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [reverseShares, rsKeyCache, receivedTitles]);
+  const receivedShareName = (share: { id: string; name?: string }) =>
+    receivedTitles[share.id] || share.name || share.id;
+
+  // Names of the links themselves, encrypted with their K_rs.
+  const [linkNames, setLinkNames] = useState<
+    Record<string, string | undefined>
+  >({});
+  useEffect(() => {
+    if (!reverseShares) return;
+    const pending = reverseShares.filter(
+      (rs) => rs.encryptedName && rsKeyCache[rs.id] && !(rs.id in linkNames),
+    );
+    if (pending.length === 0) return;
+    let cancelled = false;
+    void Promise.all(
+      pending.map(
+        async (rs) =>
+          [rs.id, await openReverseShareName(rs, rsKeyCache[rs.id])] as const,
+      ),
+    ).then((entries) => {
+      if (!cancelled) {
+        setLinkNames((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [reverseShares, rsKeyCache, linkNames]);
+  const linkName = (rs: MyReverseShare) => linkNames[rs.id] || rs.name;
 
   // Pré-déchiffrer les clés au chargement
   useEffect(() => {
@@ -495,6 +566,7 @@ const MyShares = () => {
               config.get("share.maxExpiration"),
               refetch,
               configuredMaxShareSize?.maxSize,
+              !!user?.fileMetaV1ReverseShareWrite,
             )
           }
           leftSection={<TbPlus size={20} />}
@@ -551,7 +623,7 @@ const MyShares = () => {
                     >
                     <Group gap={6} wrap="nowrap">
                       <Text size="sm" fw={600} lineClamp={1}>
-                        {reverseShare.name || reverseShare.id}
+                        {linkName(reverseShare) || reverseShare.id}
                       </Text>
                       {reverseShare.publicAccess ? (
                         <TbWorldCheck size={16} color="teal" />
@@ -646,7 +718,7 @@ const MyShares = () => {
                               <Box style={{ minWidth: 0, flex: 1 }}>
                                 <Link href={shareHref} style={{ textDecoration: "none", color: "inherit" }}>
                                   <Text size="xs" fw={500} lineClamp={1} style={{ cursor: "pointer" }}>
-                                    {share.name || share.id}
+                                    {receivedShareName(share)}
                                   </Text>
                                 </Link>
                                 {share.description && (
@@ -773,7 +845,7 @@ const MyShares = () => {
                                       style={{ textDecoration: "none", color: "inherit", minWidth: 0 }}
                                     >
                                       <Text truncate size="sm" style={{ cursor: "pointer" }}>
-                                        {share.name || share.id}
+                                        {receivedShareName(share)}
                                       </Text>
                                     </Link>
                                   </Box>
@@ -853,7 +925,7 @@ const MyShares = () => {
                       </Accordion>
                     )}
                   </Table.Td>
-                  <Table.Td>{reverseShare.name}</Table.Td>
+                  <Table.Td>{linkName(reverseShare)}</Table.Td>
                   <Table.Td style={{ textAlign: "center" }}>
                     {reverseShare.publicAccess ? (
                       <ThemeIcon color="green" variant="light">

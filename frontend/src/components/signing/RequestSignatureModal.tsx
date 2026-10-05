@@ -1,3 +1,4 @@
+import { isValidSigningRecipientEmail } from "../../utils/signingEmail.util";
 import { useEffect, useState } from "react";
 import {
   ActionIcon,
@@ -158,7 +159,7 @@ export default function RequestSignatureModal({
         name: (val: string) =>
           !val ? t("signing.modal.error.name-required") : null,
         email: (val: string) =>
-          !val || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)
+          !isValidSigningRecipientEmail(val)
             ? t("signing.modal.error.email-invalid")
             : null,
       },
@@ -384,9 +385,8 @@ export default function RequestSignatureModal({
     onError: (error: AxiosError<{ message?: string | string[] }>) => {
       const message = error.response?.data?.message;
       toast.error(
-        Array.isArray(message)
-          ? message.join(" ")
-          : message || t("signing.modal.notify.error"),
+        (Array.isArray(message) ? message.join(" ") : message) ||
+          t("signing.modal.notify.error"),
       );
       setLoading(false);
     },

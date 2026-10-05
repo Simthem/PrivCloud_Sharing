@@ -365,7 +365,7 @@ export default {
   "admin.config.share.allow-unauthenticated-shares": "是否允许未验证的共享",
   "admin.config.share.allow-unauthenticated-shares.description": "是否允许未验证的用户创建共享",
   "admin.config.share.max-expiration": "最长过期时间",
-  "admin.config.share.max-expiration.description": "“最长过期时间”以小时为单位，如果将其设置为“0”则为永不过期。",
+  "admin.config.share.max-expiration.description": "'最长过期时间'以小时为单位，如果将其设置为'0'则为永不过期。",
   "admin.config.share.share-id-length": "默认共享ID长度",
   "admin.config.share.share-id-length.description": "生成的共享 ID 的默认长度。该值也用于生成预留共享的链接。低于 8 的值不安全。",
   "admin.config.share.max-size": "最大文件上限",
@@ -432,7 +432,7 @@ export default {
   "admin.config.oauth.oidc-discovery-uri": "OpenID Connect 的 Discovery URI",
   "admin.config.oauth.oidc-discovery-uri.description": "OpenID Connect OAuth App 的 Discovery URI",
   "admin.config.oauth.oidc-sign-out": "从 OpenID Connect 注销",
-  "admin.config.oauth.oidc-sign-out.description": "“注销”按钮是否会退出OpenID连接提供商",
+  "admin.config.oauth.oidc-sign-out.description": "'注销'按钮是否会退出OpenID连接提供商",
   "admin.config.oauth.oidc-scope": "OpenID Connect scope",
   "admin.config.oauth.oidc-scope.description": "从 OpenID Connect 提供商请求的范围。",
   "admin.config.oauth.oidc-username-claim": "OpenID Connect 用户名请求",
@@ -518,16 +518,16 @@ export default {
     "PBKDF2/SHA-256 is recommended: it is bundled, broadly compatible, and faster than SHA-384 or SHA-512 for this use case.",
   "admin.config.altcha.cost": "Cost",
   "admin.config.altcha.cost.description":
-    "PBKDF2 cost per attempt. 5000 is the recommended default; tune user friction mostly with effort.",
+    "PBKDF2 cost per attempt. 5000 is the recommended default, tune user friction mostly with effort.",
   "admin.config.altcha.effort": "Effort",
   "admin.config.altcha.effort.description":
-    "Average number of counters the browser must test. 250 is a good default; increase gradually if you need more resistance.",
+    "Average number of counters the browser must test. 250 is a good default, increase gradually if you need more resistance.",
   "admin.config.altcha.expires-in-seconds": "Challenge expiration",
   "admin.config.altcha.expires-in-seconds.description":
     "Challenge validity in seconds. Short lifetimes limit token reuse windows.",
   "admin.config.altcha.hmac-key": "HMAC key",
   "admin.config.altcha.hmac-key.description":
-    "Server-side secret used to sign and verify challenges. A strong key is generated automatically; rotate only when needed.",
+    "Server-side secret used to sign and verify challenges. A strong key is generated automatically, rotate only when needed.",
   "admin.config.altcha.type": "Interaction type",
   "admin.config.altcha.type.description":
     "Widget interaction control: checkbox, native checkbox, or switch.",

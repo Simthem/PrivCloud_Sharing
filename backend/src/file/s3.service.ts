@@ -260,15 +260,8 @@ export class S3FileService {
   private uploadScheduler?: AdaptiveTransferScheduler;
   private downloadScheduler?: AdaptiveTransferScheduler;
 
-  // TTL for abandoned multipart uploads: no chunk received for 60 min.
-  // This is an *inactivity* timeout, not a total duration limit, so
-  // multi-hour uploads of very large files (40 GB+) are safe as long
-  // as chunks keep arriving.
-  // Set to 60 min (was 30 min): the client-side retry logic can spend
-  // up to ~38 min retrying a single chunk (20 transient retries with
-  // exponential backoff + 3 recovery cycles).  A 30-min TTL could clean
-  // up the session while the client is still retrying, causing a
-  // "session not found" error that kills the upload permanently.
+  // Examine idle cache entries after one hour. An unfinished, unexpired
+  // share retains its state even while direct PUTs or WAF recovery are slow.
   private static readonly MULTIPART_TTL_MS = 60 * 60 * 1000;
 
   private getAdaptiveUploadScheduler(): AdaptiveTransferScheduler {
@@ -759,10 +752,32 @@ export class S3FileService {
    */
   private async cleanupAbandonedUploads() {
     const now = Date.now();
+    const pendingShares = new Map<string, boolean>();
     for (const [key, upload] of this.multipartUploads) {
       if (now - upload.lastActivity > S3FileService.MULTIPART_TTL_MS) {
+        // Signed PUTs go straight to storage. Neither a slow PUT nor a WAF
+        // pause is evidence that the owner's unfinished upload was abandoned.
+        if (!pendingShares.has(upload.shareId)) {
+          try {
+            const share = await this.prisma.share.findUnique({
+              where: { id: upload.shareId },
+              select: { uploadLocked: true, expiration: true },
+            });
+            pendingShares.set(
+              upload.shareId,
+              !!share &&
+                !share.uploadLocked &&
+                (share.expiration.getTime() === 0 ||
+                  share.expiration.getTime() > now),
+            );
+          } catch {
+            // A database outage cannot justify losing an upload's state.
+            continue;
+          }
+        }
+        if (pendingShares.get(upload.shareId)) continue;
         this.logger.warn(
-          `Evicting local multipart state: key=${key} uploadId=${upload.uploadId}`,
+          "Evicting local multipart state for an expired or completed share",
         );
         if (upload.flowId) {
           this.getAdaptiveUploadScheduler().unregisterFlow(upload.flowId);
@@ -777,6 +792,29 @@ export class S3FileService {
    * uploads. S3 is authoritative across mixed-version workers, including an old
    * application process that does not persist database heartbeats yet.
    */
+  /** Completed objects must survive an unacknowledged or partial upload. */
+  async hasPendingMultipartUpload(shareId: string): Promise<boolean> {
+    const response = await this.getS3Instance().send(
+      new ListMultipartUploadsCommand({
+        Bucket: this.config.get("s3.bucketName"),
+        Prefix: this.getSharePrefix(shareId),
+        MaxUploads: 1,
+      }),
+    );
+    return (response.Uploads?.length ?? 0) > 0;
+  }
+
+  async hasCompletedUploadData(shareId: string): Promise<boolean> {
+    const listed = await this.getS3Instance().send(
+      new ListObjectsV2Command({
+        Bucket: this.config.get("s3.bucketName"),
+        Prefix: this.getSharePrefix(shareId),
+        MaxKeys: 1,
+      }),
+    );
+    return (listed.Contents?.length || 0) > 0;
+  }
+
   async getRecentUploadActivity(
     shareId: string,
     since: Date,
@@ -850,55 +888,65 @@ export class S3FileService {
   async abortShareMultipartUploads(shareId: string) {
     const s3Instance = this.getS3Instance();
     const bucket = this.config.get("s3.bucketName");
-
+    const prefix = this.getSharePrefix(shareId);
+    let keyMarker: string | undefined;
+    let uploadIdMarker: string | undefined;
+    try {
+      do {
+        const listed = await s3Instance.send(
+          new ListMultipartUploadsCommand({
+            Bucket: bucket,
+            Prefix: prefix,
+            KeyMarker: keyMarker,
+            UploadIdMarker: uploadIdMarker,
+          }),
+        );
+        for (const upload of listed.Uploads ?? []) {
+          if (!upload.Key || !upload.UploadId)
+            throw new Error("Invalid multipart listing");
+          try {
+            await s3Instance.send(
+              new AbortMultipartUploadCommand({
+                Bucket: bucket,
+                Key: upload.Key,
+                UploadId: upload.UploadId,
+              }),
+            );
+          } catch (error) {
+            const code =
+              (error as { name?: string; Code?: string })?.Code ??
+              (error as { name?: string })?.name;
+            if (code !== "NoSuchUpload") throw error;
+          }
+          this.logger.log(
+            "Aborted orphan multipart upload for share [redacted]",
+          );
+        }
+        if (
+          listed.IsTruncated &&
+          (!listed.NextKeyMarker ||
+            (listed.NextKeyMarker === keyMarker &&
+              listed.NextUploadIdMarker === uploadIdMarker))
+        )
+          throw new Error("Invalid multipart pagination");
+        keyMarker = listed.IsTruncated ? listed.NextKeyMarker : undefined;
+        uploadIdMarker = listed.IsTruncated
+          ? listed.NextUploadIdMarker
+          : undefined;
+      } while (keyMarker);
+    } catch {
+      this.logger.error(
+        "Could not abort all multipart uploads for share [redacted]",
+      );
+      throw new Error("Could not abort all multipart uploads");
+    }
     for (const [key, upload] of this.multipartUploads) {
       if (upload.shareId === shareId) {
-        if (upload.flowId) {
+        if (upload.flowId)
           this.getAdaptiveUploadScheduler().unregisterFlow(upload.flowId);
-        }
         this.multipartUploads.delete(key);
       }
     }
-
-    // Abort all S3-side multipart uploads under this share's prefix
-    const prefix = this.getSharePrefix(shareId);
-    try {
-      const listResp = await s3Instance.send(
-        new ListMultipartUploadsCommand({
-          Bucket: bucket,
-          Prefix: prefix,
-        }),
-      );
-      if (listResp.Uploads && listResp.Uploads.length > 0) {
-        for (const upload of listResp.Uploads) {
-          if (upload.Key && upload.UploadId) {
-            try {
-              await s3Instance.send(
-                new AbortMultipartUploadCommand({
-                  Bucket: bucket,
-                  Key: upload.Key,
-                  UploadId: upload.UploadId,
-                }),
-              );
-              this.logger.log(
-                "Aborted orphan multipart upload for share [redacted]",
-              );
-            } catch {
-              this.logger.error("Failed to abort multipart upload");
-            }
-          }
-        }
-      }
-    } catch {
-      this.logger.error(
-        "Failed to list multipart uploads for share [redacted]",
-      );
-    }
-
-    // Clean in-memory tracking for any fileId matching this share
-    // (best-effort: we don't store shareId, so clean all entries whose
-    // S3 key starts with this share's prefix)
-    // This is already covered by deleting the share, but clean up memory.
   }
 
   /**
@@ -949,6 +997,17 @@ export class S3FileService {
               upload.UploadId
             ) {
               try {
+                // Age alone must never erase a resumable part of a live share.
+                // Expiration and explicit deletion own the share lifecycle.
+                const relativeKey = upload.Key.slice(prefix.length);
+                const segments = relativeKey.split("/");
+                if (segments.length !== 2 || !segments[0] || !segments[1])
+                  continue;
+                const share = await this.prisma.share.findUnique({
+                  where: { id: segments[0] },
+                  select: { id: true },
+                });
+                if (share) continue;
                 await s3Instance.send(
                   new AbortMultipartUploadCommand({
                     Bucket: bucket,
@@ -992,15 +1051,37 @@ export class S3FileService {
     const s3 = this.getS3Instance();
     const bucket = this.config.get("s3.bucketName");
     const key = this.getShareObjectKey(shareId, fileId);
-    const listed = await s3.send(
-      new ListMultipartUploadsCommand({
-        Bucket: bucket,
-        Prefix: key,
-      }),
-    );
-    const candidates = (listed.Uploads ?? []).filter(
-      (upload) => upload.Key === key && !!upload.UploadId,
-    );
+    const candidates: Array<{ UploadId: string; Initiated?: Date }> = [];
+    let keyMarker: string | undefined;
+    let uploadIdMarker: string | undefined;
+    do {
+      const listed = await s3.send(
+        new ListMultipartUploadsCommand({
+          Bucket: bucket,
+          Prefix: key,
+          KeyMarker: keyMarker,
+          UploadIdMarker: uploadIdMarker,
+        }),
+      );
+      for (const upload of listed.Uploads ?? []) {
+        if (upload.Key === key && upload.UploadId) {
+          candidates.push({
+            UploadId: upload.UploadId,
+            Initiated: upload.Initiated,
+          });
+        }
+      }
+      if (!listed.IsTruncated) break;
+      if (
+        !listed.NextKeyMarker ||
+        (listed.NextKeyMarker === keyMarker &&
+          listed.NextUploadIdMarker === uploadIdMarker)
+      ) {
+        throw new Error("Invalid multipart recovery pagination");
+      }
+      keyMarker = listed.NextKeyMarker;
+      uploadIdMarker = listed.NextUploadIdMarker;
+    } while (keyMarker);
     if (candidates.length === 0) return false;
 
     const recoveredCandidates = await Promise.all(
@@ -1362,7 +1443,7 @@ export class S3FileService {
     }
     if (
       !Number.isSafeInteger(totalParts) ||
-      totalParts < 2 ||
+      totalParts < 1 ||
       totalParts > 10_000 ||
       !Array.isArray(parts) ||
       parts.length < 1 ||
@@ -1548,7 +1629,7 @@ export class S3FileService {
     }
     if (
       !Number.isSafeInteger(totalParts) ||
-      totalParts < 2 ||
+      totalParts < 1 ||
       totalParts > 10_000
     ) {
       throw new BadRequestException("Invalid multipart part count");
@@ -2842,13 +2923,23 @@ export class S3FileService {
           Key: file.Key!,
         }));
 
-        await s3Instance.send(
+        const deleted = await s3Instance.send(
           new DeleteObjectsCommand({
             Bucket: bucket,
             Delete: { Objects: objectsToDelete },
           }),
         );
 
+        // HTTP 200 can contain individual S3 deletion failures. Propagate
+        // them so callers retain the share and its database file references.
+        if (deleted.Errors?.length)
+          throw new Error("S3 object deletion failed");
+        if (
+          listResponse.IsTruncated &&
+          (!listResponse.NextContinuationToken ||
+            listResponse.NextContinuationToken === continuationToken)
+        )
+          throw new Error("Invalid object pagination");
         totalDeleted += objectsToDelete.length;
         continuationToken = listResponse.IsTruncated
           ? listResponse.NextContinuationToken

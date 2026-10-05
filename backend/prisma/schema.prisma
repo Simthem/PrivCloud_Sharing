@@ -7,9 +7,11 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdFileRequests   TeamFileRequest[]          @relation("FileRequestCreator")
+  fileRequestRecipients TeamFileRequestRecipient[]
+  id                    String                     @id @default(uuid())
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
 
   username String  @unique
   email    String  @unique
@@ -195,11 +197,13 @@ model TotpBackupCode {
 }
 
 model Share {
-  id                     String    @id @default(uuid())
+  teamFileRequestId      String?
+  teamFileRequest        TeamFileRequest? @relation(fields: [teamFileRequestId], references: [id], onDelete: SetNull)
+  id                     String           @id @default(uuid())
   // Opaque administration reference. The public Share.id is a capability URL
   // and must never be disclosed by the administration inventory.
-  adminAuditId           String    @unique @default(uuid())
-  createdAt              DateTime  @default(now())
+  adminAuditId           String           @unique @default(uuid())
+  createdAt              DateTime         @default(now())
   uploadLastActivityAt   DateTime?
   uploadCleanupStartedAt DateTime?
 
@@ -245,9 +249,15 @@ model Share {
   // Incremented on every rewrap (K_master rotation). Compare-and-set guard.
   wrappedShareKeyVersion   Int?
   // File name scheme of the share. NULL: names stored in clear. FILE_META_V1
-  // (1, SHARE_DEK_V1 shares only): every file of the share stores its name
-  // and folder path encrypted with K_share, next to a fixed placeholder name.
+  // (1): every file of the share stores its name and folder path encrypted
+  // with the key of its content, next to a fixed placeholder name. Allowed on
+  // E2E shares except LEGACY_ACCOUNT_KEY ones: K_share (SHARE_DEK_V1), K_team
+  // (Team folder upload) or K_rs (reverse-share upload).
   fileMetadataScheme       Int?
+  // FILE_META_V1 only: title and description encrypted with the same key,
+  // base64url [IV 12][AES-256-GCM(JSON) + tag 16] with the share id
+  // authenticated. `name` and `description` are then NULL. Opaque to the server.
+  encryptedInfo            String?
 
   // E2EE access grants for this share.
   accessGrants AccessGrant[]
@@ -259,12 +269,16 @@ model Share {
   // SHA-256 ownership proof for anonymous upload cancellation.
   anonymousSessionToken String?
 
+  @@index([teamFileRequestId, hasBeenCompleted, creatorId])
   @@index([teamFolderId, uploadLocked, createdAt])
   @@index([creatorId, teamFolderId, uploadLocked])
   @@index([uploadLocked, hasBeenCompleted, uploadCleanupStartedAt, uploadLastActivityAt], map: "Share_unfinished_upload_cleanup_idx")
 }
 
 model ReverseShare {
+  // Name encrypted with K_rs, replacing the readable name.
+  encryptedName String?
+
   id        String   @id @default(uuid())
   createdAt DateTime @default(now())
 
@@ -310,8 +324,9 @@ model File {
   // NULL: `name` and `relativePath` are the real ones. FILE_META_V1 (1):
   // `name` is "encrypted-file-" followed by the first 8 characters of the id,
   // `relativePath` is NULL and the real values are in `encryptedMetadata`,
-  // base64url [IV 12 bytes][AES-256-GCM(JSON) + tag 16 bytes] under K_share,
-  // with the share and file ids authenticated. Opaque to the server.
+  // base64url [IV 12 bytes][AES-256-GCM(JSON) + tag 16 bytes] under the
+  // share's content key, with the share and file ids authenticated. Opaque
+  // to the server.
   metadataScheme      Int?
   encryptedMetadata   String?
 
@@ -805,9 +820,10 @@ model SigningCertificate {
 // ============================================================================
 
 model Team {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fileRequests TeamFileRequest[]
+  id           String            @id @default(uuid())
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 
   // Team display name
   name String
@@ -900,9 +916,10 @@ model TeamMember {
 }
 
 model TeamFolder {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fileRequests TeamFileRequest[]
+  id           String            @id @default(uuid())
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 
   // Folder display name
   name String
@@ -1071,6 +1088,9 @@ model TeamAuditReport {
 
 // A resumable client-side Team key rotation. Only wrapped key material is stored.
 model TeamKeyRotation {
+  // Ciphertext replacements staged until the new team key is committed.
+  encryptedMetadataUpdates String?
+
   id        String   @id @default(uuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1198,6 +1218,9 @@ model UserIdentityKey {
 // Each grant is an encrypted copy of a file key for one recipient.
 // The server stores only ciphertext and cannot derive the plaintext key.
 model AccessGrant {
+  // ML-KEM-768 ciphertext for hybrid key grants.
+  kemCiphertext String?
+
   id        String   @id @default(uuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1343,4 +1366,45 @@ model UsageSnapshot {
 
   // True for the 30-day deployment backfill rebuilt from surviving records.
   backfilled Boolean @default(false)
+}
+
+// Authenticated, Team-scoped collections. Subject/note are collaboration
+// metadata, like folder names. File encryption remains on the Share.
+model TeamFileRequest {
+  // Subject and note encrypted with K_team, replacing readable values.
+  encryptedInfo String?
+
+  // Encrypted for the requester, reused for deposit notifications.
+  submissionNotification String?
+  recipientScope         String                     @default("SELECTED")
+  sendEmail              Boolean                    @default(false)
+  id                     String                     @id @default(uuid())
+  createdAt              DateTime                   @default(now())
+  closedAt               DateTime?
+  subject                String
+  note                   String?
+  status                 String                     @default("OPEN")
+  expiresAt              DateTime
+  creatorId              String
+  creator                User                       @relation("FileRequestCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  teamId                 String
+  team                   Team                       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  folderId               String?
+  folder                 TeamFolder?                @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  recipients             TeamFileRequestRecipient[]
+  shares                 Share[]
+
+  @@index([teamId, createdAt])
+  @@index([creatorId, createdAt])
+}
+
+model TeamFileRequestRecipient {
+  id        String          @id @default(uuid())
+  requestId String
+  request   TeamFileRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, userId])
+  @@index([userId, requestId])
 }

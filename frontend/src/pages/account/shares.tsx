@@ -1,3 +1,4 @@
+import PendingUploads from "../../components/upload/PendingUploads";
 import {
   ActionIcon,
   Box,
@@ -19,7 +20,15 @@ import { useModals } from "@mantine/modals";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "../../utils/dayjs";
 import Link from "next/link";
-import { TbCopy, TbEdit, TbInfoCircle, TbLock, TbQrcode, TbSignature, TbTrash } from "react-icons/tb";
+import {
+  TbCopy,
+  TbEdit,
+  TbInfoCircle,
+  TbLock,
+  TbQrcode,
+  TbSignature,
+  TbTrash,
+} from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import { useEffect, useState } from "react";
 import Meta from "../../components/Meta";
@@ -41,6 +50,8 @@ import useOwnerShareKeys from "../../hooks/useOwnerShareKeys.hook";
 import {
   decryptShareFileNames,
   isFileMetaShare,
+  openShareInfo,
+  ShareInfo,
 } from "../../utils/fileMetadata.util";
 
 const MyShares = () => {
@@ -58,14 +69,41 @@ const MyShares = () => {
     isError,
     refetch,
   } = useQuery<MyShare[]>({
-    queryKey: ["myShares"],
+    queryKey: ["myShares", user?.id],
     queryFn: shareService.getMyShares,
+    enabled: !!user,
   });
   // Legacy shares carry K_master in their link, SHARE_DEK_V1 shares K_share.
   const ownerShareKey = useOwnerShareKeys(shares);
+  // FILE_META_V1: an encrypted title and description are opened with the
+  // same key as the file names. Until then the share shows its id.
+  const [shareInfos, setShareInfos] = useState<Record<string, ShareInfo>>({});
+  useEffect(() => {
+    const encrypted = (shares ?? []).filter(
+      (share) => !!share.encryptedInfo && !!ownerShareKey(share),
+    );
+    if (encrypted.length === 0) return;
+    let cancelled = false;
+    void Promise.all(
+      encrypted.map(
+        async (share) =>
+          [share.id, await openShareInfo(share, ownerShareKey(share))] as const,
+      ),
+    ).then((entries) => {
+      if (!cancelled) setShareInfos(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [shares, ownerShareKey]);
+  const shareInfoOf = (share: MyShare): ShareInfo =>
+    share.encryptedInfo
+      ? (shareInfos[share.id] ?? {})
+      : { name: share.name, description: share.description };
   // A blank name falls back to the share id, and the full value stays
   // readable on hover whatever the column width.
-  const shareDisplayName = (share: MyShare) => share.name?.trim() || share.id;
+  const shareDisplayName = (share: MyShare) =>
+    shareInfoOf(share).name?.trim() || share.id;
 
   // FILE_META_V1: file names are opened with the share key before the PDF
   // filter of the signature button, the server only knows placeholders.
@@ -107,7 +145,7 @@ const MyShares = () => {
       }));
 
   const deleteShareMutation = useMutation({
-    mutationFn: (shareId: string) => shareService.remove(shareId),
+    mutationFn: (shareId: string) => shareService.remove(shareId, true),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["myShares"] });
       toast.success(t("account.shares.notify.deleted-success"));
@@ -134,7 +172,12 @@ const MyShares = () => {
   };
 
   // Signature request modal
-  const [sigModalShare, setSigModalShare] = useState<{ id: string; files: { id: string; name: string; encryptedName?: boolean }[]; isE2E: boolean; key: string | null } | null>(null);
+  const [sigModalShare, setSigModalShare] = useState<{
+    id: string;
+    files: { id: string; name: string; encryptedName?: boolean }[];
+    isE2E: boolean;
+    key: string | null;
+  } | null>(null);
   const bulkDelete = () => {
     if (selected.size === 0) return;
     const count = selected.size;
@@ -142,10 +185,16 @@ const MyShares = () => {
       title: t("account.shares.bulk-delete.title", { count }),
       children: (
         <Text size="sm">
-          <FormattedMessage id="account.shares.bulk-delete.description" values={{ count }} />
+          <FormattedMessage
+            id="account.shares.bulk-delete.description"
+            values={{ count }}
+          />
         </Text>
       ),
-      labels: { confirm: t("common.button.delete"), cancel: t("common.button.cancel") },
+      labels: {
+        confirm: t("common.button.delete"),
+        cancel: t("common.button.cancel"),
+      },
       confirmProps: { color: "red" },
       onConfirm: () => {
         selected.forEach((id) => deleteShareMutation.mutate(id));
@@ -180,6 +229,7 @@ const MyShares = () => {
       <Title mb={30} order={3}>
         <FormattedMessage id="account.shares.title" />
       </Title>
+      <PendingUploads />
       {shares.length == 0 ? (
         <Center style={{ height: "70vh" }}>
           <Stack align="center" gap={10}>
@@ -203,12 +253,23 @@ const MyShares = () => {
               <Checkbox
                 label={t("account.shares.select-all")}
                 checked={selected.size === shares.length}
-                indeterminate={selected.size > 0 && selected.size < shares.length}
+                indeterminate={
+                  selected.size > 0 && selected.size < shares.length
+                }
                 onChange={toggleAll}
               />
               {selected.size > 0 && (
-                <Button size="compact-sm" color="red" variant="light" leftSection={<TbTrash size={16} />} onClick={bulkDelete}>
-                  <FormattedMessage id="account.shares.bulk-delete.button" values={{ count: selected.size }} />
+                <Button
+                  size="compact-sm"
+                  color="red"
+                  variant="light"
+                  leftSection={<TbTrash size={16} />}
+                  onClick={bulkDelete}
+                >
+                  <FormattedMessage
+                    id="account.shares.bulk-delete.button"
+                    values={{ count: selected.size }}
+                  />
                 </Button>
               )}
             </Group>
@@ -222,37 +283,74 @@ const MyShares = () => {
             const shareHref = `/share/${share.id}${keyFragment}`;
             return (
               <Card key={share.id} withBorder padding="sm" radius="md">
-                <Group justify="space-between" wrap="nowrap" align="flex-start" mb={4}>
-                  <Group gap="xs" wrap="nowrap" align="flex-start" style={{ minWidth: 0, flex: 1 }}>
+                <Group
+                  justify="space-between"
+                  wrap="nowrap"
+                  align="flex-start"
+                  mb={4}
+                >
+                  <Group
+                    gap="xs"
+                    wrap="nowrap"
+                    align="flex-start"
+                    style={{ minWidth: 0, flex: 1 }}
+                  >
                     <Checkbox
                       size="xs"
                       checked={selected.has(share.id)}
                       onChange={() => toggleSelect(share.id)}
                     />
                     <Box style={{ minWidth: 0, flex: 1 }}>
-                    <Link href={shareHref} title={shareDisplayName(share)} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
-                      <Text
-                        size="sm"
-                        fw={600}
-                        lineClamp={2}
-                        style={{ cursor: "pointer", overflowWrap: "anywhere", wordBreak: "break-word", hyphens: "auto" }}
+                      <Link
+                        href={shareHref}
+                        title={shareDisplayName(share)}
+                        style={{
+                          display: "block",
+                          textDecoration: "none",
+                          color: "inherit",
+                        }}
                       >
-                        {shareDisplayName(share)}
-                      </Text>
-                    </Link>
-                    {share.description && (
-                      <Text size="xs" c="dimmed" lineClamp={1} style={{ overflowWrap: "anywhere" }}>
-                        {share.description}
-                      </Text>
-                    )}
-                  </Box>                  </Group>                  {share.security.passwordProtected && (
-                    <TbLock color="orange" size={16} style={{ flexShrink: 0 }} />
+                        <Text
+                          size="sm"
+                          fw={600}
+                          lineClamp={2}
+                          style={{
+                            cursor: "pointer",
+                            overflowWrap: "anywhere",
+                            wordBreak: "break-word",
+                            hyphens: "auto",
+                          }}
+                        >
+                          {shareDisplayName(share)}
+                        </Text>
+                      </Link>
+                      {shareInfoOf(share).description && (
+                        <Text
+                          size="xs"
+                          c="dimmed"
+                          lineClamp={1}
+                          style={{ overflowWrap: "anywhere" }}
+                        >
+                          {shareInfoOf(share).description}
+                        </Text>
+                      )}
+                    </Box>{" "}
+                  </Group>{" "}
+                  {share.security.passwordProtected && (
+                    <TbLock
+                      color="orange"
+                      size={16}
+                      style={{ flexShrink: 0 }}
+                    />
                   )}
                 </Group>
 
                 <Group gap="xs" mb={8}>
                   <Text size="xs" c="dimmed">
-                    <FormattedMessage id="account.shares.table.visitors" />: {share.security.maxViews ? `${share.views}/${share.security.maxViews}` : share.views}
+                    <FormattedMessage id="account.shares.table.visitors" />:{" "}
+                    {share.security.maxViews
+                      ? `${share.views}/${share.security.maxViews}`
+                      : share.views}
                   </Text>
                   <Text size="xs" c="dimmed">
                     {dayjs(share.expiration).unix() === 0
@@ -267,12 +365,25 @@ const MyShares = () => {
                       <TbEdit />
                     </ActionIcon>
                   </Link>
-                  <ActionIcon color="blue" variant="light" size={28}
-                    onClick={() => showShareInformationsModal(modals, share, parseInt(config.get("share.maxSize")), ownerShareKey(share))}
+                  <ActionIcon
+                    color="blue"
+                    variant="light"
+                    size={28}
+                    onClick={() =>
+                      showShareInformationsModal(
+                        modals,
+                        share,
+                        parseInt(config.get("share.maxSize")),
+                        ownerShareKey(share),
+                      )
+                    }
                   >
                     <TbInfoCircle />
                   </ActionIcon>
-                  <ActionIcon color="teal" variant="light" size={28}
+                  <ActionIcon
+                    color="teal"
+                    variant="light"
+                    size={28}
                     onClick={async () => {
                       const sk = ownerShareKey(share);
                       const kf = sk ? buildKeyFragment(sk) : "";
@@ -284,32 +395,58 @@ const MyShares = () => {
                   >
                     <TbCopy />
                   </ActionIcon>
-                  <ActionIcon color="grape" variant="light" size={28}
+                  <ActionIcon
+                    color="grape"
+                    variant="light"
+                    size={28}
                     onClick={() => {
                       const sk = ownerShareKey(share);
                       const kf = sk ? buildKeyFragment(sk) : "";
-                      showQrCodeModal(modals, `${config.get("general.appUrl")}/s/${share.id}${kf}`);
+                      showQrCodeModal(
+                        modals,
+                        `${config.get("general.appUrl")}/s/${share.id}${kf}`,
+                      );
                     }}
                   >
                     <TbQrcode />
                   </ActionIcon>
                   {hasTeamAccess && signablePdfFiles(share).length > 0 && (
-                    <ActionIcon color="violet" variant="light" size={28}
+                    <ActionIcon
+                      color="violet"
+                      variant="light"
+                      size={28}
                       onClick={() => {
                         const fileList = signablePdfFiles(share);
-                        setSigModalShare({ id: share.id, files: fileList, isE2E: !!share.isE2EEncrypted, key: ownerShareKey(share) });
+                        setSigModalShare({
+                          id: share.id,
+                          files: fileList,
+                          isE2E: !!share.isE2EEncrypted,
+                          key: ownerShareKey(share),
+                        });
                       }}
                     >
                       <TbSignature />
                     </ActionIcon>
                   )}
-                  <ActionIcon color="red" variant="light" size={28}
+                  <ActionIcon
+                    color="red"
+                    variant="light"
+                    size={28}
                     onClick={() => {
                       modals.openConfirmModal({
-                        title: t("account.shares.modal.delete.title", { share: share.id }),
-                        children: <Text size="sm"><FormattedMessage id="account.shares.modal.delete.description" /></Text>,
+                        title: t("account.shares.modal.delete.title", {
+                          share: share.id,
+                        }),
+                        children: (
+                          <Text size="sm">
+                            <FormattedMessage id="account.shares.modal.delete.description" />
+                          </Text>
+                        ),
                         confirmProps: { color: "red" },
-                        labels: { confirm: t("common.button.delete"), cancel: t("common.button.cancel") },
+                        labels: {
+                          confirm: t("common.button.delete"),
+                          cancel: t("common.button.cancel"),
+                        },
                         onConfirm: () => deleteShareMutation.mutate(share.id),
                       });
                     }}
@@ -326,208 +463,268 @@ const MyShares = () => {
         <>
           {selected.size > 0 && (
             <Group mb="sm">
-              <Button size="compact-sm" color="red" variant="light" leftSection={<TbTrash size={16} />} onClick={bulkDelete}>
-                <FormattedMessage id="account.shares.bulk-delete.button" values={{ count: selected.size }} />
+              <Button
+                size="compact-sm"
+                color="red"
+                variant="light"
+                leftSection={<TbTrash size={16} />}
+                onClick={bulkDelete}
+              >
+                <FormattedMessage
+                  id="account.shares.bulk-delete.button"
+                  values={{ count: selected.size }}
+                />
               </Button>
             </Group>
           )}
           <Box style={{ display: "block", overflowX: "auto" }}>
-          <Table striped highlightOnHover withRowBorders verticalSpacing="lg" style={{ tableLayout: "fixed" }}>
-            <Table.Thead style={{ textAlign: "left" }}>
-              <Table.Tr>
-                <Table.Th style={{ width: "3%" }}>
-                  <Checkbox
-                    size="xs"
-                    checked={selected.size === shares.length && shares.length > 0}
-                    indeterminate={selected.size > 0 && selected.size < shares.length}
-                    onChange={toggleAll}
-                  />
-                </Table.Th>
-                <Table.Th style={{ width: "37%" }}>
-                  <FormattedMessage id="account.shares.table.name" />
-                </Table.Th>
-                <Table.Th style={{ width: "12%" }}>
-                  <FormattedMessage id="account.shares.table.visitors" />
-                </Table.Th>
-                <Table.Th style={{ whiteSpace: "nowrap", width: "22%" }}>
-                  <FormattedMessage id="account.shares.table.expiresAt" />
-                </Table.Th>
-                <Table.Th style={{ width: "26%" }}></Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {shares.map((share) => {
-                const storedKey = ownerShareKey(share);
-                const keyFragment = storedKey
-                  ? buildKeyFragment(storedKey)
-                  : "";
-                const shareHref = `/share/${share.id}${keyFragment}`;
-                return (
-                <Table.Tr key={share.id}>
-                  <Table.Td>
+            <Table
+              striped
+              highlightOnHover
+              withRowBorders
+              verticalSpacing="lg"
+              style={{ tableLayout: "fixed" }}
+            >
+              <Table.Thead style={{ textAlign: "left" }}>
+                <Table.Tr>
+                  <Table.Th style={{ width: "3%" }}>
                     <Checkbox
                       size="xs"
-                      checked={selected.has(share.id)}
-                      onChange={() => toggleSelect(share.id)}
+                      checked={
+                        selected.size === shares.length && shares.length > 0
+                      }
+                      indeterminate={
+                        selected.size > 0 && selected.size < shares.length
+                      }
+                      onChange={toggleAll}
                     />
-                  </Table.Td>
-                  <Table.Td>
-                    <Box style={{ minWidth: 0 }}>
-                        <Link href={shareHref} title={shareDisplayName(share)} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
-                          <Text size="sm" fw={500} lineClamp={2} style={{ cursor: "pointer", overflowWrap: "anywhere", wordBreak: "break-word" }}>
-                            {shareDisplayName(share)}
-                          </Text>
-                        </Link>
-                        {share.description && (
-                          <Text size="xs" c="dimmed" lineClamp={1}>
-                            {share.description}
-                          </Text>
-                        )}
-                        {share.name?.trim() && (
-                          <Text size="xs" c="dimmed" lineClamp={1} style={{ overflowWrap: "anywhere" }}>
-                            {share.id}
-                          </Text>
-                        )}
-                    </Box>
-                  </Table.Td>
-                  <Table.Td>
-                    {share.security.maxViews ? (
-                      <FormattedMessage
-                        id="account.shares.table.visitor-count"
-                        values={{
-                          count: share.views,
-                          max: share.security.maxViews,
-                        }}
-                      />
-                    ) : (
-                      share.views
-                    )}
-                  </Table.Td>
-                  <Table.Td>
-                    {dayjs(share.expiration).unix() === 0 ? (
-                      <FormattedMessage id="account.shares.table.expiry-never" />
-                    ) : (
-                      dayjs(share.expiration).format("LLL")
-                    )}
-                  </Table.Td>
-                  <Table.Td>
-                    <Group justify="right" gap={6} wrap="nowrap">
-                      {share.security.passwordProtected && (
-                        <Tooltip label={t("account.shares.table.password-protected")}>
-                          <ThemeIcon color="orange" variant="light" size={25}>
-                            <TbLock size={14} />
-                          </ThemeIcon>
-                        </Tooltip>
-                      )}
-                      <Link href={`/share/${share.id}/edit`}>
-                        <ActionIcon color="blue" variant="light" size={25}>
-                          <TbEdit />
-                        </ActionIcon>
-                      </Link>
-                      <ActionIcon
-                        color="blue"
-                        variant="light"
-                        size={25}
-                        onClick={() => {
-                          showShareInformationsModal(
-                            modals,
-                            share,
-                            parseInt(config.get("share.maxSize")),
-                            ownerShareKey(share),
-                          );
-                        }}
-                      >
-                        <TbInfoCircle />
-                      </ActionIcon>
-                      <ActionIcon
-                        color="teal"
-                        variant="light"
-                        size={25}
-                        onClick={async () => {
-                          const storedKey = ownerShareKey(share);
-                          const keyFragment = storedKey
-                            ? buildKeyFragment(storedKey)
-                            : "";
-                          const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
-                          const ok = await copyToClipboard(link);
-                          if (ok) {
-                            toast.success(t("common.notify.copied-link"));
-                          } else {
-                            showShareLinkModal(modals, share.id, keyFragment);
-                          }
-                        }}
-                      >
-                        <TbCopy />
-                      </ActionIcon>
-                      <ActionIcon
-                        color="grape"
-                        variant="light"
-                        size={25}
-                        onClick={() => {
-                          const storedKey = ownerShareKey(share);
-                          const keyFragment = storedKey
-                            ? buildKeyFragment(storedKey)
-                            : "";
-                          const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
-                          showQrCodeModal(modals, link);
-                        }}
-                      >
-                        <TbQrcode />
-                      </ActionIcon>
-                      <Tooltip label={t("signing.modal.title")}>
-                        <ActionIcon
-                          color="violet"
-                          variant="light"
-                          size={25}
-                          style={{
-                            display: hasTeamAccess && signablePdfFiles(share).length > 0
-                              ? undefined
-                              : "none",
-                          }}
-                          onClick={() => {
-                            const fileList = signablePdfFiles(share);
-                            setSigModalShare({ id: share.id, files: fileList, isE2E: !!share.isE2EEncrypted, key: ownerShareKey(share) });
-                          }}
-                        >
-                          <TbSignature />
-                        </ActionIcon>
-                      </Tooltip>
-                      <ActionIcon
-                        color="red"
-                        variant="light"
-                        size={25}
-                        onClick={() => {
-                          modals.openConfirmModal({
-                            title: t("account.shares.modal.delete.title", {
-                              share: share.id,
-                            }),
-                            children: (
-                              <Text size="sm">
-                                <FormattedMessage id="account.shares.modal.delete.description" />
-                              </Text>
-                            ),
-                            confirmProps: {
-                              color: "red",
-                            },
-                            labels: {
-                              confirm: t("common.button.delete"),
-                              cancel: t("common.button.cancel"),
-                            },
-                            onConfirm: () =>
-                              deleteShareMutation.mutate(share.id),
-                          });
-                        }}
-                      >
-                        <TbTrash />
-                      </ActionIcon>
-                    </Group>
-                  </Table.Td>
+                  </Table.Th>
+                  <Table.Th style={{ width: "37%" }}>
+                    <FormattedMessage id="account.shares.table.name" />
+                  </Table.Th>
+                  <Table.Th style={{ width: "12%" }}>
+                    <FormattedMessage id="account.shares.table.visitors" />
+                  </Table.Th>
+                  <Table.Th style={{ whiteSpace: "nowrap", width: "22%" }}>
+                    <FormattedMessage id="account.shares.table.expiresAt" />
+                  </Table.Th>
+                  <Table.Th style={{ width: "26%" }}></Table.Th>
                 </Table.Tr>
-                );
-              })}
-            </Table.Tbody>
-          </Table>
-        </Box>
+              </Table.Thead>
+              <Table.Tbody>
+                {shares.map((share) => {
+                  const storedKey = ownerShareKey(share);
+                  const keyFragment = storedKey
+                    ? buildKeyFragment(storedKey)
+                    : "";
+                  const shareHref = `/share/${share.id}${keyFragment}`;
+                  return (
+                    <Table.Tr key={share.id}>
+                      <Table.Td>
+                        <Checkbox
+                          size="xs"
+                          checked={selected.has(share.id)}
+                          onChange={() => toggleSelect(share.id)}
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        <Box style={{ minWidth: 0 }}>
+                          <Link
+                            href={shareHref}
+                            title={shareDisplayName(share)}
+                            style={{
+                              display: "block",
+                              textDecoration: "none",
+                              color: "inherit",
+                            }}
+                          >
+                            <Text
+                              size="sm"
+                              fw={500}
+                              lineClamp={2}
+                              style={{
+                                cursor: "pointer",
+                                overflowWrap: "anywhere",
+                                wordBreak: "break-word",
+                              }}
+                            >
+                              {shareDisplayName(share)}
+                            </Text>
+                          </Link>
+                          {shareInfoOf(share).description && (
+                            <Text size="xs" c="dimmed" lineClamp={1}>
+                              {shareInfoOf(share).description}
+                            </Text>
+                          )}
+                          {shareInfoOf(share).name?.trim() && (
+                            <Text
+                              size="xs"
+                              c="dimmed"
+                              lineClamp={1}
+                              style={{ overflowWrap: "anywhere" }}
+                            >
+                              {share.id}
+                            </Text>
+                          )}
+                        </Box>
+                      </Table.Td>
+                      <Table.Td>
+                        {share.security.maxViews ? (
+                          <FormattedMessage
+                            id="account.shares.table.visitor-count"
+                            values={{
+                              count: share.views,
+                              max: share.security.maxViews,
+                            }}
+                          />
+                        ) : (
+                          share.views
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        {dayjs(share.expiration).unix() === 0 ? (
+                          <FormattedMessage id="account.shares.table.expiry-never" />
+                        ) : (
+                          dayjs(share.expiration).format("LLL")
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        <Group justify="right" gap={6} wrap="nowrap">
+                          {share.security.passwordProtected && (
+                            <Tooltip
+                              label={t(
+                                "account.shares.table.password-protected",
+                              )}
+                            >
+                              <ThemeIcon
+                                color="orange"
+                                variant="light"
+                                size={25}
+                              >
+                                <TbLock size={14} />
+                              </ThemeIcon>
+                            </Tooltip>
+                          )}
+                          <Link href={`/share/${share.id}/edit`}>
+                            <ActionIcon color="blue" variant="light" size={25}>
+                              <TbEdit />
+                            </ActionIcon>
+                          </Link>
+                          <ActionIcon
+                            color="blue"
+                            variant="light"
+                            size={25}
+                            onClick={() => {
+                              showShareInformationsModal(
+                                modals,
+                                share,
+                                parseInt(config.get("share.maxSize")),
+                                ownerShareKey(share),
+                              );
+                            }}
+                          >
+                            <TbInfoCircle />
+                          </ActionIcon>
+                          <ActionIcon
+                            color="teal"
+                            variant="light"
+                            size={25}
+                            onClick={async () => {
+                              const storedKey = ownerShareKey(share);
+                              const keyFragment = storedKey
+                                ? buildKeyFragment(storedKey)
+                                : "";
+                              const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
+                              const ok = await copyToClipboard(link);
+                              if (ok) {
+                                toast.success(t("common.notify.copied-link"));
+                              } else {
+                                showShareLinkModal(
+                                  modals,
+                                  share.id,
+                                  keyFragment,
+                                );
+                              }
+                            }}
+                          >
+                            <TbCopy />
+                          </ActionIcon>
+                          <ActionIcon
+                            color="grape"
+                            variant="light"
+                            size={25}
+                            onClick={() => {
+                              const storedKey = ownerShareKey(share);
+                              const keyFragment = storedKey
+                                ? buildKeyFragment(storedKey)
+                                : "";
+                              const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
+                              showQrCodeModal(modals, link);
+                            }}
+                          >
+                            <TbQrcode />
+                          </ActionIcon>
+                          <Tooltip label={t("signing.modal.title")}>
+                            <ActionIcon
+                              color="violet"
+                              variant="light"
+                              size={25}
+                              style={{
+                                display:
+                                  hasTeamAccess &&
+                                  signablePdfFiles(share).length > 0
+                                    ? undefined
+                                    : "none",
+                              }}
+                              onClick={() => {
+                                const fileList = signablePdfFiles(share);
+                                setSigModalShare({
+                                  id: share.id,
+                                  files: fileList,
+                                  isE2E: !!share.isE2EEncrypted,
+                                  key: ownerShareKey(share),
+                                });
+                              }}
+                            >
+                              <TbSignature />
+                            </ActionIcon>
+                          </Tooltip>
+                          <ActionIcon
+                            color="red"
+                            variant="light"
+                            size={25}
+                            onClick={() => {
+                              modals.openConfirmModal({
+                                title: t("account.shares.modal.delete.title", {
+                                  share: share.id,
+                                }),
+                                children: (
+                                  <Text size="sm">
+                                    <FormattedMessage id="account.shares.modal.delete.description" />
+                                  </Text>
+                                ),
+                                confirmProps: {
+                                  color: "red",
+                                },
+                                labels: {
+                                  confirm: t("common.button.delete"),
+                                  cancel: t("common.button.cancel"),
+                                },
+                                onConfirm: () =>
+                                  deleteShareMutation.mutate(share.id),
+                              });
+                            }}
+                          >
+                            <TbTrash />
+                          </ActionIcon>
+                        </Group>
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
+              </Table.Tbody>
+            </Table>
+          </Box>
         </>
       )}
 

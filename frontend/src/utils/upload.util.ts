@@ -1,3 +1,5 @@
+import { scheduleUploadInterval } from "./uploadClock.util";
+import { fingerprintUploadFile, getUploadResumeEntry, rememberUploadResumeEntry, forgetUploadResumeEntry } from "./uploadResume.util";
 import { showNotification } from "@mantine/notifications";
 import { createElement } from "react";
 import {
@@ -413,14 +415,14 @@ function runWorkerBatch(
     // itself gets 401 because the token was never refreshed" scenarios on
     // long uploads (large .vmdk, .iso, etc.).
     const TOKEN_REFRESH_INTERVAL_MS = 10 * 60 * 1000; // 10 min
-    const proactiveRefreshTimer = setInterval(() => {
+    const proactiveRefreshTimer = scheduleUploadInterval(() => {
       doTokenRefresh().catch(() => {});
     }, TOKEN_REFRESH_INTERVAL_MS);
 
     const cleanup = () => {
       if (cleanedUp) return;
       cleanedUp = true;
-      clearInterval(proactiveRefreshTimer);
+      proactiveRefreshTimer();
       signal?.removeEventListener("abort", onAbort);
       worker.removeEventListener("message", onMsg);
       worker.removeEventListener("error", onErr);
@@ -496,6 +498,7 @@ function runWorkerBatch(
             }
             worker.postMessage({
               type: result.ok ? "token-refresh-done" : "token-refresh-failed",
+              status: result.status,
             });
           }
           break;
@@ -503,9 +506,6 @@ function runWorkerBatch(
         case "need-safeline-challenge":
           try {
             await completeSafeLineChallenge();
-            // Small delay: let SafeLine propagate the session cookie
-            // to its edge nodes before the next chunk is sent.
-            await new Promise((r) => setTimeout(r, 2000));
             worker.postMessage({ type: "safeline-resolved" });
           } catch {
             // Challenge failed (popup blocked or timeout).
@@ -535,9 +535,6 @@ function runWorkerBatch(
               onClick: async () => {
                 try {
                   await completeSafeLineChallenge();
-                  // Session confirmed valid - give SafeLine a moment to
-                  // propagate, then resume the worker.
-                  await new Promise((r) => setTimeout(r, 1500));
                   worker.postMessage({ type: "safeline-resolved" });
                 } catch {
                   worker.postMessage({ type: "safeline-failed" });
@@ -754,7 +751,9 @@ export async function uploadFileViaWorker(
   // Keep the UUID stable across the page-level retry queue. The backend can
   // then reconcile already committed S3 parts instead of creating an orphaned
   // multipart upload and retransmitting the complete file.
-  let fileId: string | undefined = getStableMultipartFileId(file, shareId);
+  const resume = getUploadResumeEntry(file, shareId);
+  if (resume) chunkSize = resume.chunkSize;
+  let fileId: string | undefined = resume?.fileId ?? getStableMultipartFileId(file, shareId);
 
   // FILE_META_V1: the server only receives a placeholder name, the real
   // name and folder path travel encrypted with the share key.
@@ -765,7 +764,7 @@ export async function uploadFileViaWorker(
     if (!cryptoKey) {
       throw new Error("Encrypted file names require the share key");
     }
-    encryptedMetadata = await encryptFileMetadata(
+    encryptedMetadata = resume?.encryptedMetadata ?? await encryptFileMetadata(
       cryptoKey,
       shareId,
       fileId,
@@ -778,10 +777,23 @@ export async function uploadFileViaWorker(
   // Do not trust caller arithmetic here: the Worker uses a variable-size
   // bootstrap part, so its total and bounds must come from one authoritative
   // layout calculation.
-  const { initialChunkSize, totalChunks } = getUploadChunkLayout(
+  const { initialChunkSize, totalChunks } = resume ?? getUploadChunkLayout(
     file.size,
     chunkSize,
   );
+
+  const cryptoChunkSize = resume?.cryptoChunkSize ?? (isE2E ? Math.min(E2E_CRYPTO_RECORD_SIZE, chunkSize) : chunkSize);
+
+  if (file instanceof File) {
+    await rememberUploadResumeEntry(file, {
+      shareId, fileId, name: file.name, relativePath, size: file.size,
+      lastModified: file.lastModified,
+      fingerprint: resume?.fingerprint ?? await fingerprintUploadFile(file),
+      chunkSize, initialChunkSize, totalChunks,
+      cryptoChunkSize,
+      encryptedMetadata, savedAt: Date.now(),
+    }, cryptoKey);
+  }
 
   // Single Worker for the entire upload: no mid-transfer recycling.
   let result: { fileId: string; nextChunk: number };
@@ -794,7 +806,7 @@ export async function uploadFileViaWorker(
       totalChunks,
       isE2E,
       cryptoKeyRaw,
-      isE2E ? Math.min(E2E_CRYPTO_RECORD_SIZE, chunkSize) : chunkSize,
+      cryptoChunkSize,
       0,
       totalChunks,
       fileId,
@@ -813,5 +825,6 @@ export async function uploadFileViaWorker(
 
   fileId = result.fileId;
   forgetStableMultipartFileId(file, shareId);
+  forgetUploadResumeEntry(file, shareId);
   return fileId!;
 }

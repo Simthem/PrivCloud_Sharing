@@ -24,6 +24,10 @@ type User = {
   shareDekV1Write?: boolean;
   /** Those shares also encrypt their file names (FILE_META_V1). */
   fileMetaV1Write?: boolean;
+  /** E2E Team uploads also encrypt their file names with K_team. */
+  fileMetaV1TeamWrite?: boolean;
+  /** New E2E upload links encrypt their name with K_rs. */
+  fileMetaV1ReverseShareWrite?: boolean;
 };
 
 export type CreateUser = {

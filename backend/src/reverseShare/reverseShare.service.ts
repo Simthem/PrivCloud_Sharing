@@ -3,6 +3,7 @@ import { ConfigService } from "src/config/config.service";
 import { FileService } from "src/file/file.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { parseRelativeDateToAbsolute } from "src/utils/date.util";
+import { isValidEncryptedReverseShareName } from "src/file/file-metadata-scheme";
 import { CreateReverseShareDTO } from "./dto/createReverseShare.dto";
 import { UpdateReverseShareDTO } from "./dto/updateReverseShare.dto";
 
@@ -14,8 +15,21 @@ export class ReverseShareService {
     private fileService: FileService,
   ) {}
 
-  async create(data: CreateReverseShareDTO, creatorId: string) {
+  async create(data: CreateReverseShareDTO, creatorId: string, encryptedNameAllowed = false) {
     const expirationDate = parseRelativeDateToAbsolute(data.shareExpiration);
+
+    // An encrypted name needs K_rs, replaces the readable one and follows the
+    // owner's FILE_META_V1_REVERSE_SHARE_WRITE selection.
+    if (data.encryptedName !== undefined) {
+      if (!encryptedNameAllowed || !data.encryptedReverseShareKey) {
+        throw new BadRequestException("reverse_share_name_not_allowed");
+      }
+      if (data.name || !isValidEncryptedReverseShareName(data.encryptedName)) {
+        throw new BadRequestException("reverse_share_name_invalid");
+      }
+    }
+
+
 
     // Reverse share link expiration is independent from individual share
     // expiration (share.maxExpiration).  The link expiration controls how
@@ -40,6 +54,7 @@ export class ReverseShareService {
         simplified: data.simplified,
         publicAccess: data.publicAccess,
         encryptedReverseShareKey: data.encryptedReverseShareKey || null,
+        encryptedName: data.encryptedName || null,
         creatorId,
       },
     });
@@ -56,6 +71,14 @@ export class ReverseShareService {
 
     return reverseShare;
   }
+  /** Identity used by the rollout flags of the reverse share's owner. */
+  async getCreatorIdentity(creatorId: string) {
+    return this.prisma.user.findUnique({
+      where: { id: creatorId },
+      select: { id: true, email: true },
+    });
+  }
+
 
   async getAllByUser(userId: string) {
     const reverseShares = await this.prisma.reverseShare.findMany({

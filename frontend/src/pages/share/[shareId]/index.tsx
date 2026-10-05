@@ -13,6 +13,7 @@ import FileList from "../../../components/share/FileList";
 import showEnterPasswordModal from "../../../components/share/showEnterPasswordModal";
 import useUser from "../../../hooks/user.hook";
 import useDecryptedFileNames from "../../../hooks/useDecryptedFileNames.hook";
+import useShareInfo from "../../../hooks/useShareInfo.hook";
 import showCaptchaModal from "../../../components/share/showCaptchaModal";
 import showErrorModal from "../../../components/share/showErrorModal";
 import useTranslate from "../../../hooks/useTranslate.hook";
@@ -150,6 +151,8 @@ const Share = ({ shareId }: { shareId: string }) => {
   const { files: shareFiles, pending: fileNamesPending } =
     useDecryptedFileNames<FileMetaData>(share?.id, share?.files, e2eKey);
   const filesLoading = isLoading || (fileNamesPending && !!e2eKey);
+  // The title and description may be encrypted with the same key.
+  const shareInfo = useShareInfo(share, e2eKey);
 
   const getShareToken = async (password?: string, captchaToken?: string) => {
     await shareService
@@ -252,7 +255,7 @@ const Share = ({ shareId }: { shareId: string }) => {
   return (
     <>
       <Meta
-        title={t("share.title", { shareId: share?.name || shareId })}
+        title={t("share.title", { shareId: shareInfo.name || shareId })}
         description={t("share.description")}
         noIndex
       />
@@ -260,9 +263,9 @@ const Share = ({ shareId }: { shareId: string }) => {
       <Group justify="space-between" mb="lg">
         <Box style={{ maxWidth: "70%" }}>
           <Title order={1} fz="h3">
-            {share?.name || share?.id}
+            {shareInfo.name || share?.id}
           </Title>
-          <Text size="sm">{share?.description}</Text>
+          <Text size="sm">{shareInfo.description}</Text>
           {share?.files?.length > 0 && (
             <Text size="sm" c="dimmed" mt={5}>
               <FormattedMessage
@@ -305,6 +308,12 @@ const Share = ({ shareId }: { shareId: string }) => {
           />
         )}
       </Group>
+
+      {share?.uploadPending && (
+        <Alert title={t("upload.pending.title")} color="orange" mb="lg">
+          {t("upload.pending.detail")}
+        </Alert>
+      )}
 
       {isE2EMissingKey && (
         <Alert

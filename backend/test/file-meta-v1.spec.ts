@@ -8,9 +8,12 @@ import {
   FILE_META_V1,
   encryptedFilePlaceholderName,
   isFileMetaWriteEnabledFor,
+  isReverseShareFileMetaWriteEnabledFor,
+  isTeamFileMetaWriteEnabledFor,
   isValidEncryptedMetadata,
   resolveUploadFileMetadata,
 } from "src/file/file-metadata-scheme";
+import { FileController } from "src/file/file.controller";
 import { FileService } from "src/file/file.service";
 import { CreateShareDTO } from "src/share/dto/createShare.dto";
 import { ShareDTO } from "src/share/dto/share.dto";
@@ -39,6 +42,8 @@ const FLAG_KEYS = [
   "FILE_META_V1_WRITE",
   "FILE_META_V1_CANARY_USERS",
   "FILE_META_V1_ROLLOUT_PERCENT",
+  "FILE_META_V1_TEAM_WRITE",
+  "FILE_META_V1_REVERSE_SHARE_WRITE",
 ];
 const DEK_FLAGS = {
   SHARE_DEK_V1_WRITE: "true",
@@ -540,6 +545,269 @@ testCase("migration is additive and pins the placeholder name", () => {
   db.prepare(
     `UPDATE "File" SET "name" = 'renamed.pdf' WHERE "id" = 'plain-file'`,
   ).run();
+  db.close();
+});
+
+const SELECTED = { FILE_META_V1_WRITE: "true", FILE_META_V1_CANARY_USERS: "*" };
+const unavailable = (error: unknown) =>
+  error instanceof ConflictException &&
+  (error.getResponse() as { error?: string }).error ===
+    "file_metadata_scheme_unavailable";
+
+testCase("Team uploads encrypt names with K_team behind their own flag", () => {
+  const teamUpload = {
+    id: "t1",
+    isE2EEncrypted: true,
+    fileMetadataScheme: FILE_META_V1,
+  } as CreateShareDTO;
+  const resolve = (request: CreateShareDTO) =>
+    shareService().resolveCreateCryptoData(
+      request,
+      owner as never,
+      false,
+      true,
+    );
+
+  withFlags({}, () => assert.throws(() => resolve(teamUpload), unavailable));
+  // Personal selection alone does not reach Team folders.
+  withFlags(SELECTED, () => {
+    assert.equal(isTeamFileMetaWriteEnabledFor(owner), false);
+    assert.throws(() => resolve(teamUpload), unavailable);
+  });
+  withFlags({ ...SELECTED, FILE_META_V1_TEAM_WRITE: "true" }, () => {
+    assert.equal(isTeamFileMetaWriteEnabledFor(owner), true);
+    const data = resolve(teamUpload);
+    assert.equal(data.fileMetadataScheme, FILE_META_V1);
+    // K_team stays the content key: no personal key scheme is recorded.
+    assert.equal(data.cryptoScheme, null);
+    assert.throws(
+      () => resolve({ ...teamUpload, isE2EEncrypted: false }),
+      BadRequestException,
+    );
+  });
+  withFlags(
+    { FILE_META_V1_WRITE: "true", FILE_META_V1_TEAM_WRITE: "true" },
+    () => assert.throws(() => resolve(teamUpload), unavailable),
+  );
+});
+
+testCase("reverse-share uploads follow the owner's selection", () => {
+  const upload = {
+    id: "r1",
+    isE2EEncrypted: true,
+    fileMetadataScheme: FILE_META_V1,
+  } as CreateShareDTO;
+  const reverseShare = {
+    encryptedReverseShareKey: "wrapped-k-rs",
+    owner,
+  };
+  const resolve = (
+    request: CreateShareDTO,
+    rs:
+      | typeof reverseShare
+      | { encryptedReverseShareKey: null; owner: typeof owner },
+  ) =>
+    // The uploader is anonymous: only the owner decides.
+    shareService().resolveCreateCryptoData(request, undefined, true, false, rs);
+
+  withFlags(SELECTED, () =>
+    assert.throws(() => resolve(upload, reverseShare), unavailable),
+  );
+  withFlags({ ...SELECTED, FILE_META_V1_REVERSE_SHARE_WRITE: "true" }, () => {
+    assert.equal(isReverseShareFileMetaWriteEnabledFor(owner), true);
+    assert.equal(
+      resolve(upload, reverseShare).fileMetadataScheme,
+      FILE_META_V1,
+    );
+    // A reverse share without K_rs has no key that could hide the names.
+    assert.throws(
+      () => resolve(upload, { encryptedReverseShareKey: null, owner }),
+      BadRequestException,
+    );
+    assert.throws(
+      () => resolve({ ...upload, isE2EEncrypted: false }, reverseShare),
+      BadRequestException,
+    );
+  });
+});
+
+testCase(
+  "an encrypted title replaces the readable title and description",
+  () => {
+    const personal = { ...dekShare, fileMetadataScheme: FILE_META_V1 };
+    const resolve = (request: Partial<CreateShareDTO>) =>
+      shareService().resolveCreateCryptoData(
+        request as CreateShareDTO,
+        owner as never,
+        false,
+        false,
+      );
+    withFlags({ ...DEK_FLAGS, ...SELECTED }, () => {
+      const info = ciphertext(128);
+      assert.equal(
+        resolve({ ...personal, encryptedInfo: info }).encryptedInfo,
+        info,
+      );
+      assert.equal(resolve(personal).encryptedInfo, null);
+      for (const request of [
+        { ...personal, encryptedInfo: info, name: "Contrat" },
+        { ...personal, encryptedInfo: info, description: "Signé" },
+        { ...personal, encryptedInfo: "not base64url!" },
+        { ...personal, encryptedInfo: ciphertext(70) },
+        { ...dekShare, encryptedInfo: info },
+      ]) {
+        assert.throws(() => resolve(request), BadRequestException);
+      }
+    });
+  },
+);
+
+testCase("create and read DTOs carry the encrypted title", async () => {
+  const base = {
+    id: "abc",
+    expiration: "never",
+    security: {},
+    fileMetadataScheme: FILE_META_V1,
+  };
+  const dto = plainToInstance(CreateShareDTO, {
+    ...base,
+    encryptedInfo: ciphertext(64),
+  });
+  assert.deepEqual(await validate(dto), []);
+  const tooLong = plainToInstance(CreateShareDTO, {
+    ...base,
+    encryptedInfo: "A".repeat(6001),
+  });
+  assert.equal((await validate(tooLong)).length > 0, true);
+  const exposed = new ShareDTO().from({
+    id: "abc",
+    fileMetadataScheme: FILE_META_V1,
+    encryptedInfo: ciphertext(64),
+  } as never);
+  assert.equal(exposed.encryptedInfo, ciphertext(64));
+  assert.equal(exposed.name, undefined);
+});
+
+testCase(
+  "Team key rotation rewrites an encrypted name with the last chunk",
+  async () => {
+    const updates: unknown[] = [];
+    const controller = (metadataScheme: number | null) => {
+      const instance = Object.create(
+        FileController.prototype,
+      ) as FileController;
+      Object.assign(instance, {
+        prisma: {
+          share: { findUnique: async () => ({ cryptoScheme: null }) },
+          file: {
+            findFirst: async () => ({ metadataScheme }),
+            update: async (args: unknown) => updates.push(args),
+          },
+        },
+        fileService: { replaceFileContent: async () => undefined },
+        logger: { log() {}, warn() {}, debug() {}, error() {} },
+      });
+      return instance;
+    };
+    const chunk = (index: number, total: number) => ({
+      chunkIndex: String(index),
+      totalChunks: String(total),
+    });
+    const body = Buffer.alloc(16);
+    const name = ciphertext(64);
+    const call = (
+      instance: FileController,
+      index: number,
+      total: number,
+      header?: string,
+    ) =>
+      instance.reencrypt(
+        chunk(index, total),
+        body,
+        "share-1",
+        FILE_ID,
+        {} as never,
+        header,
+      );
+
+    const errorCode = (code: string) => (error: unknown) =>
+      error instanceof BadRequestException &&
+      (error.getResponse() as { error?: string }).error === code;
+
+    await assert.rejects(
+      call(controller(FILE_META_V1), 1, 2),
+      errorCode("file_metadata_required"),
+    );
+    await assert.rejects(
+      call(controller(null), 0, 1, name),
+      errorCode("file_metadata_not_allowed"),
+    );
+    await call(controller(FILE_META_V1), 0, 2);
+    assert.equal(updates.length, 0, "intermediate chunks keep the old name");
+    await call(controller(FILE_META_V1), 1, 2, name);
+    assert.deepEqual(updates, [
+      { where: { id: FILE_ID }, data: { encryptedMetadata: name } },
+    ]);
+    await call(controller(null), 0, 1);
+    assert.equal(updates.length, 1, "plain names are never rewritten");
+  },
+);
+
+testCase("extension migration keeps LEGACY shares out with triggers", () => {
+  const migration = "20261002120000_extend_file_meta_v1";
+  const statements = migrationStatements(migration);
+  // Only the previous FILE_META_V1 triggers are replaced, no row is rewritten.
+  const dropped = statements.match(/DROP TRIGGER "[^"]+"/g) ?? [];
+  assert.deepEqual(dropped, [
+    'DROP TRIGGER "Share_fileMetadataScheme_check_insert"',
+    'DROP TRIGGER "Share_fileMetadataScheme_check_update"',
+  ]);
+  assert.doesNotMatch(
+    statements.replace(/DROP TRIGGER/g, "").replace(/BEFORE UPDATE OF/g, ""),
+    /\bDROP\b|\bRENAME\b|\bUPDATE\b|\bDELETE\b|NOT NULL|DEFAULT/i,
+  );
+
+  const db = databaseWithMigrations(
+    "20260929120000_add_share_dek_v1",
+    "20260930120000_add_file_meta_v1",
+    migration,
+  );
+  const share = db.prepare(
+    `INSERT INTO "Share" ("id", "isE2EEncrypted", "cryptoScheme", "fileMetadataScheme", "encryptedInfo", "name", "description") VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const info = ciphertext(64);
+  // Team and reverse-share uploads keep a NULL personal key scheme.
+  share.run("team", 1, null, FILE_META_V1, null, null, null);
+  share.run("team-title", 1, null, FILE_META_V1, info, null, null);
+  for (const [id, e2e, scheme, names, encryptedInfo, name, description] of [
+    ["legacy", 1, 1, FILE_META_V1, null, null, null],
+    ["plain", 0, null, FILE_META_V1, null, null, null],
+    ["title-without-names", 1, null, null, info, null, null],
+    ["title-and-name", 1, null, FILE_META_V1, info, "Contrat", null],
+    ["title-and-description", 1, null, FILE_META_V1, info, null, "Bilan"],
+  ]) {
+    assert.throws(
+      () => share.run(id, e2e, scheme, names, encryptedInfo, name, description),
+      /Share\.(fileMetadataScheme|encryptedInfo)/,
+      String(id),
+    );
+  }
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `UPDATE "Share" SET "name" = 'Contrat' WHERE "id" = 'team-title'`,
+        )
+        .run(),
+    /Share\.encryptedInfo/,
+  );
+  assert.throws(
+    () =>
+      db
+        .prepare(`UPDATE "Share" SET "cryptoScheme" = 1 WHERE "id" = 'team'`)
+        .run(),
+    /Share\.fileMetadataScheme/,
+  );
   db.close();
 });
 

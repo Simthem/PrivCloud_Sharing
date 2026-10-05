@@ -292,6 +292,7 @@ export class FileService {
         share: {
           select: {
             teamFolderId: true,
+            isE2EEncrypted: true,
           },
         },
       },
@@ -327,12 +328,15 @@ export class FileService {
     const contentType = forceDownload
       ? "application/octet-stream"
       : String(detectedMime);
+    // The signed URL reaches the storage provider. The browser decrypts and
+    // names an E2E file itself, so its URL names neither the file nor its type.
+    const isE2E = metadata.share.isE2EEncrypted;
     const signed = await this.s3FileService.createBrowserDownloadUrl(
       shareId,
       fileId,
-      metadata.name,
-      forceDownload,
-      contentType,
+      isE2E ? fileId : metadata.name,
+      isE2E || forceDownload,
+      isE2E ? "application/octet-stream" : contentType,
     );
     const configuredDirectDownloadPartBytes = directPolicy.partBytes;
     const directDownloadMaxBufferBytes = directPolicy.maxBufferBytes;
@@ -818,6 +822,13 @@ export class FileService {
     return storageService.deleteAllFiles(shareId);
   }
 
+  async hasCompletedUploadData(shareId: string, storageProvider?: string) {
+    const storage = this.getStorageService(storageProvider);
+    return storage === this.s3FileService
+      ? this.s3FileService.hasCompletedUploadData(shareId)
+      : false;
+  }
+
   async getRecentUploadActivity(
     shareId: string,
     storageProvider: string,
@@ -827,6 +838,11 @@ export class FileService {
       shareId,
       since,
     );
+  }
+
+  async hasPendingMultipartUpload(shareId: string, storageProvider?: string) {
+    const storage = this.getStorageService(storageProvider);
+    return storage === this.s3FileService && await this.s3FileService.hasPendingMultipartUpload(shareId);
   }
 
   async getZip(shareId: string): Promise<Readable> {

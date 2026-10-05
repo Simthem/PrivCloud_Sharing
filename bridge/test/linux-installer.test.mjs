@@ -61,6 +61,12 @@ case "$url" in
   */privcloud-companion.mjs)
     cp "$MOCK_COMPANION_SOURCE" "$output"
     ;;
+  */direct-upload.mjs)
+    cp "$MOCK_DIRECT_SOURCE" "$output"
+    ;;
+  */native-transport.mjs)
+    cp "$MOCK_TRANSPORT_SOURCE" "$output"
+    ;;
   */register-native-messaging.sh)
     cp "$MOCK_NATIVE_MESSAGING_INSTALLER" "$output"
     ;;
@@ -90,6 +96,11 @@ esac
         MOCK_COMPANION_SOURCE: path.join(
           bridgeDirectory,
           "src/privcloud-bridge.mjs",
+        ),
+        MOCK_DIRECT_SOURCE: path.join(bridgeDirectory, "src/direct-upload.mjs"),
+        MOCK_TRANSPORT_SOURCE: path.join(
+          bridgeDirectory,
+          "src/native-transport.mjs",
         ),
         MOCK_NATIVE_MESSAGING_INSTALLER: path.join(
           bridgeDirectory,
@@ -123,6 +134,13 @@ esac
     ),
   );
 
+  await access(
+    path.join(
+      homeDirectory,
+      ".local/share/privcloud-companion/native-transport.mjs",
+    ),
+  );
+
   const launcher = await readFile(
     path.join(homeDirectory, ".local/bin/privcloud-companion"),
     "utf8",
@@ -135,4 +153,37 @@ esac
     launcher,
     /PRIVCLOUD_BRIDGE_ORIGINS='http:\/\/127\.0\.0\.1:3000'/,
   );
+  const message = Buffer.from(
+    JSON.stringify({
+      id: "native-launch",
+      type: "health",
+      origin: "http://127.0.0.1:3000",
+      payload: {},
+    }),
+  );
+  const frame = Buffer.alloc(4);
+  frame.writeUInt32LE(message.length);
+  const nativeResult = spawnSync(
+    path.join(homeDirectory, ".local/bin/privcloud-companion"),
+    ["chrome-extension://" + "a".repeat(32) + "/"],
+    {
+      input: Buffer.concat([frame, message]),
+      timeout: 5000,
+      env: {
+        ...process.env,
+        HOME: homeDirectory,
+        NODE_OPTIONS: `--require=${noisyNodePreload}`,
+      },
+    },
+  );
+  assert.equal(nativeResult.status, 0, nativeResult.stderr.toString());
+  const nativeBodyLength = nativeResult.stdout.readUInt32LE(0);
+  assert.equal(
+    nativeBodyLength,
+    nativeResult.stdout.length - 4,
+    "Instrumentation noise must not corrupt native framing",
+  );
+  const nativeResponse = JSON.parse(nativeResult.stdout.subarray(4));
+  assert.equal(nativeResponse.ok, true);
+  assert.equal(nativeResponse.result.nativeTransportVersion, 1);
 });

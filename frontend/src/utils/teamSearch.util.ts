@@ -1,3 +1,6 @@
+import { importKeyFromBase64 } from "./crypto.util";
+import { openFileName, openShareInfo } from "./fileMetadata.util";
+
 export type TeamSearchKind = "FILE" | "FOLDER" | "SIGNATURE" | "ACTIVITY";
 
 export type TeamSearchResult = {
@@ -143,5 +146,65 @@ export function buildTeamSearchResults(
       if (!query) return true;
       return normalize(`${result.name} ${result.secondary} ${result.status || ""}`).includes(query);
     })
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+}
+
+type EncryptedSearchFile = {
+  id: string;
+  shareId: string;
+  shareName?: string | null;
+  name: string;
+  relativePath?: string | null;
+  metadataScheme?: number | null;
+  encryptedMetadata?: string | null;
+  shareEncryptedInfo?: string | null;
+};
+
+/**
+ * Index with the FILE_META_V1 file names, folder paths and share titles
+ * opened with K_team, so that matching and ranking see the real values.
+ * The server only sent placeholders for them. An index without encrypted
+ * entries is returned as it is.
+ */
+export async function openSearchIndexNames<
+  T extends { files: EncryptedSearchFile[] },
+>(index: T, teamKeyB64: string): Promise<T> {
+  if (
+    !index.files.some(
+      (file) => file.metadataScheme != null || !!file.shareEncryptedInfo,
+    )
+  ) {
+    return index;
+  }
+  const key = await importKeyFromBase64(teamKeyB64);
+  const shareTitles = new Map<string, Promise<string | undefined>>();
+  const files = await Promise.all(
+    index.files.map(async (file) => {
+      let shareName = file.shareName;
+      if (file.shareEncryptedInfo) {
+        if (!shareTitles.has(file.shareId)) {
+          shareTitles.set(
+            file.shareId,
+            openShareInfo(
+              { id: file.shareId, encryptedInfo: file.shareEncryptedInfo },
+              key,
+            ).then((info) => info.name),
+          );
+        }
+        shareName = (await shareTitles.get(file.shareId)) ?? null;
+      }
+      if (file.metadataScheme == null) return { ...file, shareName };
+      const opened = await openFileName({ ...file, fileId: file.id }, key);
+      return {
+        ...file,
+        shareName,
+        name: opened.name,
+        relativePath: opened.relativePath ?? null,
+      };
+    }),
+  );
+  return { ...index, files };
 }

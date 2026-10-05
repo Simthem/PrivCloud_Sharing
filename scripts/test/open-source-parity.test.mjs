@@ -110,18 +110,17 @@ test("the public tree contains no native Android application surface", async () 
   );
 });
 
-test("WebDAV stays authenticated but free of plan/subscription guards", async () => {
-  const [appModule, controller, modal] = await Promise.all([
+test("WebDAV credentials stay on the authenticated local Companion", async () => {
+  const [appModule, modal, webdav] = await Promise.all([
     read("backend/src/app.module.ts"),
-    read("backend/src/webdav/webdav-proxy.controller.ts"),
     read("frontend/src/components/upload/WebDavImportModal.tsx"),
+    read("frontend/src/services/webdav.service.ts"),
   ]);
-
-  assert.match(appModule, /WebDavModule/);
-  assert.match(controller, /@UseGuards\(JwtGuard\)/);
-  assert.doesNotMatch(controller, /(?:Plan|Premium|Subscription).*Guard/i);
-  assert.match(modal, /listWebDavViaProxy/);
-  assert.match(modal, /downloadWebDavViaProxy/);
+  assert.doesNotMatch(appModule, /WebDavModule/);
+  assert.doesNotMatch(modal, /listWebDavViaProxy|downloadWebDavViaProxy/);
+  assert.doesNotMatch(webdav, /\/api\/webdav\//);
+  assert.match(modal, /listWebDavDirectoryViaBridge/);
+  assert.match(modal, /downloadWebDavFileViaBridge/);
   assert.match(modal, /isOpenSourceBridgeCompatible/);
 });
 

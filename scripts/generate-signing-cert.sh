@@ -101,11 +101,10 @@ openssl verify -CAfile "$CA_DIR/root-ca.pem" -untrusted "$CA_DIR/signing-ca.pem"
 
 cat "$CA_DIR/signing-ca.pem" "$CA_DIR/root-ca.pem" > "$WORK_DIR/chain.pem"
 
-echo "==> Exporting to PKCS#12 (.p12) [legacy format for node-forge compatibility]..."
-# IMPORTANT: OpenSSL 3.x uses PBES2/AES by default for P12 encryption.
-# node-forge (used by @signpdf/signer-p12) only supports legacy format
-# (PBE-SHA1-3DES + SHA1 MAC). Without these flags, signing will fail with:
-#   "PKCS#12 MAC could not be verified. Invalid password?"
+echo "==> Exporting to PKCS#12 (.p12) [PBES2 AES-256-CBC, SHA-256 MAC]..."
+# The backend only reads PBES2 with AES and a SHA-256 (or stronger) MAC. The
+# flags pin that profile on every OpenSSL version, independently of its
+# defaults. Convert an older P12 with scripts/convert-signing-p12.sh.
 # The whole chain goes in the P12 so every CMS seal carries it.
 openssl pkcs12 -export \
   -in "$WORK_DIR/signing-cert.pem" \
@@ -113,9 +112,9 @@ openssl pkcs12 -export \
   -certfile "$WORK_DIR/chain.pem" \
   -out "$CERT_DIR/certificate.p12" \
   -name "PrivCloud Sharing PDF Signing" \
-  -keypbe PBE-SHA1-3DES \
-  -certpbe PBE-SHA1-3DES \
-  -macalg SHA1 \
+  -keypbe AES-256-CBC \
+  -certpbe AES-256-CBC \
+  -macalg SHA256 \
   -passout "pass:${CERT_PASSWORD}"
 
 # Public trust anchor, handed to verifiers with --ca.

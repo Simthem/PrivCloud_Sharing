@@ -7,6 +7,10 @@ export class ReverseShareDTO {
   @Expose()
   name?: string;
 
+  // Name encrypted with K_rs: the holders of the link open it in the browser.
+  @Expose()
+  encryptedName?: string | null;
+
   @Expose()
   maxShareSize: string;
 
@@ -25,6 +29,10 @@ export class ReverseShareDTO {
    // E2E: indicates whether the reverse share expects encrypted files
   @Expose()
   isE2EEncrypted: boolean;
+
+  // FILE_META_V1: uploads encrypt their file names and title with K_rs.
+  @Expose()
+  fileMetaV1Write?: boolean;
 
   from(partial: Partial<ReverseShareDTO>) {
     const result = plainToClass(ReverseShareDTO, partial, {

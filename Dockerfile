@@ -323,6 +323,7 @@ RUN apt-get update && \
 FROM base AS frontend-deps
 WORKDIR /opt/app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend/vendor ./vendor
 
 RUN npm ci
 
@@ -392,7 +393,6 @@ RUN set -e; \
 FROM base AS backend-deps
 WORKDIR /opt/app/backend
 COPY backend/package.json backend/package-lock.json ./
-COPY backend/patches ./patches
 
 RUN npm ci
 
@@ -492,6 +492,8 @@ COPY --chown=1000:1000 ./integrations/gmail-workspace-addon ./public/install/gma
 COPY --chown=1000:1000 ./bridge/native-messaging ./public/install/native-messaging
 COPY --chown=1000:1000 ./bridge/install ./public/install/companion/install
 COPY --chown=1000:1000 ./bridge/src/privcloud-bridge.mjs ./public/install/companion/privcloud-companion.mjs
+COPY --chown=1000:1000 ./bridge/src/native-transport.mjs ./public/install/companion/native-transport.mjs
+COPY --chown=1000:1000 ./bridge/src/direct-upload.mjs ./public/install/companion/direct-upload.mjs
 COPY --chown=1000:1000 ./bridge/package.json ./public/install/companion/package.json
 COPY --chown=1000:1000 ./bridge/README.md ./public/install/companion/README.md
 # Default images are copied without overwriting customized mounted images by

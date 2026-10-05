@@ -10,6 +10,17 @@ import { PushService } from "src/push/push.service";
 /** Cooldown in minutes for INSTANT mode (max 1 email per cooldown) */
 const INSTANT_COOLDOWN_MINUTES = 10;
 
+/**
+ * Name shown in download alerts. They go through push services and the mail
+ * provider, so the title of an E2E share is never written there.
+ */
+export function downloadAlertShareName(share: {
+  name: string | null;
+  isE2EEncrypted: boolean;
+}) {
+  return share.isE2EEncrypted ? "Partage chiffré" : share.name || "Sans titre";
+}
+
 @Injectable()
 export class DownloadNotificationService {
   private readonly logger = new Logger(DownloadNotificationService.name);
@@ -37,7 +48,7 @@ export class DownloadNotificationService {
     if (share.creatorId) {
       const shareUrl = `${this.config.get("general.appUrl")}/s/${share.id}`;
       const dateStr = moment().format("DD/MM/YYYY HH:mm");
-      const displayName = share.name || "Sans titre";
+      const displayName = downloadAlertShareName(share);
       void this.pushService.sendToUser(share.creatorId, {
         title: this.config.get("email.downloadNotificationSubject"),
         body: `"${displayName}" -- ${dateStr}`,
@@ -96,7 +107,7 @@ export class DownloadNotificationService {
 
     const shareUrl = `${this.config.get("general.appUrl")}/s/${share.id}`;
     const dateStr = moment(now).format("DD/MM/YYYY HH:mm");
-    const displayName = share.name || "Sans titre";
+    const displayName = downloadAlertShareName(share);
 
     try {
       await this.emailService.sendDownloadNotification(
@@ -195,7 +206,7 @@ export class DownloadNotificationService {
 
       if (!byRecipient.has(email)) byRecipient.set(email, []);
       byRecipient.get(email)!.push({
-        shareName: share.name,
+        shareName: downloadAlertShareName(share),
         count: share._count.downloadEvents,
         shareId: share.id,
       });
@@ -235,7 +246,7 @@ export class DownloadNotificationService {
 
   // --- Send digest for a single share --------------------------------------
   private async sendDigestForShare(
-    share: { id: string; name: string; creatorId: string | null; senderEmail: string | null; creator?: { email: string | null } | null },
+    share: { id: string; name: string | null; isE2EEncrypted: boolean; creatorId: string | null; senderEmail: string | null; creator?: { email: string | null } | null },
     count: number,
   ) {
     const recipientEmail = share.creator?.email ?? share.senderEmail;
@@ -243,7 +254,7 @@ export class DownloadNotificationService {
 
     const appUrl = this.config.get("general.appUrl");
     const shareUrl = `${appUrl}/s/${share.id}`;
-    const displayName = share.name || "Sans titre";
+    const displayName = downloadAlertShareName(share);
     const digestLine = `- "${displayName}": ${count} téléchargement${count > 1 ? "s" : ""} -- ${shareUrl}`;
 
     try {

@@ -30,7 +30,11 @@ import { UserDTO } from "./dto/user.dto";
 import { UserSevice } from "./user.service";
 import { AuthTotpService } from "src/auth/authTotp.service";
 import { isShareDekWriteEnabledFor } from "src/share/share-crypto-scheme";
-import { isFileMetaWriteEnabledFor } from "src/file/file-metadata-scheme";
+import {
+  isFileMetaWriteEnabledFor,
+  isTeamFileMetaWriteEnabledFor,
+  isReverseShareFileMetaWriteEnabledFor,
+} from "src/file/file-metadata-scheme";
 
 @Controller("users")
 export class UserController {
@@ -64,6 +68,9 @@ export class UserController {
       shareDekV1Write: isShareDekWriteEnabledFor(user),
       // Whether those shares also encrypt their file names (FILE_META_V1).
       fileMetaV1Write: isFileMetaWriteEnabledFor(user),
+      // Whether this account's E2E Team uploads encrypt their names with K_team.
+      fileMetaV1TeamWrite: isTeamFileMetaWriteEnabledFor(user),
+      fileMetaV1ReverseShareWrite: isReverseShareFileMetaWriteEnabledFor(user),
       teamId: teamMembership?.teamId || null,
     };
   }

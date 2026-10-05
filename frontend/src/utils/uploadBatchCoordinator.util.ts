@@ -1,3 +1,5 @@
+import { scheduleUploadTimeout } from "./uploadClock.util";
+
 const DEFAULT_DIRECT_CONNECTIONS_PER_ORIGIN = 6;
 const MAX_DIRECT_CONNECTIONS_PER_ORIGIN = 8;
 const MAX_DIRECT_ORIGINS = 8;
@@ -46,6 +48,7 @@ type DirectLease = {
 
 type FlowState = {
   onWindowChange?: (_maxParallel: number) => void;
+  lastWindow?: number;
 };
 
 type OriginState = {
@@ -98,7 +101,7 @@ export class UploadBatchCoordinator {
   private connectionsPerOrigin = DEFAULT_DIRECT_CONNECTIONS_PER_ORIGIN;
   private maxDirectConcurrency = DEFAULT_DIRECT_CONNECTIONS_PER_ORIGIN;
   private maxRelayConcurrency = 1;
-  private cooldownTimer: ReturnType<typeof setTimeout> | null = null;
+  private cooldownTimer: (() => void) | null = null;
   private closed = false;
 
   get flowCount(): number {
@@ -280,18 +283,48 @@ export class UploadBatchCoordinator {
   close(): void {
     this.closed = true;
     for (const flowId of [...this.flows.keys()]) this.unregisterFlow(flowId);
-    if (this.cooldownTimer !== null) clearTimeout(this.cooldownTimer);
+    if (this.cooldownTimer !== null) this.cooldownTimer();
     this.cooldownTimer = null;
   }
 
   private notifyWindows(): void {
+    const demand = this.getDirectDemand();
+    for (const [flowId, flow] of this.flows) {
+      const window = this.getDirectWindow(flowId, demand);
+      if (flow.lastWindow !== window) {
+        flow.lastWindow = window;
+        flow.onWindowChange?.(window);
+      }
+    }
+  }
+
+  private getDirectWindow(flowId: string, demand = this.getDirectDemand()): number {
+    const population = demand.size === 0
+      ? this.flows.size
+      : demand.size + (demand.has(flowId) ? 0 : 1);
     const fairWindow = Math.max(
       1,
-      Math.ceil(this.maxDirectConcurrency / Math.max(1, this.flows.size)),
+      Math.ceil(this.maxDirectConcurrency / Math.max(1, population)),
     );
-    for (const flow of this.flows.values()) {
-      flow.onWindowChange?.(fairWindow);
+    if (!demand.has(flowId)) return fairWindow;
+
+    // Reserve active transfers and queued work up to each sibling's fair share.
+    // A sibling waiting for authorization or finishing its last part does not
+    // reserve empty sockets. Its next request immediately restores its priority.
+    let reserved = 0;
+    for (const otherId of demand) {
+      if (otherId === flowId) continue;
+      const active = this.directActiveByFlow.get(otherId) ?? 0;
+      const queued = this.directQueues.get(otherId)?.length ?? 0;
+      reserved += active + Math.min(queued, Math.max(0, fairWindow - active));
     }
+    return Math.max(fairWindow, this.maxDirectConcurrency - reserved);
+  }
+
+  private getDirectDemand(): Set<string> {
+    return new Set(this.flowOrder.filter((flowId) =>
+      (this.directActiveByFlow.get(flowId) ?? 0) > 0 ||
+      (this.directQueues.get(flowId)?.length ?? 0) > 0));
   }
 
   private getOrigin(origin: string): OriginState {
@@ -334,10 +367,7 @@ export class UploadBatchCoordinator {
       for (let offset = 0; offset < this.flowOrder.length; offset += 1) {
         const position = (this.directCursor + offset) % this.flowOrder.length;
         const flowId = this.flowOrder[position];
-        const fairWindow = Math.max(
-          1,
-          Math.ceil(this.maxDirectConcurrency / Math.max(1, this.flows.size)),
-        );
+        const fairWindow = this.getDirectWindow(flowId);
         if ((this.directActiveByFlow.get(flowId) ?? 0) >= fairWindow) continue;
         const queue = this.directQueues.get(flowId);
         const request = queue?.[0];
@@ -368,13 +398,14 @@ export class UploadBatchCoordinator {
       }
     }
 
+    this.notifyWindows();
     this.scheduleCooldownDrain(now);
     this.drainRelay();
   }
 
   private scheduleCooldownDrain(now: number): void {
     if (this.cooldownTimer !== null) {
-      clearTimeout(this.cooldownTimer);
+      this.cooldownTimer();
       this.cooldownTimer = null;
     }
     let earliest = Number.POSITIVE_INFINITY;
@@ -382,7 +413,7 @@ export class UploadBatchCoordinator {
       if (state.cooldownUntil > now) earliest = Math.min(earliest, state.cooldownUntil);
     }
     if (!Number.isFinite(earliest)) return;
-    this.cooldownTimer = setTimeout(() => {
+    this.cooldownTimer = scheduleUploadTimeout(() => {
       this.cooldownTimer = null;
       this.drain();
     }, Math.max(1, earliest - now));

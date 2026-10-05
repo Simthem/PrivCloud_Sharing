@@ -1,11 +1,15 @@
+import {
+  usesAndroidLoopback,
+  androidBridgeFetch,
+  readAndroidBridgeJson,
+} from "./bridgeAndroidLoopback.service";
+import {
+  requireCompanionExtension,
+  requestCompanionCommand,
+} from "./privcloudCompanion.service";
 import type { WebDavCredentials, WebDavEntry } from "./webdav.service";
 
-const BRIDGE_BASE_URLS = [
-  "http://127.0.0.1:47631/v1",
-  "http://localhost:47631/v1",
-];
-const TOKEN_STORAGE_KEY = "privcloud_bridge_token";
-const BASE_URL_STORAGE_KEY = "privcloud_bridge_base_url";
+const TOKEN_STORAGE_KEY = "privcloud_native_session_v1";
 
 export type BridgeHealth = {
   name: string;
@@ -16,6 +20,8 @@ export type BridgeHealth = {
     webdav: boolean;
     directBrowserImport: boolean;
     managedEncryptedUpload: boolean;
+    fileMetadataV1?: boolean;
+    directS3Upload?: boolean;
     localTokenAuthorization?: boolean;
     openSourceLocalAuthorization?: boolean;
     nativeMessaging?: boolean;
@@ -23,6 +29,7 @@ export type BridgeHealth = {
     mailAssistants?: boolean;
   };
   nativeHost?: string;
+  nativeTransportVersion?: number;
   jobs?: {
     active: number;
     total: number;
@@ -30,11 +37,6 @@ export type BridgeHealth = {
     maxFilesPerJob: number;
     staleAfterMs: number;
   };
-};
-
-export type BridgePairing = {
-  pairingId: string;
-  expiresAt: string;
 };
 
 export type BridgeListResult = {
@@ -69,6 +71,7 @@ export type StartBridgeWebDavUploadJobPayload = {
   chunkSize: number;
   isE2EEncrypted: boolean;
   encryptionKey?: string | null;
+  fileMetadataScheme?: number | null;
   webdav: WebDavCredentials;
   files: Array<
     Pick<WebDavEntry, "href" | "name" | "size" | "contentType" | "lastModified">
@@ -82,166 +85,141 @@ export class BridgeUnavailableError extends Error {
   }
 }
 
-function getToken(): string | null {
+type NativeSession = { token: string; expiresAt: number };
+let authorization: Promise<void> | null = null;
+
+function getSession(): NativeSession | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_STORAGE_KEY);
-}
-
-function setToken(token: string) {
-  window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
-}
-
-function clearToken() {
-  if (typeof window !== "undefined") {
-    window.localStorage.removeItem(TOKEN_STORAGE_KEY);
-  }
-}
-
-async function bridgeFetch(
-  path: string,
-  init: RequestInit = {},
-  options: { auth?: boolean } = {},
-) {
-  const token = getToken();
-  const storedBaseUrl =
-    typeof window !== "undefined"
-      ? window.localStorage.getItem(BASE_URL_STORAGE_KEY)
-      : null;
-  // Never send the local bearer token to a URL read directly from storage.
-  // Only the two hard-coded loopback endpoints are valid Bridge targets.
-  const preferred = BRIDGE_BASE_URLS.includes(storedBaseUrl || "")
-    ? storedBaseUrl
-    : null;
-  const bases = [
-    ...(preferred ? [preferred] : []),
-    ...BRIDGE_BASE_URLS.filter((url) => url !== preferred),
-  ];
-
-  let response: Response | null = null;
-  for (const baseUrl of bases) {
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    try {
-      const controller = new AbortController();
-      timeoutId = setTimeout(() => controller.abort(), 6000);
-      const sig = init.signal ?? controller.signal;
-      response = await fetch(`${baseUrl}${path}`, {
-        ...init,
-        headers: {
-          ...(options.auth !== false && token
-            ? { Authorization: `Bearer ${token}` }
-            : {}),
-          ...init.headers,
-        },
-        signal: sig,
-      });
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(BASE_URL_STORAGE_KEY, baseUrl);
-      }
-      break;
-    } catch (e) {
-      if (init.signal?.aborted) throw e;
-      if (baseUrl === bases[bases.length - 1]) {
-        throw new BridgeUnavailableError(e);
-      }
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId);
-    }
-  }
-
-  if (!response) throw new BridgeUnavailableError();
-
-  if (response.status === 401) {
-    clearToken();
-  }
-
-  return response;
-}
-
-async function readBridgeJson<T>(response: Response): Promise<T> {
-  const data = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(data?.message || `Bridge HTTP ${response.status}`);
-  }
-  return data as T;
-}
-
-export async function getBridgeHealth(): Promise<BridgeHealth | null> {
   try {
-    const response = await bridgeFetch("/health", {}, { auth: false });
-    if (!response.ok) return null;
-    return readBridgeJson<BridgeHealth>(response);
+    const session = JSON.parse(
+      window.sessionStorage.getItem(TOKEN_STORAGE_KEY) || "null",
+    );
+    return typeof session?.token === "string" &&
+      Number.isFinite(session.expiresAt)
+      ? session
+      : null;
   } catch {
-    // On mobile (Android/iOS), the PNA preflight may take longer on first
-    // contact. Retry once after a short delay before giving up.
-    if (
-      typeof navigator !== "undefined" &&
-      /Android|iPhone|iPad/i.test(navigator.userAgent)
-    ) {
-      try {
-        await new Promise((r) => setTimeout(r, 1200));
-        const retry = await bridgeFetch("/health", {}, { auth: false });
-        if (!retry.ok) return null;
-        return readBridgeJson<BridgeHealth>(retry);
-      } catch {
-        return null;
-      }
-    }
     return null;
   }
 }
 
-export async function startBridgePairing(): Promise<BridgePairing> {
-  const response = await bridgeFetch("/pairings", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: "{}",
-  });
-  return readBridgeJson<BridgePairing>(response);
+function clearToken() {
+  if (typeof window !== "undefined") {
+    try {
+      window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+    } catch {
+      /* Storage may be disabled. */
+    }
+  }
 }
 
-export async function confirmBridgePairing(
-  pairingId: string,
-  code: string,
-): Promise<void> {
-  const response = await bridgeFetch(
-    `/pairings/${encodeURIComponent(pairingId)}/confirm`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, label: window.location.origin }),
-    },
-  );
-  const data = await readBridgeJson<{ token: string }>(response);
-  setToken(data.token);
+export async function getBridgeHealth(
+  options: { requestLocalAccess?: boolean } = {},
+): Promise<BridgeHealth | null> {
+  if (!options.requestLocalAccess && !hasBridgeToken()) return null;
+  try {
+    if (usesAndroidLoopback())
+      return readAndroidBridgeJson<BridgeHealth>(
+        await androidBridgeFetch("/health", {
+          requestAccess: options.requestLocalAccess,
+        }),
+      );
+    const health = await requestCompanionCommand<BridgeHealth>("health");
+    if (health.nativeTransportVersion !== 1)
+      throw new Error("bridge.error.updateRequired");
+    return health;
+  } catch (error) {
+    if (options.requestLocalAccess) throw error;
+    return null;
+  }
 }
 
 export async function authorizeBridge(): Promise<void> {
-  const response = await bridgeFetch(
-    "/tokens",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label: window.location.origin }),
-    },
-    { auth: false },
-  );
-  if (response.status === 404) {
-    throw new Error("bridge.error.updateRequired");
+  if (authorization) return authorization;
+  authorization = (async () => {
+    if (!usesAndroidLoopback()) await requireCompanionExtension();
+    const previous = getSession();
+    const payload = { sessionToken: previous?.token };
+    let session: NativeSession;
+    if (usesAndroidLoopback()) {
+      const data = await readAndroidBridgeJson<{ token: string }>(
+        await androidBridgeFetch("/tokens", {
+          body: { ...payload, label: window.location.origin },
+        }),
+      );
+      session = { token: data.token, expiresAt: Date.now() + 14 * 60_000 };
+    } else {
+      session = await requestCompanionCommand<NativeSession>(
+        "authorize",
+        payload,
+      );
+    }
+    if (
+      !session?.token ||
+      !Number.isFinite(session.expiresAt) ||
+      session.expiresAt <= Date.now()
+    )
+      throw new Error("bridge.error.unavailable");
+    window.sessionStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(session));
+  })();
+  try {
+    await authorization;
+  } finally {
+    authorization = null;
   }
-  const data = await readBridgeJson<{ token: string }>(response);
-  setToken(data.token);
+}
+
+async function nativeCommand<T>(
+  command: string,
+  payload: Record<string, unknown> = {},
+  signal?: AbortSignal,
+): Promise<T> {
+  signal?.throwIfAborted();
+  let session = getSession();
+  if (!session) throw new Error("bridge.error.sessionExpired");
+  if (session.expiresAt <= Date.now() + 30_000) {
+    await authorizeBridge();
+    session = getSession();
+  }
+  try {
+    if (usesAndroidLoopback()) {
+      const routes: Record<string, string> = {
+        "webdav.list": "/webdav/list",
+        "webdav.upload.start": "/jobs/webdav-upload",
+        "jobs.get": `/jobs/${encodeURIComponent(String(payload.jobId || ""))}`,
+        "jobs.cancel": `/jobs/${encodeURIComponent(String(payload.jobId || ""))}/cancel`,
+      };
+      const path = routes[command];
+      if (!path) throw new Error("bridge.error.badRequest");
+      const response = await androidBridgeFetch(path, {
+        token: session?.token,
+        body: command === "jobs.get" ? undefined : payload,
+        signal,
+      });
+      if (response.status === 401) clearToken();
+      return readAndroidBridgeJson<T>(response);
+    }
+    return await requestCompanionCommand<T>(
+      command,
+      { ...payload, sessionToken: session?.token },
+      signal,
+    );
+  } catch (error) {
+    // Never replay a mutation: a lost response can still mean an upload started.
+    if (
+      error instanceof Error &&
+      error.message === "bridge.error.sessionExpired"
+    )
+      clearToken();
+    throw error;
+  }
 }
 
 export async function listWebDavDirectoryViaBridge(
   credentials: WebDavCredentials,
   href?: string,
 ): Promise<BridgeListResult> {
-  const response = await bridgeFetch("/webdav/list", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...credentials, href }),
-  });
-  return readBridgeJson<BridgeListResult>(response);
+  return nativeCommand("webdav.list", { ...credentials, href });
 }
 
 export async function downloadWebDavFileViaBridge(
@@ -249,74 +227,103 @@ export async function downloadWebDavFileViaBridge(
   entry: WebDavEntry,
   signal?: AbortSignal,
 ): Promise<File> {
-  const response = await bridgeFetch("/webdav/download", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...credentials, href: entry.href }),
-    signal,
-  });
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => null);
-    throw new Error(data?.message || `Bridge HTTP ${response.status}`);
+  if (usesAndroidLoopback()) {
+    const session = getSession();
+    if (!session) throw new Error("bridge.error.sessionExpired");
+    if (session.expiresAt <= Date.now() + 30_000) await authorizeBridge();
+    const response = await androidBridgeFetch("/webdav/download", {
+      body: { ...credentials, href: entry.href },
+      token: getSession()?.token,
+      signal,
+    });
+    if (response.status === 401) clearToken();
+    if (!response.ok) await readAndroidBridgeJson(response);
+    const blob = await response.blob();
+    return new File([blob], entry.name, {
+      type: entry.contentType || blob.type,
+      lastModified: entry.lastModified
+        ? Date.parse(entry.lastModified)
+        : Date.now(),
+    });
   }
-
-  const blob = await response.blob();
-  return new File([blob], entry.name, {
-    type: entry.contentType || blob.type || "application/octet-stream",
-    lastModified: entry.lastModified
-      ? Date.parse(entry.lastModified)
-      : Date.now(),
-  });
+  const opened = await nativeCommand<{
+    downloadId: string;
+    contentType: string;
+  }>("webdav.download.open", { ...credentials, href: entry.href }, signal);
+  const parts: ArrayBuffer[] = [];
+  let complete = false;
+  try {
+    while (!complete) {
+      const chunk = await nativeCommand<{ data: string; done: boolean }>(
+        "webdav.download.read",
+        { downloadId: opened.downloadId },
+        signal,
+      );
+      if (
+        typeof chunk.data !== "string" ||
+        chunk.data.length > 256 * 1024 ||
+        typeof chunk.done !== "boolean"
+      )
+        throw new Error("bridge.error.badRequest");
+      const bytes = Uint8Array.from(atob(chunk.data), (character) =>
+        character.charCodeAt(0),
+      );
+      parts.push(bytes.buffer);
+      complete = chunk.done;
+    }
+    return new File(parts, entry.name, {
+      type: entry.contentType || opened.contentType,
+      lastModified: entry.lastModified
+        ? Date.parse(entry.lastModified)
+        : Date.now(),
+    });
+  } finally {
+    if (!complete)
+      await nativeCommand("webdav.download.close", {
+        downloadId: opened.downloadId,
+      }).catch(() => undefined);
+  }
 }
 
 export async function startBridgeWebDavUploadJob(
   payload: StartBridgeWebDavUploadJobPayload,
 ): Promise<BridgeUploadJob> {
-  const response = await bridgeFetch("/jobs/webdav-upload", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return readBridgeJson<BridgeUploadJob>(response);
+  if (payload.fileMetadataScheme === 1) {
+    const health = await getBridgeHealth();
+    if (!health?.capabilities.fileMetadataV1)
+      throw new Error("bridge.error.updateRequired");
+  }
+  return nativeCommand("webdav.upload.start", { ...payload });
 }
 
 export async function getBridgeUploadJob(
   jobId: string,
 ): Promise<BridgeUploadJob> {
-  const response = await bridgeFetch(`/jobs/${encodeURIComponent(jobId)}`);
-  return readBridgeJson<BridgeUploadJob>(response);
+  return nativeCommand("jobs.get", { jobId });
 }
 
 export async function cancelBridgeUploadJob(
   jobId: string,
 ): Promise<BridgeUploadJob> {
-  const response = await bridgeFetch(
-    `/jobs/${encodeURIComponent(jobId)}/cancel`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    },
-  );
-  return readBridgeJson<BridgeUploadJob>(response);
+  return nativeCommand("jobs.cancel", { jobId });
 }
 
 function wait(ms: number, signal?: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    if (signal) {
-      signal.addEventListener(
-        "abort",
-        () => {
-          clearTimeout(timer);
-          const error = new Error("Bridge upload cancelled");
-          (error as any).cancelled = true;
-          reject(error);
-        },
-        { once: true },
-      );
-    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      const error = Object.assign(new Error("Bridge upload cancelled"), {
+        cancelled: true,
+      });
+      reject(error);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
   });
 }
 
@@ -346,12 +353,18 @@ export async function waitForBridgeUploadJob(
       throw error;
     }
 
-    await wait(options.pollIntervalMs ?? 1000, options.signal);
+    try {
+      await wait(options.pollIntervalMs ?? 1000, options.signal);
+    } catch (error) {
+      if (options.signal?.aborted)
+        await cancelBridgeUploadJob(jobId).catch(() => undefined);
+      throw error;
+    }
   }
 }
 
 export function hasBridgeToken(): boolean {
-  return !!getToken();
+  return !!getSession();
 }
 
 /** Reject older Companion builds that do not implement the OSS contract. */

@@ -1,3 +1,4 @@
+import { handleSafeLineChallengeWindow } from "../utils/safelineChallenge.util";
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
 import "altcha/altcha.css";
@@ -177,52 +178,9 @@ function App({
     }
   };
 
-  // SafeLine challenge popup signal: if THIS window was opened as a popup
-  // by completeSafeLineChallenge() (api.service.ts) to resolve a WAF 468
-  // challenge, notify the main tab that the app loaded successfully.
-  //
-  // Detection: two methods -
-  //   1. sessionStorage.__sl_challenge = '1' (set by challenge-proxy.html)
-  //   2. window.opener exists (direct popup to '/')
-  // If either is true, this is a challenge popup.
-  //
-  // Communication: both BroadcastChannel AND postMessage are used for
-  // maximum compatibility.  BroadcastChannel works even when opener is
-  // null (noopener windows); postMessage works on older browsers.
-  useEffect(() => {
-    const isChallengeWindow =
-      sessionStorage.getItem("__sl_challenge") === "1" || !!window.opener;
-
-    if (!isChallengeWindow) return;
-
-    // Clean up the proxy flag if present
-    sessionStorage.removeItem("__sl_challenge");
-
-    // Broadcast via BroadcastChannel
-    try {
-      const bc = new BroadcastChannel("safeline-challenge");
-      bc.postMessage({ type: "safeline-challenge-complete" });
-      setTimeout(() => bc.close(), 2000);
-    } catch {
-      // BroadcastChannel not available - rely on postMessage below
-    }
-
-    // postMessage to opener
-    if (window.opener) {
-      try {
-        window.opener.postMessage(
-          { type: "safeline-challenge-complete" },
-          window.location.origin,
-        );
-      } catch {
-        // opener on a different origin or already GC'd -- ignore
-      }
-    }
-    // Note: no auto-close here - the main tab closes the popup via
-    // popup.close() inside cleanup() when completeSafeLineChallenge()
-    // resolves.  Auto-closing too early (e.g. 3s) would close the popup
-    // before SafeLine has shown its real challenge page.
-  }, []);
+  // Challenge windows close themselves after verifying the API session,
+  // including when the WAF isolates them from the parent window.
+  useEffect(() => handleSafeLineChallengeWindow(), []);
 
   // Cold-start recovery: SSR could not resolve the user (e.g. the
   // access_token cookie expired between SSR and hydration, or a
