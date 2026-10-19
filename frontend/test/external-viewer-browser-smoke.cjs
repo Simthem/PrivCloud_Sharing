@@ -69,8 +69,7 @@ async function main() {
     const cert = fs.readFileSync(path.join(temporary, "cert.pem"))
     const pin = createHash("sha256").update(new X509Certificate(cert).publicKey.export({ type: "spki", format: "der" })).digest("base64")
     let failFirst = true
-    const routes = new Map()
-    for (const [route, asset] of assets) routes.set(route, (response) => {
+    const sendAsset = (route, asset, response) => {
       const reply = () => {
         const failed = route === "/pages/0" && failFirst
         if (failed) failFirst = false
@@ -84,10 +83,11 @@ async function main() {
         const timer = setTimeout(reply, 150)
         response.on("close", () => clearTimeout(timer))
       } else reply()
-    })
+    }
     server = https.createServer({ key: fs.readFileSync(path.join(temporary, "key.pem")), cert }, (request, response) => {
-      const route = routes.get(request.url)
-      if (route) route(response)
+      const route = new URL(request.url || "/", "https://127.0.0.1").pathname
+      const asset = assets.get(route)
+      if (asset) sendAsset(route, asset, response)
       else { response.writeHead(404, { "content-type": "text/plain", "x-content-type-options": "nosniff" }); response.end("not found") }
     })
     await new Promise(resolve => server.listen(0, "127.0.0.1", resolve))

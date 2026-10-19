@@ -493,6 +493,30 @@ async function main() {
       );
     return result.result.value;
   };
+  const callPageFunction = async (functionDeclaration, argumentsList = []) => {
+    const globalObject = await call(
+      "Runtime.evaluate",
+      { expression: "globalThis", returnByValue: false },
+      sessionId,
+    );
+    const result = await call(
+      "Runtime.callFunctionOn",
+      {
+        objectId: globalObject.result.objectId,
+        functionDeclaration,
+        arguments: argumentsList.map((value) => ({ value })),
+        returnByValue: true,
+        awaitPromise: true,
+      },
+      sessionId,
+    );
+    if (result.exceptionDetails)
+      throw new Error(
+        result.exceptionDetails.exception?.description ||
+          result.exceptionDetails.text,
+      );
+    return result.result.value;
+  };
   await call("Browser.setPermission", {
     permission: { name: "loopback-network" },
     setting: "denied",
@@ -575,12 +599,14 @@ async function main() {
     username: "fixture",
     password: randomBytes(24).toString("base64url"),
   };
-  const entries = await evaluate(
-    `bridge.listWebDavDirectoryViaBridge(${JSON.stringify(credentials)}).then(r=>r.entries)`,
+  const entries = await callPageFunction(
+    "async function(credentials) { return (await this.bridge.listWebDavDirectoryViaBridge(credentials)).entries; }",
+    [credentials],
   );
   assert.equal(entries[0].name, "item.bin");
-  const digest = await evaluate(
-    `(async()=>{const file=await bridge.downloadWebDavFileViaBridge(${JSON.stringify(credentials)},${JSON.stringify(entries[0])});const hash=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());return {size:file.size,hash:Array.from(new Uint8Array(hash),x=>x.toString(16).padStart(2,'0')).join('')};})()`,
+  const digest = await callPageFunction(
+    "async function(credentials, entry) { const file = await this.bridge.downloadWebDavFileViaBridge(credentials, entry); const hash = await this.crypto.subtle.digest('SHA-256', await file.arrayBuffer()); return { size: file.size, hash: Array.from(new Uint8Array(hash), value => value.toString(16).padStart(2, '0')).join('') }; }",
+    [credentials, entries[0]],
   );
   assert.deepEqual(digest, { size: file.length, hash: fileHash });
   const payload = {
@@ -594,11 +620,13 @@ async function main() {
     webdav: credentials,
     files: entries,
   };
-  const job = await evaluate(
-    `bridge.startBridgeWebDavUploadJob(${JSON.stringify(payload)})`,
+  const job = await callPageFunction(
+    "function(payload) { return this.bridge.startBridgeWebDavUploadJob(payload); }",
+    [payload],
   );
-  const finished = await evaluate(
-    `bridge.waitForBridgeUploadJob(${JSON.stringify(job.id)},{pollIntervalMs:50})`,
+  const finished = await callPageFunction(
+    "function(jobId) { return this.bridge.waitForBridgeUploadJob(jobId, { pollIntervalMs: 50 }); }",
+    [job.id],
   );
   assert.equal(finished.state, "completed");
   assert.equal(finished.completedFiles, 1);
@@ -608,8 +636,9 @@ async function main() {
     "Every upload chunk decrypts to the original bytes",
   );
   assert.equal(encryptedChunks.length, 3);
-  const cancellation = await evaluate(
-    `(async()=>{const j=await bridge.startBridgeWebDavUploadJob(${JSON.stringify(payload)});return bridge.cancelBridgeUploadJob(j.id);})()`,
+  const cancellation = await callPageFunction(
+    "async function(payload) { const job = await this.bridge.startBridgeWebDavUploadJob(payload); return this.bridge.cancelBridgeUploadJob(job.id); }",
+    [payload],
   );
   assert.equal(cancellation.state, "cancelled");
   assert.equal(

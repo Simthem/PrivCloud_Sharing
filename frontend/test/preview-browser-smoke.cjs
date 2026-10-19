@@ -371,6 +371,23 @@ window.mediaAbort=new AbortController();const source=await window.source('video'
 window.previewPdf=async()=>{const source=await window.source('pdf');const transport=new pdfjs.PDFDataRangeTransport(source.size,await readPreviewBytes(source,0,Math.min(source.size,65536)),true);transport.requestDataRange=(a,b)=>readPreviewBytes(source,a,b).then(bytes=>transport.onDataRange(a,bytes));pdfjs.GlobalWorkerOptions.workerSrc='/pdf.worker.min.mjs';const task=pdfjs.getDocument({range:transport,disableAutoFetch:true,disableStream:true,rangeChunkSize:65536,isEvalSupported:false});const doc=await task.promise;const page=await doc.getPage(2);const canvas=document.querySelector('canvas');const viewport=page.getViewport({scale:1});canvas.width=viewport.width;canvas.height=viewport.height;await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;const content=await page.getTextContent();const result={pages:doc.numPages,text:content.items.map(i=>i.str).join('')};await doc.destroy();return result;};
 window.previewOffice=async()=>{const zip=await openPreviewZip(await window.source('odt'),new AbortController().signal);const xml=await zip.read('content.xml');return parseOfficeContent(new TextDecoder().decode(xml),new DOMParser());};
 </script></body></html>`;
+    const uiAssets = new Map(
+      fs
+        .readdirSync(fixture, { withFileTypes: true })
+        .filter(
+          (entry) =>
+            entry.isFile() && /^[a-zA-Z0-9_.-]+\.(?:js|css)$/.test(entry.name),
+        )
+        .map((entry) => [
+          `/ui/${entry.name}`,
+          {
+            contentType: entry.name.endsWith(".css")
+              ? "text/css"
+              : "application/javascript",
+            body: fs.readFileSync(path.join(fixture, entry.name)),
+          },
+        ]),
+    );
     server = https.createServer(tls, (req, res) => {
       res.setHeader("X-Content-Type-Options", "nosniff");
       const route = req.url.split("?")[0];
@@ -431,16 +448,11 @@ window.previewOffice=async()=>{const zip=await openPreviewZip(await window.sourc
         res.end(storedRange(name, start, end));
         return;
       }
-      if (/^\/ui\/[a-zA-Z0-9_.-]+\.(js|css)$/.test(route)) {
-        const target = path.join(fixture, route.slice(4));
-        if (fs.existsSync(target)) {
-          res.setHeader(
-            "Content-Type",
-            route.endsWith(".css") ? "text/css" : "application/javascript",
-          );
-          res.end(fs.readFileSync(target));
-          return;
-        }
+      const uiAsset = uiAssets.get(route);
+      if (uiAsset) {
+        res.setHeader("Content-Type", uiAsset.contentType);
+        res.end(uiAsset.body);
+        return;
       }
       const files = {
         "/sw.js": path.join(root, "public/sw.js"),

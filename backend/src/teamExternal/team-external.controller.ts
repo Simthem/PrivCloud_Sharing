@@ -145,7 +145,7 @@ export class TeamExternalAdminController {
     @Param("teamId", ParseUUIDPipe) teamId: string,
     @Param("previewId", ParseUUIDPipe) previewId: string,
     @Param("index", ParseIntPipe) index: number,
-    @Body() body: Buffer,
+    @Body() body: unknown,
     @GetUser() user: User,
   ) {
     return this.service.uploadPage(teamId, previewId, index, user, body);

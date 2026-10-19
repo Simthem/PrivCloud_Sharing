@@ -68,10 +68,11 @@ export const fetchDecryptedFile=unused,fetchFileBuffer=unused;`,
 export default function dynamic(load){const Lazy=React.lazy(()=>load().then(m=>({default:m.default||m})));return function Dynamic(props){return React.createElement(React.Suspense,{fallback:null},React.createElement(Lazy,props));};}`,
   );
   const componentCss = write("component-styles.css", "");
-  const cssLoader = write(
-    "css-loader.cjs",
-    `const fs=require("node:fs");module.exports=function(source){fs.appendFileSync(${JSON.stringify(componentCss)},source);return "export default {};";};`,
+  const cssLoader = path.join(
+    __dirname,
+    "browser-css-capture-loader.cjs",
   );
+  const cssCapture = require(cssLoader);
   const loader = write(
     "loader.cjs",
     `const ts=require(${JSON.stringify(require.resolve("typescript"))});module.exports=function(source){return ts.transpileModule(source,{fileName:this.resourcePath,compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;};`,
@@ -133,6 +134,7 @@ window.uiReady=true;`,
           : resolve(),
     ),
   );
+  fs.writeFileSync(componentCss, cssCapture.takeCss());
 }
 
 /**
@@ -273,11 +275,34 @@ async function main() {
   const waitFor = async (expression, label, timeout = 20000) => {
     const until = Date.now() + timeout;
     while (Date.now() < until) {
-      const value = await evaluate(expression);
+      const value =
+        typeof expression === "function"
+          ? await expression()
+          : await evaluate(expression);
       if (value) return value;
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     throw new Error("Timed out: " + label);
+  };
+  const callPageFunction = async (functionDeclaration, argumentsList = []) => {
+    const globalObject = await call("Runtime.evaluate", {
+      expression: "globalThis",
+      returnByValue: false,
+    });
+    const result = await call("Runtime.callFunctionOn", {
+      objectId: globalObject.result.objectId,
+      functionDeclaration,
+      arguments: argumentsList.map((value) => ({ value })),
+      awaitPromise: true,
+      returnByValue: true,
+      userGesture: true,
+    });
+    if (result.exceptionDetails)
+      throw new Error(
+        result.exceptionDetails.exception?.description ||
+          JSON.stringify(result.exceptionDetails),
+      );
+    return result.result.value;
   };
 
   try {
@@ -463,16 +488,16 @@ async function main() {
     assert.equal(hevcSupported, false, "this Chrome must lack HEVC");
 
     const show = (name, type = "video/mp4", key = null) =>
-      evaluate(
-        `window.showVideo(${JSON.stringify(name)}, ${
+      callPageFunction(
+        "function(name, size, type, key) { return this.showVideo(name, size, type, key); }",
+        [
+          name,
           generatedVideos.get(name)?.length ??
-          fs.statSync(path.join(fixtures, name)).size
-        }, ${JSON.stringify(type)}, ${JSON.stringify(key)})`,
+            fs.statSync(path.join(fixtures, name)).size,
+          type,
+          key,
+        ],
       );
-    // Colors at the centre of each quadrant of the displayed picture.
-    const corners = `(()=>{const c=document.querySelector('canvas');if(!c||c.width===300)return null;
-      const x=c.getContext('2d');const at=(u,v)=>[...x.getImageData(Math.floor(u*c.width),Math.floor(v*c.height),1,1).data].slice(0,3);
-      return {size:[c.width,c.height],corners:[at(.25,.25),at(.75,.25),at(.25,.75),at(.75,.75)]};})()`;
     const near = (actual, expected) =>
       actual.every(
         (channel, index) => Math.abs(channel - expected[index]) <= 36,
@@ -485,13 +510,32 @@ async function main() {
       [230, 220, 40],
       [210, 40, 210],
     ];
-    const pictureAt = (second, rotated = false) =>
-      `(()=>{const p=${corners};if(!p)return null;const expected=${JSON.stringify(
-        rotated
-          ? [BLUE, RED, CLOCK[second], GREEN]
-          : [RED, GREEN, BLUE, CLOCK[second]],
-      )};
-      return p.corners.every((c,i)=>c.every((v,k)=>Math.abs(v-expected[i][k])<=36))?p:null;})()`;
+    const pictureAt = (second, rotated = false) => {
+      const expected = rotated
+        ? [BLUE, RED, CLOCK[second], GREEN]
+        : [RED, GREEN, BLUE, CLOCK[second]];
+      return () =>
+        callPageFunction(
+          `function(expected) {
+            const c = document.querySelector('canvas');
+            if (!c || c.width === 300) return null;
+            const context = c.getContext('2d');
+            const at = (u, v) => [...context.getImageData(
+              Math.floor(u * c.width), Math.floor(v * c.height), 1, 1
+            ).data].slice(0, 3);
+            const picture = {
+              size: [c.width, c.height],
+              corners: [at(.25, .25), at(.75, .25), at(.25, .75), at(.75, .75)],
+            };
+            return picture.corners.every((channels, index) =>
+              channels.every((value, channel) =>
+                Math.abs(value - expected[index][channel]) <= 36
+              )
+            ) ? picture : null;
+          }`,
+          [expected],
+        );
+    };
     const label = (text) => `document.querySelector('[aria-label="${text}"]')`;
 
     // 1. HEVC with sound: the native element loads the sound but no

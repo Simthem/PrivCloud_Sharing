@@ -218,6 +218,23 @@
 - Align application, tooling, verification package, Companion and extension
   release metadata on 1.25.3, including lockfiles and generated release archives.
 
+### Security
+
+- Treat encrypted contractor preview request bodies as untrusted runtime values.
+  Accept only real Node.js buffers, copy accepted bytes into an internal buffer
+  and derive storage, digest and persisted size values from that copy.
+- Reject buffer-shaped objects and other typed arrays before contractor preview
+  storage, with regression coverage for both parameter-tampering cases.
+- Pass browser-fixture values through structured Chrome DevTools Protocol
+  arguments instead of interpolating them into executable JavaScript.
+- Serve preview build output from an in-memory allowlist populated before the
+  HTTPS fixture starts, so request paths never reach filesystem operations.
+- Replace the external-viewer fixture's request-selected callbacks with a
+  request-to-data lookup and a fixed response function.
+- Keep CSS capture in a checked-in loader without generating a loader program
+  containing a filesystem path, and compare the Office fixture's expected text
+  directly without an HTML-filtering regular expression.
+
 ## [1.25.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.25.1...v1.25.2) (2026-10-05)
 
 ### Signing Evidence Downloads On Mobile

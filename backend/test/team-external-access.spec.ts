@@ -658,6 +658,16 @@ testCase(
       400,
     );
     await rejects(
+      external.uploadPage(TEAM, PREVIEW, 0, admin as never, {
+        length: 64,
+      }),
+      400,
+    );
+    await rejects(
+      external.uploadPage(TEAM, PREVIEW, 0, admin as never, new Uint8Array(64)),
+      400,
+    );
+    await rejects(
       external.uploadPage(TEAM, PREVIEW, 0, admin as never, Buffer.alloc(10)),
       400,
     );

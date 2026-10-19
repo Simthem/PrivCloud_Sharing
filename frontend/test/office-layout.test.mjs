@@ -47,7 +47,7 @@ test("DOCX restores heading, runs, shaded merged table, page margins and local i
   assert.equal(page.blocks[0].runs[0].style.color, "#2255AA");
   assert.equal(page.blocks[1].runs[0].style.fontWeight, 700);
   assert.equal(page.blocks[1].runs[0].style.color, "#AA2244");
-  assert.match(page.blocks[1].runs[1].text, /<script>/);
+  assert.equal(page.blocks[1].runs[1].text, " and safe <script> text");
   const table = page.blocks.find((b) => b.kind === "table");
   assert.equal(table.rows[0].cells[0].colSpan, 2);
   assert.equal(table.rows[0].cells[0].style.backgroundColor, "#DDEEFF");

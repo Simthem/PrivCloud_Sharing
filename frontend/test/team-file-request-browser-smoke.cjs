@@ -10,20 +10,47 @@ const { createChromeProtocolPipe } = require("./chrome-protocol-pipe.cjs");
 const root = path.resolve(__dirname, "..");
 const locale = process.env.FILE_REQUEST_TEST_LOCALE || "fr-FR";
 assert.ok(["fr-FR", "en-US"].includes(locale));
+const translationFile =
+  locale === "en-US"
+    ? path.join(root, "src/i18n/translations/en-US.ts")
+    : path.join(root, "src/i18n/translations/fr-FR.ts");
 const ts = require(path.join(root, "node_modules/typescript"));
-const translated = ts.transpileModule(
-  fs.readFileSync(
-    path.join(root, `src/i18n/translations/${locale}.ts`),
-    "utf8",
-  ),
-  { compilerOptions: { module: ts.ModuleKind.CommonJS } },
-).outputText;
-const catalogueModule = { exports: {} };
-new Function("exports", "module", translated)(
-  catalogueModule.exports,
-  catalogueModule,
+const translationSource = ts.createSourceFile(
+  translationFile,
+  fs.readFileSync(translationFile, "utf8"),
+  ts.ScriptTarget.Latest,
+  true,
 );
-const labels = catalogueModule.exports.default;
+const translationExport = translationSource.statements.find(
+  ts.isExportAssignment,
+);
+assert.ok(
+  translationExport &&
+    ts.isObjectLiteralExpression(translationExport.expression),
+);
+const readTranslation = (expression) => {
+  if (
+    ts.isStringLiteral(expression) ||
+    ts.isNoSubstitutionTemplateLiteral(expression)
+  )
+    return expression.text;
+  if (
+    ts.isBinaryExpression(expression) &&
+    expression.operatorToken.kind === ts.SyntaxKind.PlusToken
+  )
+    return (
+      readTranslation(expression.left) + readTranslation(expression.right)
+    );
+  throw new Error("Unsupported translation expression");
+};
+const labels = Object.fromEntries(
+  translationExport.expression.properties.map((property) => {
+    assert.ok(
+      ts.isPropertyAssignment(property) && ts.isStringLiteral(property.name),
+    );
+    return [property.name.text, readTranslation(property.initializer)];
+  }),
+);
 const t = (key) => labels["team.fileRequest." + key];
 const webpack = require(
   path.join(root, "node_modules/next/dist/compiled/webpack/webpack"),
@@ -96,7 +123,8 @@ export default {
 import React from "react";
 import {createRoot} from "react-dom/client";
 import {IntlProvider} from "react-intl";
-import messages from ${JSON.stringify(path.join(root, `src/i18n/translations/${locale}.ts`))};
+import frMessages from ${JSON.stringify(path.join(root, "src/i18n/translations/fr-FR.ts"))};
+import enMessages from ${JSON.stringify(path.join(root, "src/i18n/translations/en-US.ts"))};
 import {MantineProvider} from "@mantine/core";
 import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
 import TeamFileRequests from ${JSON.stringify(path.join(root, "src/components/team/TeamFileRequests.tsx"))};
@@ -109,7 +137,8 @@ import {generateX25519KeyPair,unwrapDEKFromGrant} from ${JSON.stringify(path.joi
 window.submissions=[];window.navigations=[];window.toasts=[];window.fixtureKeys={};
 window.decryptEnvelope=async (userId,envelopeText)=>{const envelope=JSON.parse(envelopeText);const plaintext=await unwrapDEKFromGrant({encryptedFileKey:envelope.ciphertext,ephemeralPublicKey:envelope.ephemeralPublicKey,nonce:envelope.nonce},window.fixtureKeys[userId].privateKey);return JSON.parse(new TextDecoder().decode(plaintext));};
 (async()=>{for(const u of users){const pair=await generateX25519KeyPair();window.fixtureKeys[u.id]={...pair,publicKey:btoa(String.fromCharCode(...pair.publicKey)).replaceAll("+","-").replaceAll("/","_").replaceAll("=","")};}
-const root=createRoot(document.getElementById("root"));window.showSettings=()=>{window.setFixtureQuery({id:ids.teamB});root.render(<IntlProvider locale=${JSON.stringify(locale)} messages={messages}><MantineProvider forceColorScheme="dark"><QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><div style={{padding:16,maxWidth:1000,margin:"auto"}}><TeamSettings/></div></QueryClientProvider></MantineProvider></IntlProvider>);};window.showDashboard=()=>{window.setFixtureQuery({id:ids.teamB});root.render(<IntlProvider locale=${JSON.stringify(locale)} messages={messages}><MantineProvider forceColorScheme="dark"><QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><div style={{padding:16,maxWidth:1000,margin:"auto"}}><TeamDashboard/></div></QueryClientProvider></MantineProvider></IntlProvider>);};root.render(<IntlProvider locale=${JSON.stringify(locale)} messages={messages}><MantineProvider forceColorScheme="dark"><QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><div style={{padding:24,maxWidth:900,margin:"auto"}}><section id="dashboard-fixture"><TeamDashboardMetrics metrics={{team:{membersCount:1,maxMembers:3,foldersCount:2},storage:{used:10000000000,folderUsed:2000000000,limit:500000000000,percentage:2},activity:{downloads:0,uploads:0,totalFiles:0}}}/><TeamEncryptionStatus canRotate={true} onRotate={()=>{window.rotationClicks=(window.rotationClicks||0)+1;}}/></section><TeamFileRequests/><TeamFileRequests teamId={ids.teamB}/></div></QueryClientProvider></MantineProvider></IntlProvider>);})();
+const locale=new URLSearchParams(location.search).get("locale")==="en-US"?"en-US":"fr-FR";const messages=locale==="en-US"?enMessages:frMessages;
+const root=createRoot(document.getElementById("root"));window.showSettings=()=>{window.setFixtureQuery({id:ids.teamB});root.render(<IntlProvider locale={locale} messages={messages}><MantineProvider forceColorScheme="dark"><QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><div style={{padding:16,maxWidth:1000,margin:"auto"}}><TeamSettings/></div></QueryClientProvider></MantineProvider></IntlProvider>);};window.showDashboard=()=>{window.setFixtureQuery({id:ids.teamB});root.render(<IntlProvider locale={locale} messages={messages}><MantineProvider forceColorScheme="dark"><QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><div style={{padding:16,maxWidth:1000,margin:"auto"}}><TeamDashboard/></div></QueryClientProvider></MantineProvider></IntlProvider>);};root.render(<IntlProvider locale={locale} messages={messages}><MantineProvider forceColorScheme="dark"><QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><div style={{padding:24,maxWidth:900,margin:"auto"}}><section id="dashboard-fixture"><TeamDashboardMetrics metrics={{team:{membersCount:1,maxMembers:3,foldersCount:2},storage:{used:10000000000,folderUsed:2000000000,limit:500000000000,percentage:2},activity:{downloads:0,uploads:0,totalFiles:0}}}/><TeamEncryptionStatus canRotate={true} onRotate={()=>{window.rotationClicks=(window.rotationClicks||0)+1;}}/></section><TeamFileRequests/><TeamFileRequests teamId={ids.teamB}/></div></QueryClientProvider></MantineProvider></IntlProvider>);})();
 `,
     );
     const loader = write(
@@ -294,7 +323,9 @@ const root=createRoot(document.getElementById("root"));window.showSettings=()=>{
     await call("Page.enable", {}, sessionId);
     await call(
       "Page.navigate",
-      { url: `https://127.0.0.1:${server.address().port}` },
+      {
+        url: `https://127.0.0.1:${server.address().port}/?locale=${encodeURIComponent(locale)}`,
+      },
       sessionId,
     );
     const evaluate = async (expression) => {
@@ -309,9 +340,41 @@ const root=createRoot(document.getElementById("root"));window.showSettings=()=>{
         );
       return r.result.value;
     };
+    const callPageFunction = async (
+      functionDeclaration,
+      argumentsList = [],
+    ) => {
+      const globalObject = await call(
+        "Runtime.evaluate",
+        { expression: "globalThis", returnByValue: false },
+        sessionId,
+      );
+      const result = await call(
+        "Runtime.callFunctionOn",
+        {
+          objectId: globalObject.result.objectId,
+          functionDeclaration,
+          arguments: argumentsList.map((value) => ({ value })),
+          returnByValue: true,
+          awaitPromise: true,
+          userGesture: true,
+        },
+        sessionId,
+      );
+      if (result.exceptionDetails)
+        throw new Error(
+          result.exceptionDetails.exception?.description ||
+            result.exceptionDetails.text,
+        );
+      return result.result.value;
+    };
     const waitFor = async (expression) => {
       for (let i = 0; i < 100; i++) {
-        if (await evaluate(`!!document.body && (${expression})`)) return;
+        const ready =
+          typeof expression === "function"
+            ? await expression()
+            : await evaluate(`!!document.body && (${expression})`);
+        if (ready) return;
         await new Promise((r) => setTimeout(r, 75));
       }
       throw new Error(
@@ -324,22 +387,31 @@ const root=createRoot(document.getElementById("root"));window.showSettings=()=>{
       );
     };
     const click = async (text) =>
-      evaluate(
-        `(()=>{const n=[...document.querySelectorAll('button,label,[role="option"]')].find(n=>n.textContent.trim()===${JSON.stringify(text)});if(!n)throw new Error('Missing control: '+${JSON.stringify(text)});n.click();return true;})()`,
+      callPageFunction(
+        "function(text) { const control = [...document.querySelectorAll('button,label,[role=option]')].find(node => node.textContent.trim() === text); if (!control) throw new Error('Missing control: ' + text); control.click(); return true; }",
+        [text],
       );
     const input = async (label, value) =>
-      evaluate(
-        `(()=>{const l=[...document.querySelectorAll('label')].find(n=>n.textContent.startsWith(${JSON.stringify(label)}));const e=document.getElementById(l.htmlFor);Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      callPageFunction(
+        "function(label, value) { const caption = [...document.querySelectorAll('label')].find(node => node.textContent.startsWith(label)); const input = document.getElementById(caption.htmlFor); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); return true; }",
+        [label, value],
       );
     const select = async (label, option) => {
-      await waitFor(
-        `(()=>{const l=[...document.querySelectorAll("label")].find(n=>n.textContent.startsWith(${JSON.stringify(label)}));return l && document.getElementById(l.htmlFor) && !document.getElementById(l.htmlFor).disabled;})()`,
+      await waitFor(() =>
+        callPageFunction(
+          "function(label) { const caption = [...document.querySelectorAll('label')].find(node => node.textContent.startsWith(label)); const input = caption && document.getElementById(caption.htmlFor); return Boolean(input && !input.disabled); }",
+          [label],
+        ),
       );
-      await evaluate(
-        `(()=>{const l=[...document.querySelectorAll('label')].find(n=>n.textContent.startsWith(${JSON.stringify(label)}));document.getElementById(l.htmlFor).click();})()`,
+      await callPageFunction(
+        "function(label) { const caption = [...document.querySelectorAll('label')].find(node => node.textContent.startsWith(label)); document.getElementById(caption.htmlFor).click(); }",
+        [label],
       );
-      await waitFor(
-        `[...document.querySelectorAll('[role="option"]')].some(n=>n.textContent.trim()===${JSON.stringify(option)})`,
+      await waitFor(() =>
+        callPageFunction(
+          "function(option) { return [...document.querySelectorAll('[role=option]')].some(node => node.textContent.trim() === option); }",
+          [option],
+        ),
       );
       await click(option);
     };
@@ -467,14 +539,16 @@ const root=createRoot(document.getElementById("root"));window.showSettings=()=>{
       ),
     );
     for (const n of first.notifications) {
-      const meta = await evaluate(
-        `window.decryptEnvelope(${JSON.stringify(n.userId)},${JSON.stringify(n.encryptedMetadata)})`,
+      const meta = await callPageFunction(
+        "function(userId, encryptedMetadata) { return this.decryptEnvelope(userId, encryptedMetadata); }",
+        [n.userId, n.encryptedMetadata],
       );
       assert.equal(meta.subject, "Documents du mois");
       assert.equal(meta.action, "FILE_REQUEST");
     }
-    const confirmation = await evaluate(
-      `window.decryptEnvelope(${JSON.stringify(creator)},${JSON.stringify(first.submissionNotification)})`,
+    const confirmation = await callPageFunction(
+      "function(userId, encryptedMetadata) { return this.decryptEnvelope(userId, encryptedMetadata); }",
+      [creator, first.submissionNotification],
     );
     assert.equal(confirmation.action, "FILE_REQUEST_SUBMITTED");
     await waitFor("!document.querySelector('[role=dialog]')");
@@ -496,12 +570,16 @@ const root=createRoot(document.getElementById("root"));window.showSettings=()=>{
     await select(t("team"), "Équipe B");
     await select(t("destination"), "Privé");
     await click(t("scope.all"));
-    await waitFor(
-      `document.body.textContent.includes(${JSON.stringify(t("allRights"))})`,
+    await waitFor(() =>
+      callPageFunction(
+        "function(text) { return document.body.textContent.includes(text); }",
+        [t("allRights")],
+      ),
     );
     assert.equal(
-      await evaluate(
-        `Array.from(document.querySelectorAll('button')).find(n=>n.textContent===${JSON.stringify(t("submit"))}).disabled`,
+      await callPageFunction(
+        "function(text) { return [...document.querySelectorAll('button')].find(node => node.textContent === text).disabled; }",
+        [t("submit")],
       ),
       true,
     );
@@ -564,14 +642,21 @@ const root=createRoot(document.getElementById("root"));window.showSettings=()=>{
     await evaluate(
       "window.setFixtureQuery({...window.fixtureQuery,fileRequests:'1'})",
     );
-    await waitFor(
-      `document.querySelector('[role="tab"][data-active]')?.textContent===${JSON.stringify(labels["team.dashboard.tabs.requests"])}`,
+    await waitFor(() =>
+      callPageFunction(
+        "function(text) { return document.querySelector('[role=tab][data-active]')?.textContent === text; }",
+        [labels["team.dashboard.tabs.requests"]],
+      ),
     );
-    await waitFor(
-      `document.body.textContent.includes(${JSON.stringify(t("subject"))})===false && document.body.textContent.includes('Demande reçue')`,
+    await waitFor(() =>
+      callPageFunction(
+        "function(hidden, visible) { return !document.body.textContent.includes(hidden) && document.body.textContent.includes(visible); }",
+        [t("subject"), "Demande reçue"],
+      ),
     );
-    await evaluate(
-      `Array.from(document.querySelectorAll('[role="tab"]')).find(n=>n.textContent===${JSON.stringify(labels["team.dashboard.tabs.members"])}).click()`,
+    await callPageFunction(
+      "function(text) { [...document.querySelectorAll('[role=tab]')].find(node => node.textContent === text).click(); }",
+      [labels["team.dashboard.tabs.members"]],
     );
     await waitFor("window.fixtureQuery.fileRequests===undefined");
     assert.equal(
@@ -581,8 +666,11 @@ const root=createRoot(document.getElementById("root"));window.showSettings=()=>{
       labels["team.dashboard.tabs.members"],
     );
     await evaluate("window.showSettings()");
-    await waitFor(
-      `document.querySelector('h2')?.textContent===${JSON.stringify(labels["team.settings.title"])}`,
+    await waitFor(() =>
+      callPageFunction(
+        "function(text) { return document.querySelector('h2')?.textContent === text; }",
+        [labels["team.settings.title"]],
+      ),
     );
     for (const width of [320, 390, 980]) {
       await call(

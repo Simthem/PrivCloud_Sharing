@@ -443,10 +443,15 @@ export class TeamExternalService {
     if (!Number.isInteger(index) || index < 0 || index >= preview.pageCount) {
       throw new BadRequestException("Invalid page index");
     }
+    if (!Buffer.isBuffer(body)) {
+      throw new BadRequestException("Invalid encrypted page");
+    }
+    const encryptedPage = Buffer.from(body);
+    const encryptedPageSize = encryptedPage.byteLength;
     if (
-      !Buffer.isBuffer(body) ||
-      body.length < EXTERNAL_PAGE_MIN_BYTES ||
-      body.length > EXTERNAL_PAGE_MAX_BYTES
+      !Number.isSafeInteger(encryptedPageSize) ||
+      encryptedPageSize < EXTERNAL_PAGE_MIN_BYTES ||
+      encryptedPageSize > EXTERNAL_PAGE_MAX_BYTES
     ) {
       throw new BadRequestException("Invalid encrypted page");
     }
@@ -468,13 +473,18 @@ export class TeamExternalService {
         if (!uploading) throw new NotFoundException("Preview not found");
         await this.fileService.storeFileByKey(
           externalPreviewPageKey(preview.id, index),
-          body,
+          encryptedPage,
         );
-        const sha256 = sha256Hex(body);
+        const sha256 = sha256Hex(encryptedPage);
         await tx.teamExternalPreviewPage.upsert({
           where: { previewId_index: { previewId: preview.id, index } },
-          create: { previewId: preview.id, index, size: body.length, sha256 },
-          update: { size: body.length, sha256 },
+          create: {
+            previewId: preview.id,
+            index,
+            size: encryptedPageSize,
+            sha256,
+          },
+          update: { size: encryptedPageSize, sha256 },
         });
       },
       { timeout: 60_000 },
