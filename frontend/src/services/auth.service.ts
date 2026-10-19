@@ -77,8 +77,8 @@ const signOut = async () => {
       window.location.assign(response.data.redirectURI);
       return;
     }
-  } catch (e) {
-    console.error("SignOut API call failed:", e);
+  } catch {
+    console.error("SignOut API call failed");
     // Continue anyway -- server may have cleared cookies even if response failed
   }
 
@@ -121,8 +121,13 @@ const updatePassword = async (oldPassword: string, password: string) => {
   await api.patch("/auth/password", { oldPassword, password });
 };
 
-const enableTOTP = async (password: string) => {
-  const { data } = await api.post("/auth/totp/enable", { password });
+// Without a password, the account proves a fresh sign-in with its linked OAuth
+// provider instead (httpOnly reauth_confirmation cookie, see /oauth/reauth).
+const enableTOTP = async (password?: string) => {
+  const { data } = await api.post(
+    "/auth/totp/enable",
+    password ? { password } : {},
+  );
 
   return {
     totpAuthUrl: data.totpAuthUrl,
@@ -131,18 +136,18 @@ const enableTOTP = async (password: string) => {
   };
 };
 
-const verifyTOTP = async (totpCode: string, password: string) => {
+const verifyTOTP = async (totpCode: string, password?: string) => {
   const { data } = await api.post("/auth/totp/verify", {
     code: totpCode,
-    password,
+    ...(password ? { password } : {}),
   });
   return { backupCodes: data.backupCodes as string[] };
 };
 
-const disableTOTP = async (totpCode: string, password: string) => {
+const disableTOTP = async (totpCode: string, password?: string) => {
   await api.post("/auth/totp/disable", {
     code: totpCode,
-    password,
+    ...(password ? { password } : {}),
   });
 };
 

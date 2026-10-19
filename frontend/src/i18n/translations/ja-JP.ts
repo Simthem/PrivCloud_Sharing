@@ -313,7 +313,7 @@ export default {
   // END /privacy
   // /admin/config
   "admin.config.config-file-warning.title": "構成ファイルがあります",
-  "admin.config.config-file-warning.description": "設定ファイル設定で済みのPrivCloud_SharingはUI を使用して設定を変更することはできません。",
+  "admin.config.config-file-warning.description": "設定ファイル設定で済みのPrivCloud SharingはUI を使用して設定を変更することはできません。",
   "admin.config.title": "設定",
   "admin.config.category.general": "一般",
   "admin.config.category.share": "共有",
@@ -324,7 +324,7 @@ export default {
   "admin.config.general.app-name": "アプリ名",
   "admin.config.general.app-name.description": "アプリの名前",
   "admin.config.general.app-url": "アプリのURL",
-  "admin.config.general.app-url.description": "PrivCloud_Sharingで利用できるURL",
+  "admin.config.general.app-url.description": "PrivCloud Sharingで利用できるURL",
   "admin.config.general.secure-cookies": "セキュアクッキー",
   "admin.config.general.secure-cookies.description": "クッキーにセキュアフラグを設定するか。有効にすると、HTTP 経由でアクセスしたときにサイトが機能しなくなります。",
   "admin.config.general.show-home-page": "ホームページを表示する",
@@ -339,7 +339,7 @@ export default {
   "admin.config.cache.max-items": "最大アイテム数",
   "admin.config.cache.max-items.description": "キャッシュ内の最大アイテム数",
   "admin.config.cache.redis-enabled": "Redis 有効化済み",
-  "admin.config.cache.redis-enabled.description": "通常、PrivCloud_Sharing は情報をメモリ内にキャッシュします。複数の PrivCloud_Sharing インスタンスを実行する場合は、インスタンス間でキャッシュを共有するために Redis キャッシュを有効にする必要があります。",
+  "admin.config.cache.redis-enabled.description": "通常、PrivCloud Sharing は情報をメモリ内にキャッシュします。複数の PrivCloud Sharing インスタンスを実行する場合は、インスタンス間でキャッシュを共有するために Redis キャッシュを有効にする必要があります。",
   "admin.config.cache.redis-url": "Redis URL",
   "admin.config.cache.redis-url.description": "キャッシュに使用する Redis インスタンスへの接続URL",
   "admin.config.email.enable-share-email-recipients": "メール受信者の共有を有効にする",

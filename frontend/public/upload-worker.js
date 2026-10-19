@@ -2028,10 +2028,7 @@ async function runBatch(opts) {
               " status=" +
               httpStatus +
               " transport=" +
-              uploadTransport +
-              (respData && typeof respData.message === "string"
-                ? " message=" + respData.message.slice(0, 160)
-                : ""),
+              uploadTransport,
           );
 
           // A legacy backend or an upstream WAF may reject the negotiated

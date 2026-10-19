@@ -1,7 +1,7 @@
 import { useModals } from "@mantine/modals";
-import mime from "mime-types";
 import { FileMetaData } from "../../../types/File.type";
 import FilePreview from "../FilePreview";
+import { resolveFileMimeType } from "../../../services/share.service";
 
 const showFilePreviewModal = (
   shareId: string,
@@ -9,16 +9,17 @@ const showFilePreviewModal = (
   modals: ReturnType<typeof useModals>,
   e2eKey?: string | null,
 ) => {
-  const mimeType = (mime.contentType(file.name) || "").split(";")[0];
+  const mimeType = resolveFileMimeType(file.name);
   return modals.openModal({
-    size: "xl",
+    size: "min(1120px, 94vw)",
     title: file.name,
-    styles: { body: { maxHeight: "calc(85vh - 80px)", overflow: "hidden" } },
+    styles: { body: { maxHeight: "calc(85vh - 80px)", overflow: "auto" } },
     children: (
       <FilePreview
         shareId={shareId}
         fileId={file.id}
         mimeType={mimeType}
+        fileName={file.name}
         fileSizeBytes={Number(file.size)}
         e2eKey={e2eKey}
       />

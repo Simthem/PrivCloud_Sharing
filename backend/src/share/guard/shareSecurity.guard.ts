@@ -1,3 +1,4 @@
+import { readShareVisitToken } from "../share-token-cookie.util";
 import {
   ExecutionContext,
   ForbiddenException,
@@ -33,7 +34,7 @@ export class ShareSecurityGuard extends JwtGuard {
         : request.params.id,
     );
 
-    const shareToken = request.cookies[`share_${shareId}_token`];
+    const shareToken = readShareVisitToken(request, shareId);
 
     const share = await this.prisma.share.findUnique({
       where: { id: shareId },
@@ -48,7 +49,6 @@ export class ShareSecurityGuard extends JwtGuard {
     if (share.uploadLocked === false && share.creatorId !== user?.id) {
       throw new NotFoundException("Share not found");
     }
-
 
     if (
       moment().isAfter(share.expiration) &&

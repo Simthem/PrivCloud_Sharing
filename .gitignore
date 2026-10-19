@@ -61,6 +61,7 @@ Dockerfile.cache
 COMMIT_*
 commit_*
 frontend/public/img/*_orig
+before_push.sh
 
 *_old
 *_orig
@@ -69,3 +70,13 @@ frontend/public/img/*_orig
 /frontend/public/install/beta/
 /bridge/dist/
 /integrations/dist/
+
+# Generated preview decoders
+/frontend/public/image-decoders/*
+!/frontend/public/image-decoders/decoder.worker.js
+/frontend/public/video-decoders/*
+!/frontend/public/video-decoders/hevc.worker.js
+
+frontend/public/forensic/*
+!frontend/public/forensic/registration.worker.js
+frontend/public/verification/contractor/

@@ -585,3 +585,87 @@ export async function openFileRequestInfo(
     return undefined;
   }
 }
+
+// ----- Team company details (watermark of contractor previews) ------------
+
+export type TeamProfile = {
+  companyName: string;
+  // Short mention such as "Confidential", "Strictly confidential".
+  mention?: string;
+  // Registration number, address or any line identifying the company.
+  details?: string;
+};
+
+export const TEAM_PROFILE_LIMITS = {
+  companyName: 120,
+  mention: 60,
+  details: 200,
+} as const;
+
+function teamProfileContext(teamId: string): string {
+  return `privcloud:team-profile:v1:${teamId}`;
+}
+
+function cleanProfileField(value: unknown, max: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || CONTROL_CHARS.test(trimmed)) return undefined;
+  return trimmed.slice(0, max);
+}
+
+/** Company details of a team, encrypted with K_team, the team id authenticated. */
+export async function encryptTeamProfile(
+  key: CryptoKey,
+  teamId: string,
+  profile: TeamProfile,
+): Promise<string> {
+  const companyName = cleanProfileField(
+    profile.companyName,
+    TEAM_PROFILE_LIMITS.companyName,
+  );
+  if (!companyName) {
+    throw new InvalidFileMetadataError("A company name is required");
+  }
+  const mention = cleanProfileField(
+    profile.mention,
+    TEAM_PROFILE_LIMITS.mention,
+  );
+  const details = cleanProfileField(
+    profile.details,
+    TEAM_PROFILE_LIMITS.details,
+  );
+  return encryptLabel(key, teamProfileContext(teamId), {
+    c: companyName,
+    ...(mention && { m: mention }),
+    ...(details && { d: details }),
+  });
+}
+
+/** Undefined when absent or when this key cannot open it. */
+export async function openTeamProfile(
+  key: CryptoKey | string | null | undefined,
+  teamId: string,
+  encrypted: string | null | undefined,
+): Promise<TeamProfile | undefined> {
+  if (!key || !encrypted) return undefined;
+  try {
+    const cryptoKey =
+      typeof key === "string" ? await importKeyFromBase64(key) : key;
+    const { c, m, d } = await decryptLabel(
+      cryptoKey,
+      teamProfileContext(teamId),
+      encrypted,
+    );
+    const companyName = cleanProfileField(c, TEAM_PROFILE_LIMITS.companyName);
+    if (!companyName) return undefined;
+    const mention = cleanProfileField(m, TEAM_PROFILE_LIMITS.mention);
+    const details = cleanProfileField(d, TEAM_PROFILE_LIMITS.details);
+    return {
+      companyName,
+      ...(mention && { mention }),
+      ...(details && { details }),
+    };
+  } catch {
+    return undefined;
+  }
+}

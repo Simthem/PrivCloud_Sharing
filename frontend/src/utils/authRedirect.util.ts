@@ -41,6 +41,12 @@ export function buildSignInRedirectPath(path?: string | null): string {
   return `${SIGN_IN_PATH}?redirect=${encodeURIComponent(pathWithoutFragment)}`;
 }
 
+/** Same rule as buildSignInRedirectPath, for the sign-up page. */
+export function buildSignUpRedirectPath(path?: string | null): string {
+  const pathWithoutFragment = safeRedirectPath(path).split("#", 1)[0];
+  return `/auth/signUp?redirect=${encodeURIComponent(pathWithoutFragment)}`;
+}
+
 export function buildExpiredSessionSignInPath(path?: string | null): string {
   return `${buildSignInRedirectPath(path)}&error=session-expired`;
 }
@@ -56,7 +62,7 @@ export function shouldRequireClassicUploadAuthentication(
 }
 
 // Routes that only render meaningfully for a signed-in user.
-const SESSION_SCOPED_ROUTE_PREFIXES = ["/account", "/admin", "/team"];
+const SESSION_SCOPED_ROUTE_PREFIXES = ["/account", "/admin", "/team", "/external"];
 
 /**
  * Whether a route must resolve the session before it is painted.
@@ -86,6 +92,14 @@ export function isEmailVerificationRoutePath(
 
 export function isTeamInvitationRoutePath(pathname?: string | null): boolean {
   return Boolean(pathname?.startsWith("/team/invite/"));
+}
+
+/** Team member and external contractor invitation pages. */
+export function isInvitationRoutePath(pathname?: string | null): boolean {
+  return (
+    isTeamInvitationRoutePath(pathname) ||
+    Boolean(pathname?.startsWith("/external/invite/"))
+  );
 }
 
 export function isTeamScopedUploadPath(path?: string | null): boolean {

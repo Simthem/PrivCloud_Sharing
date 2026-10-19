@@ -26,22 +26,52 @@ export function buildEmailVerificationMessage(
   ].join("\n");
 }
 
+// "signing": the main SMTP account (smtp.*), electronic signature mails.
+// "general": every other mail, from the second account (smtp.general*) once
+// its address is set, from the main account otherwise.
+export type MailSender = "general" | "signing";
+
 @Injectable()
 export class EmailService {
   constructor(private config: ConfigService) {}
   private readonly logger = new Logger(EmailService.name);
 
-  getTransporter() {
+  private senderSettings(sender: MailSender) {
+    const main = {
+      email: this.config.get("smtp.email"),
+      host: this.config.get("smtp.host"),
+      port: Number(this.config.get("smtp.port")),
+      username: this.config.get("smtp.username"),
+      password: this.config.get("smtp.password"),
+    };
+    const generalEmail = this.config.get("smtp.generalEmail")?.trim();
+    if (sender === "signing" || !generalEmail) return main;
+    // Empty host, port or username: the main account's, so a second mailbox
+    // on the same server only needs its address and credentials.
+    const generalHost = this.config.get("smtp.generalHost")?.trim();
+    const generalPort = Number(this.config.get("smtp.generalPort"));
+    const generalUsername = this.config.get("smtp.generalUsername")?.trim();
+    return {
+      email: generalEmail,
+      host: generalHost || main.host,
+      port: generalPort > 0 ? generalPort : main.port,
+      username: generalUsername || main.username,
+      password: generalUsername
+        ? this.config.get("smtp.generalPassword")
+        : main.password,
+    };
+  }
+
+  getTransporter(sender: MailSender = "general") {
     if (!this.config.get("smtp.enabled"))
       throw new InternalServerErrorException("SMTP is disabled");
 
-    const username = this.config.get("smtp.username");
-    const password = this.config.get("smtp.password");
+    const { host, port, username, password } = this.senderSettings(sender);
 
     return nodemailer.createTransport({
-      host: this.config.get("smtp.host"),
-      port: this.config.get("smtp.port"),
-      secure: this.config.get("smtp.port") == 465,
+      host,
+      port,
+      secure: port == 465,
       // Keep delivery below the outbox claim lease so another replica cannot
       // retry a message while this SMTP attempt is still hanging.
       connectionTimeout: 30_000,
@@ -61,15 +91,16 @@ export class EmailService {
     email: string,
     subject: string,
     text: string,
-    options: { messageId?: string } = {},
+    options: { messageId?: string; replyTo?: string; sender?: MailSender } = {},
   ) {
-    const replyTo = this.config.get("email.replyToEmail")?.trim() || undefined;
+    const sender = options.sender ?? "general";
+    const replyTo = options.replyTo || this.config.get("email.replyToEmail")?.trim() || undefined;
     const senderName =
       this.config.get("email.senderName")?.trim() ||
       this.config.get("general.appName");
-    await this.getTransporter()
+    await this.getTransporter(sender)
       .sendMail({
-        from: `"${senderName}" <${this.config.get("smtp.email")}>`,
+        from: `"${senderName}" <${this.senderSettings(sender).email}>`,
         replyTo,
         to: email,
         subject,
@@ -80,6 +111,28 @@ export class EmailService {
         this.logger.error("Email delivery failed");
         throw new InternalServerErrorException("Failed to send email");
       });
+  }
+
+  /** Security notice: a passkey can now sign in to this account. */
+  async sendPasskeyAddedEmail(recipientEmail: string) {
+    const appName = this.config.get("general.appName");
+    const appUrl = this.config.get("general.appUrl");
+    await this.sendMail(
+      recipientEmail,
+      `Nouvelle passkey sur votre compte - ${appName}`,
+      `Bonjour,\n\n` +
+        `Une passkey vient d'être ajoutée à votre compte ${appName}. Elle permet de vous connecter sans mot de passe ni code de double authentification.\n\n` +
+        `Si ce n'est pas vous, supprimez-la dès maintenant depuis les paramètres de votre compte, puis changez votre mot de passe :\n${appUrl}/account#passkeys\n\n` +
+        `-- \n${appName}\n\n` +
+        `Hello,\n\n` +
+        `A passkey was just added to your ${appName} account. It signs you in without a password or two-factor code.\n\n` +
+        `If this was not you, remove it now from your account settings, then change your password:\n${appUrl}/account#passkeys`,
+    );
+  }
+
+  /** Electronic signature mails, always from the main SMTP account. */
+  sendSigningMail(email: string, subject: string, text: string) {
+    return this.sendMail(email, subject, text, { sender: "signing" });
   }
 
   async sendMailToShareRecipients(
@@ -119,15 +172,10 @@ export class EmailService {
     );
   }
 
-  async sendMailToReverseShareCreator(
-    recipientEmail: string,
-    shareId: string,
-    e2eKeyFragment?: string,
-  ) {
-    const baseUrl = `${this.config.get("general.appUrl")}/s/${shareId}`;
-    const shareUrl = e2eKeyFragment
-      ? `${baseUrl}#key=${e2eKeyFragment}`
-      : baseUrl;
+  // Never carries a key: the reverse share owner opens the share signed in,
+  // and the share page unwraps K_rs with their master key.
+  async sendMailToReverseShareCreator(recipientEmail: string, shareId: string) {
+    const shareUrl = `${this.config.get("general.appUrl")}/s/${shareId}`;
 
     await this.sendMail(
       recipientEmail,
@@ -196,19 +244,27 @@ export class EmailService {
   }
 
   async sendTestMail(recipientEmail: string) {
-    await this.getTransporter()
-      .sendMail({
-        from: `"${this.config.get("general.appName")}" <${this.config.get(
-          "smtp.email",
-        )}>`,
-        to: recipientEmail,
-        subject: "Test email",
-        text: "This is a test email",
-      })
-      .catch(() => {
-        this.logger.error("Test email delivery failed");
-        throw new InternalServerErrorException("Failed to send test email");
-      });
+    const senders: MailSender[] = this.config.get("smtp.generalEmail")?.trim()
+      ? ["signing", "general"]
+      : ["signing"];
+    for (const sender of senders) {
+      await this.getTransporter(sender)
+        .sendMail({
+          from: `"${this.config.get("general.appName")}" <${
+            this.senderSettings(sender).email
+          }>`,
+          to: recipientEmail,
+          subject:
+            sender === "signing"
+              ? "Test email (signature account)"
+              : "Test email (general account)",
+          text: "This is a test email",
+        })
+        .catch(() => {
+          this.logger.error("Test email delivery failed");
+          throw new InternalServerErrorException("Failed to send test email");
+        });
+    }
   }
 
   async sendDownloadNotification(

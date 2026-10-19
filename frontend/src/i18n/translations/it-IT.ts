@@ -315,7 +315,7 @@ export default {
   // END /privacy
   // /admin/config
   "admin.config.config-file-warning.title": "File di configurazione presente",
-  "admin.config.config-file-warning.description": "Poiché hai configurato PrivCloud_Sharing tramite un file di configurazione, non ti è possibile modificare la configurazione dall'interfaccia utente.",
+  "admin.config.config-file-warning.description": "Poiché hai configurato PrivCloud Sharing tramite un file di configurazione, non ti è possibile modificare la configurazione dall'interfaccia utente.",
   "admin.config.title": "Configurazione",
   "admin.config.category.general": "Generale",
   "admin.config.category.share": "Condivisioni",
@@ -326,7 +326,7 @@ export default {
   "admin.config.general.app-name": "Nome dell'App",
   "admin.config.general.app-name.description": "Nome dell' applicazione",
   "admin.config.general.app-url": "URL dell'App",
-  "admin.config.general.app-url.description": "Su quale URL PrivCloud_Sharing è pubblicato",
+  "admin.config.general.app-url.description": "Su quale URL PrivCloud Sharing è pubblicato",
   "admin.config.general.secure-cookies": "Cookie sicuri",
   "admin.config.general.secure-cookies.description": "Indica se impostare il contrassegno sicuro sui cookie. Se abilitato, il sito non funzionerà quando si accede tramite HTTP.",
   "admin.config.general.show-home-page": "Visualizza Home Page",
@@ -341,7 +341,7 @@ export default {
   "admin.config.cache.max-items": "Numero massimo di elementi",
   "admin.config.cache.max-items.description": "Numero massimo di elementi all'interno della cache.",
   "admin.config.cache.redis-enabled": "Redis abilitato",
-  "admin.config.cache.redis-enabled.description": "Normalmente PrivCloud_Sharing mantiene la cache in memoria. Se si eseguono più istanze di PrivCloud_Sharing, è necessario abilitare il caching di Redis per condividere la cache tra le istanze.",
+  "admin.config.cache.redis-enabled.description": "Normalmente PrivCloud Sharing mantiene la cache in memoria. Se si eseguono più istanze di PrivCloud Sharing, è necessario abilitare il caching di Redis per condividere la cache tra le istanze.",
   "admin.config.cache.redis-url": "Url Di Redis",
   "admin.config.cache.redis-url.description": "Url per connettersi all'istanza Redis utilizzata per la cache.",
   "admin.config.email.enable-share-email-recipients": "Abilita condivisione del destinatario email",

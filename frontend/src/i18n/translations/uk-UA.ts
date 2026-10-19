@@ -313,7 +313,7 @@ export default {
   // END /privacy
   // /admin/config
   "admin.config.config-file-warning.title": "Файл конфігурації присутній",
-  "admin.config.config-file-warning.description": "Оскільки у вас налаштовано PrivCloud_Sharing за допомогою конфігураційного файлу, ви не можете змінювати конфігурацію через інтерфейс користувача.",
+  "admin.config.config-file-warning.description": "Оскільки у вас налаштовано PrivCloud Sharing за допомогою конфігураційного файлу, ви не можете змінювати конфігурацію через інтерфейс користувача.",
   "admin.config.title": "Конфігурація",
   "admin.config.category.general": "Загальне",
   "admin.config.category.share": "Завантаження",
@@ -324,7 +324,7 @@ export default {
   "admin.config.general.app-name": "Назва програми",
   "admin.config.general.app-name.description": "Видима назва додатка",
   "admin.config.general.app-url": "URL-адреса програми",
-  "admin.config.general.app-url.description": "Адреса, на якій доступний PrivCloud_Sharing",
+  "admin.config.general.app-url.description": "Адреса, на якій доступний PrivCloud Sharing",
   "admin.config.general.secure-cookies": "Безпечні cookies",
   "admin.config.general.secure-cookies.description": "Чи встановлювати прапор безпеки для cookies. Якщо увімкнено, сайт не працюватиме при доступі через HTTP.",
   "admin.config.general.show-home-page": "Показувати домашню сторінку",
@@ -339,7 +339,7 @@ export default {
   "admin.config.cache.max-items": "Maximum items",
   "admin.config.cache.max-items.description": "Maximum number of items inside the cache.",
   "admin.config.cache.redis-enabled": "Redis enabled",
-  "admin.config.cache.redis-enabled.description": "Normally PrivCloud_Sharing caches information in memory. If you run multiple instances of PrivCloud_Sharing, you need to enable Redis caching to share the cache between the instances.",
+  "admin.config.cache.redis-enabled.description": "Normally PrivCloud Sharing caches information in memory. If you run multiple instances of PrivCloud Sharing, you need to enable Redis caching to share the cache between the instances.",
   "admin.config.cache.redis-url": "Redis URL",
   "admin.config.cache.redis-url.description": "Url to connect to the Redis instance used for caching.",
   "admin.config.email.enable-share-email-recipients": "Увімкнути спільний доступ для отримувачів через ел. пошту",

@@ -1,3 +1,223 @@
+## [1.25.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.25.2...v1.25.3) (2026-10-19)
+
+### External Contractor Workspaces
+
+- Give external contractors temporary, preview-only access through dedicated
+  invitations, a personal workspace and an authenticated document viewer.
+- Keep contractor access separate from Team membership. Refuse overlapping
+  member invitations and original-file key grants for a Team's contractors.
+- Require the invited account, two-factor authentication and compatible
+  X25519/ML-KEM-768 keys before accepting an encrypted contractor preview.
+- Render the source locally in an administrator's browser, apply the selected
+  contractor's watermark and encrypt every page before uploading it. Contractors
+  receive a wrapped preview key without receiving the source file or Team key.
+- Publish a copy only after every page matches its approved issuance manifest.
+  Recheck the account, access dates, source availability and ciphertext on reads.
+- Configure active and pending contractor capacity with `TEAM_MAX_EXTERNAL_SEATS`.
+  The default `0` is unlimited. Independently bound page sizes, page counts,
+  pending uploads, invitation lifetime and access duration.
+- Revoke access immediately and purge stored pages after revocation, expiry,
+  source removal, Team deletion or abandoned publication.
+- Let each Team administrator choose email, push, both or no reminders when a
+  contractor's access ends. Reminders contain no evidence attachment or bearer
+  download link, and delivery never controls access revocation.
+
+### Issuance Records, Journals And Evidence Vault
+
+- Confirm issuance manifests with an administrator's passkey. Bind the source
+  digest, page hashes, copy identity and watermark version to that confirmation.
+- Record copy access in hash-chained journals, retain RFC 3161 timestamp evidence
+  and periodically anchor updated chains. Retry pending timestamps without
+  presenting a failed request as successful timestamping.
+- Provide the Team copy register, journal inspection, certificates and evidence
+  ZIP exports. Require fresh passkey confirmation scoped to the selected copy
+  and download kind for administrator evidence downloads.
+- Retain issuance records, journals and anchors after Team deletion for the audit
+  retention period. Keep that evidence lifecycle separate from preview storage.
+- Add an administrator evidence vault with brief, passkey-confirmed access,
+  retained Team records and explicitly authorized erasure.
+- Serialize SQLite publication, revocation and journal updates transactionally.
+  Preserve a complete journal under concurrent page reads and reject altered
+  stored pages or inconsistent manifests.
+
+### Local Watermark Analysis And Independent Verification
+
+- Add authenticated visible copy codes, whole-page multiscale marks and fragment
+  analysis alongside the original watermark channel. Record the mark version in
+  each issuance manifest and preserve interpretation of older records.
+- Analyze suspect images locally in a worker across candidate copies and pages.
+  Treat competing compatible copies as ambiguous and abstain when evidence is
+  insufficient. A watermark match remains an investigation lead, not proof of
+  who disclosed a document.
+- Offer local photo registration against an original PDF whose digest matches
+  the issuance record. Load OpenCV locally on demand, use document content only
+  for geometry and support cancellation with an overall deadline.
+- Protect diagnostic pattern exports with fresh, scoped administrator passkey
+  confirmation. Derive patterns locally and identify exports as sensitive data.
+- Publish the standalone Node/Python/OpenSSL verification toolkit, format
+  specification, laboratory reports and destructive test matrices in
+  `verification/contractor`. Generate its public download archive and checksums
+  during frontend builds.
+- Support strict verification with independently supplied trust anchors, expected
+  origin and RP ID, the original file and a previously retained checkpoint.
+  Detect changed manifests, signatures, timestamps, originals and journal chains.
+- Document ambiguity, image reconstruction and mark-erasure limits. Laboratory
+  measurements do not establish a production false-attribution rate.
+
+### Account Passkeys, Second Factors And Invitations
+
+- Sign in with account passkeys or existing signing passkeys. Add account
+  enrollment, listing and removal without replacing signing credentials.
+- Require a password or fresh authentication with the linked OAuth identity,
+  together with the current second factor when enabled, for account passkey
+  enrollment and two-factor changes.
+- Bind OAuth reauthentication to a short-lived, single-use account/provider
+  intent and reject a different linked identity. Use a scoped HttpOnly proof
+  cookie for the resulting second-factor operation.
+- Keep passkey login sessions in HttpOnly cookies, bind WebAuthn to the instance's
+  origin and RP ID, and make administrator credential resets remove account
+  passkeys as well as signing passkeys.
+- Require an authenticated session on new account-passkey, contractor and
+  evidence-vault routes even when anonymous uploads are enabled.
+- Guide Team and contractor invitees toward sign-in or account creation using
+  the invitation token. Preserve the intended destination through email
+  verification and keep invitation email prefills and Team key fragments in
+  the current tab rather than request URLs.
+- Add the contractor workspace and evidence-vault navigation, invitation screens
+  and translated labels across the supported interface locales.
+
+### Encrypted Team Profiles, Activity And Key Rotation
+
+- Store company name, watermark mention and additional Team profile details
+  encrypted with the Team key. Let administrators edit the profile used when
+  issuing contractor copies.
+- Include the encrypted profile, audit key and historical activity names in
+  resumable Team key rotations alongside existing share and request metadata.
+  Refuse the one-shot rotation when existing ciphertext needs migration.
+- Show the next rotation date, remaining days and active or paused progress in
+  Team settings. Indicate unsaved interval changes and link to the focused
+  rotation controls in the dashboard.
+- Decrypt activity file names locally, attach encrypted metadata to upload and
+  download events, and remove duplicate creation/upload entries from activity
+  views and scheduled audit summaries.
+
+### Progressive Document, Text And Source Previews
+
+- Read PDFs and compatible media through authenticated byte ranges with local
+  E2E decryption, strict range validation and a bounded in-memory read cache.
+  Release readers and pending work when a preview closes or is cancelled.
+- Add bounded local readers for DOCX, RTF, XLSX, XLS/XLT, XLSB, PPTX, ODT, ODS and
+  ODP, with document styles, tables, images, sheets and slides where supported.
+- Recognize compatible Office templates, macro-enabled document containers,
+  flat OpenDocument files, CSV/TSV and additional legacy spreadsheet formats.
+  Keep formulas, macros, embedded active content and external resources inert.
+- Add source-code highlighting in a dedicated worker, bounded text previews and
+  explicit handling of unsupported documents or embedded content.
+- Add progressive PDF rendering, image/PDF zoom from 25% to 400% and fullscreen
+  controls. Keep source download available to authorized users when a format
+  cannot be rendered within the preview limits.
+- Preserve bounded fallback behavior for legacy E2E files that require a complete
+  cryptographic record before revealing plaintext.
+- Vendor the official SheetJS 0.20.3 archive for browser spreadsheet parsing.
+  Sanitize the Next.js standalone manifest and keep spreadsheet build dependencies
+  and build lockfiles out of the frontend runtime image.
+
+### Image, RAW, Audio And Video Previews
+
+- Decode HEIC and TIFF locally in a worker. Extract supported RAW embedded JPEG
+  or RGB previews, including bounded TIFF/DNG directory reads through ranges.
+- Index compatible MP4/QuickTime media for progressive playback and support
+  bounded audio reads. Retain supported browser playback paths and explicit
+  unsupported-codec handling.
+- Decode HEVC locally in software when browser decoding is unavailable. Add video
+  seeking, volume and fullscreen controls and clean up decoding work on close.
+- Build image, video and photo-registration assets locally, distribute their
+  licenses and replacement notices, and serve decoder WebAssembly under worker
+  policies without relaxing the main document's script policy.
+
+### Transfers, Shared Visits And Companion
+
+- Import WebDAV folder trees through Companion while preserving encrypted paths,
+  bounded traversal, cancellation, storage checks and local OSS authorization.
+- Release storage streams, S3 connections and download slots when clients leave
+  before a download finishes.
+- Reuse an authenticated share visit for preview reads without consuming an
+  additional view. Verify visit-cookie signatures and their share binding before
+  retaining or removing cookies, and cap the retained set.
+- Confirm the matching persisted share and `uploadPending: false` before clearing
+  upload state. Refresh owner and Team folder views after acknowledged completion
+  or deletion, including recovery from stale pending-upload state.
+- Allow an explicit empty share edit to use the owner's deletion endpoint.
+- Drop reverse-share E2E keys from server-side notification handling, retain the
+  optional owner notification, and keep mail delivery outside upload completion.
+
+### Mail Delivery, Signing And Gmail
+
+- Add an optional SMTP account for ordinary service mail through the
+  `smtp.general*` settings. Preserve the primary sender for electronic-signature
+  invitations, codes, status updates, cancellations and completion messages.
+- Retain the primary SMTP configuration as the fallback when no general sender
+  is configured and expose the new settings in configuration examples and the
+  administration interface.
+- Export the PDF signing service for contractor certificate generation and
+  integrate signing passkeys with account login and contractor approvals.
+- Improve the Gmail add-on with bilingual guidance and validated insertion of a
+  PrivCloud link into the current draft. Bind packaged links and icons to the
+  configured instance without reading messages, accessing draft metadata or
+  sending mail, and reduce the declared Google permissions.
+
+### Service Worker, Privacy And Network Security
+
+- Remove the service worker's offline page and static-asset cache and delete old
+  caches on activation. Keep ordinary requests on the network and use ephemeral
+  preview streams without persisting decrypted media in Cache Storage.
+- Validate preview-worker messages and request ownership. Keep notification
+  destinations and icons on the instance origin, reuse the matching client tab
+  on notification clicks and refresh push presentation.
+- Mark upload links, signing links, contractor pages and the evidence vault as
+  non-indexable. Apply dedicated security policies to verification downloads and
+  decoder/registration workers, and revalidate worker scripts on update.
+- Download Trusted Lists through an explicit HTTPS proxy agent with `NO_PROXY`
+  support, TLS validation, response-size limits and a deadline covering CONNECT
+  and TLS setup. Do not fall back to a direct route after a proxy failure.
+
+### Container Startup, Dependencies And Release Checks
+
+- Fix backend startup with global-agent 4 by loading the application bootstrap
+  instead of the removed `global-agent/bootstrap` module. Include the shared Node
+  options helper in both Docker images and align the legacy shell entrypoint.
+- Preserve configured heap and DNS options, quote bootstrap paths and replace
+  obsolete backend preload arguments. Update proxy configuration examples and
+  document removal of obsolete container-level `NODE_OPTIONS` settings.
+- Update Next.js to 16.4.1, Undici to 7.30.1, Nodemailer to 10.0.13, global-agent
+  to 4.1.3, Sharp to 0.35.5 and qs to 6.16.1. Refresh vulnerable transitive
+  application, documentation and release-tool dependencies.
+- Pin Go 1.26.9 for Caddy and runtime-init builds and update the Caddy module
+  security floors. Keep both Docker build variants aligned.
+- Check production ML-KEM bundles for unsafe BigInt transforms and retain the
+  local compatibility patch and its regression checks. Use the Webpack path
+  explicitly for development and production builds.
+- Add the additive SQLite migration
+  `20261019120000_add_external_access_and_passkeys`, package the evidence verifier
+  with the backend and document backup and upgrade requirements.
+- Extend the release gate with real SQLite contractor integration, independent
+  evidence verification and dependency audits across all six npm dependency
+  trees. Check required verifier runtimes and allow the full verification suite
+  to complete within the CI timeout.
+- Add regression coverage for encrypted ranges, Office/RAW/media readers,
+  contractor authorization and revocation, evidence tampering, watermark ambiguity,
+  OAuth reauthentication, reverse-share key privacy, SMTP routing and actual
+  entrypoint preloads against both images' copied dependency sets.
+- Exercise preview, decoder and contractor viewers in Chrome using synthetic
+  HTTPS fixtures. Keep destructive verification and image-analysis checks offline
+  where possible, with ephemeral test keys and scoped certificate trust.
+- Generate verification and decoder assets during builds and exclude generated
+  binaries, private deployment artifacts and local secrets from source and Docker
+  contexts. Document reproducible Companion and integration packaging commands
+  and forward instance URL arguments through the combined packaging command.
+- Align application, tooling, verification package, Companion and extension
+  release metadata on 1.25.3, including lockfiles and generated release archives.
+
 ## [1.25.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.25.1...v1.25.2) (2026-10-05)
 
 ### Signing Evidence Downloads On Mobile

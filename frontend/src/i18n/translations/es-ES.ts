@@ -322,7 +322,7 @@ export default {
   // END /privacy
   // /admin/config
   "admin.config.config-file-warning.title": "Archivo de configuración presente",
-  "admin.config.config-file-warning.description": "Como tienes configurado PrivCloud_Sharing con un archivo de configuración, no puedes cambiar la configuración a través de la interfaz gráfica.",
+  "admin.config.config-file-warning.description": "Como tienes configurado PrivCloud Sharing con un archivo de configuración, no puedes cambiar la configuración a través de la interfaz gráfica.",
   "admin.config.title": "Configuración",
   "admin.config.category.general": "General",
   "admin.config.category.share": "Compartido",
@@ -333,7 +333,7 @@ export default {
   "admin.config.general.app-name": "Nombre de la App",
   "admin.config.general.app-name.description": "Nombre de la aplicación",
   "admin.config.general.app-url": "App URL",
-  "admin.config.general.app-url.description": "En cuál URL está disponible PrivCloud_Sharing",
+  "admin.config.general.app-url.description": "En cuál URL está disponible PrivCloud Sharing",
   "admin.config.general.secure-cookies": "Cookies seguras",
   "admin.config.general.secure-cookies.description": "Si se establece o no la bandera de seguridad en las cookies. Si se activa, el sitio no funcionará cuando se acceda a través de HTTP.",
   "admin.config.general.show-home-page": "Mostrar página de inicio",
@@ -348,7 +348,7 @@ export default {
   "admin.config.cache.max-items": "Maximum items",
   "admin.config.cache.max-items.description": "Maximum number of items inside the cache.",
   "admin.config.cache.redis-enabled": "Redis enabled",
-  "admin.config.cache.redis-enabled.description": "Normally PrivCloud_Sharing caches information in memory. If you run multiple instances of PrivCloud_Sharing, you need to enable Redis caching to share the cache between the instances.",
+  "admin.config.cache.redis-enabled.description": "Normally PrivCloud Sharing caches information in memory. If you run multiple instances of PrivCloud Sharing, you need to enable Redis caching to share the cache between the instances.",
   "admin.config.cache.redis-url": "Redis URL",
   "admin.config.cache.redis-url.description": "Url to connect to the Redis instance used for caching.",
   "admin.config.email.enable-share-email-recipients": "Habilitar compartir por correo electrónico",

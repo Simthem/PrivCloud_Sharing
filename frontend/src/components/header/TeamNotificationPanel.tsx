@@ -372,6 +372,7 @@ const NotificationItem = ({
       const fileName = (decryptedMeta.fileName as string) || "un fichier";
       return `${sender} a partagé "${fileName}"`;
     }
+    if (notification.type === "EXTERNAL_ACCESS_ENDED") return t("team.notification.generic.EXTERNAL_ACCESS_ENDED");
     if (notification.type === "FILE_REQUESTED")
       return t("team.fileRequest.notification.request");
     if (notification.type === "FILE_REQUEST_SUBMITTED")
@@ -384,6 +385,8 @@ const NotificationItem = ({
 
   // Build navigation path: prefer folder with file highlight, fallback to team page
   const getNavigationPath = (): string | null => {
+    if (notification.type === "EXTERNAL_ACCESS_ENDED" && notification.team)
+      return `/team/${encodeURIComponent(notification.team.id)}/settings#external-contractors`
     const metadata = (() => {
       if (decryptedMeta) return decryptedMeta;
       if (!notification.metadata) return null;

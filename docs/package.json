@@ -1,6 +1,6 @@
 {
   "name": "pingvindocs",
-  "version": "1.25.2",
+  "version": "1.25.3",
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
@@ -46,7 +46,7 @@
     ]
   },
   "engines": {
-    "node": ">=18.0"
+    "node": "^20.0.0 || >=22.0.0"
   },
   "overrides": {
     "minimatch": "^10.2.1",
@@ -62,7 +62,7 @@
     "webpack": "5.105.0",
     "webpack-dev-server": ">=5.2.6",
     "webpack-dev-middleware": "^8.3.0",
-    "qs": ">=6.15.2",
+    "qs": "6.16.1",
     "body-parser": ">=1.20.6",
     "shell-quote": "^1.10.0",
     "websocket-driver": ">=0.7.5",
@@ -73,7 +73,9 @@
     "browserslist": "4.28.8",
     "image-size": "^2.0.4",
     "braces": "$braces",
-    "update-notifier": "$update-notifier"
+    "update-notifier": "$update-notifier",
+    "tinypool": "2.1.2",
+    "postcss-selector-parser": "7.1.6"
   },
   "allowScripts": {
     "core-js@3.49.0": true,

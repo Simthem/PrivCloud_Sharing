@@ -4,6 +4,31 @@ id: upgrading
 
 # Upgrading
 
+## Version 1.25.3: contractor access and account passkeys
+
+Back up the SQLite database and stored files before applying
+`20261019120000_add_external_access_and_passkeys`. Run the normal migrations
+before starting the updated backend. Existing shares, files and Team requests
+are retained. The new audit records deliberately survive Team deletion until
+their retention ends or an authorized evidence-vault erasure is confirmed.
+
+`TEAM_MAX_EXTERNAL_SEATS=0` leaves contractor capacity unrestricted. Set a
+positive integer for an instance-specific limit. Preview page size, page count,
+access duration and invitation lifetime remain bounded.
+
+Frontend builds now generate decoder and evidence-verification assets. Build
+from the repository root layout and retain the required local vendor archives,
+`verification/contractor`, and scripts when preparing a source distribution.
+
+The application no longer stores an offline page or static-asset cache in its
+service worker. Existing caches are removed when the updated worker activates.
+Decrypted preview streams remain temporary and are not saved in Cache Storage.
+
+The Docker entrypoint loads the backend proxy bootstrap automatically. Remove
+old container-level `NODE_OPTIONS` arguments that require
+`node_modules/global-agent/bootstrap`: global-agent 4 no longer ships that file.
+Rebuild or pull the updated image, then recreate the container.
+
 ### Upgrade to a new version
 
 As PrivCloud_Sharing is in an early stage, see the release notes for breaking changes before upgrading.

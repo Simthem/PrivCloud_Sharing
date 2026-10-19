@@ -84,7 +84,7 @@ const createOtpHarness = () => {
   const service = new SigningService(
     prisma as never,
     {
-      sendMail: async (email: string, subject: string, body: string) => {
+      sendSigningMail: async (email: string, subject: string, body: string) => {
         sentEmails.push({ email, subject, body });
       },
     } as never,

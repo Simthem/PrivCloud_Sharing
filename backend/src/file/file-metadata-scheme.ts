@@ -158,6 +158,15 @@ export function isValidEncryptedFileRequestInfo(
   return isValidEnvelope(value, FILE_REQUEST_INFO_MAX_PLAINTEXT_BYTES);
 }
 
+// Company name, mention and details of a team: a few hundred characters at
+// most, up to 4 bytes each once encoded.
+export const TEAM_PROFILE_MAX_PLAINTEXT_BYTES = 2048;
+
+/** Team company details, encrypted with K_team (see TeamProfile). */
+export function isValidEncryptedTeamProfile(value: unknown): value is string {
+  return isValidEnvelope(value, TEAM_PROFILE_MAX_PLAINTEXT_BYTES);
+}
+
 // ----- Feature flags ------------------------------------------------------
 //
 // FILE_META_V1_WRITE (default false): new SHARE_DEK_V1 shares may encrypt

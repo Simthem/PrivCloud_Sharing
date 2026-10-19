@@ -823,11 +823,15 @@ export class SigningWebAuthnService {
     this.logger.log(`User ${userId} removed the signing passkey ${passkeyId}`);
   }
 
-  /** Administrator reset: the account enrolls a new passkey at its next signature. */
+  /**
+   * Administrator reset: the account enrolls a new passkey at its next
+   * signature. Passkeys added from the account go too: they sign in.
+   */
   async resetPasskeys(userId: string, administratorEmail: string) {
     const { count } = await this.prisma.signingPasskey.deleteMany({
       where: { userId },
     });
+    await this.prisma.accountPasskey.deleteMany({ where: { userId } });
     this.logger.warn(
       `Administrator ${administratorEmail} removed the ${count} signing passkey(s) of user ${userId}`,
     );

@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import vm from "node:vm";
 import { QueryClient } from "@tanstack/react-query";
-import { synchronizeCompletedUpload } from "../src/utils/uploadStateCache.util.ts";
+import {
+  synchronizeCompletedUpload,
+  synchronizeRemovedShare,
+} from "../src/utils/uploadStateCache.util.ts";
 import ts from "typescript";
 import { finalizeUpload } from "../src/utils/uploadCompletion.util.ts";
 
@@ -22,7 +25,7 @@ const compiled = ts.transpileModule(source, {
 
 // Run the production component's handlers with deferred React state updates.
 // Network, crypto and native service dependencies remain outside this test.
-function fixture() {
+function fixture({ savedFiles = [], uploadPending = true } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { gcTime: 0 } },
   });
@@ -34,13 +37,18 @@ function fixture() {
   const states = [],
     refs = [],
     queued = [],
-    attempts = [];
+    attempts = [],
+    deletions = [],
+    fileRemovals = [];
   let stateIndex = 0,
     refIndex = 0,
     active = false,
     completions = 0;
   let uploadFails = () => false,
     completeFails = false,
+    deleteFails = false,
+    unlocks = 0,
+    backwards = 0,
     tree;
   const jsx = (type, props) => ({ type, props });
   const defaultExport = (value) => ({ __esModule: true, default: value });
@@ -71,7 +79,13 @@ function fixture() {
     },
     "@mantine/modals": { useModals: () => ({}) },
     "@mantine/notifications": { cleanNotifications: () => {} },
-    "next/router": { useRouter: () => ({ back: () => {} }) },
+    "next/router": {
+      useRouter: () => ({
+        back: () => {
+          backwards++;
+        },
+      }),
+    },
     "p-limit": defaultExport(() => (fn) => fn()),
     "react-intl": { FormattedMessage: "FormattedMessage" },
     "@tanstack/react-query": {
@@ -93,7 +107,16 @@ function fixture() {
     }),
     "stripe.service": defaultExport({ getUploadLimit: async () => 1_000_000 }),
     "share.service": defaultExport({
-      revertComplete: async () => {},
+      revertComplete: async () => {
+        unlocks++;
+      },
+      remove: async (id, discard) => {
+        deletions.push({ id, discard });
+        if (deleteFails) throw new Error("Delete failed");
+      },
+      removeFile: async (share, id) => {
+        fileRemovals.push(id);
+      },
       keepUploadAlive: async () => {},
       completeShare: async () => {
         completions++;
@@ -110,7 +133,10 @@ function fixture() {
       startUploadSessionMaintenance: () => () => {},
     },
     "uploadCompletion.util": { finalizeUpload },
-    "uploadStateCache.util": { synchronizeCompletedUpload },
+    "uploadStateCache.util": {
+      synchronizeCompletedUpload,
+      synchronizeRemovedShare,
+    },
     "safelineChallenge.util": { prepareSafeLineRetry: async () => {} },
     "uploadResume.util": {
       readUploadResumeEntries: async () => [],
@@ -183,8 +209,8 @@ function fixture() {
     stateIndex = refIndex = 0;
     tree = exports.default({
       shareId: "share",
-      files: [],
-      uploadPending: true,
+      files: savedFiles,
+      uploadPending,
     });
   };
   function find(type, node = tree) {
@@ -197,6 +223,14 @@ function fixture() {
   render();
   return {
     attempts,
+    deletions,
+    fileRemovals,
+    get unlocks() {
+      return unlocks;
+    },
+    get backwards() {
+      return backwards;
+    },
     queryClient,
     get completions() {
       return completions;
@@ -209,6 +243,16 @@ function fixture() {
     },
     failUploads: (fn) => (uploadFails = fn),
     failCompletion: (value) => (completeFails = value),
+    failDeletion: (value) => (deleteFails = value),
+    removeAll: () => {
+      find("FileList").props.setFiles(
+        find("FileList").props.files.map((file) => ({
+          ...file,
+          deleted: true,
+        })),
+      );
+      render();
+    },
     append: async (files) => {
       await find("Dropzone").props.onFilesChanged(files);
       render();
@@ -294,3 +338,63 @@ if (source.includes("enqueueNativeFiles"))
     assert.deepEqual(upload.attempts, []);
     upload.queryClient.clear();
   });
+
+test("saving an edit with every file removed deletes the share without unlocking or finalizing it", async () => {
+  const upload = fixture({
+    savedFiles: [{ id: "old", name: "old.bin", size: "7" }],
+    uploadPending: false,
+  });
+  upload.removeAll();
+  await upload.save();
+  assert.deepEqual(upload.deletions, [{ id: "share", discard: true }]);
+  assert.equal(upload.unlocks, 0);
+  assert.equal(upload.completions, 0);
+  assert.deepEqual(upload.fileRemovals, []);
+  assert.equal(upload.active, false);
+  assert.equal(upload.backwards, 1);
+  assert.deepEqual(
+    upload.queryClient.getQueryData(["pendingUploads", "owner"]),
+    [{ id: "another" }],
+  );
+  upload.queryClient.clear();
+});
+
+test("a failed whole-share deletion preserves its published state and can be retried", async () => {
+  const upload = fixture({
+    savedFiles: [{ id: "old", name: "old.bin", size: "7" }],
+    uploadPending: false,
+  });
+  upload.removeAll();
+  upload.failDeletion(true);
+  await upload.save();
+  assert.equal(upload.unlocks, 0);
+  assert.equal(upload.completions, 0);
+  assert.equal(upload.backwards, 0);
+  assert.deepEqual(
+    upload.queryClient.getQueryData(["pendingUploads", "owner"]),
+    [{ id: "share" }, { id: "another" }],
+  );
+  upload.failDeletion(false);
+  await upload.save();
+  assert.equal(upload.deletions.length, 2);
+  assert.equal(upload.backwards, 1);
+  upload.queryClient.clear();
+});
+
+test("removing old files while adding a replacement never triggers whole-share deletion", async () => {
+  const upload = fixture({
+    savedFiles: [{ id: "old", name: "old.bin", size: "7" }],
+  });
+  upload.removeAll();
+  upload.failUploads(() => true);
+  await upload.append([file("replacement.bin")]);
+  await upload.save();
+  assert.deepEqual(upload.deletions, []);
+  assert.deepEqual(
+    upload.fileRemovals,
+    [],
+    "failed uploads preserve existing files",
+  );
+  assert.equal(upload.completions, 0);
+  upload.queryClient.clear();
+});

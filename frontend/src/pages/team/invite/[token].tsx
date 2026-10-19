@@ -13,6 +13,7 @@ import {
 } from "@mantine/core";
 import { TbCheck, TbLock, TbUsersGroup } from "react-icons/tb";
 import Meta from "../../../components/Meta";
+import InvitationAuthChoice from "../../../components/auth/InvitationAuthChoice";
 import teamService from "../../../services/team.service";
 import useUser from "../../../hooks/user.hook";
 import {
@@ -64,8 +65,8 @@ const AcceptInvitePage = () => {
           );
           if (Number.isFinite(parsedVersion)) keyVersion = parsedVersion;
         }
-      } catch (e) {
-        console.warn("[E2E] Failed to wrap team key during invite accept:", e);
+      } catch {
+        console.warn("[E2E] Failed to wrap team key during invite accept");
       }
       return teamService.acceptInvitation(tokenStr, wrappedTeamKey, keyVersion);
     },
@@ -99,12 +100,10 @@ const AcceptInvitePage = () => {
           <Stack align="center" gap="md">
             <TbUsersGroup size={48} />
             <Title order={3}>{intl.formatMessage({ id: "team.invite.title" })}</Title>
-            <Text c="dimmed">
-              {intl.formatMessage({ id: "team.invite.login-required" })}
-            </Text>
-            <Button onClick={() => router.push(`/auth/signIn?redirect=/team/invite/${tokenStr}`)}>
-              {intl.formatMessage({ id: "team.invite.login-button" })}
-            </Button>
+            <InvitationAuthChoice
+              queryKey={`team:${tokenStr}`}
+              loadAccount={() => teamService.getInvitationAccount(tokenStr)}
+            />
           </Stack>
         </Paper>
       </Container>

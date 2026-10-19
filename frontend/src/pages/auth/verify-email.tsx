@@ -22,6 +22,10 @@ import {
   rememberEmailVerificationEmail,
 } from "../../utils/emailVerification.util";
 import toast from "../../utils/toast.util";
+import {
+  finalizePostAuthRedirectPath,
+  safeRedirectPath,
+} from "../../utils/authRedirect.util";
 
 type VerificationStatus =
   | "waiting"
@@ -176,6 +180,16 @@ const VerifyEmailPage = () => {
     const user = await refreshUser({ refresh: true });
     if (!user) {
       await router.replace("/auth/signIn");
+      return;
+    }
+    // Back to the invitation that led to the sign-up, Team key fragment
+    // included (kept in this tab, never in the URL).
+    const redirect =
+      typeof router.query.redirect === "string"
+        ? safeRedirectPath(router.query.redirect)
+        : "/";
+    if (redirect !== "/") {
+      await router.replace(finalizePostAuthRedirectPath(redirect));
       return;
     }
     await router.replace(user.isAdmin ? "/admin/intro" : "/account");

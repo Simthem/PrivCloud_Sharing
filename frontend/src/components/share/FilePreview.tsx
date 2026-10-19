@@ -1,3 +1,4 @@
+import ZoomablePreview from "./ZoomablePreview";
 import {
   Button,
   Center,
@@ -8,25 +9,55 @@ import {
   Title,
   useMantineColorScheme,
 } from "@mantine/core";
-import { useMediaQuery } from "@mantine/hooks";
 import { modals } from "@mantine/modals";
 import type { MarkdownToJSX } from "markdown-to-jsx";
 import dynamic from "next/dynamic";
-import Link from "next/link";
 
 const Markdown = dynamic(() => import("markdown-to-jsx"), { ssr: false });
 import React, { Dispatch, SetStateAction, useEffect, useState } from "react";
-import { FormattedMessage } from "react-intl";
-import api from "../../services/api.service";
+import { FormattedMessage, useIntl } from "react-intl";
 import {
   fetchDecryptedFile,
-  fetchDecryptedFilePrefix,
+  fetchFileBuffer,
+  fetchFilePreviewSource,
 } from "../../services/share.service";
 import {
+  E2E_BLOB_PREVIEW_MAX_SIZE,
+  isOfficePreviewMimeType,
   isPreviewMimeTypeSupported,
   isTextBasedMimeType,
   sniffPreviewMimeType,
 } from "../../utils/filePreview.util";
+
+import { decodePreviewText } from "../../utils/textPreview.util";
+import { resolveCodeLanguage } from "../../utils/codePreview.util";
+const SourceCodePreview = dynamic(() => import("./SourceCodePreview"), {
+  ssr: false,
+});
+
+import { createProgressiveMediaUrl } from "../../utils/previewMedia.util";
+import type { PreviewByteSource } from "../../utils/previewRange.util";
+import { readRawRangePreview } from "../../utils/rawPreview.util";
+import {
+  toDisplayableImageBlob,
+  toDisplayableDecodedImageBlob,
+} from "../../utils/imageDecoder.util";
+import {
+  DECODED_IMAGE_MAX_SOURCE_BYTES,
+  imageDecoderFormat,
+} from "../../utils/imageFormats.util";
+const OfficePreview = dynamic(() => import("./OfficePreview"), { ssr: false });
+const ProgressivePdfPreview = dynamic(() => import("./ProgressivePdfPreview"), {
+  ssr: false,
+});
+const VideoPlayer = dynamic(() => import("./VideoPlayer"), {
+  ssr: false,
+  loading: () => (
+    <Center mih={200}>
+      <Loader />
+    </Center>
+  ),
+});
 
 export { isTextBasedMimeType } from "../../utils/filePreview.util";
 
@@ -43,20 +74,10 @@ const fetchPreviewPrefix = async (
   e2eKey: string | null | undefined,
   maxBytes: number,
   signal: AbortSignal,
-): Promise<ArrayBuffer> => {
-  if (e2eKey) {
-    return fetchDecryptedFilePrefix(shareId, fileId, e2eKey, maxBytes, signal);
-  }
-
-  const response = await api.get(
-    `/shares/${shareId}/files/${fileId}?download=false`,
-    {
-      responseType: "arraybuffer",
-      headers: { Range: `bytes=0-${maxBytes - 1}` },
-      signal,
-    },
-  );
-  return response.data as ArrayBuffer;
+): Promise<{ buffer: ArrayBuffer; truncated: boolean }> => {
+  const source = await fetchFilePreviewSource(shareId, fileId, e2eKey, signal);
+  const bytes = await source.read(0, Math.min(maxBytes, source.size), signal);
+  return { buffer: bytes.buffer, truncated: source.size > maxBytes };
 };
 
 /** Truncate a string if it exceeds the safe preview limit. */
@@ -66,9 +87,6 @@ const truncateForPreview = (s: string): string =>
       "\n\n[... truncated, file too large for preview]"
     : s;
 
-const ensureString = (value: unknown): string =>
-  typeof value === "string" ? value : JSON.stringify(value, null, 2);
-
 /**
  * Normalise vendor video MIME types to standard ones so the browser
  * recognises them in Blob and &lt;source type&gt;.
@@ -76,7 +94,6 @@ const ensureString = (value: unknown): string =>
  */
 const normalizeVideoMime = (m: string): string => {
   if (m === "video/x-m4v" || m === "video/x-mp4") return "video/mp4";
-  if (m === "video/x-matroska") return "video/webm";
   return m;
 };
 
@@ -84,6 +101,7 @@ const FilePreviewContext = React.createContext<{
   shareId: string;
   fileId: string;
   mimeType: string;
+  fileName?: string;
   fileSizeBytes?: number;
   e2eKey?: string | null;
   setMimeType: Dispatch<SetStateAction<string>>;
@@ -92,31 +110,83 @@ const FilePreviewContext = React.createContext<{
   shareId: "",
   fileId: "",
   mimeType: "",
+  fileName: "",
   fileSizeBytes: undefined,
   e2eKey: null,
   setMimeType: () => {},
   setIsNotSupported: () => {},
 });
 
-/** Hook: fetch encrypted file, decrypt, return a blob URL */
+/** Hook: fetch (and decrypt or decode) the image, return a blob URL */
 const useDecryptedBlobUrl = (mimeType: string) => {
-  const { shareId, fileId, e2eKey, setIsNotSupported } =
+  const { shareId, fileId, e2eKey, fileSizeBytes, setIsNotSupported } =
     React.useContext(FilePreviewContext);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // HEIC, TIFF and RAW reach the <img> only once decoded on the device.
+  const needsDecoding = imageDecoderFormat(mimeType) !== null;
 
   useEffect(() => {
-    if (!e2eKey) {
+    if (!e2eKey && !needsDecoding) {
       setLoading(false);
       return;
     }
+    if (
+      needsDecoding &&
+      imageDecoderFormat(mimeType) !== "raw" &&
+      fileSizeBytes != null &&
+      fileSizeBytes > DECODED_IMAGE_MAX_SOURCE_BYTES
+    ) {
+      setIsNotSupported(true);
+      setLoading(false);
+      return;
+    }
+    if (
+      e2eKey &&
+      imageDecoderFormat(mimeType) !== "raw" &&
+      fileSizeBytes != null &&
+      fileSizeBytes > E2E_BLOB_PREVIEW_MAX_SIZE
+    ) {
+      setIsNotSupported(true);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setBlobUrl(null);
     const controller = new AbortController();
     let active = true;
     let revoke: string | null = null;
-    fetchDecryptedFile(shareId, fileId, e2eKey, controller.signal)
-      .then((decrypted) => {
+    (async () => {
+      if (imageDecoderFormat(mimeType) === "raw") {
+        const source = await fetchFilePreviewSource(
+          shareId,
+          fileId,
+          e2eKey,
+          controller.signal,
+        );
+        const preview = await readRawRangePreview(source, controller.signal);
+        if (preview?.kind === "jpeg")
+          return toDisplayableDecodedImageBlob(
+            preview.decoded,
+            controller.signal,
+          );
+        if (preview?.kind === "tiff")
+          return toDisplayableImageBlob(
+            preview.bytes,
+            "image/tiff",
+            controller.signal,
+          );
+        // Proprietary layouts retain the existing bounded decoder fallback.
+        if (source.size > DECODED_IMAGE_MAX_SOURCE_BYTES)
+          throw new Error("RAW preview unavailable within memory budget");
+      }
+      const buffer = e2eKey
+        ? await fetchDecryptedFile(shareId, fileId, e2eKey, controller.signal)
+        : await fetchFileBuffer(shareId, fileId, controller.signal);
+      return toDisplayableImageBlob(buffer, mimeType, controller.signal);
+    })()
+      .then((blob) => {
         if (!active) return;
-        const blob = new Blob([decrypted], { type: mimeType });
         const url = URL.createObjectURL(blob);
         revoke = url;
         setBlobUrl(url);
@@ -132,30 +202,101 @@ const useDecryptedBlobUrl = (mimeType: string) => {
       controller.abort();
       if (revoke) URL.revokeObjectURL(revoke);
     };
-  }, [shareId, fileId, e2eKey, mimeType, setIsNotSupported]);
+  }, [
+    shareId,
+    fileId,
+    e2eKey,
+    fileSizeBytes,
+    mimeType,
+    needsDecoding,
+    setIsNotSupported,
+  ]);
 
-  return { blobUrl, loading };
+  return { blobUrl, loading, needsBlob: Boolean(e2eKey) || needsDecoding };
+};
+
+/**
+ * Media elements read and seek through a local, ephemeral range URL, served
+ * from one authenticated source. Video waits for its codec decision before
+ * starting a media element or registering a service worker.
+ */
+const useProgressiveMediaUrl = (needsMediaUrl = true) => {
+  const { shareId, fileId, mimeType, e2eKey, setIsNotSupported } =
+    React.useContext(FilePreviewContext);
+  const [media, setMedia] = useState<{
+    src: string;
+    source: PreviewByteSource | null;
+  } | null>(null);
+  useEffect(() => {
+    const fallback = !e2eKey
+      ? `/api/shares/${encodeURIComponent(shareId)}/files/${encodeURIComponent(fileId)}?download=false`
+      : null;
+    const controller = new AbortController();
+    let release: (() => void) | undefined;
+    setMedia(null);
+    (async () => {
+      const source = await fetchFilePreviewSource(
+        shareId,
+        fileId,
+        e2eKey,
+        controller.signal,
+      );
+      if (!needsMediaUrl) {
+        if (!controller.signal.aborted)
+          setMedia({
+            source,
+            src: fallback ?? "",
+          });
+        return;
+      }
+      const media = await createProgressiveMediaUrl(
+        source,
+        normalizeVideoMime(mimeType),
+        controller.signal,
+      );
+      release = media.release;
+      if (!controller.signal.aborted) setMedia({ src: media.url, source });
+      else release();
+    })().catch(() => {
+      if (controller.signal.aborted) return;
+      if (needsMediaUrl && fallback) setMedia({ src: fallback, source: null });
+      else setIsNotSupported(true);
+    });
+    return () => {
+      controller.abort();
+      release?.();
+    };
+  }, [shareId, fileId, mimeType, e2eKey, needsMediaUrl, setIsNotSupported]);
+  return media;
 };
 
 const FilePreview = ({
   shareId,
   fileId,
   mimeType,
+  fileName,
   fileSizeBytes,
   e2eKey,
 }: {
   shareId: string;
   fileId: string;
   mimeType: string;
+  fileName?: string;
   fileSizeBytes?: number;
   e2eKey?: string | null;
 }) => {
   const [isNotSupported, setIsNotSupported] = useState(false);
   const [resolvedMimeType, setResolvedMimeType] = useState(mimeType);
 
-  useEffect(() => setResolvedMimeType(mimeType), [mimeType]);
+  useEffect(() => {
+    setResolvedMimeType(mimeType);
+    setIsNotSupported(false);
+  }, [mimeType, shareId, fileId, e2eKey]);
 
-  if (isNotSupported) return <UnSupportedFile />;
+  if (isNotSupported)
+    return (
+      <UnSupportedFile readError={isOfficePreviewMimeType(resolvedMimeType)} />
+    );
 
   return (
     <Stack>
@@ -164,6 +305,7 @@ const FilePreview = ({
           shareId,
           fileId,
           mimeType: resolvedMimeType,
+          fileName,
           fileSizeBytes,
           e2eKey,
           setMimeType: setResolvedMimeType,
@@ -175,12 +317,13 @@ const FilePreview = ({
       {!e2eKey && (
         <Button
           variant="subtle"
-          component={Link}
+          component="a"
           onClick={() => modals.closeAll()}
           target="_blank"
+          rel="noopener noreferrer"
           href={`/api/shares/${shareId}/files/${fileId}?download=false`}
         >
-          View original file
+          <FormattedMessage id="share.modal.file-preview.view-original" />
         </Button>
       )}
     </Stack>
@@ -208,7 +351,7 @@ const FileTypeDetector = () => {
       MIME_SNIFF_BYTES,
       controller.signal,
     )
-      .then((prefix) => {
+      .then(({ buffer: prefix }) => {
         if (!active) return;
         const detected = sniffPreviewMimeType(new Uint8Array(prefix));
         if (
@@ -241,9 +384,11 @@ const FileTypeDetector = () => {
 };
 
 const FileDecider = () => {
-  const { mimeType, setIsNotSupported } = React.useContext(FilePreviewContext);
+  const { mimeType, fileName } = React.useContext(FilePreviewContext);
 
-  if (mimeType == "application/pdf") {
+  if (isOfficePreviewMimeType(mimeType)) {
+    return <OfficeFilePreview />;
+  } else if (mimeType == "application/pdf") {
     return <PdfPreview />;
   } else if (mimeType.startsWith("video/")) {
     return <VideoPreview />;
@@ -251,6 +396,11 @@ const FileDecider = () => {
     return <ImagePreview />;
   } else if (mimeType.startsWith("audio/")) {
     return <AudioPreview />;
+  } else if (
+    isTextBasedMimeType(mimeType) &&
+    resolveCodeLanguage(fileName, mimeType)
+  ) {
+    return <CodePreview />;
   } else if (
     mimeType === "text/markdown" ||
     mimeType === "text/plain" ||
@@ -260,74 +410,68 @@ const FileDecider = () => {
   } else if (isTextBasedMimeType(mimeType)) {
     return <CodePreview />;
   } else {
-    setIsNotSupported(true);
-    return null;
+    return <UnSupportedFile />;
   }
 };
 
 const AudioPreview = () => {
-  const { shareId, fileId, e2eKey, setIsNotSupported } =
-    React.useContext(FilePreviewContext);
-  const { blobUrl, loading } = useDecryptedBlobUrl("audio/mpeg");
-
-  if (e2eKey && loading)
+  const { setIsNotSupported } = React.useContext(FilePreviewContext);
+  const media = useProgressiveMediaUrl();
+  if (!media)
     return (
-      <Center style={{ minHeight: 200 }}>
+      <Center mih={200}>
         <Loader />
       </Center>
     );
-
-  const src =
-    e2eKey && blobUrl
-      ? blobUrl
-      : `/api/shares/${shareId}/files/${fileId}?download=false`;
-
   return (
-    <Center style={{ minHeight: 200 }}>
-      <Stack align="center" gap={10} style={{ width: "100%" }}>
-        <audio controls style={{ width: "100%" }}>
-          <source src={src} onError={() => setIsNotSupported(true)} />
-        </audio>
-      </Stack>
+    <Center mih={200}>
+      <audio
+        src={media.src}
+        controls
+        preload="metadata"
+        style={{ width: "100%" }}
+        onError={() => setIsNotSupported(true)}
+      />
     </Center>
   );
 };
 
 const VideoPreview = () => {
-  const { shareId, fileId, mimeType, e2eKey, setIsNotSupported } =
+  const { shareId, fileId, e2eKey, mimeType, setIsNotSupported } =
     React.useContext(FilePreviewContext);
-  const videoMime = normalizeVideoMime(mimeType);
-  const { blobUrl, loading } = useDecryptedBlobUrl(videoMime);
-
-  if (e2eKey && loading)
+  const media = useProgressiveMediaUrl(false);
+  const [codec, setCodec] = useState<string | null>(null);
+  useEffect(() => setCodec(null), [media]);
+  const onUnsupported = React.useCallback(
+    (name: string | null) => (name ? setCodec(name) : setIsNotSupported(true)),
+    [setIsNotSupported],
+  );
+  if (!media)
     return (
-      <Center style={{ minHeight: 200 }}>
+      <Center mih={200}>
         <Loader />
       </Center>
     );
-
-  const src =
-    e2eKey && blobUrl
-      ? blobUrl
-      : `/api/shares/${shareId}/files/${fileId}?download=false`;
-
+  if (codec) return <UnSupportedFile codec={codec} />;
   return (
-    <video width="100%" controls>
-      <source
-        src={src}
-        type={videoMime}
-        onError={() => setIsNotSupported(true)}
-      />
-    </video>
+    <VideoPlayer
+      shareId={shareId}
+      fileId={fileId}
+      e2eKey={e2eKey}
+      source={media.source}
+      mediaSrc={media.src}
+      mimeType={normalizeVideoMime(mimeType)}
+      onUnsupported={onUnsupported}
+    />
   );
 };
 
 const ImagePreview = () => {
-  const { shareId, fileId, mimeType, e2eKey, setIsNotSupported } =
+  const { shareId, fileId, mimeType, setIsNotSupported } =
     React.useContext(FilePreviewContext);
-  const { blobUrl, loading } = useDecryptedBlobUrl(mimeType);
+  const { blobUrl, loading, needsBlob } = useDecryptedBlobUrl(mimeType);
 
-  if (e2eKey && loading)
+  if (needsBlob && loading)
     return (
       <Center style={{ minHeight: 200 }}>
         <Loader />
@@ -335,18 +479,27 @@ const ImagePreview = () => {
     );
 
   const src =
-    e2eKey && blobUrl
+    needsBlob && blobUrl
       ? blobUrl
       : `/api/shares/${shareId}/files/${fileId}?download=false`;
 
   return (
-    <img
-      src={src}
-      alt={`${fileId}_preview`}
-      width="100%"
-      loading="lazy"
-      onError={() => setIsNotSupported(true)}
-    />
+    <ZoomablePreview key={fileId}>
+      <img
+        src={src}
+        alt={`${fileId}_preview`}
+        draggable={false}
+        style={{
+          display: "block",
+          width: "100%",
+          maxWidth: "none",
+          height: "auto",
+        }}
+        width="100%"
+        loading="lazy"
+        onError={() => setIsNotSupported(true)}
+      />
+    </ZoomablePreview>
   );
 };
 
@@ -356,6 +509,10 @@ const TextPreview = () => {
   const [text, setText] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const { colorScheme } = useMantineColorScheme();
+  const truncatedMessage = useIntl().formatMessage({
+    id: "share.modal.file-preview.partial",
+    defaultMessage: "Partial preview. Download the file to view all content.",
+  });
   const isPlainText = mimeType === "text/plain";
 
   useEffect(() => {
@@ -369,12 +526,13 @@ const TextPreview = () => {
       MAX_TEXT_PREVIEW_BYTES,
       controller.signal,
     )
-      .then((buf) => {
+      .then(({ buffer: buf, truncated }) => {
         if (!active) return;
-        const decoded = new TextDecoder().decode(buf);
-        setText(
-          truncateForPreview(decoded) || "Impossible de charger l'aperçu.",
-        );
+        const decoded = decodePreviewText(new Uint8Array(buf), truncated);
+        const content =
+          truncateForPreview(decoded) +
+          (truncated ? "\n\n" + truncatedMessage : "");
+        setText(content || "Impossible de charger l'aperçu.");
       })
       .catch(() => {
         if (active && !controller.signal.aborted) {
@@ -389,7 +547,7 @@ const TextPreview = () => {
       active = false;
       controller.abort();
     };
-  }, [shareId, fileId, e2eKey]);
+  }, [shareId, fileId, e2eKey, truncatedMessage]);
 
   if (loading)
     return (
@@ -455,34 +613,45 @@ const TextPreview = () => {
 };
 
 const CodePreview = () => {
-  const { shareId, fileId, e2eKey } = React.useContext(FilePreviewContext);
+  const { shareId, fileId, e2eKey, mimeType, fileName } =
+    React.useContext(FilePreviewContext);
   const [text, setText] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const { colorScheme } = useMantineColorScheme();
+  const [partial, setPartial] = useState(false);
 
   useEffect(() => {
-    if (e2eKey) {
-      fetchDecryptedFile(shareId, fileId, e2eKey)
-        .then((buf) =>
-          setText(truncateForPreview(new TextDecoder().decode(buf))),
-        )
-        .catch(() => setText("Impossible de charger l'aperçu."))
-        .finally(() => setLoading(false));
-    } else {
-      // responseType: "text" prevents Axios from auto-parsing JSON files
-      // into objects (which would crash React, error #31).
-      api
-        .get(`/shares/${shareId}/files/${fileId}?download=false`, {
-          responseType: "text",
-        })
-        .then((res) =>
-          setText(
-            truncateForPreview(ensureString(res.data)) ||
-              "Impossible de charger l'aperçu.",
-          ),
-        )
-        .finally(() => setLoading(false));
-    }
+    const controller = new AbortController();
+    let active = true;
+    setLoading(true);
+    setText("");
+    setPartial(false);
+
+    fetchPreviewPrefix(
+      shareId,
+      fileId,
+      e2eKey,
+      MAX_TEXT_PREVIEW_BYTES,
+      controller.signal,
+    )
+      .then(({ buffer: buf, truncated }) => {
+        if (!active) return;
+        const decoded = decodePreviewText(new Uint8Array(buf), truncated);
+        setPartial(truncated || decoded.length > MAX_TEXT_PREVIEW_CHARS);
+        setText(decoded.slice(0, MAX_TEXT_PREVIEW_CHARS));
+      })
+      .catch(() => {
+        if (active && !controller.signal.aborted) {
+          setText("Impossible de charger l'aperçu.");
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [shareId, fileId, e2eKey]);
 
   if (loading)
@@ -494,27 +663,11 @@ const CodePreview = () => {
 
   return (
     <ScrollArea styles={{ root: { maxHeight: "70vh", overflow: "auto" } }}>
-      <pre
-        style={{
-          backgroundColor:
-            colorScheme == "dark"
-              ? "rgba(30, 30, 30, 0.9)"
-              : "rgba(245, 245, 245, 0.9)",
-          color: colorScheme == "dark" ? "#d4d4d4" : "#1e1e1e",
-          padding: "1em",
-          borderRadius: "8px",
-          fontSize: "0.85em",
-          lineHeight: 1.5,
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-          fontFamily:
-            '"Fira Code", "Cascadia Code", "JetBrains Mono", Consolas, Monaco, monospace',
-          margin: 0,
-          overflow: "auto",
-        }}
-      >
-        <code>{text}</code>
-      </pre>
+      <SourceCodePreview
+        text={text}
+        partial={partial}
+        language={resolveCodeLanguage(fileName, mimeType)}
+      />
     </ScrollArea>
   );
 };
@@ -522,61 +675,86 @@ const CodePreview = () => {
 const PdfPreview = () => {
   const { shareId, fileId, e2eKey, setIsNotSupported } =
     React.useContext(FilePreviewContext);
-  const { blobUrl, loading } = useDecryptedBlobUrl("application/pdf");
-  const isMobile = useMediaQuery("(max-width: 48em)");
-
-  if (e2eKey && loading)
-    return (
-      <Center style={{ minHeight: 200 }}>
-        <Loader />
-      </Center>
-    );
-
-  const src =
-    e2eKey && blobUrl
-      ? blobUrl
-      : `/api/shares/${shareId}/files/${fileId}?download=false`;
-
-  if (isMobile) {
-    return (
-      <Center style={{ minHeight: 200 }}>
-        <Stack align="center" gap="md">
-          <Text c="dimmed" size="sm" ta="center">
-            <FormattedMessage id="share.modal.file-preview.pdf-mobile" />
-          </Text>
-          <Button
-            component="a"
-            href={src}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <FormattedMessage id="share.modal.file-preview.pdf-open" />
-          </Button>
-        </Stack>
-      </Center>
-    );
-  }
-
+  const onError = React.useCallback(
+    () => setIsNotSupported(true),
+    [setIsNotSupported],
+  );
   return (
-    <iframe
-      src={src}
-      title="PDF preview"
-      width="100%"
-      style={{ minHeight: "70vh", border: "none" }}
-      onError={() => setIsNotSupported(true)}
+    <ProgressivePdfPreview
+      shareId={shareId}
+      fileId={fileId}
+      e2eKey={e2eKey}
+      onError={onError}
     />
   );
 };
 
-const UnSupportedFile = () => {
+const OfficeFilePreview = () => {
+  const { shareId, fileId, mimeType, e2eKey, setIsNotSupported } =
+    React.useContext(FilePreviewContext);
+  const onError = React.useCallback(
+    () => setIsNotSupported(true),
+    [setIsNotSupported],
+  );
+  return (
+    <OfficePreview
+      shareId={shareId}
+      fileId={fileId}
+      mimeType={mimeType}
+      e2eKey={e2eKey}
+      onError={onError}
+    />
+  );
+};
+
+const UnSupportedFile = ({
+  readError = false,
+  codec,
+}: {
+  readError?: boolean;
+  /** A video whose codec this browser cannot decode. */
+  codec?: string;
+}) => {
+  if (codec)
+    return (
+      <Center style={{ minHeight: 200 }}>
+        <Stack align="center" gap={10}>
+          <Title order={3}>
+            <FormattedMessage
+              id="share.modal.file-preview.error.video-codec.title"
+              defaultMessage="Unsupported video format"
+            />
+          </Title>
+          <Text ta="center">
+            <FormattedMessage
+              id="share.modal.file-preview.error.video-codec.description"
+              defaultMessage="This browser cannot play {codec} videos. Download the video to watch it."
+              values={{ codec }}
+            />
+          </Text>
+        </Stack>
+      </Center>
+    );
   return (
     <Center style={{ minHeight: 200 }}>
       <Stack align="center" gap={10}>
         <Title order={3}>
-          <FormattedMessage id="share.modal.file-preview.error.not-supported.title" />
+          <FormattedMessage
+            id={
+              readError
+                ? "share.modal.file-preview.error.read-failed.title"
+                : "share.modal.file-preview.error.not-supported.title"
+            }
+          />
         </Title>
         <Text>
-          <FormattedMessage id="share.modal.file-preview.error.not-supported.description" />
+          <FormattedMessage
+            id={
+              readError
+                ? "share.modal.file-preview.error.read-failed.description"
+                : "share.modal.file-preview.error.not-supported.description"
+            }
+          />
         </Text>
       </Stack>
     </Center>

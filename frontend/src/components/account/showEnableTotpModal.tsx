@@ -27,7 +27,8 @@ const showEnableTotpModal = (
   options: {
     qrCode: string;
     secret: string;
-    password: string;
+    // Absent when a linked OAuth sign-in confirmed the change.
+    password?: string;
   },
 ) => {
   const t = translateOutsideContext();
@@ -46,7 +47,8 @@ const CreateEnableTotpModal = ({
   options: {
     qrCode: string;
     secret: string;
-    password: string;
+    // Absent when a linked OAuth sign-in confirmed the change.
+    password?: string;
   };
   refreshUser: () => {};
 }) => {

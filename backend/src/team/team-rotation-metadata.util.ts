@@ -1,9 +1,10 @@
 import { ConflictException } from "@nestjs/common";
 
 export type RotationMetadataUpdate = {
-  kind: "SHARE" | "REQUEST";
+  kind: "SHARE" | "REQUEST" | "PROFILE" | "AUDIT" | "ACTIVITY";
   id: string;
   expectedEncryptedInfo: string;
+  /** Empty only for ACTIVITY: the stored name is dropped. */
   encryptedInfo: string;
 };
 

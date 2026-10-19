@@ -1,3 +1,4 @@
+import { createPreviewByteSource } from "../utils/previewRange.util";
 import { PendingUpload } from "../types/share.type";
 import { finalizeUpload } from "../utils/uploadCompletion.util";
 import { deleteCookie, setCookie } from "cookies-next";
@@ -801,11 +802,46 @@ const fetchDecryptedFile = async (
   return result.buffer;
 };
 
-/**
- * Decrypt only the beginning of an E2E file for text/code previews. Breaking
- * the generator cancels the response body, so a multi-gigabyte JSON preview
- * costs at most one crypto record plus the requested prefix in memory.
- */
+/** Authenticated random access for previews; keys remain in the client. */
+export const fetchFilePreviewSource = async (
+  shareId: string,
+  fileId: string,
+  encodedKey?: string | null,
+  signal?: AbortSignal,
+) => {
+  const url = `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(fileId)}?download=false`;
+  const key = encodedKey ? await importKeyFromBase64(encodedKey) : undefined;
+  let directAllowed = true;
+  const fetchRange = async (
+    start: number,
+    end: number,
+    readSignal?: AbortSignal,
+  ) => {
+    const headers = { Range: `bytes=${start}-${end}` };
+    if (directAllowed) {
+      const direct = await fetchDirectStreaming(
+        url,
+        readSignal || signal,
+        headers,
+      );
+      if (
+        direct &&
+        direct.status === 206 &&
+        direct.headers
+          .get("Content-Range")
+          ?.startsWith(`bytes ${start}-${end}/`)
+      )
+        return direct;
+      await direct?.body?.cancel().catch(() => undefined);
+      // Some S3 CORS configurations hide Content-Range. Keep the authenticated
+      // API range transport usable instead of falling back to a full download.
+      directAllowed = false;
+    }
+    return fetchSameOriginStreaming(url, readSignal || signal, headers);
+  };
+  return createPreviewByteSource(fetchRange, key, getChunkSize, signal);
+};
+
 const fetchDecryptedFilePrefix = async (
   shareId: string,
   fileId: string,
@@ -813,36 +849,20 @@ const fetchDecryptedFilePrefix = async (
   maxBytes: number,
   signal?: AbortSignal,
 ): Promise<ArrayBuffer> => {
-  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+  if (
+    !Number.isSafeInteger(maxBytes) ||
+    maxBytes <= 0 ||
+    maxBytes > 1024 * 1024
+  ) {
     throw new Error("Invalid preview size limit");
   }
-
-  const downloadUrl = `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(fileId)}?download=false`;
-  const [key, legacyChunkSize, response] = await Promise.all([
-    importKeyFromBase64(encodedKey),
-    getChunkSize(),
-    fetchStreaming(downloadUrl, signal),
-  ]);
-  const resumable = createResumableDownloadBody(downloadUrl, response, signal);
-  const totalSize = resumable.totalSize;
-  const cryptoRecord = getEncryptionRecordConfig(response, legacyChunkSize);
-
-  const result = new Uint8Array(maxBytes);
-  let written = 0;
-  for await (const chunk of decryptStream(
-    resumable.stream,
-    key,
-    cryptoRecord.size,
-    totalSize,
-    cryptoRecord.exact,
-  )) {
-    const bytesToCopy = Math.min(chunk.length, maxBytes - written);
-    result.set(chunk.subarray(0, bytesToCopy), written);
-    written += bytesToCopy;
-    if (written >= maxBytes) break;
-  }
-
-  return result.slice(0, written).buffer;
+  const source = await fetchFilePreviewSource(
+    shareId,
+    fileId,
+    encodedKey,
+    signal,
+  );
+  return (await source.read(0, Math.min(maxBytes, source.size), signal)).buffer;
 };
 
 const removeFile = async (shareId: string, fileId: string) => {
@@ -1762,9 +1782,23 @@ export default {
   getStoredRecipients,
 };
 
+/** Plain file bytes, for previews the browser cannot render from the URL. */
+const fetchFileBuffer = async (
+  shareId: string,
+  fileId: string,
+  signal?: AbortSignal,
+): Promise<ArrayBuffer> => {
+  const response = await fetchStreaming(
+    `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(fileId)}?download=false`,
+    signal,
+  );
+  return response.arrayBuffer();
+};
+
 export {
   resolveFileMimeType,
   fetchDecryptedFile,
+  fetchFileBuffer,
   fetchDecryptedFilePrefix,
   downloadFileE2E,
   downloadAllAsZipE2E,

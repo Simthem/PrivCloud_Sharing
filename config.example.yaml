@@ -126,6 +126,13 @@ smtp:
   username: ""
   # Password of the SMTP server
   password: ""
+  # Optional second account for messages other than electronic signatures.
+  # Leave generalEmail empty to use the primary account for every message.
+  generalEmail: ""
+  generalHost: ""
+  generalPort: "0"
+  generalUsername: ""
+  generalPassword: ""
 ldap:
   # Use LDAP authentication for user login
   enabled: "false"

@@ -132,11 +132,11 @@ const Share = ({ shareId }: { shareId: string }) => {
           }
           throw unwrapError;
         }
-      } catch (err) {
+      } catch {
         // 403 = reverse share mais pas le propriétaire, ou erreur réseau/déchiffrement.
         // NE PAS fallback sur K_master (ce serait la mauvaise clé).
         // Laisser e2eKey null -> l'alerte "clé manquante" s'affichera.
-        console.error("[E2E] Failed to resolve share key:", err);
+        console.error("[E2E] Failed to resolve share key");
       }
     })();
 

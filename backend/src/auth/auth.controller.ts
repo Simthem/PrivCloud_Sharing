@@ -1,8 +1,10 @@
+import { AuthenticatedUserGuard } from "./guard/authenticatedUser.guard";
 import {
   Body,
   Controller,
   ForbiddenException,
   Get,
+  Header,
   HttpCode,
   Patch,
   Post,
@@ -30,12 +32,23 @@ import { VerifyTotpDTO } from "./dto/verifyTotp.dto";
 import { AltchaGuard } from "src/altcha/altcha.guard";
 import { JwtGuard } from "./guard/jwt.guard";
 
+import {
+  OAUTH_REAUTH_COOKIE,
+  OAUTH_REAUTH_COOKIE_PATH,
+} from "./oauthReauth.service";
+import { EmailService } from "src/email/email.service";
+import { PasskeyStepUpDTO } from "./dto/passkeyStepUp.dto";
+import { AccountPasskeyService } from "src/passkey/accountPasskey.service";
+import { PasskeyResponseDTO } from "src/passkey/dto/passkey.dto";
+
 @Controller("auth")
 export class AuthController {
   constructor(
     private authService: AuthService,
     private authTotpService: AuthTotpService,
     private config: ConfigService,
+    private passkeys: AccountPasskeyService,
+    private emailService: EmailService,
   ) {}
 
   private issueTokens(
@@ -98,6 +111,33 @@ export class AuthController {
     return this.issueTokens(response, result.refreshToken, result.accessToken);
   }
 
+  /** WebAuthn options for a sign-in without an address. */
+  @Post("passkey/options")
+  @Throttle({ default: { limit: 20, ttl: minutes(5) } })
+  @HttpCode(200)
+  @Header("Cache-Control", "private, no-store")
+  passkeyOptions() {
+    return this.passkeys.beginLogin();
+  }
+
+  @Post("passkey")
+  @Throttle({
+    default: {
+      limit: 10,
+      ttl: minutes(5),
+    },
+  })
+  @HttpCode(200)
+  async signInWithPasskey(
+    @Body() dto: PasskeyResponseDTO,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const user = await this.passkeys.verifyLogin(dto);
+    const result = await this.authService.signInWithPasskey(user);
+    if (!result.accessToken || !result.refreshToken) return {};
+    return this.issueTokens(response, result.refreshToken, result.accessToken);
+  }
+
   @Post("signIn/totp")
   @Throttle({
     default: {
@@ -148,11 +188,7 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
     @Body() dto: UpdatePasswordDTO,
   ) {
-    await this.authService.updatePassword(
-      user,
-      dto.password,
-      dto.oldPassword,
-    );
+    await this.authService.updatePassword(user, dto.password, dto.oldPassword);
 
     // The password change revoked every previous refresh token; hand the
     // freshly issued one back so the client keeps its session.
@@ -230,20 +266,113 @@ export class AuthController {
 
   @Post("totp/enable")
   @UseGuards(JwtGuard)
-  async enableTotp(@GetUser() user: User, @Body() body: EnableTotpDTO) {
-    return this.authTotpService.enableTotp(user, body.password);
+  @Throttle({ default: { limit: 10, ttl: minutes(10) } })
+  async enableTotp(
+    @GetUser() user: User,
+    @Body() body: EnableTotpDTO,
+    @Req() request: Request,
+  ) {
+    return this.authTotpService.enableTotp(user, {
+      password: body.password,
+      reauthProof: request.cookies?.[OAUTH_REAUTH_COOKIE],
+    });
   }
 
   @Post("totp/verify")
   @UseGuards(JwtGuard)
-  async verifyTotp(@GetUser() user: User, @Body() body: VerifyTotpDTO) {
-    return this.authTotpService.verifyTotp(user, body.password, body.code);
+  @Throttle({ default: { limit: 10, ttl: minutes(10) } })
+  async verifyTotp(
+    @GetUser() user: User,
+    @Body() body: VerifyTotpDTO,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.authTotpService.verifyTotp(
+      user,
+      {
+        password: body.password,
+        reauthProof: request.cookies?.[OAUTH_REAUTH_COOKIE],
+      },
+      body.code,
+    );
+    this.clearReauthProof(response);
+    return result;
   }
 
   @Post("totp/disable")
   @UseGuards(JwtGuard)
-  async disableTotp(@GetUser() user: User, @Body() body: VerifyTotpDTO) {
+  @Throttle({ default: { limit: 10, ttl: minutes(10) } })
+  async disableTotp(
+    @GetUser() user: User,
+    @Body() body: VerifyTotpDTO,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
     // Note: We use VerifyTotpDTO here because it has both fields we need: password and totp code
-    return this.authTotpService.disableTotp(user, body.password, body.code);
+    const result = await this.authTotpService.disableTotp(
+      user,
+      {
+        password: body.password,
+        reauthProof: request.cookies?.[OAUTH_REAUTH_COOKIE],
+      },
+      body.code,
+    );
+    this.clearReauthProof(response);
+    return result;
+  }
+
+  /**
+   * Adding a passkey lets its holder sign in without password nor 2FA code:
+   * it takes the same proof as turning 2FA off, so a stolen session alone
+   * cannot plant one.
+   */
+  @Post("passkey/registration")
+  @UseGuards(AuthenticatedUserGuard)
+  @Throttle({ default: { limit: 10, ttl: minutes(10) } })
+  @HttpCode(200)
+  @Header("Cache-Control", "private, no-store")
+  async beginPasskeyRegistration(
+    @GetUser() user: User,
+    @Body() body: PasskeyStepUpDTO,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    await this.authTotpService.confirmSecondFactorChange(
+      user,
+      {
+        password: body.password,
+        reauthProof: request.cookies?.[OAUTH_REAUTH_COOKIE],
+      },
+      body.code,
+    );
+    this.clearReauthProof(response);
+    return this.passkeys.beginRegistration(user);
+  }
+
+  @Post("passkey/registration/verify")
+  @UseGuards(AuthenticatedUserGuard)
+  @Throttle({ default: { limit: 10, ttl: minutes(10) } })
+  @HttpCode(200)
+  async finishPasskeyRegistration(
+    @GetUser() user: User,
+    @Body() dto: PasskeyResponseDTO,
+  ) {
+    const passkey = await this.passkeys.finishRegistration(user, dto);
+    // The owner hears of it even when someone else did it.
+    if (this.config.get("smtp.enabled")) {
+      await this.emailService
+        .sendPasskeyAddedEmail(user.email)
+        .catch(() => undefined);
+    }
+    return passkey;
+  }
+
+  private clearReauthProof(response: Response) {
+    response.clearCookie(OAUTH_REAUTH_COOKIE, {
+      path: OAUTH_REAUTH_COOKIE_PATH,
+      sameSite: "strict",
+      secure: this.config.get("general.secureCookies"),
+      httpOnly: true,
+    });
   }
 }

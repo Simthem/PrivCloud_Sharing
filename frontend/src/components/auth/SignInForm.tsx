@@ -14,10 +14,12 @@ import {
 import { createStyles } from "@mantine/emotion";
 import { useForm, yupResolver } from "@mantine/form";
 import { showNotification } from "@mantine/notifications";
+import { browserSupportsWebAuthn } from "@simplewebauthn/browser";
+import passkeyService from "../../services/passkey.service";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useRef, useState } from "react";
-import { TbInfoCircle } from "react-icons/tb";
+import { TbFingerprint, TbInfoCircle } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
 import AltchaCaptcha from "../captcha/AltchaCaptcha";
@@ -97,6 +99,13 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [retryAfterSeconds, setRetryAfterSeconds] = useState(0);
   const retryActive = retryAfterSeconds > 0;
+  // Known after mount only: the server render has no WebAuthn.
+  const [passkeySupported, setPasskeySupported] = useState(false);
+  const [isPasskeyLoading, setIsPasskeyLoading] = useState(false);
+
+  useEffect(() => {
+    setPasskeySupported(browserSupportsWebAuthn());
+  }, []);
 
   useEffect(() => {
     if (!retryActive) return;
@@ -178,10 +187,7 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
           );
         } else {
           const user = await refreshUser({ refresh: false });
-          const target = await resolvePostAuthRedirectPath(
-            redirectPath,
-            user,
-          );
+          const target = await resolvePostAuthRedirectPath(redirectPath, user);
           router.replace(target);
         }
       })
@@ -223,6 +229,25 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
       .catch(toast.axiosError);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const signInWithPasskey = async () => {
+    setIsPasskeyLoading(true);
+    try {
+      await passkeyService.signIn();
+      const user = await refreshUser({ refresh: false });
+      router.replace(await resolvePostAuthRedirectPath(redirectPath, user));
+    } catch (error) {
+      // Closing the browser prompt is a choice, not an error.
+      if ((error as Error)?.name === "NotAllowedError") return;
+      if (isEmailVerificationRequiredError(error)) {
+        router.push("/auth/verify-email");
+        return;
+      }
+      toast.error(t("signIn.notify.passkey-error"));
+    } finally {
+      setIsPasskeyLoading(false);
+    }
+  };
 
   if (!oauthProviders) return null;
 
@@ -305,6 +330,18 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
               </Group>
             )}
           </form>
+        )}
+        {passkeySupported && (
+          <Button
+            fullWidth
+            mt="sm"
+            variant="default"
+            leftSection={<TbFingerprint size={16} />}
+            loading={isPasskeyLoading}
+            onClick={signInWithPasskey}
+          >
+            {t("signin.button.passkey")}
+          </Button>
         )}
         {oauthProviders.length > 0 && (
           <Stack mt={config.get("oauth.disablePassword") ? undefined : "xl"}>

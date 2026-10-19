@@ -1,5 +1,12 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { Agent, createServer, request as httpsRequest } from "node:https";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
 import {
   BadRequestException,
@@ -20,6 +27,8 @@ import {
   parseSingleByteRange,
 } from "src/file/file.controller";
 import { FileService } from "src/file/file.service";
+import { AdaptiveTransferScheduler } from "src/file/adaptive-transfer-scheduler";
+import { S3FileService } from "src/file/s3.service";
 import { createUnitTestRunner } from "./unit-test";
 
 const { testCase, run } = createUnitTestRunner("file transfer HTTP");
@@ -35,7 +44,7 @@ type FileGetCall = [
   storageProvider: string | undefined,
 ];
 
-type MockResponse = {
+type MockResponse = EventEmitter & {
   headers: Record<string, unknown>;
   statusCode: number;
   ended: boolean;
@@ -45,7 +54,7 @@ type MockResponse = {
 };
 
 const createMockResponse = (): MockResponse => {
-  const response: MockResponse = {
+  const response: MockResponse = Object.assign(new EventEmitter(), {
     headers: {},
     statusCode: 200,
     ended: false,
@@ -61,7 +70,7 @@ const createMockResponse = (): MockResponse => {
       this.ended = true;
       return this;
     },
-  };
+  });
   return response;
 };
 
@@ -70,6 +79,7 @@ const createControllerHarness = (
     range?: string;
     fileExists?: boolean;
     fileSize?: string;
+    stream?: Readable;
   } = {},
 ) => {
   const calls: FileGetCall[] = [];
@@ -87,7 +97,7 @@ const createControllerHarness = (
           shareId: "share-1",
           encryptionChunkSize: 1_000_000,
         },
-        file: Readable.from([Buffer.from("payload")]),
+        file: options.stream ?? Readable.from([Buffer.from("payload")]),
       };
     },
   };
@@ -365,24 +375,27 @@ testCase(
   },
 );
 
-testCase("derives exact signed multipart lengths including E2E overhead", () => {
-  const request = {
-    id: "11111111-1111-4111-8111-111111111111",
-    name: "large.bin",
-    totalChunks: 3,
-    fileSize: 111_000_000,
-    chunkSize: 50_000_000,
-    initialChunkSize: 32_000_000,
-    encryptionChunkSize: 1_000_000,
-  };
-  assert.equal(getMultipartPartPayloadLength(request, 0), 32_000_896);
-  assert.equal(getMultipartPartPayloadLength(request, 1), 50_001_400);
-  assert.equal(getMultipartPartPayloadLength(request, 2), 29_000_812);
-  assert.throws(
-    () => getMultipartPartPayloadLength(request, 3),
-    BadRequestException,
-  );
-});
+testCase(
+  "derives exact signed multipart lengths including E2E overhead",
+  () => {
+    const request = {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "large.bin",
+      totalChunks: 3,
+      fileSize: 111_000_000,
+      chunkSize: 50_000_000,
+      initialChunkSize: 32_000_000,
+      encryptionChunkSize: 1_000_000,
+    };
+    assert.equal(getMultipartPartPayloadLength(request, 0), 32_000_896);
+    assert.equal(getMultipartPartPayloadLength(request, 1), 50_001_400);
+    assert.equal(getMultipartPartPayloadLength(request, 2), 29_000_812);
+    assert.throws(
+      () => getMultipartPartPayloadLength(request, 3),
+      BadRequestException,
+    );
+  },
+);
 
 testCase(
   "authorizes a direct download without opening the Nest data stream",
@@ -436,12 +449,7 @@ testCase(
 
     assert.equal(result.direct, true);
     assert.deepEqual(calls, [
-      [
-        "share-1",
-        "11111111-1111-4111-8111-111111111111",
-        "S3",
-        true,
-      ],
+      ["share-1", "11111111-1111-4111-8111-111111111111", "S3", true],
     ]);
     assert.equal(notifications, 1);
     assert.match(String(response.headers["Cache-Control"]), /no-store/);
@@ -658,7 +666,11 @@ testCase("validates probe length before parsing and body after parsing", () => {
   }
   assert.equal(
     getProbeErrorStatus(
-      validateProbeBody(body, [body.length] as never, "application/octet-stream"),
+      validateProbeBody(
+        body,
+        [body.length] as never,
+        "application/octet-stream",
+      ),
     ),
     400,
   );
@@ -736,5 +748,218 @@ testCase("uses millisecond throttle windows on transfer endpoints", () => {
     hours(1),
   );
 });
+
+testCase(
+  "closes a file stream the client left before its end, not a finished one",
+  async () => {
+    const pending = new Readable({ read() {} });
+    const left = createControllerHarness({ stream: pending });
+    await left.controller.getFile(
+      left.request as never,
+      left.response as never,
+      "share-1",
+      "file-1",
+      "false",
+    );
+    left.response.emit("close");
+    assert.equal(pending.destroyed, true);
+
+    const done = Readable.from([Buffer.from("payload")]);
+    const finished = createControllerHarness({ stream: done });
+    await finished.controller.getFile(
+      finished.request as never,
+      finished.response as never,
+      "share-1",
+      "file-1",
+      "false",
+    );
+    for await (const chunk of done) assert.ok(chunk);
+    finished.response.emit("close");
+    assert.equal(done.readableEnded, true);
+  },
+);
+
+testCase(
+  "gives the S3 download slot back when a client leaves mid-download",
+  async () => {
+    // One slot, as if every other one were taken: before the fix, a client
+    // leaving after the headers kept it and the next download waited for the
+    // slot timeout, then got a 429.
+    const scheduler = new AdaptiveTransferScheduler({
+      environment: {
+        S3_MAX_CONCURRENT_DOWNLOADS: "1",
+        S3_MIN_CONCURRENT_DOWNLOADS: "1",
+        S3_DOWNLOAD_SLOT_TIMEOUT_MS: "2000",
+      },
+      environmentKeys: {
+        maxSlots: "S3_MAX_CONCURRENT_DOWNLOADS",
+        minSlots: "S3_MIN_CONCURRENT_DOWNLOADS",
+        slotTimeoutMs: "S3_DOWNLOAD_SLOT_TIMEOUT_MS",
+      },
+      resourceSnapshot: () => ({
+        rssBytes: 100 * 1024 * 1024,
+        memoryLimitBytes: 10 * 1024 * 1024 * 1024,
+        cpuPressure: 0.1,
+        eventLoopLagMs: 1,
+      }),
+    });
+    const fileSize = 4 * 1024 * 1024;
+    const s3 = Object.create(S3FileService.prototype) as S3FileService;
+    Object.assign(s3, {
+      prisma: {
+        file: {
+          findFirst: async () => ({
+            id: "file-1",
+            shareId: "share-1",
+            name: "recording.mp4",
+            size: String(fileSize),
+            createdAt: new Date(0),
+          }),
+        },
+      },
+      config: {
+        get: (key: string) => (key === "s3.bucketName" ? "bucket" : ""),
+      },
+      logger: {
+        log: () => undefined,
+        debug: () => undefined,
+        warn: () => undefined,
+        error: () => undefined,
+      },
+      s3ProxyConnects: 0,
+      s3ProxyConnectFailures: 0,
+      // An S3 body sends its first bytes, then stays open like a socket.
+      getS3Instance: () => ({
+        send: async (command: { input: { Range?: string } }) => {
+          const [, start, end] = /^bytes=(\d+)-(\d+)$/
+            .exec(command.input.Range ?? "")!
+            .map(Number);
+          const body = new Readable({ read() {} });
+          body.push(Buffer.alloc(64 * 1024));
+          return {
+            Body: body,
+            ContentLength: end - start + 1,
+            LastModified: new Date(0),
+          };
+        },
+      }),
+      downloadScheduler: scheduler,
+    });
+    const { controller } = createControllerHarness({
+      fileSize: String(fileSize),
+    });
+    (controller as unknown as { fileService: unknown }).fileService = {
+      get: (
+        shareId: string,
+        fileId: string,
+        range?: { start: number; end: number },
+      ) => s3.get(shareId, fileId, range),
+    };
+    const certificates = mkdtempSync(join(tmpdir(), "slot-release-"));
+    execFileSync(
+      "openssl",
+      [
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-days",
+        "1",
+        "-subj",
+        "/CN=127.0.0.1",
+        "-addext",
+        "subjectAltName=IP:127.0.0.1",
+        "-keyout",
+        join(certificates, "key.pem"),
+        "-out",
+        join(certificates, "cert.pem"),
+      ],
+      { stdio: "ignore" },
+    );
+    const cert = readFileSync(join(certificates, "cert.pem"));
+    const key = readFileSync(join(certificates, "key.pem"));
+    rmSync(certificates, { recursive: true, force: true });
+    const server = createServer({ cert, key }, async (req, res) => {
+      Object.assign(req, {
+        authorizedShare: { storageProvider: "S3", teamFolderId: null },
+      });
+      // The two Express helpers the controller uses.
+      const reply = Object.assign(res, {
+        set(headers: Record<string, unknown>) {
+          for (const [name, value] of Object.entries(headers))
+            res.setHeader(name, String(value));
+          return reply;
+        },
+        status(code: number) {
+          res.statusCode = code;
+          return reply;
+        },
+      });
+      try {
+        const file = await controller.getFile(
+          req as never,
+          reply as never,
+          "share-1",
+          "file-1",
+          "false",
+        );
+        // What Nest's Express adapter does with a StreamableFile.
+        file?.getStream().pipe(res);
+      } catch (error) {
+        res.statusCode = (error as { status?: number }).status ?? 500;
+        res.end();
+      }
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+    // Keep this loopback fixture independent of Node's CI proxy agent.
+    const agent = new Agent({ keepAlive: false });
+    const download = (leaveAfterHeaders: boolean) =>
+      new Promise<number>((resolve, reject) => {
+        const request = httpsRequest(
+          {
+            host: "127.0.0.1",
+            agent,
+            ca: cert,
+            signal: AbortSignal.timeout(5000),
+            port,
+            path: "/",
+            headers: { range: "bytes=0-1048575" },
+          },
+          (response) => {
+            response.once("error", reject);
+            if (leaveAfterHeaders) {
+              response.destroy();
+              resolve(response.statusCode ?? 0);
+            } else {
+              response.resume();
+              resolve(response.statusCode ?? 0);
+            }
+          },
+        );
+        // A connection failure before headers must reject even when this
+        // client intends to cancel its download after receiving them.
+        request.once("error", reject);
+        request.end();
+      });
+    try {
+      assert.equal(await download(true), 206);
+      const deadline = Date.now() + 1000;
+      while (scheduler.getSnapshot().activeSlots > 0 && Date.now() < deadline)
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      assert.equal(scheduler.getSnapshot().activeSlots, 0, "slot released");
+      const started = Date.now();
+      assert.equal(await download(false), 206);
+      assert.ok(Date.now() - started < 1000, "the next download is not queued");
+    } finally {
+      agent.destroy();
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  },
+);
 
 void run();

@@ -1,4 +1,7 @@
-import { synchronizeCompletedUpload } from "../../utils/uploadStateCache.util";
+import {
+  synchronizeCompletedUpload,
+  synchronizeRemovedShare,
+} from "../../utils/uploadStateCache.util";
 import { prepareSafeLineRetry } from "../../utils/safelineChallenge.util";
 import {
   readUploadResumeEntries,
@@ -390,6 +393,30 @@ const EditableUpload = ({
       toast.error(t("share.edit.notify.generic-error"));
       return;
     }
+    // An explicit empty edit deletes the share directly. On a failed DELETE,
+    // preserve its prior published/pending state and allow the owner to retry.
+    if (
+      existingFiles.some((file) => file.deleted) &&
+      existingFiles.every((file) => file.deleted) &&
+      uploadingFiles.length === 0
+    ) {
+      setIsUploading(true);
+      try {
+        await shareService.remove(shareId, true);
+        await synchronizeRemovedShare(queryClient, shareId);
+        setPendingFinalization(false);
+        maintenanceRef.current?.();
+        maintenanceRef.current = null;
+        setUploadActive(false);
+        toast.success(t("account.shares.notify.deleted-success"));
+        router.back();
+      } catch {
+        toast.error(t("share.edit.notify.generic-error"));
+      } finally {
+        setIsUploading(false);
+      }
+      return;
+    }
     errorToastShown = false;
     setIsUploading(true);
     await wakeLock.acquire();
@@ -592,7 +619,11 @@ const EditableUpload = ({
         isUploading={isUploading}
       />
       {existingAndUploadedFiles.length > 0 && (
-        <FileList files={existingAndUploadedFiles} setFiles={setFiles} />
+        <FileList
+          files={existingAndUploadedFiles}
+          setFiles={setFiles}
+          isUploading={isUploading}
+        />
       )}
     </>
   );

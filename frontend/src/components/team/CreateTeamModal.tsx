@@ -63,8 +63,8 @@ const CreateTeamModal = ({ opened, onClose, mandatory }: CreateTeamModalProps) =
           const wrappedTeamKey = await wrapReverseShareKey(teamKey, masterKey);
           await teamService.setTeamKey(team.id, wrappedTeamKey);
         }
-      } catch (e) {
-        console.warn("[E2E] Failed to generate team key:", e);
+      } catch {
+        console.warn("[E2E] Failed to generate team key");
       }
 
       toast.success(

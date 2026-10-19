@@ -19,6 +19,7 @@ type User = {
   emailVerifiedAt?: string | null;
   emailVerificationSource?: string | null;
   hasTeamMembership?: boolean;
+  hasExternalAccess?: boolean;
   teamId?: string | null;
   /** New personal E2E shares use SHARE_DEK_V1 (server-side rollout flag). */
   shareDekV1Write?: boolean;

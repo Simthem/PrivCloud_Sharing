@@ -61,6 +61,38 @@
   margin-bottom: var(--mantine-spacing-md);
 }
 
+.rotationTarget {
+  border-radius: var(--mantine-radius-md);
+  scroll-margin-block: 110px;
+}
+
+.rotationTarget:focus {
+  outline: none;
+}
+
+.rotationHighlight {
+  animation: rotationSpotlight 4s ease-out;
+}
+
+@keyframes rotationSpotlight {
+  0%,
+  70% {
+    box-shadow:
+      0 0 0 2px var(--mantine-color-teal-6),
+      0 0 0 6px var(--mantine-color-teal-light);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rotationHighlight {
+    animation-timing-function: steps(1, end);
+  }
+}
+
 .encryptionActions {
   display: flex;
   align-items: center;

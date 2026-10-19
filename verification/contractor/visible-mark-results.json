@@ -1,0 +1,104 @@
+{
+  "format": "privcloud-visible-copy-marker-v1",
+  "generatedAt": "2026-10-13T14:02:14.735Z",
+  "markerSha256": "92d4b25dfd07398d5f8367032c805466f9e318e50b9d49d9dd481a2ba077d19e",
+  "harnessSha256": "015ba5e052a30d7e564c81bc16dded0bf206a99fec8fa29494ba7a60ae81e10f",
+  "algorithm": "privcloud:visible-copy:v1",
+  "modulePixels": 3,
+  "errorCorrection": "H",
+  "cases": [
+    {
+      "name": "intact",
+      "width": 800,
+      "height": 1000,
+      "expectedMarkers": 1,
+      "foundMarkers": 1,
+      "correct": true,
+      "elapsedMs": 170
+    },
+    {
+      "name": "perspective",
+      "width": 1000,
+      "height": 1200,
+      "expectedMarkers": 1,
+      "foundMarkers": 1,
+      "correct": true,
+      "elapsedMs": 191
+    },
+    {
+      "name": "perspective-jpeg-q20",
+      "width": 1000,
+      "height": 1200,
+      "expectedMarkers": 1,
+      "foundMarkers": 1,
+      "correct": true,
+      "elapsedMs": 247
+    },
+    {
+      "name": "wrong-copy",
+      "width": 800,
+      "height": 1000,
+      "expectedMarkers": 0,
+      "foundMarkers": 0,
+      "correct": true,
+      "elapsedMs": 630
+    },
+    {
+      "name": "wrong-team",
+      "width": 800,
+      "height": 1000,
+      "expectedMarkers": 0,
+      "foundMarkers": 0,
+      "correct": true,
+      "elapsedMs": 629
+    },
+    {
+      "name": "invented-tag",
+      "width": 800,
+      "height": 1000,
+      "expectedMarkers": 0,
+      "foundMarkers": 0,
+      "correct": true,
+      "elapsedMs": 599
+    },
+    {
+      "name": "unmarked",
+      "width": 800,
+      "height": 1000,
+      "expectedMarkers": 0,
+      "foundMarkers": 0,
+      "correct": true,
+      "elapsedMs": 608
+    }
+  ],
+  "limits": [
+    "Synthetic controls are publicly reproducible. A separate private physical-photo observation is recorded in the published report, not reproduced by this runner.",
+    "A new visible marker supplements the unchanged invisible v1 pattern. It cannot repair old copies.",
+    "A copied valid code can be transplanted. Marker recovery alone does not authenticate the surrounding image or identify a leaker.",
+    "Removing the marker, full OCR reconstruction and recreation from an unmarked original can still erase copy-specific information.",
+    "Two fixed image preparations: 1600-pixel bilinear reduction, and 2000-pixel bilinear reduction with a binomial filter. Each inspects one whole-image view and at most 81 overlapping 400-pixel tiles. No general capture or collusion guarantee."
+  ],
+  "browserVerification": {
+    "engine": "Chrome/155.0.8059.39",
+    "productionWorker": true,
+    "imageFilePath": true,
+    "expectedDecision": "visible_marker",
+    "absentDecision": "none",
+    "wrongTeamDecision": "none",
+    "invisibleTopScore": 5.013648372178309
+  },
+  "physicalPhotoCase": {
+    "width": 3072,
+    "height": 4080,
+    "condition": "real-screen-photo",
+    "markerRecovered": true,
+    "correctLaboratoryCopy": true,
+    "candidateCount": 8,
+    "matchesWithoutExpectedCandidate": 0,
+    "invisibleStatus": "inconclusive",
+    "invisibleTopScore": 5.013648372178309,
+    "markerElapsedMs": 6445,
+    "scope": "Single private development photograph, not an independent validation corpus. No private pixels, EXIF or image hash published.",
+    "placement": "Earlier laboratory band placement with identical QR payload, grid and decoder. Current encoder prevents overlapping and excessively close repeats."
+  }
+}

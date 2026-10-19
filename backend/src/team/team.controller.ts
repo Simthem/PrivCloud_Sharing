@@ -3,7 +3,9 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Put,
@@ -11,7 +13,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
-import { Throttle } from "@nestjs/throttler";
+import { minutes, Throttle } from "@nestjs/throttler";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
 import { AdministratorGuard } from "src/auth/guard/isAdmin.guard";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
@@ -34,7 +36,9 @@ import {
   CreateGuestLinkDTO,
   StartTeamKeyRotationDTO,
   UpdateTeamKeyRotationProgressDTO,
+  RotateTeamActivityNamesDTO,
   RotateTeamMetadataDTO,
+  SetTeamProfileDTO,
 } from "./dto/team.dto";
 
 @Controller("teams")
@@ -141,17 +145,14 @@ export class TeamController {
 
   @Patch("admin/:teamId")
   @UseGuards(JwtGuard, AdministratorGuard)
-  adminUpdateTeam(
-    @Param("teamId") teamId: string,
-    @Body() dto: UpdateTeamDTO,
-  ) {
+  adminUpdateTeam(@Param("teamId") teamId: string, @Body() dto: UpdateTeamDTO) {
     return this.teamService.adminUpdateTeam(teamId, dto);
   }
 
   @Delete("admin/:teamId")
   @UseGuards(JwtGuard, AdministratorGuard)
-  adminDeleteTeam(@Param("teamId") teamId: string) {
-    return this.teamService.adminDeleteTeam(teamId);
+  adminDeleteTeam(@Param("teamId") teamId: string, @GetUser() user: User) {
+    return this.teamService.adminDeleteTeam(teamId, user);
   }
 
   @Delete("admin/:teamId/members/:memberId")
@@ -252,6 +253,13 @@ export class TeamController {
     return this.teamService.inviteMember(teamId, dto, user.id);
   }
 
+  @Get("invite/:token/account")
+  @Header("Cache-Control", "private, no-store")
+  @Throttle({ default: { limit: 20, ttl: minutes(1) } })
+  invitationAccount(@Param("token", ParseUUIDPipe) token: string) {
+    return this.teamService.getInvitationAccount(token);
+  }
+
   @Post("invite/:token/accept")
   @UseGuards(JwtGuard)
   acceptInvitation(
@@ -312,21 +320,62 @@ export class TeamController {
     @Body() body: { newWrappedTeamKey: string },
     @GetUser() user: User,
   ) {
-    return this.teamService.rotateTeamKey(teamId, user.id, body.newWrappedTeamKey);
+    return this.teamService.rotateTeamKey(
+      teamId,
+      user.id,
+      body.newWrappedTeamKey,
+    );
   }
 
   @Get(":teamId/key-rotation")
   @UseGuards(JwtGuard)
-  getKeyRotationStatus(
-    @Param("teamId") teamId: string,
+  getKeyRotationStatus(@Param("teamId") teamId: string, @GetUser() user: User) {
+    return this.teamService.getKeyRotationStatus(teamId, user.id);
+  }
+
+  @Get(":teamId/profile")
+  @UseGuards(JwtGuard)
+  @Header("Cache-Control", "private, no-store")
+  getTeamProfile(
+    @Param("teamId", ParseUUIDPipe) teamId: string,
     @GetUser() user: User,
   ) {
-    return this.teamService.getKeyRotationStatus(teamId, user.id);
+    return this.teamService.getTeamProfile(teamId, user.id);
+  }
+
+  @Put(":teamId/profile")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 20, ttl: minutes(1) } })
+  setTeamProfile(
+    @Param("teamId", ParseUUIDPipe) teamId: string,
+    @Body() dto: SetTeamProfileDTO,
+    @GetUser() user: User,
+  ) {
+    return this.teamService.setTeamProfile(teamId, user.id, dto);
+  }
+
+  @Post(":teamId/key-rotation/:rotationId/activity-names")
+  @UseGuards(JwtGuard)
+  stageKeyRotationActivityNames(
+    @Param("teamId") teamId: string,
+    @Param("rotationId") rotationId: string,
+    @Body() dto: RotateTeamActivityNamesDTO,
+    @GetUser() user: User,
+  ) {
+    return this.teamService.stageTeamRotationActivityNames(
+      teamId,
+      rotationId,
+      user.id,
+      dto,
+    );
   }
 
   @Get(":teamId/key-rotation/metadata")
   @UseGuards(JwtGuard)
-  getKeyRotationMetadata(@Param("teamId") teamId: string, @GetUser() user: User) {
+  getKeyRotationMetadata(
+    @Param("teamId") teamId: string,
+    @GetUser() user: User,
+  ) {
     return this.teamService.getTeamRotationMetadata(teamId, user.id);
   }
 
@@ -338,7 +387,12 @@ export class TeamController {
     @Body() dto: RotateTeamMetadataDTO,
     @GetUser() user: User,
   ) {
-    return this.teamService.stageTeamRotationMetadata(teamId, rotationId, user.id, dto);
+    return this.teamService.stageTeamRotationMetadata(
+      teamId,
+      rotationId,
+      user.id,
+      dto,
+    );
   }
 
   @Post(":teamId/key-rotation/start")
@@ -376,7 +430,11 @@ export class TeamController {
     @Param("rotationId") rotationId: string,
     @GetUser() user: User,
   ) {
-    return this.teamService.completeTeamKeyRotation(teamId, rotationId, user.id);
+    return this.teamService.completeTeamKeyRotation(
+      teamId,
+      rotationId,
+      user.id,
+    );
   }
 
   @Delete(":teamId/key-rotation/:rotationId")
@@ -424,7 +482,12 @@ export class TeamController {
     @Body() dto: UpdateMemberRoleDTO,
     @GetUser() user: User,
   ) {
-    return this.teamService.updateMemberRole(teamId, memberId, dto.role, user.id);
+    return this.teamService.updateMemberRole(
+      teamId,
+      memberId,
+      dto.role,
+      user.id,
+    );
   }
 
   @Patch(":teamId/members/:memberId/permissions")
@@ -433,7 +496,12 @@ export class TeamController {
   updateMemberPermissions(
     @Param("teamId") teamId: string,
     @Param("memberId") memberId: string,
-    @Body() dto: { canViewActivity?: boolean; canViewSignatures?: boolean; pushNotifMode?: string },
+    @Body()
+    dto: {
+      canViewActivity?: boolean;
+      canViewSignatures?: boolean;
+      pushNotifMode?: string;
+    },
     @GetUser() user: User,
   ) {
     return this.teamService.updateMemberPermissions(
@@ -508,7 +576,12 @@ export class TeamController {
     @Param("memberId") memberId: string,
     @GetUser() user: User,
   ) {
-    return this.teamService.removeFolderAccess(teamId, folderId, memberId, user.id);
+    return this.teamService.removeFolderAccess(
+      teamId,
+      folderId,
+      memberId,
+      user.id,
+    );
   }
 
   @Delete(":teamId/folders/:folderId")
@@ -519,7 +592,12 @@ export class TeamController {
     @Body() body: { confirmationName?: string },
     @GetUser() user: User,
   ) {
-    return this.teamService.deleteFolder(teamId, folderId, user.id, body.confirmationName);
+    return this.teamService.deleteFolder(
+      teamId,
+      folderId,
+      user.id,
+      body.confirmationName,
+    );
   }
 
   @Get(":teamId/folders/:folderId/shares")

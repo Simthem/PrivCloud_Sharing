@@ -12,7 +12,7 @@ import {
 import { useForm, yupResolver } from "@mantine/form";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
 import AltchaCaptcha from "../captcha/AltchaCaptcha";
@@ -22,7 +22,14 @@ import useConfig from "../../hooks/config.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import useUser from "../../hooks/user.hook";
 import authService from "../../services/auth.service";
-import { rememberEmailVerificationEmail } from "../../utils/emailVerification.util";
+import {
+  rememberEmailVerificationEmail,
+  takeInvitedSignUpEmail,
+} from "../../utils/emailVerification.util";
+import {
+  buildSignInRedirectPath,
+  safeRedirectPath,
+} from "../../utils/authRedirect.util";
 import { getUserUniqueConflictField } from "../../utils/userConflict.util";
 import toast from "../../utils/toast.util";
 
@@ -37,6 +44,13 @@ const SignUpForm = () => {
   const [captchaToken, setCaptchaToken] = useState<string | undefined>();
   const captchaRef = useRef<AltchaWidgetHandle>(null);
   const [isLoading, setIsLoading] = useState(false);
+  // Set by an invitation page: return there once the account exists.
+  const redirectPath =
+    typeof router.query.redirect === "string"
+      ? safeRedirectPath(router.query.redirect)
+      : undefined;
+  const returnPath =
+    redirectPath && redirectPath !== "/" ? redirectPath : undefined;
 
   const resetCaptcha = () => {
     setCaptchaToken(undefined);
@@ -66,6 +80,13 @@ const SignUpForm = () => {
     validate: yupResolver(validationSchema),
   });
 
+  // The address an invitation was sent to, when coming from its page.
+  useEffect(() => {
+    const invited = takeInvitedSignUpEmail();
+    if (invited) form.setFieldValue("email", invited);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const resolveCaptchaToken = async () => {
     if (!captchaEnabled) return undefined;
     if (captchaToken) return captchaToken;
@@ -91,7 +112,11 @@ const SignUpForm = () => {
       .then(async () => {
         rememberEmailVerificationEmail(email);
         await refreshUser({ refresh: false });
-        await router.replace("/auth/verify-email");
+        await router.replace(
+          returnPath
+            ? `/auth/verify-email?redirect=${encodeURIComponent(returnPath)}`
+            : "/auth/verify-email",
+        );
       })
       .catch((error) => {
         resetCaptcha();
@@ -120,7 +145,11 @@ const SignUpForm = () => {
       {config.get("share.allowRegistration") && (
         <Text c="dimmed" size="sm" ta="center" mt={5}>
           <FormattedMessage id="signup.description" />{" "}
-          <Anchor component={Link} href={"signIn"} size="sm">
+          <Anchor
+            component={Link}
+            href={returnPath ? buildSignInRedirectPath(returnPath) : "signIn"}
+            size="sm"
+          >
             <FormattedMessage id="signup.button.signin" />
           </Anchor>
         </Text>

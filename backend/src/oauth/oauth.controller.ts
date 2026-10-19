@@ -12,6 +12,7 @@ import {
   UseFilters,
   UseGuards,
 } from "@nestjs/common";
+import { minutes, Throttle } from "@nestjs/throttler";
 import { User } from "@prisma/client";
 import { Request, Response } from "express";
 import { nanoid } from "nanoid";
@@ -28,6 +29,16 @@ import { OAuthProvider } from "./provider/oauthProvider.interface";
 import { OAuthExceptionFilter } from "./filter/oauthException.filter";
 import { SafeIdPipe } from "../share/pipe/safeId.pipe";
 
+import {
+  OAUTH_REAUTH_INTENT_TTL_MS,
+  OAUTH_REAUTH_MAX_AUTH_AGE_MS,
+  OAUTH_REAUTH_COOKIE,
+  OAUTH_REAUTH_COOKIE_PATH,
+  OAUTH_REAUTH_PROOF_TTL_MS,
+  OAuthReauthService,
+} from "../auth/oauthReauth.service";
+import { ErrorPageException } from "./exceptions/errorPage.exception";
+
 @Controller("oauth")
 export class OAuthController {
   private readonly logger = new Logger("OAuthController");
@@ -36,6 +47,7 @@ export class OAuthController {
     private authService: AuthService,
     private oauthService: OAuthService,
     private config: ConfigService,
+    private oauthReauth: OAuthReauthService,
     @Inject("OAUTH_PROVIDERS")
     private providers: Record<string, OAuthProvider<unknown>>,
   ) {}
@@ -76,6 +88,55 @@ export class OAuthController {
     response.redirect(url);
   }
 
+  /**
+   * Re-authentication with a provider already linked to the signed-in
+   * account, to confirm 2FA changes without the password. Started here,
+   * same-site, where the session cookie is present: the provider's redirect to
+   * the callback is cross-site and never carries it.
+   */
+  @Get("reauth/:provider")
+  @UseGuards(JwtGuard, ProviderGuard)
+  @UseFilters(ErrorPageExceptionFilter)
+  @Throttle({ default: { limit: 10, ttl: minutes(10) } })
+  async reauth(
+    @Param("provider", SafeIdPipe) provider: string,
+    @GetUser() user: User,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    if (!(await this.oauthService.isLinked(user.id, provider))) {
+      throw new ErrorPageException("not_linked", "/account", [
+        `provider_${provider}`,
+      ]);
+    }
+    const state = nanoid(16);
+    const isSecure = this.config.get("general.secureCookies");
+    const { url, nonce } = await this.providers[provider].getAuthEndpoint(
+      state,
+      { reauthenticate: true },
+    );
+    response.cookie(
+      `oauth_${provider}_state`,
+      nonce ? `${state}|${nonce}` : state,
+      {
+        sameSite: "lax",
+        secure: isSecure,
+        httpOnly: true,
+        maxAge: OAUTH_REAUTH_INTENT_TTL_MS,
+      },
+    );
+    response.cookie(
+      `oauth_${provider}_reauth`,
+      await this.oauthReauth.startIntent(user.id, provider),
+      {
+        sameSite: "lax",
+        secure: isSecure,
+        httpOnly: true,
+        maxAge: OAUTH_REAUTH_INTENT_TTL_MS,
+      },
+    );
+    response.redirect(url);
+  }
+
   @Get("callback/:provider")
   @UseGuards(ProviderGuard, OAuthGuard)
   @UseFilters(ErrorPageExceptionFilter, OAuthExceptionFilter)
@@ -101,12 +162,29 @@ export class OAuthController {
       httpOnly: true,
     });
 
+    // Set by reauth(): this flow confirms an identity, it never signs in or
+    // links anything.
+    const reauthIntent: string | undefined =
+      request.cookies[`oauth_${provider}_reauth`];
+    if (reauthIntent) {
+      response.clearCookie(`oauth_${provider}_reauth`, {
+        sameSite: "lax",
+        secure: isSecure,
+        httpOnly: true,
+      });
+    }
+
     try {
       const oauthToken = await this.providers[provider].getToken(query);
       const user = await this.providers[provider].getUserInfo(
         oauthToken,
         query,
       );
+      if (reauthIntent) {
+        await this.completeReauth(provider, reauthIntent, user, response);
+        return;
+      }
+
       const id = await this.authService.getIdOfCurrentUser(request);
 
       if (id) {
@@ -138,6 +216,7 @@ export class OAuthController {
         }
       }
     } catch (error) {
+      if (reauthIntent && error instanceof ErrorPageException) throw error;
       this.logger.error("OAuth callback failed");
       // Re-throw HttpException / ErrorPageException so NestJS filters handle them
       if (error instanceof Error && (error as any).status) {
@@ -151,6 +230,51 @@ export class OAuthController {
         );
       }
     }
+  }
+
+  /**
+   * The intent names the account, once. The provider must return the very
+   * identity linked to it, recently authenticated when the provider says when.
+   */
+  private async completeReauth(
+    provider: string,
+    intent: string,
+    identity: { providerId: string; authTime?: number },
+    response: Response,
+  ) {
+    const userId = await this.oauthReauth.consumeIntent(intent, provider);
+    if (!userId) throw new ErrorPageException("reauth_expired", "/account");
+    const linked = await this.oauthService.isLinked(
+      userId,
+      provider,
+      identity.providerId,
+    );
+    if (!linked) {
+      this.logger.warn("OAuth re-authentication returned another identity");
+      throw new ErrorPageException("reauth_mismatch", "/account", [
+        `provider_${provider}`,
+      ]);
+    }
+    if (
+      identity.authTime !== undefined &&
+      Date.now() - identity.authTime * 1000 > OAUTH_REAUTH_MAX_AUTH_AGE_MS
+    ) {
+      throw new ErrorPageException("reauth_expired", "/account");
+    }
+    response.cookie(
+      OAUTH_REAUTH_COOKIE,
+      await this.oauthReauth.issueProof(userId, provider),
+      {
+        path: OAUTH_REAUTH_COOKIE_PATH,
+        sameSite: "strict",
+        secure: this.config.get("general.secureCookies"),
+        httpOnly: true,
+        maxAge: OAUTH_REAUTH_PROOF_TTL_MS,
+      },
+    );
+    response.redirect(
+      this.config.get("general.appUrl") + "/account?totpReauth=1",
+    );
   }
 
   @Post("unlink/:provider")

@@ -365,11 +365,8 @@ const MyShares = () => {
         const rsKeyEncoded = await exportKeyToBase64(rsKey);
         setRsKeyCache((prev) => ({ ...prev, [reverseShare.id]: rsKeyEncoded }));
         return rsKeyEncoded;
-      } catch (e) {
-        console.error(
-          "Erreur lors du déchiffrement de la clé reverse share",
-          e,
-        );
+      } catch {
+        console.error("Erreur lors du déchiffrement de la clé reverse share");
         return null;
       }
     },
@@ -654,7 +651,8 @@ const MyShares = () => {
                       : t("account.reverseShares.table.no-shares")}
                   </Text>
                   <Text size="xs" c="dimmed">
-                    {t("account.reverseShares.table.max-size")}: {byteToHumanSizeString(parseInt(reverseShare.maxShareSize))}
+                    {t("account.reverseShares.table.max-size")}:{" "}
+                    {byteToHumanSizeString(parseInt(reverseShare.maxShareSize))}
                   </Text>
                   <Text size="xs" c="dimmed">
                     {dayjs(reverseShare.shareExpiration).unix() === 0

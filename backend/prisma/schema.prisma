@@ -77,6 +77,12 @@ model User {
   pqKeys            UserPQKey[]
   // Team notifications
   teamNotifications TeamNotification[]
+  teamExternalSeats TeamExternalSeat[]
+  externalRevocationWatches TeamExternalRevocationWatch[]
+  oauthReauthTokens OAuthReauthToken[]
+  accountPasskeys AccountPasskey[]
+  passkeyChallenges PasskeyChallenge[]
+  vaultSessions EvidenceVaultSession[]
 
   // Account lockout protection
   failedLoginAttempts Int       @default(0)
@@ -183,6 +189,29 @@ model OAuthUser {
   providerUsername String
   userId           String
   user             User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Re-authentication through an OAuth provider already linked to the account,
+// to confirm 2FA changes without the password. A PENDING row is the intent
+// started from a signed-in session, a VERIFIED row the proof the provider
+// returned that very identity. Only SHA-256 hashes of the tokens are stored,
+// each one single use.
+model OAuthReauthToken {
+  tokenHash String    @id
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  // PENDING | VERIFIED
+  stage    String
+  provider String
+  // TOTP is the only purpose so far.
+  purpose  String
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, stage])
 }
 
 model TotpBackupCode {
@@ -337,6 +366,7 @@ model File {
   // E2EE access grants for this file.
   accessGrants       AccessGrant[]
   signatureDocuments SignatureDocument[]
+  externalPreviews TeamExternalPreview[]
 
   @@index([shareId])
 }
@@ -860,6 +890,10 @@ model Team {
   keyRotations       TeamKeyRotation[]
   // Team notification feed.
   notifications      TeamNotification[]
+  externalSeats TeamExternalSeat[]
+  externalPreviews TeamExternalPreview[]
+  profile TeamProfile?
+  auditKey TeamAuditKey?
 
   // Automatic compliance report policy.
   reportEnabled   Boolean @default(true)
@@ -1174,6 +1208,136 @@ model TeamGuestLink {
   @@index([folderId])
 }
 
+// Company details of a team (name, mention, details) used in the watermark of
+// the copies shown to external contractors. Encrypted in the browser with
+// K_team: base64url [IV 12][AES-256-GCM(JSON padded to 64 bytes) + tag 16],
+// the team id authenticated. Only team administrators read or write it, and a
+// Team key rotation re-encrypts it with the other team metadata.
+model TeamProfile {
+  teamId        String   @id
+  team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  encryptedInfo String
+  // K_team version the ciphertext was produced with.
+  keyVersion    Int
+  updatedAt     DateTime @updatedAt
+  updatedById   String?
+}
+
+// ============================================================================
+// EXTERNAL CONTRACTORS (preview-only access)
+// ============================================================================
+// An external contractor is never a TeamMember: every team route keeps
+// refusing them. They only reach the copies rendered for their seat, page
+// images that a team admin rendered, watermarked and encrypted in the browser
+// for their own X25519 + ML-KEM-768 keys. Neither the original file nor the
+// team key is ever given to them.
+
+model TeamExternalSeat {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Invited address (lowercase). Only the account using it can accept.
+  email       String
+  displayName String?
+
+  // PENDING | ACTIVE | REVOKED. Expiry is read from the dates below.
+  status String @default("PENDING")
+
+  // SHA-256 (hex) of the invitation token. The token itself is only mailed.
+  tokenHash       String?   @unique
+  inviteExpiresAt DateTime
+  accessExpiresAt DateTime
+  acceptedAt      DateTime?
+  revokedAt       DateTime?
+  invitedById     String?
+
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  // Kept when the account is deleted so the hourly job purges its copies.
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  previews TeamExternalPreview[]
+  revocationWatches TeamExternalRevocationWatch[]
+
+  @@unique([teamId, email])
+  @@index([userId, status])
+}
+
+// A personal opt-in for one team administrator and one contractor access.
+model TeamExternalRevocationWatch {
+  id String @id @default(uuid())
+  createdAt DateTime @default(now())
+  mode String @default("NONE")
+  notifiedAt DateTime?
+  seatId String
+  seat TeamExternalSeat @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([seatId, userId])
+  @@index([notifiedAt, mode])
+}
+
+model TeamExternalPreview {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // UPLOADING until every page is stored, then READY.
+  status    String    @default("UPLOADING")
+  pageCount Int
+  deletedAt DateTime?
+
+  // Title and page sizes, AES-256-GCM under the preview key (base64url).
+  encryptedManifest String
+
+  // Preview key wrapped for the contractor, hybrid X25519 + ML-KEM-768 only.
+  encryptedKey       String
+  ephemeralPublicKey String
+  nonce              String
+  kemCiphertext      String
+  algorithm          String
+
+  createdById String?
+
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  seatId String
+  seat   TeamExternalSeat @relation(fields: [seatId], references: [id], onDelete: Cascade)
+
+  // NULL once the source file is deleted: the hourly job then purges the copy.
+  sourceFileId String?
+  sourceFile   File?   @relation(fields: [sourceFileId], references: [id], onDelete: SetNull)
+
+  pages TeamExternalPreviewPage[]
+
+  @@index([seatId, status])
+  @@index([teamId, createdAt])
+  @@index([sourceFileId])
+}
+
+model TeamExternalPreviewPage {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  // Zero-based position. The storage key is derived from the preview id and
+  // this index, never taken from a client.
+  index  Int
+  size   Int
+  // SHA-256 (hex) of the stored ciphertext, checked against the signed
+  // register entry before the copy is shown.
+  sha256 String?
+
+  previewId String
+  preview   TeamExternalPreview @relation(fields: [previewId], references: [id], onDelete: Cascade)
+
+  @@unique([previewId, index])
+}
+
 // ============================================================================
 // E2EE IDENTITY LAYER (X25519 + Ed25519 per-user key pairs)
 // ============================================================================
@@ -1407,4 +1571,153 @@ model TeamFileRequestRecipient {
 
   @@unique([requestId, userId])
   @@index([userId, requestId])
+}
+
+// ============================================================================
+// AUDIT OF THE COPIES ISSUED TO EXTERNAL CONTRACTORS
+// ============================================================================
+
+// Random key of the team, wrapped with K_team in the browser (covered by key
+// rotations). It derives the invisible mark of every copy and encrypts the
+// register labels: the server never reads it.
+model TeamAuditKey {
+  teamId       String   @id
+  team         Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  encryptedKey String
+  // K_team version the ciphertext was produced with.
+  keyVersion   Int
+  createdAt    DateTime @default(now())
+  createdById  String?
+}
+
+// WebAuthn credentials added from the account settings, for signing in and
+// approving copies for contractors. Their user handle differs from the
+// signing passkeys so that an authenticator never replaces one with the other.
+model AccountPasskey {
+  id                 String    @id @default(uuid())
+  createdAt          DateTime  @default(now())
+  lastUsedAt         DateTime?
+  credentialId       String    @unique
+  publicKey          Bytes
+  publicKeyAlgorithm Int
+  counter            BigInt    @default(0)
+  transports         String?
+  deviceType         String
+  backedUp           Boolean   @default(false)
+  aaguid             String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// One-time WebAuthn ceremony: REGISTER, LOGIN (no account yet, any passkey
+// of the relying party may answer) or ISSUE, where the challenge is the
+// SHA-256 of the canonical manifest it commits to.
+model PasskeyChallenge {
+  id         String    @id @default(uuid())
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  consumedAt DateTime?
+  purpose    String
+  challenge  String
+  manifest   String?
+  previewId  String?
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
+}
+
+// Register of the copies issued to contractors. Kept after the copy, and
+// after the team itself, until the audit retention ends: teamId is no foreign
+// key on purpose.
+model TeamExternalIssuance {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  // APPROVED once the passkey signed, ISSUED once every page matches.
+  status    String    @default("APPROVED")
+  issuedAt  DateTime?
+
+  teamId String
+
+  previewId       String  @unique
+  seatId          String
+  contractorEmail String
+  contractorName  String?
+  issuerId        String?
+  issuerEmail     String
+  markId          String
+
+  // Canonical JSON whose SHA-256 is the WebAuthn challenge.
+  manifest       String
+  manifestHash   String
+  // Title of the document, AES-256-GCM under the team audit key.
+  encryptedLabel String?
+
+  credentialId        String
+  credentialPublicKey String
+  credentialAlgorithm Int
+  authenticatorData   String
+  clientDataJSON      String
+  signature           String
+  userHandle          String?
+
+  // SHA-256 of the canonical record (manifest and assertion), the imprint of
+  // the RFC 3161 timestamp.
+  recordHash     String
+  timestampToken String?
+  timestampedAt  DateTime?
+
+  @@unique([teamId, markId])
+  @@index([teamId, createdAt])
+}
+
+// Hash-chained journal of the contractor side: each event commits to the
+// previous one, and anchors timestamp the head of the chain. Like the
+// register, it outlives the team until the audit retention ends.
+model TeamExternalAuditEvent {
+  id         String   @id @default(uuid())
+  teamId     String
+  seq        Int
+  at         DateTime
+  kind       String
+  previewId  String?
+  seatId     String?
+  actorEmail String
+  pageIndex  Int?
+  prevHash   String
+  hash       String
+
+  @@unique([teamId, seq])
+  @@index([teamId, previewId])
+}
+
+model TeamExternalAuditAnchor {
+  id             String   @id @default(uuid())
+  createdAt      DateTime @default(now())
+  teamId         String
+  seq            Int
+  hash           String
+  timestampToken String
+
+  @@index([teamId, seq])
+}
+
+// A platform administrator's access to the evidence vault, opened with a
+// passkey for a few minutes. Only the SHA-256 of the cookie value is stored.
+model EvidenceVaultSession {
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+  sessionHash String   @unique
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }

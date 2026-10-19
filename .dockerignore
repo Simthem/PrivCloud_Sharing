@@ -14,3 +14,12 @@ frontend/public/install/beta/
 backend/.env
 backend/.env.*
 frontend/.env*
+
+frontend/public/image-decoders/*
+!frontend/public/image-decoders/decoder.worker.js
+frontend/public/video-decoders/*
+!frontend/public/video-decoders/hevc.worker.js
+
+frontend/public/forensic/*
+!frontend/public/forensic/registration.worker.js
+frontend/public/verification/contractor/

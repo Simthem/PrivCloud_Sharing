@@ -634,9 +634,9 @@ const Upload = ({
               if (user.fileMetaV1Write) {
                 share.fileMetadataScheme = FILE_META_V1;
               }
-            } catch (dekError) {
+            } catch {
               // Never block an upload: the share keeps the account key.
-              console.warn("[E2E] Share key creation failed:", dekError);
+              console.warn("[E2E] Share key creation failed");
               reportShareCryptoEvent("dek_create_error", SHARE_DEK_V1);
             }
           }
@@ -667,7 +667,7 @@ const Upload = ({
         }
       }
     } catch (error) {
-      console.warn("[E2E] Upload key resolution failed:", error);
+      console.warn("[E2E] Upload key resolution failed");
       toast.error(
         error instanceof Error &&
           error.message === "PERSONAL_E2E_KEY_RESTORE_REQUIRED"
@@ -937,6 +937,7 @@ const Upload = ({
               return {
                 href: batchSource.href,
                 name: batchFile.name,
+                relativePath: batchFile.uploadRelativePath,
                 size: batchFile.size,
                 contentType: batchSource.contentType || batchFile.type,
                 lastModified: batchSource.lastModified,
@@ -1084,7 +1085,7 @@ const Upload = ({
         const attempt = fileAttempts.get(fileIndex) ?? 1;
         const delay = FILE_RETRY_DELAYS[attempt - 1] ?? 120_000;
         console.warn(
-          `[UPLOAD] "${file.name}" retry ${attempt}/${MAX_FILE_RETRIES}, waiting ${delay / 1000}s...`,
+          `[UPLOAD] Retry ${attempt}/${MAX_FILE_RETRIES}, waiting ${delay / 1000}s`,
         );
         showNotification({
           id: `file-retry-${fileIndex}`,
@@ -1245,12 +1246,13 @@ const Upload = ({
       createdShare?.id &&
       completingShareRef.current !== createdShare.id
     ) {
-      // For reverse shares the backend always needs K_rs so the reverse share
-      // creator can receive a working link.  For classic shares, the key is
-      // only included when the uploader opted in via the checkbox.
+      // The key only reaches the server when the uploader opted in to email
+      // it with a classic share. A reverse share upload is encrypted with
+      // K_rs, which belongs to the reverse share's owner: it never leaves this
+      // browser, and the owner unwraps it with their master key.
       const isReverseShareUpload = router.pathname !== "/upload";
       const e2eKeyForComplete =
-        (shouldShareE2EKeyViaEmail || isReverseShareUpload) && e2eKeyEncoded
+        shouldShareE2EKeyViaEmail && !isReverseShareUpload && e2eKeyEncoded
           ? e2eKeyEncoded
           : undefined;
       const completingShareId = createdShare.id;

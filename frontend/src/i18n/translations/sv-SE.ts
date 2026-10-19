@@ -313,7 +313,7 @@ export default {
   // END /privacy
   // /admin/config
   "admin.config.config-file-warning.title": "Konfigurationsfil finns",
-  "admin.config.config-file-warning.description": "Eftersom du har en konfigurerad PrivCloud_Sharing med en konfigurationsfil kan du inte ändra konfigurationen genom UI.",
+  "admin.config.config-file-warning.description": "Eftersom du har en konfigurerad PrivCloud Sharing med en konfigurationsfil kan du inte ändra konfigurationen genom UI.",
   "admin.config.title": "Konfiguration",
   "admin.config.category.general": "Allmänt",
   "admin.config.category.share": "Delning",
@@ -324,7 +324,7 @@ export default {
   "admin.config.general.app-name": "Appnamn",
   "admin.config.general.app-name.description": "Namn på applikationen",
   "admin.config.general.app-url": "Appens URL",
-  "admin.config.general.app-url.description": "På vilken URL PrivCloud_Sharing finns",
+  "admin.config.general.app-url.description": "På vilken URL PrivCloud Sharing finns",
   "admin.config.general.secure-cookies": "Skydda kakor",
   "admin.config.general.secure-cookies.description": "Om du vill ställa in den säkra flaggan på kakor. Om aktiverad, kommer webbplatsen inte att fungera när den används via HTTP.",
   "admin.config.general.show-home-page": "Visa startsidan",
@@ -339,7 +339,7 @@ export default {
   "admin.config.cache.max-items": "Maximum items",
   "admin.config.cache.max-items.description": "Maximum number of items inside the cache.",
   "admin.config.cache.redis-enabled": "Redis enabled",
-  "admin.config.cache.redis-enabled.description": "Normally PrivCloud_Sharing caches information in memory. If you run multiple instances of PrivCloud_Sharing, you need to enable Redis caching to share the cache between the instances.",
+  "admin.config.cache.redis-enabled.description": "Normally PrivCloud Sharing caches information in memory. If you run multiple instances of PrivCloud Sharing, you need to enable Redis caching to share the cache between the instances.",
   "admin.config.cache.redis-url": "Redis URL",
   "admin.config.cache.redis-url.description": "Url to connect to the Redis instance used for caching.",
   "admin.config.email.enable-share-email-recipients": "Aktivera delning av e-postmottagare",

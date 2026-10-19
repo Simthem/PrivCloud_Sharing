@@ -1,0 +1,19 @@
+{
+  "name": "privcloud-public-contractor-verification",
+  "version": "1.25.3",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
+    "benchmark": "node benchmark.mjs",
+    "test:ocr": "node ocr-recreation.mjs"
+  },
+  "dependencies": {
+    "jsqr": "1.4.0",
+    "qrcode-generator": "2.0.4",
+    "sharp": "0.35.5"
+  }
+}

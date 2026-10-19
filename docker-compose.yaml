@@ -34,7 +34,7 @@ services:
       # - TRUST_PROXY=true  (Set to true if a reverse proxy is in front of the container)
 
       # -- Proxy (uncomment and set if your server accesses the internet through a proxy) --
-      # - NODE_OPTIONS=--dns-result-order=ipv4first --require /opt/app/backend/node_modules/global-agent/bootstrap
+      # - NODE_OPTIONS=--dns-result-order=ipv4first --require /opt/app/backend/global-agent-bootstrap.js
       # - GLOBAL_AGENT_HTTP_PROXY=http://your-proxy:3128
       # - GLOBAL_AGENT_NO_PROXY=localhost,127.0.0.1,::1
       # - HTTP_PROXY=http://your-proxy:3128

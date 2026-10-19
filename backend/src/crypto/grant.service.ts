@@ -66,6 +66,7 @@ export class AccessGrantService {
 
     // Validate grantor has access to the resource
     await this.validateGrantorAccess(grantorId, dto);
+    await this.assertRecipientIsNotExternalContractor(dto);
 
     // Check for duplicate active grant
     const existingGrant = await this.prisma.accessGrant.findFirst({
@@ -126,6 +127,57 @@ export class AccessGrantService {
     void this.logTeamGrantEvent(grantorId, dto, "E2E_SHARE", grant.id);
 
     return { id: grant.id, action: "created", dekVersion: grant.dekVersion };
+  }
+
+  /**
+   * An external contractor of a team only ever receives the rendered pages of
+   * their seat: no key of an original team file may be wrapped for them,
+   * whatever a member's client sends.
+   */
+  private async assertRecipientIsNotExternalContractor(dto: {
+    recipientUserId: string;
+    fileId?: string;
+    teamFileId?: string;
+    shareId?: string;
+  }) {
+    let teamId: string | null | undefined = null;
+    if (dto.teamFileId) {
+      const teamFile = await this.prisma.teamFile.findUnique({
+        where: { id: dto.teamFileId },
+        select: { folder: { select: { teamId: true } } },
+      });
+      teamId = teamFile?.folder.teamId;
+    } else if (dto.fileId) {
+      const file = await this.prisma.file.findUnique({
+        where: { id: dto.fileId },
+        select: { share: { select: { teamFolder: { select: { teamId: true } } } } },
+      });
+      teamId = file?.share.teamFolder?.teamId;
+    } else if (dto.shareId) {
+      const share = await this.prisma.share.findUnique({
+        where: { id: dto.shareId },
+        select: { teamFolder: { select: { teamId: true } } },
+      });
+      teamId = share?.teamFolder?.teamId;
+    }
+    if (!teamId) return;
+
+    const [seat, member] = await Promise.all([
+      this.prisma.teamExternalSeat.findFirst({
+        where: { teamId, userId: dto.recipientUserId },
+        select: { id: true },
+      }),
+      this.prisma.teamMember.findFirst({
+        where: { teamId, userId: dto.recipientUserId, isActive: true },
+        select: { id: true },
+      }),
+    ]);
+    if (seat && !member) {
+      throw new ForbiddenException(
+        "External contractors only receive rendered previews",
+        "external_contractor_grant_denied",
+      );
+    }
   }
 
   /**

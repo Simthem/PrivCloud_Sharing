@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { backendNodeOptions } from "./backend-node-options.cjs";
 
 const backendDirectory = resolve(
   process.env.PRIVCLOUD_BACKEND_DIRECTORY || "/opt/app/backend",
@@ -490,17 +491,6 @@ async function migrate(includeSeed) {
   }
 }
 
-function backendNodeOptions() {
-  let options = process.env.NODE_OPTIONS || "";
-  if (!options.includes("--dns-result-order=")) {
-    options = `--dns-result-order=${process.env.NODE_DNS_RESULT_ORDER || "ipv4first"}${options ? ` ${options}` : ""}`;
-  }
-  if (!options.includes("global-agent/bootstrap")) {
-    options = `${options} --require ./node_modules/global-agent/bootstrap`;
-  }
-  return `--max-old-space-size=${process.env.NODE_MAX_OLD_SPACE_SIZE || "3072"} ${options}`;
-}
-
 async function runServer() {
   if (process.env.RUN_DB_MIGRATIONS !== "false") {
     console.log("Running database migrations before server start...");
@@ -544,7 +534,10 @@ async function runServer() {
     label: "backend",
     child: spawnProcess("node", ["dist/src/main"], {
       cwd: backendDirectory,
-      env: { ...process.env, NODE_OPTIONS: backendNodeOptions() },
+      env: {
+        ...process.env,
+        NODE_OPTIONS: backendNodeOptions(process.env, backendDirectory),
+      },
     }),
   });
 
@@ -601,6 +594,7 @@ if (isMain) {
 }
 
 export {
+  backendNodeOptions,
   ensureSqliteDatabase,
   publicParitySchemaIsReady,
   reconcileSqliteMigrations,

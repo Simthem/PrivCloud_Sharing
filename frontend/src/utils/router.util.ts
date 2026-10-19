@@ -19,7 +19,9 @@ export async function resolvePostAuthRedirectPath(
 
   if (!isDefaultDestination) return finalizePostAuthRedirectPath(safePath);
   if (!user?.hasTeamMembership && !user?.teamId) {
-    return finalizePostAuthRedirectPath("/upload");
+    return finalizePostAuthRedirectPath(
+      user?.hasExternalAccess ? "/external" : "/upload",
+    );
   }
 
   try {

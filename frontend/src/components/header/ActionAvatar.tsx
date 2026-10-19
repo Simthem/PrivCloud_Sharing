@@ -1,13 +1,15 @@
-import {
-  Collapse,
-  Loader,
-  Menu,
-  UnstyledButton,
-} from "@mantine/core";
+import { Collapse, Loader, Menu, UnstyledButton } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { useState } from "react";
 import Link from "next/link";
-import { TbChevronRight, TbDoorExit, TbSettings, TbUser, TbUsersGroup } from "react-icons/tb";
+import {
+  TbChevronRight,
+  TbDoorExit,
+  TbEyeCheck,
+  TbSettings,
+  TbUser,
+  TbUsersGroup,
+} from "react-icons/tb";
 import useUser from "../../hooks/user.hook";
 import authService from "../../services/auth.service";
 import { FormattedMessage } from "react-intl";
@@ -41,8 +43,8 @@ const ActionAvatar = ({
     try {
       onNavigate?.();
       await authService.signOut();
-    } catch (e) {
-      console.error("SignOut failed:", e);
+    } catch {
+      console.error("SignOut failed");
       // Page reload will happen regardless from auth.service.ts
     } finally {
       // Note: page will reload before this is called, but keep for safety
@@ -77,14 +79,26 @@ const ActionAvatar = ({
             <TbUser size={14} />
             <FormattedMessage id="navbar.avatar.account" />
           </Link>
-          {(teams && teams.length > 0 || hasTeamAccess) && (
+          {((teams && teams.length > 0) || hasTeamAccess) && (
             <Link
-              href={teams && teams.length === 1 ? `/team/${teams[0].id}` : "/team"}
+              href={
+                teams && teams.length === 1 ? `/team/${teams[0].id}` : "/team"
+              }
               onClick={onNavigate}
               className={cx(classes.link, classes.withIcon, classes.subLink)}
             >
               <TbUsersGroup size={14} />
               <FormattedMessage id="navbar.avatar.my-team" />
+            </Link>
+          )}
+          {user?.hasExternalAccess && (
+            <Link
+              href="/external"
+              onClick={onNavigate}
+              className={cx(classes.link, classes.withIcon, classes.subLink)}
+            >
+              <TbEyeCheck size={14} />
+              <FormattedMessage id="navbar.avatar.external" />
             </Link>
           )}
           {user!.isAdmin && (
@@ -103,11 +117,7 @@ const ActionAvatar = ({
             className={cx(classes.link, classes.withIcon, classes.subLink)}
             style={{ opacity: isSigningOut ? 0.6 : 1 }}
           >
-            {isSigningOut ? (
-              <Loader size={14} />
-            ) : (
-              <TbDoorExit size={14} />
-            )}
+            {isSigningOut ? <Loader size={14} /> : <TbDoorExit size={14} />}
             <FormattedMessage id="navbar.avatar.signout" />
           </UnstyledButton>
         </Collapse>
@@ -124,17 +134,34 @@ const ActionAvatar = ({
         </UnstyledButton>
       </Menu.Target>
       <Menu.Dropdown>
-        <Menu.Item component={Link} href="/account" leftSection={<TbUser size={14} />} onClick={onNavigate}>
+        <Menu.Item
+          component={Link}
+          href="/account"
+          leftSection={<TbUser size={14} />}
+          onClick={onNavigate}
+        >
           <FormattedMessage id="navbar.avatar.account" />
         </Menu.Item>
-        {(teams && teams.length > 0 || hasTeamAccess) && (
+        {((teams && teams.length > 0) || hasTeamAccess) && (
           <Menu.Item
             component={Link}
-            href={teams && teams.length === 1 ? `/team/${teams[0].id}` : "/team"}
+            href={
+              teams && teams.length === 1 ? `/team/${teams[0].id}` : "/team"
+            }
             leftSection={<TbUsersGroup size={14} />}
             onClick={onNavigate}
           >
             <FormattedMessage id="navbar.avatar.my-team" />
+          </Menu.Item>
+        )}
+        {user?.hasExternalAccess && (
+          <Menu.Item
+            component={Link}
+            href="/external"
+            leftSection={<TbEyeCheck size={14} />}
+            onClick={onNavigate}
+          >
+            <FormattedMessage id="navbar.avatar.external" />
           </Menu.Item>
         )}
         {user!.isAdmin && (
@@ -151,7 +178,9 @@ const ActionAvatar = ({
         <Menu.Item
           onClick={handleSignOut}
           disabled={isSigningOut}
-          leftSection={isSigningOut ? <Loader size={14} /> : <TbDoorExit size={14} />}
+          leftSection={
+            isSigningOut ? <Loader size={14} /> : <TbDoorExit size={14} />
+          }
         >
           <FormattedMessage id="navbar.avatar.signout" />
         </Menu.Item>

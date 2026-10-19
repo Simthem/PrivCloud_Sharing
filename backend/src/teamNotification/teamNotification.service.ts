@@ -11,6 +11,7 @@ import {
 } from "./team-notification-messages";
 
 export type TeamNotificationType =
+  | "EXTERNAL_ACCESS_ENDED"
   | "FILE_REQUESTED"
   | "FILE_REQUEST_SUBMITTED"
   | "FILE_SHARED"
@@ -68,6 +69,17 @@ export class TeamNotificationService {
   /** Requests insert their notification in the same transaction as the action.
    * Deliver only generic text outside that transaction. The stored notification remains
    * available if push delivery fails or the process stops here. */
+  deliverExternalRevocationNotification(
+    notification: { id: string; userId: string; title: string; teamId: string },
+    body: string,
+  ) {
+    const url = `/team/${encodeURIComponent(notification.teamId)}/settings#external-contractors`;
+    const payload = { title: notification.title, body, url };
+    void this.pushService.sendToUser(notification.userId, payload).catch(() => {
+      this.logger.debug("External-access push delivery failed");
+    });
+  }
+
   deliverFileRequestNotification(notification: {
     id: string;
     userId: string;

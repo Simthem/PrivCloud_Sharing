@@ -24,7 +24,7 @@ const Intro = () => {
             <Title order={2}>Welcome to PrivCloud Sharing</Title>
           </Center>
           <Text>
-            If you enjoy PrivCloud_Sharing please ⭐️ it on{" "}
+            If you enjoy PrivCloud Sharing please ⭐️ it on{" "}
             <Anchor
               target="_blank"
               href="https://github.com/Simthem/PrivCloud_Sharing"

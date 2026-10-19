@@ -23,7 +23,8 @@ ARG NODE_BUILDER_IMAGE=simthem/privcloud-sharing:node-builder-cache
 # CVE-2026-45135 (HIGH - FastCGI splitPos), CVE-2026-45692 (MEDIUM - Admin /config bypass),
 # GHSA-gx7w-56w6-g48x (MEDIUM - PKI path matching bypass).
 # GHSA-wwhq-w58m-w29c (MEDIUM - CVE-2026-30852 fix bypass) - status: affected, no fix yet.
-FROM golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS caddy-builder
+FROM golang:1.26.9-alpine@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade AS caddy-builder
+ENV GOTOOLCHAIN=local
 RUN apk upgrade --no-cache && apk add --no-cache curl git
 WORKDIR /caddy
 # Pin the exact commit behind the reviewed v2.11.4 tag and verify the archive
@@ -75,8 +76,8 @@ RUN test "$(grep -Fc '[]interpreter.Interpretable{reqAttr}' modules/caddyhttp/ce
 # GHSA-gcjh-h69q-9w9g: Docker Scout marks cel-go < 0.30.0 as affected. Pin the
 # reviewed v0.30.0 release, which contains the sentinel-field fix, and verify
 # the compiled binary below so a transitive downgrade fails the image build.
-RUN go get golang.org/x/net@v0.57.0 \
-    && go get golang.org/x/text@v0.40.0 \
+RUN go get golang.org/x/net@v0.60.0 \
+    && go get golang.org/x/text@v0.41.0 \
     && go get golang.org/x/crypto@v0.56.0 \
     && go get github.com/yuin/goldmark@v1.7.17 \
     && go get google.golang.org/grpc@v1.83.2 \
@@ -107,8 +108,8 @@ RUN go get golang.org/x/net@v0.57.0 \
     && go mod download go.etcd.io/bbolt \
     && go mod tidy \
     && go mod edit \
-        -replace=golang.org/x/net=golang.org/x/net@v0.57.0 \
-        -replace=golang.org/x/text=golang.org/x/text@v0.40.0 \
+        -replace=golang.org/x/net=golang.org/x/net@v0.60.0 \
+        -replace=golang.org/x/text=golang.org/x/text@v0.41.0 \
         -replace=golang.org/x/crypto=golang.org/x/crypto@v0.56.0 \
         -replace=golang.org/x/sys=golang.org/x/sys@v0.47.0 \
         -replace=github.com/go-chi/chi/v5=github.com/go-chi/chi/v5@v5.3.0 \
@@ -128,8 +129,8 @@ RUN go get golang.org/x/net@v0.57.0 \
     && go mod edit -require=github.com/grpc-ecosystem/grpc-gateway/v2@v2.30.0 \
     && echo "=== Security replace pins verification ===" \
     && grep -E 'replace|x/net|x/text|x/crypto|x/sys|go-chi/chi/v5' go.mod \
-    && go list -m golang.org/x/net | grep 'v0.57.0' \
-    && go list -m golang.org/x/text | grep 'v0.40.0' \
+    && test "$(go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' golang.org/x/net)" = "v0.60.0" \
+    && test "$(go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' golang.org/x/text)" = "v0.41.0" \
     && go list -m golang.org/x/crypto | grep 'v0.56.0' \
     && go list -m github.com/go-chi/chi/v5 | grep 'v5.3.0' \
     && test "$(go list -m -f '{{.Version}}' google.golang.org/grpc)" = "v1.83.2" \
@@ -160,6 +161,8 @@ RUN GRPC_GATEWAY_MUX="$(go env GOMODCACHE)/github.com/grpc-ecosystem/grpc-gatewa
 
 # Compiler Caddy (binaire statique, stripped, sans symboles de debug)
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/caddy \
+    && go version -m /usr/bin/caddy | head -n 1 | grep -F 'go1.26.9' \
+    && go version -m /usr/bin/caddy | grep -Eq '=>[[:space:]]+golang[.]org/x/net[[:space:]]+v0[.]60[.]0' \
     && go version -m /usr/bin/caddy | grep -Eq \
         'dep[[:space:]]+google[.]golang[.]org/grpc[[:space:]]+v1[.]83[.]2' \
     && go version -m /usr/bin/caddy | grep -Eq \
@@ -171,7 +174,8 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/ca
 # ---------------------------
 # This static helper prepares mounted directories, drops from root to PUID:PGID
 # and execs Node without requiring a shell, passwd database, PAM or gosu.
-FROM golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS runtime-init-builder
+FROM golang:1.26.9-alpine@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade AS runtime-init-builder
+ENV GOTOOLCHAIN=local
 WORKDIR /src
 COPY scripts/docker/runtime-init.go .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /runtime-init ./runtime-init.go
@@ -336,6 +340,65 @@ COPY --from=frontend-deps /opt/app/frontend/node_modules ./node_modules
 COPY global-agent-bootstrap.js ./global-agent-bootstrap.js
 COPY frontend/ ./
 
+# Public verification prebuild inputs only. Do not copy private evidence or keys.
+COPY scripts/build-public-verification.mjs /opt/app/scripts/build-public-verification.mjs
+COPY LICENSE /opt/app/LICENSE
+COPY verification/contractor/README.md \
+     verification/contractor/FORMAT.md \
+     verification/contractor/RESULTS.md \
+     verification/contractor/results.json \
+     verification/contractor/extended-results.json \
+     verification/contractor/corpus.mjs \
+     verification/contractor/real-corpus.mjs \
+     verification/contractor/corpus-results.json \
+     verification/contractor/candidate-scale.mjs \
+     verification/contractor/candidate-scale-results.json \
+     verification/contractor/decision-evaluation.mjs \
+     verification/contractor/decision-evaluation-results.json \
+     verification/contractor/photo-results.json \
+     verification/contractor/ocr-results.json \
+     verification/contractor/visible-copy-mark.ts \
+     verification/contractor/forensic-decision.ts \
+     verification/contractor/fragment-copy-mark.ts \
+     verification/contractor/fragment-benchmark.mjs \
+     verification/contractor/fragment-results.json \
+     verification/contractor/preproduction-results.json \
+     verification/contractor/visible-mark-benchmark.mjs \
+     verification/contractor/visible-mark-results.json \
+     verification/contractor/multiscale-copy-mark.ts \
+     verification/contractor/multiscale-benchmark.mjs \
+     verification/contractor/multiscale-results.json \
+     verification/contractor/ocr-recreation.mjs \
+     verification/contractor/register-photo.py \
+     verification/contractor/requirements-photo.txt \
+     verification/contractor/watermark.ts \
+     verification/contractor/verifier.py \
+     verification/contractor/benchmark.mjs \
+     verification/contractor/screenshot.mjs \
+     verification/contractor/screenshot-preflight.mjs \
+     verification/contractor/chrome-protocol-pipe.cjs \
+     verification/contractor/read-only.mjs \
+     verification/contractor/package.json \
+     verification/contractor/package-lock.json \
+     /opt/app/verification/contractor/
+COPY verification/contractor/test/evidence.test.mjs \
+     verification/contractor/test/elapsed-notice.mjs \
+     verification/contractor/test/execution.test.mjs \
+     verification/contractor/test/fixture.mjs \
+     verification/contractor/test/watermark.test.mjs \
+     verification/contractor/test/read-only.test.mjs \
+     verification/contractor/test/attribution.test.mjs \
+     verification/contractor/test/chrome-protocol.test.mjs \
+     verification/contractor/test/photo-registration.py \
+     verification/contractor/test/ocr.test.mjs \
+     verification/contractor/test/visible-mark.test.mjs \
+     verification/contractor/test/multiscale.test.mjs \
+     verification/contractor/test/fragment.test.mjs \
+     verification/contractor/test/legacy-journal.test.mjs \
+     /opt/app/verification/contractor/test/
+COPY backend/src/teamExternal/evidence-verifier.py /opt/app/backend/src/teamExternal/evidence-verifier.py
+
+
 # CVE-2026-33671 (HIGH) / CVE-2026-33672 (MEDIUM) - picomatch < 4.0.4
 # Next.js 16.x embarque picomatch ~4.0.3 pré-compilé dans dist/compiled/picomatch/.
 # Les npm overrides ne peuvent PAS patcher du code pré-compilé par Vercel.
@@ -384,6 +447,10 @@ RUN set -e; \
 RUN set -e; \
     find .next/standalone -type f -name package.json \
       -exec node -e 'const fs=require("fs"); for (const p of process.argv.slice(1)) { const j=JSON.parse(fs.readFileSync(p,"utf8")); if (j.name !== "postcss") continue; const m=/^(\d+)\.(\d+)\.(\d+)/.exec(j.version); if (!m) throw new Error("Invalid PostCSS version in "+p+": "+j.version); const v=m.slice(1).map(Number); if (v[0] < 8 || (v[0] === 8 && v[1] < 5) || (v[0] === 8 && v[1] === 5 && v[2] < 23)) throw new Error("Vulnerable PostCSS in "+p+": "+j.version); }' {} +
+
+# The standalone server does not install frontend dependencies. Keep its
+# runtime manifest accurate and exclude build-only lock metadata from the image.
+RUN node scripts/prepare-runtime-manifest.mjs
 
 # ---------------------------
 # Stage 3: Backend dependencies
@@ -480,8 +547,8 @@ COPY --from=runtime-init-builder /runtime-init /usr/local/bin/runtime-init
 # --- Frontend ---
 WORKDIR /opt/app/frontend
 # Next.js standalone : le contenu de .next/standalone va à la racine de frontend/
-# pour que server.js soit à /opt/app/frontend/server.js
-COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/package.json /opt/app/frontend/package-lock.json ./
+# pour que server.js soit à /opt/app/frontend/server.js. Son manifeste minimal
+# décrit le runtime réel. Le lockfile complet reste dans l'étape de build.
 COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/.next/standalone ./
 COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/.next/static ./.next/static
 COPY --chown=1000:1000 --from=frontend-builder /opt/app/frontend/public ./public
@@ -518,18 +585,11 @@ COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/global-
 # undici : requis pour configurer le ProxyAgent du fetch() natif Node.js.
 # Le paquet est également verrouillé dans backend/package-lock.json.
 # Sans ce paquet, les appels OAuth OIDC (Google) ignorent le proxy HTTP -> timeout.
-COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/boolean ./node_modules/boolean
-COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/roarr ./node_modules/roarr
 COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/serialize-error ./node_modules/serialize-error
 COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/matcher ./node_modules/matcher
 COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/globalthis ./node_modules/globalthis
 COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/semver ./node_modules/semver
-COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/detect-node ./node_modules/detect-node
-COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/es6-error ./node_modules/es6-error
 COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/escape-string-regexp ./node_modules/escape-string-regexp
-COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/json-stringify-safe ./node_modules/json-stringify-safe
-COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/semver-compare ./node_modules/semver-compare
-COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/sprintf-js ./node_modules/sprintf-js
 COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/define-data-property ./node_modules/define-data-property
 COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/define-properties ./node_modules/define-properties
 COPY --chown=1000:1000 --from=backend-deps /opt/app/backend/node_modules/es-define-property ./node_modules/es-define-property
@@ -546,6 +606,7 @@ COPY --from=caddy-builder /usr/bin/caddy /usr/bin/caddy
 WORKDIR /opt/app
 COPY --chown=1000:1000 --from=caddyfile-patcher /opt/app/reverse-proxy /opt/app/reverse-proxy
 COPY --chown=1000:1000 ./scripts/docker/entrypoint.mjs ./scripts/docker/entrypoint.mjs
+COPY --chown=1000:1000 ./scripts/docker/backend-node-options.cjs ./scripts/docker/backend-node-options.cjs
 
 EXPOSE 3000
 

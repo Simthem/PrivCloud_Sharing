@@ -43,20 +43,27 @@ limits are controlled by instance configuration, not by hard-coded tiers.
 - OIDC and LDAP authentication.
 - ClamAV integration for uploaded-file scanning.
 - Local filesystem and S3-compatible storage providers.
-- Video preview and text/code previews where browser memory allows.
+- Progressive PDF, Office, OpenDocument, image, video and source-code previews,
+  with local E2E decryption, document zoom and video fullscreen controls.
+- Temporary preview-only access for external contractors, with individually
+  encrypted, watermarked copies and a verifiable issuance register.
+- Account passkeys for sign-in and confirmation of sensitive actions, plus
+  linked-provider re-authentication for accounts without a local password.
 - Server-controlled adaptive upload windows with fair sharing between active
   files, bounded resource pressure, distributed idempotent finalization and
   S3-backed multipart recovery after an application restart or replacement.
 - Ordered parallel S3 range downloads with bounded memory and byte-accurate
   browser resume for individual files, including E2E streams.
 
+See [contractor access and evidence](./docs/EXTERNAL_ACCESS.md) and
+[document preview behavior](./docs/DOCUMENT_PREVIEWS.md) for their security
+boundaries, configuration and limits.
+
 ## Versioning
 
-Public `v1.24.0` adds the direct and resumable transfer pipeline, stronger
-session and outbound-request protections, Companion integration and
-privacy-preserving administration. It remains a self-hosted open-source
-release: transfer limits are instance settings and are not tied to a commercial
-plan or payment service.
+The self-hosted edition includes the direct and resumable transfer pipeline,
+Companion integrations, electronic signatures and team collaboration. Instance
+settings control transfer and collaboration limits. No payment service is required.
 
 See [CHANGELOG.md](./CHANGELOG.md) for the full list of features, fixes and CVE
 patches included in the public release.
@@ -263,6 +270,31 @@ docker build -f Dockerfile.full-build -t privcloud-sharing:full-build .
 
 That path is slower but useful for reproducibility audits and cache refreshes.
 
+## Local release checks
+
+Use Node.js 24.15 or later, Python 3, OpenSSL and Google Chrome. Install the
+locked dependencies before running checks:
+
+```sh
+npm ci
+npm --prefix backend ci
+npm --prefix frontend ci
+npm --prefix docs ci
+npm --prefix scripts ci
+npm --prefix verification/contractor ci
+npm run test:release
+npm run security:audit
+npm run lint
+npm --prefix backend run build
+npm --prefix frontend run build
+npm --prefix docs run build
+npm run build:client-tools -- --base-url https://files.example.org
+```
+
+The release suite creates disposable SQLite databases and synthetic HTTPS
+fixtures. The verification suite includes CPU-intensive measurements. It does
+not connect to an operator's application or publish release artifacts.
+
 ## Configuration
 
 Common environment variables:
@@ -275,6 +307,7 @@ Common environment variables:
 | `TEAM_MAX_MEMBERS` | Max members per team, `0` means unlimited | `30` in compose example |
 | `TEAM_MAX_OWNED_TEAMS` | Max teams a user can own, `0` means unlimited | `0` |
 | `TEAM_MAX_FOLDERS` | Max shared folders per team, `0` means unlimited | `10` in compose example |
+| `TEAM_MAX_EXTERNAL_SEATS` | Max active or pending contractor accesses per team, `0` means unlimited | `0` |
 | `TEAM_MAX_SHARE_SIZE` | Max bytes per team share, unset or `0` means unlimited | _(none)_ |
 | `TEAM_TOTAL_STORAGE_BYTES` | Total bytes per team, unset or `0` means unlimited | _(none)_ |
 | `NODE_MAX_OLD_SPACE_SIZE` | Backend V8 heap size in MB | `3072` |
@@ -396,13 +429,16 @@ proxy variables and the Node.js global-agent variables:
 
 ```yaml
 environment:
-  - NODE_OPTIONS=--dns-result-order=ipv4first --require /opt/app/backend/node_modules/global-agent/bootstrap
   - GLOBAL_AGENT_HTTP_PROXY=http://your-proxy:3128
   - GLOBAL_AGENT_NO_PROXY=localhost,127.0.0.1,::1
   - HTTP_PROXY=http://your-proxy:3128
   - HTTPS_PROXY=http://your-proxy:3128
   - NO_PROXY=localhost,127.0.0.1,::1
 ```
+
+The entrypoint preloads `/opt/app/backend/global-agent-bootstrap.js` for the
+backend automatically. Remove any old `NODE_OPTIONS` setting that preloads
+`global-agent/bootstrap` before recreating the container.
 
 If you build the image behind a proxy, pass build args too:
 

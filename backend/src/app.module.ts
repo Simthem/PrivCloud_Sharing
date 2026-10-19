@@ -4,6 +4,7 @@ import { ScheduleModule } from "@nestjs/schedule";
 import { AdminStatsModule } from "./adminStats/adminStats.module";
 import { AltchaModule } from "./altcha/altcha.module";
 import { AuthModule } from "./auth/auth.module";
+import { EvidenceVaultModule } from "./evidenceVault/evidenceVault.module";
 
 import { APP_GUARD } from "@nestjs/core";
 import { minutes, ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
@@ -23,6 +24,7 @@ import { PushModule } from "./push/push.module";
 import { ReverseShareModule } from "./reverseShare/reverseShare.module";
 import { ShareModule } from "./share/share.module";
 import { SigningModule } from "./signing/signing.module";
+import { TeamExternalModule } from "./teamExternal/team-external.module";
 import { TeamModule } from "./team/team.module";
 import { TeamNotificationModule } from "./teamNotification/teamNotification.module";
 import { UserModule } from "./user/user.module";
@@ -33,6 +35,7 @@ import { UserModule } from "./user/user.module";
     AdminStatsModule,
     AltchaModule,
     AuthModule,
+    EvidenceVaultModule,
     ShareModule,
     FileModule,
     EmailModule,
@@ -62,6 +65,7 @@ import { UserModule } from "./user/user.module";
     PushModule,
     SigningModule,
     TeamModule,
+    TeamExternalModule,
     TeamNotificationModule,
     CryptoModule,
   ],

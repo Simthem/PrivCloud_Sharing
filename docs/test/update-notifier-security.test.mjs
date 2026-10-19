@@ -67,9 +67,12 @@ test("chokidar still watches new Markdown and MDX files through brace globs", as
   const directory = mkdtempSync(path.join(tmpdir(), "privcloud-docs-watch-"));
   mkdirSync(path.join(directory, "nested"));
   writeFileSync(path.join(directory, "guide.md"), "initial");
+  // Polling keeps the brace glob under test without consuming inotify watches:
+  // CI containers share the runner kernel's per-UID quota, and concurrent jobs
+  // can exhaust it (ENOSPC) before this test places a single watch.
   const watcher = require("chokidar").watch(
     path.join(directory, "**/*.{md,mdx}"),
-    { ignoreInitial: false },
+    { ignoreInitial: false, usePolling: true, interval: 50 },
   );
   const found = [];
   watcher.on("add", (name) => found.push(path.relative(directory, name)));

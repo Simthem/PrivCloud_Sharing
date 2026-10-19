@@ -313,7 +313,7 @@ export default {
   // END /privacy
   // /admin/config
   "admin.config.config-file-warning.title": "Yapılandırma dosyası mevcut",
-  "admin.config.config-file-warning.description": "PrivCloud_Sharing'i bir yapılandırma dosyası ile kurduğunuz için, yapılandırmayı arayüz üzerinden değiştiremezsiniz.",
+  "admin.config.config-file-warning.description": "PrivCloud Sharing'i bir yapılandırma dosyası ile kurduğunuz için, yapılandırmayı arayüz üzerinden değiştiremezsiniz.",
   "admin.config.title": "Yapılandırma",
   "admin.config.category.general": "Genel",
   "admin.config.category.share": "Paylaşım",
@@ -324,7 +324,7 @@ export default {
   "admin.config.general.app-name": "Uygulama adı",
   "admin.config.general.app-name.description": "Uygulamanın adı",
   "admin.config.general.app-url": "Uygulama URL'si",
-  "admin.config.general.app-url.description": "PrivCloud_Sharing'in erişilebilir olduğu URL",
+  "admin.config.general.app-url.description": "PrivCloud Sharing'in erişilebilir olduğu URL",
   "admin.config.general.secure-cookies": "Güvenli çerezler",
   "admin.config.general.secure-cookies.description": "Çerezlerde güvenli bayrağının ayarlanıp ayarlanmayacağı. Etkinleştirilirse, site HTTP üzerinden erişildiğinde çalışmaz.",
   "admin.config.general.show-home-page": "Anasayfayı göster",
@@ -339,7 +339,7 @@ export default {
   "admin.config.cache.max-items": "Maksimum öğe sayısı",
   "admin.config.cache.max-items.description": "Önbellekteki maksimum öğe sayısı.",
   "admin.config.cache.redis-enabled": "Redis etkin",
-  "admin.config.cache.redis-enabled.description": "Normalde PrivCloud_Sharing bilgileri bellekte önbellekler. Birden fazla PrivCloud_Sharing örneği çalıştırıyorsanız, örnekler arasında önbelleği paylaşmak için Redis önbelleklemesini etkinleştirmeniz gerekir.",
+  "admin.config.cache.redis-enabled.description": "Normalde PrivCloud Sharing bilgileri bellekte önbellekler. Birden fazla PrivCloud Sharing örneği çalıştırıyorsanız, örnekler arasında önbelleği paylaşmak için Redis önbelleklemesini etkinleştirmeniz gerekir.",
   "admin.config.cache.redis-url": "Redis URL'si",
   "admin.config.cache.redis-url.description": "Önbellekleme için kullanılan Redis örneğine bağlanmak için URL.",
   "admin.config.email.enable-share-email-recipients": "E-posta alıcılarıyla paylaşımı etkinleştir",

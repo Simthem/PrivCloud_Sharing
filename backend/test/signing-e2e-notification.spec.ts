@@ -54,7 +54,7 @@ testCase(
         teamAccessLog: { create: async () => ({}) },
         user: { findUnique: async () => null },
       } as never,
-      { sendMail: async () => undefined } as never,
+      { sendSigningMail: async () => undefined } as never,
       { storeFileByKey: async () => (stored = true) } as never,
       { get: () => "https://example.invalid" } as never,
       {} as never,

@@ -13,6 +13,7 @@ import {
   getScheduledAuditWindow,
   TeamAuditSummary,
 } from "./team-audit.util";
+import { isCreationUploadDuplicate } from "./team-activity-names.util";
 
 @Injectable()
 export class TeamAuditService {
@@ -101,7 +102,7 @@ export class TeamAuditService {
     });
     if (existing?.status === "SENT") return existing;
 
-    const logs = await this.prisma.teamAccessLog.findMany({
+    const loggedEvents = await this.prisma.teamAccessLog.findMany({
       where: {
         teamId,
         createdAt: { gte: periodStart, lt: periodEnd },
@@ -110,10 +111,14 @@ export class TeamAuditService {
         action: true,
         actorEmail: true,
         fileName: true,
+        fileSize: true,
         createdAt: true,
       },
       orderBy: { createdAt: "desc" },
     });
+    // Uploads logged before the fix also appear once more, without a size:
+    // count each upload once.
+    const logs = loggedEvents.filter((log) => !isCreationUploadDuplicate(log));
 
     const keyHealth = team.members.reduce(
       (health, member) => {
@@ -252,7 +257,9 @@ export class TeamAuditService {
       },
     });
     if (!member) {
-      throw new ForbiddenException("Only Team owners and admins can access audit reports");
+      throw new ForbiddenException(
+        "Only Team owners and admins can access audit reports",
+      );
     }
   }
 
@@ -267,7 +274,9 @@ export class TeamAuditService {
   private parseStringArray(value: string): string[] {
     try {
       const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+      return Array.isArray(parsed)
+        ? parsed.filter((item) => typeof item === "string")
+        : [];
     } catch {
       return [];
     }

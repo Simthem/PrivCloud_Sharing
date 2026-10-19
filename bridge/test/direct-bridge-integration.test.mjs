@@ -133,7 +133,7 @@ test("managed WebDAV jobs send encrypted bytes straight to S3 with protected nam
     }
     const text = Buffer.concat(chunks).toString();
     assert.ok(
-      !text.includes(name) &&
+      !text.includes(name) && !text.includes("Folder/sub/") &&
         !text.includes(password) &&
         !text.includes(key.toString("base64url")),
     );
@@ -146,7 +146,7 @@ test("managed WebDAV jobs send encrypted bytes straight to S3 with protected nam
         key,
         `privcloud:file-meta:v1:direct-fixture:${body.id}`,
       );
-      assert.deepEqual(JSON.parse(label.toString()), { v: 1, n: name });
+      assert.deepEqual(JSON.parse(label.toString()), { v: 1, n: name, p: "Folder/sub/" + name });
       assert.equal(body.totalChunks, 3);
       assert.equal(body.chunkSize, 8 * 1024 * 1024);
       json(res, {
@@ -241,11 +241,13 @@ test("managed WebDAV jobs send encrypted bytes straight to S3 with protected nam
         {
           href: `https://127.0.0.1:${davPort}/file-a.bin`,
           name,
+          relativePath: "Folder/sub/" + name,
           size: content.length,
         },
         {
           href: `https://127.0.0.1:${davPort}/file-b.bin`,
           name,
+          relativePath: "Folder/sub/" + name,
           size: content.length,
         },
       ],

@@ -876,8 +876,8 @@ const SigningDetailPage = () => {
 
       queryClient.invalidateQueries({ queryKey: ["signing.document", docId] });
       toast.success(t("signing.toast.finalize-success"));
-    } catch (err) {
-      console.error("E2E finalization error:", err);
+    } catch {
+      console.error("E2E finalization error");
       toast.error(t("signing.toast.finalize-error"));
     } finally {
       setFinalizing(false);

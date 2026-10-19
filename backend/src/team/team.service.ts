@@ -1,11 +1,16 @@
+import { accountEmailExists } from "src/user/account-email.util";
 import {
   coveredRotationMetadata,
   readRotationMetadataUpdates,
+  RotationMetadataUpdate,
 } from "./team-rotation-metadata.util";
 import {
+  isValidEncryptedMetadata,
   isValidEncryptedShareInfo,
   isValidEncryptedFileRequestInfo,
+  isValidEncryptedTeamProfile,
 } from "src/file/file-metadata-scheme";
+import { isValidEncryptedAuditKey } from "src/teamExternal/team-external-audit.util";
 import {
   BadRequestException,
   ConflictException,
@@ -23,7 +28,17 @@ import { EmailService } from "src/email/email.service";
 import { ConfigService } from "src/config/config.service";
 import { FileService } from "src/file/file.service";
 import { TeamNotificationService } from "src/teamNotification/teamNotification.service";
+import { TeamExternalService } from "src/teamExternal/team-external.service";
 import { NEVER_EXPIRES_CUTOFF_DATE } from "src/utils/date.util";
+import {
+  ACTIVITY_ROTATION_ID_SEPARATOR,
+  activityIdPrefixes,
+  activityRotationId,
+  activityRotationRows,
+  attachActivityEncryptedFiles,
+  isCreationUploadDuplicate,
+  rotateActivityMetadata,
+} from "./team-activity-names.util";
 import {
   CreateTeamDTO,
   UpdateTeamDTO,
@@ -36,6 +51,8 @@ import {
   StartTeamKeyRotationDTO,
   UpdateTeamKeyRotationProgressDTO,
   RotateTeamMetadataDTO,
+  RotateTeamActivityNamesDTO,
+  SetTeamProfileDTO,
 } from "./dto/team.dto";
 
 export const parseConfiguredLimit = (
@@ -148,6 +165,7 @@ export class TeamService {
     private fileService: FileService,
     private teamNotificationService: TeamNotificationService,
     private emailOutbox: EmailOutboxService,
+    private teamExternalService: TeamExternalService,
   ) {}
 
   /**
@@ -511,7 +529,15 @@ export class TeamService {
       });
     }
 
-    // 3. Delete the team (cascade removes members, folders, access logs, invitations, etc.)
+    // 3. Remove the pages rendered for external contractors, which the
+    // cascade below would otherwise leave in storage.
+    const owner = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    });
+    await this.teamExternalService.purgeTeam(teamId, owner?.email ?? userId);
+
+    // 4. Delete the team (cascade removes members, folders, access logs, invitations, etc.)
     await this.prisma.team.delete({ where: { id: teamId } });
 
     this.logger.warn(
@@ -581,6 +607,8 @@ export class TeamService {
       }
     }
 
+    await this.assertNotExternalContractor(teamId, email, existingUser?.id);
+
     const baseUrl = await this.configService.get("general.appUrl");
     const smtpEnabled = await this.configService.get("smtp.enabled");
     const canSendEmail = smtpEnabled === true || smtpEnabled === "true";
@@ -644,6 +672,56 @@ export class TeamService {
     return { invited: true, email, invitationToken: invitation.token };
   }
 
+  /**
+   * For a signed-out visitor holding an invitation link: whether to sign in or
+   * create an account. Only the bearer of the unguessable token learns it.
+   */
+  async getInvitationAccount(token: string) {
+    const invitation = await this.prisma.teamInvitation.findUnique({
+      where: { token },
+      select: { email: true, status: true, expiresAt: true },
+    });
+    if (
+      !invitation ||
+      invitation.status !== "PENDING" ||
+      invitation.expiresAt <= new Date()
+    ) {
+      throw new NotFoundException("Invalid invitation");
+    }
+    const accountExists = await accountEmailExists(
+      this.prisma,
+      invitation.email,
+    );
+    return { email: invitation.email, accountExists };
+  }
+
+  /**
+   * A person holding a contractor seat of the team (invited or active) cannot
+   * also become a member: the admin revokes the seat first, so one account
+   * never has both the preview-only access and the team key.
+   */
+  private async assertNotExternalContractor(
+    teamId: string,
+    email: string,
+    userId?: string,
+  ) {
+    const seat = await this.prisma.teamExternalSeat.findFirst({
+      where: {
+        teamId,
+        status: { in: ["PENDING", "ACTIVE"] },
+        accessExpiresAt: { gt: new Date() },
+        OR: [{ email }, ...(userId ? [{ userId }] : [])],
+      },
+      select: { id: true },
+    });
+    if (seat) {
+      throw new ConflictException(
+        "This person is an external contractor of the team. Revoke their contractor access first.",
+        "external_contractor_is_not_member",
+      );
+    }
+  }
+
   async acceptInvitation(
     token: string,
     userId: string,
@@ -700,6 +778,12 @@ export class TeamService {
         "This invitation was sent to a different email address",
       );
     }
+    // The contractor seat may have been granted after this invitation.
+    await this.assertNotExternalContractor(
+      invitation.teamId,
+      user.email.toLowerCase(),
+      user.id,
+    );
 
     // Create or reactivate membership
     await this.prisma.teamMember.upsert({
@@ -1186,8 +1270,16 @@ export class TeamService {
 
     const team = await this.prisma.team.findUnique({ where: { id: teamId } });
     if (!team) throw new NotFoundException("Team not found");
+    // This one-shot rotation re-encrypts nothing: refuse it as soon as any
+    // ciphertext under K_team exists, or it would become unreadable.
     const metadata = await this.getTeamRotationMetadata(teamId, userId);
-    if (metadata.shares.length || metadata.requests.length)
+    if (
+      metadata.shares.length ||
+      metadata.requests.length ||
+      metadata.profile.length ||
+      metadata.auditKey.length ||
+      metadata.activity.length
+    )
       throw new ConflictException(
         "Encrypted team metadata requires the resumable key rotation workflow",
       );
@@ -1369,7 +1461,101 @@ export class TeamService {
         select: { id: true, encryptedInfo: true },
       }),
     ]);
-    return { shares, requests };
+    return {
+      shares,
+      requests,
+      profile: await this.teamProfileRows(teamId),
+      auditKey: await this.teamAuditKeyRows(teamId),
+      activity: activityRotationRows(await this.teamActivityNameLogs(teamId)),
+    };
+  }
+
+  /** Activity events that store encrypted file names (FILE_META_V1). */
+  private teamActivityNameLogs(
+    teamId: string,
+    client: Pick<PrismaService, "teamAccessLog"> = this.prisma,
+  ) {
+    return client.teamAccessLog.findMany({
+      where: { teamId, metadata: { contains: '"encryptedFiles"' } },
+      select: { id: true, metadata: true },
+    });
+  }
+
+  /** The audit key of contractor copies as rotation metadata: id = team id. */
+  private async teamAuditKeyRows(
+    teamId: string,
+    client: Pick<PrismaService, "teamAuditKey"> = this.prisma,
+  ) {
+    const key = await client.teamAuditKey.findUnique({
+      where: { teamId },
+      select: { encryptedKey: true },
+    });
+    return key ? [{ id: teamId, encryptedInfo: key.encryptedKey }] : [];
+  }
+
+  /** The team profile as rotation metadata: id = team id. */
+  private async teamProfileRows(
+    teamId: string,
+    client: Pick<PrismaService, "teamProfile"> = this.prisma,
+  ) {
+    const profile = await client.teamProfile.findUnique({
+      where: { teamId },
+      select: { encryptedInfo: true },
+    });
+    return profile
+      ? [{ id: teamId, encryptedInfo: profile.encryptedInfo }]
+      : [];
+  }
+
+  /**
+   * Company details of the team, for the watermark of contractor previews.
+   * Administrators only: members never receive the ciphertext either.
+   */
+  async getTeamProfile(teamId: string, userId: string) {
+    await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
+    const profile = await this.prisma.teamProfile.findUnique({
+      where: { teamId },
+      select: { encryptedInfo: true, keyVersion: true, updatedAt: true },
+    });
+    return profile ?? null;
+  }
+
+  async setTeamProfile(teamId: string, userId: string, dto: SetTeamProfileDTO) {
+    await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
+    const team = await this.prisma.team.findUnique({
+      where: { id: teamId },
+      select: { keyVersion: true },
+    });
+    if (!team) throw new NotFoundException("Team not found");
+    // Written with the current K_team only: an older key would leave details
+    // that the next rotation cannot open.
+    if (dto.keyVersion !== team.keyVersion) {
+      throw new ConflictException(
+        "The team key changed, reload the page and try again",
+      );
+    }
+    if (dto.encryptedInfo == null) {
+      await this.prisma.teamProfile.deleteMany({ where: { teamId } });
+      return null;
+    }
+    if (!isValidEncryptedTeamProfile(dto.encryptedInfo)) {
+      throw new BadRequestException("Invalid encrypted team profile");
+    }
+    return this.prisma.teamProfile.upsert({
+      where: { teamId },
+      create: {
+        teamId,
+        encryptedInfo: dto.encryptedInfo,
+        keyVersion: dto.keyVersion,
+        updatedById: userId,
+      },
+      update: {
+        encryptedInfo: dto.encryptedInfo,
+        keyVersion: dto.keyVersion,
+        updatedById: userId,
+      },
+      select: { encryptedInfo: true, keyVersion: true, updatedAt: true },
+    });
   }
 
   async stageTeamRotationMetadata(
@@ -1377,6 +1563,97 @@ export class TeamService {
     rotationId: string,
     userId: string,
     dto: RotateTeamMetadataDTO,
+  ) {
+    const rotation = await this.stagingRotation(teamId, rotationId, userId);
+    const valid =
+      dto.kind === "SHARE"
+        ? isValidEncryptedShareInfo
+        : dto.kind === "PROFILE"
+          ? isValidEncryptedTeamProfile
+          : dto.kind === "AUDIT"
+            ? isValidEncryptedAuditKey
+            : isValidEncryptedFileRequestInfo;
+    if (!valid(dto.expectedEncryptedInfo) || !valid(dto.encryptedInfo)) {
+      throw new BadRequestException("Invalid encrypted rotation metadata");
+    }
+    const row =
+      dto.kind === "SHARE"
+        ? await this.prisma.share.findFirst({
+            where: { id: dto.id, teamFolder: { teamId }, isE2EEncrypted: true },
+            select: { encryptedInfo: true },
+          })
+        : dto.kind === "PROFILE"
+          ? dto.id === teamId
+            ? await this.prisma.teamProfile.findUnique({
+                where: { teamId },
+                select: { encryptedInfo: true },
+              })
+            : null
+          : dto.kind === "AUDIT"
+            ? dto.id === teamId
+              ? ((await this.teamAuditKeyRows(teamId))[0] ?? null)
+              : null
+            : await this.prisma.teamFileRequest.findFirst({
+                where: { id: dto.id, teamId },
+                select: { encryptedInfo: true },
+              });
+    if (!row || row.encryptedInfo !== dto.expectedEncryptedInfo) {
+      throw new ConflictException("Team metadata changed during rotation");
+    }
+    await this.writeStagedRotationUpdates(rotation, [dto]);
+    return { success: true };
+  }
+
+  /**
+   * Stages activity names stored under the old K_team (see
+   * team-activity-names.util), up to 100 per call. Each must still be the
+   * stored value, and is replaced by its re-encryption or, when empty, dropped.
+   */
+  async stageTeamRotationActivityNames(
+    teamId: string,
+    rotationId: string,
+    userId: string,
+    dto: RotateTeamActivityNamesDTO,
+  ) {
+    const rotation = await this.stagingRotation(teamId, rotationId, userId);
+    const logs = await this.prisma.teamAccessLog.findMany({
+      where: {
+        id: { in: [...new Set(dto.entries.map((entry) => entry.logId))] },
+        teamId,
+      },
+      select: { id: true, metadata: true },
+    });
+    const current = new Map(
+      activityRotationRows(logs).map((row) => [row.id, row.encryptedInfo]),
+    );
+    const updates = dto.entries.map((entry): RotationMetadataUpdate => {
+      if (
+        !isValidEncryptedMetadata(entry.expectedEncryptedMetadata) ||
+        (entry.encryptedMetadata !== "" &&
+          !isValidEncryptedMetadata(entry.encryptedMetadata))
+      ) {
+        throw new BadRequestException("Invalid encrypted rotation metadata");
+      }
+      const id = activityRotationId(entry.logId, entry.fileId);
+      if (current.get(id) !== entry.expectedEncryptedMetadata) {
+        throw new ConflictException("Team metadata changed during rotation");
+      }
+      return {
+        kind: "ACTIVITY",
+        id,
+        expectedEncryptedInfo: entry.expectedEncryptedMetadata,
+        encryptedInfo: entry.encryptedMetadata,
+      };
+    });
+    await this.writeStagedRotationUpdates(rotation, updates);
+    return { success: true };
+  }
+
+  /** The active rotation, when the caller is its initiator. */
+  private async stagingRotation(
+    teamId: string,
+    rotationId: string,
+    userId: string,
   ) {
     await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
     const rotation = await this.prisma.teamKeyRotation.findFirst({
@@ -1391,33 +1668,28 @@ export class TeamService {
         "Only the active rotation initiator can stage metadata",
       );
     }
-    const valid =
-      dto.kind === "SHARE"
-        ? isValidEncryptedShareInfo
-        : isValidEncryptedFileRequestInfo;
-    if (!valid(dto.expectedEncryptedInfo) || !valid(dto.encryptedInfo)) {
-      throw new BadRequestException("Invalid encrypted rotation metadata");
-    }
-    const row =
-      dto.kind === "SHARE"
-        ? await this.prisma.share.findFirst({
-            where: { id: dto.id, teamFolder: { teamId }, isE2EEncrypted: true },
-            select: { encryptedInfo: true },
-          })
-        : await this.prisma.teamFileRequest.findFirst({
-            where: { id: dto.id, teamId },
-            select: { encryptedInfo: true },
-          });
-    if (!row || row.encryptedInfo !== dto.expectedEncryptedInfo) {
-      throw new ConflictException("Team metadata changed during rotation");
-    }
-    const updates = readRotationMetadataUpdates(
-      rotation.encryptedMetadataUpdates,
-    ).filter((u) => u.kind !== dto.kind || u.id !== dto.id);
-    updates.push(dto);
+    return rotation;
+  }
+
+  /** Adds or replaces staged updates, unless the rotation changed meanwhile. */
+  private async writeStagedRotationUpdates(
+    rotation: {
+      id: string;
+      status: string;
+      encryptedMetadataUpdates: string | null;
+    },
+    staged: RotationMetadataUpdate[],
+  ) {
+    const replaced = new Set(staged.map((u) => `${u.kind}\n${u.id}`));
+    const updates = [
+      ...readRotationMetadataUpdates(rotation.encryptedMetadataUpdates).filter(
+        (u) => !replaced.has(`${u.kind}\n${u.id}`),
+      ),
+      ...staged,
+    ];
     const written = await this.prisma.teamKeyRotation.updateMany({
       where: {
-        id: rotationId,
+        id: rotation.id,
         encryptedMetadataUpdates: rotation.encryptedMetadataUpdates,
         status: rotation.status,
       },
@@ -1427,7 +1699,6 @@ export class TeamService {
       throw new ConflictException(
         "Rotation metadata changed concurrently, resume the rotation",
       );
-    return { success: true };
   }
 
   async updateTeamKeyRotationProgress(
@@ -1517,6 +1788,9 @@ export class TeamService {
     });
     if (!callerMember) throw new NotFoundException("Team member not found");
     const now = new Date();
+    // Stored activity names that opened with neither key and were dropped.
+    // Recorded with the rotation, so that dropping names is never silent.
+    let droppedActivityNames = 0;
 
     await this.prisma.$transaction(
       async (tx) => {
@@ -1547,10 +1821,21 @@ export class TeamService {
           where: { teamId, encryptedInfo: { not: null } },
           select: { id: true, encryptedInfo: true },
         });
+        const profile = await this.teamProfileRows(teamId, tx);
+        const auditKey = await this.teamAuditKeyRows(teamId, tx);
+        const activityLogs = await this.teamActivityNameLogs(teamId, tx);
         const updates = [
           ...coveredRotationMetadata(shares, "SHARE", staged),
           ...coveredRotationMetadata(requests, "REQUEST", staged),
+          ...coveredRotationMetadata(profile, "PROFILE", staged),
+          ...coveredRotationMetadata(auditKey, "AUDIT", staged),
         ];
+        // Every stored activity name too, applied per event below.
+        const activityUpdates = coveredRotationMetadata(
+          activityRotationRows(activityLogs),
+          "ACTIVITY",
+          staged,
+        );
         for (const update of updates) {
           const where = {
             id: update.id,
@@ -1560,7 +1845,54 @@ export class TeamService {
           const changed =
             update.kind === "SHARE"
               ? await tx.share.updateMany({ where, data })
-              : await tx.teamFileRequest.updateMany({ where, data });
+              : update.kind === "PROFILE"
+                ? await tx.teamProfile.updateMany({
+                    where: {
+                      teamId: update.id,
+                      encryptedInfo: update.expectedEncryptedInfo,
+                    },
+                    data: {
+                      encryptedInfo: update.encryptedInfo,
+                      keyVersion: rotation.toVersion,
+                    },
+                  })
+                : update.kind === "AUDIT"
+                  ? await tx.teamAuditKey.updateMany({
+                      where: {
+                        teamId: update.id,
+                        encryptedKey: update.expectedEncryptedInfo,
+                      },
+                      data: {
+                        encryptedKey: update.encryptedInfo,
+                        keyVersion: rotation.toVersion,
+                      },
+                    })
+                  : await tx.teamFileRequest.updateMany({ where, data });
+          if (changed.count !== 1)
+            throw new ConflictException(
+              "Team metadata changed during rotation",
+            );
+        }
+        droppedActivityNames = activityUpdates.filter(
+          (update) => update.encryptedInfo === "",
+        ).length;
+        const activityByLog = new Map<string, Map<string, string>>();
+        for (const update of activityUpdates) {
+          const at = update.id.indexOf(ACTIVITY_ROTATION_ID_SEPARATOR);
+          const logId = update.id.slice(0, at);
+          const fileId = update.id.slice(at + 1);
+          if (!activityByLog.has(logId)) activityByLog.set(logId, new Map());
+          activityByLog.get(logId)!.set(fileId, update.encryptedInfo);
+        }
+        for (const log of activityLogs) {
+          const replacements = activityByLog.get(log.id);
+          if (!replacements || !log.metadata) continue;
+          const changed = await tx.teamAccessLog.updateMany({
+            where: { id: log.id, metadata: log.metadata },
+            data: {
+              metadata: rotateActivityMetadata(log.metadata, replacements),
+            },
+          });
           if (changed.count !== 1)
             throw new ConflictException(
               "Team metadata changed during rotation",
@@ -1606,6 +1938,7 @@ export class TeamService {
         toVersion: rotation.toVersion,
         files: rotation.totalFiles,
         reason: rotation.reason,
+        droppedActivityNames,
       },
     });
     return { success: true, keyVersion: rotation.toVersion };
@@ -2944,6 +3277,8 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
               actorName: true,
               fileName: true,
               folderId: true,
+              fileSize: true,
+              metadata: true,
               createdAt: true,
             },
             orderBy: { createdAt: "desc" },
@@ -3009,7 +3344,10 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
         createdAt: document.createdAt,
         author: document.creator,
       })),
-      activity,
+      // The size and metadata only served to read the events.
+      activity: (await this.withActivityFileNames(teamId, activity)).map(
+        ({ fileSize: _fileSize, metadata: _metadata, ...event }) => event,
+      ),
       capabilities: { canViewActivity, canViewSignatures },
     };
   }
@@ -3182,8 +3520,9 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       this.prisma.teamAccessLog.count({ where }),
     ]);
 
+    const readable = await this.withActivityFileNames(teamId, logs);
     return {
-      logs: logs.map((log) => ({
+      logs: readable.map((log) => ({
         ...log,
         fileSize: log.fileSize != null ? Number(log.fileSize) : null,
       })),
@@ -3194,6 +3533,65 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  /**
+   * Activity events as members see them: without the duplicate that team
+   * uploads used to log under their share id, and with the encrypted name of
+   * every FILE_META_V1 placeholder they name, for the browser to open with
+   * K_team. The server never sees those names. Whoever may view the activity
+   * already saw these names before they were encrypted.
+   */
+  private async withActivityFileNames<
+    T extends {
+      action: string;
+      fileName: string | null;
+      folderId: string | null;
+      fileSize: bigint | null;
+      metadata: string | null;
+    },
+  >(teamId: string, logs: T[]) {
+    const visible = logs.filter((log) => !isCreationUploadDuplicate(log));
+
+    const prefixes = activityIdPrefixes(visible);
+    const folderIds = [
+      ...new Set(
+        visible.map((log) => log.folderId).filter((id): id is string => !!id),
+      ),
+    ];
+    const files =
+      prefixes.length === 0 || folderIds.length === 0
+        ? []
+        : await this.prisma.file.findMany({
+            where: {
+              metadataScheme: { not: null },
+              encryptedMetadata: { not: null },
+              share: {
+                teamFolderId: { in: folderIds },
+                teamFolder: { teamId },
+              },
+              OR: prefixes.map((prefix) => ({ id: { startsWith: prefix } })),
+            },
+            select: {
+              id: true,
+              name: true,
+              shareId: true,
+              metadataScheme: true,
+              encryptedMetadata: true,
+              share: { select: { teamFolderId: true } },
+            },
+          });
+    return attachActivityEncryptedFiles(
+      visible,
+      files.map((file) => ({
+        fileId: file.id,
+        shareId: file.shareId,
+        name: file.name,
+        metadataScheme: file.metadataScheme as number,
+        encryptedMetadata: file.encryptedMetadata as string,
+        folderId: file.share.teamFolderId as string,
+      })),
+    );
   }
 
   /**
@@ -3692,13 +4090,15 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     return { updated: true, team: { id: updated.id, name: updated.name } };
   }
 
-  async adminDeleteTeam(teamId: string) {
+  async adminDeleteTeam(teamId: string, admin: User) {
     const team = await this.prisma.team.findUnique({ where: { id: teamId } });
     if (!team) throw new NotFoundException("Team not found");
 
     this.logger.warn(
       `ADMIN_DELETE_TEAM: Team ${teamId} deleted by platform admin`,
     );
+    // Contractor pages would stay in storage after the cascade.
+    await this.teamExternalService.purgeTeam(teamId, admin.email);
     await this.prisma.team.delete({ where: { id: teamId } });
     return { deleted: true, teamId };
   }

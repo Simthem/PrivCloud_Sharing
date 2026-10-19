@@ -1,5 +1,5 @@
 /**
- * E2E Encryption utilities for PrivCloud_Sharing
+ * E2E Encryption utilities for PrivCloud Sharing
  *
  * Algorithme : AES-256-GCM (Web Crypto API)
  * Format fichier chiffré : [IV 12 octets][ciphertext + tag 16 octets]
@@ -91,7 +91,7 @@ export async function decryptFile(
 }
 
 const GCM_TAG_LENGTH = 16;
-const ENCRYPTION_OVERHEAD = IV_LENGTH + GCM_TAG_LENGTH; // 28 octets par chunk
+export const ENCRYPTION_OVERHEAD = IV_LENGTH + GCM_TAG_LENGTH; // 28 octets par chunk
 
 /**
  * Déchiffre un fichier composé de N chunks chiffrés indépendamment.
@@ -1101,7 +1101,7 @@ export async function saveKeyWithPasskey(
       publicKey: {
         challenge,
         rp: {
-          name: "PrivCloud Sharing",
+          name: "PrivCloud",
           id: window.location.hostname,
         },
         user: {

@@ -14,7 +14,7 @@ import {
 
 const acquireUploadSlot = createUploadSlots(2);
 
-const VERSION = "1.25.2";
+const VERSION = "1.25.3";
 const NATIVE_HOST_NAME = "fr.privcloud.companion";
 const HOST = process.env.PRIVCLOUD_BRIDGE_HOST || "127.0.0.1";
 const PORT = Number(process.env.PRIVCLOUD_BRIDGE_PORT || "47631");
@@ -863,8 +863,19 @@ async function* readPlaintextChunks(
   }
 }
 
-function encryptFileName(key, shareId, fileId, name) {
-  const json = Buffer.from(JSON.stringify({ v: 1, n: name }));
+function normalizeRelativePath(value, name) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const invalid = () => Object.assign(new Error("Invalid relative folder path"), {statusCode:400});
+  if (typeof value !== "string" || value.length > 4096 || value.startsWith("/") || value.includes("\\")) throw invalid();
+  const segments = value.split("/");
+  if (segments.length < 2 || segments.length > 64 || segments.at(-1) !== name ||
+      segments.some(segment => !segment || segment.length > 255 || segment === "." || /\.{2}|[\x00-\x1f\x7f]|^[A-Za-z]:$/.test(segment))) throw invalid();
+  if (Buffer.byteLength(JSON.stringify({v:1,n:name,p:value})) > 4096) throw invalid();
+  return value;
+}
+
+function encryptFileName(key, shareId, fileId, name, relativePath) {
+  const json = Buffer.from(JSON.stringify({ v: 1, n: name, ...(relativePath && { p: relativePath }) }));
   if (json.length > 4096) throw new Error("File name is too long to encrypt");
   const plain = Buffer.alloc(
     Math.max(64, Math.ceil(json.length / 64) * 64),
@@ -910,6 +921,7 @@ async function uploadPrivCloudChunk({
   shareId,
   uploadToken,
   fileName,
+  relativePath,
   encryptedMetadata,
   fileId,
   chunkIndex,
@@ -942,6 +954,7 @@ async function uploadPrivCloudChunk({
           Authorization: `Bearer ${uploadToken}`,
           "Content-Type": "application/octet-stream",
           "X-File-Name": encodeURIComponent(fileName),
+          ...(relativePath && { "X-File-Relative-Path": encodeURIComponent(relativePath) }),
           ...(encryptedMetadata && { "X-File-Metadata": encryptedMetadata }),
           "X-PrivCloud-Bridge": state.bridgeId,
           "User-Agent": `PrivCloud-Bridge/${VERSION}`,
@@ -1091,6 +1104,7 @@ async function runWebDavUploadJob(job, payload) {
               payload.shareId,
               fileId,
               fileState.name,
+              selected.relativePath,
             )
           : undefined;
       let chunkIndex = 0;
@@ -1123,6 +1137,7 @@ async function runWebDavUploadJob(job, payload) {
         metadata: {
           id: fileId,
           name: uploadName,
+          ...(selected.relativePath && payload.fileMetadataScheme !== 1 && {relativePath:selected.relativePath}),
           ...(encryptedMetadata && { encryptedMetadata }),
         },
         fileSize: declaredSize,
@@ -1154,6 +1169,7 @@ async function runWebDavUploadJob(job, payload) {
             shareId: payload.shareId,
             uploadToken: payload.uploadToken,
             fileName: uploadName,
+            relativePath: payload.fileMetadataScheme === 1 ? undefined : selected.relativePath,
             encryptedMetadata,
             fileId,
             chunkIndex,
@@ -1275,6 +1291,7 @@ function bridgeHealthPayload() {
       directBrowserImport: true,
       managedEncryptedUpload: true,
       fileMetadataV1: true,
+      relativePathsV1: true,
       directS3Upload: true,
       localTokenAuthorization: true,
       openSourceLocalAuthorization: true,
@@ -1564,6 +1581,7 @@ function createWebDavUploadJob(body, _origin) {
     return {
       href,
       name: sanitizeFileName(file.name),
+      relativePath: normalizeRelativePath(file.relativePath, sanitizeFileName(file.name)),
       size,
       contentType:
         typeof file.contentType === "string" ? file.contentType : undefined,

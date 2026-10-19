@@ -39,7 +39,10 @@ import * as yup from "yup";
 import Meta from "../../components/Meta";
 import LanguagePicker from "../../components/account/LanguagePicker";
 import PushNotificationSection from "../../components/account/PushNotificationSection";
-import SigningPasskeysSection from "../../components/account/SigningPasskeysSection";
+import PasskeysSection, {
+  rememberPasskeyReauthIntent,
+  takePasskeyReauthIntent,
+} from "../../components/account/PasskeysSection";
 import ThemeSwitcher from "../../components/account/ThemeSwitcher";
 import showEnableTotpModal from "../../components/account/showEnableTotpModal";
 import useTranslate from "../../hooks/useTranslate.hook";
@@ -334,12 +337,6 @@ const E2EEncryptionSection = ({
         const legacyHash = await computeKeyHashFromEncodedLegacy(sanitized);
         valid = await userService.verifyEncryptionKey(legacyHash);
         if (!valid) {
-          console.debug(
-            "[E2E import] verification failed -- submitted hash:",
-            hash.slice(0, 8) + "...",
-            "key length:",
-            sanitized.length,
-          );
           setImportError(
             intl.formatMessage({ id: "account.e2e.import.mismatchError" }),
           );
@@ -937,6 +934,100 @@ const Account = () => {
     ),
   });
 
+  // Accounts with a linked OAuth provider may confirm 2FA changes by signing
+  // in again with it instead of typing a password (the only way for accounts
+  // without one). The provider sends the user back here with ?totpReauth=1
+  // and an httpOnly proof cookie scoped to the 2FA routes.
+  const linkedProviders = Object.keys(oauthStatus ?? {});
+  const [totpReauthReturned, setTotpReauthReturned] = useState(false);
+  const [passkeyReauthReturned, setPasskeyReauthReturned] = useState(false);
+  const [disableTotpCode, setDisableTotpCode] = useState("");
+  const totpReauthHandled = useRef(false);
+
+  const startTotpReauth = async (provider: string) => {
+    try {
+      // Refreshes an expired access token before the full-page navigation.
+      await authService.getOAuthStatus();
+    } catch {
+      // Without a fresh session the reauth route answers 401.
+    }
+    // A full navigation: the API route redirects to the provider.
+    window.location.assign(
+      new URL(
+        `/api/oauth/reauth/${encodeURIComponent(provider)}`,
+        window.location.origin,
+      ).toString(),
+    );
+  };
+
+  useEffect(() => {
+    if (!user || totpReauthHandled.current) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("totpReauth") !== "1") return;
+    totpReauthHandled.current = true;
+    params.delete("totpReauth");
+    const query = params.toString();
+    window.history.replaceState(
+      window.history.state,
+      "",
+      window.location.pathname +
+        (query ? `?${query}` : "") +
+        window.location.hash,
+    );
+    // The same proof serves a passkey: then 2FA is left alone.
+    if (takePasskeyReauthIntent()) {
+      setPasskeyReauthReturned(true);
+      return;
+    }
+    setTotpReauthReturned(true);
+    if (user.totpVerified) return;
+    authService
+      .enableTOTP()
+      .then((result) =>
+        showEnableTotpModal(modals, refreshUser, {
+          qrCode: result.qrCode,
+          secret: result.totpSecret,
+        }),
+      )
+      .catch(toast.axiosError);
+  }, [user, modals, refreshUser]);
+
+  const totpReauthButtons = (description: string) => (
+    <Stack gap="xs">
+      <Text size="sm" c="dimmed">
+        {t(description)}
+      </Text>
+      <Group justify="right">
+        {linkedProviders.map((provider) => (
+          <Button
+            key={provider}
+            variant="light"
+            onClick={() => startTotpReauth(provider)}
+          >
+            {t("account.card.security.totp.oauth.confirm", {
+              provider: t(`account.card.oauth.${provider}`),
+            })}
+          </Button>
+        ))}
+      </Group>
+    </Stack>
+  );
+
+  const totpReauthChoice =
+    linkedProviders.length > 0 ? (
+      totpReauthButtons("account.card.security.totp.oauth.description")
+    ) : (
+      <Alert color="orange">{t("account.card.security.totp.oauth.none")}</Alert>
+    );
+
+  // Shown under the password forms when a provider is linked.
+  const totpReauthAlternative = linkedProviders.length > 0 && (
+    <>
+      <Divider label={t("common.text.or")} labelPosition="center" my="md" />
+      {totpReauthButtons("account.card.security.totp.oauth.alternative")}
+    </>
+  );
+
   const refreshOAuthStatus = () => {
     authService
       .getOAuthStatus()
@@ -1150,7 +1241,46 @@ const Account = () => {
             </Tabs.List>
 
             <Tabs.Panel value="totp" pt="xs">
-              {user?.totpVerified ? (
+              {user?.totpVerified && totpReauthReturned ? (
+                <Stack>
+                  <TextInput
+                    variant="filled"
+                    label={t("account.modal.totp.codeOrBackup")}
+                    description={t(
+                      "account.card.security.totp.oauth.disableDescription",
+                    )}
+                    placeholder="123456 / A1B2C3D4"
+                    value={disableTotpCode}
+                    onChange={(event) =>
+                      setDisableTotpCode(event.currentTarget.value)
+                    }
+                  />
+                  <Group justify="right">
+                    <Button
+                      color="red"
+                      disabled={
+                        disableTotpCode.trim().length < 6 ||
+                        disableTotpCode.trim().length > 8
+                      }
+                      onClick={() =>
+                        authService
+                          .disableTOTP(disableTotpCode.trim())
+                          .then(() => {
+                            toast.success(t("account.notify.totp.disable"));
+                            setDisableTotpCode("");
+                            setTotpReauthReturned(false);
+                            refreshUser();
+                          })
+                          .catch(toast.axiosError)
+                      }
+                    >
+                      <FormattedMessage id="common.button.disable" />
+                    </Button>
+                  </Group>
+                </Stack>
+              ) : user && !user.hasPassword ? (
+                totpReauthChoice
+              ) : user?.totpVerified ? (
                 <>
                   <form
                     onSubmit={disableTotpForm.onSubmit((values) => {
@@ -1188,6 +1318,7 @@ const Account = () => {
                       </Group>
                     </Stack>
                   </form>
+                  {totpReauthAlternative}
                 </>
               ) : (
                 <>
@@ -1221,13 +1352,21 @@ const Account = () => {
                       </Group>
                     </Stack>
                   </form>
+                  {totpReauthAlternative}
                 </>
               )}
             </Tabs.Panel>
           </Tabs>
         </Paper>
         <E2EEncryptionSection refreshUser={refreshUser} />
-        <SigningPasskeysSection />
+        <PasskeysSection
+          linkedProviders={linkedProviders}
+          reauthReturned={passkeyReauthReturned}
+          onReauth={(provider) => {
+            rememberPasskeyReauthIntent();
+            void startTotpReauth(provider);
+          }}
+        />
         <PushNotificationSection />
         <Paper withBorder p="xl" mt="lg">
           <Title order={5} mb="xs">

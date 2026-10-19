@@ -173,7 +173,7 @@ _db_diag "after-seed"
 # Express buffers entire raw bodies in RAM. Tune NODE_MAX_OLD_SPACE_SIZE
 # together with UPLOAD_MAX_CHUNK_BYTES and the container mem_limit.
 NODE_MAX_OLD_SPACE_SIZE="${NODE_MAX_OLD_SPACE_SIZE:-3072}"
-NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE} --require ./node_modules/global-agent/bootstrap" node dist/src/main
+NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE} --require ./global-agent-bootstrap.js" node dist/src/main
 
 # Wait for all processes to finish
 wait

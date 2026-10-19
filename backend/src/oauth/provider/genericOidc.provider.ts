@@ -7,7 +7,12 @@ import { ConfigService } from "../../config/config.service";
 import { OAuthCallbackDto } from "../dto/oauthCallback.dto";
 import { OAuthSignInDto } from "../dto/oauthSignIn.dto";
 import { ErrorPageException } from "../exceptions/errorPage.exception";
-import { OAuthProvider, OAuthToken, AuthEndpointResult } from "./oauthProvider.interface";
+import {
+  OAuthProvider,
+  OAuthToken,
+  AuthEndpointResult,
+  AuthEndpointOptions,
+} from "./oauthProvider.interface";
 
 export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
   protected discoveryUri: string;
@@ -53,7 +58,10 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
     return this.jwk.data;
   }
 
-  async getAuthEndpoint(state: string): Promise<AuthEndpointResult> {
+  async getAuthEndpoint(
+    state: string,
+    options: AuthEndpointOptions = {},
+  ): Promise<AuthEndpointResult> {
     const configuration = await this.getConfiguration();
     const endpoint = configuration.authorization_endpoint;
 
@@ -73,6 +81,8 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
           redirect_uri: this.getRedirectUri(),
           state,
           nonce,
+          // Re-authentication: a fresh sign-in, not a silent session reuse.
+          ...(options.reauthenticate ? { prompt: "login", max_age: "0" } : {}),
         }).toString(),
       nonce,
     };
@@ -105,9 +115,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
 
     const tokenError = (token as unknown as Record<string, unknown>).error;
     if (tokenError) {
-      this.logger.error(
-        `Token exchange failed for provider ${this.name}`,
-      );
+      this.logger.error(`Token exchange failed for provider ${this.name}`);
     }
 
     return {
@@ -205,6 +213,9 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
       providerUsername: username,
       ...(isAdmin !== undefined && { isAdmin }),
       idToken: `${this.name}:${token.idToken}`,
+      ...(typeof idTokenData.auth_time === "number" && {
+        authTime: idTokenData.auth_time,
+      }),
     };
   }
 
@@ -336,4 +347,6 @@ export interface OidcIdToken {
   nickname: string;
   preferred_username: string;
   nonce: string;
+  // Sent when the request asked for max_age.
+  auth_time?: number;
 }

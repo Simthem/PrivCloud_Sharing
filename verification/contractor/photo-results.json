@@ -1,0 +1,75 @@
+{
+  "format": "privcloud-volunteered-screen-photos-v1",
+  "measuredAt": "2026-10-13",
+  "algorithmSha256": "fb0ba29f59b48c25f30692f69345aaa8f908619a641e597edcac693fe4e8bee6",
+  "registrationSha256": "9d192cfd29eed16d81bc756aa01b8aef269c0f446ce790fcc4b27a0670e39d6e",
+  "candidateCount": 8,
+  "threshold": 8,
+  "registration": "SIFT/RANSAC followed by optional content-only ECC. A bounded 8000-feature MAGSAC retry handles content-geometry failure. All accepted hypotheses are combined, not selected using a watermark score.",
+  "preproductionCase": {
+    "condition": "screen-photo-dense-text",
+    "width": 3072,
+    "height": 4080,
+    "rawStatus": "inconclusive",
+    "referenceAssistedStatus": "inconclusive",
+    "observation": "Both verdicts were reported by the operator using the deployed team verifier. Scores and derived production patterns were not supplied.",
+    "registrationSucceeded": true,
+    "contentInliers": 822,
+    "attributionVerifiedLocally": false,
+    "historicalPageEncoding": "Lossy WebP/JPEG was used by the previous renderer. Its contribution to this photo's detection failure is not established.",
+    "limits": "A separate production-copy failure, not another laboratory success. The evidence ZIP contains the manifest and journal, not the derived invisible patterns."
+  },
+  "cases": [
+    {
+      "condition": "screen-front",
+      "width": 3072,
+      "height": 4080,
+      "rawStatus": "inconclusive",
+      "rawTopScore": 4.877847947582573,
+      "referenceAssistedStatus": "match",
+      "referenceAssistedTopScore": 11.107425549786464,
+      "correctLaboratoryCopy": true,
+      "withoutExpectedCandidate": "inconclusive"
+    },
+    {
+      "condition": "screen-angle",
+      "width": 3072,
+      "height": 4080,
+      "rawStatus": "inconclusive",
+      "rawTopScore": 5.157146692289134,
+      "referenceAssistedStatus": "match",
+      "referenceAssistedTopScore": 17.666975714861383,
+      "correctLaboratoryCopy": true,
+      "withoutExpectedCandidate": "inconclusive"
+    }
+  ],
+  "additionalControls": [
+    {
+      "kind": "synthetic-perspective-unmarked",
+      "hypotheses": 2,
+      "falseMatches": 0,
+      "highestScore": 5.203049365672476
+    },
+    {
+      "kind": "synthetic-perspective-other-copy",
+      "hypotheses": 2,
+      "correct": 2,
+      "highestScore": 31.992514707343297
+    },
+    {
+      "kind": "unrelated-reference-real-photo",
+      "status": "registration-rejected"
+    }
+  ],
+  "limitations": [
+    "Two volunteered photographs of one displayed laboratory page, not a representative independent corpus.",
+    "Screen photographs were used during development. This is a development result, not held-out validation.",
+    "The direct browser/native detector still does not recognize these two raw photos. Offline reference-assisted preprocessing is required.",
+    "The correct unmarked raster reference is required. These results do not establish blind camera, print-scan or arbitrary-document recovery.",
+    "The additional geometric hypotheses are not statistically calibrated. No false-attribution probability is claimed.",
+    "Private source images, their hashes, EXIF and local filenames are not published. This report alone cannot independently reproduce the real photographs.",
+    "Physical device performance, capture conditions and production-copy attribution remain unvalidated."
+  ],
+  "historicalStateAsOf": "2026-10-13",
+  "newerSeparateCorpusReport": "preproduction-results.json"
+}

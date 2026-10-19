@@ -60,6 +60,11 @@ export default function OpenEncryptedNotification() {
           }
         }
       }
+      if (notification.type === "EXTERNAL_ACCESS_ENDED" && notification.team) {
+        void markNotificationRead(notification.id)
+        await router.replace(`/team/${encodeURIComponent(notification.team.id)}/settings#external-contractors`)
+        return
+      }
       await router.replace(
         notification.team
           ? `/team/${notification.team.id}`

@@ -1,3 +1,4 @@
+import { isLocalOrPrivateWebDavTarget } from "../../services/webdav.service";
 import {
   ActionIcon,
   Alert,
@@ -41,6 +42,8 @@ import {
 import { BridgeWebDavSource, FileUpload } from "../../types/File.type";
 import { byteToHumanSizeString } from "../../utils/fileSize.util";
 import toast from "../../utils/toast.util";
+import { attachUploadRelativePath } from "../../utils/uploadPath.util";
+import { collectWebDavFiles } from "../../utils/webDavTree.util";
 
 const LARGE_IMPORT_WARNING_BYTES = 2_000_000_000;
 const MAX_SELECTED_FILES = 20;
@@ -196,6 +199,7 @@ const WebDavImportModal = ({
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
   const [importProgress, setImportProgress] = useState(0);
+  const [enumeratedFiles, setEnumeratedFiles] = useState<number | null>(null);
   const [bridgeHealth, setBridgeHealth] = useState<BridgeHealth | null>(null);
   const [useBridge, setUseBridge] = useState(false);
   const [pairingBusy, setPairingBusy] = useState(false);
@@ -204,6 +208,8 @@ const WebDavImportModal = ({
 
   // Prevents auto-load from firing more than once per modal opening
   const autoLoadFiredRef = useRef(false);
+  const importControllerRef = useRef<AbortController | null>(null);
+  useEffect(() => () => importControllerRef.current?.abort(), []);
 
   const credentials: WebDavCredentials = useMemo(
     () => ({ endpoint, username, password }),
@@ -214,17 +220,15 @@ const WebDavImportModal = ({
     () => entries.filter((entry) => selectedIds.has(entry.id)),
     [entries, selectedIds],
   );
-  const fileEntries = useMemo(
-    () => entries.filter((entry) => !entry.isDirectory),
-    [entries],
-  );
-  const selectedVisibleFileCount = fileEntries.filter((entry) =>
+  const selectableEntries = useMemo(() => entries, [entries]);
+  const selectedVisibleEntryCount = selectableEntries.filter((entry) =>
     selectedIds.has(entry.id),
   ).length;
-  const allVisibleFilesSelected =
-    fileEntries.length > 0 && selectedVisibleFileCount === fileEntries.length;
-  const someVisibleFilesSelected =
-    selectedVisibleFileCount > 0 && !allVisibleFilesSelected;
+  const allVisibleEntriesSelected =
+    selectableEntries.length > 0 &&
+    selectedVisibleEntryCount === selectableEntries.length;
+  const someVisibleEntriesSelected =
+    selectedVisibleEntryCount > 0 && !allVisibleEntriesSelected;
   const selectedSize = selectedEntries.reduce(
     (sum, entry) => sum + entry.size,
     0,
@@ -405,7 +409,6 @@ const WebDavImportModal = ({
   };
 
   const toggleEntry = (entry: WebDavEntry) => {
-    if (entry.isDirectory) return;
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(entry.id)) next.delete(entry.id);
@@ -417,10 +420,10 @@ const WebDavImportModal = ({
   const toggleVisibleFiles = () => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (allVisibleFilesSelected) {
-        fileEntries.forEach((entry) => next.delete(entry.id));
+      if (allVisibleEntriesSelected) {
+        selectableEntries.forEach((entry) => next.delete(entry.id));
       } else {
-        fileEntries.forEach((entry) => next.add(entry.id));
+        selectableEntries.forEach((entry) => next.add(entry.id));
       }
       return next;
     });
@@ -440,45 +443,108 @@ const WebDavImportModal = ({
     setImporting(true);
     setError("");
     setImportProgress(0);
+    setEnumeratedFiles(0);
+    const controller = new AbortController();
+    importControllerRef.current = controller;
+    const imported: FileUpload[] = [];
 
     try {
-      const imported: FileUpload[] = [];
+      const selectedFiles = await collectWebDavFiles({
+        currentUrl,
+        selected: selectedEntries,
+        maxBytes: Math.max(0, maxShareSize - existingFilesSize),
+        maxFiles: bridgeManagedImport
+          ? bridgeHealth?.jobs?.maxFilesPerJob
+          : undefined,
+        signal: controller.signal,
+        onProgress: (files) => setEnumeratedFiles(files),
+        listDirectory: (url, signal) =>
+          listWebDavDirectoryViaBridge(credentials, url, signal),
+      });
+      setEnumeratedFiles(null);
       if (bridgeManagedImport) {
+        if (
+          selectedFiles.some((file) => !!file.uploadRelativePath) &&
+          !bridgeHealth?.capabilities.relativePathsV1
+        )
+          throw new Error("webdav.error.companionFolderUpdateRequired");
         imported.push(
-          ...selectedEntries.map((entry) =>
-            asBridgeWebDavUploadFile(credentials, entry),
+          ...selectedFiles.map((entry) =>
+            attachUploadRelativePath(
+              asBridgeWebDavUploadFile(credentials, entry),
+              entry.uploadRelativePath,
+            ),
           ),
         );
         setImportProgress(100);
       } else {
-        for (let i = 0; i < selectedEntries.length; i++) {
-          const entry = selectedEntries[i];
+        for (let i = 0; i < selectedFiles.length; i++) {
+          controller.signal.throwIfAborted();
+          const entry = selectedFiles[i];
           let file: File | undefined;
           let bridgeError: unknown;
-          if (bridgeEnabled) {
-            try {
-              file = await downloadWebDavFileViaBridge(credentials, entry);
-            } catch (e) {
-              bridgeError = e;
-            }
+          const requiresBridge = isLocalOrPrivateWebDavTarget(
+            entry.href || credentials.endpoint,
+          );
+          const bridgeTokenAvailable = hasBridgeToken();
+          if (!bridgeTokenAvailable) {
+            throw new Error("bridge.error.companionRequired");
+          }
+          try {
+            file = await downloadWebDavFileViaBridge(
+              credentials,
+              entry,
+              controller.signal,
+            );
+          } catch (e) {
+            bridgeError = e;
           }
           if (!file) {
-            throw bridgeError || new Error("bridge.error.localNetworkRequired");
+            if (requiresBridge) {
+              throw (
+                bridgeError || new Error("bridge.error.localNetworkRequired")
+              );
+            }
+            throw bridgeError || new Error("bridge.error.companionRequired");
           }
-          imported.push(asUploadFile(file));
-          setImportProgress(
-            Math.round(((i + 1) / selectedEntries.length) * 100),
+          imported.push(
+            attachUploadRelativePath(
+              asUploadFile(file),
+              entry.uploadRelativePath,
+            ),
           );
+          controller.signal.throwIfAborted();
+          if (
+            existingFilesSize +
+              imported.reduce((sum, file) => sum + file.size, 0) >
+            maxShareSize
+          ) {
+            throw new Error("webdav.error.quota");
+          }
+          setImportProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
         }
       }
 
+      controller.signal.throwIfAborted();
+      if (
+        existingFilesSize + imported.reduce((sum, file) => sum + file.size, 0) >
+        maxShareSize
+      ) {
+        throw new Error("webdav.error.quota");
+      }
       onFilesImported(imported);
       toast.success(t("webdav.toast.imported", { count: imported.length }));
       setSelectedIds(new Set());
       setImportProgress(0);
     } catch (e) {
-      setError(errorToMessage(e, t));
+      setError(
+        controller.signal.aborted
+          ? t("webdav.error.cancelled")
+          : errorToMessage(e, t),
+      );
     } finally {
+      importControllerRef.current = null;
+      setEnumeratedFiles(null);
       setImporting(false);
     }
   };
@@ -630,7 +696,7 @@ const WebDavImportModal = ({
             </Group>
             {/* Row 2: selection controls, disconnect, and selected size. */}
             <Group justify="flex-end" gap="xs" wrap="nowrap">
-              {fileEntries.length > 0 && (
+              {selectableEntries.length > 0 && (
                 <Button
                   size="compact-sm"
                   variant="light"
@@ -640,7 +706,7 @@ const WebDavImportModal = ({
                 >
                   <FormattedMessage
                     id={
-                      allVisibleFilesSelected
+                      allVisibleEntriesSelected
                         ? "webdav.clearSelection"
                         : "webdav.selectAll"
                     }
@@ -665,6 +731,12 @@ const WebDavImportModal = ({
         )}
 
         {entries.length > 0 && (
+          <Text size="xs" c="dimmed">
+            <FormattedMessage id="webdav.folderHint" />
+          </Text>
+        )}
+
+        {entries.length > 0 && (
           <ScrollArea h={420} offsetScrollbars>
             <Table stickyHeader verticalSpacing="sm">
               <thead>
@@ -672,9 +744,9 @@ const WebDavImportModal = ({
                   <th style={{ width: 58 }}>
                     <Checkbox
                       size="md"
-                      checked={allVisibleFilesSelected}
-                      indeterminate={someVisibleFilesSelected}
-                      disabled={fileEntries.length === 0 || importing}
+                      checked={allVisibleEntriesSelected}
+                      indeterminate={someVisibleEntriesSelected}
+                      disabled={selectableEntries.length === 0 || importing}
                       onChange={toggleVisibleFiles}
                       aria-label={t("webdav.selectAll")}
                     />
@@ -701,33 +773,22 @@ const WebDavImportModal = ({
                       }}
                     >
                       <td>
-                        {entry.isDirectory ? (
-                          <ActionIcon
-                            variant="subtle"
-                            size="lg"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              loadDirectory(entry.href, true);
-                            }}
-                            disabled={loading || importing}
-                            aria-label={t("webdav.openFolder")}
-                          >
-                            <TbFolder size={20} />
-                          </ActionIcon>
-                        ) : (
-                          <Checkbox
-                            size="md"
-                            checked={selectedIds.has(entry.id)}
-                            disabled={importing}
-                            onClick={(event) => event.stopPropagation()}
-                            onChange={() => toggleEntry(entry)}
-                            aria-label={entry.name}
-                          />
-                        )}
+                        <Checkbox
+                          size="md"
+                          checked={selectedIds.has(entry.id)}
+                          disabled={importing}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={() => toggleEntry(entry)}
+                          aria-label={entry.name}
+                        />
                       </td>
                       <td>
                         <Group gap="xs" wrap="nowrap">
-                          {!entry.isDirectory && <TbFile size={18} />}
+                          {entry.isDirectory ? (
+                            <TbFolder size={18} />
+                          ) : (
+                            <TbFile size={18} />
+                          )}
                           <Text
                             size="sm"
                             fw={entry.isDirectory ? 500 : 400}
@@ -781,7 +842,19 @@ const WebDavImportModal = ({
           </Alert>
         )}
 
-        {importing && <Progress value={importProgress} animated />}
+        {importing && (
+          <Stack gap="xs">
+            {enumeratedFiles !== null && (
+              <Text size="sm" role="status">
+                <FormattedMessage
+                  id="webdav.enumerating"
+                  values={{ count: enumeratedFiles }}
+                />
+              </Text>
+            )}
+            <Progress value={importProgress} animated />
+          </Stack>
+        )}
 
         <Group
           justify="space-between"
@@ -807,7 +880,12 @@ const WebDavImportModal = ({
             />
           </Text>
           <Group>
-            <Button variant="subtle" onClick={handleClose} disabled={importing}>
+            <Button
+              variant="subtle"
+              onClick={() =>
+                importing ? importControllerRef.current?.abort() : handleClose()
+              }
+            >
               <FormattedMessage id="common.button.cancel" />
             </Button>
             <Button

@@ -8,6 +8,8 @@ import { AuthService } from "./auth.service";
 import { AuthTotpService } from "./authTotp.service";
 import { JwtStrategy } from "./strategy/jwt.strategy";
 import { LdapService } from "./ldap.service";
+import { OAuthReauthService } from "./oauthReauth.service";
+import { PasskeyModule } from "src/passkey/passkey.module";
 import { UserModule } from "../user/user.module";
 import { OAuthModule } from "../oauth/oauth.module";
 
@@ -21,9 +23,16 @@ import { OAuthModule } from "../oauth/oauth.module";
     EmailVerificationModule,
     forwardRef(() => OAuthModule),
     UserModule,
+    PasskeyModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthTotpService, JwtStrategy, LdapService],
-  exports: [AuthService, AuthTotpService],
+  providers: [
+    AuthService,
+    AuthTotpService,
+    JwtStrategy,
+    LdapService,
+    OAuthReauthService,
+  ],
+  exports: [AuthService, AuthTotpService, OAuthReauthService],
 })
 export class AuthModule {}

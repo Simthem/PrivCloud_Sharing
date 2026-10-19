@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Request } from "express";
+import { Request, Response } from "express";
 import moment from "moment";
 import { User } from "@prisma/client";
 import { PrismaService } from "src/prisma/prisma.service";
@@ -13,6 +13,10 @@ import { ShareService } from "src/share/share.service";
 import { ConfigService } from "src/config/config.service";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
 import { TeamShareAccessService } from "src/share/team-share-access.service";
+import {
+  writeShareTokenCookie,
+  readShareVisitToken,
+} from "src/share/share-token-cookie.util";
 
 @Injectable()
 export class FileSecurityGuard extends ShareSecurityGuard {
@@ -46,7 +50,7 @@ export class FileSecurityGuard extends ShareSecurityGuard {
         : request.params.id,
     );
 
-    const shareToken = request.cookies[`share_${shareId}_token`];
+    const shareToken = readShareVisitToken(request, shareId);
 
     const share = await this._prisma.share.findUnique({
       where: { id: shareId },
@@ -64,7 +68,8 @@ export class FileSecurityGuard extends ShareSecurityGuard {
     if (share.uploadLocked === false) {
       await this.softAuthenticate(context);
       const user = request.user as User | undefined;
-      if (!user || share.creatorId !== user.id) throw new NotFoundException("File not found");
+      if (!user || share.creatorId !== user.id)
+        throw new NotFoundException("File not found");
     }
 
     // The controller can reuse the share already loaded for authorization.
@@ -97,17 +102,8 @@ export class FileSecurityGuard extends ShareSecurityGuard {
       if (share.security?.password)
         throw new ForbiddenException("This share is password protected");
 
-      if (share.security?.maxViews && share.security.maxViews <= share.views) {
-        throw new ForbiddenException(
-          "Maximum views exceeded",
-          "share_max_views_exceeded",
-        );
-      }
-
-      // Reverse share access control: when publicAccess is false, only the
-      // reverse-share creator and the share creator may download files.
-      // When publicAccess is true the files are E2E-encrypted and useless
-      // without K_rs (which lives in the URL fragment, never sent to server).
+      // SECURITY: Reverse share access control checked BEFORE the view counter is
+      // incremented, so that unauthorised requests do not inflate the view count.
       if (share.reverseShare && !share.reverseShare.publicAccess) {
         await this.softAuthenticate(context);
         const user = request.user as User | undefined;
@@ -122,7 +118,40 @@ export class FileSecurityGuard extends ShareSecurityGuard {
         }
       }
 
-      await this._shareService.increaseViewCount(share);
+      // An unfinished upload is inspected by its uploader, not visited.
+      if (share.uploadLocked === false) return true;
+
+      // SECURITY: Atomic check-and-increment to prevent TOCTOU race on maxViews.
+      // If maxViews is set, use a conditional update that only increments if views < maxViews.
+      if (share.security?.maxViews) {
+        const result = await this._prisma.share.updateMany({
+          where: { id: share.id, views: { lt: share.security.maxViews } },
+          data: { views: { increment: 1 } },
+        });
+        if (result.count === 0) {
+          throw new ForbiddenException(
+            "Maximum views exceeded",
+            "share_max_views_exceeded",
+          );
+        }
+      } else {
+        // No maxViews constraint - just increment
+        await this._shareService.increaseViewCount(share);
+      }
+
+      // A direct visit gets the same signed access token as the share page.
+      // Subsequent Office/PDF/media ranges and S3 authorizations belong to that
+      // visit, including after the last permitted view has been consumed.
+      const token = await this._shareService.generateShareToken(shareId);
+      writeShareTokenCookie(
+        request,
+        context.switchToHttp().getResponse<Response>(),
+        shareId,
+        token,
+        this._config.get("general.secureCookies"),
+        this._config.get("internal.jwtSecret"),
+      );
+
       return true;
     } else {
       return super.canActivate(context);

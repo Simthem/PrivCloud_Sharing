@@ -313,7 +313,7 @@ export default {
   // END /privacy
   // /admin/config
   "admin.config.config-file-warning.title": "Konfiguracioni fajl je prisutan",
-  "admin.config.config-file-warning.description": "Pošto ste konfigurisali PrivCloud_Sharing pomoću konfiguracionog fajla, ne možete menjati konfiguraciju putem korisničkog interfejsa (UI).",
+  "admin.config.config-file-warning.description": "Pošto ste konfigurisali PrivCloud Sharing pomoću konfiguracionog fajla, ne možete menjati konfiguraciju putem korisničkog interfejsa (UI).",
   "admin.config.title": "Konfiguracija",
   "admin.config.category.general": "Opšte",
   "admin.config.category.share": "Deljenje",
@@ -324,7 +324,7 @@ export default {
   "admin.config.general.app-name": "Naziv aplikacije",
   "admin.config.general.app-name.description": "Naziv aplikacije",
   "admin.config.general.app-url": "URL aplikacije",
-  "admin.config.general.app-url.description": "Na kojoj URL adresi je dostupan PrivCloud_Sharing",
+  "admin.config.general.app-url.description": "Na kojoj URL adresi je dostupan PrivCloud Sharing",
   "admin.config.general.secure-cookies": "Bezbedni kolačići",
   "admin.config.general.secure-cookies.description": "Da li želite da postavite zastavicu za bezbednost na kolačiće? Ako je omogućeno, sajt neće funkcionisati kada mu pristupate preko HTTP-a.",
   "admin.config.general.show-home-page": "Prikaži početnu stranicu",
@@ -339,7 +339,7 @@ export default {
   "admin.config.cache.max-items": "Maksimalan broj stavki",
   "admin.config.cache.max-items.description": "Maksimalan broj stavki u kešu.",
   "admin.config.cache.redis-enabled": "Redis omogućen",
-  "admin.config.cache.redis-enabled.description": "PrivCloud_Sharing obično kešira informacije u memoriji. Ako pokrećete više instanci PrivCloud_Sharing-a, potrebno je da omogućite Redis keširanje kako bi se keš delio između instanci.",
+  "admin.config.cache.redis-enabled.description": "PrivCloud Sharing obično kešira informacije u memoriji. Ako pokrećete više instanci PrivCloud Sharing-a, potrebno je da omogućite Redis keširanje kako bi se keš delio između instanci.",
   "admin.config.cache.redis-url": "Redis URL",
   "admin.config.cache.redis-url.description": "URL za povezivanje sa Redis instancom koja se koristi za keširanje.",
   "admin.config.email.enable-share-email-recipients": "Omogući deljenje sa primaocima imejlom",

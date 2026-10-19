@@ -31,6 +31,6 @@ import { SigningEvidenceService } from "./signing-evidence.service";
     PdfSigningService,
     TrustedListMonitorService,
   ],
-  exports: [SigningService, TrustedListMonitorService],
+  exports: [SigningService, TrustedListMonitorService, PdfSigningService],
 })
 export class SigningModule {}

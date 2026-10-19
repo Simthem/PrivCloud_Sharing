@@ -407,7 +407,7 @@ export async function reencryptAll(
         shareKeysRewrapped++;
         reportShareCryptoEvent("rewrap_ok", SHARE_DEK_V1);
       } catch (e: any) {
-        console.error(`[reencrypt] Share key rewrap failed for ${share.id}`);
+        console.error("Share key update failed");
         shareKeysFailed++;
         failedDetails.push(
           `Share ${share.id}: ${e?.message ?? "unknown error"}`,
@@ -545,10 +545,7 @@ export async function reencryptAll(
               : msg;
 
             if (fileAttempt < MAX_FILE_RETRIES) {
-              console.warn(
-                `[reencrypt] File ${file.name ?? file.id} attempt ${fileAttempt + 1}/${MAX_FILE_RETRIES + 1} failed, retrying...`,
-                errorHint,
-              );
+              console.warn("File key update failed, retrying");
               await sleep(3000 * Math.pow(2, fileAttempt));
               continue; // next retry attempt
             }
@@ -607,7 +604,7 @@ export async function reencryptAll(
         onProgress?.({ ...progress, failedDetails: [...failedDetails] });
       } catch (e: any) {
         // Track reverse share failure but continue with others
-        console.error(`[reencrypt] Phase 2 failed for RS ${rs.id}:`, e);
+        console.error("Reverse share key update failed");
         reverseSharesFailed++;
         progress.reverseSharesFailed = reverseSharesFailed;
         progress.reverseSharesDone++;
@@ -948,20 +945,13 @@ export async function reencryptTeam(
                 : msg;
 
             if (fileAttempt < MAX_FILE_RETRIES) {
-              console.warn(
-                `[reencryptTeam] File ${file.name ?? file.id} (share ${share.id}) attempt ${fileAttempt + 1}/${MAX_FILE_RETRIES + 1} failed, retrying...`,
-                errorHint,
-              );
+              console.warn("File key update failed, retrying");
               await sleep(Math.min(2000 * Math.pow(2, fileAttempt), 30_000));
               continue;
             }
 
             // All retries exhausted
-            console.error(
-              `[reencryptTeam] File ${file.name ?? file.id} (share ${share.id}) FAILED after ${MAX_FILE_RETRIES + 1} attempts:`,
-              errorHint,
-              e,
-            );
+            console.error("File key update failed");
             filesFailed++;
             filesDone++;
             failedDetails.push(`${file.name ?? file.id}: ${errorHint}`);

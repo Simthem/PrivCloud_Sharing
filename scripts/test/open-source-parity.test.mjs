@@ -50,6 +50,7 @@ test("maintained OSS runtime source contains no commercial access gates", async 
     /planRequired/i,
     /\bStripe\b/i,
     /\bentitlement\b/i,
+    /\b(?:PlanGuard|RequirePlan)\b/,
     /PremiumClientAccess/i,
     /\bSaaS\b/i,
   ];
@@ -248,6 +249,7 @@ test("all release packages stay on the same version", async () => {
     "bridge/package.json",
     "docs/package.json",
     "scripts/package.json",
+    "verification/contractor/package.json",
   ];
   const versions = await Promise.all(
     manifests.map(async (manifest) => JSON.parse(await read(manifest)).version),
@@ -274,6 +276,7 @@ test("all release packages stay on the same version", async () => {
     "frontend/package-lock.json",
     "docs/package-lock.json",
     "scripts/package-lock.json",
+    "verification/contractor/package-lock.json",
   ];
   const lockVersions = await Promise.all(
     lockfiles.map(async (lockfile) => {
@@ -285,6 +288,24 @@ test("all release packages stay on the same version", async () => {
     new Set(lockVersions.flat()),
     new Set([versions[0]]),
     JSON.stringify({ lockfiles, lockVersions }),
+  );
+
+  for (const manifest of [
+    "integrations/browser-extension/manifest.json",
+    "integrations/thunderbird-extension/manifest.json",
+  ]) {
+    assert.equal(
+      JSON.parse(await read(manifest)).version,
+      versions[0],
+      `${manifest} must declare the released version`,
+    );
+  }
+  assert.equal(
+    /<Version>([^<]+)<\/Version>/.exec(
+      await read("integrations/outlook-addin/manifest.xml"),
+    )?.[1],
+    `${versions[0]}.0`,
+    "the Outlook manifest must declare the released version",
   );
 });
 

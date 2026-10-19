@@ -1,5 +1,9 @@
 import { importKeyFromBase64 } from "./crypto.util";
 import { openFileName, openShareInfo } from "./fileMetadata.util";
+import {
+  type ActivityEncryptedFile,
+  openActivityNames,
+} from "./teamActivityNames.util";
 
 export type TeamSearchKind = "FILE" | "FOLDER" | "SIGNATURE" | "ACTIVITY";
 
@@ -129,22 +133,37 @@ export function buildTeamSearchResults(
   ];
 
   const query = normalize(filters.query);
-  const from = filters.dateFrom ? new Date(`${filters.dateFrom}T00:00:00`).getTime() : null;
-  const to = filters.dateTo ? new Date(`${filters.dateTo}T23:59:59.999`).getTime() : null;
+  const from = filters.dateFrom
+    ? new Date(`${filters.dateFrom}T00:00:00`).getTime()
+    : null;
+  const to = filters.dateTo
+    ? new Date(`${filters.dateTo}T23:59:59.999`).getTime()
+    : null;
 
   return results
-    .filter((result) => !filters.kind || filters.kind === "ALL" || result.kind === filters.kind)
-    .filter((result) => !filters.folderId || result.folderId === filters.folderId)
+    .filter(
+      (result) =>
+        !filters.kind || filters.kind === "ALL" || result.kind === filters.kind,
+    )
+    .filter(
+      (result) => !filters.folderId || result.folderId === filters.folderId,
+    )
     .filter((result) => !filters.author || result.author === filters.author)
-    .filter((result) => !filters.extension || result.extension === filters.extension)
+    .filter(
+      (result) => !filters.extension || result.extension === filters.extension,
+    )
     .filter((result) => !filters.status || result.status === filters.status)
     .filter((result) => {
       const timestamp = new Date(result.createdAt).getTime();
-      return (from == null || timestamp >= from) && (to == null || timestamp <= to);
+      return (
+        (from == null || timestamp >= from) && (to == null || timestamp <= to)
+      );
     })
     .filter((result) => {
       if (!query) return true;
-      return normalize(`${result.name} ${result.secondary} ${result.status || ""}`).includes(query);
+      return normalize(
+        `${result.name} ${result.secondary} ${result.status || ""}`,
+      ).includes(query);
     })
     .sort(
       (a, b) =>
@@ -165,21 +184,32 @@ type EncryptedSearchFile = {
 
 /**
  * Index with the FILE_META_V1 file names, folder paths and share titles
- * opened with K_team, so that matching and ranking see the real values.
- * The server only sent placeholders for them. An index without encrypted
- * entries is returned as it is.
+ * opened with K_team, so that matching and ranking see the real values, and
+ * the same for the file names of activity events. The server only sent
+ * placeholders for them. An index without encrypted entries is returned as it
+ * is.
  */
 export async function openSearchIndexNames<
-  T extends { files: EncryptedSearchFile[] },
+  T extends {
+    files: EncryptedSearchFile[];
+    activity?: Array<{
+      fileName?: string | null;
+      encryptedFiles?: ActivityEncryptedFile[];
+    }>;
+  },
 >(index: T, teamKeyB64: string): Promise<T> {
   if (
     !index.files.some(
       (file) => file.metadataScheme != null || !!file.shareEncryptedInfo,
-    )
+    ) &&
+    !index.activity?.some((event) => !!event.encryptedFiles?.length)
   ) {
     return index;
   }
   const key = await importKeyFromBase64(teamKeyB64);
+  const activity = index.activity
+    ? await openActivityNames(index.activity, key)
+    : index.activity;
   const shareTitles = new Map<string, Promise<string | undefined>>();
   const files = await Promise.all(
     index.files.map(async (file) => {
@@ -206,5 +236,5 @@ export async function openSearchIndexNames<
       };
     }),
   );
-  return { ...index, files };
+  return { ...index, files, activity };
 }

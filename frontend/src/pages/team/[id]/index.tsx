@@ -1,4 +1,7 @@
 import { rotateTeamMetadata } from "../../../utils/teamRotationMetadata.util";
+import { externalActivityLabel } from "../../../utils/externalActivity.util";
+import TeamRotationFocus from "../../../components/team/TeamRotationFocus";
+import Link from "next/link";
 import TeamEncryptionStatus from "../../../components/team/TeamEncryptionStatus";
 import TeamDashboardMetrics from "../../../components/team/TeamDashboardMetrics";
 import dashboardStyles from "../../../components/team/TeamDashboard.module.css";
@@ -73,7 +76,7 @@ import {
 import { useIntl } from "react-intl";
 import TeamFileRequests from "../../../components/team/TeamFileRequests";
 import Meta from "../../../components/Meta";
-import teamService, { TeamSearchIndex } from "../../../services/team.service";
+import teamService, { AccessLog, TeamSearchIndex } from "../../../services/team.service";
 import signingService from "../../../services/signing.service";
 import {
   generateEncryptionKey,
@@ -101,6 +104,7 @@ import {
   openSearchIndexNames,
   TeamSearchKind,
 } from "../../../utils/teamSearch.util";
+import { openActivityNames } from "../../../utils/teamActivityNames.util";
 import searchStyles from "./TeamSearchPanel.module.css";
 
 const signatureStatusTranslationKeys: Record<string, string> = {
@@ -295,9 +299,9 @@ const TeamDashboard = () => {
       queryClient.invalidateQueries({
         queryKey: ["team.keyRotation", teamIdStr],
       });
-    } catch (e) {
+    } catch {
       toast.error(t("team.dashboard.e2e.initError"));
-      console.error(e);
+      console.error("Team operation failed");
     } finally {
       setE2eInitializing(false);
     }
@@ -320,7 +324,7 @@ const TeamDashboard = () => {
       } else {
         toast.error(t("team.dashboard.e2e.shareLinkError"));
       }
-      console.error(e);
+      console.error("Team operation failed");
     }
   };
 
@@ -335,9 +339,9 @@ const TeamDashboard = () => {
       queryClient.invalidateQueries({
         queryKey: ["team.keyRotation", teamIdStr],
       });
-    } catch (e) {
+    } catch {
       toast.error(t("team.dashboard.e2e.staleKey.clearError"));
-      console.error(e);
+      console.error("Team operation failed");
     } finally {
       setClearingStaleKey(false);
     }
@@ -488,10 +492,10 @@ const TeamDashboard = () => {
         setTeamKeyStale(true);
         closeRotate();
         toast.error(t("team.dashboard.e2e.staleKey.toast"));
-        console.error(e);
+        console.error("Team operation failed");
       } else {
         toast.error(t("team.dashboard.e2e.rotateError"));
-        console.error(e);
+        console.error("Team operation failed");
       }
       if (currentRotationId) {
         teamService
@@ -560,10 +564,13 @@ const TeamDashboard = () => {
     const selected = viewport?.querySelector<HTMLElement>(
       '[role="tab"][data-active]',
     );
-    if (isMobile && viewport && selected) {
-      viewport.scrollLeft +=
-        selected.getBoundingClientRect().left -
-        viewport.getBoundingClientRect().left;
+    if (!isMobile || !viewport || !selected) return;
+    const tab = selected.getBoundingClientRect();
+    const strip = viewport.getBoundingClientRect();
+    if (tab.right <= strip.left) {
+      viewport.scrollLeft += tab.left - strip.left;
+    } else if (tab.left >= strip.right) {
+      viewport.scrollLeft += tab.right - strip.right;
     }
   }, [activeTab, isMobile, teamLoading]);
 
@@ -590,6 +597,36 @@ const TeamDashboard = () => {
     enabled: !!teamIdStr && canViewActivity && activeTab === "activity",
     staleTime: 30_000,
   });
+  // FILE_META_V1: encrypted file names are opened with K_team, the server
+  // only recorded their placeholders.
+  const activityTeamKey = useTeamKey(
+    teamIdStr,
+    canViewActivity && activeTab === "activity",
+  );
+  const [openedLogs, setOpenedLogs] = useState<{
+    source: AccessLog[];
+    logs: AccessLog[];
+  } | null>(null);
+  useEffect(() => {
+    const logs = logsData?.logs;
+    if (!logs || !activityTeamKey) return;
+    let cancelled = false;
+    void importKeyFromBase64(activityTeamKey)
+      .then((key) => openActivityNames(logs, key))
+      .then((opened) => {
+        if (!cancelled) setOpenedLogs({ source: logs, logs: opened });
+      })
+      .catch(() => {
+        // Keep the placeholders when K_team cannot be imported.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [logsData, activityTeamKey]);
+  const activityLogs =
+    openedLogs && openedLogs.source === logsData?.logs
+      ? openedLogs.logs
+      : logsData?.logs;
 
   // Fetch team signature documents
   const { data: teamSignaturesData } = useQuery({
@@ -644,7 +681,7 @@ const TeamDashboard = () => {
           setTeamKeyStale(true);
           toast.error(t("team.dashboard.e2e.staleKey.toast"));
         }
-        console.warn("[E2E] Could not build secure invite link:", e);
+        console.warn("[E2E] Could not build secure invite link");
       }
 
       closeInvite();
@@ -808,158 +845,165 @@ const TeamDashboard = () => {
         {metrics && <TeamDashboardMetrics metrics={metrics} />}
 
         {/* E2E banner */}
-        {isTeamAdmin && keyRotationStatus?.activeRotation && (
-          <Alert
-            icon={<TbKey size={18} />}
-            color={
-              keyRotationStatus.activeRotation.canResume ? "orange" : "blue"
-            }
-            mb="md"
-            title={t("team.dashboard.rotation.inProgress")}
-          >
-            <Group justify="space-between" align="center" wrap="wrap">
-              <Box style={{ flex: 1, minWidth: 220 }}>
-                <Text size="sm" mb={6}>
-                  {t("team.dashboard.rotation.progress", {
-                    done: keyRotationStatus.activeRotation.processedFiles,
-                    total: keyRotationStatus.activeRotation.totalFiles,
-                  })}
-                </Text>
-                <Progress
-                  value={
-                    keyRotationStatus.activeRotation.totalFiles > 0
-                      ? (keyRotationStatus.activeRotation.processedFiles /
-                          keyRotationStatus.activeRotation.totalFiles) *
-                        100
-                      : 100
-                  }
-                  size="sm"
-                />
-              </Box>
-              {keyRotationStatus.activeRotation.canResume && (
-                <Button
-                  size="compact-sm"
-                  color="orange"
-                  variant="light"
-                  leftSection={<TbKey size={14} />}
-                  onClick={openRotate}
-                >
-                  {t("team.dashboard.rotation.resume")}
-                </Button>
-              )}
-            </Group>
-          </Alert>
-        )}
-        {!isTeamAdmin && keyRotationStatus?.activeRotation && (
-          <Alert
-            icon={<TbKey size={18} />}
-            color="blue"
-            mb="md"
-            title={t("team.dashboard.rotation.inProgress")}
-          >
-            <Text size="sm">
-              {t("team.dashboard.rotation.memberUnavailable")}
-            </Text>
-          </Alert>
-        )}
-        {isTeamAdmin &&
-          !keyRotationStatus?.activeRotation &&
-          keyRotationStatus?.policy.reminderActive && (
+        <TeamRotationFocus
+          ready={isTeamAdmin && myWrappedTeamKey !== undefined}
+        >
+          {isTeamAdmin && keyRotationStatus?.activeRotation && (
             <Alert
               icon={<TbKey size={18} />}
-              color={keyRotationStatus.policy.isDue ? "red" : "yellow"}
-              mb="md"
-              title={
-                keyRotationStatus.policy.isDue
-                  ? t("team.dashboard.rotation.due")
-                  : t("team.dashboard.rotation.soon")
+              color={
+                keyRotationStatus.activeRotation.canResume ? "orange" : "blue"
               }
+              mb="md"
+              title={t("team.dashboard.rotation.inProgress")}
             >
               <Group justify="space-between" align="center" wrap="wrap">
-                <Text size="sm">
-                  {t("team.dashboard.rotation.nextDue", {
-                    date: new Date(
-                      keyRotationStatus.policy.nextDueAt,
-                    ).toLocaleDateString(intl.locale),
-                  })}
-                </Text>
-                {keyRotationStatus.canOrchestrate && !teamKeyStale && (
+                <Box style={{ flex: 1, minWidth: 220 }}>
+                  <Text size="sm" mb={6}>
+                    {t("team.dashboard.rotation.progress", {
+                      done: keyRotationStatus.activeRotation.processedFiles,
+                      total: keyRotationStatus.activeRotation.totalFiles,
+                    })}
+                  </Text>
+                  <Progress
+                    value={
+                      keyRotationStatus.activeRotation.totalFiles > 0
+                        ? (keyRotationStatus.activeRotation.processedFiles /
+                            keyRotationStatus.activeRotation.totalFiles) *
+                          100
+                        : 100
+                    }
+                    size="sm"
+                  />
+                </Box>
+                {keyRotationStatus.activeRotation.canResume && (
                   <Button
                     size="compact-sm"
-                    color={keyRotationStatus.policy.isDue ? "red" : "yellow"}
+                    color="orange"
                     variant="light"
-                    onClick={openRotate}
                     leftSection={<TbKey size={14} />}
+                    onClick={openRotate}
                   >
-                    {t("team.dashboard.e2e.rotateButton")}
+                    {t("team.dashboard.rotation.resume")}
                   </Button>
                 )}
               </Group>
             </Alert>
           )}
-        {myWrappedTeamKey === undefined ? null : myWrappedTeamKey &&
-          teamKeyStale ? (
-          <Alert
-            icon={<TbLock size={18} />}
-            color="red"
-            mb="md"
-            title={t("team.dashboard.e2e.staleKey.title")}
-          >
-            <Text size="sm" mb="sm">
-              {t("team.dashboard.e2e.staleKey.desc")}
-            </Text>
-            <Text size="sm" mb="sm">
-              {isTeamAdmin
-                ? t("team.dashboard.e2e.staleKey.adminHint")
-                : t("team.dashboard.e2e.staleKey.memberHint")}
-            </Text>
-            <Button
-              size="compact-sm"
-              color="red"
-              variant="light"
-              leftSection={<TbKey size={14} />}
-              loading={clearingStaleKey}
-              onClick={handleClearStaleKey}
+          {!isTeamAdmin && keyRotationStatus?.activeRotation && (
+            <Alert
+              icon={<TbKey size={18} />}
+              color="blue"
+              mb="md"
+              title={t("team.dashboard.rotation.inProgress")}
             >
-              {t("team.dashboard.e2e.staleKey.clearButton")}
-            </Button>
-          </Alert>
-        ) : myWrappedTeamKey === null && isTeamAdmin ? (
-          <Alert
-            icon={<TbLock size={18} />}
-            color="orange"
-            mb="md"
-            title={t("team.dashboard.e2e.banner.notInitTitle")}
-          >
-            <Text size="sm" mb="sm">
-              {anotherMemberHoldsKey
-                ? t("team.dashboard.e2e.banner.askResharDesc")
-                : t("team.dashboard.e2e.banner.notInitDesc")}
-            </Text>
-            {!anotherMemberHoldsKey && (
+              <Text size="sm">
+                {t("team.dashboard.rotation.memberUnavailable")}
+              </Text>
+            </Alert>
+          )}
+          {isTeamAdmin &&
+            !keyRotationStatus?.activeRotation &&
+            keyRotationStatus?.policy.reminderActive && (
+              <Alert
+                icon={<TbKey size={18} />}
+                color={keyRotationStatus.policy.isDue ? "red" : "yellow"}
+                mb="md"
+                title={
+                  keyRotationStatus.policy.isDue
+                    ? t("team.dashboard.rotation.due")
+                    : t("team.dashboard.rotation.soon")
+                }
+              >
+                <Group justify="space-between" align="center" wrap="wrap">
+                  <Text size="sm">
+                    {t("team.dashboard.rotation.nextDue", {
+                      date: new Date(
+                        keyRotationStatus.policy.nextDueAt,
+                      ).toLocaleDateString(intl.locale),
+                    })}
+                  </Text>
+                  {keyRotationStatus.canOrchestrate && !teamKeyStale && (
+                    <Button
+                      size="compact-sm"
+                      color={keyRotationStatus.policy.isDue ? "red" : "yellow"}
+                      variant="light"
+                      onClick={openRotate}
+                      leftSection={<TbKey size={14} />}
+                    >
+                      {t("team.dashboard.e2e.rotateButton")}
+                    </Button>
+                  )}
+                </Group>
+              </Alert>
+            )}
+          {myWrappedTeamKey === undefined ? null : myWrappedTeamKey &&
+            teamKeyStale ? (
+            <Alert
+              icon={<TbLock size={18} />}
+              color="red"
+              mb="md"
+              title={t("team.dashboard.e2e.staleKey.title")}
+            >
+              <Text size="sm" mb="sm">
+                {t("team.dashboard.e2e.staleKey.desc")}
+              </Text>
+              <Text size="sm" mb="sm">
+                {isTeamAdmin
+                  ? t("team.dashboard.e2e.staleKey.adminHint")
+                  : t("team.dashboard.e2e.staleKey.memberHint")}
+              </Text>
               <Button
                 size="compact-sm"
-                color="orange"
+                color="red"
+                variant="light"
                 leftSection={<TbKey size={14} />}
-                loading={e2eInitializing}
-                onClick={handleInitE2E}
+                loading={clearingStaleKey}
+                onClick={handleClearStaleKey}
               >
-                {t("team.dashboard.e2e.initButton")}
+                {t("team.dashboard.e2e.staleKey.clearButton")}
               </Button>
-            )}
-          </Alert>
-        ) : myWrappedTeamKey === null && !isTeamAdmin ? (
-          <Alert
-            icon={<TbLock size={18} />}
-            color="blue"
-            mb="md"
-            title={t("team.dashboard.e2e.banner.missingTitle")}
-          >
-            {t("team.dashboard.e2e.banner.missingDesc")}
-          </Alert>
-        ) : myWrappedTeamKey ? (
-          <TeamEncryptionStatus canRotate={isTeamAdmin} onRotate={openRotate} />
-        ) : null}
+            </Alert>
+          ) : myWrappedTeamKey === null && isTeamAdmin ? (
+            <Alert
+              icon={<TbLock size={18} />}
+              color="orange"
+              mb="md"
+              title={t("team.dashboard.e2e.banner.notInitTitle")}
+            >
+              <Text size="sm" mb="sm">
+                {anotherMemberHoldsKey
+                  ? t("team.dashboard.e2e.banner.askResharDesc")
+                  : t("team.dashboard.e2e.banner.notInitDesc")}
+              </Text>
+              {!anotherMemberHoldsKey && (
+                <Button
+                  size="compact-sm"
+                  color="orange"
+                  leftSection={<TbKey size={14} />}
+                  loading={e2eInitializing}
+                  onClick={handleInitE2E}
+                >
+                  {t("team.dashboard.e2e.initButton")}
+                </Button>
+              )}
+            </Alert>
+          ) : myWrappedTeamKey === null && !isTeamAdmin ? (
+            <Alert
+              icon={<TbLock size={18} />}
+              color="blue"
+              mb="md"
+              title={t("team.dashboard.e2e.banner.missingTitle")}
+            >
+              {t("team.dashboard.e2e.banner.missingDesc")}
+            </Alert>
+          ) : myWrappedTeamKey ? (
+            <TeamEncryptionStatus
+              canRotate={isTeamAdmin}
+              onRotate={openRotate}
+            />
+          ) : null}
+        </TeamRotationFocus>
 
         {/* Tabs: Members, Folders, Activity */}
         <Tabs
@@ -1647,10 +1691,10 @@ const TeamDashboard = () => {
           {/* Activity tab */}
           {canViewActivity && (
             <Tabs.Panel value="activity">
-              {logsData && logsData.logs.length > 0 ? (
+              {activityLogs && activityLogs.length > 0 ? (
                 isMobile ? (
                   <Stack gap="sm">
-                    {logsData.logs.map((log) => (
+                    {activityLogs.map((log) => (
                       <Card key={log.id} withBorder padding="sm">
                         <Group justify="space-between" mb={4}>
                           <Badge
@@ -1724,7 +1768,10 @@ const TeamDashboard = () => {
                                                     ? t(
                                                         "team.dashboard.activity.share",
                                                       )
-                                                    : log.action}
+                                                    : externalActivityLabel(
+                                                        log.action,
+                                                        t,
+                                                      )}
                           </Badge>
                           <Text size="xs" c="dimmed">
                             {new Date(log.createdAt).toLocaleString(
@@ -1770,7 +1817,7 @@ const TeamDashboard = () => {
                         </Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
-                        {logsData.logs.map((log) => (
+                        {activityLogs.map((log) => (
                           <Table.Tr key={log.id}>
                             <Table.Td>
                               <Badge
@@ -1851,7 +1898,10 @@ const TeamDashboard = () => {
                                                         ? t(
                                                             "team.dashboard.activity.share",
                                                           )
-                                                        : log.action}
+                                                        : externalActivityLabel(
+                                                            log.action,
+                                                            t,
+                                                          )}
                               </Badge>
                             </Table.Td>
                             <Table.Td style={{ overflow: "hidden" }}>
@@ -2734,6 +2784,20 @@ const TeamDashboard = () => {
             value={inviteRole}
             onChange={(val) => setInviteRole(val || "MEMBER")}
           />
+          {isTeamAdmin && (
+            <Text size="xs" c="dimmed" mt={-8}>
+              {t("team.dashboard.modals.invite.externalHint")}{" "}
+              <Text
+                component={Link}
+                href={`/team/${teamIdStr}/settings#external-contractors`}
+                size="xs"
+                c="blue"
+                onClick={closeInvite}
+              >
+                {t("team.dashboard.modals.invite.externalLink")}
+              </Text>
+            </Text>
+          )}
           <Group justify="flex-end">
             <Button variant="subtle" onClick={closeInvite}>
               {t("common.cancel")}

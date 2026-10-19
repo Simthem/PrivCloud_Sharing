@@ -313,7 +313,7 @@ export default {
   // END /privacy
   // /admin/config
   "admin.config.config-file-warning.title": "Konfiguratsioonifail olemas",
-  "admin.config.config-file-warning.description": "Kuna teil on konfigureeritud PrivCloud_Sharing konfiguratsioonifailiga, ei saa te muuta konfiguratsiooni kasutajaliidest kasutades.",
+  "admin.config.config-file-warning.description": "Kuna teil on konfigureeritud PrivCloud Sharing konfiguratsioonifailiga, ei saa te muuta konfiguratsiooni kasutajaliidest kasutades.",
   "admin.config.title": "Seaded",
   "admin.config.category.general": "Üldine",
   "admin.config.category.share": "Jagamine",
@@ -324,7 +324,7 @@ export default {
   "admin.config.general.app-name": "Rakenduse nimi",
   "admin.config.general.app-name.description": "Rakenduse nimi",
   "admin.config.general.app-url": "Rakenduse URL",
-  "admin.config.general.app-url.description": "URL, mille kaudu PrivCloud_Sharing on kättesaadav",
+  "admin.config.general.app-url.description": "URL, mille kaudu PrivCloud Sharing on kättesaadav",
   "admin.config.general.secure-cookies": "Turvalised küpsised",
   "admin.config.general.secure-cookies.description": "Kas küpsistele seata turvalisuse lipp. Kui see on lubatud, ei tööta teenus HTTP kaudu.",
   "admin.config.general.show-home-page": "Kuva avaleht",
@@ -339,7 +339,7 @@ export default {
   "admin.config.cache.max-items": "Maximum items",
   "admin.config.cache.max-items.description": "Maximum number of items inside the cache.",
   "admin.config.cache.redis-enabled": "Redis enabled",
-  "admin.config.cache.redis-enabled.description": "Normally PrivCloud_Sharing caches information in memory. If you run multiple instances of PrivCloud_Sharing, you need to enable Redis caching to share the cache between the instances.",
+  "admin.config.cache.redis-enabled.description": "Normally PrivCloud Sharing caches information in memory. If you run multiple instances of PrivCloud Sharing, you need to enable Redis caching to share the cache between the instances.",
   "admin.config.cache.redis-url": "Redis URL",
   "admin.config.cache.redis-url.description": "Url to connect to the Redis instance used for caching.",
   "admin.config.email.enable-share-email-recipients": "Luba e-posti teavitused jagamise saajatele",

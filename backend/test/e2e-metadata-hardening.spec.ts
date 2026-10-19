@@ -187,6 +187,7 @@ function grantService(pqKey: boolean) {
   const service = new AccessGrantService({
     userIdentityKey: { findFirst: async () => ({ id: "x25519-key" }) },
     userPQKey: { findFirst: async () => (pqKey ? { id: "pq-key" } : null) },
+    file: { findUnique: async () => ({ share: { teamFolder: null } }) },
     accessGrant: {
       findFirst: async () => null,
       create: async ({ data }: { data: Record<string, unknown> }) => {

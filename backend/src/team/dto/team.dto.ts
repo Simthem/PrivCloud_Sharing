@@ -100,8 +100,8 @@ export class UpdateTeamKeyRotationProgressDTO {
 }
 
 export class RotateTeamMetadataDTO {
-  @IsIn(["SHARE", "REQUEST"])
-  kind: "SHARE" | "REQUEST";
+  @IsIn(["SHARE", "REQUEST", "PROFILE", "AUDIT"])
+  kind: "SHARE" | "REQUEST" | "PROFILE" | "AUDIT";
 
   @IsString()
   @MaxLength(128)
@@ -117,6 +117,54 @@ export class RotateTeamMetadataDTO {
   @MaxLength(22000)
   @Matches(/^[A-Za-z0-9_-]+$/)
   encryptedInfo: string;
+}
+
+/** One activity name stored under the old K_team, re-encrypted for the new. */
+export class RotateActivityNameDTO {
+  @IsString()
+  @MaxLength(128)
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  logId: string;
+
+  @IsString()
+  @MaxLength(128)
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  fileId: string;
+
+  // A FILE_META_V1 name is at most 4096 bytes once padded: about 5.5k
+  // base64url characters with its IV and tag.
+  @IsString()
+  @MaxLength(6000)
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  expectedEncryptedMetadata: string;
+
+  // Empty when the name opens with neither key: it is dropped.
+  @IsString()
+  @MaxLength(6000)
+  @Matches(/^[A-Za-z0-9_-]*$/)
+  encryptedMetadata: string;
+}
+
+export class RotateTeamActivityNamesDTO {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => RotateActivityNameDTO)
+  entries: RotateActivityNameDTO[];
+}
+
+export class SetTeamProfileDTO {
+  // Company details encrypted with K_team, null to remove them.
+  @IsOptional()
+  @IsString()
+  @MaxLength(4096)
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  encryptedInfo: string | null;
+
+  @IsInt()
+  @Min(1)
+  keyVersion: number;
 }
 
 export class InviteMemberDTO {

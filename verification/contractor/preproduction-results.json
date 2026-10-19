@@ -1,0 +1,117 @@
+{
+  "format": "privcloud-private-corpus-aggregate-v1",
+  "measuredAt": "2026-10-14",
+  "runtime": "Chrome headless, production forensic worker, real browser PDF.js and image decoding, verified local HTTPS",
+  "candidateCount": 8,
+  "actualExportedCandidates": 1,
+  "laboratoryDistractors": 7,
+  "sourceDigestMatchesSignedManifest": true,
+  "exportedPatternMatchesSignedMarkId": true,
+  "referenceRegistration": {
+    "geometry": "Content-only ORB/RANSAC, three-quarter fit and one-quarter held-out validation, geometry-derived antialias before perspective downsampling",
+    "matchingPdfPage": 3,
+    "pdfPagesExamined": 6,
+    "otherPagesAccepted": 0,
+    "matches": 148,
+    "fittingInliers": 41,
+    "heldOutMatches": 37,
+    "heldOutInliers": 13,
+    "decisionThreshold": 8,
+    "score": 17.534093005815187,
+    "second": 4.441328012723737,
+    "withoutExpectedCandidate": {
+      "decision": "none",
+      "score": 5.004788162384808
+    },
+    "wrongTeamPatterns": {
+      "decision": "none",
+      "score": 5.260882598292344
+    },
+    "cspViolations": 0
+  },
+  "fragmentCases": [
+    {
+      "width": 631,
+      "height": 66,
+      "decision": "match",
+      "correctExportedPattern": true,
+      "score": 17.991010082558418,
+      "second": 4.9465037016104665,
+      "decisionThreshold": 10,
+      "hypotheses": 181,
+      "withoutExpectedCandidate": {
+        "decision": "none",
+        "score": 4.9465037016104665
+      },
+      "wrongTeamPatterns": {
+        "decision": "none",
+        "score": 5.1110369141423035
+      }
+    },
+    {
+      "width": 113,
+      "height": 135,
+      "decision": "match",
+      "correctExportedPattern": true,
+      "score": 12.855419910616613,
+      "second": 5.030082449510021,
+      "decisionThreshold": 10,
+      "hypotheses": 181,
+      "withoutExpectedCandidate": {
+        "decision": "none",
+        "score": 5.030082449510021
+      },
+      "wrongTeamPatterns": {
+        "decision": "none",
+        "score": 5.385831913355024
+      }
+    }
+  ],
+  "landscapePhoto": {
+    "referenceRegistration": "rejected",
+    "invisibleAttributionVerifiedLocally": false,
+    "operatorReportedVisibleCodeMatch": true
+  },
+  "limitations": [
+    "Private development corpus, one real exported candidate plus seven synthetic distractors, not the full production team register.",
+    "The photo and two crops were used during decoder development. No held-out real-photo or population-level false-attribution claim.",
+    "A source-matched PDF is required for this photographed page. Content matching alone never identifies a recipient.",
+    "The landscape photograph's visible-code result was reported by the operator. Its authenticated token was not supplied for independent local checking.",
+    "Browser timings are fixture observations, not physical Android/iOS or production network measurements.",
+    "Private images, identity, filenames, EXIF, image/source hashes and derived patterns are not distributed. This aggregate cannot reproduce the private photographs independently.",
+    "OCR recreation and rendering from the unmarked original can erase all copy-specific pixel information. Their documented failures are not relabeled as detection successes.",
+    "The expanded fixed-scale and reference channels require separate representative calibration. Earlier v1 statistical bounds do not transfer."
+  ],
+  "fragmentSha256": "3ea04a59a085fefa3bb9790dafd099a3d72b07e9f44e5e4e7898c8fc57618888",
+  "registrationCoreSha256": "a8822040355042fc0ebb151d76acd12d5bcf961ff7ac9510a294fb0deabb8800",
+  "registrationBuilderSha256": "15c0e8aef3d82296f068cdb8077070cf3ebae5693321711cd878a3f23a5ffa50",
+  "verifiedClientBuilds": [
+    "web-production-worker",
+    "capacitor-export-production-worker"
+  ],
+  "analysisWorkersByteIdentical": true,
+  "nativePhysicalDeviceTested": false,
+  "previouslyConclusiveCrops": [
+    {
+      "width": 639,
+      "height": 351,
+      "score": 27.58302251032398,
+      "withoutExpectedCandidate": "none",
+      "wrongTeamPatterns": "none"
+    },
+    {
+      "width": 398,
+      "height": 135,
+      "score": 23.69553809799816,
+      "withoutExpectedCandidate": "none",
+      "wrongTeamPatterns": "none"
+    },
+    {
+      "width": 239,
+      "height": 135,
+      "score": 21.224363339272628,
+      "withoutExpectedCandidate": "none",
+      "wrongTeamPatterns": "none"
+    }
+  ]
+}

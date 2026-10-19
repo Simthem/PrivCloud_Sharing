@@ -1,0 +1,86 @@
+.source {
+  --code-comment: #57606a;
+  --code-keyword: #a11b31;
+  --code-string: #075985;
+  --code-number: #0753a6;
+  --code-title: #6639a6;
+  --code-tag: #116329;
+  --code-variable: #953800;
+  background: #f6f8fa;
+  color: #24292f;
+  padding: 1em;
+  border-radius: 8px;
+  font-size: 0.85em;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family:
+    "Fira Code", "Cascadia Code", "JetBrains Mono", Consolas, Monaco, monospace;
+  margin: 0;
+  overflow: auto;
+  tab-size: 4;
+}
+.source[data-theme="dark"] {
+  --code-comment: #9da7b3;
+  --code-keyword: #ff7b72;
+  --code-string: #a5d6ff;
+  --code-number: #79c0ff;
+  --code-title: #d2a8ff;
+  --code-tag: #7ee787;
+  --code-variable: #ffa657;
+  background: #161b22;
+  color: #e6edf3;
+}
+.source[data-wrap="false"] {
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.source :global(.hljs-comment),
+.source :global(.hljs-quote) {
+  color: var(--code-comment);
+  font-style: italic;
+}
+.source :global(.hljs-keyword),
+.source :global(.hljs-selector-tag),
+.source :global(.hljs-doctag),
+.source :global(.hljs-meta) {
+  color: var(--code-keyword);
+}
+.source :global(.hljs-string),
+.source :global(.hljs-regexp),
+.source :global(.hljs-meta-string) {
+  color: var(--code-string);
+}
+.source :global(.hljs-number),
+.source :global(.hljs-literal),
+.source :global(.hljs-attr),
+.source :global(.hljs-attribute),
+.source :global(.hljs-built_in),
+.source :global(.hljs-type) {
+  color: var(--code-number);
+}
+.source :global(.hljs-title),
+.source :global(.hljs-section),
+.source :global(.hljs-selector-class),
+.source :global(.hljs-selector-id) {
+  color: var(--code-title);
+}
+.source :global(.hljs-tag),
+.source :global(.hljs-name),
+.source :global(.hljs-selector-pseudo),
+.source :global(.hljs-addition) {
+  color: var(--code-tag);
+}
+.source :global(.hljs-variable),
+.source :global(.hljs-template-variable),
+.source :global(.hljs-symbol),
+.source :global(.hljs-bullet),
+.source :global(.hljs-deletion) {
+  color: var(--code-variable);
+}
+.source :global(.hljs-emphasis) {
+  font-style: italic;
+}
+.source :global(.hljs-strong) {
+  font-weight: 600;
+}

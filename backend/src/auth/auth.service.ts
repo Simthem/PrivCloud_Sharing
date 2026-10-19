@@ -255,14 +255,49 @@ export class AuthService {
     throw new UnauthorizedException("Wrong email or password");
   }
 
-  async generateToken(user: User, oauth?: { idToken?: string }) {
+  /**
+   * Sign-in with a passkey already verified by AccountPasskeyService. The
+   * passkey proves possession and user verification, so it stands for both
+   * factors: no TOTP code is asked on top. Lockout and every other access
+   * rule of generateToken still apply.
+   */
+  async signInWithPasskey(user: User) {
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      this.logger.warn(`Locked account passkey sign-in for user ${user.id}`);
+      throw this.lockedLogin(user.lockedUntil);
+    }
+    if (user.failedLoginAttempts > 0) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+          lastFailedLoginAt: null,
+        },
+      });
+    }
+    this.logger.log(`Successful passkey login for user ${user.id}`);
+    return this.generateToken(user, undefined, {
+      multiFactor: true,
+    });
+  }
+
+  async generateToken(
+    user: User,
+    oauth?: { idToken?: string },
+    options: { multiFactor?: boolean } = {},
+  ) {
     assertEmailVerificationAccess(user);
 
     // Invalidate all old loginTokens when a new one is created
     await this.prisma.loginToken.deleteMany({ where: { userId: user.id } });
 
     // Check if the user has TOTP enabled
-    if (user.totpVerified && !(oauth && this.config.get("oauth.ignoreTotp"))) {
+    if (
+      user.totpVerified &&
+      !options.multiFactor &&
+      !(oauth && this.config.get("oauth.ignoreTotp"))
+    ) {
       const loginToken = await this.createLoginToken(user.id);
 
       return { loginToken };

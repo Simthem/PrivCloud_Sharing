@@ -1,3 +1,7 @@
+import TeamRotationSchedule from "../../../components/team/TeamRotationSchedule";
+import ExternalSeatsPanel from "../../../components/team/external/ExternalSeatsPanel";
+import TeamAuditPanel from "../../../components/team/external/TeamAuditPanel";
+import TeamProfilePanel from "../../../components/team/external/TeamProfilePanel";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
@@ -117,6 +121,9 @@ const TeamSettings = () => {
       }),
     onSuccess: () => {
       toast.success(t("team.settings.toast.updated"));
+      queryClient.invalidateQueries({
+        queryKey: ["team.keyRotation", teamIdStr],
+      });
       queryClient.invalidateQueries({ queryKey: ["team", teamIdStr] });
     },
     onError: (err: any) =>
@@ -492,8 +499,15 @@ const TeamSettings = () => {
                 <TbKey size={20} />
                 <Title order={4}>{t("team.settings.rotation.title")}</Title>
               </Group>
+              <TeamRotationSchedule teamId={teamIdStr} />
               <Select
                 label={t("team.settings.rotation.interval")}
+                description={
+                  Number(keyRotationIntervalDays) !==
+                  team.keyRotationIntervalDays
+                    ? t("team.settings.rotation.unsaved")
+                    : undefined
+                }
                 value={keyRotationIntervalDays}
                 onChange={(value) => value && setKeyRotationIntervalDays(value)}
                 data={[
@@ -519,6 +533,11 @@ const TeamSettings = () => {
                   },
                 ]}
               />
+              <Button mt="md" variant="light" loading={updateMutation.isPending}
+                disabled={Number(keyRotationIntervalDays) === team.keyRotationIntervalDays || !name.trim()}
+                onClick={() => updateMutation.mutate()}>
+                {t("team.settings.info.save")}
+              </Button>
             </Paper>
 
             <Paper withBorder p="lg" mb="lg">
@@ -680,6 +699,9 @@ const TeamSettings = () => {
                 </Table>
               )}
             </Paper>
+            <TeamProfilePanel teamId={teamIdStr} />
+            <ExternalSeatsPanel teamId={teamIdStr} />
+            <TeamAuditPanel teamId={teamIdStr} />
           </>
         )}
 
@@ -812,6 +834,10 @@ const TeamSettings = () => {
                     <li>{t("team.settings.danger.item.history")}</li>
                   </ul>
                 </Alert>
+
+                <Text size="sm" c="dimmed">
+                  {t("team.settings.danger.evidenceKept")}
+                </Text>
 
                 <Text size="sm" fw={500}>
                   {t("team.settings.danger.confirmHint")}{" "}

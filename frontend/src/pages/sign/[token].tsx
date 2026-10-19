@@ -82,7 +82,7 @@ const SignPage = () => {
   // The browser shows nothing when a passkey ceremony fails, so the reason
   // is logged and translated into something the signer can act on.
   const passkeyErrorToast = (error: unknown, fallbackId: string) => {
-    console.error("Passkey ceremony failed", error);
+    console.error("Passkey ceremony failed");
     const { reason, detail } = describePasskeyError(error);
     toast.error(
       reason === "server"

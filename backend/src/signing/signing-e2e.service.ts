@@ -301,7 +301,7 @@ export class SigningE2EService {
         creator,
         recipients: allRecipients,
         sendMail: (email, subject, body) =>
-          this.emailService.sendMail(email, subject, body),
+          this.emailService.sendSigningMail(email, subject, body),
         onFailure: () =>
           this.logger.error("E2E completion email delivery failed"),
       });

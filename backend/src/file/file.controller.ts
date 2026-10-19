@@ -22,6 +22,7 @@ import {
 import { hours, minutes, Throttle } from "@nestjs/throttler";
 import contentDisposition from "content-disposition";
 import { Request, Response } from "express";
+import type { Readable } from "node:stream";
 import { Share, User } from "@prisma/client";
 import { BridgeUploadTokenService } from "src/bridgeUpload/bridge-upload-token.service";
 import { CreateShareGuard } from "src/share/guard/createShare.guard";
@@ -34,6 +35,7 @@ import { TeamNotificationService } from "src/teamNotification/teamNotification.s
 import { FileService } from "./file.service";
 import { FileSecurityGuard } from "./guard/fileSecurity.guard";
 import * as mime from "mime-types";
+import { serializeActivityNames } from "src/team/team-activity-names.util";
 import { SafeIdPipe } from "src/share/pipe/safeId.pipe";
 import {
   getMaxUploadPayloadBytes,
@@ -107,6 +109,22 @@ export function getMultipartPartPayloadLength(
     plainLength,
     request.encryptionChunkSize,
   );
+}
+
+/**
+ * Streams a file and closes its source when the client leaves early. Nest
+ * only pipes a StreamableFile: a request cancelled midway would leave the
+ * source paused forever, holding its S3 connection and download slot, until
+ * every slot is taken and each new download waits for a timeout.
+ */
+export function streamUntilClientLeaves(
+  res: Pick<Response, "once">,
+  stream: Readable,
+): StreamableFile {
+  res.once("close", () => {
+    if (!stream.readableEnded && !stream.destroyed) stream.destroy();
+  });
+  return new StreamableFile(stream);
 }
 
 export function parseSingleByteRange(
@@ -770,7 +788,7 @@ export class FileController {
       "X-Accel-Buffering": "no",
     });
 
-    return new StreamableFile(zipStream);
+    return streamUntilClientLeaves(res, zipStream);
   }
 
   @Get(":fileId")
@@ -859,6 +877,7 @@ export class FileController {
       this.recordFileDownload(
         req,
         authorizedShare,
+        fileId,
         fileMetaData.name,
         fileMetaData.size,
       );
@@ -893,7 +912,7 @@ export class FileController {
       }
       res.status(206).set(rangeHeaders);
 
-      return new StreamableFile(file.file);
+      return streamUntilClientLeaves(res, file.file);
     }
 
     // --- Full response ---
@@ -926,7 +945,7 @@ export class FileController {
 
     res.set(headers);
 
-    return new StreamableFile(file.file);
+    return streamUntilClientLeaves(res, file.file);
   }
 
   @Get(":fileId/direct")
@@ -962,6 +981,7 @@ export class FileController {
       this.recordFileDownload(
         req,
         authorizedShare,
+        fileId,
         authorization.fileName,
         String(authorization.size),
       );
@@ -972,6 +992,7 @@ export class FileController {
   private recordFileDownload(
     req: Request,
     share: Share,
+    fileId: string,
     fileName: string,
     fileSize: string,
   ): void {
@@ -983,10 +1004,21 @@ export class FileController {
     // Audit I/O must not delay authorization or the first response byte.
     if (share.teamFolderId) {
       void (async () => {
-        const folder = await this.prisma.teamFolder.findUnique({
-          where: { id: share.teamFolderId! },
-          select: { teamId: true },
-        });
+        const [folder, file] = await Promise.all([
+          this.prisma.teamFolder.findUnique({
+            where: { id: share.teamFolderId! },
+            select: { teamId: true },
+          }),
+          this.prisma.file.findFirst({
+            where: { id: fileId, shareId: share.id },
+            select: {
+              id: true,
+              shareId: true,
+              metadataScheme: true,
+              encryptedMetadata: true,
+            },
+          }),
+        ]);
         if (folder) {
           const downloader = (req as unknown as { user?: User }).user;
           await this.prisma.teamAccessLog.create({
@@ -998,6 +1030,9 @@ export class FileController {
               fileName,
               fileSize: BigInt(fileSize),
               folderId: share.teamFolderId,
+              // FILE_META_V1: the encrypted name, so the activity can still
+              // show it once the file is deleted.
+              metadata: file ? serializeActivityNames([file]) : undefined,
             },
           });
         }

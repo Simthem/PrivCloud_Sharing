@@ -315,7 +315,7 @@ export default {
   // END /privacy
   // /admin/config
   "admin.config.config-file-warning.title": "Arquivo de configuração presente",
-  "admin.config.config-file-warning.description": "Como você tem um PrivCloud_Sharing configurado com um arquivo de configuração, você não pode alterar a configuração através da UI.",
+  "admin.config.config-file-warning.description": "Como você tem um PrivCloud Sharing configurado com um arquivo de configuração, você não pode alterar a configuração através da UI.",
   "admin.config.title": "Configuração",
   "admin.config.category.general": "Geral",
   "admin.config.category.share": "Compartilhamento",
@@ -326,7 +326,7 @@ export default {
   "admin.config.general.app-name": "Nome da aplicação",
   "admin.config.general.app-name.description": "Nome da aplicação",
   "admin.config.general.app-url": "URL do Aplicativo",
-  "admin.config.general.app-url.description": "Em qual URL o PrivCloud_Sharing está disponível",
+  "admin.config.general.app-url.description": "Em qual URL o PrivCloud Sharing está disponível",
   "admin.config.general.secure-cookies": "Cookies seguros",
   "admin.config.general.secure-cookies.description": "Se definir a bandeira segura nos cookies. Se habilitado, o site não funcionará quando acessado por HTTP.",
   "admin.config.general.show-home-page": "Mostrar a página inicial",
@@ -341,7 +341,7 @@ export default {
   "admin.config.cache.max-items": "Máximo de itens",
   "admin.config.cache.max-items.description": "Número máximo de itens dentro do cache.",
   "admin.config.cache.redis-enabled": "Redis habilitado",
-  "admin.config.cache.redis-enabled.description": "Normalmente informações de caches PrivCloud_Sharing na memória. Se você executar várias instâncias do PrivCloud_Sharing, você precisa habilitar o cache do Redis para compartilhar o cache entre as instâncias.",
+  "admin.config.cache.redis-enabled.description": "Normalmente informações de caches PrivCloud Sharing na memória. Se você executar várias instâncias do PrivCloud Sharing, você precisa habilitar o cache do Redis para compartilhar o cache entre as instâncias.",
   "admin.config.cache.redis-url": "URL do Redis",
   "admin.config.cache.redis-url.description": "Url para conectar à instância de Redis usada para cache.",
   "admin.config.email.enable-share-email-recipients": "Ativar compartilhamento por email",

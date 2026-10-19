@@ -838,7 +838,7 @@ export class SigningService {
     }
 
     try {
-      await this.emailService.sendMail(
+      await this.emailService.sendSigningMail(
         recipient.email,
         `Code de vérification de signature - ${recipient.document.fileName}`,
         `Bonjour ${recipient.name},\n\n` +
@@ -1396,7 +1396,7 @@ export class SigningService {
       });
       if (!creator?.email) return;
       const baseUrl = await this.configService.get("general.appUrl");
-      await this.emailService.sendMail(
+      await this.emailService.sendSigningMail(
         creator.email,
         `Signature reçue (${signedCount}/${totalSigners}) - ${document.fileName}`,
         `Bonjour ${creator.username || ""},\n\n` +
@@ -1509,7 +1509,7 @@ export class SigningService {
 
     // Notify document creator
     if (recipient.document.creator) {
-      await this.emailService.sendMail(
+      await this.emailService.sendSigningMail(
         recipient.document.creator.email,
         `Signature refusée - ${recipient.document.fileName}`,
         `${recipient.name} (${recipient.email}) a refusé de signer le document "${recipient.document.fileName}".\n\n` +
@@ -1622,7 +1622,7 @@ export class SigningService {
     for (const r of doc.recipients.filter(
       (r) => r.status === "PENDING" || r.status === "VIEWED",
     )) {
-      await this.emailService.sendMail(
+      await this.emailService.sendSigningMail(
         r.email,
         `Signature annulée - ${doc.fileName}`,
         `La demande de signature pour le document "${doc.fileName}" a été annulée par l'expéditeur.`,
@@ -2187,7 +2187,7 @@ export class SigningService {
           creator,
           recipients: allRecipients,
           sendMail: (email, subject, body) =>
-            this.emailService.sendMail(email, subject, body),
+            this.emailService.sendSigningMail(email, subject, body),
           onFailure: () =>
             this.logger.error("Completion email delivery failed"),
         });
@@ -2239,7 +2239,7 @@ export class SigningService {
             .get("general.appUrl")
             .catch(() => "");
           await this.emailService
-            .sendMail(
+            .sendSigningMail(
               creator.email,
               `Erreur de finalisation - ${doc.fileName}`,
               `Bonjour ${creator.username || ""},\n\n` +
@@ -2283,7 +2283,7 @@ export class SigningService {
       `-- \nPrivCloud Sharing - Signature Électronique`;
 
     try {
-      await this.emailService.sendMail(recipient.email, subject, body);
+      await this.emailService.sendSigningMail(recipient.email, subject, body);
 
       await this.createAuditEvent(
         document.id,
@@ -2314,7 +2314,7 @@ export class SigningService {
       `-- \nPrivCloud Sharing - Signature Électronique`;
 
     try {
-      await this.emailService.sendMail(
+      await this.emailService.sendSigningMail(
         recipient.email,
         `Copie : Demande de signature - ${document.fileName}`,
         body,
@@ -2348,7 +2348,7 @@ export class SigningService {
       `-- \nPrivCloud Sharing - Signature Électronique`;
 
     try {
-      await this.emailService.sendMail(recipient.email, subject, body);
+      await this.emailService.sendSigningMail(recipient.email, subject, body);
       return true;
     } catch {
       this.logger.warn("Signing E2E key email failed");

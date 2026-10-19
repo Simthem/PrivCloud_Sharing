@@ -8,6 +8,8 @@ import { PrismaService } from "src/prisma/prisma.service";
 import { ReverseShareService } from "src/reverseShare/reverseShare.service";
 import { TeamAuditService } from "src/team/team-audit.service";
 import { TeamService } from "src/team/team.service";
+import { TeamExternalAuditService } from "src/teamExternal/team-external-audit.service";
+import { TeamExternalService } from "src/teamExternal/team-external.service";
 import {
   ABANDONED_UPLOAD_CLEANUP_CRON,
   getAbandonedUploadCutoff,
@@ -30,6 +32,8 @@ export class JobsService {
     private teamService: TeamService,
     private config: ConfigService,
     private trustedListMonitor: TrustedListMonitorService,
+    private teamExternalService: TeamExternalService,
+    private teamExternalAudit: TeamExternalAuditService,
   ) {}
 
   /** Daily confirmation that the pinned TSA is still qualified, mailed to admins. */
@@ -374,6 +378,34 @@ export class JobsService {
           `Removed generated artifacts for ${cleaned} deleted signature source(s)`,
         );
       }
+    });
+  }
+
+  /**
+   * Purge the copies rendered for external contractors once nobody may see
+   * them: access revoked or expired, source file deleted, upload abandoned.
+   */
+  @Cron("50 * * * *")
+  async purgeExternalPreviews() {
+    await this.runExclusive("purgeExternalPreviews", async () => {
+      const purged = await this.teamExternalService.purgeHiddenPreviews();
+      if (purged > 0) {
+        this.logger.log(`Purged ${purged} external contractor preview(s)`);
+      }
+    });
+  }
+
+  /**
+   * Evidence of contractor copies: timestamps register entries the TSA could
+   * not answer at once, anchors every journal that moved, and erases what is
+   * older than the audit retention.
+   */
+  @Cron("55 * * * *")
+  async sealExternalAudit() {
+    await this.runExclusive("sealExternalAudit", async () => {
+      await this.teamExternalAudit.timestampPendingIssuances();
+      await this.teamExternalAudit.anchorChains();
+      await this.teamExternalAudit.purge();
     });
   }
 

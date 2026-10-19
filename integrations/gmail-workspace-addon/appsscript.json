@@ -3,13 +3,16 @@
   "exceptionLogging": "STACKDRIVER",
   "runtimeVersion": "V8",
   "oauthScopes": [
-    "https://www.googleapis.com/auth/gmail.addons.current.action.compose",
-    "https://www.googleapis.com/auth/script.external_request"
+    "https://www.googleapis.com/auth/gmail.addons.execute",
+    "https://www.googleapis.com/auth/gmail.addons.current.action.compose"
   ],
   "addOns": {
     "common": {
       "name": "PrivCloud",
-      "logoUrl": "https://share.example.com/img/logo.png",
+      "logoUrl": "https://share.example.com/install/assets/privcloud-gmail-logo-v1.png",
+      "openLinkUrlPrefixes": [
+        "https://share.example.com/"
+      ],
       "homepageTrigger": {
         "runFunction": "homepage"
       }
@@ -18,11 +21,11 @@
       "composeTrigger": {
         "selectActions": [
           {
-            "text": "Send with PrivCloud",
+            "text": "Envoyer avec PrivCloud",
             "runFunction": "composeAction"
           }
         ],
-        "draftAccess": "METADATA"
+        "draftAccess": "NONE"
       }
     }
   }

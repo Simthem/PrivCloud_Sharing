@@ -10,8 +10,16 @@ export interface AuthEndpointResult {
   nonce?: string;
 }
 
+export interface AuthEndpointOptions {
+  // Ask the provider to authenticate the user again, even with a session.
+  reauthenticate?: boolean;
+}
+
 export interface OAuthProvider<T, C = OAuthCallbackDto> {
-  getAuthEndpoint(state: string): Promise<AuthEndpointResult>;
+  getAuthEndpoint(
+    state: string,
+    options?: AuthEndpointOptions,
+  ): Promise<AuthEndpointResult>;
 
   getToken(query: C): Promise<OAuthToken<T>>;
 

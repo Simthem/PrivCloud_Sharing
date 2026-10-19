@@ -1,6 +1,7 @@
 import api from "./api.service";
 import { createInflightRequest } from "../utils/inflightRequest.util";
 import { apiPathSegment } from "../utils/apiPath.util";
+import type { ActivityEncryptedFile } from "../utils/teamActivityNames.util";
 
 export interface Team {
   id: string;
@@ -87,6 +88,8 @@ export interface AccessLog {
   createdAt: string;
   folder?: { name: string };
   file?: { name: string };
+  /** FILE_META_V1: encrypted names of the placeholders in `fileName`. */
+  encryptedFiles?: ActivityEncryptedFile[];
 }
 
 export interface TeamAuditReport {
@@ -222,6 +225,12 @@ const inviteMember = async (
     await api.post(`teams/${apiPathSegment(teamId)}/members/invite`, data)
   ).data;
 };
+
+/** Signed-out visitor of an invitation link: sign in or sign up. */
+const getInvitationAccount = async (
+  token: string,
+): Promise<{ email: string; accountExists: boolean }> =>
+  (await api.get(`teams/invite/${apiPathSegment(token)}/account`)).data;
 
 const acceptInvitation = async (
   token: string,
@@ -366,14 +375,41 @@ const getKeyRotationMetadata = async (
 ): Promise<{
   shares: { id: string; encryptedInfo: string }[];
   requests: { id: string; encryptedInfo: string }[];
+  profile?: { id: string; encryptedInfo: string }[];
+  auditKey?: { id: string; encryptedInfo: string }[];
+  /** File names stored in activity events, id = `<event id>:<file id>`. */
+  activity?: {
+    id: string;
+    shareId: string;
+    fileId: string;
+    encryptedInfo: string;
+  }[];
 }> =>
   (await api.get(`teams/${apiPathSegment(teamId)}/key-rotation/metadata`)).data;
+
+/** Up to 100 per call. An empty `encryptedMetadata` drops an unreadable name. */
+const stageKeyRotationActivityNames = async (
+  teamId: string,
+  rotationId: string,
+  entries: {
+    logId: string;
+    fileId: string;
+    expectedEncryptedMetadata: string;
+    encryptedMetadata: string;
+  }[],
+) =>
+  (
+    await api.post(
+      `teams/${apiPathSegment(teamId)}/key-rotation/${apiPathSegment(rotationId)}/activity-names`,
+      { entries },
+    )
+  ).data;
 
 const stageKeyRotationMetadata = async (
   teamId: string,
   rotationId: string,
   data: {
-    kind: "SHARE" | "REQUEST";
+    kind: "SHARE" | "REQUEST" | "PROFILE" | "AUDIT";
     id: string;
     expectedEncryptedInfo: string;
     encryptedInfo: string;
@@ -385,6 +421,23 @@ const stageKeyRotationMetadata = async (
       data,
     )
   ).data;
+
+/** Company details (watermark), K_team ciphertext. Team administrators only. */
+const getTeamProfile = async (
+  teamId: string,
+): Promise<{ encryptedInfo: string; keyVersion: number } | null> =>
+  (await api.get(`teams/${apiPathSegment(teamId)}/profile`)).data || null;
+
+const setTeamProfile = async (
+  teamId: string,
+  encryptedInfo: string | null,
+  keyVersion: number,
+): Promise<void> => {
+  await api.put(`teams/${apiPathSegment(teamId)}/profile`, {
+    encryptedInfo,
+    keyVersion,
+  });
+};
 
 const completeKeyRotation = async (
   teamId: string,
@@ -774,6 +827,7 @@ const teamService = {
   deleteTeam,
   inviteMember,
   acceptInvitation,
+  getInvitationAccount,
   getTeamKey,
   setTeamKey,
   clearTeamKey,
@@ -803,7 +857,10 @@ const teamService = {
   updateKeyRotationProgress,
   completeKeyRotation,
   getKeyRotationMetadata,
+  getTeamProfile,
+  setTeamProfile,
   stageKeyRotationMetadata,
+  stageKeyRotationActivityNames,
   cancelKeyRotation,
   getSignableFiles,
   getAuditReports,

@@ -53,6 +53,7 @@ import { normalizeShareRecipients } from "./share-recipient.util";
 import { wantsFileRequestNotification } from "src/teamFileRequest/team-file-request-notification";
 import { assertFileRequestUpload } from "src/teamFileRequest/team-file-request-access";
 import { touchShareUploadActivity } from "./upload-activity.util";
+import { serializeActivityNames } from "src/team/team-activity-names.util";
 
 @Injectable()
 export class ShareService {
@@ -567,29 +568,6 @@ export class ShareService {
       );
     }
 
-    // Log team activity for team-folder uploads
-    if (teamFolderConnect && user) {
-      const folder = await this.prisma.teamFolder.findUnique({
-        where: { id: teamFolderConnect.id },
-        select: { teamId: true, name: true },
-      });
-      if (folder) {
-        this.logger.log(`Logging UPLOAD for team ${folder.teamId}`);
-        this.prisma.teamAccessLog
-          .create({
-            data: {
-              teamId: folder.teamId,
-              action: "UPLOAD",
-              actorEmail: user.email,
-              actorName: user.username || undefined,
-              fileName: share.id,
-              folderId: teamFolderConnect.id,
-            },
-          })
-          .catch(() => this.logger.error("Failed to log UPLOAD"));
-      }
-    }
-
     return shareTuple;
   }
 
@@ -663,7 +641,9 @@ export class ShareService {
     const completedShareResponse = (completedShare: Share) => ({
       ...completedShare,
       uploadPending: false,
-      notifyReverseShareCreator,
+      notifyReverseShareCreator: notifyReverseShareCreator
+        ? undefined
+        : notifyReverseShareCreator,
     });
 
     if (share.uploadLocked) {
@@ -773,54 +753,58 @@ export class ShareService {
       share.recipients.map((recipient) => recipient.email),
     );
     const recipientCount = recipientEmails.length;
+    // A share uploaded through a reverse share is encrypted with K_rs, the
+    // reverse share owner's key. Its owner unwraps K_rs with K_master in the
+    // browser, so the server has no use for it: whatever a client still sends
+    // is dropped here, never mailed, never stored.
+    const shareKey = share.reverseShare ? undefined : e2eKey;
     // Only include the E2E key in the email if the global admin setting allows it
     const e2eKeyForEmail =
-      e2eKey && this.config.get("email.enableE2EKeyEmailSharing")
-        ? e2eKey
+      shareKey && this.config.get("email.enableE2EKeyEmailSharing")
+        ? shareKey
         : undefined;
-    if (recipientCount > 0 && this.config.get("smtp.enabled")) {
-      this.logger.debug(
-        `Sending recipient emails: share=redacted recipients=${recipientCount} e2eKeyInEmail=${!!e2eKeyForEmail}`,
-      );
-      for (const recipientEmail of recipientEmails) {
+
+    void (async () => {
+      if (recipientCount > 0 && this.config.get("smtp.enabled")) {
+        this.logger.debug(
+          `Sending recipient emails: share=redacted recipients=${recipientCount} e2eKeyInEmail=${!!e2eKeyForEmail}`,
+        );
+        for (const recipientEmail of recipientEmails) {
+          try {
+            await this.emailService.sendMailToShareRecipients(
+              recipientEmail,
+              share.id,
+              share.creator,
+              share.name,
+              share.description,
+              share.expiration,
+              e2eKeyForEmail,
+            );
+            this.logger.debug("Recipient email sent");
+          } catch {
+            // Log and continue sending to others
+            this.logger.error("Recipient email failed");
+          }
+        }
+      } else {
+        this.logger.debug(
+          `Skipping recipient emails: share=redacted recipients=${recipientCount} smtpEnabled=${this.config.get("smtp.enabled")}`,
+        );
+      }
+
+      if (notifyReverseShareCreator) {
         try {
-          await this.emailService.sendMailToShareRecipients(
-            recipientEmail,
+          // No key in this link: the owner's share page unwraps K_rs itself.
+          await this.emailService.sendMailToReverseShareCreator(
+            share.reverseShare.creator.email,
             share.id,
-            share.creator,
-            share.name,
-            share.description,
-            share.expiration,
-            e2eKeyForEmail,
           );
-          this.logger.debug("Recipient email sent");
+          this.logger.debug("Reverse-share creator notified");
         } catch {
-          // Log and continue sending to others
-          this.logger.error("Recipient email failed");
+          this.logger.error("Reverse share notification failed");
         }
       }
-    } else {
-      this.logger.debug(
-        `Skipping recipient emails: share=redacted recipients=${recipientCount} smtpEnabled=${this.config.get("smtp.enabled")}`,
-      );
-    }
-
-    if (notifyReverseShareCreator) {
-      try {
-        // The reverse share creator owns K_rs - always include it in the email
-        // so they can decrypt their files. This is NOT gated by
-        // enableE2EKeyEmailSharing (that setting controls sharing K with
-        // third-party recipients, not with the key owner).
-        await this.emailService.sendMailToReverseShareCreator(
-          share.reverseShare.creator.email,
-          share.id,
-          e2eKey,
-        );
-        this.logger.debug("Reverse-share creator notified");
-      } catch {
-        this.logger.error("Reverse share notification failed");
-      }
-    }
+    })().catch(() => this.logger.error("Share notification failed"));
 
     // Send push notification to reverse share creator
     if (share.reverseShare) {
@@ -854,6 +838,33 @@ export class ShareService {
     this.logger.debug(
       `Share completed: share=redacted files=${share.files.length} recipients=${recipientCount} uploadLocked=true`,
     );
+
+    if (share.teamFolderId) {
+      const folder = await this.prisma.teamFolder.findUnique({
+        where: { id: share.teamFolderId },
+        select: { teamId: true },
+      });
+      if (folder && share.creator) {
+        await this.prisma.teamAccessLog
+          .create({
+            data: {
+              teamId: folder.teamId,
+              action: "UPLOAD",
+              actorEmail: share.creator.email,
+              actorName: share.creator.username || undefined,
+              folderId: share.teamFolderId,
+              fileName:
+                share.name || share.files.map((file) => file.name).join(", "),
+              fileSize: share.files.reduce(
+                (total, file) => total + BigInt(file.size),
+                0n,
+              ),
+              metadata: serializeActivityNames(share.files),
+            },
+          })
+          .catch(() => this.logger.error("Failed to log team upload activity"));
+      }
+    }
 
     return completedShareResponse(updatedShare);
   }

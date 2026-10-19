@@ -1,8 +1,7 @@
-import { PickType } from "@nestjs/swagger";
 import { IsString, MaxLength } from "class-validator";
-import { UserDTO } from "src/user/dto/user.dto";
+import { EnableTotpDTO } from "./enableTotp.dto";
 
-export class VerifyTotpDTO extends PickType(UserDTO, ["password"] as const) {
+export class VerifyTotpDTO extends EnableTotpDTO {
   @IsString()
   @MaxLength(64)
   code: string;

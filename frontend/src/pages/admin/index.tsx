@@ -6,6 +6,7 @@ import {
   TbLink,
   TbRefresh,
   TbSettings,
+  TbShieldLock,
   TbUsers,
   TbUsersGroup,
 } from "react-icons/tb";
@@ -49,6 +50,11 @@ const Admin = () => {
       title: t("admin.button.teams"),
       icon: TbUsersGroup,
       route: "/admin/teams",
+    },
+    {
+      title: t("admin.button.vault"),
+      icon: TbShieldLock,
+      route: "/admin/evidence-vault",
     },
     {
       title: t("admin.button.config"),

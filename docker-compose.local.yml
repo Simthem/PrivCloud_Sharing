@@ -9,6 +9,8 @@ services:
       # Local-only: force the container to use the Caddyfile that routes
       # / to the frontend and /api to the backend, without changing prod.
       - TRUST_PROXY=true
+      # -- Proxy required on PublicWeb for S3/OAuth outbound calls --
+      - NODE_OPTIONS=--dns-result-order=ipv4first --require /opt/app/backend/global-agent-bootstrap.js
       # -- Optional collaboration limits --
       - TEAM_MAX_MEMBERS=30                                # Max members per team (0 = unlimited)
       - TEAM_MAX_OWNED_TEAMS=0                             # Max owned teams per user (0 = unlimited)

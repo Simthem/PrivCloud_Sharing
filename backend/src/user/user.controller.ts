@@ -60,10 +60,20 @@ export class UserController {
       where: { userId: user.id, isActive: true },
       select: { teamId: true },
     });
+    // Preview-only access granted by a team to this account as a contractor.
+    const externalSeat = await this.prisma.teamExternalSeat.findFirst({
+      where: {
+        userId: user.id,
+        status: "ACTIVE",
+        accessExpiresAt: { gt: new Date() },
+      },
+      select: { id: true },
+    });
 
     return {
       ...userDTO,
       hasTeamMembership: !!teamMembership,
+      hasExternalAccess: !!externalSeat,
       // Whether new personal E2E shares of this account use SHARE_DEK_V1.
       shareDekV1Write: isShareDekWriteEnabledFor(user),
       // Whether those shares also encrypt their file names (FILE_META_V1).

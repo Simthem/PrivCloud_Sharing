@@ -60,4 +60,4 @@ if (overrideRisk) {
   console.error(message);
 }
 
-require("global-agent/bootstrap");
+require("global-agent").bootstrap();

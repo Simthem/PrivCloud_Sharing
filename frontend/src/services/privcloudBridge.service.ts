@@ -21,6 +21,7 @@ export type BridgeHealth = {
     directBrowserImport: boolean;
     managedEncryptedUpload: boolean;
     fileMetadataV1?: boolean;
+    relativePathsV1?: boolean;
     directS3Upload?: boolean;
     localTokenAuthorization?: boolean;
     openSourceLocalAuthorization?: boolean;
@@ -74,7 +75,10 @@ export type StartBridgeWebDavUploadJobPayload = {
   fileMetadataScheme?: number | null;
   webdav: WebDavCredentials;
   files: Array<
-    Pick<WebDavEntry, "href" | "name" | "size" | "contentType" | "lastModified">
+    Pick<
+      WebDavEntry,
+      "href" | "name" | "size" | "contentType" | "lastModified"
+    > & { relativePath?: string }
   >;
 };
 
@@ -218,8 +222,9 @@ async function nativeCommand<T>(
 export async function listWebDavDirectoryViaBridge(
   credentials: WebDavCredentials,
   href?: string,
+  signal?: AbortSignal,
 ): Promise<BridgeListResult> {
-  return nativeCommand("webdav.list", { ...credentials, href });
+  return nativeCommand("webdav.list", { ...credentials, href }, signal);
 }
 
 export async function downloadWebDavFileViaBridge(
@@ -288,9 +293,15 @@ export async function downloadWebDavFileViaBridge(
 export async function startBridgeWebDavUploadJob(
   payload: StartBridgeWebDavUploadJobPayload,
 ): Promise<BridgeUploadJob> {
-  if (payload.fileMetadataScheme === 1) {
+  const hasPaths = payload.files.some((file) => !!file.relativePath);
+  if (payload.fileMetadataScheme === 1 || hasPaths) {
     const health = await getBridgeHealth();
-    if (!health?.capabilities.fileMetadataV1)
+    if (hasPaths && !health?.capabilities.relativePathsV1)
+      throw new Error("webdav.error.companionFolderUpdateRequired");
+    if (
+      payload.fileMetadataScheme === 1 &&
+      !health?.capabilities.fileMetadataV1
+    )
       throw new Error("bridge.error.updateRequired");
   }
   return nativeCommand("webdav.upload.start", { ...payload });

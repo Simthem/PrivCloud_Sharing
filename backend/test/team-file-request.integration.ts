@@ -505,6 +505,7 @@ async function main() {
         {} as never,
         notifications as never,
         outbox,
+        {} as never,
       );
       teamService.logAccess = async () => {};
       const rotation = await teamService.startTeamKeyRotation(

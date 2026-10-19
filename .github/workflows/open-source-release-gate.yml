@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   release-gate:
-    timeout-minutes: 30
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -36,6 +36,13 @@ jobs:
       - name: Install script dependencies
         working-directory: scripts
         run: npm ci
+
+      - name: Install verification dependencies
+        working-directory: verification/contractor
+        run: npm ci
+
+      - name: Check verification runtimes
+        run: python3 --version && openssl version && google-chrome --version
 
       - name: Run OSS release regression suite
         run: npm run test:release

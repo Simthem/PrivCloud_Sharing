@@ -262,6 +262,31 @@ export const configVariables = {
       defaultValue: "",
       obscured: true,
     },
+    // Second SMTP account for every mail other than electronic signatures
+    // (email verification, invitations, shares, upload links...). Empty
+    // address: everything leaves from the account above, as before. Empty
+    // host, port or credentials: those of the account above.
+    generalEmail: {
+      type: "string",
+      defaultValue: "",
+    },
+    generalHost: {
+      type: "string",
+      defaultValue: "",
+    },
+    generalPort: {
+      type: "number",
+      defaultValue: "0",
+    },
+    generalUsername: {
+      type: "string",
+      defaultValue: "",
+    },
+    generalPassword: {
+      type: "string",
+      defaultValue: "",
+      obscured: true,
+    },
   },
   ldap: {
     enabled: {

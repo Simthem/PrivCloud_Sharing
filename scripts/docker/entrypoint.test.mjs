@@ -16,10 +16,29 @@ const entrypointUrl = pathToFileURL(
   path.resolve(backendDirectory, "..", "scripts", "docker", "entrypoint.mjs"),
 );
 const {
+  backendNodeOptions,
   ensureSqliteDatabase,
   publicParitySchemaIsReady,
   reconcileSqliteMigrations,
 } = await import(`${entrypointUrl.href}?unit-test`);
+
+test("backend preload retains configured heap, DNS and unrelated Node options", () => {
+  const options = backendNodeOptions({
+    NODE_OPTIONS:
+      '--trace-warnings --dns-result-order=verbatim --diagnostic-dir="/tmp/runtime  diagnostics"',
+    NODE_DNS_RESULT_ORDER: "ipv4first",
+    NODE_MAX_OLD_SPACE_SIZE: "4096",
+  });
+  assert.match(options, /--max-old-space-size=4096/);
+  assert.match(options, /--trace-warnings/);
+  assert.ok(options.includes('--diagnostic-dir="/tmp/runtime  diagnostics"'));
+  assert.match(options, /--dns-result-order=verbatim/);
+  assert.doesNotMatch(options, /--dns-result-order=ipv4first/);
+  assert.match(
+    options,
+    /--require "\/opt\/app\/backend\/global-agent-bootstrap\.js"/,
+  );
+});
 
 function createPartiallyMigratedDatabase(databasePath) {
   const database = new Database(databasePath);

@@ -4,7 +4,7 @@ import {
   OnApplicationBootstrap,
 } from "@nestjs/common";
 import * as crypto from "crypto";
-import * as https from "https";
+import { downloadTrustedList } from "./trusted-list-download.util";
 import { ConfigService } from "src/config/config.service";
 import { EmailService } from "src/email/email.service";
 import { PrismaService } from "src/prisma/prisma.service";
@@ -18,7 +18,6 @@ import {
   verifyTrustedListSignature,
 } from "./trusted-list.util";
 
-const MAX_LIST_BYTES = 50 * 1024 * 1024;
 const DAY_MS = 86_400_000;
 const RETRY_AFTER_ERROR_MS = 3_600_000;
 const DEFAULT_LOTL_URL = "https://ec.europa.eu/tools/lotl/eu-lotl.xml";
@@ -229,35 +228,6 @@ export class TrustedListMonitorService implements OnApplicationBootstrap {
   }
 
   private download(listUrl: string): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      const url = new URL(listUrl);
-      if (url.protocol !== "https:") {
-        reject(new Error("The Trusted List URL must use HTTPS"));
-        return;
-      }
-      const request = https.get(url, { timeout: 60_000 }, (response) => {
-        if (response.statusCode !== 200) {
-          response.resume();
-          reject(new Error(`HTTP ${response.statusCode}`));
-          return;
-        }
-        const chunks: Buffer[] = [];
-        let size = 0;
-        response.on("data", (chunk: Buffer) => {
-          size += chunk.length;
-          if (size > MAX_LIST_BYTES) {
-            request.destroy(new Error("The Trusted List is too large"));
-            return;
-          }
-          chunks.push(chunk);
-        });
-        response.on("end", () => resolve(Buffer.concat(chunks)));
-        response.on("error", reject);
-      });
-      request.on("timeout", () =>
-        request.destroy(new Error("Trusted List download timed out")),
-      );
-      request.on("error", reject);
-    });
+    return downloadTrustedList(listUrl);
   }
 }

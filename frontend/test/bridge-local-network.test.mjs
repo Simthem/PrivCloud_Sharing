@@ -268,6 +268,7 @@ test("encrypted label jobs require a capable Companion before sending any secret
   await fixture(async (control) => {
     const payload = {
       fileMetadataScheme: 1,
+      files: [],
       encryptionKey: randomBytes(32).toString("base64url"),
     };
     control.respond = () => ({

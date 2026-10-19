@@ -1,4 +1,5 @@
 import { TeamFileRequestModule } from "src/teamFileRequest/team-file-request.module";
+import { TeamExternalModule } from "src/teamExternal/team-external.module";
 import { Module } from "@nestjs/common";
 import { TeamController } from "./team.controller";
 import { TeamService } from "./team.service";
@@ -16,6 +17,7 @@ import { TeamAuditService } from "./team-audit.service";
     ConfigModule,
     FileModule,
     TeamNotificationModule,
+    TeamExternalModule,
   ],
   controllers: [TeamController],
   providers: [TeamService, TeamAuditService],

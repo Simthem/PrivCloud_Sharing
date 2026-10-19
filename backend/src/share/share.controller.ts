@@ -1,3 +1,4 @@
+import { writeShareTokenCookie } from "./share-token-cookie.util";
 import {
   Body,
   Controller,
@@ -16,11 +17,9 @@ import {
   UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
-import { JwtService } from "@nestjs/jwt";
 import { hours, minutes, Throttle } from "@nestjs/throttler";
 import { User } from "@prisma/client";
 import { Request, Response } from "express";
-import moment from "moment";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { AdministratorGuard } from "src/auth/guard/isAdmin.guard";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
@@ -58,7 +57,6 @@ export class ShareController {
 
   constructor(
     private shareService: ShareService,
-    private jwtService: JwtService,
     private config: ConfigService,
     private bridgeUploadTokenService: BridgeUploadTokenService,
   ) {}
@@ -361,61 +359,15 @@ export class ShareController {
   ) {
     const token = await this.shareService.getShareToken(id, body.password);
 
-    this.clearShareTokenCookies(request, response);
-    const isSecure = this.config.get("general.secureCookies");
-    response.cookie(`share_${id}_token`, token, {
-      path: "/",
-      httpOnly: true,
-      sameSite: "strict",
-      secure: isSecure,
-      maxAge: 1000 * 60 * 60 * 24, // 24 hours
-    });
+    writeShareTokenCookie(
+      request,
+      response,
+      id,
+      token,
+      this.config.get("general.secureCookies"),
+      this.config.get("internal.jwtSecret"),
+    );
 
     return { token };
-  }
-
-  /**
-   * Keeps the 10 most recent share token cookies and deletes the rest and all expired ones
-   */
-  private clearShareTokenCookies(request: Request, response: Response) {
-    const now = moment().unix();
-    const shareTokenCookies: { key: string; exp: number }[] = [];
-
-    for (const [key, value] of Object.entries(request.cookies)) {
-      if (!key.startsWith("share_") || !key.endsWith("_token")) continue;
-      if (typeof value !== "string" || !value) {
-        // Malformed cookie value, clear it immediately
-        response.clearCookie(key);
-        continue;
-      }
-      try {
-        const payload = this.jwtService.decode(value);
-        if (
-          !payload ||
-          typeof payload !== "object" ||
-          typeof (payload as any).exp !== "number"
-        ) {
-          // Not a valid JWT payload, clear the cookie
-          response.clearCookie(key);
-          continue;
-        }
-        shareTokenCookies.push({ key, exp: (payload as any).exp });
-      } catch {
-        // jwtService.decode threw (not a JWT at all), clear it
-        response.clearCookie(key);
-      }
-    }
-
-    const expiredTokens = shareTokenCookies.filter((c) => c.exp < now);
-    const validTokens = shareTokenCookies.filter((c) => c.exp >= now);
-
-    expiredTokens.forEach((c) => response.clearCookie(c.key));
-
-    if (validTokens.length > 10) {
-      validTokens
-        .sort((a, b) => a.exp - b.exp)
-        .slice(0, -10)
-        .forEach((c) => response.clearCookie(c.key));
-    }
   }
 }
