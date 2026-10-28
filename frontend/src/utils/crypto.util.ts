@@ -8,31 +8,80 @@
  * La clé n'est JAMAIS envoyée au serveur.
  */
 
+import {
+  CONTENT_V2_MIN_LENGTH,
+  CONTENT_V2_RECORD_SIZE,
+  ContentIntegrityError,
+  assertContentAllowed,
+  contentV2PlainSize,
+  decodeContentKeyMaterial,
+  decryptContentV2,
+  decryptContentV2Stream,
+  encodeContentKeyMaterial,
+  hasContentV2Floor,
+  hasSigningResultV2Floor,
+  isContentV2,
+  openContentV2Writer,
+  setContentV2Floor,
+  setSigningResultV2Floor,
+  type ContentContext,
+} from "./contentV2.util";
+
 const IV_LENGTH = 12; // 96 bits, recommandé pour AES-GCM
 
 // ----- Génération de clé ----------------------------------------------------------------------──
 
-export async function generateEncryptionKey(): Promise<CryptoKey> {
-  return crypto.subtle.generateKey(
+/**
+ * A content key created with `v2Floor` only reads and writes v2 content, see
+ * contentV2.util.ts. The account key never carries a floor.
+ */
+export async function generateEncryptionKey(
+  options: { v2Floor?: boolean } = {},
+): Promise<CryptoKey> {
+  const key = await crypto.subtle.generateKey(
     { name: "AES-GCM", length: 256 },
     true, // extractable
     ["encrypt", "decrypt"],
   );
+  return options.v2Floor ? setContentV2Floor(key) : key;
 }
 
 // ----- Export / Import de clé (base64url) ---------------------------------------------
 
+/** Transported key material: the raw key, preceded by its v2 floor if any. */
+export async function exportKeyMaterial(
+  key: CryptoKey,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const raw = new Uint8Array(await crypto.subtle.exportKey("raw", key));
+  return encodeContentKeyMaterial(
+    raw,
+    hasContentV2Floor(key),
+    hasSigningResultV2Floor(key),
+  );
+}
+
+export async function importKeyMaterial(
+  material: Uint8Array,
+): Promise<CryptoKey> {
+  const { raw, floor, signingResultFloor } = decodeContentKeyMaterial(material);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    raw,
+    { name: "AES-GCM" },
+    true,
+    ["encrypt", "decrypt"],
+  );
+  if (floor) setContentV2Floor(key);
+  if (signingResultFloor) setSigningResultV2Floor(key);
+  return key;
+}
+
 export async function exportKeyToBase64(key: CryptoKey): Promise<string> {
-  const raw = await crypto.subtle.exportKey("raw", key);
-  return arrayBufferToBase64Url(raw);
+  return arrayBufferToBase64Url((await exportKeyMaterial(key)).buffer);
 }
 
 export async function importKeyFromBase64(encoded: string): Promise<CryptoKey> {
-  const raw = base64UrlToArrayBuffer(encoded);
-  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, [
-    "encrypt",
-    "decrypt",
-  ]);
+  return importKeyMaterial(new Uint8Array(base64UrlToArrayBuffer(encoded)));
 }
 
 // ----- Chiffrement d'un fichier ------------------------------------------------------------─
@@ -107,8 +156,19 @@ export async function decryptFileAuto(
   encrypted: ArrayBuffer,
   key: CryptoKey,
   plaintextChunkSize: number,
+  context?: ContentContext,
 ): Promise<ArrayBuffer> {
   const totalLen = encrypted.byteLength;
+  await assertContentAllowed(key, new Uint8Array(encrypted), context);
+  if (isContentV2(new Uint8Array(encrypted))) {
+    return (
+      await decryptContentV2(
+        key,
+        requireContext(context),
+        new Uint8Array(encrypted),
+      )
+    ).buffer;
+  }
 
   // Tenter single-block d'abord (ancien format ou petit fichier).
   // Limite a 200 MB pour eviter un decrypt inutile sur les gros fichiers.
@@ -187,6 +247,14 @@ async function decryptPerChunk(
   return result.buffer;
 }
 
+/** v2 content is only read for the file it was written for. */
+function requireContext(context?: ContentContext): ContentContext {
+  if (!context) {
+    throw new ContentIntegrityError("v2 content is not readable here");
+  }
+  return context;
+}
+
 // ----- Streaming decrypt (pour les gros fichiers) ----------------------------
 
 /**
@@ -207,7 +275,8 @@ export async function* decryptStream(
   configChunkSize: number,
   totalEncryptedSize: number,
   chunkSizeIsExact = false,
-  onChunkSizeResolved?: (_chunkSize: number) => void,
+  onChunkSizeResolved?: (_chunkSize: number, _plainSize?: number) => void,
+  context?: ContentContext,
 ): AsyncGenerator<Uint8Array> {
   const reader = encryptedStream.getReader();
   try {
@@ -266,6 +335,29 @@ export async function* decryptStream(
       }
       return true;
     };
+
+    if (totalEncryptedSize > 0) {
+      await fillBuffer(Math.min(CONTENT_V2_MIN_LENGTH, totalEncryptedSize));
+    }
+    // A key with a v2 floor refuses anything else, an empty object included.
+    await assertContentAllowed(key, buf.subarray(0, bufLen), context);
+    if (isContentV2(buf.subarray(0, bufLen))) {
+      onChunkSizeResolved?.(
+        CONTENT_V2_RECORD_SIZE,
+        contentV2PlainSize(totalEncryptedSize),
+      );
+      yield* decryptContentV2Stream(
+        key,
+        requireContext(context),
+        totalEncryptedSize,
+        buf.slice(0, bufLen),
+        async () => {
+          const { done, value } = await reader.read();
+          return done ? undefined : value;
+        },
+      );
+      return;
+    }
 
     // --- Phase 1: resolve crypto record size ---
     let detectedPlainSize = chunkSizeIsExact ? configChunkSize : -1;
@@ -326,6 +418,13 @@ export async function* decryptStream(
     // whose records can be as large as 200 MB.
     const decryptPipelineDepth = detectedPlainSize <= 2_000_000 ? 3 : 1;
     const pendingDecrypts: Array<Promise<Uint8Array>> = [];
+    const queueDecrypt = (record: ArrayBuffer) => {
+      const pending = decryptFile(record, key).then(
+        (decrypted) => new Uint8Array(decrypted),
+      );
+      void pending.catch(() => undefined);
+      pendingDecrypts.push(pending);
+    };
 
     let pendingFill: Promise<boolean> | null = null;
     while (true) {
@@ -341,11 +440,8 @@ export async function* decryptStream(
       // Start receiving the next record before decrypting/yielding this one.
       // Fetch backpressure still bounds memory to roughly two records.
       pendingFill = fillBuffer(encChunkSize);
-      pendingDecrypts.push(
-        decryptFile(encryptedChunk, key).then(
-          (decrypted) => new Uint8Array(decrypted),
-        ),
-      );
+      void pendingFill.catch(() => undefined);
+      queueDecrypt(encryptedChunk);
       if (pendingDecrypts.length >= decryptPipelineDepth) {
         yield await pendingDecrypts.shift()!;
       }
@@ -355,11 +451,7 @@ export async function* decryptStream(
 
     // Final partial chunk (last chunk of the file, smaller than encChunkSize)
     if (bufLen > ENCRYPTION_OVERHEAD) {
-      pendingDecrypts.push(
-        decryptFile(bufSlice(0, bufLen), key).then(
-          (decrypted) => new Uint8Array(decrypted),
-        ),
-      );
+      queueDecrypt(bufSlice(0, bufLen));
     }
 
     for (const decrypted of pendingDecrypts) {
@@ -420,12 +512,23 @@ export interface ReencryptStreamOptions {
   maxChunks?: number;
   maxTargetChunkSize?: number;
   chunkSizeQuantum?: number;
+  /**
+   * The file being rewritten in place. Required to read v2 content and to
+   * write it, the identity stays the same and the key changes.
+   */
+  context?: ContentContext;
+  /**
+   * Format requested for the rewrite. v2 is written anyway when the new key
+   * has a floor or the source is already v2, never the reverse.
+   */
+  contentScheme?: 1 | 2;
   signal?: AbortSignal;
   uploadChunk: (
     _encryptedChunk: ArrayBuffer,
     _chunkIndex: number,
     _totalChunks: number,
     _plaintextChunkSize: number,
+    _contentScheme: 1 | 2,
   ) => Promise<void>;
 }
 
@@ -478,9 +581,15 @@ export async function reencryptStream({
   maxChunks = Number.MAX_SAFE_INTEGER,
   maxTargetChunkSize = targetChunkSize,
   chunkSizeQuantum = 1,
+  context,
+  contentScheme = 1,
   signal,
   uploadChunk,
-}: ReencryptStreamOptions): Promise<{ bytes: number; chunks: number }> {
+}: ReencryptStreamOptions): Promise<{
+  bytes: number;
+  chunks: number;
+  contentScheme: 1 | 2;
+}> {
   if (
     !Number.isSafeInteger(targetChunkSize) ||
     targetChunkSize <= 0 ||
@@ -495,40 +604,64 @@ export async function reencryptStream({
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
   };
   let resolvedSourceChunkSize = 0;
+  let sourcePlainSize: number | undefined;
   const decrypted = decryptStream(
     encryptedStream,
     oldKey,
     sourceChunkSize,
     totalEncryptedSize,
     sourceChunkSizeIsExact,
-    (resolved) => {
+    (resolved, plainSize) => {
       resolvedSourceChunkSize = resolved;
+      sourcePlainSize = plainSize;
     },
+    context,
   );
 
   // Starting the iterator resolves legacy record sizing and yields the first
   // record without materializing the remainder of the file.
   const first = await decrypted.next();
-  if (first.done || resolvedSourceChunkSize <= 0) {
+  if (first.done && totalEncryptedSize === 0) {
+    resolvedSourceChunkSize = sourceChunkSize;
+  } else if (first.done || resolvedSourceChunkSize <= 0) {
     throw new Error("Encrypted stream has no content");
   }
 
-  const expectedBytes = getDecryptedStreamSize(
-    totalEncryptedSize,
-    resolvedSourceChunkSize,
-  );
-  const effectiveTargetChunkSize = computeReencryptChunkSize(
-    expectedBytes,
-    targetChunkSize,
-    maxTargetChunkSize,
-    maxChunks,
-    chunkSizeQuantum,
-  );
+  const sourceIsV2 = sourcePlainSize !== undefined;
+  const scheme: 1 | 2 =
+    sourceIsV2 || hasContentV2Floor(newKey) ? 2 : contentScheme;
+  if (scheme === 2 && targetRecordSize !== CONTENT_V2_RECORD_SIZE) {
+    throw new Error("Invalid re-encryption chunk size");
+  }
+  const expectedBytes =
+    totalEncryptedSize === 0
+      ? 0
+      : (sourcePlainSize ??
+        getDecryptedStreamSize(totalEncryptedSize, resolvedSourceChunkSize));
+  const effectiveTargetChunkSize =
+    expectedBytes === 0
+      ? targetChunkSize
+      : computeReencryptChunkSize(
+          expectedBytes,
+          targetChunkSize,
+          maxTargetChunkSize,
+          maxChunks,
+          chunkSizeQuantum,
+        );
   const recordsPerTransportChunk = Math.max(
     1,
     Math.floor(effectiveTargetChunkSize / targetRecordSize),
   );
-  const totalRecords = Math.ceil(expectedBytes / targetRecordSize);
+  const writer =
+    scheme === 2
+      ? await openContentV2Writer(
+          newKey,
+          requireContext(context),
+          expectedBytes,
+        )
+      : null;
+  const totalRecords =
+    writer?.records ?? Math.ceil(expectedBytes / targetRecordSize);
   const totalChunks = Math.ceil(totalRecords / recordsPerTransportChunk);
   if (totalChunks > maxChunks) {
     throw new Error("File is too large for multipart re-encryption");
@@ -541,9 +674,17 @@ export async function reencryptStream({
   let recordLength = 0;
   const transportCapacity =
     recordsPerTransportChunk * (targetRecordSize + ENCRYPTION_OVERHEAD);
-  let transportBuffer = new Uint8Array(transportCapacity);
+  // A v2 object starts with its header, carried by the first transport chunk.
+  let transportBuffer = new Uint8Array(
+    transportCapacity + (writer?.header.length ?? 0),
+  );
   let transportLength = 0;
+  if (writer) {
+    transportBuffer.set(writer.header);
+    transportLength = writer.header.length;
+  }
   let transportRecords = 0;
+  let sealedRecords = 0;
   let processedBytes = 0;
   let chunkIndex = 0;
   let pendingUpload: Promise<{ error?: unknown }> | null = null;
@@ -556,7 +697,7 @@ export async function reencryptStream({
   };
 
   const flushTransport = async () => {
-    if (transportLength === 0) return;
+    if (transportRecords === 0) return;
     throwIfAborted();
     await waitForPendingUpload();
     const encrypted =
@@ -569,6 +710,7 @@ export async function reencryptStream({
       currentIndex,
       totalChunks,
       targetRecordSize,
+      scheme,
     ).then(
       () => ({}),
       (error) => ({ error }),
@@ -578,14 +720,20 @@ export async function reencryptStream({
     transportRecords = 0;
   };
 
-  const flushRecord = async () => {
-    if (recordLength === 0) return;
+  const flushRecord = async (final = false) => {
+    // An empty v2 object still holds its single, final record.
+    if (recordLength === 0 && !(final && writer && sealedRecords === 0)) {
+      return;
+    }
     throwIfAborted();
     const plaintext =
       recordLength === recordBuffer.length
         ? recordBuffer.buffer
         : recordBuffer.slice(0, recordLength).buffer;
-    const encrypted = new Uint8Array(await encryptFile(plaintext, newKey));
+    const encrypted = writer
+      ? await writer.sealRecord(sealedRecords, new Uint8Array(plaintext))
+      : new Uint8Array(await encryptFile(plaintext, newKey));
+    sealedRecords++;
     transportBuffer.set(encrypted, transportLength);
     transportLength += encrypted.length;
     transportRecords++;
@@ -615,9 +763,9 @@ export async function reencryptStream({
   };
 
   try {
-    await append(first.value);
+    if (!first.done) await append(first.value);
     for await (const part of decrypted) await append(part);
-    await flushRecord();
+    await flushRecord(true);
     await flushTransport();
     await waitForPendingUpload();
   } catch (error) {
@@ -632,7 +780,7 @@ export async function reencryptStream({
   if (processedBytes !== expectedBytes || chunkIndex !== totalChunks) {
     throw new Error("Re-encrypted stream size mismatch");
   }
-  return { bytes: processedBytes, chunks: chunkIndex };
+  return { bytes: processedBytes, chunks: chunkIndex, contentScheme: scheme };
 }
 
 // ----- Stockage de la clé utilisateur (sessionStorage) ----------------------
@@ -857,8 +1005,8 @@ export async function wrapReverseShareKey(
   rsKey: CryptoKey,
   masterKey: CryptoKey,
 ): Promise<string> {
-  const raw = await crypto.subtle.exportKey("raw", rsKey);
-  const encrypted = await encryptFile(raw, masterKey);
+  const material = await exportKeyMaterial(rsKey);
+  const encrypted = await encryptFile(material.buffer, masterKey);
   return arrayBufferToBase64Url(encrypted);
 }
 
@@ -873,11 +1021,8 @@ export async function unwrapReverseShareKey(
   masterKey: CryptoKey,
 ): Promise<CryptoKey> {
   const encrypted = base64UrlToArrayBuffer(encryptedBase64);
-  const raw = await decryptFile(encrypted, masterKey);
-  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, [
-    "encrypt",
-    "decrypt",
-  ]);
+  const material = await decryptFile(encrypted, masterKey);
+  return importKeyMaterial(new Uint8Array(material));
 }
 
 // ----- Clé propre à un partage personnel (SHARE_DEK_V1) --------------------
@@ -893,16 +1038,17 @@ function shareKeyAdditionalData(shareId: string): Uint8Array<ArrayBuffer> {
 
 /**
  * Enveloppe K_share avec K_master, même format que K_rs et K_team :
- * base64url [IV 12 octets][AES-256-GCM(K_share) + tag 16 octets].
+ * base64url [IV 12 octets][AES-256-GCM(K_share) + tag 16 octets]. Une clé à
+ * plancher v2 est enveloppée avec son octet de plancher, sous le même tag.
  */
 export async function wrapShareKey(
   shareKey: CryptoKey,
   masterKey: CryptoKey,
   shareId: string,
 ): Promise<string> {
-  const raw = await crypto.subtle.exportKey("raw", shareKey);
+  const material = await exportKeyMaterial(shareKey);
   const encrypted = await encryptFile(
-    raw,
+    material.buffer,
     masterKey,
     shareKeyAdditionalData(shareId),
   );
@@ -915,16 +1061,17 @@ export async function unwrapShareKey(
   masterKey: CryptoKey,
   shareId: string,
 ): Promise<CryptoKey> {
-  const raw = await decryptFile(
-    base64UrlToArrayBuffer(wrappedBase64),
-    masterKey,
-    shareKeyAdditionalData(shareId),
+  const material = new Uint8Array(
+    await decryptFile(
+      base64UrlToArrayBuffer(wrappedBase64),
+      masterKey,
+      shareKeyAdditionalData(shareId),
+    ),
   );
-  if (raw.byteLength !== 32) throw new Error("Invalid share key length");
-  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, [
-    "encrypt",
-    "decrypt",
-  ]);
+  if (decodeContentKeyMaterial(material).raw.byteLength !== 32) {
+    throw new Error("Invalid share key length");
+  }
+  return importKeyMaterial(material);
 }
 
 /**

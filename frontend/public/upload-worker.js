@@ -22,7 +22,10 @@
  *   main -> worker: { type: 'start', shareId, file, chunkSize,
  *                     initialChunkSize,
  *                     totalChunks, isE2E, cryptoKeyRaw?, fileId?,
- *                     fileName, encryptedMetadata?, startChunk, endChunk }
+ *                     fileName, encryptedMetadata?, startChunk, endChunk,
+ *                     contentScheme?, contentNonce? }
+ *   contentScheme 2 writes E2EE content v2 (docs/E2EE_CONTENT_V2.md) with the
+ *   16-byte header nonce contentNonce, kept across resumed sessions.
  *   encryptedMetadata (FILE_META_V1): the real name and folder path, already
  *   encrypted with the share key. fileName is then the server placeholder.
  *   main -> worker: { type: 'safeline-resolved' }
@@ -42,6 +45,86 @@
 
 var UPLOAD_CLIENT_REVISION = "multipath-origin-pool-v9";
 var IV_LENGTH = 12;
+
+// ---- E2EE content v2 writer ----
+// Same layout, key derivation and additional data as utils/contentV2.util.ts,
+// whose reader test/content-v2-writers.test.mjs checks this writer against.
+var CONTENT_V2_HEADER_LENGTH = 32;
+var CONTENT_V2_RECORD_SIZE = 1000000;
+var CONTENT_V2_MAGIC = [0x89, 0x50, 0x43, 0x45, 0x32, 0x0d, 0x0a, 0x1a];
+
+function contentV2Field(value) {
+  var bytes = new TextEncoder().encode(value);
+  var out = new Uint8Array(2 + bytes.length);
+  new DataView(out.buffer).setUint16(0, bytes.length);
+  out.set(bytes, 2);
+  return out;
+}
+
+function contentV2Concat(parts) {
+  var length = parts.reduce(function (sum, part) {
+    return sum + part.length;
+  }, 0);
+  var out = new Uint8Array(length);
+  var offset = 0;
+  parts.forEach(function (part) {
+    out.set(part, offset);
+    offset += part.length;
+  });
+  return out;
+}
+
+function buildContentV2Header(nonce) {
+  var header = new Uint8Array(CONTENT_V2_HEADER_LENGTH);
+  header.set(CONTENT_V2_MAGIC);
+  header[8] = 2;
+  new DataView(header.buffer).setUint32(10, CONTENT_V2_RECORD_SIZE);
+  header.set(nonce, 14);
+  return header;
+}
+
+function contentV2Identity(fileId) {
+  return contentV2Concat([
+    contentV2Field("share-file"),
+    contentV2Field(fileId),
+  ]);
+}
+
+async function deriveContentV2Key(rawKey, header, identity) {
+  var material = await crypto.subtle.importKey("raw", rawKey, "HKDF", false, [
+    "deriveKey",
+  ]);
+  return crypto.subtle.deriveKey(
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: new Uint8Array(0),
+      info: contentV2Concat([
+        contentV2Field("privcloud:content:v2:key"),
+        header,
+        identity,
+      ]),
+    },
+    material,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt"],
+  );
+}
+
+function contentV2Aad(header, identity, index, isLast) {
+  var position = new Uint8Array(9);
+  var view = new DataView(position.buffer);
+  view.setUint32(0, Math.floor(index / 4294967296));
+  view.setUint32(4, index % 4294967296);
+  position[8] = isLast ? 1 : 0;
+  return contentV2Concat([
+    contentV2Field("privcloud:content:v2:record"),
+    header,
+    identity,
+    position,
+  ]);
+}
 var aborted = false;
 // Token refresh flags -- main thread handles the actual fetch because
 // Safari does NOT send HttpOnly cookies in fetch() from Web Workers
@@ -197,6 +280,7 @@ async function runBatch(opts) {
   var totalChunks = opts.totalChunks;
   var isE2E = opts.isE2E;
   var cryptoChunkSize = opts.cryptoChunkSize || chunkSize;
+  var contentV2 = isE2E && opts.contentScheme === 2;
   var fileName = opts.fileName;
   var relativePath = opts.relativePath;
   var encryptedMetadata = opts.encryptedMetadata || undefined;
@@ -233,6 +317,23 @@ async function runBatch(opts) {
   ) {
     throw new Error("Initial E2E chunk must end on a crypto record boundary");
   }
+  // v2 records are numbered across the whole file and bound to a file id
+  // chosen here, never by the server.
+  if (
+    contentV2 &&
+    (cryptoChunkSize !== CONTENT_V2_RECORD_SIZE ||
+      chunkSize % CONTENT_V2_RECORD_SIZE !== 0 ||
+      initialChunkSize % CONTENT_V2_RECORD_SIZE !== 0 ||
+      !fileId ||
+      !opts.contentNonce ||
+      opts.contentNonce.byteLength !== 16)
+  ) {
+    throw new Error("Invalid E2EE content v2 upload layout");
+  }
+  var contentV2Records = Math.max(
+    1,
+    Math.ceil(file.size / CONTENT_V2_RECORD_SIZE),
+  );
 
   function getChunkBounds(idx) {
     var from = idx === 0 ? 0 : initialChunkSize + (idx - 1) * chunkSize;
@@ -249,6 +350,13 @@ async function runBatch(opts) {
     var bounds = getChunkBounds(idx);
     var plainBytes = Math.max(0, bounds.to - bounds.from);
     if (!isE2E) return plainBytes;
+    if (contentV2) {
+      return (
+        plainBytes +
+        Math.max(1, Math.ceil(plainBytes / cryptoChunkSize)) * 28 +
+        (idx === 0 ? CONTENT_V2_HEADER_LENGTH : 0)
+      );
+    }
     return plainBytes + Math.ceil(plainBytes / cryptoChunkSize) * 28;
   }
 
@@ -374,17 +482,30 @@ async function runBatch(opts) {
     return;
   }
 
-  // Import crypto key once per batch
+  // Import crypto key once per batch. v2 encrypts under the key derived for
+  // this file from the share key, the header and the file id.
   var cryptoKey = null;
+  var contentHeader = null;
+  var contentIdentity = null;
   if (isE2E) {
     try {
-      cryptoKey = await crypto.subtle.importKey(
-        "raw",
-        opts.cryptoKeyRaw,
-        { name: "AES-GCM", length: 256 },
-        false,
-        ["encrypt"],
-      );
+      if (contentV2) {
+        contentHeader = buildContentV2Header(new Uint8Array(opts.contentNonce));
+        contentIdentity = contentV2Identity(fileId);
+        cryptoKey = await deriveContentV2Key(
+          opts.cryptoKeyRaw,
+          contentHeader,
+          contentIdentity,
+        );
+      } else {
+        cryptoKey = await crypto.subtle.importKey(
+          "raw",
+          opts.cryptoKeyRaw,
+          { name: "AES-GCM", length: 256 },
+          false,
+          ["encrypt"],
+        );
+      }
     } catch (err) {
       self.postMessage({
         type: "error",
@@ -459,11 +580,13 @@ async function runBatch(opts) {
     }
   }
 
-  async function encryptRecord(iv, plaintext) {
+  async function encryptRecord(iv, plaintext, additionalData) {
     await acquireCryptoSlot();
     try {
       return await crypto.subtle.encrypt(
-        { name: "AES-GCM", iv: iv },
+        additionalData
+          ? { name: "AES-GCM", iv: iv, additionalData: additionalData }
+          : { name: "AES-GCM", iv: iv },
         cryptoKey,
         plaintext,
       );
@@ -488,7 +611,15 @@ async function runBatch(opts) {
     if (isE2E) {
       var plainLength = to - from;
       var recordCount = Math.ceil(plainLength / cryptoChunkSize);
-      var combined = new Uint8Array(plainLength + recordCount * 28);
+      // An empty v2 file still holds one final record, after the header.
+      if (contentV2 && recordCount === 0) recordCount = 1;
+      var headerLength =
+        contentV2 && idx === 0 ? CONTENT_V2_HEADER_LENGTH : 0;
+      var firstRecord = contentV2 ? from / cryptoChunkSize : 0;
+      var combined = new Uint8Array(
+        headerLength + plainLength + recordCount * 28,
+      );
+      if (headerLength) combined.set(contentHeader);
 
       // Read one contiguous batch instead of issuing one Blob read per record.
       // AES-GCM still runs once per record with a fresh IV, and output offsets
@@ -522,8 +653,21 @@ async function runBatch(opts) {
                 localRecordOffset + recordEnd - recordOffset,
               );
               var iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
-              var ciphertext = await encryptRecord(iv, plainView);
-              var outputOffset = recordOffset + currentRecord * 28;
+              var recordNumber = firstRecord + currentRecord;
+              var ciphertext = await encryptRecord(
+                iv,
+                plainView,
+                contentV2
+                  ? contentV2Aad(
+                      contentHeader,
+                      contentIdentity,
+                      recordNumber,
+                      recordNumber === contentV2Records - 1,
+                    )
+                  : undefined,
+              );
+              var outputOffset =
+                headerLength + recordOffset + currentRecord * 28;
               combined.set(iv, outputOffset);
               combined.set(
                 new Uint8Array(ciphertext),
@@ -895,6 +1039,17 @@ async function runBatch(opts) {
     return safelinePromise;
   }
 
+  // v2 records are already bound to this id: content stored under another
+  // one would never be readable.
+  function postFileIdMismatch() {
+    self.postMessage({
+      type: "error",
+      message: "The server assigned another file id to E2EE v2 content",
+      status: 0,
+      data: null,
+    });
+  }
+
   function getMultipartControlPayloadObject() {
     return {
       id: fileId,
@@ -906,6 +1061,7 @@ async function runBatch(opts) {
       chunkSize: chunkSize,
       initialChunkSize: initialChunkSize,
       encryptionChunkSize: isE2E ? cryptoChunkSize : undefined,
+      contentScheme: contentV2 ? 2 : undefined,
     };
   }
 
@@ -981,6 +1137,10 @@ async function runBatch(opts) {
         }
         if (response.ok && data) {
           confirmApiSession();
+          if (contentV2 && data.id && data.id !== fileId) {
+            postFileIdMismatch();
+            return { ready: false, fatal: true };
+          }
           if (data && data.uploadComplete === true) {
             self.postMessage({ type: "progress", chunkIndex: totalChunks - 1, totalChunks: totalChunks, fileId: data.id || fileId, uploadedBytes: file.size,
             });
@@ -1331,6 +1491,7 @@ async function runBatch(opts) {
     for (var attempt = 1; attempt <= 3; attempt++) {
       if (aborted) return { fatal: true };
       try {
+        var requestedAt = Date.now();
         var response = await fetch(authorizationUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1354,6 +1515,7 @@ async function runBatch(opts) {
           data.contentLength === contentLength
         ) {
           confirmApiSession();
+          data.usableUntil = getDirectAuthorizationDeadline(requestedAt, data);
           return { ok: true, data: data };
         }
         if (isChallengeResponse(response, data)) {
@@ -1478,6 +1640,7 @@ async function runBatch(opts) {
     for (var attempt = 1; attempt <= maxAttempts; attempt++) {
       if (aborted) return { fatal: true };
       try {
+        var requestedAt = Date.now();
         var response = await fetch(authorizationUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1509,13 +1672,15 @@ async function runBatch(opts) {
             if (!indexes.includes(itemIndex)) return;
             var expectedLength = getExpectedBodyBytes(itemIndex);
             if (Number(item.contentLength) !== expectedLength) return;
-            byIndex.set(
-              itemIndex,
-              Object.assign({}, data, item, {
-                id: data.id || item.id || fileId,
-                contentLength: expectedLength,
-              }),
+            var authorization = Object.assign({}, data, item, {
+              id: data.id || item.id || fileId,
+              contentLength: expectedLength,
+            });
+            authorization.usableUntil = getDirectAuthorizationDeadline(
+              requestedAt,
+              authorization,
             );
+            byIndex.set(itemIndex, authorization);
           });
           if (byIndex.size !== indexes.length) {
             self.postMessage({
@@ -1658,10 +1823,12 @@ async function runBatch(opts) {
     var nextBatch = (Math.floor(chunkIndex / DIRECT_AUTH_BATCH_SIZE) + 1) * DIRECT_AUTH_BATCH_SIZE;
     if (nextBatch >= endChunk ||
         chunkIndex < nextBatch - MAX_PARALLEL - 2 ||
-        directAuthorizationCache.has(nextBatch) || directAuthorizationInflight.has(nextBatch)) return;
+        isDirectAuthorizationUsable(directAuthorizationCache.get(nextBatch)) ||
+        directAuthorizationInflight.has(nextBatch)) return;
     var nextBatchEnd = Math.min(endChunk, nextBatch + DIRECT_AUTH_BATCH_SIZE);
     while (nextBatch < nextBatchEnd && completedProgressChunks.has(nextBatch)) nextBatch++;
-    if (nextBatch >= nextBatchEnd || directAuthorizationCache.has(nextBatch) ||
+    if (nextBatch >= nextBatchEnd ||
+        isDirectAuthorizationUsable(directAuthorizationCache.get(nextBatch)) ||
         directAuthorizationInflight.has(nextBatch)) return;
     // Authorize one following batch while cached parts still transfer. Keep its
     // deadline independent of the part that triggered it and never warm recursively.
@@ -1680,7 +1847,10 @@ async function runBatch(opts) {
   ) {
     if (browserOriginPoolMode && !batchAuthorizationUnsupported) {
       var cached = directAuthorizationCache.get(chunkIndex);
-      if (cached && Number(cached.contentLength) === contentLength) {
+      if (
+        isDirectAuthorizationUsable(cached) &&
+        Number(cached.contentLength) === contentLength
+      ) {
         if (!prefetchOnly) prefetchDirectAuthorizationWindow(chunkIndex);
         return { ok: true, data: cached };
       }
@@ -1696,7 +1866,9 @@ async function runBatch(opts) {
         ) {
           if (
             !completedProgressChunks.has(candidateIndex) &&
-            !directAuthorizationCache.has(candidateIndex)
+            !isDirectAuthorizationUsable(
+              directAuthorizationCache.get(candidateIndex),
+            )
           ) {
             indexes.push(candidateIndex);
           }
@@ -1733,6 +1905,19 @@ async function runBatch(opts) {
 
   function invalidateDirectAuthorization(chunkIndex) {
     directAuthorizationCache.delete(chunkIndex);
+  }
+
+  // S3 rejects a presigned URL with 403 once S3_DIRECT_BROWSER_URL_TTL_SECONDS
+  // have elapsed. Parts can wait minutes for a page-level slot on a slow link,
+  // so a URL is only sent while a margin of its lifetime remains.
+  function getDirectAuthorizationDeadline(requestedAt, authorization) {
+    var lifetimeMs =
+      Math.max(60, Number(authorization.expiresInSeconds) || 60) * 1000;
+    return requestedAt + lifetimeMs - Math.min(60000, lifetimeMs / 2);
+  }
+
+  function isDirectAuthorizationUsable(authorization) {
+    return !!authorization && Date.now() < Number(authorization.usableUntil);
   }
 
   /**
@@ -1773,6 +1958,22 @@ async function runBatch(opts) {
           // otherwise sibling file Workers wait behind an idle connection.
           var body = await getBody();
           grant = await acquireDirectSlot(candidates);
+          if (!isDirectAuthorizationUsable(authorization.data)) {
+            // The slot arrived after the usable life of these URLs. Sign the
+            // part again while holding it rather than collect a 403 from S3.
+            invalidateDirectAuthorization(chunkIndex);
+            authorization = await requestDirectPartAuthorization(
+              chunkIndex,
+              bodyBytes,
+              signal,
+            );
+            if (!authorization.ok) {
+              releaseDirectSlot(grant.leaseId, "cancelled", 0);
+              released = true;
+              return authorization;
+            }
+            candidates = normalizeDirectCandidates(authorization.data);
+          }
           var candidate = candidates[grant.candidateIndex];
           if (!candidate || candidate.origin !== grant.origin) {
             releaseDirectSlot(grant.leaseId, "cancelled", 0);
@@ -1805,9 +2006,11 @@ async function runBatch(opts) {
             response.status === 403 ||
             response.status === 429 ||
             response.status >= 500;
+          // A 403 refuses this signed URL, not the origin. Cooling the origin
+          // down would also hold back every other part sent to it.
           releaseDirectSlot(
             grant.leaseId,
-            transient ? "transient" : "cancelled",
+            transient && response.status !== 403 ? "transient" : "cancelled",
             retryAfterMs,
           );
           released = true;
@@ -1883,6 +2086,7 @@ async function runBatch(opts) {
       url += "chunkIndex=" + chunkIndex + "&totalChunks=" + totalChunks;
       url += "&chunkSize=" + chunkSize;
       if (isE2E) url += "&encryptionChunkSize=" + cryptoChunkSize;
+      if (contentV2) url += "&contentScheme=2";
       if (fileId) url += "&id=" + encodeURIComponent(fileId);
 
       // Rate-limit guard
@@ -2437,6 +2641,11 @@ async function runBatch(opts) {
           MAX_PARALLEL++;
         }
 
+        if (contentV2 && jsonResult.id !== fileId) {
+          releaseBodyForTransfer();
+          postFileIdMismatch();
+          return { ok: false };
+        }
         fileId = jsonResult.id;
         if (
           serverManagedWindow &&
@@ -2571,8 +2780,7 @@ async function runBatch(opts) {
       if (!Number.isInteger(idx) || idx < startChunk || idx >= endChunk || completedProgressChunks.has(idx)) return;
       var bounds = getChunkBounds(idx);
       var plainSize = bounds.to - bounds.from;
-      var expectedSize = plainSize + (isE2E ? Math.ceil(plainSize / cryptoChunkSize) * 28 : 0);
-      if (part.size !== expectedSize) return;
+      if (part.size !== getExpectedBodyBytes(idx)) return;
       completedProgressChunks.add(idx);
       uploadedPlainBytes += plainSize;
     });

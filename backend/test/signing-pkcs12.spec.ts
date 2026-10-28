@@ -2,6 +2,7 @@ import "reflect-metadata";
 import assert from "node:assert/strict";
 import * as crypto from "node:crypto";
 import {
+  Asn1Node,
   asn1,
   encodeDer,
   oidFromDer,
@@ -40,7 +41,10 @@ testCase("decodes BER indefinite lengths and re-encodes them as DER", () => {
   const ber = Buffer.from("3080040201020500" + "0000", "hex");
   const node = parseDer(ber);
   assert.equal(encodeDer(node).toString("hex"), "3006040201020500");
-  assert.deepEqual(readOctets((node.value as any[])[0]), Buffer.from([1, 2]));
+  assert.deepEqual(
+    readOctets((node.value as Asn1Node[])[0]),
+    Buffer.from([1, 2]),
+  );
 });
 
 testCase("rejects truncated, trailing and deeply nested input", () => {

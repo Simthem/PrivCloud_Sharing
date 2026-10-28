@@ -237,6 +237,7 @@ const SignPage = () => {
           await downloadedBlob.arrayBuffer(),
           await importKeyFromBase64(e2eKey),
           5_000_000,
+          { signingDocumentId: signingData.document.id },
         );
         blob = new Blob([decrypted], { type: "application/pdf" });
       }
@@ -332,10 +333,12 @@ const SignPage = () => {
         const encryptedBuf = await resp.arrayBuffer();
         const cryptoKey = await importKeyFromBase64(e2eKey);
         // Default chunk size 5MB - decryptFileAuto tries multiple sizes
+        const sourceFileId = signingData.document.fileId;
         const decryptedBuf = await decryptFileAuto(
           encryptedBuf,
           cryptoKey,
           5_000_000,
+          sourceFileId ? { fileId: sourceFileId } : undefined,
         );
         const sourceHash = await sha256Hex(new Uint8Array(decryptedBuf));
         if (cancelled) return;

@@ -1,8 +1,14 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
 import { createHmac, randomBytes } from "node:crypto";
+import { ExecutionContext, HttpException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import type { CookieOptions, Request, Response } from "express";
+import { ConfigService } from "src/config/config.service";
 import { FileSecurityGuard } from "src/file/guard/fileSecurity.guard";
+import { PrismaService } from "src/prisma/prisma.service";
+import { ShareService } from "src/share/share.service";
+import { TeamShareAccessService } from "src/share/team-share-access.service";
 import {
   readShareVisitToken,
   writeShareTokenCookie,
@@ -11,8 +17,32 @@ import { createUnitTestRunner } from "./unit-test";
 const { testCase, run } = createUnitTestRunner("share visit counting");
 const jwtSecret = randomBytes(32).toString("base64url");
 const jwt = new JwtService({ secret: jwtSecret });
+type VisitShare = {
+  id: string;
+  uploadLocked: boolean;
+  views: number;
+  expiration: Date;
+  createdAt: Date;
+  security: { maxViews: number | null; password?: string };
+  reverseShare: { publicAccess: boolean; creatorId: string } | null;
+  teamFolderId: string | null;
+  creatorId?: string;
+};
+type VisitOptions = {
+  range?: string;
+  headers?: Record<string, string>;
+  fileId?: string;
+  cookies?: Record<string, string>;
+  user?: { id: string };
+};
+type VisitResponse = {
+  cookie: (key: string, value: string, settings: CookieOptions) => void;
+  clearCookie: () => void;
+  setHeader: (key: string, value: string) => void;
+  [header: string]: unknown;
+};
 function fixture(maxViews: number | null = null) {
-  const share: any = {
+  const share: VisitShare = {
     id: "visit",
     uploadLocked: true,
     views: 0,
@@ -22,8 +52,8 @@ function fixture(maxViews: number | null = null) {
     reverseShare: null,
     teamFolderId: null,
   };
-  let cookies: Record<string, string> = {};
-  const prisma: any = {
+  const cookies: Record<string, string> = {};
+  const prisma = {
     share: {
       findUnique: async () => share,
       updateMany: async () => {
@@ -33,7 +63,7 @@ function fixture(maxViews: number | null = null) {
       },
     },
   };
-  const service: any = {
+  const service = {
     increaseViewCount: async () => {
       share.views++;
     },
@@ -51,41 +81,41 @@ function fixture(maxViews: number | null = null) {
     assertCanAccessShare: async () => {},
   };
   const guard = new FileSecurityGuard(
-    service,
-    prisma,
+    service as unknown as ShareService,
+    prisma as unknown as PrismaService,
     {
       get: (key: string) => (key === "internal.jwtSecret" ? jwtSecret : true),
-    } as any,
-    teamAccess as any,
+    } as unknown as ConfigService,
+    teamAccess as unknown as TeamShareAccessService,
   );
-  async function visit(options: any = {}) {
-    const headers: any = {
+  async function visit(options: VisitOptions = {}) {
+    const headers: Record<string, string> = {
       range: options.range || "bytes=0-1023",
       ...(options.headers || {}),
     };
-    const request: any = {
+    const request = {
       params: { shareId: share.id, fileId: options.fileId || "file" },
       cookies: options.cookies || cookies,
       headers,
       user: options.user,
     };
-    const response: any = {
-      cookie: (key: string, value: string, settings: any) => {
+    const response: VisitResponse = {
+      cookie: (key, value, settings) => {
         assert.equal(settings.httpOnly, true);
         assert.equal(settings.sameSite, "strict");
         cookies[key] = value;
       },
       clearCookie: () => {},
-      setHeader: (key: string, value: string) => {
+      setHeader: (key, value) => {
         response[key] = value;
       },
     };
-    const context: any = {
+    const context = {
       switchToHttp: () => ({
         getRequest: () => request,
         getResponse: () => response,
       }),
-    };
+    } as unknown as ExecutionContext;
     return { allowed: await guard.canActivate(context), response };
   }
   return { share, visit, teamAccess };
@@ -101,7 +131,7 @@ testCase(
     assert.equal(f.share.views, 1);
     await assert.rejects(
       f.visit({ cookies: {} }),
-      (error: any) => error.getStatus() === 403,
+      (error: HttpException) => error.getStatus() === 403,
     );
     assert.equal(f.share.views, 1);
   },
@@ -168,7 +198,7 @@ testCase(
 testCase(
   "cookie cleanup retains non-expiring visits, removes malformed/expired entries and caps total cookies at ten",
   async () => {
-    const cookies: any = {
+    const cookies: Record<string, string> = {
       share_forever_token: jwt.sign({ shareId: "forever", iat: 10 }),
       share_bad_token: "bad",
       share_expired_token: jwt.sign({ shareId: "expired", exp: 1 }),
@@ -180,7 +210,7 @@ testCase(
       });
     const removed: string[] = [];
     writeShareTokenCookie(
-      { cookies } as any,
+      { cookies } as unknown as Request,
       {
         cookie: (key: string, value: string) => {
           cookies[key] = value;
@@ -189,7 +219,7 @@ testCase(
           removed.push(key);
           delete cookies[key];
         },
-      } as any,
+      } as unknown as Response,
       "new",
       jwt.sign({}),
       true,
@@ -201,13 +231,13 @@ testCase(
     const only = { share_forever_token: jwt.sign({ shareId: "forever" }) };
     const foreverRemoved: string[] = [];
     writeShareTokenCookie(
-      { cookies: only } as any,
+      { cookies: only } as unknown as Request,
       {
         cookie() {},
         clearCookie(key: string) {
           foreverRemoved.push(key);
         },
-      } as any,
+      } as unknown as Response,
       "new",
       jwt.sign({}),
       true,
@@ -219,7 +249,7 @@ testCase(
         {
           headers: { "x-share-token": ["bad"] },
           cookies: { share_new_token: "valid-cookie" },
-        } as any,
+        } as unknown as Request,
         "new",
       ),
       "valid-cookie",
@@ -263,7 +293,7 @@ testCase(
     };
     const removed: string[] = [];
     writeShareTokenCookie(
-      { cookies } as any,
+      { cookies } as unknown as Request,
       {
         cookie: (key: string, value: string) => {
           cookies[key] = value;
@@ -272,7 +302,7 @@ testCase(
           removed.push(key);
           delete cookies[key];
         },
-      } as any,
+      } as unknown as Response,
       "new",
       jwt.sign({ shareId: "new" }),
       true,

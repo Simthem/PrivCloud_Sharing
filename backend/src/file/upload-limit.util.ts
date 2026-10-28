@@ -42,13 +42,20 @@ export function getUploadChunkLimit(isAuthenticated: boolean): number {
     : ANONYMOUS_MAX_UPLOAD_CHUNK_BYTES;
 }
 
+/**
+ * Largest body of a part. `headerBytes` is the E2EE content v2 header that
+ * only the first part of a v2 file carries.
+ */
 export function getMaxUploadPayloadBytes(
   maxChunkBytes: number,
   declaredChunkSize = maxChunkBytes,
   encryptionChunkSize?: number,
+  headerBytes = 0,
 ): number {
   const plainBytes = Math.min(maxChunkBytes, declaredChunkSize);
   if (!encryptionChunkSize) return plainBytes;
   const recordCount = Math.ceil(plainBytes / encryptionChunkSize);
-  return plainBytes + recordCount * ENCRYPTION_RECORD_OVERHEAD_BYTES;
+  return (
+    plainBytes + recordCount * ENCRYPTION_RECORD_OVERHEAD_BYTES + headerBytes
+  );
 }

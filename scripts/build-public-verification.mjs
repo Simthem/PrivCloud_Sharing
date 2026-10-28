@@ -314,6 +314,10 @@ const summary = {
 // or accidentally copied file cannot survive outside the explicit allowlist.
 await rm(output, { recursive: true, force: true })
 await mkdir(output, { recursive: true })
+// DOS timestamps carry no time zone and fflate writes the local fields of the
+// Date it is given. Building it from local fields keeps the archive, and so its
+// published checksum, byte-identical whatever time zone runs the build.
+const archiveMtime = new Date(2026, 9, 9, 2, 0, 0)
 const archive = {},
   checksums = []
 for (const file of [...files, "LICENSE"]) {
@@ -323,15 +327,12 @@ for (const file of [...files, "LICENSE"]) {
   const target = path.join(output, file)
   await mkdir(path.dirname(target), { recursive: true })
   await writeFile(target, bytes)
-  archive[file] = [bytes, { mtime: new Date("2026-10-09T00:00:00Z") }]
+  archive[file] = [bytes, { mtime: archiveMtime }]
   checksums.push(`${hash(bytes)}  ${file}`)
 }
 const summaryBytes = Buffer.from(JSON.stringify(summary) + "\n")
 await writeFile(path.join(output, "summary.json"), summaryBytes)
-archive["summary.json"] = [
-  summaryBytes,
-  { mtime: new Date("2026-10-09T00:00:00Z") },
-]
+archive["summary.json"] = [summaryBytes, { mtime: archiveMtime }]
 checksums.push(`${hash(summaryBytes)}  summary.json`)
 const zip = zipSync(archive, { level: 9 })
 await writeFile(path.join(output, "verification.zip"), zip)

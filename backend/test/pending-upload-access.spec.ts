@@ -1,6 +1,13 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
-import { ForbiddenException } from "@nestjs/common";
+import {
+  ExecutionContext,
+  ForbiddenException,
+  HttpException,
+} from "@nestjs/common";
+import { ConfigService } from "src/config/config.service";
+import { PrismaService } from "src/prisma/prisma.service";
+import { TeamShareAccessService } from "src/share/team-share-access.service";
 import { ShareService } from "src/share/share.service";
 import { ShareDTO } from "src/share/dto/share.dto";
 import { ShareSecurityGuard } from "src/share/guard/shareSecurity.guard";
@@ -10,8 +17,59 @@ import { getAdminUploadStatus } from "src/share/admin-upload-status.util";
 import { createUnitTestRunner } from "./unit-test";
 const { testCase, run } = createUnitTestRunner("unfinished upload recovery");
 const logger = { log() {}, warn() {}, debug() {}, error() {} };
+type FixtureFile = {
+  id?: string;
+  size: string;
+  name?: string;
+  encryptedMetadata?: string;
+};
+type PendingShare = { uploadPending: boolean; teamId?: string };
+type PendingUpload = {
+  id: string;
+  canResume: boolean;
+  size: number;
+  fileCount: number;
+};
+type PendingQuery = {
+  where: {
+    creatorId: string;
+    uploadLocked: boolean;
+    removedReason: null;
+    OR: { expiration: { gt: Date } }[];
+  };
+  select: { files: { select: { name?: boolean } } };
+};
+type AccessCheck = (id: string, user: { id: string }) => Promise<void>;
+type ShareServiceDouble = {
+  prisma: {
+    share: {
+      findUnique: () => Promise<unknown>;
+      findMany?: (input: PendingQuery) => Promise<unknown[]>;
+    };
+    user: { findUnique: () => Promise<unknown> };
+  };
+  teamShareAccessService?: {
+    assertCanAccessShare: AccessCheck;
+    assertCanManageShare: AccessCheck;
+  };
+  increaseViewCount?: () => Promise<void>;
+  get(id: string, recoveringUserId?: string): Promise<unknown>;
+  getPendingUploadsByUser(userId: string): Promise<PendingUpload[]>;
+};
+type JobsServiceDouble = {
+  logger: typeof logger;
+  runExclusive: (name: string, fn: () => Promise<void>) => Promise<void>;
+  prisma: {
+    share: {
+      findMany: () => Promise<{ id: string }[]>;
+      deleteMany: () => Promise<{ count: number }>;
+    };
+  };
+  fileService: { deleteAllFiles: () => Promise<void> };
+  deleteExpiredShares(): Promise<void>;
+};
 function serviceFixture(
-  files: any[] = [
+  files: FixtureFile[] = [
     { id: "file-1", size: "100", name: "opaque", encryptedMetadata: "opaque" },
   ],
 ) {
@@ -26,7 +84,7 @@ function serviceFixture(
     teamFolderId: null,
     expiration: new Date(Date.now() + 86400000),
   };
-  const service: any = Object.create(ShareService.prototype);
+  const service: ShareServiceDouble = Object.create(ShareService.prototype);
   service.prisma = {
     share: { findUnique: async () => share },
     user: { findUnique: async () => ({ isAdmin: true }) },
@@ -37,17 +95,18 @@ testCase(
   "only the authenticated uploader can inspect saved files before finalization",
   async () => {
     const { service } = serviceFixture();
-    const result: any = await service.get("share-1", "owner");
+    const result = (await service.get("share-1", "owner")) as PendingShare;
     assert.equal(result.uploadPending, true);
     assert.equal(new ShareDTO().from(result).uploadPending, true);
     for (const userId of [undefined, "foreign", "platform-admin"])
       await assert.rejects(
         service.get("share-1", userId),
-        (e: any) => e.getStatus() === 404,
+        (e: HttpException) => e.getStatus() === 404,
       );
     const empty = serviceFixture([]);
     assert.equal(
-      (await empty.service.get("share-1", "owner")).uploadPending,
+      ((await empty.service.get("share-1", "owner")) as PendingShare)
+        .uploadPending,
       true,
     );
   },
@@ -56,16 +115,19 @@ testCase(
   "owner recovery returns wrapped Team context without plaintext keys",
   async () => {
     const { service, share } = serviceFixture();
-    share.teamFolderId = "folder" as any;
-    share.teamFolder = { teamId: "team" } as any;
-    const result: any = await service.get("share-1", "owner");
+    share.teamFolderId = "folder";
+    share.teamFolder = { teamId: "team" };
+    const result = (await service.get("share-1", "owner")) as PendingShare;
     assert.equal(result.teamId, "team");
     assert.equal(result.uploadPending, true);
-    const dto: any = new ShareDTO().from({
+    const dto = new ShareDTO().from({
       ...result,
       key: "forbidden",
       wrappedShareKey: "forbidden",
-    });
+    } as Partial<ShareDTO>) as ShareDTO & {
+      key?: string;
+      wrappedShareKey?: string;
+    };
     assert.equal(dto.key, undefined);
     assert.equal(dto.wrappedShareKey, undefined);
   },
@@ -74,8 +136,8 @@ testCase(
   "recovery discovery is scoped to owner, unexpired shares, including uploads without a committed file",
   async () => {
     const { service } = serviceFixture();
-    let query: any;
-    service.prisma.share.findMany = async (input: any) => {
+    let query: PendingQuery;
+    service.prisma.share.findMany = async (input) => {
       query = input;
       return [
         {
@@ -109,11 +171,11 @@ testCase(
       ];
     };
     service.teamShareAccessService = {
-      assertCanAccessShare: async (id: string, user: any) => {
+      assertCanAccessShare: async (id, user) => {
         assert.equal(user.id, "owner");
         if (id === "denied-team") throw new ForbiddenException();
       },
-      assertCanManageShare: async (id: string, user: any) => {
+      assertCanManageShare: async (id, user) => {
         assert.equal(user.id, "owner");
         if (id === "readonly-team") throw new ForbiddenException();
       },
@@ -124,7 +186,7 @@ testCase(
     assert.equal(query.where.removedReason, null);
     assert.ok(query.where.OR[0].expiration.gt instanceof Date);
     assert.deepEqual(
-      rows.map((row: any) => row.id),
+      rows.map((row) => row.id),
       ["personal", "allowed-team", "readonly-team"],
     );
     assert.equal(rows[2].canResume, false);
@@ -147,11 +209,11 @@ testCase(
     for (const guardClass of [ShareSecurityGuard, FileSecurityGuard]) {
       for (const id of [undefined, "foreign", "owner"]) {
         const { service, share } = serviceFixture();
-        const guard: any = new guardClass(
-          service,
-          service.prisma,
-          { get: () => true } as any,
-          {} as any,
+        const guard = new guardClass(
+          service as unknown as ShareService,
+          service.prisma as unknown as PrismaService,
+          { get: () => true } as unknown as ConfigService,
+          {} as TeamShareAccessService,
         );
         service.increaseViewCount = async () => {};
         const request = {
@@ -164,19 +226,19 @@ testCase(
             getRequest: () => request,
             getResponse: () => ({}),
           }),
-        };
+        } as unknown as ExecutionContext;
         if (id === "owner")
-          assert.equal(await guard.canActivate(context as any), true);
+          assert.equal(await guard.canActivate(context), true);
         else
           await assert.rejects(
-            guard.canActivate(context as any),
-            (e: any) => e.getStatus() === 404,
+            guard.canActivate(context),
+            (e: HttpException) => e.getStatus() === 404,
           );
         if (id === "owner") {
-          share.security = { password: "hash" } as any;
+          share.security = { password: "hash" };
           await assert.rejects(
-            guard.canActivate(context as any),
-            (e: any) => e.getStatus() === 403,
+            guard.canActivate(context),
+            (e: HttpException) => e.getStatus() === 403,
           );
         }
       }
@@ -188,10 +250,9 @@ testCase(
   async () => {
     for (const storageFails of [true, false]) {
       let deleted = 0;
-      const service: any = Object.create(JobsService.prototype);
+      const service: JobsServiceDouble = Object.create(JobsService.prototype);
       service.logger = logger;
-      service.runExclusive = async (_name: string, fn: () => Promise<void>) =>
-        fn();
+      service.runExclusive = async (_name, fn) => fn();
       service.prisma = {
         share: {
           findMany: async () => [{ id: "expired" }],

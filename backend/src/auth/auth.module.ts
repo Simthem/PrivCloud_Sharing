@@ -12,6 +12,8 @@ import { OAuthReauthService } from "./oauthReauth.service";
 import { PasskeyModule } from "src/passkey/passkey.module";
 import { UserModule } from "../user/user.module";
 import { OAuthModule } from "../oauth/oauth.module";
+import { EmailChangeService } from "./emailChange.service";
+import { StepUpModule } from "src/auth/stepUp.module";
 
 @Module({
   imports: [
@@ -24,6 +26,7 @@ import { OAuthModule } from "../oauth/oauth.module";
     forwardRef(() => OAuthModule),
     UserModule,
     PasskeyModule,
+    StepUpModule,
   ],
   controllers: [AuthController],
   providers: [
@@ -32,6 +35,7 @@ import { OAuthModule } from "../oauth/oauth.module";
     JwtStrategy,
     LdapService,
     OAuthReauthService,
+    EmailChangeService,
   ],
   exports: [AuthService, AuthTotpService, OAuthReauthService],
 })

@@ -1,3 +1,178 @@
+## [1.26.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.25.3...v1.26.0) (2026-10-28)
+
+### Security
+
+- Build Caddy with golang.org/x/net 0.62.0 for CVE-2026-78661 and
+  CVE-2026-97045 in the HTML parser, and verify the version in the compiled
+  binary. Move the distroless runtime to the digest that ships
+  ca-certificates 20250419+deb13u1 (DSA-6572-1).
+- Replace deepmerge with a local implementation for GHSA-gcqx-w48m-w2h4,
+  which has no patched release. A `__proto__` key in merged input could
+  replace the prototype of the result. The backend build and the
+  documentation site resolve `@privcloud/safe-deepmerge` through a local
+  dependency and the `$deepmerge` override, without an advisory exception.
+  Both are build dependencies, never shipped in the image.
+- Allowlist by exact line in `.gitleaks.toml` the reviewed secret-scan false
+  positives of the content v2 sources: the Bridge variable holding the
+  runtime E2E key and the names of the content key policy constants.
+- Adopt E2EE v2 automatically for new writes without recreating historical
+  shares, reverse links or Teams. Keep historical ciphertext and root keys.
+  New context identities and authenticated key policies refuse format and
+  plaintext downgrades. Sign a v1 source while requiring a v2 signed result.
+  Preserve optional direct SaaS email delivery of complete links, with its
+  existing explicit disclosure of the content key to the mail backend.
+- Keep encrypted metadata with a file's content during explicit rotation,
+  handle historical empty files and retain interrupted-rotation recovery.
+  Serialize competing Team rotation starts where rotation is supported.
+  Encrypt historical plain file names when an explicit rotation adopts v2,
+  so the new key opens the content and its description after a lost response.
+- Update qs to 6.17.0 in backend and documentation dependency locks for
+  CVE-2026-110910. Test empty-array key encoding against parameter and fragment
+  injection.
+- Build Caddy with go-jose v4.1.6 and klauspost/compress 1.20.3 for
+  CVE-2026-116585, CVE-2026-116586, CVE-2026-116587 and CVE-2026-116591.
+  go-jose v3 has no fixed release and smallstep still requires it, so the
+  upstream v4 fixes are backported to v3.0.5 from `.docker/patches` and linked
+  through a local replace. CBC-HMAC refuses an empty padded buffer, JSON
+  nesting is capped and JWK RSA moduli are bounded with `p * q == n`. The
+  image build fails if the patch, the pinned versions or the binary module
+  list drift.
+- Draw the IV of the content v2 magic-prefix test at random. Derive the
+  Companion v2 test key with HKDF-SHA256 written out, so the independent
+  check shares no derivation routine with the writer and passes no fixed salt
+  to a key derivation API.
+- Refuse a Companion or integrations release output directory outside the
+  work tree or the system temporary directory. The directory is wiped before
+  each build, so `--output-dir` can no longer remove an unrelated directory
+  or the repository root.
+- Confine the command-line paths of the local verification tools to plain
+  names in the current directory. Read photo registration results only from
+  the wrapper's own temporary directory. Generate the cipher keys and IVs of
+  the browser test fixtures at random. The regenerated synthetic corpus and
+  multiscale reports keep every measurement, only their timings and generator
+  hashes change. The private photo measurements are kept as measured.
+- Refuse a second local-storage upload under an existing file identifier.
+  Uploads are published atomically without ever replacing a file, also
+  between backend processes sharing the volume. A failed upload removes only
+  its own temporary and published data. S3 storage is unchanged.
+- Read and write the E2EE content format v2 everywhere. Downloads, ZIP
+  archives, streaming, resumed and parallel transfers and range previews read
+  it. Web and PWA uploads, resumed and parallel uploads, the Companion,
+  re-encryption and signed results write it. A v2 record is bound to its
+  file, position and end, under a key derived for that file. The identity
+  uses the file identifier and no longer the share identifier, which signers
+  must not receive. It does not prove freshness. See
+  `docs/E2EE_CONTENT_V2.md`.
+- Keep the backend switches `share.contentV2Writes` and
+  `share.contentV2Floor` for rollout compatibility. With writes switched on,
+  the backend rejects older v1 writers with `e2ee_content_v2_required`. The
+  current client writes v2 and creates restricted content keys independently
+  of these switches. Turning a switch off never makes v2 unreadable and never
+  lifts an existing floor. Every replica reads the switches from the database. `E2EE_CONTENT_V2_WRITES` and
+  `E2EE_CONTENT_V2_FLOOR` set their deployment defaults, declared with the
+  `SHARE_DEK_V1` flags in the compose files.
+- Record the declared format in the new nullable column `File.contentScheme`,
+  check the fixed header bytes of a v2 first part and account for its 32
+  header bytes in every size check. The Companion reports a `contentV2`
+  capability and the web app refuses to hand it a v2 upload without it.
+- Upgrade the documentation site body-parser to 2.4.0 for GHSA-27r3-jxmh-p828,
+  serialize-javascript to 7.1.4 for GHSA-m5mm-p8h7-m29v and fast-uri to 3.1.9
+  for GHSA-w74x-v6f9-j3xg, GHSA-wjr9-j795-jxcr, GHSA-xhq7-xmqj-769h and
+  GHSA-333x-w4r6-6crp. All are development server and build dependencies,
+  never shipped in the image.
+- Upgrade go-chi/chi to 5.4.0 in both Caddy builds for CVE-2026-114437, which
+  affects its middleware trust and origin validation.
+- Upgrade nodemailer to 10.1.4 for GHSA-m943-m63m-w62w, GHSA-85x2-q946-cp5h
+  and GHSA-8c8m-p3m8-cjg8, where crafted display names or comments could add
+  unintended recipients. Upgrade backend fast-uri to 3.1.9 for the same URI
+  parsing advisories as the documentation site.
+- Lock the frontend development dependency zod to 4.6.7 for
+  GHSA-mrhx-c7xc-m3w5.
+- Rebuild Caddy and runtime-init with digest-pinned Go 1.26.10 to fix
+  CVE-2026-111943 in crypto/x509. Both Docker builds verify the toolchain
+  version embedded in each binary.
+- Upgrade backend body-parser to 2.4.0 and multer to 2.5.0 to include the
+  upstream fixes for uncaught errors during compressed-body and multipart
+  request teardown. Preserve the existing request and upload limits.
+- Pin DOMPurify to 3.4.17 for the upstream sanitization fixes. Pin
+  follow-redirects to 1.16.2 in the frontend and require at least 1.16.2 in
+  the backend for cross-origin credential stripping (CVE-2026-111755). Keep
+  the existing legal-page sanitization policy unchanged.
+- Replace direct profile email changes with current-factor verification,
+  approval from both the old and new mailboxes, short-lived hashed tokens and
+  cancellation from the old address. Preserve existing keys, passkeys and
+  encrypted files. Protect first-password setup and factor changes from a
+  stolen session.
+- Require a short-lived, single-use confirmation for privileged account,
+  configuration, Team and signing-passkey changes. Require confirmation before
+  an administrator links an OAuth identity and serialize sign-in counters.
+- Require `email_verified` before an OIDC address creates or matches an account.
+  Previously linked accounts retain their sign-in path. Accept both documented
+  Google ID-token issuers and fetch JWKS only over verified HTTPS, using the
+  configured proxy policy and bounded requests.
+- Cap TOTP and backup-code checks per login token. Expired or exhausted tokens
+  return the user to sign-in without consuming a backup code after the cap.
+- Recheck Team access when using a Bridge upload token and deny restricted
+  Team folders when no matching rule grants access. Bind OTP signing and its
+  preview to the recipient's verified browser session. Preserve the completed
+  signature if later PDF finalization fails.
+- Handle concurrent E2EE v1 record failures without leaving rejected promises
+  unobserved. The known v1 record-reordering and rollback integrity limitation
+  of historical v1 content is not repaired. New writes use content v2.
+
+### Changed
+
+- Add guided email-change and administrative confirmation screens with
+  actionable errors, plus an expired-session path for TOTP verification.
+- Add additive SQLite migrations for email-change requests, login-token
+  attempts, step-up grants and recipient signing sessions. Existing data and
+  encrypted file formats are unchanged.
+- Add public-only unit and SQLite integration tests for authentication,
+  authorization, concurrency, signing and frontend flows.
+- Accept protected `v2.` share identifiers in route validation, Team
+  notification messages and the Gmail add-on source.
+- Inline the editor and type-check settings of the documentation site, since
+  the Docusaurus preset still declares `baseUrl`, which TypeScript 7 rejects.
+
+### Fixed
+
+- Type every backend test double, so the tests pass the strict ESLint rules
+  without `any`. Load manifests and CommonJS helpers in TypeScript tests
+  through `createRequire`, declare the Node.js globals of the standalone test
+  scripts and fix the remaining unused variable, unused directive and frontend
+  fixture globals, so the test files report no ESLint problem.
+- Sign a direct upload part again when it waited for a browser slot past
+  the lifetime of its S3 URLs. On a slow link, parts reached the storage with
+  expired URLs and were refused with HTTP 403, and each refusal paused every
+  upload to that storage origin for up to 30 seconds. A 403 from the storage
+  no longer pauses the origin.
+- Decrypt each E2EE v2 record from views of the downloaded bytes instead of
+  two extra copies, which brings v2 download decryption back to the speed of
+  v1.
+- Show the administrator confirmation dialog above the user editor. It
+  opened behind that dialog, so resetting another user's two-factor
+  authentication always failed with a confirmation error. The dialog now
+  states that administrators confirm their own identity.
+- Ask for a TOTP code at sign-in only when a TOTP secret exists. Let
+  administrators reset any partial two-factor state, which also discards
+  the user's pending sign-in challenges.
+
+### Deployment notes
+
+- Docker build contexts and CI checkouts must include `backend/vendor` and
+  `docs/vendor`, which hold local replacements for unpatched dependencies.
+- Back up SQLite before migration. Do not route sensitive requests to an old
+  backend during an update, since it ignores the new checks and TOTP cap.
+- Run the full release pipeline and staging checks before publication.
+- Migration `20261027120000_file_content_scheme` adds a nullable column,
+  compatible with the previous backend. Keep both E2EE v2 switches off until
+  no previous backend serves traffic, and install the Companion of this
+  version first. The activation, checks and rollback are in
+  `docs/E2EE_CONTENT_V2_ROLLOUT.md`. Files and keys created before the
+  switches keep their format and their links.
+- The local-storage overwrite protection is complete once no previous backend
+  version serves uploads from the same volume.
+
 ## [1.25.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.25.2...v1.25.3) (2026-10-19)
 
 ### External Contractor Workspaces

@@ -43,6 +43,10 @@ import {
 } from "./signing-evidence.util";
 import { collectRecipientFieldValues } from "./signing-field-values.util";
 import { resolveSignatureSlots } from "./signature-slots.util";
+import {
+  holdsSigningEmailSession,
+  newSigningEmailSession,
+} from "./signing-email-session.util";
 import { parseSignatureData } from "./signature-data.util";
 import {
   toVisibleAuditEvent,
@@ -359,9 +363,7 @@ export class SigningService {
             folderId: share.teamFolderId || undefined,
           },
         })
-        .catch(() =>
-          this.logger.error("Failed to log SIGNATURE_REQUEST"),
-        );
+        .catch(() => this.logger.error("Failed to log SIGNATURE_REQUEST"));
     }
 
     // Send emails to recipients (in order)
@@ -635,7 +637,7 @@ export class SigningService {
    * Get signing page data for a recipient via their signing token.
    * No authentication required - the token IS the authentication.
    */
-  async getSigningPage(signingToken: string) {
+  async getSigningPage(signingToken: string, emailSession?: unknown) {
     const recipient = await this.prisma.signatureRecipient.findUnique({
       where: { signingToken },
       include: {
@@ -669,10 +671,11 @@ export class SigningService {
 
     // Already signed - return data with flag instead of throwing
     const alreadySigned = recipient.status === "SIGNED";
+    const emailVerified = holdsSigningEmailSession(recipient, emailSession);
     const requiresEmailVerification =
       !alreadySigned &&
       recipient.document.signatureLevel === SignatureLevel.STANDARD &&
-      !recipient.otpVerified;
+      !emailVerified;
     const emailVerificationCodePending = Boolean(
       requiresEmailVerification &&
       recipient.otpHash &&
@@ -711,6 +714,11 @@ export class SigningService {
         signatureLevel: recipient.document.signatureLevel,
         addApprovalField: recipient.document.addApprovalField,
         isE2EEncrypted: recipient.document.isE2EEncrypted,
+        // E2E content v2 is bound to its file identifier. The share
+        // identifier, the capability of the share link, stays hidden.
+        fileId: recipient.document.isE2EEncrypted
+          ? recipient.document.fileId
+          : null,
         pageRotations: recipient.document.pageRotations,
         creator: recipient.document.creator,
       },
@@ -720,7 +728,7 @@ export class SigningService {
         email: recipient.email,
         role: recipient.role,
         status: recipient.status,
-        emailVerified: recipient.otpVerified,
+        emailVerified,
         identityVerificationMethod: recipient.identityVerificationMethod,
         identityVerifiedAt: recipient.identityVerifiedAt,
         hasWrappedE2EKey: !!recipient.wrappedE2EKey,
@@ -752,7 +760,7 @@ export class SigningService {
   }
 
   /** Send a short-lived OTP to the address assigned to a standard signer. */
-  async sendSigningEmailOtp(signingToken: string) {
+  async sendSigningEmailOtp(signingToken: string, emailSession?: unknown) {
     const recipient = await this.prisma.signatureRecipient.findUnique({
       where: { signingToken },
       include: { document: true },
@@ -782,7 +790,9 @@ export class SigningService {
     if (recipient.status !== "PENDING" && recipient.status !== "VIEWED") {
       throw new ForbiddenException("This signing action is already complete");
     }
-    if (recipient.otpVerified) {
+    // Verified in this browser already. Another browser holding the link
+    // proves the mailbox again, with a code of its own.
+    if (holdsSigningEmailSession(recipient, emailSession)) {
       return { verified: true, sent: false };
     }
 
@@ -814,7 +824,6 @@ export class SigningService {
     const claimed = await this.prisma.signatureRecipient.updateMany({
       where: {
         id: recipient.id,
-        otpVerified: false,
         otpFailures: { lt: SIGNING_EMAIL_OTP_MAX_TOTAL_FAILURES },
         OR: [
           { otpSentAt: null },
@@ -828,7 +837,6 @@ export class SigningService {
       data: {
         otpHash,
         otpSentAt: now,
-        otpVerified: false,
       },
     });
     if (claimed.count !== 1) {
@@ -877,7 +885,8 @@ export class SigningService {
     code: string,
     ipAddress: string,
     userAgent: string,
-  ) {
+    emailSession?: unknown,
+  ): Promise<{ verified: true; session?: string }> {
     const recipient = await this.prisma.signatureRecipient.findUnique({
       where: { signingToken },
       include: { document: true },
@@ -907,7 +916,9 @@ export class SigningService {
     if (recipient.status !== "PENDING" && recipient.status !== "VIEWED") {
       throw new ForbiddenException("This signing action is already complete");
     }
-    if (recipient.otpVerified) return { verified: true };
+    if (holdsSigningEmailSession(recipient, emailSession)) {
+      return { verified: true };
+    }
 
     const now = new Date();
     if (!recipient.otpHash || !recipient.otpSentAt) {
@@ -942,11 +953,7 @@ export class SigningService {
         (recipient.otpFailures + 1) % SIGNING_EMAIL_OTP_MAX_FAILURES === 0 ||
         recipient.otpFailures + 1 >= SIGNING_EMAIL_OTP_MAX_TOTAL_FAILURES;
       await this.prisma.signatureRecipient.updateMany({
-        where: {
-          id: recipient.id,
-          otpHash: recipient.otpHash,
-          otpVerified: false,
-        },
+        where: { id: recipient.id, otpHash: recipient.otpHash },
         data: mustReset
           ? {
               otpHash: null,
@@ -962,17 +969,18 @@ export class SigningService {
       );
     }
 
+    // One code, one browser: the first to spend it gets the session, which
+    // replaces any earlier one.
+    const session = newSigningEmailSession(now);
     const verified = await this.prisma.signatureRecipient.updateMany({
-      where: {
-        id: recipient.id,
-        otpHash: recipient.otpHash,
-        otpVerified: false,
-      },
+      where: { id: recipient.id, otpHash: recipient.otpHash },
       data: {
         otpHash: null,
         otpSentAt: null,
         otpVerified: true,
         otpFailures: 0,
+        otpSessionHash: session.hash,
+        otpSessionExpiresAt: session.expiresAt,
         identityVerificationMethod: "EMAIL_OTP",
         identityVerifiedAt: now,
       },
@@ -990,7 +998,7 @@ export class SigningService {
       JSON.stringify({ method: "EMAIL_OTP" }),
     );
 
-    return { verified: true };
+    return { verified: true, session: session.value };
   }
 
   /**
@@ -1002,6 +1010,7 @@ export class SigningService {
     dto: SignDocumentDTO,
     ipAddress: string,
     userAgent: string,
+    emailSession?: unknown,
   ) {
     const recipient = await this.prisma.signatureRecipient.findUnique({
       where: { signingToken },
@@ -1036,7 +1045,7 @@ export class SigningService {
       );
     }
 
-    this.assertStandardEmailVerified(recipient);
+    this.assertStandardEmailVerified(recipient, emailSession);
 
     // Check signing order
     const currentOrder = Math.min(
@@ -1418,6 +1427,7 @@ export class SigningService {
     dto: RejectDocumentDTO,
     ipAddress: string,
     userAgent: string,
+    emailSession?: unknown,
   ) {
     const recipient = await this.prisma.signatureRecipient.findUnique({
       where: { signingToken },
@@ -1450,7 +1460,7 @@ export class SigningService {
       );
     }
 
-    this.assertStandardEmailVerified(recipient);
+    this.assertStandardEmailVerified(recipient, emailSession);
 
     const evidence =
       recipient.document.signatureLevel === "REINFORCED"
@@ -1533,9 +1543,7 @@ export class SigningService {
             fileName: recipient.document.fileName,
           },
         })
-        .catch(() =>
-          this.logger.error("Failed to log SIGNATURE_REJECTED"),
-        );
+        .catch(() => this.logger.error("Failed to log SIGNATURE_REJECTED"));
     }
 
     return { status: "REJECTED" };
@@ -1736,7 +1744,9 @@ export class SigningService {
     const seenPages = new Set<number>();
     for (const entry of rotations) {
       if (seenPages.has(entry.page)) {
-        throw new BadRequestException("A page rotation may only be supplied once");
+        throw new BadRequestException(
+          "A page rotation may only be supplied once",
+        );
       }
       seenPages.add(entry.page);
     }
@@ -1876,7 +1886,11 @@ export class SigningService {
         webauthnTransactionManifest: string | null;
       }>;
       fields: Array<{
-        fieldValues: Array<{ fieldId: string; recipientId: string; value: string }>;
+        fieldValues: Array<{
+          fieldId: string;
+          recipientId: string;
+          value: string;
+        }>;
       }>;
     },
     sourceSha256: string,
@@ -1968,7 +1982,9 @@ export class SigningService {
 
     try {
       // Load original PDF
-      const sourcePdf = await this.fileService.getFileByKey(doc.originalFileKey);
+      const sourcePdf = await this.fileService.getFileByKey(
+        doc.originalFileKey,
+      );
       let pdfBuffer = sourcePdf;
       await this.assertContributionsMatchSignedManifests(
         doc,
@@ -2169,9 +2185,7 @@ export class SigningService {
               fileName: doc.fileName,
             },
           })
-          .catch(() =>
-            this.logger.error("Failed to log SIGNATURE_COMPLETE"),
-          );
+          .catch(() => this.logger.error("Failed to log SIGNATURE_COMPLETE"));
       }
 
       try {
@@ -2235,9 +2249,7 @@ export class SigningService {
           })
           .catch(() => null);
         if (creator?.email) {
-          const baseUrl = await this.configService
-            .get("general.appUrl")
-            .catch(() => "");
+          const baseUrl = this.configService.get("general.appUrl") ?? "";
           await this.emailService
             .sendSigningMail(
               creator.email,
@@ -2394,15 +2406,20 @@ export class SigningService {
     return { stored: true };
   }
 
-  private assertStandardEmailVerified(recipient: {
-    otpVerified: boolean;
-    identityVerificationMethod: string;
-    identityVerifiedAt: Date | null;
-    document: { signatureLevel: string };
-  }) {
+  private assertStandardEmailVerified(
+    recipient: {
+      otpVerified: boolean;
+      otpSessionHash: string | null;
+      otpSessionExpiresAt: Date | null;
+      identityVerificationMethod: string;
+      identityVerifiedAt: Date | null;
+      document: { signatureLevel: string };
+    },
+    emailSession: unknown,
+  ) {
     if (
       recipient.document.signatureLevel === SignatureLevel.STANDARD &&
-      (!recipient.otpVerified ||
+      (!holdsSigningEmailSession(recipient, emailSession) ||
         recipient.identityVerificationMethod !== "EMAIL_OTP" ||
         !recipient.identityVerifiedAt)
     ) {

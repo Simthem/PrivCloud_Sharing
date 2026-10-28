@@ -111,6 +111,20 @@ export const configVariables = {
       defaultValue: "false",
       secret: false,
     },
+    // E2EE content v2, docs/E2EE_CONTENT_V2.md. Writes: new end-to-end
+    // encrypted files are written in v2 and v1 uploads are refused. Floor: new
+    // share, Team and reverse share keys only accept v2. Turning either off
+    // never makes v2 content unreadable and never lifts the floor of a key.
+    contentV2Writes: {
+      type: "boolean",
+      defaultValue: "false",
+      secret: false,
+    },
+    contentV2Floor: {
+      type: "boolean",
+      defaultValue: "false",
+      secret: false,
+    },
   },
   cache: {
     "redis-enabled": {

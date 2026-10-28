@@ -306,7 +306,7 @@ testCase(
 testCase("events extend the chain of their team under a lock", async () => {
   const [first, second] = chain(2);
   let locked = "";
-  let written: Record<string, any> | undefined;
+  let written: Record<string, unknown> | undefined;
   const service = auditService({
     $transaction: async (work: (tx: object) => Promise<unknown>) =>
       work({
@@ -316,7 +316,7 @@ testCase("events extend the chain of their team under a lock", async () => {
         },
         teamExternalAuditEvent: {
           findFirst: async () => ({ seq: first.seq, hash: first.hash }),
-          create: async (args: { data: Record<string, any> }) => {
+          create: async (args: { data: Record<string, unknown> }) => {
             written = args.data;
           },
         },
@@ -483,7 +483,7 @@ testCase(
 testCase(
   "approving needs a passkey, whose handle never replaces a signing one",
   async () => {
-    const created: Record<string, any>[] = [];
+    const created: Record<string, unknown>[] = [];
     const passkeys = new AccountPasskeyService(
       {
         accountPasskey: { findMany: async () => [] },
@@ -491,7 +491,7 @@ testCase(
         passkeyChallenge: {
           deleteMany: async () => ({ count: 0 }),
           updateMany: async () => ({ count: 0 }),
-          create: async (args: { data: Record<string, any> }) => {
+          create: async (args: { data: Record<string, unknown> }) => {
             created.push(args.data);
             return { id: "challenge" };
           },
@@ -824,7 +824,12 @@ testCase("the script of the bundle checks it without PrivCloud", async () => {
       "seq",
     ]);
 
-    const tampered = (edit: (evidence: any) => void) => {
+    // The fields of an evidence bundle that the tampering cases rewrite.
+    type EvidenceBundle = {
+      journal: { events: Record<string, unknown>[]; links: unknown[] };
+      issuance: { manifest: string; webauthn: { signatureBase64Url: string } };
+    };
+    const tampered = (edit: (evidence: EvidenceBundle) => void) => {
       const evidence = JSON.parse(original);
       edit(evidence);
       writeFileSync(file, JSON.stringify(evidence));

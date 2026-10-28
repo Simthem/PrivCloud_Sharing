@@ -106,6 +106,7 @@ import {
 } from "../../../utils/teamSearch.util";
 import { openActivityNames } from "../../../utils/teamActivityNames.util";
 import searchStyles from "./TeamSearchPanel.module.css";
+import { contentPolicy } from "../../../utils/contentPolicy.util";
 
 const signatureStatusTranslationKeys: Record<string, string> = {
   PENDING: "team.dashboard.signatures.status.pending",
@@ -259,7 +260,9 @@ const TeamDashboard = () => {
     }
     setE2eInitializing(true);
     try {
-      const teamKey = await generateEncryptionKey();
+      const teamKey = await generateEncryptionKey({
+        v2Floor: contentPolicy().v2Floor,
+      });
       const masterKey = await importKeyFromBase64(userKeyB64);
       const wrapped = await wrapReverseShareKey(teamKey, masterKey);
       await teamService.setTeamKey(
@@ -391,7 +394,9 @@ const TeamDashboard = () => {
         rotationVersion = activeRotation.toVersion;
         completedFileIds = activeRotation.completedFileIds;
       } else {
-        newTeamKey = await generateEncryptionKey();
+        newTeamKey = await generateEncryptionKey({
+          v2Floor: contentPolicy().v2Floor,
+        });
         const newWrapped = await wrapReverseShareKey(newTeamKey, masterKey);
         const session = await teamService.startKeyRotation(teamIdStr, {
           newWrappedTeamKey: newWrapped,

@@ -6,8 +6,15 @@ import sharp from "sharp";
 import { detectMark, embedMark, markPattern, estimateDocumentSkew } from "./watermark.ts";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
-const [directory, output] = process.argv.slice(2);
-assert.ok(directory && output, "Usage: node real-corpus.mjs INPUT_DIRECTORY PRIVATE_REPORT.json");
+const [directoryName, outputName] = process.argv.slice(2);
+assert.ok(directoryName && outputName, "Usage: node real-corpus.mjs INPUT_DIRECTORY PRIVATE_REPORT.json");
+/** Inputs and the report are plain names in the current directory, never paths elsewhere. */
+function localPath(argument, pattern) {
+  const name = path.basename(argument);
+  assert.ok(name === argument && pattern.test(name), "Use plain names in the current directory");
+  return path.join(process.cwd(), name);
+}
+const directory = localPath(directoryName, /^[^.]/), output = localPath(outputName, /\.json$/);
 const key = new Uint8Array(Buffer.from(sha("real-background-new-control-pattern-v1"), "hex"));
 const candidates = await Promise.all(Array.from({ length: 8 }, async (_, index) => {
   const markId = sha(`real-background-control-copy:${index}`).slice(0, 32);

@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { detectMark, embedMark, markPattern } from "./watermark.ts";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
+/** A report is a plain .json name in the current directory, never a path elsewhere. */
+function reportPath(argument) {
+  const name = path.basename(argument);
+  assert.ok(name === argument && name.endsWith(".json"), "Name a .json report in the current directory");
+  return path.join(process.cwd(), name);
+}
 const key = new Uint8Array(Buffer.from(sha("candidate-scale-evaluation-v1"), "hex"));
 const cases = [];
 for (const count of [100, 1000]) {
@@ -35,5 +42,5 @@ const report = { format: "privcloud-candidate-scale-v1", generatedAt: new Date()
   limitations: ["Eight synthetic controls on constant backgrounds only, 1920x1440 and 320x256.",
     "Not a false-positive calibration or browser/mobile performance guarantee.",
     "Pattern bytes exclude worker structured-clone overhead, FFT buffers and image memory."], cases };
-await writeFile(process.argv[2] || "candidate-scale-results.json", JSON.stringify(report, null, 2) + "\n");
+await writeFile(reportPath(process.argv[2] || "candidate-scale-results.json"), JSON.stringify(report, null, 2) + "\n");
 assert.ok(cases.every(c => c.matched === null || c.matched === c.expected), "Wrong attribution; report retained");

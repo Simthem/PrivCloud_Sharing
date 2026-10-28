@@ -1,5 +1,6 @@
 import { InternalServerErrorException, Logger } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import { createHttpsProxyAgent } from "../../utils/https-proxy-agent.util";
 import * as jmespath from "jmespath";
 import * as jose from "jose";
 import { nanoid } from "nanoid";
@@ -18,6 +19,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
   protected discoveryUri: string;
   private configuration: OidcConfigurationCache;
   private jwk: OidcJwkCache;
+  private jwksAgent: ReturnType<typeof createHttpsProxyAgent> | undefined;
   private remoteJwks: ReturnType<typeof jose.createRemoteJWKSet> | undefined;
   private logger: Logger = new Logger(
     Object.getPrototypeOf(this).constructor.name,
@@ -114,8 +116,16 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
     const token = (await res.json()) as OidcToken;
 
     const tokenError = (token as unknown as Record<string, unknown>).error;
-    if (tokenError) {
-      this.logger.error(`Token exchange failed for provider ${this.name}`);
+    if (
+      !res.ok ||
+      tokenError ||
+      typeof token.id_token !== "string" ||
+      !token.id_token
+    ) {
+      this.logger.error(
+        `Token exchange failed for provider ${this.name} (HTTP ${res.status})`,
+      );
+      throw new ErrorPageException("invalid_token");
     }
 
     return {
@@ -208,7 +218,10 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
 
     return {
       provider: this.name as OAuthSignInDto["provider"],
-      email: idTokenData.email,
+      // An address the provider has not verified proves nothing: it must
+      // neither create an account nor be matched to an existing one.
+      email:
+        idTokenData.email_verified === true ? idTokenData.email : undefined,
       providerId: idTokenData.sub,
       providerUsername: username,
       ...(isAdmin !== undefined && { isAdmin }),
@@ -220,6 +233,12 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
   }
 
   protected abstract getDiscoveryUri(): string;
+
+  protected getExpectedIssuers(
+    configuration: OidcConfiguration,
+  ): string | string[] {
+    return configuration.issuer;
+  }
 
   private async fetchConfiguration(): Promise<void> {
     const res = await fetch(this.discoveryUri, {
@@ -253,6 +272,8 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
     this.configuration = undefined;
     this.jwk = undefined;
     this.remoteJwks = undefined;
+    this.jwksAgent?.destroy();
+    this.jwksAgent = undefined;
   }
 
   /**
@@ -261,9 +282,17 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
   private async getRemoteJwks() {
     if (!this.remoteJwks) {
       const configuration = await this.getConfiguration();
-      this.remoteJwks = jose.createRemoteJWKSet(
-        new URL(configuration.jwks_uri),
-      );
+      const url = new URL(configuration.jwks_uri);
+      if (url.protocol !== "https:") {
+        throw new Error("OIDC JWKS must use HTTPS");
+      }
+      // JOSE v4 uses node:https, independently of the fetch dispatcher used for
+      // discovery and token exchange. Route its verified TLS tunnel explicitly.
+      this.jwksAgent = createHttpsProxyAgent(url);
+      this.remoteJwks = jose.createRemoteJWKSet(url, {
+        agent: this.jwksAgent,
+        timeoutDuration: 15_000,
+      });
     }
     return this.remoteJwks;
   }
@@ -271,7 +300,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
   /**
    * Cryptographically verify the id_token:
    * - Signature checked against the provider's JWKS
-   * - `iss` must match the OIDC discovery issuer
+   * - `iss` must match the provider issuer policy (exact discovery issuer by default)
    * - `aud` must match our client_id
    * - `exp` is enforced (token must not be expired)
    * - Unsafe algorithms (e.g. "none") are rejected by jose
@@ -283,14 +312,56 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
       const clientId = this.config.get(`oauth.${this.name}-clientId`);
 
       const { payload } = await jose.jwtVerify(idToken, jwks, {
-        issuer: configuration.issuer,
+        issuer: this.getExpectedIssuers(configuration),
         audience: clientId,
       });
 
       return payload as unknown as OidcIdToken;
-    } catch {
+    } catch (error) {
+      // Never log the token, claims, raw error message or a proxy URL.
+      let reason = "key_retrieval_failed";
+      if (error instanceof jose.errors.JWTClaimValidationFailed) {
+        reason = ["iss", "aud", "nbf"].includes(error.claim)
+          ? `claim_${error.claim}_invalid`
+          : "claim_invalid";
+      } else if (error instanceof jose.errors.JWTExpired) {
+        reason = "token_expired";
+      } else if (error instanceof jose.errors.JWKSTimeout) {
+        reason = "jwks_timeout";
+      } else if (
+        error instanceof jose.errors.JWKInvalid ||
+        error instanceof jose.errors.JWKSInvalid
+      ) {
+        reason = "jwks_invalid";
+      } else if (error instanceof jose.errors.JWKSNoMatchingKey) {
+        reason = "signing_key_not_found";
+      } else if (error instanceof jose.errors.JWSSignatureVerificationFailed) {
+        reason = "signature_invalid";
+      } else if (error instanceof jose.errors.JOSEError) {
+        reason = "token_or_jwks_invalid";
+      } else if (error instanceof Error && "code" in error) {
+        switch (error.code) {
+          case "ENOTFOUND":
+          case "EAI_AGAIN":
+            reason = "jwks_dns_failed";
+            break;
+          case "ECONNREFUSED":
+          case "ECONNRESET":
+          case "ETIMEDOUT":
+            reason = "jwks_connection_failed";
+            break;
+          case "ERR_TLS_CERT_ALTNAME_INVALID":
+          case "CERT_HAS_EXPIRED":
+          case "UNABLE_TO_VERIFY_LEAF_SIGNATURE":
+          case "UNABLE_TO_GET_ISSUER_CERT_LOCALLY":
+          case "DEPTH_ZERO_SELF_SIGNED_CERT":
+          case "SELF_SIGNED_CERT_IN_CHAIN":
+            reason = "jwks_tls_failed";
+            break;
+        }
+      }
       this.logger.error(
-        `ID token verification failed for provider ${this.name}`,
+        `ID token verification failed for provider ${this.name} (${reason})`,
       );
       throw new ErrorPageException("invalid_token");
     }
@@ -343,6 +414,7 @@ export interface OidcIdToken {
   exp: number;
   iat: number;
   email: string;
+  email_verified?: boolean;
   name: string;
   nickname: string;
   preferred_username: string;

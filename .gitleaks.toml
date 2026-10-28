@@ -13,6 +13,7 @@ regexes = [
   '''\bencryptionKey\b''',
   '''e2eMaterial:\s*body\.isE2EEncrypted''',
   '''decodeBase64UrlKey\(body\.encryptionKey\)''',
+  '''^\s*const e2eKey = body\.isE2EEncrypted\s*$''',
 ]
 
 [[allowlists]]
@@ -22,3 +23,13 @@ targetRules = ["generic-api-key"]
 paths = ['''backend/src/signing/signing-exposure\.util\.ts''']
 regexTarget = "line"
 regexes = ['''\{ wrappedE2EKey: recipient\.wrappedE2EKey \}''']
+
+[[allowlists]]
+description = "Names of the policy byte constants that prefix a transported E2E content key. The key bytes are never a literal here"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''^frontend/src/utils/contentV2\.util\.ts$''']
+regexTarget = "line"
+regexes = [
+  '''^\s*out\[0\] = floor \? CONTENT_KEY_FLOOR_V2 : SIGNING_RESULT_POLICY_V2;\s*$''',
+]

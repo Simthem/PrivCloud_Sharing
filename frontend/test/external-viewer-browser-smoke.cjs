@@ -59,8 +59,7 @@ async function main() {
     assets.set("/fixture-key", ["application/octet-stream", syntheticKey])
     for (let index = 0; index < 30; index++) {
       const png = await sharp({ create: { width: 512, height: 640, channels: 4, background: { r: 70 + index, g: 120, b: 180, alpha: 1 } } }).png().toBuffer()
-      const iv = Buffer.alloc(12)
-      iv.writeUInt32BE(index, 8)
+      const iv = randomBytes(12)
       const cipher = createCipheriv("aes-256-gcm", syntheticKey, iv)
       cipher.setAAD(Buffer.from(`privcloud-external-page:v1:synthetic-viewer:${index}`))
       assets.set("/pages/" + index, ["application/octet-stream", Buffer.concat([iv, cipher.update(png), cipher.final(), cipher.getAuthTag()])])

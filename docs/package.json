@@ -1,6 +1,6 @@
 {
   "name": "pingvindocs",
-  "version": "1.25.3",
+  "version": "1.26.0",
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
@@ -31,7 +31,8 @@
     "typescript": "~5.6.2",
     "patch-package": "^8.0.1",
     "braces": "file:./vendor/brace-patterns",
-    "update-notifier": "file:./vendor/disabled-update-notifier"
+    "update-notifier": "file:./vendor/disabled-update-notifier",
+    "deepmerge": "file:./vendor/safe-deepmerge"
   },
   "browserslist": {
     "production": [
@@ -50,20 +51,20 @@
   },
   "overrides": {
     "minimatch": "^10.2.1",
-    "serialize-javascript": "^7.0.4",
+    "serialize-javascript": "^7.1.3",
     "picomatch": ">=4.0.4",
     "sirv": ">=3.0.2",
     "lodash": ">=4.18.1",
     "uuid": ">=14.0.0",
-    "fast-uri": "3.1.8",
+    "fast-uri": "3.1.9",
     "postcss": ">=8.5.23",
     "@babel/plugin-transform-modules-systemjs": ">=7.29.4",
     "http-proxy-middleware": "^3.0.6",
     "webpack": "5.105.0",
     "webpack-dev-server": ">=5.2.6",
     "webpack-dev-middleware": "^8.3.0",
-    "qs": "6.16.1",
-    "body-parser": ">=1.20.6",
+    "qs": "6.17.0",
+    "body-parser": "2.4.0",
     "shell-quote": "^1.10.0",
     "websocket-driver": ">=0.7.5",
     "brace-expansion": "5.0.12",
@@ -74,6 +75,7 @@
     "image-size": "^2.0.4",
     "braces": "$braces",
     "update-notifier": "$update-notifier",
+    "deepmerge": "$deepmerge",
     "tinypool": "2.1.2",
     "postcss-selector-parser": "7.1.6"
   },

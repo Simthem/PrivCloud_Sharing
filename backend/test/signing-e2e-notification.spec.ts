@@ -42,7 +42,7 @@ testCase(
             teamId: "team-1",
             recipients,
           }),
-          update: async ({ data }: any) => {
+          update: async ({ data }: { data: { status: string } }) => {
             completed = data.status === "COMPLETED";
           },
         },
@@ -64,8 +64,8 @@ testCase(
         },
       } as never,
       { createFinalEvidence: async () => ({}) } as never,
-    ) as any;
-    service.createAuditEvent = async () => undefined;
+    );
+    Object.assign(service, { createAuditEvent: async () => undefined });
 
     const result = await service.storeE2EFinal(
       "document-1",

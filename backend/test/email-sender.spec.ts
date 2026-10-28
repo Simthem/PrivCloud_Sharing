@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
-import { EmailService } from "src/email/email.service";
+import { EmailService, MailSender } from "src/email/email.service";
 import { createUnitTestRunner } from "./unit-test";
 
 const { testCase, run } = createUnitTestRunner("email sender");
@@ -27,8 +27,8 @@ function service(settings: Record<string, unknown> = {}) {
     get: (key: string) => ({ ...MAIN, ...settings })[key as keyof typeof MAIN],
   } as never);
   Object.assign(email, {
-    getTransporter(sender: string) {
-      const account = (email as any).senderSettings(sender);
+    getTransporter(sender: MailSender) {
+      const account = email["senderSettings"](sender);
       return {
         sendMail: async (mail: { from: string; subject: string }) => {
           sent.push({
@@ -87,14 +87,8 @@ testCase(
       port: 465,
       user: "signature",
     });
-    assert.equal(
-      (email as any).senderSettings("general").password,
-      "general-secret",
-    );
-    assert.equal(
-      (email as any).senderSettings("signing").password,
-      "main-secret",
-    );
+    assert.equal(email["senderSettings"]("general").password, "general-secret");
+    assert.equal(email["senderSettings"]("signing").password, "main-secret");
   },
 );
 
@@ -106,7 +100,7 @@ testCase(
       "smtp.generalPort": 0,
       "smtp.generalUsername": "",
     });
-    const general = (email as any).senderSettings("general");
+    const general = email["senderSettings"]("general");
     assert.equal(general.email, "noreply@example.test");
     assert.equal(general.host, "smtp.example.test");
     assert.equal(general.port, 465);

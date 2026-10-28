@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 import { readFile, writeFile } from "node:fs/promises"
+import path from "node:path"
 import { fileURLToPath } from "node:url"
 import sharp from "sharp"
 import {
@@ -375,8 +376,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const report = await runBenchmark({
     extended: process.argv.includes("--extended"),
   })
+  // A report is a plain .json name in the current directory, never a path elsewhere.
+  const name = path.basename(process.argv[2] || "results.json")
+  assert.ok(
+    name === (process.argv[2] || "results.json") && name.endsWith(".json"),
+    "Name a .json report in the current directory",
+  )
   await writeFile(
-    process.argv[2] || "results.json",
+    path.join(process.cwd(), name),
     JSON.stringify(report, null, 2) + "\n",
   )
 }

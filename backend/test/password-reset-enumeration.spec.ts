@@ -19,9 +19,20 @@ async function run() {
   const service = Object.assign(Object.create(AuthService.prototype), {
     config: { get: () => false },
     prisma: {
-      user: { findFirst: async () => lookups.shift() },
+      user: {
+        findFirst: async () => lookups.shift(),
+        findUnique: async () => ({
+          id: "local-user",
+          email: "local@example.com",
+          ldapDN: null,
+        }),
+      },
+      $executeRaw: async () => 1,
+      $transaction: async (fn: (client: unknown) => Promise<unknown>) =>
+        fn((service as unknown as { prisma: unknown }).prisma),
       resetPasswordToken: {
         delete: async () => writes.push("delete"),
+        deleteMany: async () => ({ count: 0 }),
         create: async ({ data }: { data: { token: string } }) => {
           storedToken = data.token;
           writes.push("create");

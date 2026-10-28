@@ -46,6 +46,55 @@ Redirect URI: `https://<your-domain>/api/oauth/callback/oidc`
 
 Post Logout Redirect URI: `https://<your-domain>`
 
+## Troubleshooting ID-token verification
+
+The generic browser error page returns HTTP 500 by design. The backend's first
+OAuth error identifies the failing step. Replacing the client secret does not
+repair a failure to retrieve public signing keys or validate token claims.
+
+Google accepts the two issuer values `https://accounts.google.com` and
+`accounts.google.com`, as documented in its
+[ID-token validation guide](https://developers.google.com/identity/openid-connect/openid-connect#validatinganidtoken).
+Custom OIDC providers still require their exact discovery issuer.
+
+Discovery and token exchange use `fetch`. JOSE v4 retrieves JWKS with
+`node:https`, so the backend explicitly supplies a verified HTTPS agent using
+`GLOBAL_AGENT_HTTPS_PROXY`, `GLOBAL_AGENT_HTTP_PROXY`, `HTTPS_PROXY`, `https_proxy`,
+`HTTP_PROXY` or `http_proxy`, in that order. The combined `GLOBAL_AGENT_NO_PROXY`,
+`NO_PROXY` and `no_proxy` exclusions select direct connections. A proxy failure
+never triggers a direct retry. Certificates and hostnames remain verified.
+
+After rebuilding and redeploying, ID-token failures include a safe category:
+
+- `claim_iss_invalid` or `claim_aud_invalid`: compare the provider and client-ID
+  configuration with the working environment.
+- `token_expired`: check the container host's clock and token freshness.
+- `jwks_dns_failed`, `jwks_connection_failed` or `jwks_timeout`: check DNS,
+  outbound proxy policy and reachability of the discovery document's `jwks_uri`.
+- `jwks_tls_failed`: check the trusted CA bundle and any outbound TLS interception.
+- `signature_invalid`, `signing_key_not_found`, `jwks_invalid`,
+  `token_or_jwks_invalid` or `key_retrieval_failed`: inspect the provider's key
+  endpoint and the deployed version. These categories intentionally omit raw
+  token data and upstream error messages.
+
+When preproduction works and production fails, compare immutable image IDs,
+proxy settings, exclusions, CA trust and host clock before changing credentials.
+No database migration is needed for this correction. A fresh real Google login
+in each deployed web/native environment remains the final deployment check.
+The local Node 24 reproduction also shows that the installed `global-agent`
+4.1.3 can omit the destination TLS SNI when used as Node's HTTPS agent. This
+can fail against a shared TLS endpoint even after Squid returns
+`TCP_TUNNEL/200`. The explicit JWKS agent preserves SNI and consumes the full
+CONNECT response, including responses split across network reads. Regression
+fixtures require SNI and use fragmented CONNECT replies.
+
+The 19 October Undici bump changed 7.29.1 to 7.30.1. The lockfile kept
+`global-agent` at 4.1.3 and JOSE at 4.15.9. JWKS retrieval uses Node HTTPS rather
+than Undici, and the corrected flow passes with Undici 7.30.1. These facts do not
+by themselves prove which transport detail caused a particular production failure.
+
+Never include client secrets, authorization codes, cookies or tokens in reports.
+
 ## Custom your OAuth 2 Provider
 
 If our built-in providers don't meet your needs, you can create your own OAuth 2 provider.

@@ -6,6 +6,14 @@ import { createUnitTestRunner } from "./unit-test";
 
 const { testCase, run } = createUnitTestRunner("distributed auth refresh");
 
+type Row = Record<string, unknown>;
+type RefreshRow = Row & { token: string };
+type ReplayRow = Row & {
+  previousTokenHash: string;
+  expiresAt: Date;
+  encryptedResult: string | null;
+};
+
 testCase("two replicas return the exact same persisted rotation", async () => {
   const secret = crypto.randomBytes(32).toString("base64url");
   const rawToken = crypto.randomBytes(32).toString("base64url");
@@ -22,7 +30,7 @@ testCase("two replicas return the exact same persisted rotation", async () => {
     emailVerificationDeletionStartedAt: null,
   };
 
-  const refreshTokens = new Map<string, any>([
+  const refreshTokens = new Map<string, RefreshRow>([
     [
       oldHash,
       {
@@ -34,21 +42,27 @@ testCase("two replicas return the exact same persisted rotation", async () => {
       },
     ],
   ]);
-  const replays = new Map<string, any>();
+  const replays = new Map<string, ReplayRow>();
   const calls = { create: 0, sign: 0, transactions: 0 };
 
   let transactionTail = Promise.resolve();
-  const prisma: any = {
+  const prisma = {
     refreshToken: {
-      findUnique: async ({ where }: any) =>
+      findUnique: async ({ where }: { where: { token: string } }) =>
         refreshTokens.get(where.token) ?? null,
-      update: async ({ where, data }: any) => {
+      update: async ({
+        where,
+        data,
+      }: {
+        where: { token: string };
+        data: Row;
+      }) => {
         const row = refreshTokens.get(where.token);
         assert(row);
         Object.assign(row, data);
         return row;
       },
-      create: async ({ data }: any) => {
+      create: async ({ data }: { data: RefreshRow }) => {
         calls.create++;
         const row = {
           ...data,
@@ -60,7 +74,7 @@ testCase("two replicas return the exact same persisted rotation", async () => {
       },
     },
     refreshTokenReplay: {
-      deleteMany: async ({ where }: any) => {
+      deleteMany: async ({ where }: { where: { expiresAt: { lt: Date } } }) => {
         let count = 0;
         for (const [key, replay] of replays) {
           if (replay.expiresAt < where.expiresAt.lt) {
@@ -70,9 +84,9 @@ testCase("two replicas return the exact same persisted rotation", async () => {
         }
         return { count };
       },
-      findUnique: async ({ where }: any) =>
+      findUnique: async ({ where }: { where: { previousTokenHash: string } }) =>
         replays.get(where.previousTokenHash) ?? null,
-      create: async ({ data }: any) => {
+      create: async ({ data }: { data: ReplayRow }) => {
         if (replays.has(data.previousTokenHash)) {
           throw Object.assign(new Error("unique"), { code: "P2002" });
         }
@@ -84,14 +98,20 @@ testCase("two replicas return the exact same persisted rotation", async () => {
         replays.set(data.previousTokenHash, row);
         return row;
       },
-      update: async ({ where, data }: any) => {
+      update: async ({
+        where,
+        data,
+      }: {
+        where: { previousTokenHash: string };
+        data: Row;
+      }) => {
         const row = replays.get(where.previousTokenHash);
         assert(row);
         Object.assign(row, data);
         return row;
       },
     },
-    $transaction: async (work: (tx: any) => Promise<unknown>) => {
+    $transaction: async (work: (tx: unknown) => Promise<unknown>) => {
       const previous = transactionTail;
       let release!: () => void;
       transactionTail = new Promise<void>((resolve) => {
@@ -131,11 +151,9 @@ testCase("two replicas return the exact same persisted rotation", async () => {
     {},
     {},
     {},
-  ] as const;
-  const firstReplica = new (AuthService as any)(...dependencies) as AuthService;
-  const secondReplica = new (AuthService as any)(
-    ...dependencies,
-  ) as AuthService;
+  ] as unknown as ConstructorParameters<typeof AuthService>;
+  const firstReplica = new AuthService(...dependencies);
+  const secondReplica = new AuthService(...dependencies);
 
   const [first, second] = await Promise.all([
     firstReplica.refreshAccessToken(rawToken),

@@ -2,6 +2,7 @@ import { forwardRef, Module } from "@nestjs/common";
 import { OAuthController } from "./oauth.controller";
 import { OAuthService } from "./oauth.service";
 import { AuthModule } from "../auth/auth.module";
+import { StepUpModule } from "../auth/stepUp.module";
 import { GitHubProvider } from "./provider/github.provider";
 import { GoogleProvider } from "./provider/google.provider";
 import { OAuthProvider } from "./provider/oauthProvider.interface";
@@ -51,7 +52,7 @@ import { MicrosoftProvider } from "./provider/microsoft.provider";
       inject: ["OAUTH_PROVIDERS"],
     },
   ],
-  imports: [forwardRef(() => AuthModule)],
+  imports: [forwardRef(() => AuthModule), StepUpModule],
   exports: [OAuthService],
 })
 export class OAuthModule {}

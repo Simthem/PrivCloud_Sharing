@@ -89,7 +89,9 @@ export default {
   "admin.config.smtp.general-password": "General password",
   "admin.config.smtp.general-password.description": "Password of the second SMTP account, when it has its own username.",
   "error.msg.reauth_mismatch": "The {0} account you used is not the one linked to your PrivCloud account. Sign in with the linked account.",
+  "error.msg.reauth_unsupported": "Your {0} account cannot confirm a recent sign-in. To set a password, sign out and use \"Forgot your password?\" on the sign-in page.",
   "error.msg.reauth_expired": "The identity confirmation expired. Start again from your account.",
+  "error.msg.step_up_required": "Confirm your identity from your account, then link the account again.",
   "admin.button.vault": "Evidence vault",
   "admin.vault.title": "Evidence vault",
   "admin.vault.hint":
@@ -703,6 +705,9 @@ export default {
   "account.card.password.new": "New password",
   "account.card.password.noPasswordSet":
     "You do not have a password set. To sign in using your email and password, you need to create a password.",
+  "account.card.password.oauth.description": "Confirm your identity by signing in again with the account linked to yours before choosing a password.",
+  "account.card.password.oauth.confirmed": "Identity confirmed. Choose your password within the next few minutes.",
+  "account.card.password.oauth.none": "None of your linked accounts can confirm your identity here. Sign out and use \"Forgot your password?\" on the sign-in page to receive a link by email, or ask your administrator.",
   "account.notify.password.success": "Password changed successfully",
 
   "account.card.oauth.title": "Social login",
@@ -953,6 +958,18 @@ export default {
   // END /admin
 
   // /admin/users
+  "step-up.title": "Confirm your identity",
+  "step-up.description.admin": "This operation changes administrator rights, someone else's credentials or the sign-in settings. Confirm your own administrator identity. The affected user has nothing to provide, and the confirmation is valid for this operation only.",
+  "step-up.password": "Your password",
+  "step-up.description.signing-passkey": "This passkey will sign documents in your name and sign you in. Confirm your identity first, as when adding a passkey from your account settings.",
+  "step-up.confirm": "Confirm",
+  "step-up.passkey": "Confirm with a passkey",
+  "step-up.wrong-proof": "Wrong password, or the confirmation with your linked account has expired.",
+  "step-up.wrong-code": "Invalid two-factor code.",
+  "step-up.passkey-error": "The passkey could not confirm this operation.",
+  "step-up.error": "The confirmation failed. Try again.",
+  "step-up.none": "Your account has no password, passkey or linked account able to confirm this operation. Add a passkey or set a password from your account settings.",
+  "step-up.oauth-returned": "Identity confirmed with your linked account. Repeat the operation within five minutes.",
   "admin.users.title": "User management",
   "admin.users.total": "{count, plural, one {# user total} other {# users total}}",
   "admin.users.search.placeholder": "Search by username or email",
@@ -972,6 +989,8 @@ export default {
     "Password changed successfully",
   "admin.users.edit.update.totp.disable": "Disable 2FA for this user",
   "admin.users.edit.update.totp.disabled": "2FA disabled successfully",
+  "admin.users.edit.update.self":
+    "Change your own email address, password and 2FA from your account settings.",
   "admin.users.edit.security.title": "Account security",
   "admin.users.edit.security.email.link":
     "E-mail address verified on {date} by confirmation link",
@@ -1618,6 +1637,12 @@ export default {
   "admin.config.share.auto-open-share-modal": "Auto open create share modal",
   "admin.config.share.auto-open-share-modal.description":
     "The share creation modal automatically appears when a user selects files, eliminating the need to manually click the button.",
+  "admin.config.share.content-v2writes": "E2EE content v2 writes",
+  "admin.config.share.content-v2writes.description":
+    "New end-to-end encrypted files are written in the v2 format, which authenticates the position of every record and the end of the file. Uploads in the previous format are then refused. Turning it off never makes v2 files unreadable, and keys with a v2 floor keep writing v2.",
+  "admin.config.share.content-v2floor": "E2EE v2 floor for new keys",
+  "admin.config.share.content-v2floor.description":
+    "New share, Team and reverse share keys only accept v2 content, which every client checks. Existing keys and their files are unchanged. Turning it off only affects keys created afterwards.",
   "admin.config.share.allow-admin-access-all-shares":
     "Allow admins to access all shares",
   "admin.config.share.allow-admin-access-all-shares.description":

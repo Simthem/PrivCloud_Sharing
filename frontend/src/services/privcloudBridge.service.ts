@@ -22,6 +22,8 @@ export type BridgeHealth = {
     managedEncryptedUpload: boolean;
     fileMetadataV1?: boolean;
     relativePathsV1?: boolean;
+    /** Writes E2EE content v2 and accepts keys with a v2 floor. */
+    contentV2?: boolean;
     directS3Upload?: boolean;
     localTokenAuthorization?: boolean;
     openSourceLocalAuthorization?: boolean;
@@ -73,6 +75,8 @@ export type StartBridgeWebDavUploadJobPayload = {
   isE2EEncrypted: boolean;
   encryptionKey?: string | null;
   fileMetadataScheme?: number | null;
+  /** E2EE content format the Companion must write. */
+  contentScheme?: 1 | 2;
   webdav: WebDavCredentials;
   files: Array<
     Pick<
@@ -294,7 +298,8 @@ export async function startBridgeWebDavUploadJob(
   payload: StartBridgeWebDavUploadJobPayload,
 ): Promise<BridgeUploadJob> {
   const hasPaths = payload.files.some((file) => !!file.relativePath);
-  if (payload.fileMetadataScheme === 1 || hasPaths) {
+  const contentV2 = payload.isE2EEncrypted && payload.contentScheme === 2;
+  if (payload.fileMetadataScheme === 1 || hasPaths || contentV2) {
     const health = await getBridgeHealth();
     if (hasPaths && !health?.capabilities.relativePathsV1)
       throw new Error("webdav.error.companionFolderUpdateRequired");
@@ -302,6 +307,9 @@ export async function startBridgeWebDavUploadJob(
       payload.fileMetadataScheme === 1 &&
       !health?.capabilities.fileMetadataV1
     )
+      throw new Error("bridge.error.updateRequired");
+    // A Companion without v2 would write v1 under a key that requires v2.
+    if (contentV2 && !health?.capabilities.contentV2)
       throw new Error("bridge.error.updateRequired");
   }
   return nativeCommand("webdav.upload.start", { ...payload });

@@ -692,6 +692,7 @@ testCase(
   "Team key rotation rewrites an encrypted name with the last chunk",
   async () => {
     const updates: unknown[] = [];
+    const separateUpdates: unknown[] = [];
     const controller = (metadataScheme: number | null) => {
       const instance = Object.create(
         FileController.prototype,
@@ -701,10 +702,14 @@ testCase(
           share: { findUnique: async () => ({ cryptoScheme: null }) },
           file: {
             findFirst: async () => ({ metadataScheme }),
-            update: async (args: unknown) => updates.push(args),
+            update: async (args: unknown) => separateUpdates.push(args),
           },
         },
-        fileService: { replaceFileContent: async () => undefined },
+        fileService: {
+          replaceFileContent: async (...args: unknown[]) => {
+            if (args[7] !== undefined) updates.push(args[7]);
+          },
+        },
         logger: { log() {}, warn() {}, debug() {}, error() {} },
       });
       return instance;
@@ -745,11 +750,27 @@ testCase(
     await call(controller(FILE_META_V1), 0, 2);
     assert.equal(updates.length, 0, "intermediate chunks keep the old name");
     await call(controller(FILE_META_V1), 1, 2, name);
-    assert.deepEqual(updates, [
-      { where: { id: FILE_ID }, data: { encryptedMetadata: name } },
-    ]);
+    assert.deepEqual(updates, [name]);
+    assert.equal(
+      separateUpdates.length,
+      0,
+      "the description is committed with the content",
+    );
     await call(controller(null), 0, 1);
-    assert.equal(updates.length, 1, "plain names are never rewritten");
+    assert.equal(updates.length, 1, "v1 rotations retain plain names");
+    await controller(null).reencrypt(
+      { ...chunk(0, 1), contentScheme: "2", encryptionChunkSize: "1000000" },
+      Buffer.alloc(60),
+      "share-1",
+      FILE_ID,
+      {} as never,
+      name,
+    );
+    assert.deepEqual(
+      updates,
+      [name, name],
+      "a v2 rotation can authenticate a historical plain name",
+    );
   },
 );
 

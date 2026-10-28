@@ -1,3 +1,11 @@
+import {
+  isContentV2ShareId,
+  isContentV2FileId,
+} from "../../utils/shareContentContext.util";
+import {
+  setContentV2Floor,
+  setSigningResultV2Floor,
+} from "../../utils/contentV2.util";
 import { isValidSigningRecipientEmail } from "../../utils/signingEmail.util";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -165,8 +173,18 @@ const NewSigningRequestPage = () => {
       setSignableFiles(undefined);
       return;
     }
-    const plain = listedSignableFiles.filter((f) => !f.metadataScheme);
-    const encrypted = listedSignableFiles.filter((f) => !!f.metadataScheme);
+    const plain = listedSignableFiles.filter(
+      (f) =>
+        !f.metadataScheme &&
+        !isContentV2FileId(f.fileId) &&
+        !isContentV2ShareId(f.shareId),
+    );
+    const encrypted = listedSignableFiles.filter(
+      (f) =>
+        !!f.metadataScheme ||
+        isContentV2FileId(f.fileId) ||
+        isContentV2ShareId(f.shareId),
+    );
     const userKeyB64 = getUserKey();
     if (encrypted.length === 0 || !userKeyB64) {
       setSignableFiles(plain);
@@ -221,6 +239,7 @@ const NewSigningRequestPage = () => {
               ...f,
               fileName: name,
               encryptedName: true,
+              isE2EEncrypted: true,
             }));
         } catch {
           return [];
@@ -346,10 +365,16 @@ const NewSigningRequestPage = () => {
             userKeyB64,
             material,
           );
-          if (!cancelled) setTeamKeyB64(keyB64);
+          const sourceKey = await importKeyFromBase64(keyB64);
+          setSigningResultV2Floor(sourceKey);
+          if (
+            isContentV2ShareId(fileEntry.shareId) ||
+            isContentV2FileId(fileEntry.fileId)
+          )
+            setContentV2Floor(sourceKey);
+          if (!cancelled) setTeamKeyB64(await exportKeyToBase64(sourceKey));
         } catch {
-          // Unknown share state: keep the previous behaviour for legacy files
-          if (!cancelled) setTeamKeyB64(userKeyB64);
+          if (!cancelled) setTeamKeyB64(null);
         }
       })();
       return () => {
@@ -367,12 +392,16 @@ const NewSigningRequestPage = () => {
         if (cancelled || !wrappedTeamKey) return;
         const masterKey = await importKeyFromBase64(userKeyB64);
         const teamKey = await unwrapReverseShareKey(wrappedTeamKey, masterKey);
+        setSigningResultV2Floor(teamKey);
+        if (
+          isContentV2ShareId(fileEntry.shareId) ||
+          isContentV2FileId(fileEntry.fileId)
+        )
+          setContentV2Floor(teamKey);
         const keyB64 = await exportKeyToBase64(teamKey);
         if (!cancelled) setTeamKeyB64(keyB64);
       } catch {
-        // Fallback to user key
-        const userKeyB64 = getUserKey();
-        if (!cancelled && userKeyB64) setTeamKeyB64(userKeyB64);
+        if (!cancelled) setTeamKeyB64(null);
       }
     })();
     return () => {

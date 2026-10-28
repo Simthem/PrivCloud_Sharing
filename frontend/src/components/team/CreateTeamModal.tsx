@@ -20,6 +20,7 @@ import {
 } from "../../utils/crypto.util";
 import toast from "../../utils/toast.util";
 import { useIntl } from "react-intl";
+import { contentPolicy } from "../../utils/contentPolicy.util";
 
 interface CreateTeamModalProps {
   opened: boolean;
@@ -58,7 +59,9 @@ const CreateTeamModal = ({ opened, onClose, mandatory }: CreateTeamModalProps) =
       try {
         const userKeyB64 = getUserKey();
         if (userKeyB64) {
-          const teamKey = await generateEncryptionKey();
+          const teamKey = await generateEncryptionKey({
+            v2Floor: contentPolicy().v2Floor,
+          });
           const masterKey = await importKeyFromBase64(userKeyB64);
           const wrappedTeamKey = await wrapReverseShareKey(teamKey, masterKey);
           await teamService.setTeamKey(team.id, wrappedTeamKey);

@@ -144,7 +144,7 @@ export class CreateSignatureRequestDTO {
   @IsUUID()
   id?: string;
   @IsString()
-  @Matches(/^[a-zA-Z0-9_-]+$/)
+  @Matches(/^(?:v2\.)?[a-zA-Z0-9_-]+$/)
   @Length(3, 50)
   shareId: string;
 

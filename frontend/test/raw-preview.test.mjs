@@ -83,7 +83,7 @@ test("extracts an encrypted DNG preview using only authenticated metadata/image 
   const preview = await readRawRangePreview(source);
   assert.deepEqual(preview.decoded.bytes, jpeg);
   assert.ok(reads.length <= 3);
-  assert.ok(reads.reduce((n, [a, b]) => n + b - a + 1, 0) <= 2_000_057);
+  assert.ok(reads.reduce((n, [a, b]) => n + b - a + 1, 0) <= 2_000_088);
 });
 
 test("rebases a non-JPEG RGB preview into a standalone TIFF and preserves orientation", async () => {

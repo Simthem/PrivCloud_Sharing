@@ -20,6 +20,43 @@ export default tseslint.config(
     },
   },
   {
+    // Test doubles name the parameters they ignore with a leading underscore.
+    files: ["test/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
+  },
+  {
+    // Standalone Node.js test scripts.
+    files: ["test/**/*.cjs", "test/**/*.mjs"],
+    languageOptions: {
+      globals: Object.fromEntries(
+        [
+          "AbortSignal",
+          "Buffer",
+          "Headers",
+          "URL",
+          "__dirname",
+          "clearTimeout",
+          "console",
+          "fetch",
+          "module",
+          "process",
+          "require",
+          "setTimeout",
+        ].map((name) => [name, "readonly"]),
+      ),
+    },
+  },
+  {
+    files: ["test/**/*.cjs"],
+    languageOptions: { sourceType: "commonjs" },
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
+  {
     ignores: ["dist/", "node_modules/", "prisma/"],
   },
 );

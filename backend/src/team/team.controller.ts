@@ -12,10 +12,13 @@ import {
   Query,
   UnauthorizedException,
   UseGuards,
+  Req,
 } from "@nestjs/common";
+import { Request } from "express";
 import { minutes, Throttle } from "@nestjs/throttler";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
 import { AdministratorGuard } from "src/auth/guard/isAdmin.guard";
+import { StepUpService } from "src/auth/stepUp.service";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { User } from "@prisma/client";
 import { TeamService } from "./team.service";
@@ -46,6 +49,7 @@ export class TeamController {
   constructor(
     private teamService: TeamService,
     private teamAuditService: TeamAuditService,
+    private stepUp: StepUpService,
   ) {}
 
   // =========================================================================
@@ -94,37 +98,54 @@ export class TeamController {
     return this.teamService.adminCreateTeam(dto);
   }
 
+  // Membership and roles open a team's folders to an account for good: the
+  // platform administrator confirms their identity for each of them, their
+  // own membership included.
   @Post("admin/:teamId/join")
   @UseGuards(JwtGuard, AdministratorGuard)
-  adminJoinTeam(@Param("teamId") teamId: string, @GetUser() user: User) {
+  async adminJoinTeam(
+    @Param("teamId") teamId: string,
+    @GetUser() user: User,
+    @Req() request: Request,
+  ) {
+    await this.stepUp.consume(request, user, `team.member.add:${teamId}`);
     return this.teamService.adminJoinTeam(teamId, user.id);
   }
 
   @Post("admin/:teamId/add-member")
   @UseGuards(JwtGuard, AdministratorGuard)
-  adminAddMember(
+  async adminAddMember(
     @Param("teamId") teamId: string,
     @Body() dto: AdminAddMemberDTO,
+    @GetUser() admin: User,
+    @Req() request: Request,
   ) {
+    await this.stepUp.consume(request, admin, `team.member.add:${teamId}`);
     return this.teamService.adminAddUserToTeam(teamId, dto.userId, dto.role);
   }
 
   @Patch("admin/:teamId/members/:memberId/role")
   @UseGuards(JwtGuard, AdministratorGuard)
-  adminSetMemberRole(
+  async adminSetMemberRole(
     @Param("teamId") teamId: string,
     @Param("memberId") memberId: string,
     @Body() dto: AdminSetRoleDTO,
+    @GetUser() admin: User,
+    @Req() request: Request,
   ) {
+    await this.stepUp.consume(request, admin, `team.member.role:${memberId}`);
     return this.teamService.adminAddUserToTeam(teamId, memberId, dto.role);
   }
 
   @Patch("admin/:teamId/members/:memberId/set-admin")
   @UseGuards(JwtGuard, AdministratorGuard)
-  adminDesignateTeamAdmin(
+  async adminDesignateTeamAdmin(
     @Param("teamId") teamId: string,
     @Param("memberId") memberId: string,
+    @GetUser() admin: User,
+    @Req() request: Request,
   ) {
+    await this.stepUp.consume(request, admin, `team.admin.set:${memberId}`);
     return this.teamService.adminSetTeamAdmin(teamId, memberId);
   }
 

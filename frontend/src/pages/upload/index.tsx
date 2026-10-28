@@ -1,3 +1,4 @@
+import { contentV2ShareId } from "../../utils/shareContentContext.util";
 import { synchronizeCompletedUpload } from "../../utils/uploadStateCache.util";
 import { prepareSafeLineRetry } from "../../utils/safelineChallenge.util";
 import { startUploadSessionMaintenance } from "../../utils/uploadSessionMaintenance.util";
@@ -89,6 +90,8 @@ import {
   getUploadSchedulingProfile,
 } from "../../utils/uploadPerformance.util";
 import { requestNotificationPermission } from "../../utils/safeline-notify.util";
+import { contentPolicy } from "../../utils/contentPolicy.util";
+import { contentWriteScheme } from "../../utils/contentV2.util";
 
 // pLimit is created per-upload to avoid stale slot accumulation across
 // uploads in the same SPA session (module-level pLimit never resets).
@@ -544,7 +547,8 @@ const Upload = ({
 
     try {
       if (isReverseShare) {
-        if (isE2EEncrypted) {
+        if (isE2EEncrypted || extractKeyFromHash()) {
+          share.id = contentV2ShareId(share.id);
           const rsKeyEncoded = extractKeyFromHash();
           if (!rsKeyEncoded) {
             throw new Error("Reverse-share E2E key is missing");
@@ -553,7 +557,7 @@ const Upload = ({
           e2eKeyEncoded = rsKeyEncoded;
           share.isE2EEncrypted = true;
           // FILE_META_V1 with K_rs, as decided for the reverse share's owner.
-          if (fileMetaV1Write) {
+          if (fileMetaV1Write || contentPolicy().v2Writes) {
             share.fileMetadataScheme = FILE_META_V1;
           }
         } else {
@@ -576,8 +580,9 @@ const Upload = ({
           throw new Error("Team folder is unavailable");
         }
 
-        const { wrappedTeamKey } = await teamService.getTeamKey(match.teamId);
-        if (!wrappedTeamKey) {
+        const { wrappedTeamKey, keyVersion, memberKeyVersion } =
+          await teamService.getTeamKey(match.teamId);
+        if (!wrappedTeamKey || memberKeyVersion !== keyVersion) {
           throw new Error("Team E2E key is missing");
         }
 
@@ -585,9 +590,10 @@ const Upload = ({
         cryptoKey = await unwrapReverseShareKey(wrappedTeamKey, masterKey);
         e2eKeyEncoded = await exportKeyToBase64(cryptoKey);
         share.isE2EEncrypted = true;
+        share.id = contentV2ShareId(share.id);
         // FILE_META_V1 with K_team: every member opens the names with the
         // key they already use for the content.
-        if (user.fileMetaV1TeamWrite) {
+        if (user.fileMetaV1TeamWrite || contentPolicy().v2Writes) {
           share.fileMetadataScheme = FILE_META_V1;
         }
       } else if (user) {
@@ -617,25 +623,32 @@ const Upload = ({
           throw new Error("PERSONAL_E2E_KEY_RESTORE_REQUIRED");
         }
         if (keyAction !== "upload-without-e2e") {
+          share.id = contentV2ShareId(share.id);
           share.isE2EEncrypted = true;
           personalMasterKeyEncoded = e2eKeyEncoded;
           share.cryptoScheme = LEGACY_ACCOUNT_KEY;
-          if (user.shareDekV1Write && e2eKeyEncoded) {
+          if (
+            (user.shareDekV1Write || contentPolicy().v2Floor) &&
+            e2eKeyEncoded
+          ) {
             try {
               // SHARE_DEK_V1: this share gets its own key. The recipient link
               // carries K_share, the server only receives it wrapped.
-              const dek = await createShareDek(e2eKeyEncoded, share.id);
+              const dek = await createShareDek(e2eKeyEncoded, share.id, {
+                v2Floor: contentPolicy().v2Floor,
+              });
               cryptoKey = dek.key;
               e2eKeyEncoded = dek.encodedKey;
               share.cryptoScheme = SHARE_DEK_V1;
               share.wrappedShareKey = dek.wrappedShareKey;
               share.wrappedShareKeyAlgorithm = dek.wrappedShareKeyAlgorithm;
               // FILE_META_V1: file names are encrypted with the same key.
-              if (user.fileMetaV1Write) {
+              if (user.fileMetaV1Write || contentPolicy().v2Floor) {
                 share.fileMetadataScheme = FILE_META_V1;
               }
-            } catch {
-              // Never block an upload: the share keeps the account key.
+            } catch (error) {
+              if (contentPolicy().v2Floor) throw error;
+              // Before v2 activation, retain the existing rollout fallback.
               console.warn("[E2E] Share key creation failed");
               reportShareCryptoEvent("dek_create_error", SHARE_DEK_V1);
             }
@@ -723,6 +736,7 @@ const Upload = ({
         } catch (createError: any) {
           if (
             share.fileMetadataScheme !== FILE_META_V1 ||
+            contentPolicy().v2Writes ||
             createError?.response?.data?.error !==
               "file_metadata_scheme_unavailable"
           ) {
@@ -737,6 +751,7 @@ const Upload = ({
       } catch (createError: any) {
         if (
           share.cryptoScheme !== SHARE_DEK_V1 ||
+          contentPolicy().v2Floor ||
           !personalMasterKeyEncoded ||
           createError?.response?.data?.error !==
             "share_crypto_scheme_unavailable"
@@ -927,6 +942,10 @@ const Upload = ({
             isE2EEncrypted: share.isE2EEncrypted ?? false,
             encryptionKey: share.isE2EEncrypted ? e2eKeyEncoded : undefined,
             fileMetadataScheme: createdShare.fileMetadataScheme,
+            contentScheme:
+              share.isE2EEncrypted && cryptoKey
+                ? contentWriteScheme(cryptoKey, contentPolicy().v2Writes)
+                : undefined,
             webdav: {
               endpoint: source.endpoint,
               username: source.username,

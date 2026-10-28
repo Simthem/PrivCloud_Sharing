@@ -60,7 +60,13 @@ testCase(
     const rows = new Map<string, Row>();
     let transactionTail = Promise.resolve();
     const emailOutbox = {
-      upsert: async ({ where, create }: any) => {
+      upsert: async ({
+        where,
+        create,
+      }: {
+        where: { deduplicationKey: string };
+        create: Pick<Row, "id" | "deduplicationKey" | "encryptedPayload">;
+      }) => {
         const existing = [...rows.values()].find(
           (row) => row.deduplicationKey === where.deduplicationKey,
         );
@@ -77,7 +83,16 @@ testCase(
         });
         return { id: create.id };
       },
-      findMany: async ({ where, take }: any) =>
+      findMany: async ({
+        where,
+        take,
+      }: {
+        where: {
+          availableAt: { lte: Date };
+          OR: { claimedAt?: { lt: Date } }[];
+        };
+        take: number;
+      }) =>
         [...rows.values()]
           .filter(
             (row) =>
@@ -87,7 +102,17 @@ testCase(
           )
           .slice(0, take)
           .map(({ id }) => ({ id })),
-      updateMany: async ({ where, data }: any) => {
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: {
+          id: string;
+          claimedAt?: Date | null;
+          OR?: { claimedAt?: { lt: Date } }[];
+        };
+        data: Partial<Row>;
+      }) => {
         const row = rows.get(where.id);
         if (!row || row.sentAt) return { count: 0 };
         if (data.attempts) {
@@ -104,12 +129,15 @@ testCase(
         }
         return { count: 1 };
       },
-      findUnique: async ({ where }: any) => rows.get(where.id) ?? null,
+      findUnique: async ({ where }: { where: { id: string } }) =>
+        rows.get(where.id) ?? null,
       deleteMany: async () => ({ count: 0 }),
     };
-    const prisma: any = {
+    const prisma = {
       emailOutbox,
-      $transaction: async (operation: (client: any) => Promise<unknown>) => {
+      $transaction: async (
+        operation: (client: unknown) => Promise<unknown>,
+      ) => {
         let release!: () => void;
         const previous = transactionTail;
         transactionTail = new Promise<void>((resolve) => {
@@ -139,12 +167,12 @@ testCase(
         name === "internal.jwtSecret" ? "outbox-test-secret" : undefined,
     };
     const firstReplica = new EmailOutboxService(
-      prisma,
+      prisma as never,
       config as never,
       email as never,
     );
     const secondReplica = new EmailOutboxService(
-      prisma,
+      prisma as never,
       config as never,
       email as never,
     );
@@ -155,7 +183,7 @@ testCase(
     };
 
     const id = await firstReplica.enqueue(
-      prisma,
+      prisma as never,
       message,
       "team-invitation:invitation-1",
     );
@@ -206,7 +234,7 @@ testCase(
     };
     const prisma = {
       emailOutbox: {
-        updateMany: async ({ data }: any) => {
+        updateMany: async ({ data }: { data: { sentAt?: Date } }) => {
           terminal = data.sentAt instanceof Date;
           return { count: 1 };
         },

@@ -45,6 +45,21 @@ const register = async (
   ).data;
 };
 
+/** Confirms one administrator operation with a passkey of the account. */
+const confirmStepUp = async (scope: string): Promise<void> => {
+  const ceremony: Ceremony = (await api.post("auth/step-up/passkey", { scope }))
+    .data;
+  const response = await startAuthentication({
+    optionsJSON: ceremony.options as unknown as Parameters<
+      typeof startAuthentication
+    >[0]["optionsJSON"],
+  });
+  await api.post("auth/step-up", {
+    scope,
+    passkey: { challengeId: ceremony.challengeId, response },
+  });
+};
+
 const remove = async (passkeyId: string): Promise<void> => {
   await api.delete(`passkeys/${apiPathSegment(passkeyId)}`);
 };
@@ -66,6 +81,12 @@ const signIn = async () => {
   });
 };
 
-const passkeyService = { list, register, remove, signIn };
+const passkeyService = {
+  list,
+  register,
+  remove,
+  signIn,
+  confirmStepUp,
+};
 
 export default passkeyService;

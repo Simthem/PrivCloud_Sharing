@@ -191,7 +191,8 @@ independent calibration or collusion studies. See `corpus-results.json` for the
 measured corpus, including its statistical assumptions and limitations.
 
 For private real-background controls, run `node real-corpus.mjs INPUT_DIRECTORY
-PRIVATE_REPORT.json`. Existing marks are not recovered: the runner overlays a
+PRIVATE_REPORT.json` from the directory that contains both. Paths elsewhere are
+refused. Existing marks are not recovered: the runner overlays a
 new known pattern and measures it against the supplied image background. Keep
 the report outside the public assets. Input pixels and filenames are not copied
 into it. This does not replace end-to-end issued capture or real-photo testing.
@@ -388,7 +389,8 @@ No GitHub synchronization is needed to serve these tools.
 
 ## Independently test deployed read-only access
 
-`node read-only.mjs /private/path/test-tenant.json` runs actual HTTPS requests against
+From the private directory that holds it, `node /path/to/read-only.mjs
+test-tenant.json` runs actual HTTPS requests against
 an existing test tenant, including an owner positive control on the original.
 It verifies the contractor's rendered page ciphertext against a pinned hash,
 refuses original bytes, direct-download URLs, original key grants, team keys and

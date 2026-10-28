@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { lstat, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Read-only HTTPS audit of a prepared test tenant. Never creates seats or sends invitations. */
@@ -194,7 +195,13 @@ export async function verifyReadOnly(config) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     assert.ok(process.argv[2], "Provide a private JSON configuration file");
-    const metadata = await lstat(process.argv[2]);
+    const name = path.basename(process.argv[2]);
+    assert.ok(
+      name === process.argv[2] && name.endsWith(".json"),
+      "Run from the directory holding the private .json configuration and pass its name",
+    );
+    const configuration = path.join(process.cwd(), name);
+    const metadata = await lstat(configuration);
     assert.ok(
       metadata.isFile() && !metadata.isSymbolicLink(),
       "The private configuration must be a regular file, not a link",
@@ -210,7 +217,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         "Protect the private configuration with chmod 600",
       );
     const result = await verifyReadOnly(
-      JSON.parse(await readFile(process.argv[2], "utf8")),
+      JSON.parse(await readFile(configuration, "utf8")),
     );
     // No sessions, origins, resource identifiers, keys or response bodies are logged.
     console.log(JSON.stringify(result, null, 2));

@@ -88,7 +88,9 @@ export default {
   "admin.config.smtp.general-password": "Mot de passe des e-mails courants",
   "admin.config.smtp.general-password.description": "Mot de passe du second compte SMTP, s'il a son propre nom d'utilisateur.",
   "error.msg.reauth_mismatch": "Le compte {0} utilisé n'est pas celui qui est lié à votre compte PrivCloud. Reconnectez-vous avec le compte lié.",
+  "error.msg.reauth_unsupported": "Votre compte {0} ne permet pas de confirmer une connexion récente. Pour définir un mot de passe, déconnectez-vous et utilisez « Mot de passe oublié ? » sur la page de connexion.",
   "error.msg.reauth_expired": "La confirmation d'identité a expiré. Recommencez depuis votre compte.",
+  "error.msg.step_up_required": "Confirmez votre identité depuis votre compte, puis associez à nouveau le compte.",
   "admin.button.vault": "Coffre-fort des preuves",
   "admin.vault.title": "Coffre-fort des preuves",
   "admin.vault.hint":
@@ -690,6 +692,9 @@ export default {
   "account.card.password.old": "Ancien mot de passe",
   "account.card.password.new": "Nouveau mot de passe",
   "account.card.password.noPasswordSet": "Vous n'avez pas de mot de passe défini. Si vous voulez vous connecter avec un courriel et un mot de passe, vous devez définir un mot de passe.",
+  "account.card.password.oauth.description": "Confirmez votre identité en vous reconnectant avec le compte que vous y avez lié avant de choisir un mot de passe.",
+  "account.card.password.oauth.confirmed": "Identité confirmée. Choisissez votre mot de passe dans les prochaines minutes.",
+  "account.card.password.oauth.none": "Aucun de vos comptes liés ne permet de confirmer votre identité ici. Déconnectez-vous et utilisez « Mot de passe oublié ? » sur la page de connexion pour recevoir un lien par courriel, ou contactez votre administrateur.",
   "account.notify.password.success": "Le mot de passe a été modifié avec succès",
   "account.card.oauth.title": "Identifiant social",
   "account.card.oauth.github": "GitHub",
@@ -901,6 +906,18 @@ export default {
     "Aucun relevé quotidien n'a encore été enregistré. Les courbes des partages, vues et du stockage se remplissent à partir du premier relevé, celle des utilisateurs est reconstituée à partir des dates de création des comptes.",
   // END /admin
   // /admin/users
+  "step-up.title": "Confirmez votre identité",
+  "step-up.description.admin": "Cette opération modifie des droits d'administrateur, les identifiants d'un autre compte ou les réglages de connexion. Confirmez votre propre identité d'administrateur. L'utilisateur concerné n'a rien à fournir, et la confirmation ne vaut que pour cette opération.",
+  "step-up.password": "Votre mot de passe",
+  "step-up.description.signing-passkey": "Cette passkey signera des documents en votre nom et permettra de vous connecter. Confirmez d'abord votre identité, comme pour ajouter une passkey depuis les paramètres de votre compte.",
+  "step-up.confirm": "Confirmer",
+  "step-up.passkey": "Confirmer avec une passkey",
+  "step-up.wrong-proof": "Mot de passe incorrect, ou la confirmation avec votre compte lié a expiré.",
+  "step-up.wrong-code": "Code de double authentification invalide.",
+  "step-up.passkey-error": "La passkey n'a pas pu confirmer cette opération.",
+  "step-up.error": "La confirmation a échoué. Réessayez.",
+  "step-up.none": "Votre compte n'a ni mot de passe, ni passkey, ni compte lié capable de confirmer cette opération. Ajoutez une passkey ou définissez un mot de passe depuis les paramètres de votre compte.",
+  "step-up.oauth-returned": "Identité confirmée avec votre compte lié. Refaites l'opération dans les cinq minutes.",
   "admin.users.title": "Gestion des utilisateurs",
   "admin.users.total": "{count, plural, one {# utilisateur au total} other {# utilisateurs au total}}",
   "admin.users.search.placeholder": "Rechercher par surnom ou courriel",
@@ -918,6 +935,8 @@ export default {
   "admin.users.edit.update.notify.password.success": "Le mot de passe a été modifié",
   "admin.users.edit.update.totp.disable": "Désactiver la 2FA pour cet utilisateur",
   "admin.users.edit.update.totp.disabled": "2FA désactivée avec succès",
+  "admin.users.edit.update.self":
+    "Modifiez votre propre adresse e-mail, votre mot de passe et votre 2FA depuis les paramètres de votre compte.",
   "admin.users.edit.security.title": "Sécurité du compte",
   "admin.users.edit.security.email.link":
     "Adresse e-mail vérifiée le {date} par lien de confirmation",
@@ -1485,6 +1504,10 @@ export default {
   "admin.config.share.chunk-size.description": "Ajustez la taille des tronçons pour que vos téléchargements équilibrent efficacité et fiabilité en fonction de votre connexion Internet. Les petits tronçons peuvent améliorer les taux de succès sur les connexions instables, tandis que les tronçons plus importants accélèrent les téléchargements sur les connexions stables.",
   "admin.config.share.auto-open-share-modal": "Ouvrir automatiquement la modale de partage",
   "admin.config.share.auto-open-share-modal.description": "La modale de création de partage apparaît automatiquement lorsqu'un utilisateur sélectionne des fichiers, ce qui élimine le besoin de cliquer manuellement sur le bouton.",
+  "admin.config.share.content-v2writes": "Écriture du contenu E2EE v2",
+  "admin.config.share.content-v2writes.description": "Les nouveaux fichiers chiffrés de bout en bout sont écrits au format v2, qui authentifie la position de chaque enregistrement et la fin du fichier. Les envois au format précédent sont alors refusés. La désactivation ne rend jamais les fichiers v2 illisibles et les clés à plancher v2 continuent d'écrire en v2.",
+  "admin.config.share.content-v2floor": "Plancher E2EE v2 des nouvelles clés",
+  "admin.config.share.content-v2floor.description": "Les nouvelles clés de partage, d'équipe et de dépôt n'acceptent que du contenu v2, ce que chaque client vérifie. Les clés existantes et leurs fichiers ne changent pas. La désactivation ne concerne que les clés créées ensuite.",
   "admin.config.share.allow-admin-access-all-shares":
     "Autoriser les administrateurs à accéder à tous les partages",
   "admin.config.share.allow-admin-access-all-shares.description":

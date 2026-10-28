@@ -21,8 +21,11 @@ export type ShareCryptoScheme = typeof LEGACY_ACCOUNT_KEY | typeof SHARE_DEK_V1;
 
 export const SHARE_KEY_WRAP_ALGORITHM = "AES-256-GCM/K_MASTER/AAD-SHARE-ID/V1";
 
-// [IV 12][K_share 32][GCM tag 16] = 60 bytes = 80 base64url characters.
-export const WRAPPED_SHARE_KEY_PATTERN = /^[A-Za-z0-9_-]{80}$/;
+// [IV 12][K_share 32][GCM tag 16] = 60 bytes = 80 base64url characters. A
+// K_share with an E2EE v2 floor is wrapped with its floor byte: 61 bytes, 82
+// characters. The floor is inside the authenticated plaintext.
+export const WRAPPED_SHARE_KEY_PATTERN =
+  /^(?:[A-Za-z0-9_-]{80}|[A-Za-z0-9_-]{82})$/;
 
 export function resolveShareCryptoScheme(
   value: number | null | undefined,

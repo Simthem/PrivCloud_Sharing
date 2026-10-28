@@ -81,13 +81,13 @@ function authenticator() {
 }
 
 function passkeyService(stored: {
-  account?: Record<string, any>;
-  signing?: Record<string, any>;
+  account?: Record<string, unknown>;
+  signing?: Record<string, unknown>;
 }) {
-  const challenges = new Map<string, Record<string, any>>();
+  const challenges = new Map<string, Record<string, unknown>>();
   const counters: string[] = [];
   const byCredential =
-    (row?: Record<string, any>) =>
+    (row?: Record<string, unknown>) =>
     async (args: { where: { credentialId: string } }) =>
       row && row.credentialId === args.where.credentialId ? row : null;
   const prisma = {
@@ -103,7 +103,7 @@ function passkeyService(stored: {
     },
     passkeyChallenge: {
       deleteMany: async () => ({ count: 0 }),
-      create: async (args: { data: Record<string, any> }) => {
+      create: async (args: { data: Record<string, unknown> }) => {
         const id = `00000000-0000-4000-8000-00000000000${challenges.size}`;
         challenges.set(id, {
           id,
@@ -113,7 +113,9 @@ function passkeyService(stored: {
         });
         return { id };
       },
-      findFirst: async (args: { where: Record<string, any> }) => {
+      findFirst: async (args: {
+        where: { id: string } & Record<string, unknown>;
+      }) => {
         const row = challenges.get(args.where.id);
         return row &&
           row.purpose === args.where.purpose &&
@@ -199,7 +201,6 @@ testCase("a passkey enrolled for a signature signs in too", async () => {
   assert.equal(user.id, USER);
   assert.deepEqual(counters, ["signing"]);
 });
-
 
 testCase(
   "forged, foreign or unverified answers all get the same 401",
@@ -348,7 +349,12 @@ function authService() {
     config: { get: () => false },
     prisma: {
       loginToken: { deleteMany: async () => ({ count: 0 }) },
-      user: { update: async () => void calls.push("reset") },
+      user: {
+        updateMany: async () => {
+          calls.push("reset");
+          return { count: 1 };
+        },
+      },
     },
     createLoginToken: async () => {
       calls.push("loginToken");
@@ -368,6 +374,7 @@ testCase("a passkey stands for both factors, never for a lock", async () => {
   const user = {
     id: USER,
     totpVerified: true,
+    totpSecret: "SECRET",
     failedLoginAttempts: 2,
     lockedUntil: null,
     emailVerificationRequiredAt: null,
@@ -397,17 +404,17 @@ testCase("a passkey stands for both factors, never for a lock", async () => {
 testCase(
   "team evidence assertions bind account, team, copy and download kind, and cannot be replayed",
   async () => {
-    const device = authenticator()
+    const device = authenticator();
     const { service } = passkeyService({
       account: row("account-cred", device.publicKey),
-    })
-    const user = { id: USER } as never
+    });
+    const user = { id: USER } as never;
     const ceremony = await service.beginTeamEvidence(
       user,
       "team-a",
       "copy-a",
       "evidence",
-    )
+    );
     const dto = {
       challengeId: ceremony.challengeId,
       response: device.assert(
@@ -415,19 +422,19 @@ testCase(
         ceremony.options.challenge,
         `account:${USER}`,
       ),
-    } as never
+    } as never;
     await assert.rejects(
       service.verifyTeamEvidence(user, "team-b", "copy-a", "evidence", dto),
-    )
+    );
     await assert.rejects(
       service.verifyTeamEvidence(user, "team-a", "copy-b", "evidence", dto),
-    )
+    );
     await assert.rejects(
       service.verifyTeamEvidence(user, "team-a", "copy-a", "certificate", dto),
-    )
+    );
     await assert.rejects(
       service.verifyTeamEvidence(user, "team-a", "copy-a", "pattern", dto),
-    )
+    );
     await assert.rejects(
       service.verifyTeamEvidence(
         { id: "other-admin" } as never,
@@ -436,14 +443,14 @@ testCase(
         "evidence",
         dto,
       ),
-    )
-    await assert.rejects(service.verifyVault(user, dto))
-    await service.verifyTeamEvidence(user, "team-a", "copy-a", "evidence", dto)
+    );
+    await assert.rejects(service.verifyVault(user, dto));
+    await service.verifyTeamEvidence(user, "team-a", "copy-a", "evidence", dto);
     await assert.rejects(
       service.verifyTeamEvidence(user, "team-a", "copy-a", "evidence", dto),
-    )
+    );
   },
-)
+);
 
 testCase(
   "team evidence refuses missing verification and foreign origins",
@@ -453,17 +460,17 @@ testCase(
       { origin: "https://attacker.example.test" },
       { origin: "android:apk-key-hash:untrusted" },
     ]) {
-      const device = authenticator()
+      const device = authenticator();
       const { service } = passkeyService({
         account: row("account-cred", device.publicKey),
-      })
-      const user = { id: USER } as never
+      });
+      const user = { id: USER } as never;
       const ceremony = await service.beginTeamEvidence(
         user,
         "team-a",
         "copy-a",
         "evidence",
-      )
+      );
       const dto = {
         challengeId: ceremony.challengeId,
         response: device.assert(
@@ -472,23 +479,23 @@ testCase(
           `account:${USER}`,
           options,
         ),
-      } as never
+      } as never;
       const result = service.verifyTeamEvidence(
         user,
         "team-a",
         "copy-a",
         "evidence",
         dto,
-      )
-      await assert.rejects(result)
+      );
+      await assert.rejects(result);
     }
   },
-)
+);
 
 testCase(
   "team evidence has no password or session-only fallback when the account has no passkey",
   async () => {
-    const { service } = passkeyService({})
+    const { service } = passkeyService({});
     await assert.rejects(
       service.beginTeamEvidence(
         { id: USER } as never,
@@ -496,24 +503,24 @@ testCase(
         "copy",
         "evidence",
       ),
-    )
+    );
   },
-)
+);
 
 testCase(
   "pattern diagnostics require a distinct single-use passkey assertion",
   async () => {
-    const device = authenticator()
+    const device = authenticator();
     const { service } = passkeyService({
       account: row("account-cred", device.publicKey),
-    })
-    const user = { id: USER } as never
+    });
+    const user = { id: USER } as never;
     const ceremony = await service.beginTeamEvidence(
       user,
       "team-a",
       "copy-a",
       "pattern",
-    )
+    );
     const dto = {
       challengeId: ceremony.challengeId,
       response: device.assert(
@@ -521,19 +528,19 @@ testCase(
         ceremony.options.challenge,
         `account:${USER}`,
       ),
-    } as never
-    assert.equal(ceremony.options.userVerification, "required")
+    } as never;
+    assert.equal(ceremony.options.userVerification, "required");
     await assert.rejects(
       service.verifyTeamEvidence(user, "team-a", "copy-a", "evidence", dto),
-    )
+    );
     await assert.rejects(
       service.verifyTeamEvidence(user, "team-a", "copy-a", "certificate", dto),
-    )
-    await service.verifyTeamEvidence(user, "team-a", "copy-a", "pattern", dto)
+    );
+    await service.verifyTeamEvidence(user, "team-a", "copy-a", "pattern", dto);
     await assert.rejects(
       service.verifyTeamEvidence(user, "team-a", "copy-a", "pattern", dto),
-    )
+    );
   },
-)
+);
 
 void run();

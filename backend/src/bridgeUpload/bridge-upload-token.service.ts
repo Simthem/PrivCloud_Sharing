@@ -5,15 +5,20 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
+import { User } from "@prisma/client";
 import * as crypto from "crypto";
 import { PrismaService } from "src/prisma/prisma.service";
+import { TeamShareAccessService } from "src/share/team-share-access.service";
 
 const TOKEN_BYTES = 32;
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 
 @Injectable()
 export class BridgeUploadTokenService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private teamShareAccess: TeamShareAccessService,
+  ) {}
 
   async createToken(
     shareId: string,
@@ -66,7 +71,16 @@ export class BridgeUploadTokenService {
 
     const record = await this.prisma.bridgeUploadToken.findUnique({
       where: { tokenHash: this.hashToken(token) },
-      include: { share: { select: { id: true, uploadLocked: true } } },
+      include: {
+        share: {
+          select: {
+            id: true,
+            uploadLocked: true,
+            creatorId: true,
+            teamFolderId: true,
+          },
+        },
+      },
     });
 
     if (!record || record.shareId !== shareId) {
@@ -80,6 +94,17 @@ export class BridgeUploadTokenService {
     }
     if (record.share.uploadLocked) {
       throw new BadRequestException("Share is already completed");
+    }
+    // The token carries its creator's authority at issuance and must not
+    // outlive it: every chunk is checked against the creator's current right
+    // to manage the share, as the owner guard would check a signed-in upload.
+    if (!record.creatorId || record.share.creatorId !== record.creatorId) {
+      throw new UnauthorizedException("Bridge upload token has been revoked");
+    }
+    if (record.share.teamFolderId) {
+      await this.teamShareAccess.assertCanManageShare(shareId, {
+        id: record.creatorId,
+      } as User);
     }
 
     await this.prisma.bridgeUploadToken.update({

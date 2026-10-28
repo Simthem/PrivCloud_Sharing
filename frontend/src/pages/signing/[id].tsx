@@ -73,6 +73,12 @@ import {
   unwrapReverseShareKey,
 } from "../../utils/crypto.util";
 import {
+  contentWriteScheme,
+  encryptContentV2,
+  isContentV2,
+} from "../../utils/contentV2.util";
+import { contentPolicy } from "../../utils/contentPolicy.util";
+import {
   getInitialsStampGeometry,
   normalizedPdfRotation,
   pageSizePoints,
@@ -271,6 +277,7 @@ const SigningDetailPage = () => {
         encryptedBuf,
         cryptoKey,
         5_000_000,
+        typedDoc?.fileId ? { fileId: typedDoc.fileId } : undefined,
       );
 
       // 3. Get signatures data from backend
@@ -864,7 +871,19 @@ const SigningDetailPage = () => {
         padesSignedPdf.byteOffset,
         padesSignedPdf.byteOffset + padesSignedPdf.byteLength,
       ) as ArrayBuffer;
-      const reEncrypted = await encryptFile(padesSignedBuffer, cryptoKey);
+      // A v2 source, a key with a v2 floor or the operator switch keeps the
+      // signed result in v2, bound to this signing document.
+      const reEncrypted =
+        isContentV2(new Uint8Array(encryptedBuf)) ||
+        contentWriteScheme(cryptoKey, contentPolicy().v2Writes) === 2
+          ? (
+              await encryptContentV2(
+                cryptoKey,
+                { signingDocumentId: docId },
+                padesSignedPdf,
+              )
+            ).buffer
+          : await encryptFile(padesSignedBuffer, cryptoKey);
 
       // 9. Upload encrypted final PDF for storage
       await signingService.finalizeE2E(
@@ -922,6 +941,7 @@ const SigningDetailPage = () => {
           encryptedBuf,
           cryptoKey,
           5_000_000,
+          { signingDocumentId: docId },
         );
         finalBlob = new Blob([decryptedBuf], { type: "application/pdf" });
       }

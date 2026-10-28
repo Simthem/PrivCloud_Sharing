@@ -223,11 +223,12 @@ export class ShareController {
   ) {
     const { reverse_share_token } = request.cookies;
     // Strip captchaToken - it was consumed by AltchaGuard and must not reach Prisma.
-    const { captchaToken: _, ...shareData } = body;
+    const { captchaToken: _, contentScheme, ...shareData } = body;
     const share = await this.shareService.create(
       shareData as CreateShareDTO,
       user,
       reverse_share_token,
+      contentScheme,
     );
     if (share.cryptoScheme !== null && share.cryptoScheme !== undefined) {
       shareCryptoCounters.record({

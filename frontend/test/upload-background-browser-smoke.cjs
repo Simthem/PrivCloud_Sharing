@@ -4,7 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 const https = require("node:https");
 const { spawn, execFileSync } = require("node:child_process");
-const { createHash, createDecipheriv } = require("node:crypto");
+const { createHash, createDecipheriv, randomBytes } = require("node:crypto");
 const ts = require("typescript");
 const { createChromeProtocolPipe } = require("./chrome-protocol-pipe.cjs");
 
@@ -16,7 +16,7 @@ const fileId = "b53173ae-a482-4d17-b952-246df7317c8a";
 const partBytes = 1024 * 1024,
   recordBytes = 256 * 1024,
   partCount = 64;
-const key = Buffer.alloc(32, 7);
+const key = randomBytes(32);
 let browser,
   api,
   storage,
@@ -234,7 +234,7 @@ const transpile = (name) =>
               if(m.type==='release-direct-slot')coordinator.releaseDirect(m.leaseId,m.outcome,m.retryAfterMs);
               if(['batch-complete','error','quota-exceeded'].includes(m.type)){window.uploadResult=m;coordinator.close();worker.terminate()}
             };
-            worker.postMessage({type:'start',shareId:'fixture',fileId:'${fileId}',fileName:'fixture.bin',file:new File([new Uint8Array(${partBytes * partCount}).fill(0x5a)],'fixture.bin'),chunkSize:${partBytes},initialChunkSize:${partBytes},cryptoChunkSize:${recordBytes},totalChunks:${partCount},isE2E:true,cryptoKeyRaw:new Uint8Array(32).fill(7),serverManagedWindow:true,maxParallelLanes:6});
+            worker.postMessage({type:'start',shareId:'fixture',fileId:'${fileId}',fileName:'fixture.bin',file:new File([new Uint8Array(${partBytes * partCount}).fill(0x5a)],'fixture.bin'),chunkSize:${partBytes},initialChunkSize:${partBytes},cryptoChunkSize:${recordBytes},totalChunks:${partCount},isE2E:true,cryptoKeyRaw:new Uint8Array([${[...key].join(",")}]),serverManagedWindow:true,maxParallelLanes:6});
           };
         </script>`);
       } else if (url.pathname === "/cover") {

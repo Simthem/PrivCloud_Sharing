@@ -44,6 +44,7 @@ const ReactQueryDevtools = dynamic(
 import Header from "../components/header/Header";
 import { HEADER_HEIGHT } from "../components/header/Header.styles";
 import { ConfigContext } from "../hooks/config.hook";
+import { applyContentPolicy } from "../utils/contentPolicy.util";
 import { UserContext } from "../hooks/user.hook";
 import {
   LOCALES,
@@ -61,7 +62,10 @@ import Config from "../types/config.type";
 import { CurrentUser } from "../types/user.type";
 import i18nUtil from "../utils/i18n.util";
 import { resolvePostAuthRedirectPath } from "../utils/router.util";
-import { AUTH_SESSION_EXPIRED_EVENT } from "../utils/authRedirect.util";
+import {
+  AUTH_SESSION_EXPIRED_EVENT,
+  shouldRedirectAuthenticatedEntryPath,
+} from "../utils/authRedirect.util";
 import { shouldPromptForE2EKey } from "../utils/e2ePromptPolicy.util";
 import userPreferences from "../utils/userPreferences.util";
 
@@ -92,6 +96,9 @@ const EmailVerificationNotice = dynamic(
   () => import("../components/auth/EmailVerificationNotice"),
   { ssr: false },
 );
+const StepUpHost = dynamic(() => import("../components/auth/StepUpHost"), {
+  ssr: false,
+});
 
 // Keep secondary text clearly readable in both themes. The custom dark-1
 // shade is deliberately lighter than Mantine's default muted gray.
@@ -133,6 +140,9 @@ function App({
   const [configVariables, setConfigVariables] = useState<Config[]>(
     pageProps.configVariables,
   );
+  // Uploads, key creation and re-encryption read the v2 switches outside
+  // React, from the configuration this shell last received.
+  applyContentPolicy(configVariables);
 
   // E2E key prompt: shown when user has a server-side key hash but the
   // in-memory key is empty (RAM-only model -- key lost on tab close).
@@ -163,7 +173,7 @@ function App({
       const u = await userService.getCurrentUser({ refresh: false });
       if (u) {
         setUser(u);
-        if (router.pathname === "/" || router.pathname.startsWith("/auth/")) {
+        if (shouldRedirectAuthenticatedEntryPath(router.pathname)) {
           const target = await resolvePostAuthRedirectPath(undefined, u);
           router.replace(target);
         }
@@ -639,6 +649,7 @@ function App({
                           },
                         }}
                       >
+                        {user && <StepUpHost />}
                         {excludeDefaultLayoutRoutes.includes(route) ? (
                           <Component {...pageProps} />
                         ) : (

@@ -77,6 +77,8 @@ async function main() {
     "/ranges.mjs": "previewRange.util",
     "/imageCore.mjs": "imageDecoderCore.util",
     "/crypto.mjs": "crypto.util",
+    "/contentV2.mjs": "contentV2.util",
+    "/shareContentContext.mjs": "shareContentContext.util",
     "/readCache.mjs": "previewReadCache.util",
   };
   for (const [route, name] of Object.entries(moduleNames))
@@ -86,6 +88,11 @@ async function main() {
         .replaceAll('"./imageDecoderCore.util"', '"/imageCore.mjs"')
         .replaceAll('"./previewRange.util"', '"/ranges.mjs"')
         .replaceAll('"./crypto.util"', '"/crypto.mjs"')
+        .replaceAll('"./contentV2.util"', '"/contentV2.mjs"')
+        .replaceAll(
+          '"./shareContentContext.util"',
+          '"/shareContentContext.mjs"',
+        )
         .replaceAll('"./previewReadCache.util"', '"/readCache.mjs"'),
     ];
   const jpeg = execFileSync("ffmpeg", [

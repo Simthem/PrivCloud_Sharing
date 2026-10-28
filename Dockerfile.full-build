@@ -12,11 +12,12 @@
 # + CVE-2026-39836 (HIGH), CVE-2026-42499 (HIGH), CVE-2026-39823 (MEDIUM),
 # + CVE-2026-39825 (MEDIUM), CVE-2026-39826 (MEDIUM) -- tous fixés en 1.26.3.
 # + CVE-2026-39822 et CVE-2026-42505 -- corrigés par Go 1.26.5.
+# + CVE-2026-111943 (HIGH, crypto/x509), corrigé par Go 1.26.10.
 # Caddy 2.11.3 requis pour fixer CVE-2026-30851 (HIGH), CVE-2026-30852 (MEDIUM),
 # CVE-2026-45135 (HIGH - FastCGI splitPos), CVE-2026-45692 (MEDIUM - Admin /config bypass),
 # GHSA-gx7w-56w6-g48x (MEDIUM - PKI path matching bypass).
 # GHSA-wwhq-w58m-w29c (MEDIUM - CVE-2026-30852 fix bypass) - status: affected, no fix yet.
-FROM golang:1.26.9-alpine@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade AS caddy-builder
+FROM golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS caddy-builder
 ENV GOTOOLCHAIN=local
 # CVE-2026-27171 : zlib 1.3.1-r2 -> 1.3.2-r0 disponible dans Alpine
 RUN apk upgrade --no-cache && apk add --no-cache curl git
@@ -43,6 +44,10 @@ RUN test "$(grep -Fc '[]interpreter.Interpretable{reqAttr}' modules/caddyhttp/ce
 # CVE-2026-84445 (HIGH) : google.golang.org/grpc 1.83.1 (xDS server DoS)
 # GHSA-q4r8-xm5f-56gw (CRITICAL) + CVE-2026-30836 (CVSS 7.8, HIGH) : github.com/smallstep/certificates < 0.30.2
 # CVE-2026-34986 (CVSS 8.7, HIGH) : github.com/go-jose/go-jose v3 < 3.0.5, v4 < 4.1.4
+# CVE-2026-116587 (CVSS 8.7, HIGH) : github.com/go-jose/go-jose v3 <= 3.0.5, v4 < 4.1.6
+# CVE-2026-116585 / CVE-2026-116586 (CVSS 6.9, MEDIUM) : go-jose v3 <= 3.0.5, v4 < 4.1.5
+#   v4 is bumped. v3 has no fixed release, see the backport stage below.
+# CVE-2026-116591 (CVSS 8.7, HIGH) : github.com/klauspost/compress{/fse,/huff0} < 1.20.2
 # CVE-2026-33816 (CVSS 8.7, HIGH) : github.com/jackc/pgx/v5 < 5.9.0
 # GHSA-j88v-2chj-qfwx (CVSS 2.3, LOW) : github.com/jackc/pgx/v5 < 5.9.2 [SQL Injection]
 # CVE-2026-33815 (CVSS 9.8, CRITICAL) : pgx/v5 pgproto3 OOB write -- NO upstream fix (all versions).
@@ -51,11 +56,13 @@ RUN test "$(grep -Fc '[]interpreter.Interpretable{reqAttr}' modules/caddyhttp/ce
 # CVE-2026-33817 (CVSS 6.9, MEDIUM) : go.etcd.io/bbolt (no release yet, pin to fix commit)
 # SNYK-GOLANG-GOOPENTELEMETRYIO* (MEDIUM x4) : go.opentelemetry.io/otel{/propagation,/baggage} < 1.44.0
 # CVE-2026-40898 (CVSS 6.9, MEDIUM) : github.com/quic-go/quic-go/http3@v0.59.1
+# CVE-2026-114437 : github.com/go-chi/chi/v5 middleware trust/origin validation issues < 5.4.0.
 # CVE-2026-39824 (LOW) : golang.org/x/sys < 0.44.0
 # SNYK-GOLANG-GITHUBCOMYUINGOLDMARKRENDERERHTML-15838406 (MEDIUM) : goldmark XSS < 1.7.17
 # SNYK-GOLANG-GOLANGORGXCRYPTOSSH* (CRITICAL x7 + HIGH x2 + MEDIUM x4) : golang.org/x/crypto/ssh{,/agent} < 0.52.0
 # SNYK-GOLANG-GOLANGORGXNETHTML* (CRITICAL x1 + MEDIUM x5) : golang.org/x/net/html < 0.55.0
 # CVE-2026-46600 : golang.org/x/net < 0.56.0
+# CVE-2026-78661, CVE-2026-97045 : golang.org/x/net/html < 0.62.0
 # CVE-2026-56852 : golang.org/x/text < 0.39.0
 # GHSA-gcjh-h69q-9w9g : github.com/google/cel-go <= 0.28.1
 # CVE-2026-37236 : grpc-gateway v2.30.0, mitigated below by disabling
@@ -70,13 +77,13 @@ RUN test "$(grep -Fc '[]interpreter.Interpretable{reqAttr}' modules/caddyhttp/ce
 # GHSA-gcjh-h69q-9w9g: Docker Scout marks cel-go < 0.30.0 as affected. Pin the
 # reviewed v0.30.0 release, which contains the sentinel-field fix, and verify
 # the compiled binary below so a transitive downgrade fails the image build.
-RUN go get golang.org/x/net@v0.60.0 \
+RUN go get golang.org/x/net@v0.62.0 \
     && go get golang.org/x/text@v0.41.0 \
     && go get golang.org/x/crypto@v0.56.0 \
     && go get github.com/yuin/goldmark@v1.7.17 \
     && go get google.golang.org/grpc@v1.83.2 \
     && go get github.com/go-jose/go-jose/v3@v3.0.5 \
-    && go get github.com/go-jose/go-jose/v4@v4.1.4 \
+    && go get github.com/go-jose/go-jose/v4@v4.1.6 \
     && go get github.com/jackc/pgx/v5@v5.9.2 \
     && go get go.opentelemetry.io/otel@v1.45.0 \
     && go get go.opentelemetry.io/otel/sdk@v1.45.0 \
@@ -89,7 +96,7 @@ RUN go get golang.org/x/net@v0.60.0 \
     && go get go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.21.0 \
     && go get go.opentelemetry.io/otel/exporters/stdout/stdoutlog@v0.21.0 \
     && go get github.com/quic-go/quic-go/http3@v0.59.1 \
-    && go get github.com/go-chi/chi/v5@v5.3.0 \
+    && go get github.com/go-chi/chi/v5@v5.4.0 \
     && go get golang.org/x/sys@v0.47.0 \
     && go get github.com/smallstep/certificates@v0.30.2 \
     && go get go.etcd.io/bbolt@cae11e991754 \
@@ -102,11 +109,11 @@ RUN go get golang.org/x/net@v0.60.0 \
     && go mod download go.etcd.io/bbolt \
     && go mod tidy \
     && go mod edit \
-        -replace=golang.org/x/net=golang.org/x/net@v0.60.0 \
+        -replace=golang.org/x/net=golang.org/x/net@v0.62.0 \
         -replace=golang.org/x/text=golang.org/x/text@v0.41.0 \
         -replace=golang.org/x/crypto=golang.org/x/crypto@v0.56.0 \
         -replace=golang.org/x/sys=golang.org/x/sys@v0.47.0 \
-        -replace=github.com/go-chi/chi/v5=github.com/go-chi/chi/v5@v5.3.0 \
+        -replace=github.com/go-chi/chi/v5=github.com/go-chi/chi/v5@v5.4.0 \
         -replace=go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptrace-grpc=go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptrace-grpc@v1.45.0 \
         -replace=go.opentelemetry.io/otel/log=go.opentelemetry.io/otel/log@v0.21.0 \
         -replace=go.opentelemetry.io/otel/sdk/log=go.opentelemetry.io/otel/sdk/log@v0.21.0 \
@@ -114,22 +121,23 @@ RUN go get golang.org/x/net@v0.60.0 \
         -replace=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.21.0 \
         -replace=go.opentelemetry.io/otel/exporters/stdout/stdoutlog=go.opentelemetry.io/otel/exporters/stdout/stdoutlog@v0.21.0 \
     && go mod tidy \
-    && go mod edit -require=github.com/go-chi/chi/v5@v5.3.0 \
+    && go mod edit -require=github.com/go-chi/chi/v5@v5.4.0 \
     && go get google.golang.org/grpc@v1.83.2 \
     && go get github.com/google/cel-go@v0.30.0 \
-    && go get github.com/klauspost/compress@v1.18.7 \
+    && go get github.com/klauspost/compress@v1.20.3 \
     && go get github.com/grpc-ecosystem/grpc-gateway/v2@v2.30.0 \
     && go mod tidy \
     && go mod edit -require=github.com/grpc-ecosystem/grpc-gateway/v2@v2.30.0 \
     && echo "=== Security replace pins verification ===" \
     && grep -E 'replace|x/net|x/text|x/crypto|x/sys|go-chi/chi/v5' go.mod \
-    && go list -m golang.org/x/net | grep 'v0.60.0' \
+    && go list -m golang.org/x/net | grep 'v0.62.0' \
     && go list -m golang.org/x/text | grep 'v0.41.0' \
     && go list -m golang.org/x/crypto | grep 'v0.56.0' \
-    && go list -m github.com/go-chi/chi/v5 | grep 'v5.3.0' \
+    && go list -m github.com/go-chi/chi/v5 | grep 'v5.4.0' \
     && test "$(go list -m -f '{{.Version}}' google.golang.org/grpc)" = "v1.83.2" \
     && test "$(go list -m -f '{{.Version}}' github.com/google/cel-go)" = "v0.30.0" \
-    && test "$(go list -m -f '{{.Version}}' github.com/klauspost/compress)" = "v1.18.7" \
+    && test "$(go list -m -f '{{.Version}}' github.com/klauspost/compress)" = "v1.20.3" \
+    && test "$(go list -m -f '{{.Version}}' github.com/go-jose/go-jose/v4)" = "v4.1.6" \
     && test "$(go list -m -f '{{.Version}}' github.com/grpc-ecosystem/grpc-gateway/v2)" = "v2.30.0" \
     && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel)" = "v1.45.0" \
     && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/sdk)" = "v1.45.0" \
@@ -139,6 +147,22 @@ RUN go get golang.org/x/net@v0.60.0 \
     && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp)" = "v0.21.0" \
     && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/exporters/stdout/stdoutlog)" = "v0.21.0" \
     && ! go list -deps ./cmd/caddy | grep -qx 'golang.org/x/crypto/openpgp'
+# go-jose v3 has no fixed release. Build against v3.0.5 with the upstream v4
+# fixes backported (.docker/patches), through a local replace so the binary
+# declares the patched source instead of claiming to be upstream v3.0.5.
+COPY .docker/patches/go-jose-v3.0.5-security-backport.patch /tmp/go-jose-v3.patch
+RUN test "$(go list -m -f '{{.Version}}' github.com/go-jose/go-jose/v3)" = "v3.0.5" \
+    && mkdir -p third_party \
+    && cp -R "$(go env GOMODCACHE)/github.com/go-jose/go-jose/v3@v3.0.5" third_party/go-jose-v3 \
+    && chmod -R u+w third_party/go-jose-v3 \
+    && git -C third_party/go-jose-v3 apply -p1 /tmp/go-jose-v3.patch \
+    && grep -Fq 'const maxNestingDepth = 10000' third_party/go-jose-v3/json/scanner.go \
+    && grep -Fq 'if len(buffer) == 0 || len(buffer)%blockSize != 0 {' third_party/go-jose-v3/cipher/cbc_hmac.go \
+    && grep -Fq 'var MaxRSAModulusBits = 4096' third_party/go-jose-v3/jwk.go \
+    && go mod edit -replace=github.com/go-jose/go-jose/v3=./third_party/go-jose-v3 \
+    && test "$(go list -m -f '{{.Replace.Path}}' github.com/go-jose/go-jose/v3)" = "./third_party/go-jose-v3" \
+    && rm /tmp/go-jose-v3.patch
+
 # grpc-gateway is linked through transitive OTLP/generated packages, so Caddy has
 # no application-owned NewServeMux call where the official opt-out can be passed.
 # Apply WithDisableHTTPMethodOverride inside the verified v2.30.0 constructor so
@@ -155,10 +179,17 @@ RUN GRPC_GATEWAY_MUX="$(go env GOMODCACHE)/github.com/grpc-ecosystem/grpc-gatewa
 
 # Compiler Caddy (binaire statique, stripped, sans symboles de debug)
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/caddy \
+    && go version -m /usr/bin/caddy | head -n 1 | grep -F 'go1.26.10' \
     && go version -m /usr/bin/caddy | grep -Eq \
         'dep[[:space:]]+google[.]golang[.]org/grpc[[:space:]]+v1[.]83[.]2' \
     && go version -m /usr/bin/caddy | grep -Eq \
         'dep[[:space:]]+github[.]com/grpc-ecosystem/grpc-gateway/v2[[:space:]]+v2[.]30[.]0' \
+    && go version -m /usr/bin/caddy | grep -Eq \
+        'dep[[:space:]]+github[.]com/go-jose/go-jose/v4[[:space:]]+v4[.]1[.]6' \
+    && go version -m /usr/bin/caddy | grep -Eq \
+        '=>[[:space:]]+[.]/third_party/go-jose-v3[[:space:]]+[(]devel[)]' \
+    && go version -m /usr/bin/caddy | grep -Eq \
+        'dep[[:space:]]+github[.]com/klauspost/compress[[:space:]]+v1[.]20[.]3' \
     && go clean -cache -modcache
 
 # ---------------------------
@@ -166,11 +197,12 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/ca
 # ---------------------------
 # This static helper prepares mounted directories, drops from root to PUID:PGID
 # and execs Node without requiring a shell, passwd database, PAM or gosu.
-FROM golang:1.26.9-alpine@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade AS runtime-init-builder
+FROM golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS runtime-init-builder
 ENV GOTOOLCHAIN=local
 WORKDIR /src
 COPY scripts/docker/runtime-init.go .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /runtime-init ./runtime-init.go
+RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /runtime-init ./runtime-init.go \
+    && go version -m /runtime-init | head -n 1 | grep -F 'go1.26.10'
 
 # ---------------------------
 # Stage 0c: Build the exact OpenSSL 3.6.4 release
@@ -500,6 +532,7 @@ RUN node scripts/prepare-runtime-manifest.mjs
 FROM base AS backend-deps
 WORKDIR /opt/app/backend
 COPY backend/package.json backend/package-lock.json ./
+COPY backend/vendor ./vendor
 
 RUN npm ci
 
@@ -562,7 +595,8 @@ RUN set -eu; \
 # ---------------------------
 # CVE-2026-5450 / CVE-2026-5928: this digest contains Debian's
 # libc6 2.41-12+deb13u4 security update.
-FROM gcr.io/distroless/base-nossl-debian13:latest@sha256:af5cb8dd589b8520b8c06bebb9efb73d7e16406cab58e85c51761fff49d370a0 AS runner
+# DSA-6572-1: it also contains ca-certificates 20250419+deb13u1.
+FROM gcr.io/distroless/base-nossl-debian13:latest@sha256:ca1c7e6a875e59345ae6ff182a1e0930f0ca1ffef23a9b830f8823ab348ad5dd AS runner
 
 ENV NODE_ENV=docker
 ENV HOME=/home/privcloud-sharing

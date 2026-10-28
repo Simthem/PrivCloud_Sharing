@@ -64,7 +64,11 @@ export function navigationMetadata(
   const kept: Record<string, string> = {};
   for (const key of NAVIGATION_KEYS) {
     const value = metadata[key];
-    if (typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value)) {
+    if (
+      typeof value === "string" &&
+      (/^[A-Za-z0-9_-]{1,128}$/.test(value) ||
+        (key === "shareId" && /^v2\.[A-Za-z0-9_-]{3,47}$/.test(value)))
+    ) {
       kept[key] = value;
     }
   }

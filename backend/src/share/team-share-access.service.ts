@@ -68,8 +68,9 @@ export class TeamShareAccessService {
     });
 
     if (
-      folderAccess &&
-      DENY_PERMISSIONS.includes(folderAccess.permission)
+      folderAccess
+        ? DENY_PERMISSIONS.includes(folderAccess.permission)
+        : await this.isRestrictedFolder(share.teamFolderId)
     ) {
       throw new ForbiddenException(
         "You do not have access to this team share",
@@ -172,9 +173,10 @@ export class TeamShareAccessService {
     });
 
     if (
-      folderAccess &&
-      (DENY_PERMISSIONS.includes(folderAccess.permission) ||
-        !folderAccess.canDownload)
+      folderAccess
+        ? DENY_PERMISSIONS.includes(folderAccess.permission) ||
+          !folderAccess.canDownload
+        : await this.isRestrictedFolder(share.teamFolderId)
     ) {
       throw new ForbiddenException(
         "You do not have access to this team file",
@@ -256,6 +258,17 @@ export class TeamShareAccessService {
         );
       }
     }
+  }
+
+  /**
+   * A folder with access rules is restricted: members without a rule of their
+   * own have no access, as in the folder listing and the search index.
+   */
+  private async isRestrictedFolder(folderId: string): Promise<boolean> {
+    const rules = await this.prisma.teamFolderAccess.count({
+      where: { folderId },
+    });
+    return rules > 0;
   }
 
   private async assertTeamMembership(teamId: string, user: User | undefined) {

@@ -4,6 +4,33 @@ id: upgrading
 
 # Upgrading
 
+## Version 1.26.0: E2EE content v2 and confirmed account changes
+
+Back up the SQLite database and stored files before applying
+`20261022120000_email_change_requests`,
+`20261022150000_add_login_token_attempts`,
+`20261023090000_step_up_and_sessions` and
+`20261027120000_file_content_scheme`. All four are additive. Run the normal
+migrations before starting the updated backend. Existing accounts, shares,
+files and keys are retained.
+
+New encrypted uploads use the E2EE content format v2. Historical v1 files keep
+their format, keys and links and remain readable. Install the Companion of
+this version first: its health must advertise `capabilities.contentV2`. Keep
+`share.contentV2Writes` and `share.contentV2Floor` off until no previous
+backend serves traffic. The deployment window, checks and rollback are
+described in `docs/E2EE_CONTENT_V2_ROLLOUT.md`.
+
+A profile email change is now approved from both the old and the new mailbox,
+so it requires a working SMTP configuration. Privileged account,
+configuration, Team and signing-passkey changes ask for a short-lived
+confirmation of a current factor. OIDC sign-in requires `email_verified`
+before an address creates or matches an account. Previously linked accounts
+keep their sign-in path.
+
+Source builds and Docker build contexts must include `backend/vendor` and
+`docs/vendor`, which hold local replacements for unpatched dependencies.
+
 ## Version 1.25.3: contractor access and account passkeys
 
 Back up the SQLite database and stored files before applying

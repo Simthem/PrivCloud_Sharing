@@ -1,14 +1,36 @@
 import assert from "node:assert/strict";
 import { JobsService } from "src/jobs/jobs.service";
 
+type UnverifiedLookup = {
+  emailVerifiedAt: null;
+  emailVerificationRequiredAt: { lte: Date };
+};
+type CleanupJobs = {
+  logger: { log: () => void; warn: () => void };
+  runExclusive: (name: string, job: () => Promise<void>) => Promise<void>;
+  config: { get: (key: string) => boolean | undefined };
+  fileService: { deleteAllFiles: (shareId: string) => Promise<void> };
+  prisma: {
+    user: {
+      findMany: (query: { where: UnverifiedLookup }) => Promise<unknown[]>;
+      updateMany: (query: {
+        data: { emailVerificationDeletionStartedAt: Date };
+      }) => Promise<{ count: number }>;
+      deleteMany: (query: {
+        where: { id: string; emailVerificationDeletionStartedAt: Date };
+      }) => Promise<{ count: number }>;
+    };
+  };
+  deleteExpiredUnverifiedAccounts(): Promise<void>;
+};
+
 void (async () => {
   const events: string[] = [];
-  let lookupWhere: any;
+  let lookupWhere: UnverifiedLookup;
   let claimStartedAt: Date | undefined;
-  const service: any = Object.create(JobsService.prototype);
+  const service: CleanupJobs = Object.create(JobsService.prototype);
   service.logger = { log: () => {}, warn: () => {} };
-  service.runExclusive = async (_name: string, job: () => Promise<void>) =>
-    job();
+  service.runExclusive = async (_name, job) => job();
   let smtpEnabled = true;
   service.config = { get: (key: string) => (key === "smtp.enabled" ? smtpEnabled : undefined) };
   service.fileService = {
@@ -19,7 +41,7 @@ void (async () => {
   };
   service.prisma = {
     user: {
-      findMany: async ({ where }: { where: any }) => {
+      findMany: async ({ where }) => {
         lookupWhere = where;
         return [
           {
@@ -29,11 +51,11 @@ void (async () => {
           },
         ];
       },
-      updateMany: async ({ data }: { data: any }) => {
+      updateMany: async ({ data }) => {
         claimStartedAt = data.emailVerificationDeletionStartedAt;
         return { count: 1 };
       },
-      deleteMany: async ({ where }: { where: any }) => {
+      deleteMany: async ({ where }) => {
         assert.equal(where.id, "new-unverified-user");
         assert.equal(
           where.emailVerificationDeletionStartedAt,

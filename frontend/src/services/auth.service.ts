@@ -1,7 +1,4 @@
-import api, {
-  expireConfirmedSession,
-  refreshTokenOnce,
-} from "./api.service";
+import api, { expireConfirmedSession, refreshTokenOnce } from "./api.service";
 import { removeUserKey } from "../utils/crypto.util";
 
 function isSafeLogoutRedirect(value: unknown): value is string {
@@ -11,13 +8,15 @@ function isSafeLogoutRedirect(value: unknown): value is string {
     url.protocol === "http:" &&
     ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
   return (
-    !url.username &&
-    !url.password &&
-    (url.protocol === "https:" || isLocalHttp)
+    !url.username && !url.password && (url.protocol === "https:" || isLocalHttp)
   );
 }
 
-const signIn = async (emailOrUsername: string, password: string, captchaToken?: string) => {
+const signIn = async (
+  emailOrUsername: string,
+  password: string,
+  captchaToken?: string,
+) => {
   const emailOrUsernameBody = emailOrUsername.includes("@")
     ? { email: emailOrUsername }
     : { username: emailOrUsername };
@@ -38,8 +37,18 @@ const signInTotp = (totp: string, loginToken: string) => {
   });
 };
 
-const signUp = async (email: string, username: string, password: string, captchaToken?: string) => {
-  const response = await api.post("auth/signUp", { email, username, password, ...(captchaToken && { captchaToken }) });
+const signUp = async (
+  email: string,
+  username: string,
+  password: string,
+  captchaToken?: string,
+) => {
+  const response = await api.post("auth/signUp", {
+    email,
+    username,
+    password,
+    ...(captchaToken && { captchaToken }),
+  });
 
   return response;
 };
@@ -64,6 +73,27 @@ const resendEmailVerification = async (
     accepted: response.data?.accepted ?? true,
     retryAfterSeconds: response.data?.retryAfterSeconds ?? 60,
   };
+};
+
+const requestEmailChange = async (body: {
+  email: string;
+  password?: string;
+  code?: string;
+}): Promise<{ currentAddressApproval?: boolean }> => {
+  const { data } = await api.post("/auth/email-change", body);
+  return data;
+};
+const confirmEmailChange = async (
+  token: string,
+): Promise<{ changed: boolean }> => {
+  const result = await api.post<{ changed: boolean }>(
+    "/auth/email-change/confirm",
+    { token },
+  );
+  return result.data;
+};
+const cancelEmailChange = async (token: string) => {
+  await api.post("/auth/email-change/cancel", { token });
 };
 
 const signOut = async () => {
@@ -110,7 +140,10 @@ const hasActiveSession = async (): Promise<boolean> => {
 };
 
 const requestResetPassword = async (email: string, captchaToken?: string) => {
-  await api.post("/auth/resetPassword/request", { email, ...(captchaToken && { captchaToken }) });
+  await api.post("/auth/resetPassword/request", {
+    email,
+    ...(captchaToken && { captchaToken }),
+  });
 };
 
 const resetPassword = async (token: string, password: string) => {
@@ -151,6 +184,29 @@ const disableTOTP = async (totpCode: string, password?: string) => {
   });
 };
 
+export type StepUpMethods = {
+  password: boolean;
+  totp: boolean;
+  passkey: boolean;
+  providers: string[];
+};
+
+const getStepUpMethods = async (): Promise<StepUpMethods> =>
+  (await api.get("/auth/step-up")).data;
+
+// Without a password, the fresh linked sign-in (httpOnly reauth_confirmation
+// cookie, see /oauth/reauth?purpose=admin) stands in for it.
+const confirmStepUp = async (
+  scope: string,
+  proof: { password?: string; code?: string },
+) => {
+  await api.post("/auth/step-up", {
+    scope,
+    ...(proof.password ? { password: proof.password } : {}),
+    ...(proof.code ? { code: proof.code } : {}),
+  });
+};
+
 const getAvailableOAuth = async () => {
   return api.get("/oauth/available");
 };
@@ -160,6 +216,9 @@ const getOAuthStatus = () => {
 };
 
 export default {
+  requestEmailChange,
+  confirmEmailChange,
+  cancelEmailChange,
   signIn,
   signInTotp,
   signUp,
@@ -174,6 +233,8 @@ export default {
   enableTOTP,
   verifyTOTP,
   disableTOTP,
+  getStepUpMethods,
+  confirmStepUp,
   getAvailableOAuth,
   getOAuthStatus,
 };

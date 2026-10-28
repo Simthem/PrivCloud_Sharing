@@ -28,11 +28,14 @@ const showUpdateUserModal = (
   modals: ReturnType<typeof useModals>,
   user: User,
   getUsers: () => void,
+  isSelf = false,
 ) => {
   const t = translateOutsideContext();
   return modals.openModal({
     title: t("admin.users.edit.update.title", { username: user.username }),
-    children: <Body user={user} modals={modals} getUsers={getUsers} />,
+    children: (
+      <Body user={user} modals={modals} getUsers={getUsers} isSelf={isSelf} />
+    ),
   });
 };
 
@@ -40,10 +43,16 @@ const Body = ({
   user,
   modals,
   getUsers,
+  isSelf,
 }: {
   modals: ReturnType<typeof useModals>;
   user: User;
   getUsers: () => void;
+  /**
+   * The administrator's own row: their credentials change from the account
+   * page, where the server asks for the proofs this form does not collect.
+   */
+  isSelf: boolean;
 }) => {
   const t = useTranslate();
   const [signingPasskeyCount, setSigningPasskeyCount] = useState(0);
@@ -105,6 +114,8 @@ const Body = ({
           />
           <TextInput
             label={t("admin.users.table.email")}
+            description={isSelf ? t("admin.users.edit.update.self") : undefined}
+            disabled={isSelf}
             {...accountForm.getInputProps("email")}
           />
           <Switch
@@ -115,39 +126,44 @@ const Body = ({
           />
         </Stack>
       </form>
-      <Accordion>
-        <Accordion.Item style={{ borderBottom: "none" }} value="changePassword">
-          <Accordion.Control px={0}>
-            <FormattedMessage id="admin.users.edit.update.change-password.title" />
-          </Accordion.Control>
-          <Accordion.Panel>
-            <form
-              onSubmit={passwordForm.onSubmit(async (values) => {
-                userService
-                  .update(user.id, {
-                    password: values.password,
-                  })
-                  .then(() =>
-                    toast.success(
-                      t("admin.users.edit.update.notify.password.success"),
-                    ),
-                  )
-                  .catch(toast.axiosError);
-              })}
-            >
-              <Stack>
-                <PasswordInput
-                  label={t("admin.users.edit.update.change-password.field")}
-                  {...passwordForm.getInputProps("password")}
-                />
-                <Button variant="light" type="submit">
-                  <FormattedMessage id="admin.users.edit.update.change-password.button" />
-                </Button>
-              </Stack>
-            </form>
-          </Accordion.Panel>
-        </Accordion.Item>
-      </Accordion>
+      {!isSelf && (
+        <Accordion>
+          <Accordion.Item
+            style={{ borderBottom: "none" }}
+            value="changePassword"
+          >
+            <Accordion.Control px={0}>
+              <FormattedMessage id="admin.users.edit.update.change-password.title" />
+            </Accordion.Control>
+            <Accordion.Panel>
+              <form
+                onSubmit={passwordForm.onSubmit(async (values) => {
+                  userService
+                    .update(user.id, {
+                      password: values.password,
+                    })
+                    .then(() =>
+                      toast.success(
+                        t("admin.users.edit.update.notify.password.success"),
+                      ),
+                    )
+                    .catch(toast.axiosError);
+                })}
+              >
+                <Stack>
+                  <PasswordInput
+                    label={t("admin.users.edit.update.change-password.field")}
+                    {...passwordForm.getInputProps("password")}
+                  />
+                  <Button variant="light" type="submit">
+                    <FormattedMessage id="admin.users.edit.update.change-password.button" />
+                  </Button>
+                </Stack>
+              </form>
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
+      )}
       <Stack gap={6}>
         <Text size="sm" fw={500}>
           <FormattedMessage id="admin.users.edit.security.title" />
@@ -206,7 +222,7 @@ const Body = ({
               <FormattedMessage id="admin.users.edit.security.email.button" />
             </Button>
           )}
-          {user.totpVerified && (
+          {user.totpVerified && !isSelf && (
             <Button
               color="orange"
               variant="light"

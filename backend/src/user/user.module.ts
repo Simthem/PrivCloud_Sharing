@@ -5,6 +5,7 @@ import { UserController } from "./user.controller";
 import { UserSevice } from "./user.service";
 import { FileModule } from "src/file/file.module";
 import { AuthModule } from "src/auth/auth.module";
+import { StepUpModule } from "src/auth/stepUp.module";
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { AuthModule } from "src/auth/auth.module";
     EmailVerificationModule,
     FileModule,
     forwardRef(() => AuthModule),
+    StepUpModule,
   ],
   providers: [UserSevice],
   controllers: [UserController],

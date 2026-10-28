@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -8,6 +9,19 @@ const bridgeDirectory = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
+const repositoryDirectory = path.resolve(bridgeDirectory, "..");
+
+// The destination is wiped before every build, so it has to be a dedicated
+// directory strictly inside the work tree or the system temporary directory.
+function confineOutputDirectory(candidate) {
+  const resolved = path.resolve(candidate);
+  for (const root of [repositoryDirectory, path.resolve(os.tmpdir())]) {
+    if (resolved.startsWith(root + path.sep)) return resolved;
+  }
+  throw new Error(
+    `Refusing to build outside the work tree or the temporary directory: ${resolved}`,
+  );
+}
 
 function parseOutputDirectory(argv) {
   const index = argv.indexOf("--output-dir");
@@ -106,7 +120,7 @@ async function releaseEntries() {
 }
 
 export async function buildCompanionRelease({ outputDirectory } = {}) {
-  const destination = path.resolve(
+  const destination = confineOutputDirectory(
     outputDirectory || path.join(bridgeDirectory, "dist"),
   );
   const packageJson = JSON.parse(

@@ -1,4 +1,8 @@
 import {
+  FILE_META_V1,
+  encryptedFilePlaceholderName,
+} from "./file-metadata-scheme";
+import {
   BadRequestException,
   HttpException,
   HttpStatus,
@@ -6,9 +10,10 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import * as crypto from "crypto";
-import { createReadStream } from "fs";
+import { createReadStream, Stats } from "fs";
 import * as fs from "fs/promises";
 import * as mime from "mime-types";
 import * as path from "path";
@@ -18,10 +23,27 @@ import { validate as isValidUUID } from "uuid";
 import { SHARE_DIRECTORY } from "../constants";
 import { Readable } from "stream";
 import { MAX_UPLOAD_CHUNK_BYTES } from "./upload-limit.util";
+import { contentHeaderBytes, ContentScheme } from "./content-scheme.util";
+
+// link() reports these where the filesystem has no hard links.
+const HARD_LINK_UNSUPPORTED = new Set([
+  "EPERM",
+  "ENOTSUP",
+  "EOPNOTSUPP",
+  "ENOSYS",
+  "EXDEV",
+]);
+// An upload lock older than this was left by a process that stopped.
+const UPLOAD_LOCK_STALE_MS = 15 * 60_000;
+const UPLOAD_LOCK_WAIT_MS = 30_000;
 
 @Injectable()
 export class LocalFileService {
   private readonly logger = new Logger(LocalFileService.name);
+
+  // Chunks of one upload are checked, appended and published in order,
+  // within this process first and then across processes sharing the volume.
+  private readonly uploadQueues = new Map<string, Promise<unknown>>();
 
   constructor(
     private prisma: PrismaService,
@@ -65,6 +87,7 @@ export class LocalFileService {
       relativePath?: string;
       metadataScheme?: number | null;
       encryptedMetadata?: string | null;
+      contentScheme?: ContentScheme;
     },
     shareId: string,
     clientChunkSize?: number,
@@ -84,17 +107,61 @@ export class LocalFileService {
       );
       throw new BadRequestException("Invalid file ID format");
     } else {
-      this.logger.debug(
-        `Upload continued: share=redacted fileId=${file.id}`,
-      );
+      this.logger.debug(`Upload continued: share=redacted fileId=${file.id}`);
     }
 
+    const lockPath = this.resolveSharePath(
+      shareId,
+      `${file.id}.lock.tmp-chunk`,
+    );
+    return this.serializeUpload(lockPath, () =>
+      this.appendChunk(
+        data,
+        chunk,
+        file,
+        shareId,
+        clientChunkSize,
+        share,
+        callerEffectiveLimit,
+        encryptionChunkSize,
+      ),
+    );
+  }
+
+  private async appendChunk(
+    data: Buffer,
+    chunk: { index: number; total: number },
+    file: {
+      id?: string;
+      name: string;
+      relativePath?: string;
+      metadataScheme?: number | null;
+      encryptedMetadata?: string | null;
+      contentScheme?: ContentScheme;
+    },
+    shareId: string,
+    clientChunkSize?: number,
+    share?: any,
+    callerEffectiveLimit?: number,
+    encryptionChunkSize?: number,
+  ) {
     // Use share passed from file.service (avoids duplicate DB query)
     if (!share) {
       share = await this.prisma.share.findUnique({
         where: { id: shareId },
         include: { files: true, reverseShare: true },
       });
+    }
+
+    // An identifier names one immutable file. As on S3, a retried or
+    // duplicated upload of a completed file leaves it untouched.
+    const existingFile = await this.prisma.file.findUnique({
+      where: { id: file.id },
+      select: { shareId: true },
+    });
+    if (existingFile?.shareId === shareId) return file;
+    if (existingFile) {
+      throw new BadRequestException("File ID is already in use");
     }
 
     if (share.uploadLocked) {
@@ -150,7 +217,12 @@ export class LocalFileService {
     const effectiveChunkSize = share.isE2EEncrypted
       ? chunkSize + recordsPerTransportChunk * 28
       : chunkSize;
-    const expectedChunkIndex = Math.ceil(diskFileSize / effectiveChunkSize);
+    // The E2EE content v2 header precedes the records of the first chunk.
+    const headerBytes =
+      diskFileSize > 0 ? contentHeaderBytes(file.contentScheme, 0) : 0;
+    const expectedChunkIndex = Math.ceil(
+      (diskFileSize - headerBytes) / effectiveChunkSize,
+    );
 
     if (expectedChunkIndex != chunk.index) {
       this.logger.warn(
@@ -204,13 +276,24 @@ export class LocalFileService {
       `Chunk appended: share=redacted fileId=${file.id} chunkIndex=${chunk.index} chunkTotal=${chunk.total} last=${isLastChunk}`,
     );
     if (isLastChunk) {
-      await fs.rename(tmpChunkPath, this.resolveSharePath(shareId, file.id));
-      const fileSize = (await fs.stat(this.resolveSharePath(shareId, file.id)))
-        .size;
+      const finalPath = this.resolveSharePath(shareId, file.id);
+      const published = await this.publishWithoutReplacing(
+        tmpChunkPath,
+        finalPath,
+      );
+      if (!published) {
+        await fs.rm(tmpChunkPath, { force: true });
+        const owner = await this.prisma.file.findUnique({
+          where: { id: file.id },
+          select: { shareId: true },
+        });
+        if (owner?.shareId === shareId) return file;
+        throw new BadRequestException("File ID is already in use");
+      }
+      const fileSize = published.size;
 
       // SQLite serializes writers, so the interactive transaction closes the
       // completion race inside the serialized SQLite transaction.
-      let sizeLimitExceeded = false;
       try {
         await this.prisma.$transaction(async (tx) => {
           const freshShare = await tx.share.findUnique({
@@ -222,7 +305,6 @@ export class LocalFileService {
             0,
           );
           if (currentSize + fileSize > effectiveLimit) {
-            sizeLimitExceeded = true;
             throw new HttpException(
               "Max share size exceeded",
               HttpStatus.PAYLOAD_TOO_LARGE,
@@ -239,15 +321,23 @@ export class LocalFileService {
               encryptionChunkSize: share.isE2EEncrypted
                 ? cryptoRecordSize
                 : null,
+              contentScheme: file.contentScheme ?? null,
               share: { connect: { id: shareId } },
             },
           });
         });
       } catch (error) {
-        if (sizeLimitExceeded) {
-          await fs
-            .unlink(this.resolveSharePath(shareId, file.id))
-            .catch(() => {});
+        // Without a readable outcome the commit may have succeeded, so the
+        // published file is kept rather than risk orphaning a record.
+        const owner = await this.prisma.file
+          .findUnique({ where: { id: file.id }, select: { shareId: true } })
+          .catch(() => undefined);
+        if (owner?.shareId === shareId) return file;
+        if (owner !== undefined) {
+          await this.removeIfUnchanged(finalPath, published);
+        }
+        if ((error as { code?: string })?.code === "P2002") {
+          throw new BadRequestException("File ID is already in use");
         }
         throw error;
       }
@@ -257,6 +347,129 @@ export class LocalFileService {
       );
     }
     return file;
+  }
+
+  private async serializeUpload<T>(
+    key: string,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.uploadQueues.get(key) ?? Promise.resolve();
+    const current = previous
+      .catch(() => undefined)
+      .then(() => this.holdUploadLock(key, task));
+    this.uploadQueues.set(key, current);
+    try {
+      return await current;
+    } finally {
+      if (this.uploadQueues.get(key) === current) {
+        this.uploadQueues.delete(key);
+      }
+    }
+  }
+
+  /**
+   * An exclusively created lock file serializes one upload between backend
+   * processes. Its .tmp-chunk suffix lets the daily cleanup remove a lock
+   * left behind by a process that stopped.
+   */
+  private async holdUploadLock<T>(
+    lockPath: string,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    const deadline = Date.now() + UPLOAD_LOCK_WAIT_MS;
+    let lock: Stats;
+    for (;;) {
+      try {
+        const handle = await fs.open(lockPath, "wx");
+        lock = await handle.stat();
+        await handle.close();
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+      const held = await fs.stat(lockPath).catch(() => null);
+      if (held && Date.now() - held.mtimeMs > UPLOAD_LOCK_STALE_MS) {
+        await this.removeIfUnchanged(lockPath, held);
+        continue;
+      }
+      if (Date.now() > deadline) {
+        throw new ServiceUnavailableException(
+          "This upload chunk is still being written, retry it",
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    try {
+      return await task();
+    } finally {
+      await this.removeIfUnchanged(lockPath, lock).catch(() => undefined);
+    }
+  }
+
+  /**
+   * Publish a completed upload under its final name without ever replacing an
+   * existing file. link() creates the name atomically or fails with EEXIST,
+   * also between backend processes sharing the volume. Filesystems without
+   * hard links get an exclusive create and a copy instead. A published name
+   * is only served once its database record exists. Returns null when the
+   * name is already taken.
+   */
+  private async publishWithoutReplacing(
+    source: string,
+    target: string,
+  ): Promise<Stats | null> {
+    try {
+      await this.linkFile(source, target);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EEXIST") return null;
+      if (!HARD_LINK_UNSUPPORTED.has(code)) throw error;
+      return this.copyWithoutReplacing(source, target);
+    }
+    const published = await fs.stat(target);
+    await fs.rm(source, { force: true });
+    return published;
+  }
+
+  private linkFile(source: string, target: string) {
+    return fs.link(source, target);
+  }
+
+  private async copyWithoutReplacing(
+    source: string,
+    target: string,
+  ): Promise<Stats | null> {
+    let handle: fs.FileHandle;
+    try {
+      handle = await fs.open(target, "wx");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return null;
+      throw error;
+    }
+    const created = await handle.stat();
+    try {
+      for await (const part of createReadStream(source, {
+        highWaterMark: 1_048_576,
+      })) {
+        await handle.write(part as Buffer);
+      }
+      const published = await handle.stat();
+      await handle.close();
+      await fs.rm(source, { force: true });
+      return published;
+    } catch (error) {
+      await handle.close().catch(() => undefined);
+      await this.removeIfUnchanged(target, created);
+      throw error;
+    }
+  }
+
+  /** Remove a name only while it still designates the given file. */
+  private async removeIfUnchanged(target: string, expected: Stats) {
+    const current = await fs.stat(target).catch(() => null);
+    if (current?.dev === expected.dev && current.ino === expected.ino) {
+      await fs.unlink(target);
+    }
   }
 
   /**
@@ -269,6 +482,8 @@ export class LocalFileService {
     fileId: string,
     shareId: string,
     encryptionChunkSize?: number,
+    contentScheme?: ContentScheme,
+    encryptedMetadata?: string,
   ) {
     if (!isValidUUID(fileId)) {
       throw new BadRequestException("Invalid file ID format");
@@ -304,6 +519,13 @@ export class LocalFileService {
         data: {
           size: fileSize.toString(),
           encryptionChunkSize: encryptionChunkSize ?? null,
+          contentScheme: contentScheme ?? null,
+          ...(encryptedMetadata !== undefined && {
+            encryptedMetadata,
+            metadataScheme: FILE_META_V1,
+            name: encryptedFilePlaceholderName(fileId),
+            relativePath: null,
+          }),
         },
       });
       if (updated.count !== 1) {

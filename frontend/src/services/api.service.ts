@@ -16,8 +16,10 @@ import {
 } from "../utils/authRedirect.util";
 import {
   type AuthRefreshResult,
+  isReauthenticationRefusal,
   refreshAfterPossibleCookieRotation,
 } from "../utils/authRefresh.util";
+import { readStepUpScope, requestStepUp } from "../utils/stepUp.util";
 
 const api = axios.create({
   baseURL: "/api",
@@ -95,7 +97,11 @@ refreshApi.interceptors.response.use(
       }
       return Promise.reject(error);
     }
-    if (error.response?.status === 468 && original && !original._safelineRetried) {
+    if (
+      error.response?.status === 468 &&
+      original &&
+      !original._safelineRetried
+    ) {
       original._safelineRetried = true;
       try {
         await completeSafeLineChallenge();
@@ -169,14 +175,13 @@ export function refreshTokenOnce(): Promise<AuthRefreshResult> {
       .then(() => ({ ok: true, status: 200 }))
       .catch((e: any) => ({ ok: false, status: e?.response?.status ?? 0 }));
 
-  refreshInFlight = refreshAfterPossibleCookieRotation(attempt)
-    .finally(() => {
-      // Hold the slot ~300 ms after completion so a burst of near-simultaneous
-      // callers reuse the same result instead of firing a second rotation.
-      setTimeout(() => {
-        refreshInFlight = null;
-      }, 300);
-    });
+  refreshInFlight = refreshAfterPossibleCookieRotation(attempt).finally(() => {
+    // Hold the slot ~300 ms after completion so a burst of near-simultaneous
+    // callers reuse the same result instead of firing a second rotation.
+    setTimeout(() => {
+      refreshInFlight = null;
+    }, 300);
+  });
   return refreshInFlight;
 }
 
@@ -224,7 +229,20 @@ api.interceptors.response.use(
         try {
           await completeSafeLineChallenge();
           return api(original);
-        } catch { /* Preserve the upload and propagate the original 468. */ }
+        } catch {
+          /* Preserve the upload and propagate the original 468. */
+        }
+      }
+      return Promise.reject(error);
+    }
+
+    // A sensitive operation: once the user confirmed their identity, the
+    // request is replayed with that confirmation.
+    const stepUpScope = readStepUpScope(error);
+    if (stepUpScope) {
+      if (original && !original._stepUp) {
+        original._stepUp = true;
+        if (await requestStepUp(stepUpScope)) return api(original);
       }
       return Promise.reject(error);
     }
@@ -247,12 +265,17 @@ api.interceptors.response.use(
     const isShareSecurityError =
       error.response?.status === 403 &&
       shareSecurityErrors.includes(error.response?.data?.error);
+    const refusedProof = isReauthenticationRefusal(
+      error.response?.status,
+      original?.url,
+    );
 
     const uploadActive = isUploadActive();
     const needsRefresh = uploadActive
       ? error.response?.status === 401
       : (error.response?.status === 401 || error.response?.status === 403) &&
-        !isShareSecurityError;
+        !isShareSecurityError &&
+        !refusedProof;
 
     if (
       needsRefresh &&

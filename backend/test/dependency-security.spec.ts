@@ -1,14 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
 import nodemailer from "nodemailer";
 import qs from "qs";
 import { LOGO_UPLOAD_OPTIONS } from "../src/config/logo-upload.config";
 
+const loadPackage = createRequire(__filename);
+const root = path.resolve(__dirname, "..");
+
+function readJson(filename: string) {
+  return JSON.parse(readFileSync(path.join(root, filename), "utf8"));
+}
+
 test("the backend installs its locked Undici security version", () => {
-  const manifest = require("../package.json");
-  const lock = require("../package-lock.json");
-  const installedVersion = require("undici/package.json").version;
+  const manifest = readJson("package.json");
+  const lock = readJson("package-lock.json");
+  const installedVersion = loadPackage("undici/package.json").version;
   assert.equal(installedVersion, lock.packages["node_modules/undici"].version);
   assert.equal(installedVersion, manifest.dependencies.undici);
   assert.equal(installedVersion, manifest.overrides.undici);

@@ -1,4 +1,8 @@
 import {
+  FILE_META_V1,
+  encryptedFilePlaceholderName,
+} from "./file-metadata-scheme";
+import {
   BadRequestException,
   HttpException,
   HttpStatus,
@@ -42,6 +46,7 @@ import { validate as isValidUUID } from "uuid";
 import { Prisma } from "@prisma/client";
 import { createZipArchive } from "../utils/archive.util";
 import { getUploadRequestStartedAt } from "./upload-timing.util";
+import { ContentScheme } from "./content-scheme.util";
 import {
   AdaptiveTransferScheduler,
   TransferSchedulerAllocation,
@@ -1617,6 +1622,7 @@ export class S3FileService {
       relativePath?: string;
       metadataScheme?: number | null;
       encryptedMetadata?: string | null;
+      contentScheme?: ContentScheme;
     },
     shareId: string,
     totalParts: number,
@@ -1787,6 +1793,7 @@ export class S3FileService {
               encryptionChunkSize: share.isE2EEncrypted
                 ? encryptionChunkSize
                 : null,
+              contentScheme: file.contentScheme ?? null,
               share: { connect: { id: shareId } },
             },
           });
@@ -1830,6 +1837,7 @@ export class S3FileService {
       relativePath?: string;
       metadataScheme?: number | null;
       encryptedMetadata?: string | null;
+      contentScheme?: ContentScheme;
     },
     shareId: string,
     _clientChunkSize?: number,
@@ -2180,6 +2188,7 @@ export class S3FileService {
               encryptionChunkSize: _share?.isE2EEncrypted
                 ? encryptionChunkSize
                 : null,
+              contentScheme: file.contentScheme ?? null,
               share: { connect: { id: shareId } },
             },
           });
@@ -2218,6 +2227,8 @@ export class S3FileService {
     fileId: string,
     shareId: string,
     encryptionChunkSize?: number,
+    contentScheme?: ContentScheme,
+    encryptedMetadata?: string,
   ) {
     if (!Buffer.isBuffer(data)) {
       throw new BadRequestException("Re-encryption body must be binary");
@@ -2352,6 +2363,13 @@ export class S3FileService {
           data: {
             size: fileSize.toString(),
             encryptionChunkSize: encryptionChunkSize ?? null,
+            contentScheme: contentScheme ?? null,
+            ...(encryptedMetadata !== undefined && {
+              encryptedMetadata,
+              metadataScheme: FILE_META_V1,
+              name: encryptedFilePlaceholderName(fileId),
+              relativePath: null,
+            }),
           },
         });
         if (updated.count !== 1) {

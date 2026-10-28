@@ -1,3 +1,8 @@
+import {
+  contentV2FileId,
+  isContentV2FileId,
+} from "../utils/shareContentContext.util";
+import { ContentIntegrityError } from "../utils/contentV2.util";
 import api from "./api.service";
 import { apiPathSegment } from "../utils/apiPath.util";
 import { selectPqNotificationPublicKey } from "../utils/pqNotification.util";
@@ -53,6 +58,8 @@ export interface SigningPageData {
     signatureLevel: string;
     addApprovalField?: boolean;
     isE2EEncrypted?: boolean;
+    /** Identity of an end-to-end encrypted source, never its share. */
+    fileId?: string | null;
     pageRotations?: { page: number; rotation: number }[] | null;
     creator?: { username: string; email: string };
   };
@@ -143,12 +150,18 @@ const createRequest = async (
   data: CreateSignatureRequestPayload,
 ): Promise<SignatureRequest> => {
   const { notificationCreatorId, notificationE2EKey, ...request } = data;
+  if (request.isE2EEncrypted && !request.id)
+    request.id = contentV2FileId(crypto.randomUUID());
   const prepared = await prepareTeamSigningNotifications(
     request,
     notificationCreatorId,
     notificationE2EKey,
   );
-  return (await api.post("signing/request", prepared)).data;
+  const document = (await api.post("signing/request", prepared)).data;
+  if (prepared.id && document.id !== prepared.id)
+    throw new ContentIntegrityError("Signing document identity mismatch");
+  assertSigningEncryption(document);
+  return document;
 };
 
 /** Build recipient-specific PQ-hybrid notification actions in the browser. */
@@ -160,7 +173,7 @@ const prepareTeamSigningNotifications = async (
   if (!request.teamId || !creatorUserId || !globalThis.crypto?.randomUUID)
     return request;
 
-  const documentId = crypto.randomUUID();
+  const documentId = request.id ?? crypto.randomUUID();
   const team = await teamService.getTeam(request.teamId);
   const members = (team.members || []).filter(
     (member) => member.isActive && member.user,
@@ -232,8 +245,32 @@ const getReceivedDocuments = async (): Promise<SignatureRequest[]> => {
   return (await api.get("signing/received")).data;
 };
 
+function assertSigningEncryption(document: {
+  id: string;
+  fileId?: string | null;
+  isE2EEncrypted?: boolean;
+}): void {
+  const fragmentRequiresKey =
+    typeof window !== "undefined" && /[#&]key=/.test(window.location.hash);
+  if (
+    !document.isE2EEncrypted &&
+    (fragmentRequiresKey ||
+      isContentV2FileId(document.id) ||
+      !!(document.fileId && isContentV2FileId(document.fileId)))
+  ) {
+    throw new ContentIntegrityError(
+      "This signing document requires end-to-end encryption",
+    );
+  }
+}
+
 const getDocument = async (id: string): Promise<SignatureRequest> => {
-  return (await api.get(`signing/documents/${apiPathSegment(id)}`)).data;
+  const document = (await api.get(`signing/documents/${apiPathSegment(id)}`))
+    .data;
+  if (document.id !== id)
+    throw new ContentIntegrityError("Signing document identity mismatch");
+  assertSigningEncryption(document);
+  return document;
 };
 
 const cancelDocument = async (id: string): Promise<void> => {
@@ -356,7 +393,9 @@ const finalizeE2E = async (
 // ============================================================
 
 const getSigningPage = async (token: string): Promise<SigningPageData> => {
-  return (await api.get(`signing/sign/${apiPathSegment(token)}`)).data;
+  const page = (await api.get(`signing/sign/${apiPathSegment(token)}`)).data;
+  assertSigningEncryption(page.document);
+  return page;
 };
 
 const sendSigningEmailOtp = async (token: string) =>

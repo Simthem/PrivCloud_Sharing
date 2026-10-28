@@ -12,14 +12,16 @@ import {
   Headers,
   UseGuards,
   Res,
+  Req,
 } from "@nestjs/common";
-import { Response } from "express";
+import { Request, Response } from "express";
 import { User } from "@prisma/client";
 import { RegistrationResponseJSON } from "@simplewebauthn/server";
 import { hours, minutes, Throttle } from "@nestjs/throttler";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
 import { AdministratorGuard } from "src/auth/guard/isAdmin.guard";
+import { StepUpService } from "src/auth/stepUp.service";
 import { SigningService } from "./signing.service";
 import { SigningDownloadService } from "./signing-download.service";
 import { SigningE2EService } from "./signing-e2e.service";
@@ -38,6 +40,12 @@ import {
   StoreRecipientE2EKeyDTO,
   VerifySigningEmailOtpDTO,
 } from "./dto/signDocument.dto";
+import {
+  SIGNING_EMAIL_SESSION_COOKIE,
+  SIGNING_EMAIL_SESSION_TTL_MS,
+  presentedSigningEmailSession,
+} from "./signing-email-session.util";
+import { ConfigService } from "src/config/config.service";
 
 @Controller("signing")
 export class SigningController {
@@ -47,6 +55,8 @@ export class SigningController {
     private signingE2EService: SigningE2EService,
     private signingWebAuthnService: SigningWebAuthnService,
     private signingEvidenceService: SigningEvidenceService,
+    private stepUp: StepUpService,
+    private configService: ConfigService,
   ) {}
 
   private setPublicSigningHeaders(res: Response) {
@@ -286,7 +296,13 @@ export class SigningController {
   async resetUserPasskeys(
     @Param("userId") userId: string,
     @GetUser() admin: User,
+    @Req() request: Request,
   ) {
+    await this.stepUp.consume(
+      request,
+      admin,
+      `signing.passkeys.reset:${userId}`,
+    );
     return this.signingWebAuthnService.resetPasskeys(userId, admin.email);
   }
 
@@ -390,10 +406,14 @@ export class SigningController {
   @Get("sign/:token")
   async getSigningPage(
     @Param("token") token: string,
+    @Req() request: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     this.setPublicSigningHeaders(res);
-    return this.signingService.getSigningPage(token);
+    return this.signingService.getSigningPage(
+      token,
+      presentedSigningEmailSession(request),
+    );
   }
 
   /**
@@ -422,10 +442,14 @@ export class SigningController {
   @Throttle({ default: { limit: 3, ttl: minutes(10) } })
   async sendSigningEmailOtp(
     @Param("token") token: string,
+    @Req() request: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     this.setPublicSigningHeaders(res);
-    return this.signingService.sendSigningEmailOtp(token);
+    return this.signingService.sendSigningEmailOtp(
+      token,
+      presentedSigningEmailSession(request),
+    );
   }
 
   /** Prove current control of the assigned mailbox before standard signing. */
@@ -437,16 +461,30 @@ export class SigningController {
     @Ip() ip: string,
     @Headers("x-forwarded-for") forwardedFor: string,
     @Headers("user-agent") userAgent: string,
+    @Req() request: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     this.setPublicSigningHeaders(res);
     const clientIp = forwardedFor ? forwardedFor.split(",")[0].trim() : ip;
-    return this.signingService.verifySigningEmailOtp(
-      token,
-      dto.code,
-      clientIp,
-      userAgent || "",
-    );
+    const { verified, session } =
+      await this.signingService.verifySigningEmailOtp(
+        token,
+        dto.code,
+        clientIp,
+        userAgent || "",
+        presentedSigningEmailSession(request),
+      );
+    if (session) {
+      // Only this link's routes receive it.
+      res.cookie(SIGNING_EMAIL_SESSION_COOKIE, session, {
+        path: `/api/signing/sign/${encodeURIComponent(token)}`,
+        sameSite: "strict",
+        secure: this.configService.get("general.secureCookies"),
+        httpOnly: true,
+        maxAge: SIGNING_EMAIL_SESSION_TTL_MS,
+      });
+    }
+    return { verified };
   }
 
   /**
@@ -456,10 +494,15 @@ export class SigningController {
   @Throttle({ default: { limit: 20, ttl: minutes(1) } })
   async previewOriginalPdf(
     @Param("token") token: string,
+    @Req() request: Request,
     @Res() res: Response,
   ) {
     const { buffer, fileName } =
-      await this.signingDownloadService.getOriginalPdfForPreview(token);
+      await this.signingDownloadService.getOriginalPdfForPreview(
+        token,
+        undefined,
+        presentedSigningEmailSession(request),
+      );
     this.setPublicSigningHeaders(res);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
@@ -538,16 +581,31 @@ export class SigningController {
     res.send(buffer);
   }
 
-  /** Begin passkey enrolment from the authenticated, assigned account. */
+  /**
+   * Begin passkey enrolment from the authenticated, assigned account. The new
+   * passkey signs documents and signs in: the user confirms their identity
+   * first, as before adding a passkey from the account settings.
+   */
   @Post("sign/:token/passkey/register/options")
   @UseGuards(JwtGuard)
   @Throttle({ default: { limit: 5, ttl: minutes(10) } })
   async beginPasskeyRegistration(
     @Param("token") token: string,
     @GetUser() user: User,
+    @Req() request: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     this.setPublicSigningHeaders(res);
+    const recipientId =
+      await this.signingWebAuthnService.assignedReinforcedRecipientId(
+        token,
+        user,
+      );
+    await this.stepUp.consume(
+      request,
+      user,
+      `signing.passkey.enroll:${recipientId}`,
+    );
     return this.signingWebAuthnService.beginRegistration(token, user);
   }
 
@@ -593,6 +651,7 @@ export class SigningController {
     @Ip() ip: string,
     @Headers("x-forwarded-for") forwardedFor: string,
     @Headers("user-agent") userAgent: string,
+    @Req() request: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     this.setPublicSigningHeaders(res);
@@ -603,6 +662,7 @@ export class SigningController {
       dto,
       clientIp,
       userAgent || "",
+      presentedSigningEmailSession(request),
     );
   }
 
@@ -617,6 +677,7 @@ export class SigningController {
     @Ip() ip: string,
     @Headers("x-forwarded-for") forwardedFor: string,
     @Headers("user-agent") userAgent: string,
+    @Req() request: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     this.setPublicSigningHeaders(res);
@@ -626,6 +687,7 @@ export class SigningController {
       dto,
       clientIp,
       userAgent || "",
+      presentedSigningEmailSession(request),
     );
   }
 }

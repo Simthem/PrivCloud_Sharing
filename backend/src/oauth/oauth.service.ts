@@ -42,6 +42,11 @@ export class OAuthService {
     );
   }
 
+  /** The account, when it is an administrator's. */
+  findAdministrator(userId: string) {
+    return this.prisma.user.findFirst({ where: { id: userId, isAdmin: true } });
+  }
+
   async status(user: User) {
     const oauthUsers = await this.prisma.oAuthUser.findMany({
       select: {

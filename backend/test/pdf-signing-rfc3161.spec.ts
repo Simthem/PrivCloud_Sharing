@@ -120,12 +120,12 @@ const requestValues = (body: unknown) => {
 testCase(
   "builds a DER request containing only the SHA-256 imprint and protocol metadata",
   () => {
-    const service = new PdfSigningService() as any;
+    const service = new PdfSigningService();
     const imprint = crypto
       .createHash("sha256")
       .update("document bytes stay local")
       .digest();
-    const request = service.buildTimestampRequest(imprint);
+    const request = service["buildTimestampRequest"](imprint);
     const requestBody = requireBuffer(request.body, "RFC 3161 request body");
     const parsed = children(parseDer(requestBody));
 
@@ -146,9 +146,9 @@ testCase(
 testCase(
   "rejects cleartext TSA endpoints before opening a connection",
   async () => {
-    const service = new PdfSigningService() as any;
+    const service = new PdfSigningService();
     await assert.rejects(
-      service.requestTsa("http://timestamp.invalid/tsr", Buffer.alloc(1)),
+      service["requestTsa"]("http://timestamp.invalid/tsr", Buffer.alloc(1)),
       /must use HTTPS/,
     );
   },
@@ -157,13 +157,13 @@ testCase(
 testCase(
   "validates the TSA token and rejects a mismatched imprint or nonce",
   () => {
-    const service = new PdfSigningService() as any;
+    const service = new PdfSigningService();
     const tsa = createCertificate("PrivCloud test TSA", true);
     const imprint = crypto.randomBytes(32);
     const nonce = Buffer.from("1020304050607080", "hex");
     const response = createTimestampResponse(imprint, nonce, tsa);
 
-    const evidence = service.validateTimestampResponse(
+    const evidence = service["validateTimestampResponse"](
       response,
       imprint,
       nonce,
@@ -175,7 +175,7 @@ testCase(
     );
     assert.throws(
       () =>
-        service.validateTimestampResponse(
+        service["validateTimestampResponse"](
           response,
           crypto.randomBytes(32),
           nonce,
@@ -184,7 +184,7 @@ testCase(
     );
     assert.throws(
       () =>
-        service.validateTimestampResponse(
+        service["validateTimestampResponse"](
           response,
           imprint,
           crypto.randomBytes(8),
@@ -197,13 +197,13 @@ testCase(
 testCase(
   "rejects a token whose signing certificate is not reserved for timestamping",
   () => {
-    const service = new PdfSigningService() as any;
+    const service = new PdfSigningService();
     const tsa = createCertificate("Invalid test TSA", false);
     const imprint = crypto.randomBytes(32);
     const nonce = Buffer.from("1122334455667788", "hex");
     const response = createTimestampResponse(imprint, nonce, tsa);
     assert.throws(
-      () => service.validateTimestampResponse(response, imprint, nonce),
+      () => service["validateTimestampResponse"](response, imprint, nonce),
       /critical timeStamping EKU/,
     );
   },
@@ -212,20 +212,24 @@ testCase(
 testCase(
   "requires the TSA chain to reach the configured trust fingerprint",
   () => {
-    const service = new PdfSigningService() as any;
+    const service = new PdfSigningService();
     const tsa = createCertificate("Pinned test TSA", true);
     const imprint = crypto.randomBytes(32);
     const nonce = Buffer.from("2233445566778899", "hex");
     const response = createTimestampResponse(imprint, nonce, tsa);
 
-    service.tsaTrustedCertFingerprints = new Set([certificateFingerprint(tsa)]);
+    Object.assign(service, {
+      tsaTrustedCertFingerprints: new Set([certificateFingerprint(tsa)]),
+    });
     assert.doesNotThrow(() =>
-      service.validateTimestampResponse(response, imprint, nonce),
+      service["validateTimestampResponse"](response, imprint, nonce),
     );
 
-    service.tsaTrustedCertFingerprints = new Set(["a".repeat(64)]);
+    Object.assign(service, {
+      tsaTrustedCertFingerprints: new Set(["a".repeat(64)]),
+    });
     assert.throws(
-      () => service.validateTimestampResponse(response, imprint, nonce),
+      () => service["validateTimestampResponse"](response, imprint, nonce),
       /does not reach a configured SHA-256 trust fingerprint/,
     );
   },
@@ -234,12 +238,12 @@ testCase(
 testCase(
   "uses OpenSSL for certificate signatures and rejects RSA exponent 3",
   () => {
-    const service = new PdfSigningService() as any;
+    const service = new PdfSigningService();
     const safe = parseCertificate(
       createCertificate("OpenSSL verification control").der,
     );
     assert.equal(
-      service.verifyCertificateSignatureWithOpenSsl(safe, safe),
+      service["verifyCertificateSignatureWithOpenSsl"](safe, safe),
       true,
     );
 
@@ -247,7 +251,10 @@ testCase(
       createCertificate("Unsafe exponent certificate", false, 3).der,
     );
     assert.equal(
-      service.verifyCertificateSignatureWithOpenSsl(lowExponent, lowExponent),
+      service["verifyCertificateSignatureWithOpenSsl"](
+        lowExponent,
+        lowExponent,
+      ),
       false,
     );
   },
@@ -278,7 +285,7 @@ testCase(
         );
       };
 
-    const service = new PdfSigningService() as any;
+    const service = new PdfSigningService();
     for (const publicExponent of [0x10001, 3]) {
       const tsa = createTestCertificate({
         commonName: `Forged DigestInfo TSA e=${publicExponent}`,
@@ -294,7 +301,7 @@ testCase(
         forgedSignature(tsa),
       );
       assert.throws(
-        () => service.validateTimestampResponse(forged, imprint, nonce),
+        () => service["validateTimestampResponse"](forged, imprint, nonce),
         /TSA CMS signature verification failed/,
       );
     }
@@ -310,12 +317,12 @@ testCase(
     process.env.SIGNING_TSA_REQUIRED = "true";
 
     try {
-      const service = new PdfSigningService() as any;
+      const service = new PdfSigningService();
       const tsa = createCertificate("PrivCloud embedding test TSA", true);
       const seal = createCertificate("PrivCloud test PDF seal", false);
       const p12 = createTestPkcs12(seal.privateKey, [seal.der], "");
-      service.loadCertificate = async () => p12;
-      service.requestTsa = async (_url: string, body: Buffer) => {
+      service["loadCertificate"] = async () => p12;
+      service["requestTsa"] = async (_url: string, body: Buffer) => {
         const { imprint, nonce } = requestValues(body);
         return createTimestampResponse(imprint, nonce, tsa);
       };

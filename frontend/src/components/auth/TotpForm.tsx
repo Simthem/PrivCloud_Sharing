@@ -5,11 +5,13 @@ import {
   Group,
   Paper,
   PinInput,
+  Text,
   TextInput,
   Title,
 } from "@mantine/core";
 import { useForm, yupResolver } from "@mantine/form";
 import { useRouter } from "next/router";
+import Link from "next/link";
 import { useState } from "react";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
@@ -26,6 +28,7 @@ function TotpForm({ redirectPath }: { redirectPath: string }) {
 
   const [loading, setLoading] = useState(false);
   const [useBackupCode, setUseBackupCode] = useState(false);
+  const [tokenUnavailable, setTokenUnavailable] = useState(false);
 
   const totpSchema = yup.object().shape({
     code: yup
@@ -61,8 +64,12 @@ function TotpForm({ redirectPath }: { redirectPath: string }) {
       const target = await resolvePostAuthRedirectPath(redirectPath, user);
       await router.replace(target);
     } catch (e) {
-      toast.axiosError(e);
-      form.setFieldError("code", "error");
+      if ((e as { response?: { status?: number } })?.response?.status === 401) {
+        setTokenUnavailable(true);
+      } else {
+        toast.axiosError(e);
+        form.setFieldError("code", "error");
+      }
     } finally {
       setLoading(false);
     }
@@ -74,46 +81,62 @@ function TotpForm({ redirectPath }: { redirectPath: string }) {
         <FormattedMessage id="totp.title" />
       </Title>
       <Paper withBorder shadow="md" p={30} mt={30} radius="md">
-        <form onSubmit={form.onSubmit(onSubmit)}>
-          <Group justify="center">
-            {useBackupCode ? (
-              <TextInput
-                label={t("totp.backup.label")}
-                placeholder="A1B2C3D4"
-                autoFocus
-                style={{ width: "100%" }}
-                {...form.getInputProps("code")}
-              />
-            ) : (
-              <PinInput
-                length={6}
-                oneTimeCode
-                aria-label="One time code"
-                autoFocus={true}
-                onComplete={onSubmit}
-                {...form.getInputProps("code")}
-              />
-            )}
-            <Button mt="md" type="submit" loading={loading}>
+        {tokenUnavailable ? (
+          <>
+            <Text ta="center">
+              {t("signIn.notify.session-expired.description")}
+            </Text>
+            <Button
+              component={Link}
+              href={`/auth/signIn?redirect=${encodeURIComponent(redirectPath)}`}
+              fullWidth
+              mt="md"
+            >
               {t("totp.button.signIn")}
             </Button>
-          </Group>
-          <Group justify="center" mt="md">
-            <Anchor
-              size="sm"
-              onClick={() => {
-                setUseBackupCode(!useBackupCode);
-                form.reset();
-              }}
-            >
+          </>
+        ) : (
+          <form onSubmit={form.onSubmit(onSubmit)}>
+            <Group justify="center">
               {useBackupCode ? (
-                <FormattedMessage id="totp.backup.useTotp" />
+                <TextInput
+                  label={t("totp.backup.label")}
+                  placeholder="A1B2C3D4"
+                  autoFocus
+                  style={{ width: "100%" }}
+                  {...form.getInputProps("code")}
+                />
               ) : (
-                <FormattedMessage id="totp.backup.useBackup" />
+                <PinInput
+                  length={6}
+                  oneTimeCode
+                  aria-label="One time code"
+                  autoFocus={true}
+                  onComplete={onSubmit}
+                  {...form.getInputProps("code")}
+                />
               )}
-            </Anchor>
-          </Group>
-        </form>
+              <Button mt="md" type="submit" loading={loading}>
+                {t("totp.button.signIn")}
+              </Button>
+            </Group>
+            <Group justify="center" mt="md">
+              <Anchor
+                size="sm"
+                onClick={() => {
+                  setUseBackupCode(!useBackupCode);
+                  form.reset();
+                }}
+              >
+                {useBackupCode ? (
+                  <FormattedMessage id="totp.backup.useTotp" />
+                ) : (
+                  <FormattedMessage id="totp.backup.useBackup" />
+                )}
+              </Anchor>
+            </Group>
+          </form>
+        )}
       </Paper>
     </Container>
   );

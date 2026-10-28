@@ -25,6 +25,34 @@ import { createUnitTestRunner } from "./unit-test";
 
 const { testCase, run } = createUnitTestRunner("team external access");
 
+// Prisma arguments captured by the doubles, read back field by field.
+type ContractorPreviewWhere = {
+  id: string;
+  status: string;
+  deletedAt: null;
+  sourceFileId: unknown;
+  team: unknown;
+  seat: { userId: string; status: string; accessExpiresAt: { gt: Date } };
+};
+type SeatAcceptance = {
+  where: { tokenHash: string; status: string };
+  data: { userId: string; tokenHash: null };
+};
+type AdminMemberWhere = { role: unknown; isActive: boolean; team: unknown };
+type SourceFileWhere = { share: unknown };
+type UploadingPreviewWhere = {
+  createdById: string;
+  status: string;
+  teamId: string;
+};
+type HiddenPreviews = { where: { seatId: string }; data: { deletedAt: Date } };
+type ContractorSeatWhere = {
+  teamId: string;
+  status: unknown;
+  accessExpiresAt: { gt: Date };
+  OR: unknown;
+};
+
 const NOW = new Date("2026-10-06T12:00:00Z");
 const DAY = 24 * 60 * 60 * 1000;
 const TEAM = "11111111-1111-4111-8111-111111111111";
@@ -239,10 +267,10 @@ testCase(
 testCase(
   "a contractor only reaches READY copies of their own active seat",
   async () => {
-    let where: Record<string, any> | undefined;
+    let where: ContractorPreviewWhere | undefined;
     const external = service({
       teamExternalPreview: {
-        findFirst: async (args: { where: Record<string, any> }) => {
+        findFirst: async (args: { where: ContractorPreviewWhere }) => {
           where = args.where;
           return null;
         },
@@ -420,12 +448,12 @@ testCase(
     };
     let keys = { x25519: 1, pq: 1 };
     let member: object | null = null;
-    let accepted: Record<string, any> | undefined;
+    let accepted: SeatAcceptance | undefined;
     const external = service({
       teamExternalSeat: {
         findUnique: async (args: { where: { tokenHash: string } }) =>
           args.where.tokenHash === seat.tokenHash ? seat : null,
-        updateMany: async (args: Record<string, any>) => {
+        updateMany: async (args: SeatAcceptance) => {
           accepted = args;
           return { count: 1 };
         },
@@ -473,10 +501,10 @@ testCase(
 // ---------------------------------------------------------------------------
 
 testCase("only an admin of an active team manages contractors", async () => {
-  let where: Record<string, any> | undefined;
+  let where: AdminMemberWhere | undefined;
   const external = service({
     teamMember: {
-      findFirst: async (args: { where: Record<string, any> }) => {
+      findFirst: async (args: { where: AdminMemberWhere }) => {
         where = args.where;
         return null;
       },
@@ -571,7 +599,7 @@ testCase("external seats are unlimited by default and retain invitation isolatio
 testCase(
   "a copy needs a usable seat, a hybrid wrapping and a source of the same team",
   async () => {
-    let sourceWhere: Record<string, any> | undefined;
+    let sourceWhere: SourceFileWhere | undefined;
     let created = 0;
     let seat: object | null = {
       id: SEAT,
@@ -585,7 +613,7 @@ testCase(
       ...adminMembership,
       teamExternalSeat: { findFirst: async () => seat },
       file: {
-        findFirst: async (args: { where: Record<string, any> }) => {
+        findFirst: async (args: { where: SourceFileWhere }) => {
           sourceWhere = args.where;
           return source;
         },
@@ -628,14 +656,14 @@ testCase(
 testCase(
   "pages are bounded encrypted blobs uploaded by the copy's creator only",
   async () => {
-    let previewWhere: Record<string, any> | undefined;
+    let previewWhere: UploadingPreviewWhere | undefined;
     const stored: string[] = [];
     const hashes: string[] = [];
     const external = service(
       {
         ...adminMembership,
         teamExternalPreview: {
-          findFirst: async (args: { where: Record<string, any> }) => {
+          findFirst: async (args: { where: UploadingPreviewWhere }) => {
             previewWhere = args.where;
             return { id: PREVIEW, pageCount: 2 };
           },
@@ -704,7 +732,7 @@ testCase(
   "revoking a seat hides its copies at once and purges their pages",
   async () => {
     const deleted: string[] = [];
-    let hidden: Record<string, any> | undefined;
+    let hidden: HiddenPreviews | undefined;
     const prisma = {
       ...adminMembership,
       teamExternalSeat: {
@@ -713,7 +741,7 @@ testCase(
         deleteMany: async () => ({ count: 0 }),
       },
       teamExternalPreview: {
-        updateMany: (args: Record<string, any>) => {
+        updateMany: (args: HiddenPreviews) => {
           hidden = args;
           return args;
         },
@@ -782,12 +810,12 @@ testCase(
 );
 
 testCase("a contractor of the team cannot also become a member", async () => {
-  let where: Record<string, any> | undefined;
+  let where: ContractorSeatWhere | undefined;
   let seat: object | null = { id: SEAT };
   const team = new TeamService(
     {
       teamExternalSeat: {
-        findFirst: async (args: { where: Record<string, any> }) => {
+        findFirst: async (args: { where: ContractorSeatWhere }) => {
           where = args.where;
           return seat;
         },
@@ -801,7 +829,7 @@ testCase("a contractor of the team cannot also become a member", async () => {
     {} as never,
   );
   const guard = (email: string, userId?: string) =>
-    (team as any).assertNotExternalContractor(TEAM, email, userId);
+    team["assertNotExternalContractor"](TEAM, email, userId);
   await rejects(guard("presta@example.test", "contractor"), 409);
   assert.equal(where!.teamId, TEAM);
   assert.deepEqual(where!.status, { in: ["PENDING", "ACTIVE"] });

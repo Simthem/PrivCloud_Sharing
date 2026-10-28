@@ -42,6 +42,11 @@ import {
   getUploadChunkLimit,
   MAX_UPLOAD_CHUNK_BYTES,
 } from "./upload-limit.util";
+import {
+  contentHeaderBytes,
+  ContentScheme,
+  parseContentScheme,
+} from "./content-scheme.util";
 
 const STREAMING_UPLOAD_CONTENT_TYPE = "application/vnd.privcloud.chunk";
 const S3_MIN_MULTIPART_PART_BYTES = 5 * 1024 * 1024;
@@ -57,6 +62,7 @@ type MultipartInitializationBody = {
   chunkSize?: unknown;
   initialChunkSize?: unknown;
   encryptionChunkSize?: unknown;
+  contentScheme?: unknown;
 };
 
 type MultipartPartAuthorizationBody = MultipartInitializationBody & {
@@ -80,6 +86,7 @@ type ParsedMultipartInitialization = {
   chunkSize: number;
   initialChunkSize: number;
   encryptionChunkSize?: number;
+  contentScheme?: ContentScheme;
 };
 
 export function getMultipartPartPayloadLength(
@@ -108,6 +115,7 @@ export function getMultipartPartPayloadLength(
     plainLength,
     plainLength,
     request.encryptionChunkSize,
+    contentHeaderBytes(request.contentScheme, chunkIndex),
   );
 }
 
@@ -321,6 +329,7 @@ export class FileController {
       totalChunks: string;
       chunkSize?: string;
       encryptionChunkSize?: string;
+      contentScheme?: string;
     },
     @Headers("x-file-name") headerFileName: string | undefined,
     @Headers("x-file-relative-path") headerRelativePath: string | undefined,
@@ -348,7 +357,9 @@ export class FileController {
       parsedTotalChunks,
       parsedChunkSize,
       parsedEncryptionChunkSize,
+      contentScheme,
     } = this.parseUploadQuery(query, maxChunkBytes);
+    const headerBytes = contentHeaderBytes(contentScheme, parsedChunkIndex);
 
     // The first chunk uses application/octet-stream and negotiates the
     // transport. Subsequent S3 chunks use this unparsed media type so the
@@ -360,12 +371,13 @@ export class FileController {
         maxChunkBytes,
         parsedChunkSize,
         parsedEncryptionChunkSize,
+        headerBytes,
       );
       return await this.fileService.createStream(
         req,
         parsedContentLength,
         { index: parsedChunkIndex, total: parsedTotalChunks },
-        { id, name, relativePath, encryptedMetadata },
+        { id, name, relativePath, encryptedMetadata, contentScheme },
         shareId,
         parsedChunkSize,
         parsedEncryptionChunkSize,
@@ -377,13 +389,14 @@ export class FileController {
       maxChunkBytes,
       parsedChunkSize,
       parsedEncryptionChunkSize,
+      headerBytes,
     );
 
     // Data can be empty if the file is empty
     return await this.fileService.create(
       body!,
       { index: parsedChunkIndex, total: parsedTotalChunks },
-      { id, name, relativePath, encryptedMetadata },
+      { id, name, relativePath, encryptedMetadata, contentScheme },
       shareId,
       parsedChunkSize,
       parsedEncryptionChunkSize,
@@ -460,6 +473,7 @@ export class FileController {
       totalChunks: string;
       chunkSize?: string;
       encryptionChunkSize?: string;
+      contentScheme?: string;
     },
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-file-name") headerFileName: string | undefined,
@@ -486,18 +500,20 @@ export class FileController {
       parsedTotalChunks,
       parsedChunkSize,
       parsedEncryptionChunkSize,
+      contentScheme,
     } = this.parseUploadQuery(query, MAX_UPLOAD_CHUNK_BYTES);
     this.assertChunkBodySize(
       body,
       MAX_UPLOAD_CHUNK_BYTES,
       parsedChunkSize,
       parsedEncryptionChunkSize,
+      contentHeaderBytes(contentScheme, parsedChunkIndex),
     );
 
     return await this.fileService.create(
       body,
       { index: parsedChunkIndex, total: parsedTotalChunks },
-      { id, name, relativePath, encryptedMetadata },
+      { id, name, relativePath, encryptedMetadata, contentScheme },
       shareId,
       parsedChunkSize,
       parsedEncryptionChunkSize,
@@ -530,6 +546,7 @@ export class FileController {
       chunkSize,
       initialChunkSize,
       encryptionChunkSize,
+      contentScheme,
     } = body;
     if (typeof id !== "string" || typeof name !== "string") {
       throw new BadRequestException("Invalid multipart file metadata");
@@ -580,6 +597,7 @@ export class FileController {
       throw new BadRequestException("Invalid multipart part count");
     }
 
+    const parsedContentScheme = parseContentScheme(contentScheme);
     let parsedEncryptionChunkSize: number | undefined;
     if (encryptionChunkSize !== undefined && encryptionChunkSize !== null) {
       if (
@@ -604,6 +622,7 @@ export class FileController {
       chunkSize: chunkSize as number,
       initialChunkSize: initialChunkSize as number,
       encryptionChunkSize: parsedEncryptionChunkSize,
+      ...(parsedContentScheme && { contentScheme: parsedContentScheme }),
     };
   }
 
@@ -616,11 +635,13 @@ export class FileController {
       totalChunks: string;
       chunkSize?: string;
       encryptionChunkSize?: string;
+      contentScheme?: string;
     },
     maxChunkBytes: number,
   ) {
     const { id, chunkIndex, totalChunks, chunkSize, encryptionChunkSize } =
       query;
+    const contentScheme = parseContentScheme(query.contentScheme);
     const parsedChunkIndex = parseInt(chunkIndex, 10);
     const parsedTotalChunks = parseInt(totalChunks, 10);
     const parsedChunkSize = chunkSize ? parseInt(chunkSize, 10) : undefined;
@@ -665,6 +686,7 @@ export class FileController {
       parsedTotalChunks,
       parsedChunkSize,
       parsedEncryptionChunkSize,
+      contentScheme,
     };
   }
 
@@ -680,6 +702,7 @@ export class FileController {
     maxChunkBytes: number,
     declaredChunkSize?: number,
     encryptionChunkSize?: number,
+    headerBytes = 0,
   ): number {
     if (!contentLength || !/^\d+$/.test(contentLength)) {
       throw new BadRequestException(
@@ -692,6 +715,7 @@ export class FileController {
       maxChunkBytes,
       declaredChunkSize,
       encryptionChunkSize,
+      headerBytes,
     );
     if (!Number.isSafeInteger(parsed) || parsed > maxPayloadBytes) {
       throw new PayloadTooLargeException(
@@ -706,6 +730,7 @@ export class FileController {
     maxChunkBytes: number,
     declaredChunkSize?: number,
     encryptionChunkSize?: number,
+    headerBytes = 0,
   ) {
     if (!Buffer.isBuffer(body)) {
       throw new BadRequestException("Missing upload chunk body");
@@ -714,6 +739,7 @@ export class FileController {
       maxChunkBytes,
       declaredChunkSize,
       encryptionChunkSize,
+      headerBytes,
     );
     if (body.byteLength > maxPayloadBytes) {
       throw new PayloadTooLargeException(
@@ -1101,6 +1127,7 @@ export class FileController {
       rotationId?: string;
       encryptionChunkSize?: string;
       sessionId?: string;
+      contentScheme?: string;
     },
     @Body() body: Buffer,
     @Param("shareId", SafeIdPipe) shareId: string,
@@ -1121,6 +1148,7 @@ export class FileController {
       throw new BadRequestException("Invalid re-encryption session ID");
     }
     const reencryptSessionId = query.sessionId || "legacy";
+    const contentScheme = parseContentScheme(query.contentScheme);
 
     if (
       !Number.isFinite(chunkIndex) ||
@@ -1156,6 +1184,7 @@ export class FileController {
       MAX_UPLOAD_CHUNK_BYTES,
       MAX_UPLOAD_CHUNK_BYTES,
       encryptionChunkSize,
+      contentHeaderBytes(contentScheme, chunkIndex),
     );
     if (!Buffer.isBuffer(body)) {
       throw new BadRequestException("Missing re-encryption chunk body");
@@ -1186,7 +1215,13 @@ export class FileController {
       where: { id: fileId, shareId },
       select: { metadataScheme: true },
     });
-    const rewritesName = fileScheme?.metadataScheme === FILE_META_V1;
+    const upgradesName =
+      !!fileScheme &&
+      fileScheme.metadataScheme == null &&
+      contentScheme === 2 &&
+      headerEncryptedMetadata !== undefined;
+    const rewritesName =
+      fileScheme?.metadataScheme === FILE_META_V1 || upgradesName;
     if (headerEncryptedMetadata && !rewritesName) {
       throw new BadRequestException(
         "Encrypted file names are not enabled for this file",
@@ -1211,14 +1246,9 @@ export class FileController {
       shareId,
       encryptionChunkSize,
       reencryptSessionId,
+      contentScheme,
+      rewritesName && isLastChunk ? headerEncryptedMetadata : undefined,
     );
-
-    if (rewritesName && isLastChunk) {
-      await this.prisma.file.update({
-        where: { id: fileId },
-        data: { encryptedMetadata: headerEncryptedMetadata },
-      });
-    }
 
     if (query.rotationId && chunkIndex === totalChunks - 1) {
       await this.recordTeamRotationFile(

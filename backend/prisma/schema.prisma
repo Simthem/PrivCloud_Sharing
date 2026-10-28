@@ -43,6 +43,7 @@ model User {
   emailVerificationSource            String?
   emailVerificationDeletionStartedAt DateTime?
   emailVerificationTokens            EmailVerificationToken[]
+  emailChangeRequest                 EmailChangeRequest?
 
   // E2E encryption: SHA-256 hex hash of the user's AES-256 key (never the key itself)
   encryptionKeyHash           String?
@@ -83,6 +84,7 @@ model User {
   accountPasskeys AccountPasskey[]
   passkeyChallenges PasskeyChallenge[]
   vaultSessions EvidenceVaultSession[]
+  stepUpGrants StepUpGrant[]
 
   // Account lockout protection
   failedLoginAttempts Int       @default(0)
@@ -90,6 +92,25 @@ model User {
   lastFailedLoginAt   DateTime?
 
   @@index([emailVerifiedAt, emailVerificationRequiredAt, emailVerificationDeletionStartedAt])
+}
+
+model EmailChangeRequest {
+  id              String    @id @default(uuid())
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  oldEmail        String
+  newEmail        String
+  securityState   String
+  oldTokenHash    String    @unique
+  newTokenHash    String    @unique
+  cancelTokenHash String    @unique
+  oldApprovedAt   DateTime?
+  newVerifiedAt   DateTime?
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([expiresAt])
 }
 
 model WrappedKey {
@@ -152,9 +173,10 @@ model LoginToken {
 
   expiresAt DateTime
 
-  userId String
-  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  used   Boolean @default(false)
+  userId   String
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  used     Boolean @default(false)
+  attempts Int     @default(0)
 }
 
 model ResetPasswordToken {
@@ -205,13 +227,32 @@ model OAuthReauthToken {
   // PENDING | VERIFIED
   stage    String
   provider String
-  // TOTP is the only purpose so far.
+  // TOTP | PASSWORD | EMAIL | STEP_UP
   purpose  String
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, stage])
+}
+
+// An administrator confirmed their identity for one sensitive operation, such
+// as granting administrator rights. The scope names the operation and its
+// target. The browser holds the token, only its SHA-256 hash is stored. Single
+// use, a few minutes.
+model StepUpGrant {
+  tokenHash String    @id
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+  scope     String
+  // password | oauth | passkey
+  method    String
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
 }
 
 model TotpBackupCode {
@@ -358,6 +399,10 @@ model File {
   // to the server.
   metadataScheme      Int?
   encryptedMetadata   String?
+  // E2EE content format, docs/E2EE_CONTENT_V2.md. NULL: v1, every file
+  // written before this column. 2: content v2. Readers recognise the format
+  // by its header, the column only serves operations and statistics.
+  contentScheme       Int?
 
   shareId String
   share   Share  @relation(fields: [shareId], references: [id], onDelete: Cascade)
@@ -589,6 +634,9 @@ model SignatureRecipient {
   otpSentAt   DateTime?
   otpVerified Boolean   @default(false)
   otpFailures Int       @default(0)
+  // The browser that verified the code holds the value, this row its hash.
+  otpSessionHash      String?
+  otpSessionExpiresAt DateTime?
 
   // Account-level evidence for REINFORCED requests; this is not a civil eID.
   identityVerificationMethod String    @default("NONE")

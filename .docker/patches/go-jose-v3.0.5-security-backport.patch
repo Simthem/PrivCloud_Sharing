@@ -1,0 +1,135 @@
+# go-jose v3.0.5 is the last v3 release and upstream ships no v3 fix for
+# CVE-2026-116585, CVE-2026-116586 and CVE-2026-116587. Caddy reaches v3
+# through smallstep (caddypki), whose latest releases still require it.
+# The fixes are the upstream v4.1.5 and v4.1.6 changes, backported to v3:
+#   cipher/cbc_hmac.go  reject an empty padded buffer and unknown key sizes
+#   json/scanner.go     cap the nesting depth at 10000
+#   jwk.go              cap RSA moduli at 4096 bits and require p * q == n
+diff -ru a/cipher/cbc_hmac.go b/cipher/cbc_hmac.go
+--- a/cipher/cbc_hmac.go
++++ b/cipher/cbc_hmac.go
+@@ -51,6 +51,8 @@
+ 		hash = sha512.New384
+ 	case 32:
+ 		hash = sha512.New
++	default:
++		return nil, errors.New("go-jose/go-jose: invalid key size for CBC-HMAC")
+ 	}
+ 
+ 	return &cbcAEAD{
+@@ -176,7 +178,9 @@
+ 
+ // Remove padding
+ func unpadBuffer(buffer []byte, blockSize int) ([]byte, error) {
+-	if len(buffer)%blockSize != 0 {
++	// A padded buffer can't be empty because an empty input is padded with
++	// `blockSize` bytes, resulting in a non-empty ciphertext.
++	if len(buffer) == 0 || len(buffer)%blockSize != 0 {
+ 		return nil, errors.New("go-jose/go-jose: invalid padding")
+ 	}
+ 
+diff -ru a/json/scanner.go b/json/scanner.go
+--- a/json/scanner.go
++++ b/json/scanner.go
+@@ -140,6 +140,10 @@
+ 	parseArrayValue         // parsing array value
+ )
+ 
++// This limits the max nesting depth to prevent stack overflow.
++// This is permitted by https://tools.ietf.org/html/rfc7159#section-9
++const maxNestingDepth = 10000
++
+ // reset prepares the scanner for use.
+ // It must be called before calling s.step.
+ func (s *scanner) reset() {
+@@ -170,8 +174,13 @@
+ }
+ 
+ // pushParseState pushes a new parse state p onto the parse stack.
+-func (s *scanner) pushParseState(p int) {
+-	s.parseState = append(s.parseState, p)
++// an error state is returned if maxNestingDepth was exceeded, otherwise successState is returned.
++func (s *scanner) pushParseState(c byte, newParseState int, successState int) int {
++	s.parseState = append(s.parseState, newParseState)
++	if len(s.parseState) <= maxNestingDepth {
++		return successState
++	}
++	return s.error(c, "exceeded max depth")
+ }
+ 
+ // popParseState pops a parse state (already obtained) off the stack
+@@ -211,12 +220,10 @@
+ 	switch c {
+ 	case '{':
+ 		s.step = stateBeginStringOrEmpty
+-		s.pushParseState(parseObjectKey)
+-		return scanBeginObject
++		return s.pushParseState(c, parseObjectKey, scanBeginObject)
+ 	case '[':
+ 		s.step = stateBeginValueOrEmpty
+-		s.pushParseState(parseArrayValue)
+-		return scanBeginArray
++		return s.pushParseState(c, parseArrayValue, scanBeginArray)
+ 	case '"':
+ 		s.step = stateInString
+ 		return scanBeginLiteral
+diff -ru a/jwk.go b/jwk.go
+--- a/jwk.go
++++ b/jwk.go
+@@ -481,13 +481,25 @@
+ 	return true
+ }
+ 
++// MaxRSAModulusBits is the largest RSA modulus size, in bits, that will be
++// accepted when parsing a JWK. Applications that need larger keys can raise
++// this limit.
++//
++// If modifying MaxRSAModulusBits, do it before any parsing occurs.
++var MaxRSAModulusBits = 4096
++
+ func (key rawJSONWebKey) rsaPublicKey() (*rsa.PublicKey, error) {
+ 	if key.N == nil || key.E == nil {
+ 		return nil, fmt.Errorf("go-jose/go-jose: invalid RSA key, missing n/e values")
+ 	}
+ 
++	n := key.N.bigInt()
++	if n.BitLen() > MaxRSAModulusBits {
++		return nil, fmt.Errorf("go-jose/go-jose: invalid RSA key, modulus too large")
++	}
++
+ 	return &rsa.PublicKey{
+-		N: key.N.bigInt(),
++		N: n,
+ 		E: key.E.toInt(),
+ 	}, nil
+ }
+@@ -628,16 +640,23 @@
+ 		return nil, fmt.Errorf("go-jose/go-jose: invalid RSA private key, missing %s value(s)", strings.Join(missing, ", "))
+ 	}
+ 
++	n := key.N.bigInt()
++	if n.BitLen() > MaxRSAModulusBits {
++		return nil, fmt.Errorf("go-jose/go-jose: invalid RSA key, modulus too large")
++	}
++
++	p, q := key.P.bigInt(), key.Q.bigInt()
++	if p.BitLen()+q.BitLen() > n.BitLen()+1 || new(big.Int).Mul(p, q).Cmp(n) != 0 {
++		return nil, errors.New("go-jose/go-jose: invalid RSA private key, p * q != n")
++	}
++
+ 	rv := &rsa.PrivateKey{
+ 		PublicKey: rsa.PublicKey{
+-			N: key.N.bigInt(),
++			N: n,
+ 			E: key.E.toInt(),
+ 		},
+-		D: key.D.bigInt(),
+-		Primes: []*big.Int{
+-			key.P.bigInt(),
+-			key.Q.bigInt(),
+-		},
++		D:      key.D.bigInt(),
++		Primes: []*big.Int{p, q},
+ 	}
+ 
+ 	if key.Dp != nil {

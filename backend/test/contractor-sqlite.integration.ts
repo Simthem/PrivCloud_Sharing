@@ -135,7 +135,7 @@ async function main() {
         }),
       ),
     );
-    const [admin, contractor, other] = users;
+    const [admin, contractor] = users;
     await prisma.user.update({
       where: { id: contractor.id },
       data: { email: contractor.email.toUpperCase() },

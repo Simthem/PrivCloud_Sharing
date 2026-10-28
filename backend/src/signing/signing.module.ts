@@ -12,6 +12,7 @@ import { ConfigModule } from "src/config/config.module";
 import { SigningWebAuthnService } from "./signing-webauthn.service";
 import { TeamNotificationModule } from "src/teamNotification/teamNotification.module";
 import { SigningEvidenceService } from "./signing-evidence.service";
+import { StepUpModule } from "src/auth/stepUp.module";
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { SigningEvidenceService } from "./signing-evidence.service";
     FileModule,
     ConfigModule,
     TeamNotificationModule,
+    StepUpModule,
   ],
   controllers: [SigningController],
   providers: [

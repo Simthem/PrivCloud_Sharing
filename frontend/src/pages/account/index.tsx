@@ -38,6 +38,7 @@ import { FormattedMessage, useIntl } from "react-intl";
 import * as yup from "yup";
 import Meta from "../../components/Meta";
 import LanguagePicker from "../../components/account/LanguagePicker";
+import EmailChangeSection from "../../components/account/EmailChangeSection";
 import PushNotificationSection from "../../components/account/PushNotificationSection";
 import PasskeysSection, {
   rememberPasskeyReauthIntent,
@@ -50,6 +51,7 @@ import useUser from "../../hooks/user.hook";
 import authService from "../../services/auth.service";
 import userService from "../../services/user.service";
 import { getOAuthIcon, getOAuthUrl, unlinkOAuth } from "../../utils/oauth.util";
+import { requestStepUp } from "../../utils/stepUp.util";
 import toast from "../../utils/toast.util";
 import { copyToClipboard } from "../../utils/clipboard.util";
 import { useQuery } from "@tanstack/react-query";
@@ -937,14 +939,22 @@ const Account = () => {
   // Accounts with a linked OAuth provider may confirm 2FA changes by signing
   // in again with it instead of typing a password (the only way for accounts
   // without one). The provider sends the user back here with ?totpReauth=1
-  // and an httpOnly proof cookie scoped to the 2FA routes.
+  // (?passwordReauth=1 for a first password) and an httpOnly proof cookie
+  // scoped to the auth routes.
   const linkedProviders = Object.keys(oauthStatus ?? {});
+  // Only providers that state when the user really signed in (OIDC
+  // auth_time) can confirm a first password. Microsoft omits it by default.
+  const freshSignInProviders = linkedProviders.filter((provider) =>
+    ["google", "oidc"].includes(provider),
+  );
   const [totpReauthReturned, setTotpReauthReturned] = useState(false);
+  // Same round trip, started to set the first password of such an account.
+  const [passwordReauthReturned, setPasswordReauthReturned] = useState(false);
   const [passkeyReauthReturned, setPasskeyReauthReturned] = useState(false);
   const [disableTotpCode, setDisableTotpCode] = useState("");
   const totpReauthHandled = useRef(false);
 
-  const startTotpReauth = async (provider: string) => {
+  const startOAuthReauth = async (provider: string, purpose?: "password") => {
     try {
       // Refreshes an expired access token before the full-page navigation.
       await authService.getOAuthStatus();
@@ -954,7 +964,8 @@ const Account = () => {
     // A full navigation: the API route redirects to the provider.
     window.location.assign(
       new URL(
-        `/api/oauth/reauth/${encodeURIComponent(provider)}`,
+        `/api/oauth/reauth/${encodeURIComponent(provider)}` +
+          (purpose ? `?purpose=${purpose}` : ""),
         window.location.origin,
       ).toString(),
     );
@@ -992,6 +1003,21 @@ const Account = () => {
       .catch(toast.axiosError);
   }, [user, modals, refreshUser]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("passwordReauth") !== "1") return;
+    params.delete("passwordReauth");
+    const query = params.toString();
+    window.history.replaceState(
+      window.history.state,
+      "",
+      window.location.pathname +
+        (query ? `?${query}` : "") +
+        window.location.hash,
+    );
+    setPasswordReauthReturned(true);
+  }, []);
+
   const totpReauthButtons = (description: string) => (
     <Stack gap="xs">
       <Text size="sm" c="dimmed">
@@ -1002,7 +1028,7 @@ const Account = () => {
           <Button
             key={provider}
             variant="light"
-            onClick={() => startTotpReauth(provider)}
+            onClick={() => startOAuthReauth(provider)}
           >
             {t("account.card.security.totp.oauth.confirm", {
               provider: t(`account.card.oauth.${provider}`),
@@ -1066,8 +1092,22 @@ const Account = () => {
                   <Badge size="md" color="violet" variant="filled">
                     Team - {t.teamName}
                   </Badge>
-                  <Badge size="sm" variant="light" color={t.role === "OWNER" ? "violet" : t.role === "ADMIN" ? "blue" : "gray"}>
-                    {t.role === "OWNER" ? "Propriétaire" : t.role === "ADMIN" ? "Admin" : "Membre"}
+                  <Badge
+                    size="sm"
+                    variant="light"
+                    color={
+                      t.role === "OWNER"
+                        ? "violet"
+                        : t.role === "ADMIN"
+                          ? "blue"
+                          : "gray"
+                    }
+                  >
+                    {t.role === "OWNER"
+                      ? "Propriétaire"
+                      : t.role === "ADMIN"
+                        ? "Admin"
+                        : "Membre"}
                   </Badge>
                 </Group>
               </Paper>
@@ -1086,7 +1126,6 @@ const Account = () => {
               userService
                 .updateCurrentUser({
                   username: values.username,
-                  email: values.email,
                 })
                 .then(() => toast.success(t("account.notify.info.success")))
                 .catch(toast.axiosError),
@@ -1100,8 +1139,8 @@ const Account = () => {
               />
               <TextInput
                 label={t("account.card.info.email")}
-                disabled={user?.isLdap}
-                {...accountForm.getInputProps("email")}
+                readOnly
+                value={user?.email ?? ""}
               />
               {!user?.isLdap && (
                 <Group justify="right">
@@ -1112,6 +1151,7 @@ const Account = () => {
               )}
             </Stack>
           </form>
+          <EmailChangeSection />
         </Paper>
         {user?.isLdap ? null : (
           <Paper withBorder p="xl" mt="lg">
@@ -1123,11 +1163,20 @@ const Account = () => {
                 authService
                   .updatePassword(values.oldPassword, values.password)
                   .then(async () => {
-                    refreshUser();
+                    await refreshUser();
                     toast.success(t("account.notify.password.success"));
                     passwordForm.reset();
+                    setPasswordReauthReturned(false);
                   })
-                  .catch(toast.axiosError),
+                  .catch((error) => {
+                    // The confirmation is spent or expired: offer it again.
+                    if (!user?.hasPassword && error?.response?.status === 403) {
+                      setPasswordReauthReturned(false);
+                      toast.error(t("error.msg.reauth_expired"));
+                      return;
+                    }
+                    toast.axiosError(error);
+                  }),
               )}
             >
               <Stack>
@@ -1141,15 +1190,49 @@ const Account = () => {
                     <FormattedMessage id="account.card.password.noPasswordSet" />
                   </Text>
                 )}
-                <PasswordInput
-                  label={t("account.card.password.new")}
-                  {...passwordForm.getInputProps("password")}
-                />
-                <Group justify="right">
-                  <Button type="submit">
-                    <FormattedMessage id="common.button.save" />
-                  </Button>
-                </Group>
+                {/* Without a password, a fresh sign-in with the linked
+                    provider comes first: a session alone cannot set one. */}
+                {user?.hasPassword || passwordReauthReturned ? (
+                  <>
+                    {!user?.hasPassword && (
+                      <Text size="sm">
+                        <FormattedMessage id="account.card.password.oauth.confirmed" />
+                      </Text>
+                    )}
+                    <PasswordInput
+                      label={t("account.card.password.new")}
+                      {...passwordForm.getInputProps("password")}
+                    />
+                    <Group justify="right">
+                      <Button type="submit">
+                        <FormattedMessage id="common.button.save" />
+                      </Button>
+                    </Group>
+                  </>
+                ) : freshSignInProviders.length > 0 ? (
+                  <Stack gap="xs">
+                    <Text size="sm" c="dimmed">
+                      {t("account.card.password.oauth.description")}
+                    </Text>
+                    <Group justify="right">
+                      {freshSignInProviders.map((provider) => (
+                        <Button
+                          key={provider}
+                          variant="light"
+                          onClick={() => startOAuthReauth(provider, "password")}
+                        >
+                          {t("account.card.security.totp.oauth.confirm", {
+                            provider: t(`account.card.oauth.${provider}`),
+                          })}
+                        </Button>
+                      ))}
+                    </Group>
+                  </Stack>
+                ) : oauthStatus ? (
+                  <Alert color="orange">
+                    {t("account.card.password.oauth.none")}
+                  </Alert>
+                ) : null}
               </Stack>
             </form>
           </Paper>
@@ -1215,7 +1298,19 @@ const Account = () => {
                     ) : (
                       <Button
                         component="a"
-                        href={getOAuthUrl(window.location.origin, provider)}
+                        href={`${getOAuthUrl(window.location.origin, provider)}?link=1`}
+                        onClick={(event) => {
+                          // A linked provider signs in to an administrator's
+                          // account for good: the server asks to confirm it.
+                          if (!user?.isAdmin) return;
+                          event.preventDefault();
+                          const href = event.currentTarget.href;
+                          void requestStepUp(`oauth.link:${provider}`).then(
+                            (confirmed) => {
+                              if (confirmed) window.location.assign(href);
+                            },
+                          );
+                        }}
                         color="orange"
                         variant="light"
                       >
@@ -1364,7 +1459,7 @@ const Account = () => {
           reauthReturned={passkeyReauthReturned}
           onReauth={(provider) => {
             rememberPasskeyReauthIntent();
-            void startTotpReauth(provider);
+            void startOAuthReauth(provider);
           }}
         />
         <PushNotificationSection />

@@ -354,7 +354,7 @@ testCase(
       eventHash: "e".repeat(64),
       ipAddress: "203.0.113.7",
       userAgent: "Test",
-    } as any);
+    } as Parameters<typeof toVisibleAuditEvent>[0]);
     assert.equal("ipAddress" in event, false);
     assert.equal("userAgent" in event, false);
   },

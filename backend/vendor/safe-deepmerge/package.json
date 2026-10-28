@@ -1,0 +1,8 @@
+{
+  "name": "@privcloud/safe-deepmerge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "deepmerge interface that never changes the prototype of a result",
+  "main": "index.cjs",
+  "license": "BSD-2-Clause"
+}

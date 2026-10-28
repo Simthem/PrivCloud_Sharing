@@ -11,6 +11,7 @@ function collectSpecs(directory: string): string[] {
 }
 
 const specs = [
+  "test/email-change.spec.ts",
   "test/upload-auth-renewal.spec.ts",
   "test/multipart-lifecycle.spec.ts",
   "test/pending-upload-access.spec.ts",

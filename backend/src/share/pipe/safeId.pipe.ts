@@ -15,7 +15,8 @@ import {
  */
 @Injectable()
 export class SafeIdPipe implements PipeTransform<string, string> {
-  private static readonly ALLOWED = /^[A-Za-z0-9_-]{1,255}$/u;
+  private static readonly ALLOWED =
+    /^(?:[A-Za-z0-9_-]{1,255}|v2\.[A-Za-z0-9_-]{3,47})$/u;
 
   transform(value: string, _metadata: ArgumentMetadata): string {
     if (typeof value !== "string" || !SafeIdPipe.ALLOWED.test(value)) {

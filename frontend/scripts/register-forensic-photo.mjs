@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -39,8 +39,17 @@ try {
     { timeout: 120_000, maxBuffer: 32 * 1024, cwd: temporary },
   )
   const response = JSON.parse(stdout)
-  assert.match(response.output, /^photo-registrations\/[a-f0-9]{32}$/)
-  const output = path.join(temporary, response.output)
+  // The helper reports where it wrote, but only this process's own temporary
+  // directory decides which files are read back.
+  const registrations = path.join(temporary, "photo-registrations")
+  const entries = await readdir(registrations)
+  assert.ok(
+    entries.length === 1 &&
+      /^[a-f0-9]{32}$/.test(entries[0]) &&
+      response.output === "photo-registrations/" + entries[0],
+    "The registration helper must create exactly one output directory",
+  )
+  const output = path.join(registrations, entries[0])
   const registration = JSON.parse(
     await readFile(path.join(output, "registration.json"), "utf8"),
   )
@@ -51,7 +60,9 @@ try {
   for (const { method } of registration.hypotheses) {
     assert.ok(method === "sift" || method === "ecc")
     const image = await document.embedPng(
-      await readFile(path.join(output, method + ".png")),
+      await readFile(
+        path.join(output, method === "sift" ? "sift.png" : "ecc.png"),
+      ),
     )
     const page = document.addPage([
       (image.width * 72) / 200,

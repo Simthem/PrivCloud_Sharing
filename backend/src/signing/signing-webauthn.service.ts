@@ -127,6 +127,11 @@ export class SigningWebAuthnService {
     private pdfSigningService: PdfSigningService,
   ) {}
 
+  /** The reinforced request behind this link, if it is assigned to the user. */
+  async assignedReinforcedRecipientId(signingToken: string, user: User) {
+    return (await this.getReinforcedRecipientForUser(signingToken, user.id)).id;
+  }
+
   async beginRegistration(signingToken: string, user: User) {
     const recipient = await this.getReinforcedRecipientForUser(
       signingToken,

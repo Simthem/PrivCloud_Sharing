@@ -104,6 +104,7 @@ export class ShareService {
       encryptedReverseShareKey: string | null;
       owner: Pick<User, "id" | "email"> | null;
     },
+    v2WritesEnabled = false,
   ): {
     cryptoScheme: number | null;
     wrappedShareKey: string | null;
@@ -117,6 +118,7 @@ export class ShareService {
       user,
       isReverseShareUpload,
       isTeamShare,
+      v2WritesEnabled,
     );
     if (
       share.fileMetadataScheme === undefined ||
@@ -163,7 +165,7 @@ export class ShareService {
       scope = "personal";
       enabled = isFileMetaWriteEnabledFor(user);
     }
-    if (!enabled) {
+    if (!enabled && !v2WritesEnabled) {
       this.logger.warn(
         `Share file names refused: share=redacted fileMetadataScheme=FILE_META_V1 scope=${scope} reason=write_disabled`,
       );
@@ -211,6 +213,7 @@ export class ShareService {
     user: Pick<User, "id" | "email"> | undefined,
     isReverseShareUpload: boolean,
     isTeamShare: boolean,
+    v2WritesEnabled = false,
   ): {
     cryptoScheme: number | null;
     wrappedShareKey: string | null;
@@ -264,7 +267,10 @@ export class ShareService {
         "SHARE_DEK_V1 requires a wrapped share key and its algorithm",
       );
     }
-    if (!isShareDekReadEnabled() || !isShareDekWriteEnabledFor(user)) {
+    if (
+      !isShareDekReadEnabled() ||
+      (!v2WritesEnabled && !isShareDekWriteEnabledFor(user))
+    ) {
       this.logger.warn(
         `Share crypto refused: share=redacted cryptoScheme=SHARE_DEK_V1 reason=write_disabled`,
       );
@@ -281,7 +287,17 @@ export class ShareService {
     };
   }
 
-  async create(share: CreateShareDTO, user?: User, reverseShareToken?: string) {
+  async create(
+    share: CreateShareDTO,
+    user?: User,
+    reverseShareToken?: string,
+    clientContentScheme?: 2,
+  ) {
+    if (share.id.startsWith("v2.") && !share.isE2EEncrypted) {
+      throw new BadRequestException(
+        "A v2 share identifier requires end-to-end encryption",
+      );
+    }
     if (!(await this.isShareIdAvailable(share.id)).isAvailable)
       throw new BadRequestException("Share id already in use");
 
@@ -496,6 +512,9 @@ export class ShareService {
             owner: reverseShareOwner,
           }
         : undefined,
+      clientContentScheme === 2 ||
+        (await this.configService.isContentV2WritesEnabled?.()) ||
+        (await this.configService.isContentV2FloorEnabled?.()),
     );
 
     const shareTuple = await this.prisma.$transaction(async (tx) => {

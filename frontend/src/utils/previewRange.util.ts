@@ -1,3 +1,16 @@
+import {
+  isContentV2ShareId,
+  isContentV2FileId,
+} from "./shareContentContext.util";
+import {
+  CONTENT_V2_HEADER_LENGTH,
+  ContentIntegrityError,
+  assertContentAllowed,
+  isContentV2,
+  openContentV2,
+  type ContentContext,
+  type OpenedContentV2,
+} from "./contentV2.util";
 import { decryptFile, ENCRYPTION_OVERHEAD } from "./crypto.util";
 import { createPreviewReadCache } from "./previewReadCache.util";
 
@@ -16,29 +29,35 @@ type RangeFetcher = (
 ) => Promise<Response>;
 export const PREVIEW_READ_BYTES = 1024 * 1024;
 
-/** A range must really be partial: never buffer a server's full-file fallback. */
+/**
+ * A range must really be partial: never buffer a server's full-file fallback.
+ * With allowShorter, a range past the end is accepted as clipped to the file.
+ */
 export async function readVerifiedRange(
   fetchRange: RangeFetcher,
   start: number,
   end: number,
   signal?: AbortSignal,
+  allowShorter = false,
 ) {
   const response = await fetchRange(start, end, signal);
   const match = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(
     response.headers.get("Content-Range") || "",
   );
+  const total = Number(match?.[3]);
+  const last = allowShorter ? Math.min(end, total - 1) : end;
   if (
     response.status !== 206 ||
     !match ||
     Number(match[1]) !== start ||
-    Number(match[2]) !== end ||
-    !Number.isSafeInteger(Number(match[3])) ||
-    Number(match[3]) <= end
+    Number(match[2]) !== last ||
+    !Number.isSafeInteger(total) ||
+    total <= last
   ) {
     await response.body?.cancel();
     throw new Error("Preview requires valid byte-range responses");
   }
-  const expected = end - start + 1;
+  const expected = last - start + 1;
   const reader = response.body?.getReader();
   if (!reader) throw new Error("Missing preview response body");
   const bytes = new Uint8Array(expected);
@@ -66,8 +85,27 @@ export async function createPreviewByteSource(
   key?: CryptoKey,
   legacyChunkSize: number | (() => Promise<number>) = 10_000_000,
   signal?: AbortSignal,
+  context?: ContentContext,
 ): Promise<PreviewByteSource> {
-  const initial = await readVerifiedRange(fetchRange, 0, 0, signal);
+  // An encrypted source reads the v2 header span in the same first request.
+  const initial = await readVerifiedRange(
+    fetchRange,
+    0,
+    key ? CONTENT_V2_HEADER_LENGTH - 1 : 0,
+    signal,
+    true,
+  );
+  if (
+    !key &&
+    context &&
+    "fileId" in context &&
+    (isContentV2FileId(context.fileId) ||
+      !!(context.shareId && isContentV2ShareId(context.shareId)))
+  ) {
+    throw new ContentIntegrityError(
+      "An encryption key is required for this context",
+    );
+  }
   const encryptedSize = initial.total;
   let recordSize = Number(initial.headers.get("X-Encryption-Chunk-Size"));
   let cachedIndex = -1;
@@ -87,8 +125,18 @@ export async function createPreviewByteSource(
       throw new Error("Preview file changed during reading");
     return result.bytes;
   };
+  let v2: OpenedContentV2 | null = null;
+  if (key) await assertContentAllowed(key, initial.bytes, context);
+  if (key && isContentV2(initial.bytes)) {
+    if (!context) {
+      throw new ContentIntegrityError("v2 content is not readable here");
+    }
+    v2 = await openContentV2(key, context, encryptedSize, initial.bytes);
+    recordSize = v2.recordSize;
+  }
   if (
     key &&
+    !v2 &&
     !(
       Number.isSafeInteger(recordSize) &&
       recordSize >= 1_000_000 &&
@@ -145,13 +193,16 @@ export async function createPreviewByteSource(
   const remainder = encryptedSize % encryptedRecordSize;
   if (
     key &&
+    !v2 &&
     (recordSize <= 0 || (remainder > 0 && remainder <= ENCRYPTION_OVERHEAD))
   )
     throw new Error("Invalid encrypted preview layout");
-  const size = key
-    ? encryptedSize -
-      Math.ceil(encryptedSize / encryptedRecordSize) * ENCRYPTION_OVERHEAD
-    : encryptedSize;
+  const size = v2
+    ? v2.size
+    : key
+      ? encryptedSize -
+        Math.ceil(encryptedSize / encryptedRecordSize) * ENCRYPTION_OVERHEAD
+      : encryptedSize;
   // Three independent reads hide round-trip latency without unbounded prefetch.
   // Large historical GCM records retain at most one record and load one at a time.
   const budget = Math.max(24 * 1024 * 1024, key ? recordSize : 0);
@@ -197,6 +248,16 @@ export async function createPreviewByteSource(
                   Math.min(size, (index + 1) * blockSize),
                   loadSignal,
                 );
+              if (v2) {
+                const [storedStart, storedEnd] = v2.recordRange(index);
+                const stored = await readStored(
+                  storedStart,
+                  storedEnd,
+                  loadSignal,
+                );
+                loadSignal.throwIfAborted();
+                return v2.decryptRecord(index, stored);
+              }
               if (index === cachedIndex && legacyRecord) {
                 const first = legacyRecord;
                 legacyRecord = null;

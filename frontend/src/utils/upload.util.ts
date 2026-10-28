@@ -1,5 +1,9 @@
+import { contentV2FileId } from "./shareContentContext.util";
 import { scheduleUploadInterval } from "./uploadClock.util";
 import { fingerprintUploadFile, getUploadResumeEntry, rememberUploadResumeEntry, forgetUploadResumeEntry } from "./uploadResume.util";
+import { contentWriteScheme } from "./contentV2.util";
+import { contentPolicy, noteContentV2Required } from "./contentPolicy.util";
+import { arrayBufferToBase64Url, base64UrlToArrayBuffer } from "./crypto.util";
 import { showNotification } from "@mantine/notifications";
 import { createElement } from "react";
 import {
@@ -57,7 +61,17 @@ let activeLargeProbeController: AbortController | null = null;
 let bandwidthProbeGeneration = 0;
 
 const WORKER_CACHE_KEY = Math.random().toString(36).slice(2);
-const multipartFileIds = new WeakMap<Blob, Map<string, string>>();
+/**
+ * The id of a file, with the format and v2 header nonce its first session
+ * used. The server may hold parts of that session: they are only reused
+ * under the same id, format and nonce.
+ */
+type StableUpload = {
+  id: string;
+  contentScheme: 1 | 2;
+  contentNonce?: Uint8Array<ArrayBuffer>;
+};
+const multipartFileIds = new WeakMap<Blob, Map<string, StableUpload>>();
 const PAGE_UPLOAD_COORDINATOR_KEY = "browser-direct-s3-page-pool";
 
 function createMultipartFileId(): string {
@@ -75,11 +89,24 @@ function createMultipartFileId(): string {
   ].join("-");
 }
 
-function getStableMultipartFileId(file: File | Blob, shareId: string): string {
+function getStableMultipartUpload(
+  file: File | Blob,
+  shareId: string,
+  contentScheme: 1 | 2,
+): StableUpload {
   let idsByShare = multipartFileIds.get(file);
   const existing = idsByShare?.get(shareId);
-  if (existing) return existing;
-  const created = createMultipartFileId();
+  if (existing?.contentScheme === contentScheme) return existing;
+  const created: StableUpload = {
+    id:
+      contentScheme === 2
+        ? contentV2FileId(createMultipartFileId())
+        : createMultipartFileId(),
+    contentScheme,
+    ...(contentScheme === 2 && {
+      contentNonce: crypto.getRandomValues(new Uint8Array(16)),
+    }),
+  };
   if (!idsByShare) {
     idsByShare = new Map();
     multipartFileIds.set(file, idsByShare);
@@ -384,6 +411,8 @@ function runWorkerBatch(
   maxParallelLanes?: number,
   plannedFileConcurrency?: number,
   encryptedMetadata?: string,
+  contentScheme: 1 | 2 = 1,
+  contentNonce?: Uint8Array<ArrayBuffer>,
 ): Promise<{ fileId: string; nextChunk: number }> {
   return new Promise((resolve, reject) => {
     const worker = new Worker("/upload-worker.js?v=" + WORKER_CACHE_KEY);
@@ -709,6 +738,8 @@ function runWorkerBatch(
       encryptedMetadata,
       maxParallelLanes,
       plannedFileConcurrency,
+      contentScheme,
+      contentNonce: contentNonce?.slice().buffer,
       // Current backends continuously advertise the fair data window. The
       // Worker keeps only a hardware/memory safety ceiling and falls back to
       // legacy chunk-0 negotiation during rolling upgrades.
@@ -741,36 +772,65 @@ export async function uploadFileViaWorker(
   encryptFileName = false,
 ): Promise<string> {
   let cryptoKeyRaw: ArrayBuffer | null = null;
+  let contentScheme: 1 | 2 = 1;
   if (isE2E) {
     if (!cryptoKey) {
       throw new Error("E2E encryption key is required for encrypted uploads");
     }
     cryptoKeyRaw = await crypto.subtle.exportKey("raw", cryptoKey);
+    contentScheme = contentWriteScheme(cryptoKey, contentPolicy().v2Writes);
   }
 
   // Keep the UUID stable across the page-level retry queue. The backend can
   // then reconcile already committed S3 parts instead of creating an orphaned
-  // multipart upload and retransmitting the complete file.
-  const resume = getUploadResumeEntry(file, shareId);
+  // multipart upload and retransmitting the complete file. A resumed upload
+  // keeps the format of its first session, except that a v1 session is
+  // restarted under a new id once the file must be written in v2.
+  let resume = getUploadResumeEntry(file, shareId);
+  if (resume && (resume.contentScheme ?? 1) < contentScheme) {
+    forgetUploadResumeEntry(file, shareId);
+    forgetStableMultipartFileId(file, shareId);
+    resume = undefined;
+  }
+  if (resume?.contentScheme === 2) contentScheme = 2;
   if (resume) chunkSize = resume.chunkSize;
-  let fileId: string | undefined = resume?.fileId ?? getStableMultipartFileId(file, shareId);
+  if (contentScheme === 2) {
+    // v2 records hold exactly 1 MB, so parts end on record boundaries.
+    chunkSize = Math.max(
+      E2E_CRYPTO_RECORD_SIZE,
+      Math.floor(chunkSize / E2E_CRYPTO_RECORD_SIZE) * E2E_CRYPTO_RECORD_SIZE,
+    );
+  }
+  const stable = resume
+    ? undefined
+    : getStableMultipartUpload(file, shareId, contentScheme);
+  let fileId: string | undefined = resume?.fileId ?? stable!.id;
+  const contentNonce =
+    contentScheme === 2
+      ? resume
+        ? new Uint8Array(base64UrlToArrayBuffer(resume.contentNonce ?? ""))
+        : stable!.contentNonce!
+      : undefined;
 
   // FILE_META_V1: the server only receives a placeholder name, the real
   // name and folder path travel encrypted with the share key.
   let fileName = file instanceof File ? file.name : "blob";
   let uploadRelativePath = relativePath;
   let encryptedMetadata: string | undefined;
-  if (encryptFileName) {
+  if (encryptFileName || contentScheme === 2) {
     if (!cryptoKey) {
       throw new Error("Encrypted file names require the share key");
     }
-    encryptedMetadata = resume?.encryptedMetadata ?? await encryptFileMetadata(
-      cryptoKey,
-      shareId,
-      fileId,
-      fileName,
-      relativePath,
-    );
+    encryptedMetadata =
+      resume?.encryptedMetadata ??
+      (await encryptFileMetadata(
+        cryptoKey,
+        shareId,
+        fileId,
+        fileName,
+        relativePath,
+        contentScheme === 2 ? 2 : undefined,
+      ));
     fileName = encryptedFilePlaceholderName(fileId);
     uploadRelativePath = undefined;
   }
@@ -792,6 +852,10 @@ export async function uploadFileViaWorker(
       chunkSize, initialChunkSize, totalChunks,
       cryptoChunkSize,
       encryptedMetadata, savedAt: Date.now(),
+      ...(contentNonce && {
+        contentScheme: 2 as const,
+        contentNonce: arrayBufferToBase64Url(contentNonce.slice().buffer),
+      }),
     }, cryptoKey);
   }
 
@@ -817,9 +881,18 @@ export async function uploadFileViaWorker(
       maxParallelLanes,
       plannedFileConcurrency,
       encryptedMetadata,
+      contentScheme,
+      contentNonce,
     );
   } catch (error: any) {
     if (error?.cancelled) forgetStableMultipartFileId(file, shareId);
+    // The server already requires v2: the next attempt starts again in v2
+    // under a new id, without the v1 session.
+    if (error?.data?.error === "e2ee_content_v2_required") {
+      noteContentV2Required();
+      forgetStableMultipartFileId(file, shareId);
+      forgetUploadResumeEntry(file, shareId);
+    }
     throw error;
   }
 

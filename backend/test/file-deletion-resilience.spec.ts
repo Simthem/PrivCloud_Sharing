@@ -15,11 +15,36 @@ const silentLogger = {
 
 const fileRecord = { id: "file-1", name: "contract.pdf", size: "1024" };
 
+type S3Command = {
+  input: { UploadId?: string; KeyMarker?: string; UploadIdMarker?: string };
+  constructor: { name: string };
+};
+// Storage services built from their prototype, with the collaborators a test
+// replaces and the methods it calls.
+type StorageDouble = {
+  logger: typeof silentLogger;
+  config: { get: () => string };
+  prisma: {
+    file: {
+      findFirst: () => Promise<unknown>;
+      delete: (query: { where: { id: string } }) => Promise<unknown>;
+    };
+  };
+  getShareObjectKey: () => string;
+  getSharePrefix: () => string;
+  resolveSharePath: () => string;
+  multipartUploads: Map<string, unknown>;
+  abortShareMultipartUploads: (shareId: string) => Promise<void>;
+  getS3Instance: () => { send: (command: S3Command) => Promise<unknown> };
+  remove(shareId: string, fileId: string): Promise<unknown>;
+  deleteAllFiles(shareId: string): Promise<unknown>;
+};
+
 // The constructor schedules an interval; the prototype is enough to exercise
 // remove() without leaving a timer behind.
 const buildS3Service = (send: () => Promise<unknown>) => {
   const deleted: string[] = [];
-  const service = Object.create(S3FileService.prototype) as any;
+  const service: StorageDouble = Object.create(S3FileService.prototype);
   service.logger = silentLogger;
   service.config = { get: () => "bucket" };
   service.prisma = {
@@ -39,10 +64,14 @@ const buildS3Service = (send: () => Promise<unknown>) => {
 testCase(
   "removes the database record when the S3 object is already gone",
   async () => {
-    const missingKey: any = new Error("The specified key does not exist.");
-    missingKey.name = "NoSuchKey";
-    missingKey.Code = "NoSuchKey";
-    missingKey.$metadata = { httpStatusCode: 404 };
+    const missingKey = Object.assign(
+      new Error("The specified key does not exist."),
+      {
+        name: "NoSuchKey",
+        Code: "NoSuchKey",
+        $metadata: { httpStatusCode: 404 },
+      },
+    );
 
     const { service, deleted } = buildS3Service(async () => {
       throw missingKey;
@@ -55,9 +84,10 @@ testCase(
 testCase(
   "still refuses to delete the record on a real S3 failure",
   async () => {
-    const denied: any = new Error("Access Denied");
-    denied.name = "AccessDenied";
-    denied.$metadata = { httpStatusCode: 403 };
+    const denied = Object.assign(new Error("Access Denied"), {
+      name: "AccessDenied",
+      $metadata: { httpStatusCode: 403 },
+    });
 
     const { service, deleted } = buildS3Service(async () => {
       throw denied;
@@ -74,7 +104,7 @@ testCase(
   "removes the database record when the stored file is already gone",
   async () => {
     const deleted: string[] = [];
-    const service = Object.create(LocalFileService.prototype) as any;
+    const service: StorageDouble = Object.create(LocalFileService.prototype);
     service.logger = silentLogger;
     service.prisma = {
       file: {
@@ -94,7 +124,7 @@ testCase(
 
 
 testCase("batch S3 errors inside HTTP 200 prevent successful share deletion", async () => {
-  const service: any = Object.create(S3FileService.prototype);
+  const service: StorageDouble = Object.create(S3FileService.prototype);
   service.logger = silentLogger; service.config = { get: () => "bucket" };
   service.getSharePrefix = () => "share-1/"; service.abortShareMultipartUploads = async () => {};
   let sends = 0;
@@ -103,7 +133,7 @@ testCase("batch S3 errors inside HTTP 200 prevent successful share deletion", as
 });
 testCase("multipart abort errors propagate while already absent uploads remain idempotent", async () => {
   for (const code of ["AccessDenied", "NoSuchUpload"]) {
-    const service: any = Object.create(S3FileService.prototype);
+    const service: StorageDouble = Object.create(S3FileService.prototype);
     service.logger = silentLogger; service.config = { get: () => "bucket" };
     service.getSharePrefix = () => "share-1/"; service.multipartUploads = new Map();
     let sends = 0;
@@ -113,11 +143,11 @@ testCase("multipart abort errors propagate while already absent uploads remain i
   }
 });
 testCase("multipart cancellation paginates before acknowledging deletion", async () => {
-  const service: any = Object.create(S3FileService.prototype);
+  const service: StorageDouble = Object.create(S3FileService.prototype);
   service.logger = silentLogger; service.config = { get: () => "bucket" };
   service.getSharePrefix = () => "share-1/"; service.multipartUploads = new Map();
-  const queries: any[] = [];
-  service.getS3Instance = () => ({ send: async (command: any) => {
+  const queries: S3Command["input"][] = [];
+  service.getS3Instance = () => ({ send: async (command: S3Command) => {
     queries.push(command.input);
     if (command.constructor.name === "AbortMultipartUploadCommand") return {};
     return command.input.KeyMarker ? { Uploads: [{ Key: "share-1/file-2", UploadId: "u2" }] } : { Uploads: [{ Key: "share-1/file-1", UploadId: "u1" }], IsTruncated: true, NextKeyMarker: "share-1/file-1", NextUploadIdMarker: "u1" };

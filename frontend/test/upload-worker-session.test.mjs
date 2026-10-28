@@ -40,6 +40,8 @@ async function transfer(options = {}) {
     lastStorageCompletion: null,
     idleGaps: [],
     authorizationRequests: 0,
+    expiredPuts: 0,
+    forbiddenPuts: 0,
     firstReads: new Map(),
   };
   const schedule = (fn, delay) => {
@@ -187,12 +189,22 @@ async function transfer(options = {}) {
           chunkIndex,
           contentLength,
           partNumber: chunkIndex + 1,
-          url: `https://storage.example.test/part/${chunkIndex}`,
+          url: `https://storage.example.test/part/${chunkIndex}?signedAt=${now}`,
+          expiresInSeconds: 300,
         })),
       });
     }
     if (parsed.origin === "https://storage.example.test") {
       const index = Number(parsed.pathname.split("/").pop());
+      // S3 refuses a presigned URL older than its lifetime with 403.
+      if (now - Number(parsed.searchParams.get("signedAt")) > 300_000) {
+        stats.expiredPuts++;
+        return json({}, 403);
+      }
+      if (options.forbiddenIndex === index && stats.forbiddenPuts === 0) {
+        stats.forbiddenPuts++;
+        return json({}, 403);
+      }
       if (options.storageDelay) {
         if (stats.storageActive === 0 && stats.lastStorageCompletion !== null) stats.idleGaps.push(now - stats.lastStorageCompletion);
         stats.storageActive++;
@@ -444,4 +456,23 @@ test("authorization lookahead skips saved batches and handles a resumed batch bo
   assert.equal(f.stats.reads, f.totalChunks - savedIndexes.length);
   assert.equal(f.stats.authorizationRequests, 2);
   assert.equal(f.stats.relays, 0);
+});
+
+test("parts that wait past the URL lifetime are signed again instead of refused", async () => {
+  const f = await transfer({ size: 1_532_000_000, storageDelay: 200_000 });
+  assert.equal(f.terminal.type, "batch-complete");
+  assert.equal(f.complete, true);
+  assert.equal(f.stats.expiredPuts, 0, "an expired URL reached the storage");
+  assert.equal(f.stats.relays, 0);
+});
+
+test("a refused signature renews the part without cooling the storage origin down", async () => {
+  const f = await transfer({ size: 332_000_000, forbiddenIndex: 2 });
+  assert.equal(f.terminal.type, "batch-complete");
+  assert.equal(f.complete, true);
+  assert.equal(f.stats.forbiddenPuts, 1);
+  assert.equal(f.stats.relays, 0);
+  const outcomes = f.messages.filter((message) => message.type === "release-direct-slot").map((message) => message.outcome);
+  assert.equal(outcomes.includes("transient"), false, "a 403 paused the origin");
+  assert.equal(outcomes.includes("cancelled"), true);
 });

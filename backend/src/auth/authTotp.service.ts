@@ -16,7 +16,7 @@ import { assertEmailVerificationAccess } from "src/emailVerification/emailVerifi
 import { AuthService } from "./auth.service";
 import { AuthSignInTotpDTO } from "./dto/authSignInTotp.dto";
 
-import { OAuthReauthService } from "./oauthReauth.service";
+import { OAuthReauthPurpose, OAuthReauthService } from "./oauthReauth.service";
 export type TotpStepUp = { password?: string; reauthProof?: string };
 
 const BACKUP_CODE_COUNT = 10;
@@ -45,6 +45,7 @@ export class AuthTotpService {
   private async assertStepUp(
     user: User,
     credentials: TotpStepUp,
+    purpose: OAuthReauthPurpose = "TOTP",
   ): Promise<"password" | "oauth"> {
     if (credentials.password) {
       if (!(await this.authService.verifyPassword(user, credentials.password)))
@@ -56,7 +57,11 @@ export class AuthTotpService {
     });
     if (
       linked === 0 ||
-      !(await this.oauthReauth.hasProof(credentials.reauthProof, user.id))
+      !(await this.oauthReauth.hasProof(
+        credentials.reauthProof,
+        user.id,
+        purpose,
+      ))
     ) {
       throw new ForbiddenException(
         linked === 0
@@ -71,10 +76,15 @@ export class AuthTotpService {
     user: User,
     method: "password" | "oauth",
     credentials: TotpStepUp,
+    purpose: OAuthReauthPurpose = "TOTP",
   ) {
     if (
       method === "oauth" &&
-      !(await this.oauthReauth.consumeProof(credentials.reauthProof, user.id))
+      !(await this.oauthReauth.consumeProof(
+        credentials.reauthProof,
+        user.id,
+        purpose,
+      ))
     ) {
       throw new ForbiddenException("Sign in again with your linked account");
     }
@@ -155,6 +165,13 @@ export class AuthTotpService {
     return this.tryBackupCode(userId, code);
   }
 
+  /** A code typed to confirm a change counts towards the account's lock. */
+  private verifyStepUpCode(user: User, totpSecret: string, code: string) {
+    return this.authService.countReauthentication(user.id, () =>
+      this.verifyTotpOrBackup(user.id, totpSecret, code),
+    );
+  }
+
   // -- Sign in with TOTP -----------------------------------------
 
   async signInTotp(dto: AuthSignInTotpDTO) {
@@ -188,9 +205,32 @@ export class AuthTotpService {
       throw new BadRequestException("TOTP is not enabled");
     }
 
-    if (!(await this.verifyTotpOrBackup(token.user.id, totpSecret, dto.totp))) {
+    // Reserve a code check before verification so concurrent requests share
+    // the same five-attempt limit, including tokens created by older servers.
+    const reserved = await this.prisma.loginToken.updateMany({
+      where: {
+        token: token.token,
+        used: false,
+        expiresAt: { gt: new Date() },
+        attempts: { lt: 5 },
+      },
+      data: { attempts: { increment: 1 } },
+    });
+    if (reserved.count !== 1) {
+      throw new UnauthorizedException("Invalid login token");
+    }
+
+    // Counted towards the account's lock as well: a new login token per
+    // correct password must not mean five fresh guesses each time.
+    if (
+      !(await this.authService.countReauthentication(token.user.id, () =>
+        this.verifyTotpOrBackup(token.user.id, totpSecret, dto.totp),
+      ))
+    ) {
       throw new BadRequestException("Invalid code");
     }
+    // The sign-in is complete: its failure count restarts.
+    await this.authService.clearLoginFailures(token.user.id);
 
     // Consume the one-time token atomically. Two valid TOTP requests can race;
     // only the request that changes `used` from false to true may create a
@@ -321,7 +361,7 @@ export class AuthTotpService {
       throw new BadRequestException("TOTP is not enabled");
     }
 
-    if (!(await this.verifyTotpOrBackup(user.id, totpSecret, code))) {
+    if (!(await this.verifyStepUpCode(user, totpSecret, code))) {
       throw new BadRequestException("Invalid code");
     }
     await this.spendStepUp(user, method, credentials);
@@ -348,12 +388,18 @@ export class AuthTotpService {
    * such as adding a passkey: the password (or a fresh linked OAuth sign-in)
    * and, when 2FA is on, a current code. The same proof as disabling 2FA.
    */
+  /**
+   * The proof of a 2FA change, also asked of an administrator before a
+   * sensitive operation (`ADMIN`): the password or a fresh linked sign-in,
+   * plus the current code when 2FA is on. Returns the factor that was proven.
+   */
   async confirmSecondFactorChange(
     user: User,
     credentials: TotpStepUp,
     code?: string,
+    purpose: OAuthReauthPurpose = "TOTP",
   ) {
-    const method = await this.assertStepUp(user, credentials);
+    const method = await this.assertStepUp(user, credentials, purpose);
     if (user.totpVerified) {
       const stored = await this.prisma.user.findUnique({
         where: { id: user.id },
@@ -362,12 +408,24 @@ export class AuthTotpService {
       if (
         !code ||
         !stored?.totpSecret ||
-        !(await this.verifyTotpOrBackup(user.id, stored.totpSecret, code))
+        !(await this.verifyStepUpCode(user, stored.totpSecret, code))
       ) {
         throw new BadRequestException("Invalid code");
       }
     }
-    await this.spendStepUp(user, method, credentials);
+    await this.spendStepUp(user, method, credentials, purpose);
+    return method;
+  }
+
+  async confirmEmailChangeFactor(user: User, code?: string) {
+    if (
+      user.totpVerified &&
+      (!user.totpSecret ||
+        !code ||
+        !(await this.verifyStepUpCode(user, user.totpSecret, code)))
+    ) {
+      throw new BadRequestException("Invalid code");
+    }
   }
 
   // -- Admin: force-disable TOTP for a user ----------------------
@@ -375,19 +433,22 @@ export class AuthTotpService {
   async adminDisableTotp(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { totpEnabled: true },
+      select: { totpEnabled: true, totpVerified: true, totpSecret: true },
     });
 
     if (!user) {
       throw new BadRequestException("User not found");
     }
 
-    if (!user.totpEnabled) {
+    // Sign-in asks for a code as soon as totpVerified is set. Any trace of a
+    // second factor must therefore be resettable, not only a complete one.
+    if (!user.totpEnabled && !user.totpVerified && !user.totpSecret) {
       throw new BadRequestException("TOTP is not enabled for this user");
     }
 
     await this.prisma.$transaction([
       this.prisma.totpBackupCode.deleteMany({ where: { userId } }),
+      this.prisma.loginToken.deleteMany({ where: { userId } }),
       this.prisma.user.update({
         where: { id: userId },
         data: {

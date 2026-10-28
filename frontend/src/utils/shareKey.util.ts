@@ -1,3 +1,4 @@
+import { isContentV2ShareId } from "./shareContentContext.util";
 /**
  * Key of a personal E2E share, as seen by its owner.
  *
@@ -21,6 +22,7 @@ import {
   unwrapShareKey,
   wrapShareKey,
 } from "./crypto.util";
+import { hasContentV2Floor, setContentV2Floor } from "./contentV2.util";
 
 export const LEGACY_ACCOUNT_KEY = 1;
 export const SHARE_DEK_V1 = 2;
@@ -87,6 +89,7 @@ async function sameRawKey(a: CryptoKey, b: CryptoKey): Promise<boolean> {
 export async function createShareDek(
   masterKeyEncoded: string,
   shareId: string,
+  options: { v2Floor?: boolean } = {},
 ): Promise<{
   key: CryptoKey;
   encodedKey: string;
@@ -94,10 +97,13 @@ export async function createShareDek(
   wrappedShareKeyAlgorithm: string;
 }> {
   const masterKey = await importKeyFromBase64(masterKeyEncoded);
-  const key = await generateEncryptionKey();
+  const key = await generateEncryptionKey(options);
   const wrappedShareKey = await wrapShareKey(key, masterKey, shareId);
   const reopened = await unwrapShareKey(wrappedShareKey, masterKey, shareId);
-  if (!(await sameRawKey(key, reopened))) {
+  if (
+    !(await sameRawKey(key, reopened)) ||
+    hasContentV2Floor(key) !== hasContentV2Floor(reopened)
+  ) {
     throw new ShareKeyUnavailableError("Share key self-check failed");
   }
   return {
@@ -128,6 +134,7 @@ export async function resolveOwnerShareKey(
       material.encryptedReverseShareKey,
       masterKey,
     );
+    if (isContentV2ShareId(shareId)) setContentV2Floor(rsKey);
     return exportKeyToBase64(rsKey);
   }
   if (resolveShareCryptoScheme(material.cryptoScheme) === SHARE_DEK_V1) {
@@ -139,7 +146,13 @@ export async function resolveOwnerShareKey(
       masterKey,
       shareId,
     );
+    if (isContentV2ShareId(shareId)) setContentV2Floor(shareKey);
     return exportKeyToBase64(shareKey);
+  }
+  if (isContentV2ShareId(shareId)) {
+    throw new ShareKeyUnavailableError(
+      "The wrapped key of this v2 share is required",
+    );
   }
   return masterKeyEncoded;
 }

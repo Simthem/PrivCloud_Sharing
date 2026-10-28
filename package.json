@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing",
-  "version": "1.25.3",
+  "version": "1.26.0",
   "scripts": {
     "format": "cd frontend && npm run format && cd ../backend && npm run format",
     "lint": "cd frontend && npm run lint && cd ../backend && npm run lint",
@@ -9,7 +9,7 @@
     "test:bridge": "npm --prefix bridge test",
     "test:integrations": "node --test integrations/test/*.test.mjs",
     "test:oss-parity": "node --test scripts/test/open-source-parity.test.mjs",
-    "test:release": "npm run test:oss-parity && npm run test:frontend && npm run test:unit && npm --prefix backend run test:team-file-requests && npm run test:contractors && npm run test:verification && npm run test:bridge && npm run test:integrations && npm --prefix docs run audit:ci",
+    "test:release": "npm run test:oss-parity && npm run test:frontend && npm run test:unit && npm --prefix backend run test:team-file-requests && npm run test:contractors && npm --prefix backend run test:sign-in-races && npm --prefix backend run test:email-change && npm run test:verification && npm run test:bridge && npm run test:integrations && npm --prefix docs run audit:ci",
     "security:audit": "npm audit --audit-level=high && npm --prefix backend audit --audit-level=high && npm --prefix frontend audit --audit-level=high && npm --prefix scripts audit --audit-level=high && npm --prefix docs audit --audit-level=high && npm --prefix verification/contractor audit --audit-level=high",
     "security:snyk:code": "snyk code test . --report --project-name='Github_Public_OpenSource' --org=themthem58",
     "build:companion": "npm --prefix bridge run build",

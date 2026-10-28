@@ -7,6 +7,7 @@ import {
   ParseFilePipe,
   Patch,
   Post,
+  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -14,6 +15,10 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import "multer";
 import { SkipThrottle } from "@nestjs/throttler";
+import { User } from "@prisma/client";
+import { Request } from "express";
+import { StepUpService } from "src/auth/stepUp.service";
+import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { AdministratorGuard } from "src/auth/guard/isAdmin.guard";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
 import { EmailService } from "src/email/email.service";
@@ -31,6 +36,16 @@ import { LogoService } from "./logo.service";
 import { LOGO_UPLOAD_OPTIONS } from "./logo-upload.config";
 import { NoCacheInterceptor } from "./interceptor/no-cache.interceptor";
 
+// Settings an administrator may change without confirming their identity.
+const UNCONFIRMED_CONFIG_CATEGORIES = [
+  "announcement",
+  "share",
+  "cache",
+  "legal",
+  "pushNotifications",
+  "team",
+];
+
 @Controller("configs")
 @UseInterceptors(NoCacheInterceptor)
 export class ConfigController {
@@ -38,6 +53,7 @@ export class ConfigController {
     private configService: ConfigService,
     private logoService: LogoService,
     private emailService: EmailService,
+    private stepUp: StepUpService,
   ) {}
 
   @Get()
@@ -73,7 +89,24 @@ export class ConfigController {
 
   @Patch("admin")
   @UseGuards(JwtGuard, AdministratorGuard)
-  async updateMany(@Body() data: UpdateConfigDTO[]) {
+  async updateMany(
+    @Body() data: UpdateConfigDTO[],
+    @GetUser() admin: User,
+    @Req() request: Request,
+  ) {
+    // Addresses, sign-in providers, the directory, mail delivery and the
+    // security policy decide who gets into which account.
+    if (
+      !Array.isArray(data) ||
+      data.some(
+        (variable) =>
+          !UNCONFIRMED_CONFIG_CATEGORIES.includes(
+            String(variable?.key).split(".")[0],
+          ),
+      )
+    ) {
+      await this.stepUp.consume(request, admin, "config.update");
+    }
     return new AdminConfigDTO().fromList(
       await this.configService.updateMany(data),
     );

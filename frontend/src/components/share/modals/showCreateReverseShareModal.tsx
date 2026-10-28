@@ -36,6 +36,7 @@ import {
   wrapReverseShareKey,
 } from "../../../utils/crypto.util";
 import { encryptReverseShareName } from "../../../utils/fileMetadata.util";
+import { contentPolicy } from "../../../utils/contentPolicy.util";
 
 const showCreateReverseShareModal = (
   modals: ReturnType<typeof useModals>,
@@ -125,7 +126,9 @@ const Body = ({
 
     if (masterKeyEncoded) {
       try {
-        const rsKey = await generateEncryptionKey();
+        const rsKey = await generateEncryptionKey({
+          v2Floor: contentPolicy().v2Floor,
+        });
         rsKeyEncoded = await exportKeyToBase64(rsKey);
         const masterKey = await importKeyFromBase64(masterKeyEncoded);
         wrappedKey = await wrapReverseShareKey(rsKey, masterKey);

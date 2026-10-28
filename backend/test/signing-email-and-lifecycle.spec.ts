@@ -11,10 +11,41 @@ const { testCase, run } = createUnitTestRunner(
   "signing email verification and lifecycle",
 );
 
+type FakeDocument = {
+  id: string;
+  fileName: string;
+  status: string;
+  signatureLevel: string;
+  expiresAt: Date;
+  [field: string]: unknown;
+};
+
+type FakeRecipient = {
+  id: string;
+  status: string;
+  otpHash: string | null;
+  otpSentAt: Date | null;
+  otpVerified: boolean;
+  otpFailures: number;
+  otpSessionHash: string | null;
+  otpSessionExpiresAt: Date | null;
+  identityVerificationMethod: string;
+  identityVerifiedAt: Date | null;
+  document: FakeDocument;
+  [field: string]: unknown;
+};
+
+type RecipientWhere = {
+  id?: string;
+  otpVerified?: boolean;
+  otpHash?: string | null;
+  OR?: Array<{ otpSentAt?: null | { lt: Date } }>;
+};
+
 const createOtpHarness = () => {
   const sentEmails: Array<{ email: string; subject: string; body: string }> =
     [];
-  const recipient: any = {
+  const recipient: FakeRecipient = {
     id: "recipient-1",
     documentId: "document-1",
     email: "signer@example.test",
@@ -25,6 +56,8 @@ const createOtpHarness = () => {
     otpSentAt: null,
     otpVerified: false,
     otpFailures: 0,
+    otpSessionHash: null,
+    otpSessionExpiresAt: null,
     identityVerificationMethod: "NONE",
     identityVerifiedAt: null,
     document: {
@@ -36,7 +69,7 @@ const createOtpHarness = () => {
     },
   };
 
-  const matchesWhere = (where: any) => {
+  const matchesWhere = (where: RecipientWhere) => {
     if (where.id && where.id !== recipient.id) return false;
     if (
       typeof where.otpVerified === "boolean" &&
@@ -51,7 +84,7 @@ const createOtpHarness = () => {
       return false;
     }
     if (where.OR) {
-      const allowed = where.OR.some((condition: any) => {
+      const allowed = where.OR.some((condition) => {
         if (condition.otpSentAt === null) return recipient.otpSentAt === null;
         if (condition.otpSentAt?.lt) {
           return Boolean(
@@ -68,11 +101,19 @@ const createOtpHarness = () => {
   const prisma = {
     signatureRecipient: {
       findUnique: async () => recipient,
-      updateMany: async ({ where, data }: any) => {
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: RecipientWhere;
+        data: Record<string, unknown>;
+      }) => {
         if (!matchesWhere(where)) return { count: 0 };
         for (const [key, value] of Object.entries(data)) {
           if (value && typeof value === "object" && "increment" in value) {
-            recipient[key] += (value as { increment: number }).increment;
+            recipient[key] =
+              (recipient[key] as number) +
+              (value as { increment: number }).increment;
           } else {
             recipient[key] = value;
           }
@@ -94,8 +135,9 @@ const createOtpHarness = () => {
     {} as never,
     {} as never,
     { notifyTeamMembers: async () => [] } as never,
-  ) as any;
-  service.createAuditEvent = async () => undefined;
+  );
+  // The audit chain is covered elsewhere. Here it records nothing.
+  Object.assign(service, { createAuditEvent: async () => undefined });
 
   return { recipient, sentEmails, service };
 };
@@ -124,16 +166,176 @@ testCase(
     );
     assert.equal(recipient.otpFailures, 1);
 
-    assert.deepEqual(
-      await service.verifySigningEmailOtp("token-1", code, "127.0.0.1", "test"),
-      { verified: true },
+    const verified = await service.verifySigningEmailOtp(
+      "token-1",
+      code,
+      "127.0.0.1",
+      "test",
     );
+    assert.equal(verified.verified, true);
+    assert.match(verified.session, /^[A-Za-z0-9_-]{43}$/);
+    assert.match(recipient.otpSessionHash, /^[a-f0-9]{64}$/);
+    assert.notEqual(recipient.otpSessionHash, verified.session);
     assert.equal(recipient.otpVerified, true);
     assert.equal(recipient.identityVerificationMethod, "EMAIL_OTP");
     assert.ok(recipient.identityVerifiedAt instanceof Date);
     assert.equal(recipient.otpHash, null);
   },
 );
+
+/** Sends a code and returns it, as read from the recipient's mailbox. */
+const mailedCode = async (
+  harness: ReturnType<typeof createOtpHarness>,
+  session?: string,
+) => {
+  harness.recipient.otpSentAt = null;
+  await harness.service.sendSigningEmailOtp("token-1", session);
+  const body = harness.sentEmails[harness.sentEmails.length - 1].body;
+  return body.match(/: (\d{6})/)?.[1] as string;
+};
+
+const prepareSigning = (recipient: FakeRecipient) => {
+  recipient.document.originalFileKey = "share-1/file-1";
+  recipient.document.isE2EEncrypted = false;
+  recipient.document.recipients = [recipient];
+  recipient.document.fields = [];
+  recipient.document.creator = null;
+  recipient.order = 1;
+};
+
+testCase(
+  "binds a verified address to the browser that typed the code",
+  async () => {
+    const harness = createOtpHarness();
+    const { recipient, service } = harness;
+    prepareSigning(recipient);
+    const code = await mailedCode(harness);
+    const { session } = await service.verifySigningEmailOtp(
+      "token-1",
+      code,
+      "127.0.0.1",
+      "test",
+    );
+
+    // That browser sees the document, any other holder of the link does not.
+    const mine = await service.getSigningPage("token-1", session);
+    assert.equal(mine.recipient.emailVerified, true);
+    const theirs = await service.getSigningPage("token-1", "x".repeat(43));
+    assert.equal(theirs.recipient.emailVerified, false);
+    assert.equal(
+      (await service.getSigningPage("token-1")).recipient.emailVerified,
+      false,
+    );
+    assert.deepEqual(await service.sendSigningEmailOtp("token-1", session), {
+      verified: true,
+      sent: false,
+    });
+
+    // Signing or rejecting from elsewhere is refused before anything else.
+    for (const other of [undefined, "x".repeat(43), session.slice(1)]) {
+      await assert.rejects(
+        () =>
+          service.signDocument(
+            "token-1",
+            { signatureData: "signature", signatureType: "TYPE" },
+            "127.0.0.1",
+            "test",
+            other,
+          ),
+        /Verify the assigned email address/,
+      );
+      await assert.rejects(
+        () => service.rejectDocument("token-1", {}, "127.0.0.1", "test", other),
+        /Verify the assigned email address/,
+      );
+    }
+  },
+);
+
+testCase(
+  "another holder of the link proves the mailbox again, on its own",
+  async () => {
+    const harness = createOtpHarness();
+    const { recipient, service } = harness;
+    prepareSigning(recipient);
+    const first = await service.verifySigningEmailOtp(
+      "token-1",
+      await mailedCode(harness),
+      "127.0.0.1",
+      "test",
+    );
+
+    // A second browser gets a code of its own, mailed to the same address.
+    const code = await mailedCode(harness);
+    assert.equal(harness.sentEmails.length, 2);
+    // Its guesses still count while the address is verified elsewhere.
+    await assert.rejects(() =>
+      service.verifySigningEmailOtp("token-1", "000000", "10.0.0.2", "b"),
+    );
+    assert.equal(recipient.otpFailures, 1);
+    const second = await service.verifySigningEmailOtp(
+      "token-1",
+      code,
+      "10.0.0.2",
+      "b",
+    );
+    assert.notEqual(second.session, first.session);
+    // The latest verification wins: the earlier browser starts again.
+    assert.equal(
+      (await service.getSigningPage("token-1", first.session)).recipient
+        .emailVerified,
+      false,
+    );
+    assert.equal(
+      (await service.getSigningPage("token-1", second.session)).recipient
+        .emailVerified,
+      true,
+    );
+  },
+);
+
+testCase("one code verifies one browser, even when two race", async () => {
+  const harness = createOtpHarness();
+  const code = await mailedCode(harness);
+  const results = await Promise.allSettled([
+    harness.service.verifySigningEmailOtp("token-1", code, "a", "a"),
+    harness.service.verifySigningEmailOtp("token-1", code, "b", "b"),
+  ]);
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+});
+
+testCase(
+  "an address verified before browsers were bound is verified again",
+  async () => {
+    const harness = createOtpHarness();
+    const { recipient, service } = harness;
+    prepareSigning(recipient);
+    recipient.otpVerified = true;
+    recipient.identityVerificationMethod = "EMAIL_OTP";
+    recipient.identityVerifiedAt = new Date();
+    const page = await service.getSigningPage("token-1");
+    assert.equal(page.recipient.emailVerified, false);
+    const response = await service.sendSigningEmailOtp("token-1");
+    assert.equal(response.sent, true);
+  },
+);
+
+testCase("an expired signing session is refused", async () => {
+  const harness = createOtpHarness();
+  const { recipient, service } = harness;
+  prepareSigning(recipient);
+  const { session } = await service.verifySigningEmailOtp(
+    "token-1",
+    await mailedCode(harness),
+    "127.0.0.1",
+    "test",
+  );
+  recipient.otpSessionExpiresAt = new Date(Date.now() - 1_000);
+  assert.equal(
+    (await service.getSigningPage("token-1", session)).recipient.emailVerified,
+    false,
+  );
+});
 
 testCase("refuses a second OTP during the per-recipient cooldown", async () => {
   const { service } = createOtpHarness();
@@ -267,6 +469,68 @@ testCase(
   },
 );
 
+testCase(
+  "a failed finalization keeps the signature and tells the creator",
+  async () => {
+    const statuses: string[] = [];
+    const mails: Array<{ to: string; body: string }> = [];
+    const service = new SigningService(
+      {
+        signatureDocument: {
+          findUnique: async ({ select }: { select?: unknown }) =>
+            select
+              ? { status: "PENDING" }
+              : {
+                  id: "document-1",
+                  originalFileKey: "signing/original.pdf",
+                  creatorId: "owner-1",
+                  fileName: "agreement.pdf",
+                  recipients: [],
+                  fields: [],
+                },
+          update: async ({ data }: { data: { status: string } }) => {
+            statuses.push(data.status);
+          },
+        },
+        user: {
+          findUnique: async () => ({
+            email: "owner@example.test",
+            username: "owner",
+          }),
+        },
+      } as never,
+      {
+        sendSigningMail: async (to: string, _subject: string, body: string) => {
+          mails.push({ to, body });
+        },
+      } as never,
+      {
+        getFileByKey: async () => {
+          throw new Error("storage unavailable");
+        },
+      } as never,
+      {
+        get: (key: string) =>
+          key === "general.appUrl" ? "https://app.test" : undefined,
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    ) as unknown as { finalizeDocument: (id: string) => Promise<void> };
+    Object.assign(service, {
+      logger: { log: () => undefined, error: () => undefined },
+      createAuditEvent: async () => undefined,
+    });
+
+    await service.finalizeDocument("document-1");
+    assert.deepEqual(statuses, ["AWAITING_FINALIZATION"]);
+    assert.equal(mails.length, 1);
+    assert.equal(mails[0].to, "owner@example.test");
+    assert.match(mails[0].body, /https:\/\/app\.test\/signing\/document-1/);
+  },
+);
+
 testCase("keeps a tombstoned request in the owner audit listing", async () => {
   const tombstone = {
     id: "document-1",
@@ -301,7 +565,11 @@ testCase(
     const service = new SigningService(
       {
         teamMember: {
-          findMany: async ({ where }: any) =>
+          findMany: async ({
+            where,
+          }: {
+            where: { userId: { in: string[] } };
+          }) =>
             where.userId.in
               .filter((userId: string) => activeMemberIds.has(userId))
               .map((userId: string) => ({ userId })),
@@ -318,7 +586,11 @@ testCase(
           notifications.push(params);
         },
       } as never,
-    ) as any;
+    ) as unknown as {
+      notifyTeamOfSignatureInvitation: (...args: unknown[]) => void;
+      notifyTeamOfSignature: (...args: unknown[]) => void;
+      notifyTeamOfSignatureCompletion: (...args: unknown[]) => void;
+    };
 
     service.notifyTeamOfSignatureInvitation(
       {

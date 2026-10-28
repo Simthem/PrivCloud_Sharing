@@ -62,7 +62,12 @@ export function shouldRequireClassicUploadAuthentication(
 }
 
 // Routes that only render meaningfully for a signed-in user.
-const SESSION_SCOPED_ROUTE_PREFIXES = ["/account", "/admin", "/team", "/external"];
+const SESSION_SCOPED_ROUTE_PREFIXES = [
+  "/account",
+  "/admin",
+  "/team",
+  "/external",
+];
 
 /**
  * Whether a route must resolve the session before it is painted.
@@ -88,6 +93,12 @@ export function isEmailVerificationRoutePath(
   pathname?: string | null,
 ): boolean {
   return pathname === "/auth/verify-email";
+}
+
+export function shouldRedirectAuthenticatedEntryPath(path: string): boolean {
+  return (
+    path === "/" || (path.startsWith("/auth/") && path !== "/auth/change-email")
+  );
 }
 
 export function isTeamInvitationRoutePath(pathname?: string | null): boolean {

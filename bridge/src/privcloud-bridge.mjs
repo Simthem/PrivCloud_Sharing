@@ -8,13 +8,16 @@ import { Readable } from "node:stream";
 import { runNativeTransport } from "./native-transport.mjs";
 import {
   uploadDirectFile,
+  CONTENT_V2_RECORD_SIZE,
+  encryptContentV2Chunk,
+  openContentV2Writer,
   createUploadSlots,
   runParallelFiles,
 } from "./direct-upload.mjs";
 
 const acquireUploadSlot = createUploadSlots(2);
 
-const VERSION = "1.25.3";
+const VERSION = "1.26.0";
 const NATIVE_HOST_NAME = "fr.privcloud.companion";
 const HOST = process.env.PRIVCLOUD_BRIDGE_HOST || "127.0.0.1";
 const PORT = Number(process.env.PRIVCLOUD_BRIDGE_PORT || "47631");
@@ -439,11 +442,18 @@ function sanitizeFileName(name) {
   return clean;
 }
 
-function decodeBase64UrlKey(value) {
+/**
+ * A content key, preceded by its v2 floor (0x02) when it has one. A key with
+ * a floor only accepts v2 content, so this Companion always writes v2 with it.
+ */
+function decodeContentKey(value) {
   try {
-    const key = Buffer.from(String(value || ""), "base64url");
-    if (key.length !== 32) throw new Error("bad length");
-    return key;
+    const material = Buffer.from(String(value || ""), "base64url");
+    if (material.length === 33 && material[0] === 2) {
+      return { key: material.subarray(1), floor: true };
+    }
+    if (material.length !== 32) throw new Error("bad length");
+    return { key: material, floor: false };
   } catch {
     const err = new Error("Invalid encryption key");
     err.statusCode = 400;
@@ -457,6 +467,7 @@ function encryptChunk(plain, key) {
   const encrypted = Buffer.concat([cipher.update(plain), cipher.final()]);
   return Buffer.concat([iv, encrypted, cipher.getAuthTag()]);
 }
+
 
 function directoryUrl(url) {
   if (!url.pathname.endsWith("/")) url.pathname += "/";
@@ -874,8 +885,15 @@ function normalizeRelativePath(value, name) {
   return value;
 }
 
-function encryptFileName(key, shareId, fileId, name, relativePath) {
-  const json = Buffer.from(JSON.stringify({ v: 1, n: name, ...(relativePath && { p: relativePath }) }));
+function encryptFileName(key, shareId, fileId, name, relativePath, contentV2) {
+  const json = Buffer.from(
+    JSON.stringify({
+      v: 1,
+      n: name,
+      ...(relativePath && { p: relativePath }),
+      ...(contentV2 && { c: 2 }),
+    }),
+  );
   if (json.length > 4096) throw new Error("File name is too long to encrypt");
   const plain = Buffer.alloc(
     Math.max(64, Math.ceil(json.length / 64) * 64),
@@ -901,6 +919,7 @@ function buildBridgeUploadUrl(
   totalChunks,
   chunkSize,
   encryptionChunkSize,
+  contentScheme,
 ) {
   const url = new URL(
     `/api/shares/${encodeURIComponent(shareId)}/files/bridge`,
@@ -912,6 +931,7 @@ function buildBridgeUploadUrl(
   if (encryptionChunkSize) {
     url.searchParams.set("encryptionChunkSize", String(encryptionChunkSize));
   }
+  if (contentScheme === 2) url.searchParams.set("contentScheme", "2");
   if (fileId) url.searchParams.set("id", fileId);
   return url;
 }
@@ -928,6 +948,7 @@ async function uploadPrivCloudChunk({
   totalChunks,
   chunkSize,
   encryptionChunkSize,
+  contentScheme,
   body,
   job,
 }) {
@@ -944,6 +965,7 @@ async function uploadPrivCloudChunk({
       totalChunks,
       chunkSize,
       encryptionChunkSize,
+      contentScheme,
     );
 
     let response;
@@ -1082,29 +1104,51 @@ async function runWebDavUploadJob(job, payload) {
         job.totalBytes += declaredSize - fileState.size;
         fileState.size = declaredSize;
       }
-      const chunkSize = Math.min(
+      const contentV2 = !!payload.e2eMaterial && payload.contentScheme === 2;
+      const plannedChunkSize = Math.min(
         payload.chunkSize,
         32 * 1024 * 1024,
         Math.max(8 * 1024 * 1024, Math.ceil(declaredSize / 10000)),
       );
+      // v2 parts hold whole 1 MB records.
+      const chunkSize = contentV2
+        ? Math.max(
+            CONTENT_V2_RECORD_SIZE,
+            Math.floor(plannedChunkSize / CONTENT_V2_RECORD_SIZE) *
+              CONTENT_V2_RECORD_SIZE,
+          )
+        : plannedChunkSize;
       const totalChunks = Math.max(1, Math.ceil(declaredSize / chunkSize));
       if (totalChunks > 10000) {
         throw new Error(`Too many chunks for ${fileState.name}`);
       }
 
       let fileId = crypto.randomUUID();
+      if (contentV2) fileId = fileId.slice(0, 14) + "8" + fileId.slice(15);
+      const contentWriter = contentV2
+        ? openContentV2Writer(payload.e2eMaterial, fileId, declaredSize)
+        : null;
+      let encryptedOffset = 0;
+      const encryptPart = (plain) => {
+        if (!payload.e2eMaterial) return plain;
+        if (!contentWriter) return encryptChunk(plain, payload.e2eMaterial);
+        const part = encryptContentV2Chunk(contentWriter, plain, encryptedOffset);
+        encryptedOffset += plain.length;
+        return part;
+      };
       const uploadName =
-        payload.fileMetadataScheme === 1
+        payload.fileMetadataScheme === 1 || contentV2
           ? `encrypted-file-${fileId.slice(0, 8)}`
           : fileState.name;
       const encryptedMetadata =
-        payload.fileMetadataScheme === 1
+        payload.fileMetadataScheme === 1 || contentV2
           ? encryptFileName(
               payload.e2eMaterial,
               payload.shareId,
               fileId,
               fileState.name,
               selected.relativePath,
+              contentV2,
             )
           : undefined;
       let chunkIndex = 0;
@@ -1143,13 +1187,11 @@ async function runWebDavUploadJob(job, payload) {
         fileSize: declaredSize,
         chunkSize: chunkSize,
         encrypted: !!payload.e2eMaterial,
+        contentScheme: contentV2 ? 2 : 1,
         chunks,
         signal: job.abortController.signal,
         cancelSource: (error) => job.abortController.abort(error),
-        transform: (plain) =>
-          payload.e2eMaterial
-            ? encryptChunk(plain, payload.e2eMaterial)
-            : plain,
+        transform: encryptPart,
         onProgress: (size) => {
           bytesRead += size;
           fileState.uploadedBytes = Math.min(bytesRead, declaredSize);
@@ -1160,9 +1202,7 @@ async function runWebDavUploadJob(job, payload) {
       if (!direct)
         for await (const plainChunk of chunks) {
           throwIfCancelled(job);
-          const uploadBody = payload.e2eMaterial
-            ? encryptChunk(plainChunk, payload.e2eMaterial)
-            : plainChunk;
+          const uploadBody = encryptPart(plainChunk);
           phase = `PrivCloud upload chunk ${chunkIndex + 1}/${totalChunks}`;
           const result = await uploadPrivCloudChunk({
             appBaseUrl: payload.appBaseUrl,
@@ -1175,10 +1215,19 @@ async function runWebDavUploadJob(job, payload) {
             chunkIndex,
             totalChunks,
             chunkSize: chunkSize,
-            encryptionChunkSize: payload.e2eMaterial ? chunkSize : undefined,
+            encryptionChunkSize: payload.e2eMaterial
+              ? contentV2
+                ? CONTENT_V2_RECORD_SIZE
+                : chunkSize
+              : undefined,
+            contentScheme: contentV2 ? 2 : undefined,
             body: uploadBody,
             job,
           });
+          // v2 records are bound to the id chosen here.
+          if (contentV2 && result.id !== fileId) {
+            throw new Error("The server assigned another file id to v2 content");
+          }
           fileId = result.id;
           chunkIndex += 1;
           bytesRead += plainChunk.length;
@@ -1298,6 +1347,7 @@ function bridgeHealthPayload() {
       nativeMessaging: true,
       browserExtension: true,
       mailAssistants: true,
+      contentV2: true,
     },
     allowedOrigins: Array.from(ALLOWED_ORIGINS),
     jobs: {
@@ -1540,7 +1590,7 @@ function createWebDavUploadJob(body, _origin) {
 
   const appBaseUrl = normalizePrivCloudBaseUrl(body.appBaseUrl);
   const shareId = String(body.shareId || "");
-  if (!/^[A-Za-z0-9_-]{3,120}$/.test(shareId)) {
+  if (!/^(?:v2\.)?[A-Za-z0-9_-]{3,120}$/.test(shareId)) {
     const err = new Error("Invalid share id");
     err.statusCode = 400;
     throw err;
@@ -1590,15 +1640,18 @@ function createWebDavUploadJob(body, _origin) {
     };
   });
 
+  const e2eKey = body.isE2EEncrypted
+    ? decodeContentKey(body.encryptionKey)
+    : null;
   const payload = {
     appBaseUrl,
     shareId,
     uploadToken,
     chunkSize,
     fileMetadataScheme: body.fileMetadataScheme === 1 ? 1 : null,
-    e2eMaterial: body.isE2EEncrypted
-      ? decodeBase64UrlKey(body.encryptionKey)
-      : null,
+    e2eMaterial: e2eKey?.key ?? null,
+    // A key with a v2 floor writes v2 whatever the page asked for.
+    contentScheme: e2eKey && (e2eKey.floor || body.contentScheme === 2) ? 2 : 1,
     webdav: {
       endpoint: body.webdav?.endpoint,
       username: body.webdav?.username,

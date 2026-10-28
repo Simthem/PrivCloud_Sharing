@@ -29,7 +29,13 @@ function reauthStore() {
       },
       findUnique: async ({ where }: { where: { tokenHash: string } }) =>
         rows.get(where.tokenHash) ?? null,
-      updateMany: async ({ where, data }: any) => {
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { tokenHash: string };
+        data: { usedAt: Date };
+      }) => {
         const row = rows.get(where.tokenHash);
         if (!row || row.usedAt) return { count: 0 };
         row.usedAt = data.usedAt;
@@ -52,7 +58,10 @@ testCase("an intent is spent once, for its provider only", async () => {
   const { service } = reauthStore();
   const intent = await service.startIntent("user-1", "google");
   assert.equal(await service.consumeIntent(intent, "github"), null);
-  assert.equal(await service.consumeIntent(intent, "google"), "user-1");
+  assert.deepEqual(await service.consumeIntent(intent, "google"), {
+    userId: "user-1",
+    purpose: "TOTP",
+  });
   assert.equal(await service.consumeIntent(intent, "google"), null);
   assert.equal(await service.consumeIntent("forged", "google"), null);
   assert.equal(await service.consumeIntent(undefined, "google"), null);
@@ -82,6 +91,7 @@ function totpService(options: { linked: number }) {
   const store = reauthStore();
   const secret = generateSecret();
   const updates: unknown[] = [];
+  const counted: string[] = [];
   const prisma = {
     oAuthUser: { count: async () => options.linked },
     user: {
@@ -99,10 +109,17 @@ function totpService(options: { linked: number }) {
     { get: () => "PrivCloud" } as never,
     {
       verifyPassword: async (_u: unknown, p: string) => p === "right",
+      countReauthentication: async (
+        id: string,
+        check: () => Promise<boolean>,
+      ) => {
+        counted.push(id);
+        return check();
+      },
     } as never,
     store.service,
   );
-  return { service, store, secret, updates };
+  return { service, store, secret, updates, counted };
 }
 
 const oauthOnly = {
@@ -176,6 +193,35 @@ testCase(
 );
 
 testCase(
+  "a 2FA code typed to confirm a change counts towards the account lock",
+  async () => {
+    const { service, secret, counted } = totpService({ linked: 0 });
+    const protectedUser = {
+      ...(withPassword as object),
+      totpVerified: true,
+      totpSecret: secret,
+    } as never;
+    await rejects(
+      service.confirmSecondFactorChange(
+        protectedUser,
+        { password: "right" },
+        "000000",
+      ),
+      400,
+    );
+    await service.confirmEmailChangeFactor(
+      protectedUser,
+      await generate({ secret }),
+    );
+    await rejects(
+      service.disableTotp(protectedUser, { password: "right" }, "000000"),
+      400,
+    );
+    assert.deepEqual(counted, ["user-1", "user-1", "user-1"]);
+  },
+);
+
+testCase(
   "adding a passkey takes the same proof as turning 2FA off",
   async () => {
     const { service, store, secret } = totpService({ linked: 1 });
@@ -227,13 +273,22 @@ testCase(
   },
 );
 
+// The flow's private steps, called directly like the provider would.
+type ReauthFlow = {
+  reauth: (...args: unknown[]) => Promise<void>;
+  completeReauth: (...args: unknown[]) => Promise<void>;
+};
+
 function controller(linkedIdentity: string) {
   const store = reauthStore();
-  const cookies: Record<string, { value: string; options: any }> = {};
+  const cookies: Record<
+    string,
+    { value: string; options: Record<string, unknown> }
+  > = {};
   let redirected = "";
   const response = {
     cookie: (name: string, value: string, options: unknown) => {
-      cookies[name] = { value, options };
+      cookies[name] = { value, options: options as Record<string, unknown> };
     },
     redirect: (url: string) => {
       redirected = url;
@@ -251,12 +306,13 @@ function controller(linkedIdentity: string) {
     } as never,
     store.service,
     {} as never,
+    {} as never,
   );
   Object.assign(oauth, {
     logger: { warn: () => undefined, error: () => undefined },
   });
   return {
-    oauth: oauth as any,
+    oauth: oauth as unknown as ReauthFlow,
     store,
     cookies,
     response,

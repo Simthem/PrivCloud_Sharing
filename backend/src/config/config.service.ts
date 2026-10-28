@@ -18,6 +18,31 @@ import { parse as yamlParse } from "yaml";
 import { YamlConfig } from "../../prisma/seed/config.seed";
 import { CONFIG_FILE } from "src/constants";
 
+// E2EE content v2 switches. Every running instance enforces and publishes
+// the value an administrator last saved.
+const CONTENT_V2_SETTING_NAMES = ["contentV2Writes", "contentV2Floor"];
+
+/**
+ * Deployment defaults of the E2EE content v2 switches, from
+ * E2EE_CONTENT_V2_WRITES and E2EE_CONTENT_V2_FLOOR. A value saved in the
+ * administration settings always takes precedence.
+ */
+export function withContentV2Default<
+  T extends { category: string; name: string; defaultValue: string },
+>(row: T, env: NodeJS.ProcessEnv = process.env): T {
+  if (row.category !== "share") return row;
+  const variable =
+    row.name === "contentV2Writes"
+      ? env.E2EE_CONTENT_V2_WRITES
+      : row.name === "contentV2Floor"
+        ? env.E2EE_CONTENT_V2_FLOOR
+        : undefined;
+  const value = variable?.trim().toLowerCase();
+  return value === "true" || value === "false"
+    ? { ...row, defaultValue: value }
+    : row;
+}
+
 /**
  * ConfigService extends EventEmitter to allow listening for config updates,
  * now only `update` event will be emitted.
@@ -119,6 +144,7 @@ export class ConfigService extends EventEmitter {
 
   async getByCategory(category: string) {
     const configVariables = this.configVariables
+      .map((row) => withContentV2Default(row))
       .filter((c) => !c.locked && category == c.category)
       .sort((c1, c2) => c1.order - c2.order);
 
@@ -133,7 +159,18 @@ export class ConfigService extends EventEmitter {
   }
 
   async list() {
-    const configVariables = this.configVariables.filter((c) => !c.secret);
+    const fresh = this.isEditAllowed()
+      ? await this.prisma.config.findMany({
+          where: { category: "share", name: { in: CONTENT_V2_SETTING_NAMES } },
+        })
+      : [];
+    const byKey = new Map(
+      fresh.map((row) => [`${row.category}.${row.name}`, row]),
+    );
+    const configVariables = this.configVariables
+      .map((row) => byKey.get(`${row.category}.${row.name}`) ?? row)
+      .map((row) => withContentV2Default(row))
+      .filter((c) => !c.secret);
 
     return configVariables.map((variable) => {
       return {
@@ -142,6 +179,37 @@ export class ConfigService extends EventEmitter {
         value: variable.value ?? variable.defaultValue,
       };
     });
+  }
+
+  /** Whether new E2E uploads must be E2EE content v2. */
+  async isContentV2WritesEnabled(): Promise<boolean> {
+    const row = this.isEditAllowed()
+      ? await this.prisma.config.findUnique({
+          where: {
+            name_category: { category: "share", name: "contentV2Writes" },
+          },
+        })
+      : this.configVariables.find(
+          (row) => row.category === "share" && row.name === "contentV2Writes",
+        );
+    if (!row) return false;
+    const effective = withContentV2Default(row);
+    return (effective.value ?? effective.defaultValue) === "true";
+  }
+
+  async isContentV2FloorEnabled(): Promise<boolean> {
+    const row = this.isEditAllowed()
+      ? await this.prisma.config.findUnique({
+          where: {
+            name_category: { category: "share", name: "contentV2Floor" },
+          },
+        })
+      : this.configVariables.find(
+          (row) => row.category === "share" && row.name === "contentV2Floor",
+        );
+    if (!row) return false;
+    const effective = withContentV2Default(row);
+    return (effective.value ?? effective.defaultValue) === "true";
   }
 
   async updateMany(data: { key: string; value: string | number | boolean }[]) {

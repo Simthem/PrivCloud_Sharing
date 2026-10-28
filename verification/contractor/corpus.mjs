@@ -1,9 +1,17 @@
+import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { detectMark, embedMark, markPattern, MARK_DETECTION_THRESHOLD } from "./watermark.ts";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
+/** A report is a plain .json name in the current directory, never a path elsewhere. */
+function reportPath(argument) {
+  const name = path.basename(argument);
+  assert.ok(name === argument && name.endsWith(".json"), "Name a .json report in the current directory");
+  return path.join(process.cwd(), name);
+}
 /** Seeded synthetic pages: a reproducible exploratory corpus, not production calibration. */
 function page(seed, width = 320, height = 256) {
   const data = new Uint8ClampedArray(width * height * 4);
@@ -51,7 +59,7 @@ export async function runCorpus(trials = 1000) {
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const report = await runCorpus(Number(process.argv[3] || 1000));
-  await writeFile(process.argv[2] || "corpus-results.json", JSON.stringify(report, null, 2) + "\n");
+  await writeFile(reportPath(process.argv[2] || "corpus-results.json"), JSON.stringify(report, null, 2) + "\n");
   console.log(`false matches: ${report.falseMatches}/${report.trials}`);
   if (report.falseMatches) process.exitCode = 1;
 }

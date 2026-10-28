@@ -25,12 +25,17 @@ import { ShareSecurityDTO } from "./shareSecurity.dto";
 
 export class CreateShareDTO {
   @IsOptional()
+  @IsInt()
+  @IsIn([2])
+  contentScheme?: 2;
+
+  @IsOptional()
   @IsUUID()
   teamFileRequestId?: string;
 
   @IsString()
-  @Matches("^[a-zA-Z0-9_-]*$", undefined, {
-    message: "ID can only contain letters, numbers, underscores and hyphens",
+  @Matches(/^(?:[A-Za-z0-9_-]{3,50}|v2\.[A-Za-z0-9_-]{3,47})$/u, {
+    message: "Invalid share identifier",
   })
   @Length(3, 50)
   id: string;

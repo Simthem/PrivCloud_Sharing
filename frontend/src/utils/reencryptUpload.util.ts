@@ -10,6 +10,8 @@ interface ReencryptUploadRequest {
   sessionId?: string;
   /** Last chunk of a FILE_META_V1 file: its name under the new key. */
   encryptedMetadata?: string;
+  /** E2EE content format of the rewritten file. */
+  contentScheme?: 1 | 2;
 }
 
 interface PendingUpload {
@@ -45,7 +47,7 @@ const getWorker = (): Worker => {
     throw new Error("Web Worker is unavailable for key rotation");
   }
 
-  const activeWorker = new Worker("/reencrypt-worker.js?v=20261002-1", {
+  const activeWorker = new Worker("/reencrypt-worker.js?v=20261027-2", {
     name: "privcloud-reencrypt-upload",
   });
   worker = activeWorker;

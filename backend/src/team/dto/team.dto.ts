@@ -105,7 +105,7 @@ export class RotateTeamMetadataDTO {
 
   @IsString()
   @MaxLength(128)
-  @Matches(/^[A-Za-z0-9_-]+$/)
+  @Matches(/^(?:v2\.)?[A-Za-z0-9_-]+$/)
   id: string;
 
   @IsString()

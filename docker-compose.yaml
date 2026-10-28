@@ -77,6 +77,10 @@ services:
       # - FILE_META_V1_CANARY_USERS=*                     # accounts must also be selected for SHARE_DEK_V1
       # - FILE_META_V1_TEAM_WRITE=true                    # also encrypt team folder upload names (team key)
       # - FILE_META_V1_REVERSE_SHARE_WRITE=true           # also encrypt reverse-share upload names (link key)
+      # -- E2EE content v2, docs/E2EE_CONTENT_V2_ROLLOUT.md (off by default) --
+      # Defaults of the Share settings, a value saved by an administrator wins.
+      # - E2EE_CONTENT_V2_WRITES=true                     # write new encrypted files in v2, refuse v1 uploads
+      # - E2EE_CONTENT_V2_FLOOR=true                      # new keys only accept v2, needs SHARE_DEK_V1 for personal shares
     volumes:
       - "./data:/opt/app/backend/data"
       - "./data/images:/opt/app/frontend/public/img"

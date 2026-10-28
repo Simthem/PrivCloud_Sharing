@@ -14,7 +14,7 @@ test("locked query parsers, worker pools and selector parsers include the securi
     readFileSync(path.join(docsRoot, "package-lock.json")),
   );
   for (const [name, expected] of [
-    ["qs", "6.16.1"],
+    ["qs", "6.17.0"],
     ["tinypool", "2.1.2"],
     ["postcss-selector-parser", "7.1.6"],
   ]) {

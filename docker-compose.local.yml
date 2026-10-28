@@ -37,6 +37,14 @@ services:
       - SIGNING_EVIDENCE_RETENTION_YEARS=${SIGNING_EVIDENCE_RETENTION_YEARS:-10}
       # - SIGNING_TSA_URL=https://freetsa.org/tsr  # RFC 3161 TSA (default)
       # - SIGNING_TSA_TRUSTED_LIST_URL=https://tsl.digital.gob.es/TSL.xml  # daily check of a qualified TSA, trace e-mailed to admins
+      # -- E2EE content v2, docs/E2EE_CONTENT_V2_ROLLOUT.md --
+      # On by default for this single local container. A value saved in the
+      # administration settings takes precedence.
+      - E2EE_CONTENT_V2_WRITES=${E2EE_CONTENT_V2_WRITES:-true}
+      - E2EE_CONTENT_V2_FLOOR=${E2EE_CONTENT_V2_FLOOR:-true}
+      # Own key per personal share, which carries the v2 floor.
+      - SHARE_DEK_V1_WRITE=${SHARE_DEK_V1_WRITE:-true}
+      - SHARE_DEK_V1_CANARY_USERS=${SHARE_DEK_V1_CANARY_USERS:-*}
     volumes:
       - "./data:/opt/app/backend/data"
       - "./data/images:/opt/app/frontend/public/img"

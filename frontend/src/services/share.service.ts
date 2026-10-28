@@ -1,3 +1,8 @@
+import {
+  isContentV2ShareId,
+  isContentV2FileId,
+} from "../utils/shareContentContext.util";
+import { ContentIntegrityError } from "../utils/contentV2.util";
 import { createPreviewByteSource } from "../utils/previewRange.util";
 import { PendingUpload } from "../types/share.type";
 import { finalizeUpload } from "../utils/uploadCompletion.util";
@@ -59,7 +64,7 @@ const create = async (share: CreateShare, isReverseShare = false) => {
   if (!isReverseShare) {
     deleteCookie("reverse_share_token");
   }
-  return (await api.post("shares", share)).data;
+  return (await api.post("shares", { ...share, contentScheme: 2 })).data;
 };
 
 const completeShare = async (id: string, e2eKey?: string) => {
@@ -102,16 +107,42 @@ const revertComplete = async (id: string) => {
   return (await api.delete(`shares/${apiPathSegment(id)}/complete`)).data;
 };
 
+function assertShareEncryption(share: Share, id: string): void {
+  const fragmentRequiresKey =
+    typeof window !== "undefined" &&
+    /[#&]key=/.test(window.location.hash) &&
+    (window.location.pathname.endsWith("/" + id) ||
+      window.location.pathname.endsWith("/" + encodeURIComponent(id)));
+  if (
+    !share.isE2EEncrypted &&
+    (fragmentRequiresKey ||
+      isContentV2ShareId(id) ||
+      share.files?.some((file: { id: string }) => isContentV2FileId(file.id)))
+  ) {
+    throw new ContentIntegrityError(
+      "This share requires end-to-end encryption",
+    );
+  }
+}
+
 const get = async (id: string): Promise<Share> => {
-  return (await api.get(`shares/${apiPathSegment(id)}`)).data;
+  const share = (await api.get(`shares/${apiPathSegment(id)}`)).data;
+  if (share?.id !== id)
+    throw new ContentIntegrityError("Share identity mismatch");
+  assertShareEncryption(share, id);
+  return share;
 };
 
 const getFromOwner = async (id: string): Promise<Share> => {
-  return (
+  const share = (
     await api.get(`shares/${apiPathSegment(id)}/from-owner`, {
       params: { _state: Date.now() },
     })
   ).data;
+  if (share?.id !== id)
+    throw new ContentIntegrityError("Share identity mismatch");
+  assertShareEncryption(share, id);
+  return share;
 };
 
 const getMetaData = async (id: string): Promise<ShareMetaData> => {
@@ -717,6 +748,8 @@ const downloadFileE2E = async (
           cryptoRecord.size,
           totalSize,
           cryptoRecord.exact,
+          undefined,
+          { fileId, shareId },
         ),
         writable,
         signal,
@@ -749,6 +782,8 @@ const downloadFileE2E = async (
       cryptoRecord.size,
       totalSize,
       cryptoRecord.exact,
+      undefined,
+      { fileId, shareId },
     )) {
       parts.push(new Uint8Array(chunk) as BlobPart);
     }
@@ -787,6 +822,8 @@ const fetchDecryptedFile = async (
     cryptoRecord.size,
     totalSize,
     cryptoRecord.exact,
+    undefined,
+    { fileId, shareId },
   )) {
     parts.push(chunk);
     totalDecrypted += chunk.length;
@@ -839,7 +876,10 @@ export const fetchFilePreviewSource = async (
     }
     return fetchSameOriginStreaming(url, readSignal || signal, headers);
   };
-  return createPreviewByteSource(fetchRange, key, getChunkSize, signal);
+  return createPreviewByteSource(fetchRange, key, getChunkSize, signal, {
+    fileId,
+    shareId,
+  });
 };
 
 const fetchDecryptedFilePrefix = async (
@@ -1085,6 +1125,8 @@ const downloadAllAsZipE2E = async (
         cryptoRecord.size,
         totalSize,
         cryptoRecord.exact,
+        undefined,
+        { fileId: file.id, shareId },
       )) {
         entry.push(chunk, false);
       }
@@ -1706,6 +1748,8 @@ const downloadSelectedAsZipE2E = async (
         cryptoRecord.size,
         totalSize,
         cryptoRecord.exact,
+        undefined,
+        { fileId: file.id, shareId },
       )) {
         entry.push(chunk, false);
       }

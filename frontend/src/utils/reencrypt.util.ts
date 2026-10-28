@@ -1,3 +1,4 @@
+import { contentWriteScheme } from "./contentV2.util";
 /**
  * Re-encryption utility for E2E key rotation.
  *
@@ -8,6 +9,7 @@
 
 import {
   importKeyFromBase64,
+  decryptStream,
   reencryptStream,
   wrapReverseShareKey,
   unwrapReverseShareKey,
@@ -37,6 +39,7 @@ import {
   DEFAULT_REENCRYPT_TRANSPORT_CHUNK_SIZE,
   getRuntimeReencryptChunkSize,
 } from "./reencryptChunk.util";
+import { applyContentPolicy, contentPolicy } from "./contentPolicy.util";
 
 const REENCRYPT_CRYPTO_RECORD_SIZE = 1_000_000;
 const MAX_REENCRYPT_CHUNKS = 9_500;
@@ -240,6 +243,7 @@ async function uploadChunkWithRetry(
   encryptionChunkSize = REENCRYPT_CRYPTO_RECORD_SIZE,
   signal?: AbortSignal,
   encryptedMetadata?: string,
+  contentScheme: 1 | 2 = 1,
 ): Promise<void> {
   let pendingChunk = chunk;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -255,6 +259,7 @@ async function uploadChunkWithRetry(
           encryptionChunkSize,
           sessionId,
           encryptedMetadata,
+          contentScheme,
         },
         pendingChunk,
         signal,
@@ -438,6 +443,7 @@ export async function reencryptAll(
       if (cfg)
         configChunkSize = parseInt(cfg.value ?? cfg.defaultValue ?? "10000000");
       reencryptChunkSize = getRuntimeReencryptChunkSize(configs);
+      applyContentPolicy(configs);
     } catch {
       // fallback to default
     }
@@ -458,7 +464,10 @@ export async function reencryptAll(
 
         // Skip 0-byte or empty files -- they have no encrypted content
         const fileSize = parseInt(file.size ?? "0", 10);
-        if (fileSize <= 0) {
+        if (
+          fileSize <= 0 &&
+          contentWriteScheme(newKey, contentPolicy().v2Writes) === 1
+        ) {
           filesSkipped++;
           filesDone++;
           progress.filesDone = filesDone;
@@ -484,7 +493,7 @@ export async function reencryptAll(
               10,
             );
 
-            if (!response.body || totalSize <= 0) {
+            if ((!response.body && totalSize !== 0) || totalSize < 0) {
               // File exists in DB but has no actual content -- skip
               filesSkipped++;
               filesDone++;
@@ -500,7 +509,13 @@ export async function reencryptAll(
             );
 
             await reencryptStream({
-              encryptedStream: response.body,
+              encryptedStream:
+                response.body ??
+                new ReadableStream<Uint8Array>({
+                  start(controller) {
+                    controller.close();
+                  },
+                }),
               oldKey,
               newKey,
               sourceChunkSize: cryptoRecord.size,
@@ -511,8 +526,10 @@ export async function reencryptAll(
               maxChunks: MAX_REENCRYPT_CHUNKS,
               maxTargetChunkSize: reencryptChunkSize,
               chunkSizeQuantum: REENCRYPT_CHUNK_QUANTUM,
+              context: { fileId: file.id, shareId: share.id },
+              contentScheme: contentPolicy().v2Writes ? 2 : 1,
               signal,
-              uploadChunk: (encrypted, index, total, chunkSize) =>
+              uploadChunk: (encrypted, index, total, chunkSize, scheme) =>
                 uploadChunkWithRetry(
                   share.id,
                   file.id,
@@ -523,6 +540,8 @@ export async function reencryptAll(
                   reencryptSessionId,
                   chunkSize,
                   signal,
+                  undefined,
+                  scheme,
                 ),
             });
 
@@ -643,26 +662,91 @@ async function rotateEncryptedFileName(
     id: string;
     metadataScheme?: number | null;
     encryptedMetadata?: string | null;
+    name?: string;
+    relativePath?: string | null;
   },
   oldKey: CryptoKey,
   newKey: CryptoKey,
 ): Promise<string> {
+  if (file.metadataScheme == null && !file.encryptedMetadata) {
+    if (!file.name) throw new Error("File name is missing");
+    return encryptFileMetadata(
+      newKey,
+      shareId,
+      file.id,
+      file.name,
+      file.relativePath ?? undefined,
+      2,
+    );
+  }
   if (file.metadataScheme !== FILE_META_V1 || !file.encryptedMetadata) {
     throw new Error("unsupported encrypted name");
   }
-  const metadata = await decryptFileMetadata(
-    oldKey,
-    shareId,
-    file.id,
-    file.encryptedMetadata,
-  );
+  let metadata;
+  try {
+    metadata = await decryptFileMetadata(
+      oldKey,
+      shareId,
+      file.id,
+      file.encryptedMetadata,
+    );
+  } catch (error) {
+    try {
+      await decryptFileMetadata(
+        newKey,
+        shareId,
+        file.id,
+        file.encryptedMetadata,
+      );
+      return file.encryptedMetadata;
+    } catch {
+      throw error;
+    }
+  }
   return encryptFileMetadata(
     newKey,
     shareId,
     file.id,
     metadata.name,
     metadata.relativePath,
+    metadata.minimumContentScheme,
   );
+}
+
+/** Verify every record before accepting a file completed by an earlier attempt. */
+async function verifyRotatedFile(
+  shareId: string,
+  fileId: string,
+  newKey: CryptoKey,
+  legacyChunkSize: number,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  try {
+    const response = await fetchStreaming(
+      `/api/shares/${shareId}/files/${fileId}`,
+      signal,
+    );
+    const total = Number(response.headers.get("Content-Length"));
+    if (!response.body || !Number.isSafeInteger(total) || total <= 0)
+      return false;
+    const record = getEncryptionRecordConfig(response, legacyChunkSize);
+    for await (const bytes of decryptStream(
+      response.body,
+      newKey,
+      record.size,
+      total,
+      record.exact,
+      undefined,
+      { fileId },
+    )) {
+      signal?.throwIfAborted();
+      if (!bytes) return false;
+    }
+    return true;
+  } catch {
+    signal?.throwIfAborted();
+    return false;
+  }
 }
 
 /** Empty files have no content to re-encrypt: only their name moves. */
@@ -789,6 +873,7 @@ export async function reencryptTeam(
       if (cfg)
         configChunkSize = parseInt(cfg.value ?? cfg.defaultValue ?? "10000000");
       reencryptChunkSize = getRuntimeReencryptChunkSize(configs);
+      applyContentPolicy(configs);
     } catch {
       /* fallback */
     }
@@ -815,7 +900,10 @@ export async function reencryptTeam(
         // content. A name that cannot be opened fails the file, it would be
         // lost under the new key.
         let rotatedName: string | undefined;
-        if (file.metadataScheme != null) {
+        if (
+          file.metadataScheme != null ||
+          contentWriteScheme(newKey, contentPolicy().v2Writes) === 2
+        ) {
           try {
             rotatedName = await rotateEncryptedFileName(
               share.id,
@@ -837,7 +925,11 @@ export async function reencryptTeam(
         }
 
         const fileSize = parseInt(file.size ?? "0", 10);
-        if (fileSize <= 0 && rotatedName) {
+        if (
+          fileSize <= 0 &&
+          contentWriteScheme(newKey, contentPolicy().v2Writes) === 1 &&
+          rotatedName
+        ) {
           try {
             await updateEmptyFileNameWithRetry(
               share.id,
@@ -856,7 +948,10 @@ export async function reencryptTeam(
             continue;
           }
         }
-        if (fileSize <= 0) {
+        if (
+          fileSize <= 0 &&
+          contentWriteScheme(newKey, contentPolicy().v2Writes) === 1
+        ) {
           filesSkipped++;
           filesDone++;
           progress.filesDone = filesDone;
@@ -881,7 +976,7 @@ export async function reencryptTeam(
               10,
             );
 
-            if (!response.body || totalSize <= 0) {
+            if ((!response.body && totalSize !== 0) || totalSize < 0) {
               filesSkipped++;
               filesDone++;
               progress.filesDone = filesDone;
@@ -897,7 +992,13 @@ export async function reencryptTeam(
             );
 
             await reencryptStream({
-              encryptedStream: response.body,
+              encryptedStream:
+                response.body ??
+                new ReadableStream<Uint8Array>({
+                  start(controller) {
+                    controller.close();
+                  },
+                }),
               oldKey,
               newKey,
               sourceChunkSize: cryptoRecord.size,
@@ -908,8 +1009,10 @@ export async function reencryptTeam(
               maxChunks: MAX_REENCRYPT_CHUNKS,
               maxTargetChunkSize: reencryptChunkSize,
               chunkSizeQuantum: REENCRYPT_CHUNK_QUANTUM,
+              context: { fileId: file.id, shareId: share.id },
+              contentScheme: contentPolicy().v2Writes ? 2 : 1,
               signal,
-              uploadChunk: (encrypted, index, total, chunkSize) =>
+              uploadChunk: (encrypted, index, total, chunkSize, scheme) =>
                 uploadChunkWithRetry(
                   share.id,
                   file.id,
@@ -921,6 +1024,7 @@ export async function reencryptTeam(
                   chunkSize,
                   signal,
                   index === total - 1 ? rotatedName : undefined,
+                  scheme,
                 ),
             });
 
@@ -930,6 +1034,50 @@ export async function reencryptTeam(
               throw e;
 
             // Classify the error for diagnostics
+            let nameIsCurrent =
+              !rotatedName || rotatedName === file.encryptedMetadata;
+            if (!nameIsCurrent && rotatedName) {
+              try {
+                const refreshed = await teamService.getTeamShares(teamId);
+                const stored = refreshed
+                  .find((entry) => entry.id === share.id)
+                  ?.files?.find(
+                    (entry: { id: string }) => entry.id === file.id,
+                  );
+                if (
+                  stored?.metadataScheme === FILE_META_V1 &&
+                  stored.encryptedMetadata
+                ) {
+                  await decryptFileMetadata(
+                    newKey,
+                    share.id,
+                    file.id,
+                    stored.encryptedMetadata,
+                  );
+                  nameIsCurrent = true;
+                }
+              } catch {
+                nameIsCurrent = false;
+              }
+            }
+            if (
+              nameIsCurrent &&
+              (await verifyRotatedFile(
+                share.id,
+                file.id,
+                newKey,
+                configChunkSize,
+                signal,
+              ))
+            ) {
+              await options?.onSkippedFile?.(file.id);
+              filesDone++;
+              filesSkipped++;
+              progress.filesDone = filesDone;
+              progress.filesSkipped = filesSkipped;
+              onProgress?.({ ...progress, failedDetails: [...failedDetails] });
+              continue fileLoop;
+            }
             const msg = e?.message ?? "unknown error";
             const httpStatus = e?.status ?? e?.response?.status;
             const isNetworkError =

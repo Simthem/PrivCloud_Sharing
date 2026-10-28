@@ -406,7 +406,6 @@ export async function runCollection(collectionPath, options = {}) {
     const runScripts = (sources, phase) => {
       for (const source of sources) {
         try {
-          // eslint-disable-next-line no-new-func
           new Function("pm", `"use strict";\n${source}`)(pm);
         } catch (error) {
           summary.assertions += 1;

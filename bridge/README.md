@@ -89,10 +89,12 @@ cd bridge/dist && sha256sum -c SHA256SUMS
 ```
 
 To build somewhere other than `bridge/dist/` (useful in CI, where wiping a
-directory in the work tree is undesirable), call the script directly:
+directory in the work tree is undesirable), call the script directly. The
+output directory is wiped first, so it must sit inside the work tree or the
+system temporary directory:
 
 ```bash
-node ./scripts/build-release.mjs --output-dir /path/to/output
+node ./scripts/build-release.mjs --output-dir "$(mktemp -d)/companion"
 ```
 
 Note that `npm run build` is **not** what puts Companion in front of end users.

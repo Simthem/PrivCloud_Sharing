@@ -82,7 +82,7 @@ function validatedShareLink_(value) {
   const link = value.trim();
   if (!link.startsWith(PRIVCLOUD_ORIGIN + "/s/")) return null;
   const route = link.slice(PRIVCLOUD_ORIGIN.length);
-  return /^\/s\/[A-Za-z0-9_-]+(?:\?[^#\s<>"'\\]*)?(?:#[^\s<>"'\\]*)?$/.test(route) ? link : null;
+  return /^\/s\/(?:v2\.)?[A-Za-z0-9_-]+(?:\?[^#\s<>"'\\]*)?(?:#[^\s<>"'\\]*)?$/.test(route) ? link : null;
 }
 
 function escapeHtml_(value) {

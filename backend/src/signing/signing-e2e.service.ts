@@ -1,3 +1,4 @@
+import { assertSigningResultContent } from "src/file/content-scheme.util";
 import {
   BadRequestException,
   ConflictException,
@@ -169,6 +170,7 @@ export class SigningE2EService {
     this.assertSourceAvailable(doc);
     if (!doc.isE2EEncrypted)
       throw new BadRequestException("Not an E2E document");
+    assertSigningResultContent(documentId, encryptedPdfBuffer);
     if (doc.status !== "AWAITING_FINALIZATION") {
       throw new BadRequestException(
         `Document status is "${doc.status}", expected "AWAITING_FINALIZATION"`,

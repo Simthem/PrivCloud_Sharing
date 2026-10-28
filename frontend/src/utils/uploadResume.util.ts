@@ -18,6 +18,9 @@ export type UploadResumeEntry = {
   totalChunks: number;
   cryptoChunkSize: number;
   encryptedMetadata?: string;
+  /** E2EE content v2 session and the nonce of the header it sent. */
+  contentScheme?: 2;
+  contentNonce?: string;
   savedAt: number;
 };
 const PREFIX = "privcloud-upload-resume-v1:";
@@ -109,7 +112,13 @@ function validEntry(
     entry.totalChunks ===
       (entry.size > entry.chunkSize
         ? 1 + Math.ceil((entry.size - entry.initialChunkSize) / entry.chunkSize)
-        : 1)
+        : 1) &&
+    (entry.contentScheme === undefined
+      ? entry.contentNonce === undefined
+      : entry.contentScheme === 2 &&
+        entry.cryptoChunkSize === 1_000_000 &&
+        typeof entry.contentNonce === "string" &&
+        /^[A-Za-z0-9_-]{22}$/.test(entry.contentNonce))
   );
 }
 export async function readUploadResumeEntries(

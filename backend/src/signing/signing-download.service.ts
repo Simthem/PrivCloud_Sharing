@@ -9,6 +9,7 @@ import { PrismaService } from "src/prisma/prisma.service";
 import { appendSignatureAuditEvent } from "./signing-audit.util";
 import { toVisibleAuditEvent } from "./signing-exposure.util";
 import { FileService } from "src/file/file.service";
+import { holdsSigningEmailSession } from "./signing-email-session.util";
 
 @Injectable()
 export class SigningDownloadService {
@@ -114,6 +115,7 @@ export class SigningDownloadService {
   async getOriginalPdfForPreview(
     signingToken: string,
     userId?: string,
+    emailSession?: unknown,
   ): Promise<{
     buffer: Buffer;
     fileName: string;
@@ -153,7 +155,7 @@ export class SigningDownloadService {
 
     if (
       recipient.document.signatureLevel === "STANDARD" &&
-      !recipient.otpVerified
+      !holdsSigningEmailSession(recipient, emailSession)
     ) {
       throw new ForbiddenException(
         "Verify the assigned email address to view this document",

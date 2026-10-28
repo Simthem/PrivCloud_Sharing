@@ -132,9 +132,9 @@ async function fixture(mode, callback) {
         process.execPath,
         [
           fileURLToPath(new URL("../read-only.mjs", import.meta.url)),
-          configPath,
+          "private-test-config.json",
         ],
-        { env, timeout: 30000, maxBuffer: 65536 },
+        { cwd: directory, env, timeout: 30000, maxBuffer: 65536 },
       );
       return JSON.parse(stdout);
     };

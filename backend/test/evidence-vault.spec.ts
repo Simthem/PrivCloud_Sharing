@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
 import { createHash, randomBytes, randomUUID } from "crypto";
+import { HttpException } from "@nestjs/common";
 import { EvidenceVaultGuard } from "src/evidenceVault/evidenceVault.guard";
 import {
   EVIDENCE_VAULT_COOKIE,
@@ -158,7 +159,7 @@ testCase("the guard wants an administrator and an opened vault", async () => {
     context(undefined, value),
     context(admin, randomBytes(32).toString("base64url")),
   ]) {
-    await assert.rejects(guard.canActivate(denied), (error: any) => {
+    await assert.rejects(guard.canActivate(denied), (error: HttpException) => {
       assert.equal(error.getStatus(), 403);
       return true;
     });
@@ -172,7 +173,7 @@ testCase("every extraction is journaled before it is returned", async () => {
   assert.deepEqual(calls, [`event:VAULT:${PREVIEW}`, "certificate"]);
   await assert.rejects(
     service.certificate(TEAM, randomUUID(), admin as never),
-    (error: any) => error.getStatus() === 404,
+    (error: HttpException) => error.getStatus() === 404,
   );
   assert.equal(calls.length, 2);
 });
@@ -193,7 +194,7 @@ testCase("teams keep their recorded name once deleted", async () => {
   assert.equal(team.teamExists, true);
   await assert.rejects(
     service.teams("x".repeat(101)),
-    (error: any) => error.getStatus() === 400,
+    (error: HttpException) => error.getStatus() === 400,
   );
 });
 
@@ -203,13 +204,13 @@ testCase(
     let { service, calls } = vault({ teamExists: true });
     await assert.rejects(
       service.erase(TEAM, "Cabinet renommé", admin as never),
-      (error: any) => error.getStatus() === 409,
+      (error: HttpException) => error.getStatus() === 409,
     );
     assert.deepEqual(calls, []);
     ({ service, calls } = vault());
     await assert.rejects(
       service.erase(TEAM, "cabinet", admin as never),
-      (error: any) => error.getStatus() === 400,
+      (error: HttpException) => error.getStatus() === 400,
     );
     assert.deepEqual(calls, []);
     assert.deepEqual(await service.erase(TEAM, "Cabinet", admin as never), {

@@ -116,6 +116,7 @@ module.exports = {
         "/sign/:token",
         "/external/:path*",
         "/admin/evidence-vault",
+        "/auth/change-email",
       ].map((source) => ({
         source,
         headers: [

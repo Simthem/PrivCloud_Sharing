@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
+import { HttpException } from "@nestjs/common";
 import { S3FileService } from "src/file/s3.service";
 import { createUnitTestRunner } from "./unit-test";
 
@@ -11,10 +12,50 @@ const plainBytes = 361_700_000_000;
 const storedBytes = plainBytes + Math.ceil(plainBytes / 1_000_000) * 28;
 const totalParts = 1 + Math.ceil((plainBytes - 32_000_000) / 50_000_000);
 
+type MultipartState = {
+  uploadId: string;
+  shareId: string;
+  flowId: string;
+  parts: unknown[];
+  lastActivity: number;
+};
+type S3Command = {
+  constructor: { name: string };
+  input: {
+    Prefix?: string;
+    KeyMarker?: string;
+    UploadIdMarker?: string;
+    PartNumberMarker?: string;
+    MultipartUpload?: { Parts: unknown[] };
+  };
+};
+type MultipartDouble = Pick<
+  S3FileService,
+  "initializeMultipartUpload" | "completeMultipartUpload"
+> & {
+  multipartUploads: Map<string, MultipartState>;
+  multipartInitializations: Map<string, unknown>;
+  config: { get: (name: string) => string };
+  logger: Record<string, (message: string) => unknown>;
+  getAdaptiveUploadScheduler: () => {
+    registerFlow(): void;
+    touchFlow(): void;
+    unregisterFlow: (id: string) => unknown;
+  };
+  getS3Instance: () => { send: (command: S3Command) => Promise<unknown> };
+  prisma: unknown;
+  cleanupAbandonedUploads(): Promise<void>;
+};
+type SavedFile = {
+  size: string;
+  encryptionChunkSize: number;
+  encryptedMetadata: string;
+};
+
 function serviceFixture() {
   const messages: string[] = [],
     commands: string[] = [];
-  const service: any = Object.create(S3FileService.prototype);
+  const service: MultipartDouble = Object.create(S3FileService.prototype);
   service.multipartUploads = new Map();
   service.multipartInitializations = new Map();
   service.config = {
@@ -34,7 +75,7 @@ function serviceFixture() {
     unregisterFlow: (id: string) => released.push(id),
   });
   service.getS3Instance = () => ({
-    send: async (command: any) => {
+    send: async (command: S3Command) => {
       commands.push(command.constructor.name);
       return {};
     },
@@ -122,7 +163,7 @@ testCase(
   async () => {
     const f = serviceFixture();
     let completed = false,
-      saved: any,
+      saved: SavedFile | undefined,
       failDatabaseOnce = true,
       completionCalls = 0;
     const listPages: number[] = [];
@@ -131,7 +172,7 @@ testCase(
       share: { findUnique: async () => ({ files: [] }) },
       file: {
         findUnique: async () => (saved ? { shareId } : null),
-        create: async ({ data }: any) => {
+        create: async ({ data }: { data: SavedFile }) => {
           if (failDatabaseOnce) {
             failDatabaseOnce = false;
             throw new Error("database unavailable");
@@ -142,10 +183,11 @@ testCase(
       },
     };
     f.service.prisma = {
-      $transaction: async (operation: any) => operation(tx),
+      $transaction: async (operation: (client: typeof tx) => unknown) =>
+        operation(tx),
     };
     f.service.getS3Instance = () => ({
-      send: async (command: any) => {
+      send: async (command: S3Command) => {
         const name = command.constructor.name;
         f.commands.push(name);
         if (name === "ListMultipartUploadsCommand") {
@@ -215,7 +257,7 @@ testCase(
     assert.equal(initialized.uploadedParts.length, totalParts);
     assert.equal(
       initialized.uploadedParts.reduce(
-        (sum: number, part: any) => sum + part.size,
+        (sum: number, part) => sum + part.size,
         0,
       ),
       storedBytes,
@@ -235,7 +277,10 @@ testCase(
         Number.MAX_SAFE_INTEGER,
         1_000_000,
       );
-    await assert.rejects(finish, (error: any) => error.getStatus() === 503);
+    await assert.rejects(
+      finish,
+      (error: HttpException) => error.getStatus() === 503,
+    );
     assert.equal(saved, undefined);
     const result = await finish();
     assert.equal(result.uploadComplete, true);
@@ -244,7 +289,9 @@ testCase(
     assert.equal(saved.encryptedMetadata, "fixture-ciphertext");
     assert.equal(completionCalls, 1);
     const previousCalls = f.commands.length;
-    assert.equal((await finish()).alreadyCompleted, true);
+    const repeated = await finish();
+    assert.ok("alreadyCompleted" in repeated);
+    assert.equal(repeated.alreadyCompleted, true);
     assert.equal(f.commands.length, previousCalls);
     assert.equal(f.service.multipartUploads.size, 0);
   },

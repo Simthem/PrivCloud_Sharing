@@ -100,3 +100,14 @@ test("Gmail provides manual-paste recovery when the draft update fails", () => {
   assert.ok(response.notification.text.includes("Paste it directly"));
 });
 
+test("Gmail accepts the v2 share namespace without accepting arbitrary dotted paths", () => {
+  assert.equal(
+    addon().insertShareLink(event(`${origin}/s/v2.new-share#key=example`)).type,
+    "UpdateDraftActionResponseBuilder",
+  );
+  for (const id of ["other.namespace", "v2..evil", "v2./evil"])
+    assert.equal(
+      addon().insertShareLink(event(`${origin}/s/${id}`)).type,
+      "ActionResponseBuilder",
+    );
+});

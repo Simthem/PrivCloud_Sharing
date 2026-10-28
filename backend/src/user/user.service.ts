@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -132,7 +133,14 @@ export class UserSevice {
     }
   }
 
-  async update(id: string, user: UpdateUserDto) {
+  async update(id: string, user: UpdateUserDto, administratorId?: string) {
+    // Optional means absent: a null would erase the password, or fail on the
+    // address, without any of the checks below.
+    if (user.password === null || user.email === null) {
+      throw new BadRequestException(
+        "The password and email address cannot be removed",
+      );
+    }
     try {
       const current = await this.prisma.user.findUnique({ where: { id } });
       const emailChanged =
@@ -145,7 +153,6 @@ export class UserSevice {
       // out of an instance that cannot send it anything.
       const reverifyOnEmailChange =
         emailChanged && this.emailVerificationService.isDeliveryAvailable();
-      const hash = user.password && (await argon.hash(user.password));
       const { password: _password, ...userData } = user as Record<
         string,
         unknown
@@ -157,6 +164,14 @@ export class UserSevice {
 
       const addressChanged =
         !!current && !!user.email && user.email !== current.email;
+      // An administrator proves their own changes like any other user: the
+      // account page asks for the current password, 2FA and both mailboxes.
+      if (administratorId === id && (addressChanged || user.password)) {
+        throw new ForbiddenException(
+          "Change your own email address or password from your account settings",
+        );
+      }
+      const hash = user.password && (await argon.hash(user.password));
 
       const verificationData = reverifyOnEmailChange
         ? {
@@ -170,15 +185,55 @@ export class UserSevice {
           }
         : {};
 
-      const updated = await this.prisma.user.update({
-        where: { id },
-        data: {
-          ...(userData as Prisma.UserUpdateInput),
-          password: hash,
-          ...verificationData,
-          ...(addressChanged ? { emailVerificationSource: null } : {}),
-        },
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.user.update({
+          where: { id },
+          data: {
+            ...(userData as Prisma.UserUpdateInput),
+            password: hash,
+            ...verificationData,
+            ...(addressChanged ? { emailVerificationSource: null } : {}),
+            // A new password restarts the sign-in failure count.
+            ...(hash
+              ? {
+                  failedLoginAttempts: 0,
+                  lockedUntil: null,
+                  lastFailedLoginAt: null,
+                }
+              : {}),
+          },
+        });
+        // Links mailed to the previous address, or issued before the new
+        // password, no longer speak for the account. Nor do its sessions
+        // once an administrator replaces the password.
+        if (addressChanged || hash) {
+          await tx.resetPasswordToken.deleteMany({ where: { userId: id } });
+        }
+        if (addressChanged) {
+          await tx.emailChangeRequest.deleteMany({ where: { userId: id } });
+          await tx.emailVerificationToken.deleteMany({ where: { userId: id } });
+        }
+        if (hash) {
+          await tx.refreshToken.deleteMany({ where: { userId: id } });
+          await tx.loginToken.deleteMany({ where: { userId: id } });
+        }
+        return updated;
       });
+      if (administratorId && (addressChanged || hash)) {
+        this.logger.warn(
+          `Administrator ${administratorId} changed the ${addressChanged ? "email address" : "password"}${addressChanged && hash ? " and password" : ""} of user ${id}`,
+        );
+      }
+      if (
+        administratorId &&
+        current &&
+        user.isAdmin !== undefined &&
+        !!user.isAdmin !== current.isAdmin
+      ) {
+        this.logger.warn(
+          `Administrator ${administratorId} ${user.isAdmin ? "granted" : "revoked"} administrator rights ${user.isAdmin ? "to" : "of"} user ${id}`,
+        );
+      }
 
       if (reverifyOnEmailChange) {
         await this.emailVerificationService.issueAndSend(updated);

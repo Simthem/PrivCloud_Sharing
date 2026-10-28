@@ -14,6 +14,7 @@ import { useMediaQuery } from "@mantine/hooks";
 import { useModals } from "@mantine/modals";
 import { TbCheck, TbEdit, TbTrash } from "react-icons/tb";
 import { FormattedMessage, useIntl } from "react-intl";
+import useUser from "../../../hooks/user.hook";
 import User from "../../../types/user.type";
 import showUpdateUserModal from "./showUpdateUserModal";
 
@@ -30,6 +31,7 @@ const ManageUserTable = ({
 }) => {
   const modals = useModals();
   const intl = useIntl();
+  const { user: currentUser } = useUser();
   const isMobile = useMediaQuery("(max-width: 680px)");
 
   const fmtDate = (iso?: string | null) => {
@@ -88,7 +90,12 @@ const ManageUserTable = ({
                         </Badge>
                       )}
                       {user.isAdmin && (
-                        <Badge size="xs" color="red" variant="light" style={{ flexShrink: 0 }}>
+                        <Badge
+                          size="xs"
+                          color="red"
+                          variant="light"
+                          style={{ flexShrink: 0 }}
+                        >
                           Admin
                         </Badge>
                       )}
@@ -100,7 +107,9 @@ const ManageUserTable = ({
                       <Badge color={accessColor()} variant="light" size="sm">
                         Full access
                       </Badge>
-                      <Text size="xs" c="dimmed">{fmtDate(user.createdAt)}</Text>
+                      <Text size="xs" c="dimmed">
+                        {fmtDate(user.createdAt)}
+                      </Text>
                     </Group>
                   </Box>
                   <Group gap="sm" wrap="nowrap">
@@ -111,7 +120,12 @@ const ManageUserTable = ({
                         size={28}
                         aria-label={editLabel(user)}
                         onClick={() =>
-                          showUpdateUserModal(modals, user, getUsers)
+                          showUpdateUserModal(
+                            modals,
+                            user,
+                            getUsers,
+                            user.id === currentUser?.id,
+                          )
                         }
                       >
                         <TbEdit />
@@ -202,7 +216,12 @@ const ManageUserTable = ({
                             size={28}
                             aria-label={editLabel(user)}
                             onClick={() =>
-                              showUpdateUserModal(modals, user, getUsers)
+                              showUpdateUserModal(
+                                modals,
+                                user,
+                                getUsers,
+                                user.id === currentUser?.id,
+                              )
                             }
                           >
                             <TbEdit />

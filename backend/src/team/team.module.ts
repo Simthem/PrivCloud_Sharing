@@ -9,6 +9,7 @@ import { ConfigModule } from "src/config/config.module";
 import { FileModule } from "src/file/file.module";
 import { TeamNotificationModule } from "src/teamNotification/teamNotification.module";
 import { TeamAuditService } from "./team-audit.service";
+import { StepUpModule } from "src/auth/stepUp.module";
 @Module({
   imports: [
     TeamFileRequestModule,
@@ -18,6 +19,7 @@ import { TeamAuditService } from "./team-audit.service";
     FileModule,
     TeamNotificationModule,
     TeamExternalModule,
+    StepUpModule,
   ],
   controllers: [TeamController],
   providers: [TeamService, TeamAuditService],

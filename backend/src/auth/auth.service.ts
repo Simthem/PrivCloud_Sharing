@@ -27,12 +27,27 @@ import { UserSevice } from "../user/user.service";
 import { AuthRegisterDTO } from "./dto/authRegister.dto";
 import { AuthSignInDTO } from "./dto/authSignIn.dto";
 import { LdapService } from "./ldap.service";
-import { LoginBackoffPolicy, nextLoginFailureState } from "./loginBackoff.util";
+import { OAuthReauthService } from "./oauthReauth.service";
+import {
+  LoginBackoffPolicy,
+  LoginFailureState,
+  nextLoginFailureState,
+} from "./loginBackoff.util";
 import {
   decryptRefreshReplay,
   encryptRefreshReplay,
   RefreshReplayTokens,
 } from "./refresh-replay.util";
+
+// A failed sign-in retries its compare-and-set write this many times before
+// falling back to a plain increment.
+const LOGIN_FAILURE_WRITE_ATTEMPTS = 8;
+
+/** A failure counted ahead of its check, and what it found and changed. */
+type LoginReservation = LoginFailureState & {
+  blocked: boolean;
+  lockOwned: boolean;
+};
 
 @Injectable()
 export class AuthService {
@@ -48,6 +63,7 @@ export class AuthService {
     private ldapService: LdapService,
     private userService: UserSevice,
     @Inject(forwardRef(() => OAuthService)) private oAuthService: OAuthService,
+    private oauthReauth: OAuthReauthService,
   ) {}
   private readonly logger = new Logger(AuthService.name);
 
@@ -156,6 +172,147 @@ export class AuthService {
     );
   }
 
+  /**
+   * Concurrent failures must not overwrite each other: each one is written
+   * only over the state it was computed from, and recomputed from a fresh read
+   * otherwise. Under persistent contention it is still counted.
+   */
+  private async recordLoginFailure(
+    user: Pick<
+      User,
+      "id" | "failedLoginAttempts" | "lastFailedLoginAt" | "lockedUntil"
+    >,
+  ) {
+    let current = user;
+    for (let attempt = 0; attempt < LOGIN_FAILURE_WRITE_ATTEMPTS; attempt++) {
+      const failure = nextLoginFailureState({
+        previousAttempts: current.failedLoginAttempts,
+        lastFailedLoginAt: current.lastFailedLoginAt,
+        previousLockedUntil: current.lockedUntil,
+        policy: this.loginBackoffPolicy(),
+      });
+      const { count } = await this.prisma.user.updateMany({
+        where: {
+          id: current.id,
+          failedLoginAttempts: current.failedLoginAttempts,
+          lastFailedLoginAt: current.lastFailedLoginAt,
+          lockedUntil: current.lockedUntil,
+        },
+        data: {
+          failedLoginAttempts: failure.attempts,
+          lockedUntil: failure.lockedUntil,
+          lastFailedLoginAt: failure.lastFailedLoginAt,
+        },
+      });
+      // An attempt counted over a lock still running is refused unchecked.
+      // The lock is only ever given back by the attempt that set it.
+      if (count === 1)
+        return {
+          ...failure,
+          blocked: !!current.lockedUntil && current.lockedUntil > new Date(),
+          lockOwned: !!failure.lockedUntil,
+        };
+
+      const fresh = await this.prisma.user.findUnique({
+        where: { id: current.id },
+        select: {
+          id: true,
+          failedLoginAttempts: true,
+          lastFailedLoginAt: true,
+          lockedUntil: true,
+        },
+      });
+      if (!fresh) return { ...failure, blocked: false, lockOwned: false };
+      current = fresh;
+    }
+
+    const now = new Date();
+    const { count } = await this.prisma.user.updateMany({
+      where: { id: current.id },
+      data: { failedLoginAttempts: { increment: 1 }, lastFailedLoginAt: now },
+    });
+    const counted =
+      count === 1 &&
+      (await this.prisma.user.findUnique({
+        where: { id: current.id },
+        select: { failedLoginAttempts: true, lockedUntil: true },
+      }));
+    // The account is gone: there is nothing left to lock.
+    if (!counted) {
+      return {
+        attempts: 0,
+        lastFailedLoginAt: now,
+        lockedUntil: null,
+        retryAfterSeconds: 0,
+        blocked: false,
+        lockOwned: false,
+      };
+    }
+    const failure = nextLoginFailureState({
+      previousAttempts: counted.failedLoginAttempts - 1,
+      lastFailedLoginAt: now,
+      previousLockedUntil: counted.lockedUntil,
+      now,
+      policy: this.loginBackoffPolicy(),
+    });
+    if (failure.lockedUntil) {
+      // Only ever extends a lock another request may have set meanwhile.
+      await this.prisma.user.updateMany({
+        where: {
+          id: current.id,
+          OR: [
+            { lockedUntil: null },
+            { lockedUntil: { lt: failure.lockedUntil } },
+          ],
+        },
+        data: { lockedUntil: failure.lockedUntil },
+      });
+    }
+    if (
+      counted.lockedUntil &&
+      counted.lockedUntil > (failure.lockedUntil ?? now)
+    ) {
+      return {
+        ...failure,
+        lockedUntil: counted.lockedUntil,
+        blocked: true,
+        lockOwned: false,
+      };
+    }
+    return {
+      ...failure,
+      blocked: !!counted.lockedUntil && counted.lockedUntil > now,
+      lockOwned: false,
+    };
+  }
+
+  /**
+   * A successful sign-in clears the failure count, but never a lock that a
+   * concurrent failure set after this request checked it.
+   */
+  async clearLoginFailures(userId: string) {
+    const now = new Date();
+    const { count } = await this.prisma.user.updateMany({
+      where: {
+        id: userId,
+        failedLoginAttempts: { gt: 0 },
+        OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }],
+      },
+      data: {
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+        lastFailedLoginAt: null,
+      },
+    });
+    if (count === 1) return;
+    const current = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { lockedUntil: true },
+    });
+    if (current?.lockedUntil && current.lockedUntil > now)
+      throw this.lockedLogin(current.lockedUntil);
+  }
+
   async signIn(dto: AuthSignInDTO, _ip: string) {
     if (!dto.email && !dto.username) {
       throw new BadRequestException("Email or username is required");
@@ -179,22 +336,23 @@ export class AuthService {
       throw this.lockedLogin(targetUser.lockedUntil);
     }
 
+    // Counted before it is checked: concurrent guesses must not all pass the
+    // lock above. Only those within the limit are checked, the one that
+    // reaches it included. An unknown name has nothing to lock.
+    const reserved = targetUser && (await this.recordLoginFailure(targetUser));
+    if (reserved?.blocked) {
+      this.logger.warn(
+        `Locked account login attempt for user ${targetUser.id}`,
+      );
+      throw this.lockedLogin(reserved.lockedUntil ?? new Date());
+    }
+
     if (!this.config.get("oauth.disablePassword")) {
       if (
         targetUser?.password &&
         (await argon.verify(targetUser.password, dto.password))
       ) {
-        // Reset failed attempts on successful login
-        if (targetUser.failedLoginAttempts > 0) {
-          await this.prisma.user.update({
-            where: { id: targetUser.id },
-            data: {
-              failedLoginAttempts: 0,
-              lockedUntil: null,
-              lastFailedLoginAt: null,
-            },
-          });
-        }
+        await this.passwordAccepted(targetUser, reserved);
         this.logger.log(`Successful password login for user ${targetUser.id}`);
         return this.generateToken(targetUser);
       }
@@ -209,46 +367,25 @@ export class AuthService {
       );
       if (ldapUser) {
         const user = await this.userService.findOrCreateFromLDAP(dto, ldapUser);
-        // Reset failed attempts on successful LDAP login
-        if (user.failedLoginAttempts > 0) {
-          await this.prisma.user.update({
-            where: { id: user.id },
-            data: {
-              failedLoginAttempts: 0,
-              lockedUntil: null,
-              lastFailedLoginAt: null,
-            },
-          });
+        // The name typed may belong to another local account than the
+        // directory entry: that account gets its reserved attempt back.
+        if (reserved && user.id !== targetUser.id) {
+          await this.refundAttempt(targetUser.id, reserved);
         }
+        await this.passwordAccepted(
+          user,
+          user.id === targetUser?.id ? reserved : undefined,
+        );
         this.logger.log(`Successful LDAP login for user ${user.id}`);
         return this.generateToken(user);
       }
     }
 
-    // Increment failed attempts
-    if (targetUser) {
-      const failure = nextLoginFailureState({
-        previousAttempts: targetUser.failedLoginAttempts,
-        lastFailedLoginAt: targetUser.lastFailedLoginAt,
-        previousLockedUntil: targetUser.lockedUntil,
-        policy: this.loginBackoffPolicy(),
-      });
-
-      await this.prisma.user.update({
-        where: { id: targetUser.id },
-        data: {
-          failedLoginAttempts: failure.attempts,
-          lockedUntil: failure.lockedUntil,
-          lastFailedLoginAt: failure.lastFailedLoginAt,
-        },
-      });
-
-      if (failure.lockedUntil) {
-        this.logger.warn(
-          `Account ${targetUser.id} locked after ${failure.attempts} failed attempts`,
-        );
-        throw this.lockedLogin(failure.lockedUntil);
-      }
+    if (reserved?.lockedUntil) {
+      this.logger.warn(
+        `Account ${targetUser.id} locked after ${reserved.attempts} failed attempts`,
+      );
+      throw this.lockedLogin(reserved.lockedUntil);
     }
 
     this.logger.log("Failed login attempt");
@@ -266,16 +403,7 @@ export class AuthService {
       this.logger.warn(`Locked account passkey sign-in for user ${user.id}`);
       throw this.lockedLogin(user.lockedUntil);
     }
-    if (user.failedLoginAttempts > 0) {
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: {
-          failedLoginAttempts: 0,
-          lockedUntil: null,
-          lastFailedLoginAt: null,
-        },
-      });
-    }
+    await this.clearLoginFailures(user.id);
     this.logger.log(`Successful passkey login for user ${user.id}`);
     return this.generateToken(user, undefined, {
       multiFactor: true,
@@ -292,9 +420,10 @@ export class AuthService {
     // Invalidate all old loginTokens when a new one is created
     await this.prisma.loginToken.deleteMany({ where: { userId: user.id } });
 
-    // Check if the user has TOTP enabled
+    // A verified flag without a secret is not a usable second factor.
     if (
       user.totpVerified &&
+      !!user.totpSecret &&
       !options.multiFactor &&
       !(oauth && this.config.get("oauth.ignoreTotp"))
     ) {
@@ -330,25 +459,26 @@ export class AuthService {
       return;
     }
 
-    // Delete old reset password token
-    if (user.resetPasswordToken) {
-      await this.prisma.resetPasswordToken.delete({
-        where: { token: user.resetPasswordToken.token },
-      });
-    }
-
     const rawToken = crypto.randomBytes(32).toString("base64url");
     const tokenHash = crypto
       .createHash("sha256")
       .update(rawToken)
       .digest("hex");
-    await this.prisma.resetPasswordToken.create({
-      data: {
-        token: tokenHash,
-        expiresAt: moment().add(1, "hour").toDate(),
-        user: { connect: { id: user.id } },
-      },
+    const issued = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`UPDATE "User" SET "id" = "id" WHERE "id" = ${user.id}`;
+      const current = await tx.user.findUnique({ where: { id: user.id } });
+      if (!current || current.email !== email || current.ldapDN) return false;
+      await tx.resetPasswordToken.deleteMany({ where: { userId: user.id } });
+      await tx.resetPasswordToken.create({
+        data: {
+          token: tokenHash,
+          userId: user.id,
+          expiresAt: moment().add(1, "hour").toDate(),
+        },
+      });
+      return true;
     });
+    if (!issued) return;
 
     try {
       await this.emailService.sendResetPasswordEmail(user.email, rawToken);
@@ -390,29 +520,59 @@ export class AuthService {
     const newPasswordHash = await argon.hash(newPassword);
 
     await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`UPDATE "User" SET "id" = "id" WHERE "id" = ${resetToken.user.id}`;
+      const currentToken = await tx.resetPasswordToken.findUnique({
+        where: { token: resetToken.token },
+      });
+      if (!currentToken || currentToken.expiresAt.getTime() <= Date.now())
+        throw new BadRequestException("Token invalid or expired");
       await tx.resetPasswordToken.delete({
         where: { token: resetToken.token },
       });
       await tx.user.update({
         where: { id: resetToken.user.id },
-        data: { password: newPasswordHash },
+        // The emailed link proves the account: the failure count restarts.
+        data: {
+          password: newPasswordHash,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+          lastFailedLoginAt: null,
+        },
       });
       // Invalidate all sessions on password reset
       await tx.refreshToken.deleteMany({
         where: { userId: resetToken.user.id },
       });
+      // A sign-in still waiting for its 2FA code was made with the old password.
+      await tx.loginToken.deleteMany({
+        where: { userId: resetToken.user.id },
+      });
     });
   }
 
+  /**
+   * Without a current password, a session alone must not be enough to set one:
+   * it would outlive the session and sign every other device out. Such an
+   * account proves a fresh sign-in with its linked OAuth provider (or its
+   * directory password), otherwise it goes through the emailed reset link.
+   */
   async updatePassword(
     user: User,
     newPassword: string,
     oldPassword?: string,
+    reauthProof?: string,
   ): Promise<void> {
-    const isPasswordValid =
-      !user.password || (await argon.verify(user.password, oldPassword));
-
-    if (!isPasswordValid) throw new ForbiddenException("Invalid password");
+    if (user.password) {
+      if (!oldPassword || !(await this.verifyPassword(user, oldPassword)))
+        throw new ForbiddenException("Invalid password");
+    } else if (oldPassword) {
+      if (!(await this.verifyPassword(user, oldPassword)))
+        throw new ForbiddenException("Invalid password");
+    } else if (
+      !(await this.oauthReauth.consumeProof(reauthProof, user.id, "PASSWORD"))
+    ) {
+      throw new ForbiddenException("Sign in again with your linked account");
+    }
 
     const hash = await argon.hash(newPassword);
 
@@ -808,13 +968,84 @@ export class AuthService {
     }
   }
 
+  /**
+   * A signed-in user proving a factor again, to change their email address,
+   * password or 2FA, makes one more sign-in attempt: a stolen session must not
+   * become a guessing oracle that the per-account lock never sees.
+   */
+  async countReauthentication(
+    userId: string,
+    check: () => Promise<boolean>,
+  ): Promise<boolean> {
+    const state = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        failedLoginAttempts: true,
+        lastFailedLoginAt: true,
+        lockedUntil: true,
+      },
+    });
+    if (!state) return false;
+    if (state.lockedUntil && state.lockedUntil > new Date())
+      throw this.lockedLogin(state.lockedUntil);
+    // Counted before it is checked, like a sign-in code: concurrent guesses
+    // must not all read the same count and each get a check. Only those within
+    // the limit are checked, the one that reaches it included.
+    const reserved = await this.recordLoginFailure(state);
+    if (reserved.blocked)
+      throw this.lockedLogin(reserved.lockedUntil ?? new Date());
+    if (await check()) {
+      await this.refundAttempt(userId, reserved);
+      return true;
+    }
+    if (reserved.lockedUntil) throw this.lockedLogin(reserved.lockedUntil);
+    return false;
+  }
+
+  /**
+   * A correct password gives back the attempt it reserved. The failure count
+   * only restarts once the sign-in is complete: with 2FA on, after the code,
+   * so that knowing the password does not buy fresh guesses at it.
+   */
+  private async passwordAccepted(
+    user: User,
+    reserved?: LoginReservation | null,
+  ) {
+    if (reserved) await this.refundAttempt(user.id, reserved);
+    if (!user.totpVerified) await this.clearLoginFailures(user.id);
+  }
+
+  /** A proven attempt gives back what it reserved, and the lock if it set it. */
+  private async refundAttempt(userId: string, reserved: LoginReservation) {
+    await this.prisma.user.updateMany({
+      where: { id: userId, failedLoginAttempts: { gt: 0 } },
+      data: { failedLoginAttempts: { decrement: 1 } },
+    });
+    if (reserved.lockOwned && reserved.lockedUntil) {
+      await this.prisma.user.updateMany({
+        where: { id: userId, lockedUntil: reserved.lockedUntil },
+        data: { lockedUntil: null },
+      });
+    }
+  }
+
+  /** Re-authentication only: sign-in checks its password on its own. */
   async verifyPassword(user: User, password: string) {
-    if (!user.password && this.config.get("ldap.enabled")) {
+    return this.countReauthentication(user.id, () =>
+      this.matchesPassword(user, password),
+    );
+  }
+
+  private async matchesPassword(user: User, password: string) {
+    if (!user.password && user.ldapDN && this.config.get("ldap.enabled")) {
+      // The username can be edited: only the directory entry this account was
+      // created from may vouch for it.
       const ldapUser = await this.ldapService.authenticateUser(
         user.username,
         password,
       );
-      return !!ldapUser;
+      return ldapUser?.dn === user.ldapDN;
     }
 
     if (!user.password) return false;

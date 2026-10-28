@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -212,13 +213,25 @@ async function packageEntries(descriptor, options) {
   );
 }
 
+// The destination is wiped before every build, so it has to be a dedicated
+// directory strictly inside the work tree or the system temporary directory.
+function confineOutputDirectory(candidate) {
+  const resolved = path.resolve(candidate);
+  for (const root of [repositoryDirectory, path.resolve(os.tmpdir())]) {
+    if (resolved.startsWith(root + path.sep)) return resolved;
+  }
+  throw new Error(
+    `Refusing to build outside the work tree or the temporary directory: ${resolved}`,
+  );
+}
+
 function sha256(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
 export async function buildIntegrations({ baseUrl, outputDirectory } = {}) {
   const canonicalBaseUrl = normalizeBaseUrl(baseUrl || "");
-  const destination = path.resolve(
+  const destination = confineOutputDirectory(
     outputDirectory || path.join(integrationsDirectory, "dist"),
   );
   const rootPackage = JSON.parse(

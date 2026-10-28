@@ -1,15 +1,24 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
-import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
+import {
+  ExecutionContext,
+  ForbiddenException,
+  HttpException,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
+import { ConfigService } from "src/config/config.service";
+import { PrismaService } from "src/prisma/prisma.service";
+import { ReverseShareService } from "src/reverseShare/reverseShare.service";
 import { CreateShareGuard } from "src/share/guard/createShare.guard";
 import { ShareOwnerGuard } from "src/share/guard/shareOwner.guard";
+import { TeamShareAccessService } from "src/share/team-share-access.service";
 import { createUnitTestRunner } from "./unit-test";
 
 const { testCase, run } = createUnitTestRunner("upload authentication renewal");
 const original = JwtGuard.prototype.canActivate;
-const config: any = { get: () => false };
-function context(cookies = {}, user?: any) {
+const config = { get: () => false } as unknown as ConfigService;
+function context(cookies = {}, user?: { id: string }) {
   return {
     switchToHttp: () => ({
       getRequest: () => ({
@@ -19,9 +28,12 @@ function context(cookies = {}, user?: any) {
         params: { id: "share" },
       }),
     }),
-  } as any;
+  } as unknown as ExecutionContext;
 }
-async function withJwt(attempt: any, operation: () => Promise<void>) {
+async function withJwt(
+  attempt: JwtGuard["canActivate"],
+  operation: () => Promise<void>,
+) {
   JwtGuard.prototype.canActivate = attempt;
   try {
     await operation();
@@ -40,7 +52,7 @@ testCase(
       async () => {
         const guard = new CreateShareGuard(config, {
           isValid: async () => false,
-        } as any);
+        } as unknown as ReverseShareService);
         for (const cookies of [
           {},
           { refresh_token: "fixture" },
@@ -48,7 +60,7 @@ testCase(
         ]) {
           await assert.rejects(
             guard.canActivate(context(cookies)),
-            (error: any) => error.getStatus() === 401,
+            (error: HttpException) => error.getStatus() === 401,
           );
         }
       },
@@ -66,7 +78,7 @@ testCase(
       async () => {
         const guard = new CreateShareGuard(config, {
           isValid: async (token: string) => token === "valid",
-        } as any);
+        } as unknown as ReverseShareService);
         assert.equal(
           await guard.canActivate(context({ reverse_share_token: "valid" })),
           true,
@@ -90,10 +102,10 @@ testCase(
       async () => {
         const guard = new CreateShareGuard(config, {
           isValid: async () => true,
-        } as any);
+        } as unknown as ReverseShareService);
         await assert.rejects(
           guard.canActivate(context({ reverse_share_token: "valid" })),
-          (error: any) => error.getStatus() === 403,
+          (error: HttpException) => error.getStatus() === 403,
         );
       },
     );
@@ -109,8 +121,8 @@ testCase(
         share: {
           findUnique: async () => ({ creatorId: "owner", teamFolderId: null }),
         },
-      } as any,
-      {} as any,
+      } as unknown as PrismaService,
+      {} as TeamShareAccessService,
     );
     await withJwt(
       async () => {
@@ -119,7 +131,7 @@ testCase(
       async () => {
         await assert.rejects(
           guard.canActivate(context({ refresh_token: "fixture" })),
-          (error: any) => error.getStatus() === 401,
+          (error: HttpException) => error.getStatus() === 401,
         );
       },
     );

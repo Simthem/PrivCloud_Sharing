@@ -4,7 +4,12 @@ const os = require("node:os");
 const path = require("node:path");
 const https = require("node:https");
 const { spawn, execFileSync } = require("node:child_process");
-const { createCipheriv, createHash, X509Certificate } = require("node:crypto");
+const {
+  createCipheriv,
+  createHash,
+  randomBytes,
+  X509Certificate,
+} = require("node:crypto");
 const ts = require("typescript");
 const { zipSync, strToU8 } = require("fflate");
 const { createChromeProtocolPipe } = require("./chrome-protocol-pipe.cjs");
@@ -18,10 +23,13 @@ let browser,
   send,
   nextId = 0;
 const pending = new Map(),
-  key = Buffer.alloc(32, 19),
+  key = randomBytes(32),
   recordBytes = 1_000_000;
 const reads = [],
   encryptedCache = new Map(),
+  // An evicted record is encrypted again with its first IV, so range reads
+  // that straddle two requests see the same bytes.
+  recordIvs = new Map(),
   assets = new Map();
 const stats = { requested: 0, wholeRequests: 0 };
 function plainRange(asset, start, end) {
@@ -42,8 +50,8 @@ function storedRange(name, start, end) {
       id = `${name}:${index}`;
     let record = encryptedCache.get(id);
     if (!record) {
-      const iv = Buffer.alloc(12);
-      iv.writeUInt32BE(index, 8);
+      const iv = recordIvs.get(id) ?? randomBytes(12);
+      recordIvs.set(id, iv);
       const cipher = createCipheriv("aes-256-gcm", key, iv);
       const plain = plainRange(
         asset,
@@ -99,6 +107,8 @@ const transpile = (name) =>
     )
     .outputText.replaceAll('"./crypto.util"', '"/crypto.js"')
     .replaceAll('"./previewRange.util"', '"/ranges.js"')
+    .replaceAll('"./contentV2.util"', '"/content-v2.js"')
+    .replaceAll('"./shareContentContext.util"', '"/share-content-context.js"')
     .replaceAll('"./previewReadCache.util"', '"/read-cache.js"')
     .replaceAll('"fflate"', '"/fflate.js"');
 (async () => {
@@ -478,6 +488,8 @@ window.previewOffice=async()=>{const zip=await openPreviewZip(await window.sourc
       const modules = {
         "/crypto.js": "crypto.util",
         "/ranges.js": "previewRange.util",
+        "/content-v2.js": "contentV2.util",
+        "/share-content-context.js": "shareContentContext.util",
         "/read-cache.js": "previewReadCache.util",
         "/media.js": "previewMedia.util",
         "/office.js": "officePreview.util",
@@ -563,6 +575,42 @@ window.previewOffice=async()=>{const zip=await openPreviewZip(await window.sourc
         return answered;
       })()`),
       false,
+    );
+    assert.deepEqual(
+      await evaluate(`(async () => {
+        const { encryptContentV2 } = await import('/content-v2.js');
+        const { encryptFile } = await import('/crypto.js');
+        const { createPreviewByteSource, readPreviewBytes } = await import('/ranges.js');
+        const context = { fileId: '11111111-2222-8333-8444-555555555555' };
+        const plain = Uint8Array.from({length: 2000013}, (_, i) => i % 251);
+        const sealed = await encryptContentV2(window.key, context, plain);
+        const source = async bytes => createPreviewByteSource(async (start, end) => {
+          const last = Math.min(end, bytes.length - 1);
+          return new Response(bytes.slice(start, last + 1), {status: 206, headers: {
+            'Content-Range': 'bytes ' + start + '-' + last + '/' + bytes.length
+          }});
+        }, window.key, 1000000, undefined, context);
+        const opened = await source(sealed);
+        const cross = await readPreviewBytes(opened, 999990, 1000030);
+        const tail = await readPreviewBytes(opened, plain.length - 13, plain.length);
+        const matches = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+        if (!matches(cross, plain.slice(999990, 1000030)) || !matches(tail, plain.slice(-13))) throw new Error('Wrong v2 range');
+        const empty = await source(await encryptContentV2(window.key, context, new Uint8Array()));
+        const corrupt = sealed.slice(); corrupt[corrupt.length - 1] ^= 1;
+        let corruptRejected = false, downgradeRejected = false;
+        try { await readPreviewBytes(await source(corrupt), plain.length - 13, plain.length); } catch { corruptRejected = true; }
+        try { await source(new Uint8Array(await encryptFile(plain.buffer, window.key))); } catch { downgradeRejected = true; }
+        return {length: opened.size, empty: empty.size, corruptRejected, downgradeRejected};
+      })()`),
+      {
+        length: 2000013,
+        empty: 0,
+        corruptRejected: true,
+        downgradeRejected: true,
+      },
+    );
+    console.log(
+      "v2 browser ranges, empty content, corruption and downgrade checks passed",
     );
     console.log("worker ready");
     await wait(
@@ -1094,6 +1142,7 @@ window.previewOffice=async()=>{const zip=await openPreviewZip(await window.sourc
           requestedBytes: stats.requested,
           rangeRequests: reads.length,
           checks: [
+            "v2-browser-ranges-empty-corruption-downgrade",
             "first-frame-before-full-download",
             "seek",
             "playback",

@@ -11,6 +11,16 @@ import { createUnitTestRunner } from "./unit-test";
 
 const { testCase, run } = createUnitTestRunner("upload activity");
 
+type CleanupWhere = {
+  uploadLocked: boolean;
+  uploadCleanupStartedAt: null;
+  uploadLastActivityAt: { lt: Date };
+};
+type RelockQuery = {
+  where: CleanupWhere & { id: string; hasBeenCompleted: boolean };
+  data: { uploadLocked: boolean };
+};
+
 testCase("keeps abandoned-upload cleanup below one hour", () => {
   const now = new Date("2026-08-03T12:00:00.000Z");
 
@@ -82,9 +92,9 @@ testCase(
       storageFails: boolean,
       storageActivity: Date | null = null,
     ) => {
-      let cleanupWhere: any;
+      let cleanupWhere: CleanupWhere;
       let storageDeletes = 0;
-      const prisma: any = {
+      const prisma = {
         runWithAdvisoryLock: async (
           _namespace: string,
           _name: string,
@@ -94,7 +104,7 @@ testCase(
           return { acquired: true };
         },
         share: {
-          findMany: async ({ where }: any) => {
+          findMany: async ({ where }: { where: CleanupWhere }) => {
             cleanupWhere = where;
             return [
               {
@@ -109,7 +119,7 @@ testCase(
         },
       };
       const jobs = new JobsService(
-        prisma,
+        prisma as never,
         {} as never,
         {
           hasCompletedUploadData: async () => false,
@@ -127,11 +137,13 @@ testCase(
         {} as never,
         {} as never,
       );
-      (jobs as any).logger = {
-        debug: () => undefined,
-        warn: () => undefined,
-        log: () => undefined,
-      };
+      Object.assign(jobs, {
+        logger: {
+          debug: () => undefined,
+          warn: () => undefined,
+          log: () => undefined,
+        },
+      });
 
       const before = Date.now();
       await jobs.deleteUnfinishedShares();
@@ -162,9 +174,9 @@ testCase(
 testCase(
   "relocks an abandoned edit of a completed share without touching storage",
   async () => {
-    let relockQuery: any;
+    let relockQuery: RelockQuery;
     let storageCalls = 0;
-    const prisma: any = {
+    const prisma = {
       runWithAdvisoryLock: async (
         _namespace: string,
         _name: string,
@@ -181,14 +193,14 @@ testCase(
             hasBeenCompleted: true,
           },
         ],
-        updateMany: async (query: any) => {
+        updateMany: async (query: RelockQuery) => {
           relockQuery = query;
           return { count: 1 };
         },
       },
     };
     const jobs = new JobsService(
-      prisma,
+      prisma as never,
       {} as never,
       {
         getRecentUploadActivity: async () => {
@@ -206,11 +218,13 @@ testCase(
       {} as never,
       {} as never,
     );
-    (jobs as any).logger = {
-      debug: () => undefined,
-      warn: () => undefined,
-      log: () => undefined,
-    };
+    Object.assign(jobs, {
+      logger: {
+        debug: () => undefined,
+        warn: () => undefined,
+        log: () => undefined,
+      },
+    });
 
     await jobs.deleteUnfinishedShares();
 

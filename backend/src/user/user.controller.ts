@@ -1,21 +1,25 @@
 import {
   Body,
+  BadRequestException,
   ConflictException,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   Logger,
+  NotFoundException,
   Param,
   Patch,
   Post,
   Put,
+  Req,
   Res,
   UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
 import { User } from "@prisma/client";
-import { Response } from "express";
+import { Request, Response } from "express";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { AdministratorGuard } from "src/auth/guard/isAdmin.guard";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
@@ -29,6 +33,7 @@ import { UpdateUserDto } from "./dto/updateUser.dto";
 import { UserDTO } from "./dto/user.dto";
 import { UserSevice } from "./user.service";
 import { AuthTotpService } from "src/auth/authTotp.service";
+import { StepUpService } from "src/auth/stepUp.service";
 import { isShareDekWriteEnabledFor } from "src/share/share-crypto-scheme";
 import {
   isFileMetaWriteEnabledFor,
@@ -45,6 +50,7 @@ export class UserController {
     private config: ConfigService,
     private authTotpService: AuthTotpService,
     private prisma: PrismaService,
+    private stepUp: StepUpService,
   ) {}
 
   // Own user operations
@@ -92,7 +98,13 @@ export class UserController {
     @Body() data: UpdateOwnUserDTO,
   ) {
     if (!user?.id) throw new UnauthorizedException();
-    return new UserDTO().from(await this.userService.update(user.id, data));
+    if (data.email !== undefined && data.email !== user.email) {
+      throw new BadRequestException(
+        "Use the email-change confirmation process to change your email address",
+      );
+    }
+    const { email: _email, ...profile } = data;
+    return new UserDTO().from(await this.userService.update(user.id, profile));
   }
 
   @Delete("me")
@@ -217,20 +229,62 @@ export class UserController {
 
   @Post()
   @UseGuards(JwtGuard, AdministratorGuard)
-  async create(@Body() user: CreateUserDTO) {
-    return new UserDTO().from(await this.userService.create(user));
+  async create(
+    @Body() user: CreateUserDTO,
+    @GetUser() admin: User,
+    @Req() request: Request,
+  ) {
+    if (user.isAdmin) {
+      await this.stepUp.consume(request, admin, "user.create.admin");
+    }
+    const created = await this.userService.create(user);
+    if (created.isAdmin) {
+      this.logger.warn(
+        `Administrator ${admin.id} created the administrator account ${created.id}`,
+      );
+    }
+    return new UserDTO().from(created);
   }
 
   @Patch(":id")
   @UseGuards(JwtGuard, AdministratorGuard)
-  async update(@Param("id") id: string, @Body() user: UpdateUserDto) {
-    return new UserDTO().from(await this.userService.update(id, user));
+  async update(
+    @Param("id") id: string,
+    @Body() user: UpdateUserDto,
+    @GetUser() admin: User,
+    @Req() request: Request,
+  ) {
+    const target = await this.userService.get(id);
+    if (!target) throw new NotFoundException("User not found");
+    // Administrator rights, and the credentials that open someone else's
+    // account (one's own are changed from the account settings only).
+    if (
+      (user.isAdmin !== undefined && !!user.isAdmin !== target.isAdmin) ||
+      (id !== admin.id &&
+        ((user.email !== undefined && user.email !== target.email) ||
+          user.password !== undefined))
+    ) {
+      await this.stepUp.consume(request, admin, `user.update:${id}`);
+    }
+    return new UserDTO().from(
+      await this.userService.update(id, user, admin.id),
+    );
   }
 
   @Delete(":id/totp")
   @HttpCode(204)
   @UseGuards(JwtGuard, AdministratorGuard)
-  async adminDisableTotp(@Param("id") id: string, @GetUser() admin: User) {
+  async adminDisableTotp(
+    @Param("id") id: string,
+    @GetUser() admin: User,
+    @Req() request: Request,
+  ) {
+    if (id === admin.id) {
+      throw new ForbiddenException(
+        "Disable your own two-factor authentication from your account settings",
+      );
+    }
+    await this.stepUp.consume(request, admin, `user.totp.reset:${id}`);
     await this.authTotpService.adminDisableTotp(id);
     this.logger.warn(`Administrator ${admin.id} reset the 2FA of user ${id}`);
   }
@@ -255,7 +309,15 @@ export class UserController {
 
   @Delete(":id")
   @UseGuards(JwtGuard, AdministratorGuard)
-  async delete(@Param("id") id: string) {
+  async delete(
+    @Param("id") id: string,
+    @GetUser() admin: User,
+    @Req() request: Request,
+  ) {
+    // Removing an administrator takes their rights away for good.
+    if ((await this.userService.get(id))?.isAdmin) {
+      await this.stepUp.consume(request, admin, `user.delete:${id}`);
+    }
     return new UserDTO().from(await this.userService.delete(id));
   }
 }

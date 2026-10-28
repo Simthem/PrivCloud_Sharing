@@ -21,6 +21,11 @@ import {
   resolveStoragePath,
 } from "./file-path.util";
 import { resolveUploadFileMetadata } from "./file-metadata-scheme";
+import {
+  assertContentV2FirstPart,
+  assertUploadContentScheme,
+  ContentScheme,
+} from "./content-scheme.util";
 import { touchShareUploadActivity } from "src/share/upload-activity.util";
 
 type MultipartUploadRequest = {
@@ -33,6 +38,7 @@ type MultipartUploadRequest = {
   chunkSize: number;
   initialChunkSize: number;
   encryptionChunkSize?: number;
+  contentScheme?: ContentScheme;
 };
 
 type MultipartPartAuthorizationRequest = {
@@ -111,6 +117,7 @@ export class FileService {
     if (share.uploadLocked) {
       throw new BadRequestException("Share is already completed");
     }
+    await this.assertNewUploadContent(share, request, request.contentScheme);
     await touchShareUploadActivity(this.prisma, share);
 
     const storageService = this.getStorageService(share.storageProvider);
@@ -405,7 +412,10 @@ export class FileService {
       }),
     ]);
     if (!share) throw new NotFoundException("Share not found");
-    const file = this.resolveUploadedFile(share, request);
+    const file = {
+      ...this.resolveUploadedFile(share, request),
+      contentScheme: request.contentScheme,
+    };
     if (existingFile?.shareId === shareId) {
       this.s3FileService.unregisterUploadFlow(shareId, request.id);
       return {
@@ -420,6 +430,14 @@ export class FileService {
     if (share.uploadLocked) {
       throw new BadRequestException("Share is already completed");
     }
+    assertUploadContentScheme({
+      isE2EEncrypted: share.isE2EEncrypted,
+      scheme: request.contentScheme,
+      v2WritesEnabled: false,
+      encryptionChunkSize: request.encryptionChunkSize,
+      fileId: request.id,
+      shareId,
+    });
     await touchShareUploadActivity(this.prisma, share);
     if (this.getStorageService(share.storageProvider) !== this.s3FileService) {
       throw new BadRequestException(
@@ -459,6 +477,7 @@ export class FileService {
       name: string;
       relativePath?: string;
       encryptedMetadata?: string;
+      contentScheme?: ContentScheme;
     },
     shareId: string,
     clientChunkSize?: number,
@@ -488,18 +507,24 @@ export class FileService {
     share: { id: string; fileMetadataScheme: number | null },
     request: T & {
       name: string;
+      contentScheme?: ContentScheme;
       relativePath?: string;
       encryptedMetadata?: string;
     },
   ) {
     let metadata: ReturnType<typeof resolveUploadFileMetadata>;
     try {
-      metadata = resolveUploadFileMetadata(share.fileMetadataScheme, {
-        id: request.id,
-        name: request.name,
-        relativePath: request.relativePath,
-        encryptedMetadata: request.encryptedMetadata,
-      });
+      metadata = resolveUploadFileMetadata(
+        request.contentScheme === 2 && request.encryptedMetadata
+          ? 1
+          : share.fileMetadataScheme,
+        {
+          id: request.id,
+          name: request.name,
+          relativePath: request.relativePath,
+          encryptedMetadata: request.encryptedMetadata,
+        },
+      );
     } catch (error) {
       // Logged without any name: the refused value may be a readable one.
       const code =
@@ -532,6 +557,7 @@ export class FileService {
       name: string;
       relativePath?: string;
       encryptedMetadata?: string;
+      contentScheme?: ContentScheme;
     },
     shareId: string,
     clientChunkSize?: number,
@@ -559,6 +585,7 @@ export class FileService {
       name: string;
       relativePath?: string;
       encryptedMetadata?: string;
+      contentScheme?: ContentScheme;
     },
     shareId: string,
     clientChunkSize?: number,
@@ -580,12 +607,37 @@ export class FileService {
     // Validate the display filename and optional logical folder path, or
     // their ciphertext. relativePath is metadata for UI display and safe ZIP
     // entry names.
-    const file = this.resolveUploadedFile(share, uploadedFile);
+    const file = {
+      ...this.resolveUploadedFile(share, uploadedFile),
+      contentScheme: uploadedFile.contentScheme,
+    };
 
     // Reject uploads to already-completed shares (was missing for S3)
     if (share.uploadLocked) {
       this.logger.warn("Upload rejected because the share is completed");
       throw new BadRequestException("Share is already completed");
+    }
+    // The format is decided when a file starts: a v1 upload already under way
+    // when v2 writes are turned on still completes, in v1.
+    if (chunk.index === 0) {
+      await this.assertNewUploadContent(
+        share,
+        file,
+        file.contentScheme,
+        encryptionChunkSize,
+      );
+      if (Buffer.isBuffer(data)) {
+        assertContentV2FirstPart(file.contentScheme, chunk.index, data);
+      }
+    } else {
+      assertUploadContentScheme({
+        isE2EEncrypted: share.isE2EEncrypted,
+        scheme: file.contentScheme,
+        v2WritesEnabled: false,
+        encryptionChunkSize,
+        fileId: file.id,
+        shareId: share.id,
+      });
     }
     await touchShareUploadActivity(this.prisma, share);
 
@@ -695,6 +747,33 @@ export class FileService {
     };
   }
 
+  /** v1 is refused for a new E2E upload while v2 writes are on. */
+  private async assertNewUploadContent(
+    share: { id?: string; isE2EEncrypted: boolean },
+    file: { id?: string; encryptionChunkSize?: number },
+    scheme: ContentScheme,
+    encryptionChunkSize = file.encryptionChunkSize,
+  ) {
+    try {
+      assertUploadContentScheme({
+        isE2EEncrypted: share.isE2EEncrypted,
+        scheme,
+        v2WritesEnabled:
+          share.isE2EEncrypted && scheme !== 2
+            ? await this.configService.isContentV2WritesEnabled()
+            : false,
+        encryptionChunkSize,
+        fileId: file.id,
+        shareId: share.id,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `E2E upload format refused: share=redacted fileId=${file.id ?? "none"} scheme=${scheme ?? 1}`,
+      );
+      throw error;
+    }
+  }
+
   /**
    * Resolve the instance-configured limit. Reverse-share and Team limits are
    * ordinary self-hosting controls.
@@ -736,6 +815,8 @@ export class FileService {
     shareId: string,
     encryptionChunkSize?: number,
     reencryptSessionId = "legacy",
+    contentScheme?: ContentScheme,
+    encryptedMetadata?: string,
   ) {
     const share = await this.prisma.share.findUnique({
       where: { id: shareId },
@@ -756,6 +837,19 @@ export class FileService {
     if (!file || file.shareId !== shareId) {
       throw new NotFoundException("File not found in this share");
     }
+
+    // A rewrite keeps the file id and changes the key. Both formats remain
+    // accepted here: a rotation that cannot proceed would strand the file
+    // under its previous key.
+    assertUploadContentScheme({
+      isE2EEncrypted: true,
+      scheme: contentScheme,
+      v2WritesEnabled: false,
+      encryptionChunkSize,
+      fileId,
+      shareId,
+    });
+    assertContentV2FirstPart(contentScheme, chunk.index, data);
 
     // Prevent concurrent re-encryption of the same file
     const activeSession = this.reencryptingFiles.get(fileId);
@@ -780,6 +874,8 @@ export class FileService {
         fileId,
         shareId,
         encryptionChunkSize,
+        contentScheme,
+        encryptedMetadata,
       );
     } catch (error) {
       // Keep the session so a transient network/S3 failure can retry the same

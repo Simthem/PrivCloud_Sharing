@@ -7,6 +7,10 @@ import { createUnitTestRunner } from "./unit-test";
 
 const { testCase, run } = createUnitTestRunner("admin share privacy");
 
+// ShareService built from its prototype: its public interface plus the
+// Prisma client these tests replace.
+type ShareServiceDouble = Omit<ShareService, never> & { prisma: unknown };
+
 testCase("admin DTO strips public links and sensitive metadata", () => {
   const result = new AdminShareDTO().from({
     reference: "opaque-audit-reference",
@@ -43,7 +47,7 @@ testCase("admin DTO strips public links and sensitive metadata", () => {
 
 testCase("admin inventory selects only operational fields", async () => {
   let selection: Record<string, unknown> | undefined;
-  const service: any = Object.create(ShareService.prototype);
+  const service: ShareServiceDouble = Object.create(ShareService.prototype);
   service.prisma = {
     share: {
       findMany: async ({ select }: { select: Record<string, unknown> }) => {

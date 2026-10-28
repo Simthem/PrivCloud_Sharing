@@ -1,3 +1,7 @@
+import {
+  isContentV2ShareId,
+  isContentV2FileId,
+} from "./shareContentContext.util";
 /**
  * FILE_META_V1: file names and folder paths encrypted with the share's
  * content key.
@@ -23,6 +27,12 @@ import {
   importKeyFromBase64,
 } from "./crypto.util";
 
+import {
+  bindAuthenticatedContentPolicy,
+  hasContentV2Floor,
+  rejectContentMetadata,
+} from "./contentV2.util";
+
 export const FILE_META_V1 = 1;
 
 const PADDING_BYTES = 64;
@@ -36,7 +46,11 @@ const MAX_RELATIVE_PATH_SEGMENTS = 64;
 const CONTROL_CHARS = /[\x00-\x1F\x7F]/;
 const FORBIDDEN_SEGMENT = /[/\\]|\.{2}|\x00/;
 
-export type FileMetadata = { name: string; relativePath?: string };
+export type FileMetadata = {
+  name: string;
+  relativePath?: string;
+  minimumContentScheme?: 2;
+};
 
 export class InvalidFileMetadataError extends Error {
   constructor(message: string) {
@@ -128,6 +142,7 @@ function serialize(metadata: FileMetadata): Uint8Array {
     JSON.stringify({
       v: FILE_META_V1,
       n: metadata.name,
+      ...(metadata.minimumContentScheme === 2 && { c: 2 }),
       ...(metadata.relativePath && { p: metadata.relativePath }),
     }),
   );
@@ -139,14 +154,19 @@ export async function encryptFileMetadata(
   fileId: string,
   name: string,
   relativePath?: string | null,
+  minimumContentScheme?: 2,
 ): Promise<string> {
-  let metadata = normalizeFileMetadata(name, relativePath);
+  const policy =
+    minimumContentScheme === 2 || hasContentV2Floor(key)
+      ? { minimumContentScheme: 2 as const }
+      : {};
+  let metadata = { ...normalizeFileMetadata(name, relativePath), ...policy };
   let json = serialize(metadata);
   if (json.byteLength > MAX_PLAINTEXT_BYTES) {
     // Only a folder path of several thousand bytes gets here: the file keeps
     // its name and lands at the root of the share.
     console.warn("[E2E] Folder path too long to encrypt, file kept at root");
-    metadata = { name: metadata.name };
+    metadata = { name: metadata.name, ...policy };
     json = serialize(metadata);
   }
   const encrypted = await encryptFile(
@@ -172,8 +192,10 @@ export async function decryptFileMetadata(
     v?: unknown;
     n?: unknown;
     p?: unknown;
+    c?: unknown;
   };
   if (
+    (parsed.c !== undefined && parsed.c !== 2) ||
     parsed.v !== FILE_META_V1 ||
     typeof parsed.n !== "string" ||
     (parsed.p !== undefined && typeof parsed.p !== "string")
@@ -182,7 +204,15 @@ export async function decryptFileMetadata(
   }
   // The names end up in downloads and ZIP entries: never trust them more
   // than the server trusted plain names.
-  return normalizeFileMetadata(parsed.n, parsed.p as string | undefined);
+  const metadata = normalizeFileMetadata(
+    parsed.n,
+    parsed.p as string | undefined,
+  );
+  await bindAuthenticatedContentPolicy(key, { fileId }, parsed.c === 2);
+  if (parsed.c === 2) {
+    return { ...metadata, minimumContentScheme: 2 };
+  }
+  return metadata;
 }
 
 /**
@@ -213,12 +243,26 @@ export async function decryptShareFileNames<T extends EncryptedFileRow>(
   files: T[],
   key: CryptoKey | string,
 ): Promise<T[]> {
-  if (!files.some((file) => file.metadataScheme != null)) return files;
+  if (files.length === 0) return files;
   const cryptoKey =
     typeof key === "string" ? await importKeyFromBase64(key) : key;
+  if (
+    !hasContentV2Floor(cryptoKey) &&
+    !isContentV2ShareId(shareId) &&
+    !files.some(
+      (file) => file.metadataScheme != null || isContentV2FileId(file.id),
+    )
+  )
+    return files;
   const decrypted = await Promise.all(
     files.map(async (file) => {
-      if (file.metadataScheme == null) return file;
+      if (
+        file.metadataScheme == null &&
+        !hasContentV2Floor(cryptoKey) &&
+        !isContentV2ShareId(shareId) &&
+        !isContentV2FileId(file.id)
+      )
+        return file;
       try {
         if (file.metadataScheme !== FILE_META_V1 || !file.encryptedMetadata) {
           throw new InvalidFileMetadataError("Unsupported file metadata");
@@ -235,6 +279,7 @@ export async function decryptShareFileNames<T extends EncryptedFileRow>(
           relativePath: metadata.relativePath ?? null,
         };
       } catch {
+        await rejectContentMetadata(cryptoKey, { fileId: file.id });
         return {
           ...file,
           name: encryptedFilePlaceholderName(file.id),
@@ -379,17 +424,21 @@ export async function openSharesWithKey<
   F extends EncryptedFileRow,
   S extends EncryptedShareRow<F>,
 >(shares: S[], key: CryptoKey | string): Promise<S[]> {
+  const cryptoKey =
+    typeof key === "string" ? await importKeyFromBase64(key) : key;
   if (
+    !hasContentV2Floor(cryptoKey) &&
+    !shares.some((share) => isContentV2ShareId(share.id)) &&
     !shares.some(
       (share) =>
         !!share.encryptedInfo ||
-        share.files.some((file) => file.metadataScheme != null),
+        share.files.some(
+          (file) => file.metadataScheme != null || isContentV2FileId(file.id),
+        ),
     )
   ) {
     return shares;
   }
-  const cryptoKey =
-    typeof key === "string" ? await importKeyFromBase64(key) : key;
   return Promise.all(
     shares.map(async (share) => {
       const files = await decryptShareFileNames(

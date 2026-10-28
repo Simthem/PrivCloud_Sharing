@@ -50,6 +50,7 @@ async function uploadChunk(message) {
   if (message.sessionId) {
     url += "&sessionId=" + encodeURIComponent(message.sessionId);
   }
+  if (message.contentScheme === 2) url += "&contentScheme=2";
 
   var headers = { "Content-Type": "application/octet-stream" };
   // FILE_META_V1 Team rotation: the last chunk carries the file name

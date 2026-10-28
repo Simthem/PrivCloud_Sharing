@@ -38,6 +38,18 @@ import {
   OAuthReauthService,
 } from "../auth/oauthReauth.service";
 import { ErrorPageException } from "./exceptions/errorPage.exception";
+import { StepUpService } from "../auth/stepUp.service";
+
+// Pages a confirmation started from may send the user back to: the account,
+// the administration and the signing pages, nothing else.
+const isStepUpReturn = (value: unknown): value is string =>
+  typeof value === "string" &&
+  /^\/(?:account|admin(?:\/[A-Za-z0-9_-]+)*|sign\/[0-9A-Fa-f-]{36})$/.test(
+    value,
+  );
+
+// Time for the provider's sign-in, between the link request and the callback.
+const OAUTH_LINK_TTL_MS = 10 * 60 * 1000;
 
 @Controller("oauth")
 export class OAuthController {
@@ -50,6 +62,7 @@ export class OAuthController {
     private oauthReauth: OAuthReauthService,
     @Inject("OAUTH_PROVIDERS")
     private providers: Record<string, OAuthProvider<unknown>>,
+    private stepUp: StepUpService,
   ) {}
 
   @Get("available")
@@ -69,10 +82,42 @@ export class OAuthController {
   @UseFilters(ErrorPageExceptionFilter)
   async auth(
     @Param("provider") provider: string,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
+    @Query("link") link?: string,
   ) {
     const state = nanoid(16);
     const isSecure = this.config.get("general.secureCookies");
+
+    // A linked provider signs in for good and confirms an administrator's
+    // sensitive operations. Linking one to an administrator, asked for from
+    // the account page, is confirmed here, where the step-up cookie is sent:
+    // the provider's return to the callback is cross-site, so the callback
+    // gets its own single-use grant. A sign-in asks for nothing, even in a
+    // browser signed in as an administrator.
+    const signedIn =
+      link === "1" ? await this.authService.getIdOfCurrentUser(request) : null;
+    const admin = signedIn
+      ? await this.oauthService.findAdministrator(signedIn)
+      : null;
+    if (admin) {
+      const scope = `oauth.link:${provider}`;
+      try {
+        await this.stepUp.consume(request, admin, scope);
+      } catch {
+        throw new ErrorPageException("step_up_required", "/account");
+      }
+      response.cookie(
+        `oauth_${provider}_link`,
+        await this.stepUp.handOver(admin, scope, OAUTH_LINK_TTL_MS),
+        {
+          sameSite: "lax",
+          secure: isSecure,
+          httpOnly: true,
+          maxAge: OAUTH_LINK_TTL_MS,
+        },
+      );
+    }
     const { url, nonce } =
       await this.providers[provider].getAuthEndpoint(state);
     // Store state (and optional nonce for OIDC providers) in a single
@@ -90,9 +135,12 @@ export class OAuthController {
 
   /**
    * Re-authentication with a provider already linked to the signed-in
-   * account, to confirm 2FA changes without the password. Started here,
-   * same-site, where the session cookie is present: the provider's redirect to
-   * the callback is cross-site and never carries it.
+   * account, to confirm 2FA changes without the password, the first password
+   * of an account that has none (?purpose=password), an email change
+   * (?purpose=email) or a sensitive operation (?purpose=step-up, back to the
+   * page named by ?return=). Started here, same-site, where the session cookie is
+   * present: the provider's redirect to the callback is cross-site and never
+   * carries it.
    */
   @Get("reauth/:provider")
   @UseGuards(JwtGuard, ProviderGuard)
@@ -102,6 +150,8 @@ export class OAuthController {
     @Param("provider", SafeIdPipe) provider: string,
     @GetUser() user: User,
     @Res({ passthrough: true }) response: Response,
+    @Query("purpose") purpose?: string,
+    @Query("return") returnTo?: string,
   ) {
     if (!(await this.oauthService.isLinked(user.id, provider))) {
       throw new ErrorPageException("not_linked", "/account", [
@@ -126,7 +176,17 @@ export class OAuthController {
     );
     response.cookie(
       `oauth_${provider}_reauth`,
-      await this.oauthReauth.startIntent(user.id, provider),
+      await this.oauthReauth.startIntent(
+        user.id,
+        provider,
+        purpose === "email"
+          ? "EMAIL"
+          : purpose === "password"
+            ? "PASSWORD"
+            : purpose === "step-up"
+              ? "STEP_UP"
+              : "TOTP",
+      ),
       {
         sameSite: "lax",
         secure: isSecure,
@@ -134,6 +194,14 @@ export class OAuthController {
         maxAge: OAUTH_REAUTH_INTENT_TTL_MS,
       },
     );
+    if (purpose === "step-up" && isStepUpReturn(returnTo)) {
+      response.cookie(`oauth_${provider}_return`, returnTo, {
+        sameSite: "lax",
+        secure: isSecure,
+        httpOnly: true,
+        maxAge: OAUTH_REAUTH_INTENT_TTL_MS,
+      });
+    }
     response.redirect(url);
   }
 
@@ -173,6 +241,22 @@ export class OAuthController {
         httpOnly: true,
       });
     }
+    const linkGrant: unknown = request.cookies[`oauth_${provider}_link`];
+    if (linkGrant !== undefined) {
+      response.clearCookie(`oauth_${provider}_link`, {
+        sameSite: "lax",
+        secure: isSecure,
+        httpOnly: true,
+      });
+    }
+    const stepUpReturn: unknown = request.cookies[`oauth_${provider}_return`];
+    if (stepUpReturn !== undefined) {
+      response.clearCookie(`oauth_${provider}_return`, {
+        sameSite: "lax",
+        secure: isSecure,
+        httpOnly: true,
+      });
+    }
 
     try {
       const oauthToken = await this.providers[provider].getToken(query);
@@ -181,13 +265,33 @@ export class OAuthController {
         query,
       );
       if (reauthIntent) {
-        await this.completeReauth(provider, reauthIntent, user, response);
+        await this.completeReauth(
+          provider,
+          reauthIntent,
+          user,
+          response,
+          isStepUpReturn(stepUpReturn) ? stepUpReturn : undefined,
+        );
         return;
       }
 
       const id = await this.authService.getIdOfCurrentUser(request);
 
       if (id) {
+        const admin = await this.oauthService.findAdministrator(id);
+        if (
+          admin &&
+          !(await this.stepUp.spend(
+            admin.id,
+            `oauth.link:${provider}`,
+            linkGrant,
+          ))
+        ) {
+          this.logger.warn(
+            `Refused to link ${provider} to administrator ${admin.id} without a confirmation`,
+          );
+          throw new ErrorPageException("step_up_required", "/account");
+        }
         await this.oauthService.link(
           id,
           provider,
@@ -219,7 +323,10 @@ export class OAuthController {
       if (reauthIntent && error instanceof ErrorPageException) throw error;
       this.logger.error("OAuth callback failed");
       // Re-throw HttpException / ErrorPageException so NestJS filters handle them
-      if (error instanceof Error && (error as any).status) {
+      if (
+        error instanceof ErrorPageException ||
+        (error instanceof Error && (error as any).status)
+      ) {
         throw error;
       }
       // For non-HTTP errors, ensure a response is still sent
@@ -241,9 +348,11 @@ export class OAuthController {
     intent: string,
     identity: { providerId: string; authTime?: number },
     response: Response,
+    stepUpReturn?: string,
   ) {
-    const userId = await this.oauthReauth.consumeIntent(intent, provider);
-    if (!userId) throw new ErrorPageException("reauth_expired", "/account");
+    const confirmed = await this.oauthReauth.consumeIntent(intent, provider);
+    if (!confirmed) throw new ErrorPageException("reauth_expired", "/account");
+    const { userId, purpose } = confirmed;
     const linked = await this.oauthService.isLinked(
       userId,
       provider,
@@ -255,6 +364,19 @@ export class OAuthController {
         `provider_${provider}`,
       ]);
     }
+    // A first password, a new email or an administrator's operation outlives
+    // every session: only a provider that states when the user actually
+    // signed in (OIDC auth_time) may confirm one.
+    if (
+      (purpose === "PASSWORD" ||
+        purpose === "EMAIL" ||
+        purpose === "STEP_UP") &&
+      identity.authTime === undefined
+    ) {
+      throw new ErrorPageException("reauth_unsupported", "/account", [
+        `provider_${provider}`,
+      ]);
+    }
     if (
       identity.authTime !== undefined &&
       Date.now() - identity.authTime * 1000 > OAUTH_REAUTH_MAX_AUTH_AGE_MS
@@ -263,7 +385,7 @@ export class OAuthController {
     }
     response.cookie(
       OAUTH_REAUTH_COOKIE,
-      await this.oauthReauth.issueProof(userId, provider),
+      await this.oauthReauth.issueProof(userId, provider, purpose),
       {
         path: OAUTH_REAUTH_COOKIE_PATH,
         sameSite: "strict",
@@ -273,7 +395,14 @@ export class OAuthController {
       },
     );
     response.redirect(
-      this.config.get("general.appUrl") + "/account?totpReauth=1",
+      this.config.get("general.appUrl") +
+        (purpose === "PASSWORD"
+          ? "/account?passwordReauth=1"
+          : purpose === "EMAIL"
+            ? "/account?emailReauth=1"
+            : purpose === "STEP_UP"
+              ? `${stepUpReturn ?? "/admin"}?stepUpReauth=1`
+              : "/account?totpReauth=1"),
     );
   }
 

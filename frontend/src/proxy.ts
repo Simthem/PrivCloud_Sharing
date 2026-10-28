@@ -60,7 +60,8 @@ export async function proxy(request: NextRequest) {
     const cfg = (configData as any[]).find((v: any) => v.key === key);
     if (!cfg) return null;
     const value = cfg.value ?? cfg.defaultValue;
-    if (cfg.type === "number" || cfg.type === "filesize") return parseInt(value);
+    if (cfg.type === "number" || cfg.type === "filesize")
+      return parseInt(value);
     if (cfg.type === "boolean") return value === "true";
     if (cfg.type === "string" || cfg.type === "text") return value;
     return value;
@@ -107,9 +108,7 @@ export async function proxy(request: NextRequest) {
         getConfig("general.maintenanceAllowedEmails") || "";
 
       if (!isEmailAllowed(user?.email || "", allowedEmailsRaw)) {
-        return NextResponse.redirect(
-          new URL("/maintenance", request.url),
-        );
+        return NextResponse.redirect(new URL("/maintenance", request.url));
       }
     }
 
@@ -153,7 +152,7 @@ export async function proxy(request: NextRequest) {
     },
      // Authenticated state
     {
-      condition: user && routes.unauthenticated.contains(route) && !isEmailVerificationRoutePath(route) && !getConfig("share.allowUnauthenticatedShares"),
+      condition: user && routes.unauthenticated.contains(route) && !isEmailVerificationRoutePath(route) && route !== "/auth/change-email" && !getConfig("share.allowUnauthenticatedShares"),
       path: "/upload",
     },
     // Unauthenticated state -- only redirect when the session is fully

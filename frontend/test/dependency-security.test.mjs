@@ -24,11 +24,12 @@ function assertFixedVersion(actual, minimum) {
   );
 }
 
-test("the frontend locks fixed Next.js, Axios, DOMPurify and Undici versions", () => {
+test("the frontend locks fixed Next.js, Axios, DOMPurify, follow-redirects and Undici versions", () => {
   for (const [name, minimum] of [
     ["next", "16.4.1"],
     ["axios", "1.20.0"],
-    ["dompurify", "3.4.16"],
+    ["dompurify", "3.4.17"],
+    ["follow-redirects", "1.16.2"],
     ["undici", "7.30.1"],
   ]) {
     const version = frontendLock.packages[`node_modules/${name}`].version;
@@ -40,6 +41,27 @@ test("the frontend locks fixed Next.js, Axios, DOMPurify and Undici versions", (
     assert.equal(frontend.dependencies[name], version);
     assert.equal(require(`${name}/package.json`).version, version);
   }
+  assert.equal(
+    JSON.parse(
+      readFileSync(
+        new URL("../node_modules/dompurify/package.json", import.meta.url),
+        "utf8",
+      ),
+    ).version,
+    frontendLock.packages["node_modules/dompurify"].version,
+  );
+  assert.equal(
+    JSON.parse(
+      readFileSync(
+        new URL(
+          "../node_modules/follow-redirects/package.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    ).version,
+    frontendLock.packages["node_modules/follow-redirects"].version,
+  );
   assert.equal(
     frontend.devDependencies["@next/eslint-plugin-next"],
     frontend.dependencies.next,
@@ -98,8 +120,8 @@ test("all frontend and backend Undici copies retain the October security fixes",
 test("backend and documentation locks retain their security fixes", () => {
   for (const [directory, name, minimum] of [
     ["backend", "axios", "1.20.0"],
-    ["backend", "fast-uri", "3.1.8"],
-    ["docs", "fast-uri", "3.1.8"],
+    ["backend", "fast-uri", "3.1.9"],
+    ["docs", "fast-uri", "3.1.9"],
   ]) {
     const manifest = JSON.parse(
       readFileSync(
@@ -125,6 +147,17 @@ test("HTML sanitization still rejects event handlers and script URLs", async () 
     '<img src="x" onerror="alert(1)"><a href="javascript:alert(1)">link</a><script>alert(1)</script>',
   );
   assert.doesNotMatch(sanitized, /onerror|javascript:|<script/i);
+  assert.match(sanitized, /link/);
+});
+
+test("legal Markdown sanitization strips HTML without losing text", async () => {
+  const { default: purifier } = await import("isomorphic-dompurify");
+  const sanitized = purifier.sanitize(
+    '# Heading <img src="x" onerror="alert(1)"><a href="javascript:alert(1)">link</a>',
+    { ALLOWED_TAGS: [], KEEP_CONTENT: true },
+  );
+  assert.doesNotMatch(sanitized, /<[^>]+>|onerror|javascript:/i);
+  assert.match(sanitized, /# Heading/);
   assert.match(sanitized, /link/);
 });
 

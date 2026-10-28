@@ -77,7 +77,7 @@ test("authenticates random ranges across AES-GCM boundaries and the short final 
   assert.ok(reads.every(([start, end]) => end - start + 1 <= chunkSize + 28));
 });
 
-test("opens a logical 40 GB encrypted file using only the first metadata byte and requested records", async () => {
+test("opens a logical 40 GB encrypted file using only the first metadata range and requested records", async () => {
   const key = await generateEncryptionKey();
   const record = new Uint8Array(
     await encryptFile(new Uint8Array(1_000_000).fill(7).buffer, key),

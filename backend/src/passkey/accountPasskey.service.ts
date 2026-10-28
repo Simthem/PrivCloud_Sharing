@@ -49,7 +49,13 @@ type StoredCredential = {
   transports: string | null;
 };
 
-type Ceremony = "REGISTER" | "ISSUE" | "LOGIN" | "VAULT" | "TEAM_EVIDENCE";
+type Ceremony =
+  | "REGISTER"
+  | "ISSUE"
+  | "LOGIN"
+  | "VAULT"
+  | "TEAM_EVIDENCE"
+  | "STEP_UP";
 
 function parseTransports(value: string | null) {
   if (!value) return undefined;
@@ -466,11 +472,12 @@ export class AccountPasskeyService {
    */
   private async beginOwnAssertion(
     user: User,
-    purpose: "ISSUE" | "VAULT" | "TEAM_EVIDENCE",
+    purpose: "ISSUE" | "VAULT" | "TEAM_EVIDENCE" | "STEP_UP",
     missing: { message: string; code: string },
     ceremony: { challenge?: Uint8Array; manifest?: string; previewId?: string },
+    credentials?: StoredCredential[],
   ) {
-    const credentials = await this.credentials(user.id);
+    credentials ??= await this.credentials(user.id);
     if (credentials.length === 0) {
       throw new ForbiddenException(missing.message, missing.code);
     }
@@ -582,7 +589,7 @@ export class AccountPasskeyService {
         previewId: issuanceId,
         manifest: JSON.stringify({ teamId, issuanceId, kind }),
       },
-    )
+    );
   }
 
   async verifyTeamEvidence(
@@ -597,24 +604,23 @@ export class AccountPasskeyService {
       user.id,
       "TEAM_EVIDENCE",
       issuanceId,
-    )
+    );
     if (challenge.manifest !== JSON.stringify({ teamId, issuanceId, kind }))
       throw new ForbiddenException(
         "The evidence download does not match the passkey request",
-      )
-    const response = dto.response as unknown as AuthenticationResponseJSON
+      );
+    const response = dto.response as unknown as AuthenticationResponseJSON;
     const credential = (await this.credentials(user.id)).find(
       (stored) => stored.credentialId === response?.id,
-    )
+    );
     if (
       !credential ||
       !(await this.verifyAssertion(challenge.challenge, credential, response, [
         this.relyingParty().expectedOrigin,
-
       ]))
     )
-      throw new ForbiddenException("The passkey confirmation is invalid")
-    await this.consume(challenge.id)
+      throw new ForbiddenException("The passkey confirmation is invalid");
+    await this.consume(challenge.id);
   }
 
   // Evidence vault of the platform administrators, with a separate purpose.
@@ -648,5 +654,60 @@ export class AccountPasskeyService {
       throw new ForbiddenException("The passkey confirmation is invalid");
     }
     await this.consume(challenge.id);
+  }
+
+  /**
+   * Passkeys added from the account settings only: adding one takes the
+   * password or a fresh linked sign-in, which enrolling a signing passkey
+   * does not.
+   */
+  private async accountCredentials(userId: string) {
+    return (await this.credentials(userId)).filter(
+      (credential) => credential.table === "account",
+    );
+  }
+
+  // Platform administrators confirming one sensitive operation, named by the
+  // scope the challenge is issued for.
+  async beginStepUp(user: User, scope: string) {
+    return this.beginOwnAssertion(
+      user,
+      "STEP_UP",
+      {
+        message: "Add a passkey from your account before confirming with one",
+        code: "step_up_passkey_required",
+      },
+      { manifest: scope },
+      await this.accountCredentials(user.id),
+    );
+  }
+
+  async verifyStepUp(user: User, scope: string, dto: PasskeyResponseDTO) {
+    const challenge = await this.usableChallenge(
+      dto.challengeId,
+      user.id,
+      "STEP_UP",
+    );
+    if (challenge.manifest !== scope) {
+      throw new ForbiddenException(
+        "The passkey confirmation was started for another operation",
+      );
+    }
+    const response = dto.response as unknown as AuthenticationResponseJSON;
+    const credential = (await this.accountCredentials(user.id)).find(
+      (stored) => stored.credentialId === response?.id,
+    );
+    if (
+      !credential ||
+      !(await this.verifyAssertion(challenge.challenge, credential, response))
+    ) {
+      throw new ForbiddenException("The passkey confirmation is invalid");
+    }
+    await this.consume(challenge.id);
+  }
+
+  /** Whether the user holds a passkey that can confirm an operation. */
+  async hasStepUpPasskey(userId: string) {
+    return (await this.accountCredentials(userId)).length > 0;
   }
 }

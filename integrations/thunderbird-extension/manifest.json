@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "PrivCloud Thunderbird",
   "description": "Send Thunderbird attachments through PrivCloud Companion.",
-  "version": "1.25.3",
+  "version": "1.26.0",
   "applications": {
     "gecko": {
       "id": "thunderbird@privcloud.fr",

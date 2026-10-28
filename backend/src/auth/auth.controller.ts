@@ -40,6 +40,17 @@ import { EmailService } from "src/email/email.service";
 import { PasskeyStepUpDTO } from "./dto/passkeyStepUp.dto";
 import { AccountPasskeyService } from "src/passkey/accountPasskey.service";
 import { PasskeyResponseDTO } from "src/passkey/dto/passkey.dto";
+import { EmailChangeService } from "./emailChange.service";
+import { EmailChangeDTO, EmailChangeTokenDTO } from "./dto/emailChange.dto";
+import { StepUpDTO, StepUpScopeDTO } from "./dto/stepUp.dto";
+import {
+  STEP_UP_COOKIE,
+  STEP_UP_COOKIE_PATH,
+  STEP_UP_TTL_MS,
+  StepUpMethod,
+  StepUpService,
+} from "./stepUp.service";
+import { PrismaService } from "src/prisma/prisma.service";
 
 @Controller("auth")
 export class AuthController {
@@ -49,7 +60,37 @@ export class AuthController {
     private config: ConfigService,
     private passkeys: AccountPasskeyService,
     private emailService: EmailService,
+    private emailChanges: EmailChangeService,
+    private stepUp: StepUpService,
+    private prisma: PrismaService,
   ) {}
+
+  @Post("email-change")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 5, ttl: minutes(15) } })
+  requestEmailChange(
+    @GetUser() user: User,
+    @Body() body: EmailChangeDTO,
+    @Req() request: Request,
+  ) {
+    return this.emailChanges.initiate(
+      user.id,
+      body,
+      request.cookies?.[OAUTH_REAUTH_COOKIE],
+    );
+  }
+
+  @Post("email-change/confirm")
+  @Throttle({ default: { limit: 10, ttl: minutes(5) } })
+  confirmEmailChange(@Body() body: EmailChangeTokenDTO) {
+    return this.emailChanges.confirm(body.token);
+  }
+
+  @Post("email-change/cancel")
+  @Throttle({ default: { limit: 10, ttl: minutes(5) } })
+  cancelEmailChange(@Body() body: EmailChangeTokenDTO) {
+    return this.emailChanges.cancel(body.token);
+  }
 
   private issueTokens(
     response: Response,
@@ -185,10 +226,17 @@ export class AuthController {
   @UseGuards(JwtGuard)
   async updatePassword(
     @GetUser() user: User,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
     @Body() dto: UpdatePasswordDTO,
   ) {
-    await this.authService.updatePassword(user, dto.password, dto.oldPassword);
+    await this.authService.updatePassword(
+      user,
+      dto.password,
+      dto.oldPassword,
+      request.cookies?.[OAUTH_REAUTH_COOKIE],
+    );
+    this.clearReauthProof(response);
 
     // The password change revoked every previous refresh token; hand the
     // freshly issued one back so the client keeps its session.
@@ -365,6 +413,88 @@ export class AuthController {
         .catch(() => undefined);
     }
     return passkey;
+  }
+
+  /** The ways this user can confirm a sensitive operation. */
+  @Get("step-up")
+  @UseGuards(JwtGuard)
+  @Header("Cache-Control", "private, no-store")
+  async stepUpMethods(@GetUser() user: User) {
+    const [providers, passkey] = await Promise.all([
+      this.prisma.oAuthUser.findMany({
+        where: { userId: user.id },
+        select: { provider: true },
+      }),
+      this.passkeys.hasStepUpPasskey(user.id),
+    ]);
+    return {
+      password:
+        !!user.password || (!!user.ldapDN && !!this.config.get("ldap.enabled")),
+      totp: user.totpVerified,
+      passkey,
+      providers: providers.map(({ provider }) => provider),
+    };
+  }
+
+  @Post("step-up/passkey")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 10, ttl: minutes(10) } })
+  @HttpCode(200)
+  @Header("Cache-Control", "private, no-store")
+  stepUpPasskey(@GetUser() user: User, @Body() dto: StepUpScopeDTO) {
+    this.stepUp.assertMayConfirm(user, dto.scope);
+    return this.passkeys.beginStepUp(user, dto.scope);
+  }
+
+  /**
+   * Confirms the user's identity for one operation. The browser receives a
+   * single-use confirmation that the operation spends.
+   */
+  @Post("step-up")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { limit: 10, ttl: minutes(10) } })
+  @HttpCode(200)
+  async confirmStepUp(
+    @GetUser() user: User,
+    @Body() dto: StepUpDTO,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    this.stepUp.assertMayConfirm(user, dto.scope);
+    let method: StepUpMethod;
+    try {
+      if (dto.passkey) {
+        await this.passkeys.verifyStepUp(user, dto.scope, dto.passkey);
+        method = "passkey";
+      } else {
+        method = await this.authTotpService.confirmSecondFactorChange(
+          user,
+          {
+            password: dto.password,
+            reauthProof: request.cookies?.[OAUTH_REAUTH_COOKIE],
+          },
+          dto.code,
+          "STEP_UP",
+        );
+        this.clearReauthProof(response);
+      }
+    } catch (error) {
+      this.stepUp.recordRefusal(user, dto.scope);
+      throw error;
+    }
+    const { value, expiresAt } = await this.stepUp.issue(
+      user,
+      dto.scope,
+      method,
+    );
+    response.cookie(STEP_UP_COOKIE, value, {
+      path: STEP_UP_COOKIE_PATH,
+      sameSite: "strict",
+      secure: this.config.get("general.secureCookies"),
+      httpOnly: true,
+      maxAge: STEP_UP_TTL_MS,
+    });
+    return { expiresAt };
   }
 
   private clearReauthProof(response: Response) {
