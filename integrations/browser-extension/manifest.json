@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "PrivCloud Companion",
   "description": "Client-side PrivCloud connector for browser, WebDAV and mail workflows.",
-  "version": "1.26.1",
+  "version": "1.26.2",
   "permissions": [
     "nativeMessaging",
     "storage",

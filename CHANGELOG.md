@@ -1,3 +1,9 @@
+## [1.26.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.1...v1.26.2) (2026-10-29)
+
+### Security
+
+- Upgrade go-chi/chi to 5.5.0 in both Caddy builds for CVE-2026-118681.
+
 ## [1.26.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.0...v1.26.1) (2026-10-29)
 
 ### Security
