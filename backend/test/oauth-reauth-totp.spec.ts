@@ -2,7 +2,10 @@ import "reflect-metadata";
 import assert from "node:assert/strict";
 import { generate, generateSecret } from "otplib";
 import { AuthTotpService } from "src/auth/authTotp.service";
-import { OAuthReauthService } from "src/auth/oauthReauth.service";
+import {
+  OAuthReauthService,
+  reauthPurpose,
+} from "src/auth/oauthReauth.service";
 import { OAuthController } from "src/oauth/oauth.controller";
 import { createUnitTestRunner } from "./unit-test";
 
@@ -383,5 +386,23 @@ testCase(
     assert.equal(redirected(), "https://app.test/account?totpReauth=1");
   },
 );
+
+testCase("a reauthentication purpose comes only from known names", () => {
+  assert.equal(reauthPurpose("email"), "EMAIL");
+  assert.equal(reauthPurpose("password"), "PASSWORD");
+  assert.equal(reauthPurpose("step-up"), "STEP_UP");
+  for (const other of [
+    undefined,
+    "",
+    "EMAIL",
+    "totp",
+    "constructor",
+    "__proto__",
+    ["email"],
+    { toString: () => "email" },
+  ]) {
+    assert.equal(reauthPurpose(other), "TOTP");
+  }
+});
 
 void run();

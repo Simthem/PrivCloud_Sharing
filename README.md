@@ -13,10 +13,11 @@ limits are controlled by instance configuration, not by hard-coded tiers.
 
 - Link-based file sharing with expiration dates, visitor limits and passwords.
 - Authenticated and anonymous reverse shares.
-- Client-side AES-256-GCM encryption before upload.
-- Optional random key per personal share and encrypted file names and share
-  titles, also available for team folders and reverse shares, all off by
-  default.
+- Client-side AES-256-GCM encryption before upload, in the E2EE content
+  format v2 for every new file. Historical v1 files remain readable.
+- A random key per new personal E2E share, and encrypted file names, folder
+  paths and share titles for new personal, team folder and reverse-share
+  uploads.
 - E2E encrypted reverse-share uploads with per-link keys in URL fragments.
 - Team workspaces with shared folders, member management and access logs.
 - Granular team permissions for folders, files, downloads, deletes, E2E sharing
@@ -74,20 +75,32 @@ patches included in the public release.
 
 Files are encrypted client-side using AES-256-GCM through the Web Crypto API.
 
+- Every new file is written in the E2EE content format v2, specified in
+  [docs/E2EE_CONTENT_V2.md](./docs/E2EE_CONTENT_V2.md). Its key is derived
+  with HKDF-SHA256 for that file alone, and its 1,000,000-byte records are
+  bound to the file identifier, their position and the end of the content. A
+  record that is altered, removed, reordered, truncated or appended fails to
+  decrypt. New share, Team and reverse-share keys carry a v2 floor, so
+  content under them is never read as v1. The format does not prove
+  freshness: an older complete state of a file under the same key still
+  reads.
+- Historical v1 files, shares, reverse links and Team keys are kept as they
+  are. New files added to them are written in v2, nothing is re-encrypted or
+  recreated.
 - User uploads create or reuse a per-user master key stored in the browser.
   The server stores only verification metadata, never the cleartext key.
 - Share links carry the decryption key in the URL fragment (`#key=...`), which
   browsers do not send to the server. The key only passes through the server
-  when the owner chooses to include it in the recipient e-mail, and for files
-  received through a reverse share, whose link is e-mailed to its creator.
-- A personal share can use its own random key (`SHARE_DEK_V1`, off by
-  default). The browser generates a 256-bit key for the share, the recipient
+  when the owner chooses to include it in the recipient e-mail. The link
+  e-mailed to a reverse-share owner after a deposit carries no key.
+- Each new personal E2E share gets its own random key (`SHARE_DEK_V1`).
+  The browser generates a 256-bit key for the share, the recipient
   link carries that key only, and the server stores it wrapped by the owner's
   master key with the share id authenticated. A master key rotation only
   rewraps it, so files are never re-encrypted and recipient links keep
   working.
-- On top of that, file names and folder paths can be encrypted with the share
-  key before upload (`FILE_META_V1`, off by default), padded to 64-byte steps
+- On top of that, file names and folder paths are encrypted with the share
+  key before upload (`FILE_META_V1`), padded to 64-byte steps
   and bound to the share and file ids. The share title and description are
   then encrypted the same way. The server, its logs and its database only see
   a neutral `encrypted-file-<id>` name and no title, and database triggers
@@ -95,12 +108,11 @@ Files are encrypted client-side using AES-256-GCM through the Web Crypto API.
   encrypted one. Recipients and owners get the real values back in the
   browser. For a signature request on such a PDF, the owner discloses its
   name for that request only.
-- The same encryption can cover team folder uploads, with the team key
-  (`FILE_META_V1_TEAM_WRITE`), and uploads to an encrypted reverse share, with
-  its key (`FILE_META_V1_REVERSE_SHARE_WRITE`). Both are off by default. A team
-  key rotation re-encrypts each name together with its file.
-- Names stay readable for existing shares and uploads made without these
-  flags. The updated Companion encrypts names for FILE_META_V1 imports on
+- The same encryption covers team folder uploads, with the team key, and
+  uploads to an encrypted reverse share, with its key. A team key rotation
+  re-encrypts each name together with its file.
+- Names stay readable for shares and uploads created before, or by an older
+  client without these flags. The updated Companion encrypts names for FILE_META_V1 imports on
   direct S3 and relay routes. An older Companion is refused before the job.
 - Team and folder names remain readable. Reverse-link names can be encrypted
   with K_rs, and team request subjects and notes with K_team, using the same
@@ -115,8 +127,11 @@ Files are encrypted client-side using AES-256-GCM through the Web Crypto API.
   public-key metadata. Team administrators can explicitly enable hybrid
   ML-KEM/X25519 encryption for notification actions.
 
-Per-share keys and encrypted file names are enabled per account, so an
-instance can try them on a few accounts first. For every account:
+The current web app uses per-share keys and encrypted names whatever the
+flags below say, and the backend accepts them from every client that writes
+v2. The flags still decide it for older clients, and select the accounts
+whose reverse-link names and team request subjects are encrypted. For every
+account:
 
 ```yaml
 - SHARE_DEK_V1_WRITE=true
@@ -131,15 +146,22 @@ Existing shares keep their key and their file names. Turning a flag off later
 only affects new shares: a share created with encrypted names keeps
 encrypting the names of the files added to it.
 
+The `share.contentV2Writes` and `share.contentV2Floor` settings, with their
+deployment defaults `E2EE_CONTENT_V2_WRITES` and `E2EE_CONTENT_V2_FLOOR`
+(both `false`), only concern older clients. With writes on, the backend
+refuses their v1 uploads with `e2ee_content_v2_required`. Turning a setting
+off never makes v2 content unreadable and never lifts the floor of a key.
+Deployment order and rollback:
+[docs/E2EE_CONTENT_V2_ROLLOUT.md](./docs/E2EE_CONTENT_V2_ROLLOUT.md).
+
 ### Encrypted Metadata And Notifications
 
-`FILE_META_V1_WRITE` and its account selection remain disabled by default.
-Personal shares additionally require `SHARE_DEK_V1_WRITE`. With encrypted file
-names, the share title and description also travel encrypted. Team uploads and
-file request subjects and notes use `K_team` when `FILE_META_V1_TEAM_WRITE` is
-selected for their creator. Upload link names and incoming file names use
-`K_rs` when `FILE_META_V1_REVERSE_SHARE_WRITE` is selected for the link owner.
-Existing readable metadata is not automatically converted.
+The current web app encrypts the file names of new E2E uploads, and the title
+and description of new personal shares, with the key of their share, Team
+(`K_team`) or reverse share (`K_rs`). Team file request subjects and notes use
+`K_team` when `FILE_META_V1_TEAM_WRITE` is selected for their creator. Upload
+link names use `K_rs` when `FILE_META_V1_REVERSE_SHARE_WRITE` is selected for
+the link owner. Existing readable metadata is not automatically converted.
 
 The server still reads account and recipient addresses, team membership, team
 and team folder names, sizes, counts and dates, and document names explicitly
@@ -351,15 +373,17 @@ Common environment variables:
 | `SIGNING_TSA_REQUIRE_QUALIFIED_STATUS` | `true` refuses to timestamp unless a recent check confirmed the TSA as a granted qualified service | `false` |
 | `SIGNING_TSA_TRUSTED_LIST_MAX_AGE_DAYS` | Maximum age of that confirmation | `7` |
 | `SIGNING_EVIDENCE_RETENTION_YEARS` | Finalized PDF/evidence retention after source deletion (1-30) | `10` |
-| `SHARE_DEK_V1_WRITE` | `true` lets the selected accounts create personal E2E shares with their own random key | `false` |
+| `SHARE_DEK_V1_WRITE` | `true` lets the selected accounts create personal E2E shares with their own random key from an older client. The current web app always does | `false` |
 | `SHARE_DEK_V1_CANARY_USERS` | Accounts selected for `SHARE_DEK_V1_WRITE`: comma-separated user ids or e-mail addresses, `*` for all | _(none)_ |
 | `SHARE_DEK_V1_ROLLOUT_PERCENT` | Additional stable share of accounts (0-100), from a hash of their id | `0` |
 | `SHARE_DEK_V1_READ` | `false` stops serving wrapped share keys to owners, recipient links keep working | `true` |
-| `FILE_META_V1_WRITE` | `true` also encrypts file names and folder paths of those shares, for the selected accounts | `false` |
+| `FILE_META_V1_WRITE` | `true` also encrypts file names and folder paths of those shares from an older client, for the selected accounts | `false` |
 | `FILE_META_V1_CANARY_USERS` | Accounts selected for `FILE_META_V1_WRITE`, which must also be selected for `SHARE_DEK_V1` | _(none)_ |
 | `FILE_META_V1_ROLLOUT_PERCENT` | Additional stable share of accounts, independent of the `SHARE_DEK_V1` one | `0` |
-| `FILE_META_V1_TEAM_WRITE` | `true` also encrypts the names of E2E team folder uploads with the team key, when the uploader is selected for `FILE_META_V1_WRITE` | `false` |
-| `FILE_META_V1_REVERSE_SHARE_WRITE` | `true` also encrypts the names of uploads to an E2E reverse share with its key, when its owner is selected for `FILE_META_V1_WRITE` | `false` |
+| `FILE_META_V1_TEAM_WRITE` | `true` encrypts team file request subjects and notes, and the names of E2E team folder uploads from an older client, with the team key, when the creator is selected for `FILE_META_V1_WRITE` | `false` |
+| `FILE_META_V1_REVERSE_SHARE_WRITE` | `true` encrypts upload link names, and the names of uploads to an E2E reverse share from an older client, with its key, when its owner is selected for `FILE_META_V1_WRITE` | `false` |
+| `E2EE_CONTENT_V2_WRITES` | Default of `share.contentV2Writes`: `true` refuses v1 uploads from older clients with `e2ee_content_v2_required` | `false` |
+| `E2EE_CONTENT_V2_FLOOR` | Default of `share.contentV2Floor`: `true` makes intermediate clients create keys that only accept v2 | `false` |
 | `HTTP_PROXY` / `HTTPS_PROXY` | System proxy for outbound traffic | _(none)_ |
 | `GLOBAL_AGENT_HTTP_PROXY` | Node.js global-agent proxy URL | _(none)_ |
 | `GLOBAL_AGENT_NO_PROXY` / `NO_PROXY` | Hosts that bypass the proxy | _(none)_ |
@@ -741,6 +765,12 @@ When upgrading an existing instance:
 4. Check the logs for compatibility warnings.
 5. Verify login, upload, team folders, WebDAV import and signing flows.
 
+The `v1.26.0` migrations are additive. They record the declared content format
+in `File.contentScheme` and add email-change requests, login-token attempts,
+step-up grants and recipient signing sessions. Follow
+[docs/E2EE_CONTENT_V2_ROLLOUT.md](./docs/E2EE_CONTENT_V2_ROLLOUT.md) to
+deploy the backend, web app and Companion together.
+
 The `v1.24.0` migrations preserve existing shares while adding resumable upload
 state, explicit completion markers, E2E key-generation preferences and opaque
 administrator audit references.
@@ -748,6 +778,8 @@ administrator audit references.
 ## Documentation
 
 - [CHANGELOG.md](./CHANGELOG.md)
+- [docs/E2EE_CONTENT_V2.md](./docs/E2EE_CONTENT_V2.md)
+- [docs/E2EE_CONTENT_V2_ROLLOUT.md](./docs/E2EE_CONTENT_V2_ROLLOUT.md)
 - [integrations/README.md](./integrations/README.md)
 - [integrations/PUBLISHING.md](./integrations/PUBLISHING.md)
 - [bridge/README.md](./bridge/README.md)

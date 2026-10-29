@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-frontend",
-  "version": "1.26.0",
+  "version": "1.26.1",
   "scripts": {
     "dev": "node scripts/copy-pdf-worker.mjs && next dev --webpack",
     "prebuild": "node ../scripts/build-public-verification.mjs && node scripts/copy-pdf-worker.mjs && node scripts/build-photo-registration.mjs && node scripts/build-image-decoders.mjs && node scripts/build-video-decoders.mjs && sh scripts/strip-legacy-polyfills.sh",

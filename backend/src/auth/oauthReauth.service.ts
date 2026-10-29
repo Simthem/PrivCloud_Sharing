@@ -17,6 +17,16 @@ export const OAUTH_REAUTH_COOKIE_PATH = "/api/auth";
 // A proof only confirms the change it was started for.
 export type OAuthReauthPurpose = "TOTP" | "PASSWORD" | "EMAIL" | "STEP_UP";
 const PURPOSES: readonly string[] = ["TOTP", "PASSWORD", "EMAIL", "STEP_UP"];
+const PURPOSE_PARAMETERS = new Map<unknown, OAuthReauthPurpose>([
+  ["email", "EMAIL"],
+  ["password", "PASSWORD"],
+  ["step-up", "STEP_UP"],
+]);
+
+/** The change named by ?purpose=. Absent or unknown values confirm 2FA. */
+export function reauthPurpose(parameter: unknown): OAuthReauthPurpose {
+  return PURPOSE_PARAMETERS.get(parameter) ?? "TOTP";
+}
 
 const hash = (token: string) =>
   createHash("sha256").update(token, "utf8").digest("hex");

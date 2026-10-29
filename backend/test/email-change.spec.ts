@@ -10,6 +10,11 @@ import { UserController } from "src/user/user.controller";
 import { UserSevice } from "src/user/user.service";
 import { OAuthReauthService } from "src/auth/oauthReauth.service";
 import { OAuthController } from "src/oauth/oauth.controller";
+import {
+  matchesSecurityState,
+  sameSecurityState,
+  sealSecurityState,
+} from "src/auth/securityState.util";
 import { createUnitTestRunner } from "./unit-test";
 import { createTestCredentials } from "./test-credentials";
 
@@ -383,6 +388,49 @@ testCase(
     assert.deepEqual(calls, [
       ["u", { username: fixtureCredentials.username }, "admin"],
     ]);
+  },
+);
+
+testCase(
+  "the stored security state is salted and follows credentials",
+  async () => {
+    const account = {
+      password: fixtureCredentials.passwordHash,
+      ldapDN: null,
+      totpEnabled: true,
+      totpVerified: true,
+      totpSecret: fixtureCredentials.totpSecret,
+    };
+    const sealed = await sealSecurityState(account);
+    assert.notEqual(sealed, await sealSecurityState(account));
+    assert.equal(sealed.includes(account.password), false);
+    assert.equal(await matchesSecurityState(sealed, { ...account }), true);
+    assert.equal(sameSecurityState(account, { ...account }), true);
+    for (const changed of [
+      { password: fixtureCredentials.updatedPasswordHash },
+      { ldapDN: "uid=user,dc=example" },
+      { totpEnabled: false },
+      { totpVerified: false },
+      { totpSecret: null },
+    ]) {
+      assert.equal(
+        await matchesSecurityState(sealed, { ...account, ...changed }),
+        false,
+      );
+      assert.equal(
+        sameSecurityState(account, { ...account, ...changed }),
+        false,
+      );
+    }
+    for (const stored of [
+      "a".repeat(64),
+      "",
+      ".",
+      `${sealed}.extra`,
+      sealed.slice(0, -2),
+    ]) {
+      assert.equal(await matchesSecurityState(stored, account), false);
+    }
   },
 );
 

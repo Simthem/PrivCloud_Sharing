@@ -17,7 +17,7 @@ import {
 
 const acquireUploadSlot = createUploadSlots(2);
 
-const VERSION = "1.26.0";
+const VERSION = "1.26.1";
 const NATIVE_HOST_NAME = "fr.privcloud.companion";
 const HOST = process.env.PRIVCLOUD_BRIDGE_HOST || "127.0.0.1";
 const PORT = Number(process.env.PRIVCLOUD_BRIDGE_PORT || "47631");

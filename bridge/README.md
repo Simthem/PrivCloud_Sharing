@@ -21,7 +21,9 @@ The web app never gives its cookies to Companion. The flow is:
 3. The browser or extension sends the WebDAV app password, selected files,
    upload token and E2EE key to the local Companion.
 4. Companion reads WebDAV on the local machine and encrypts E2E chunks with
-   the same AES-256-GCM format as the web uploader. When direct S3 upload is
+   the same AES-256-GCM format as the web uploader, the E2EE content format
+   v2. Its health reports the `contentV2` capability, and the web app never
+   hands a v2 upload to a Companion without it. When direct S3 upload is
    enabled, the API initializes the object, authorizes bounded parts and checks
    completion. Companion sends those parts straight to S3, without web cookies,
    WebDAV credentials or the encryption key. Unsupported APIs and local or

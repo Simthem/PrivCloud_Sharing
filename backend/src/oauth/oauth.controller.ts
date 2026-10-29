@@ -36,6 +36,7 @@ import {
   OAUTH_REAUTH_COOKIE_PATH,
   OAUTH_REAUTH_PROOF_TTL_MS,
   OAuthReauthService,
+  reauthPurpose,
 } from "../auth/oauthReauth.service";
 import { ErrorPageException } from "./exceptions/errorPage.exception";
 import { StepUpService } from "../auth/stepUp.service";
@@ -179,13 +180,7 @@ export class OAuthController {
       await this.oauthReauth.startIntent(
         user.id,
         provider,
-        purpose === "email"
-          ? "EMAIL"
-          : purpose === "password"
-            ? "PASSWORD"
-            : purpose === "step-up"
-              ? "STEP_UP"
-              : "TOTP",
+        reauthPurpose(purpose),
       ),
       {
         sameSite: "lax",

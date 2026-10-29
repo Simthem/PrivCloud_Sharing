@@ -33,8 +33,9 @@ export function contentHeaderBytes(
 }
 
 /** Every header byte is fixed except the 16-byte nonce. */
-export function isContentV2Header(bytes: Buffer): boolean {
+export function isContentV2Header(bytes: unknown): bytes is Buffer {
   return (
+    Buffer.isBuffer(bytes) &&
     bytes.length >= CONTENT_V2_HEADER_BYTES &&
     bytes.subarray(0, 8).equals(CONTENT_V2_MAGIC) &&
     bytes[8] === 2 &&
@@ -114,7 +115,7 @@ export function assertSigningResultContent(
     /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
       documentId,
     ) &&
-    (bytes.length < 60 || !isContentV2Header(bytes))
+    (!isContentV2Header(bytes) || bytes.length < 60)
   ) {
     throw new ConflictException(
       "Update or reload PrivCloud to finalize this encrypted document",

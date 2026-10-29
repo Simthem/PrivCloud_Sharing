@@ -1,3 +1,21 @@
+## [1.26.1](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.0...v1.26.1) (2026-10-29)
+
+### Security
+
+- Seal the security state of a pending email change with salted scrypt
+  instead of an unsalted SHA-256 of the password hash and second factor.
+  Changes requested before this update must be started again.
+- Check that uploaded parts and signed results are buffers before reading
+  their E2EE content v2 header.
+- Read the purpose of a linked-provider re-authentication from a fixed list
+  of names. Absent or unknown values still confirm 2FA.
+
+### Fixed
+
+- Import the step-up module into the configuration module instead of
+  declaring it as a provider, so the configuration controller receives its
+  step-up service and the backend starts.
+
 ## [1.26.0](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.25.3...v1.26.0) (2026-10-28)
 
 ### Security
@@ -136,9 +154,6 @@
 
 ### Fixed
 
-- Import the step-up module into the configuration module instead of
-  declaring it as a provider, so the configuration controller receives its
-  step-up service and the backend starts.
 - Type every backend test double, so the tests pass the strict ESLint rules
   without `any`. Load manifests and CommonJS helpers in TypeScript tests
   through `createRequire`, declare the Node.js globals of the standalone test

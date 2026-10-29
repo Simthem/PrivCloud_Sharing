@@ -134,6 +134,14 @@ testCase("a v2 header is recognised only with its fixed bytes", () => {
     assert.equal(isContentV2Header(changed), false, `offset ${offset}`);
   }
   assert.equal(isContentV2Header(v2Header().subarray(0, 31)), false);
+  for (const forged of [
+    v2Header().toString("latin1"),
+    Array.from(v2Header()),
+    { length: 32 },
+    null,
+  ]) {
+    assert.equal(isContentV2Header(forged), false);
+  }
   assert.throws(
     () => assertContentV2FirstPart(2, 0, Buffer.alloc(60)),
     BadRequestException,

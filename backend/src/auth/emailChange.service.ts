@@ -6,7 +6,7 @@ import {
   Injectable,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { Prisma, User } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { createHash, randomBytes } from "crypto";
 import { ConfigService } from "src/config/config.service";
 import { EmailOutboxService } from "src/email/email-outbox.service";
@@ -15,21 +15,14 @@ import { AuthService } from "./auth.service";
 import { AuthTotpService } from "./authTotp.service";
 import { EmailChangeDTO } from "./dto/emailChange.dto";
 import { OAuthReauthService } from "./oauthReauth.service";
+import {
+  matchesSecurityState,
+  sameSecurityState,
+  sealSecurityState,
+} from "./securityState.util";
 
 function digest(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
-}
-
-function accountProof(user: User): string {
-  return digest(
-    JSON.stringify({
-      password: user.password,
-      directory: user.ldapDN,
-      totpEnabled: user.totpEnabled,
-      totpVerified: user.totpVerified,
-      totpSecret: user.totpSecret,
-    }),
-  );
 }
 
 @Injectable()
@@ -123,6 +116,7 @@ export class EmailChangeService {
     const cancel = randomBytes(32).toString("base64url");
     const createdAt = new Date();
     const expiresAt = new Date(createdAt.getTime() + 1_800_000);
+    const securityState = await sealSecurityState(account);
     const fragmentLink = (token: string, action = "confirm") =>
       `${this.config.get("general.appUrl")}/auth/change-email#action=${action}&token=${token}`;
     await this.conflictSafe(async () =>
@@ -131,14 +125,14 @@ export class EmailChangeService {
         if (
           !current ||
           current.email !== account.email ||
-          accountProof(current) !== accountProof(account)
+          !sameSecurityState(current, account)
         )
           throw new ConflictException("Account security changed. Start again.");
         await this.ensureRequestAllowed(tx, userId, dto.email);
         const values = {
           oldEmail: current.email,
           newEmail: dto.email,
-          securityState: accountProof(current),
+          securityState,
           oldTokenHash: digest(approve),
           newTokenHash: digest(verify),
           cancelTokenHash: digest(cancel),
@@ -211,9 +205,9 @@ export class EmailChangeService {
           pending.consumedAt ||
           pending.expiresAt.getTime() <= Date.now() ||
           pending.oldEmail !== account.email ||
-          pending.securityState !== accountProof(account) ||
           // An account already being purged for an unproven address stays so.
-          account.emailVerificationDeletionStartedAt
+          account.emailVerificationDeletionStartedAt ||
+          !(await matchesSecurityState(pending.securityState, account))
         )
           this.invalidLink();
         const isOld = tokenHash === pending.oldTokenHash;
