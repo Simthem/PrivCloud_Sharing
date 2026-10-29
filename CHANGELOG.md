@@ -136,6 +136,9 @@
 
 ### Fixed
 
+- Import the step-up module into the configuration module instead of
+  declaring it as a provider, so the configuration controller receives its
+  step-up service and the backend starts.
 - Type every backend test double, so the tests pass the strict ESLint rules
   without `any`. Load manifests and CommonJS helpers in TypeScript tests
   through `createRequire`, declare the Node.js globals of the standalone test

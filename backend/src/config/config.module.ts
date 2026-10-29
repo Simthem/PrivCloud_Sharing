@@ -9,7 +9,7 @@ import { StepUpModule } from "src/auth/stepUp.module";
 
 @Global()
 @Module({
-  imports: [EmailModule],
+  imports: [EmailModule, StepUpModule],
   providers: [
     {
       provide: "CONFIG_VARIABLES",
@@ -28,7 +28,6 @@ import { StepUpModule } from "src/auth/stepUp.module";
       inject: [PrismaService, "CONFIG_VARIABLES"],
     },
     LogoService,
-    StepUpModule,
   ],
   controllers: [ConfigController],
   exports: [ConfigService],
