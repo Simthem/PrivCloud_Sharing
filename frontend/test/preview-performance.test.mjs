@@ -5,6 +5,10 @@ import {
   encryptFile,
   generateEncryptionKey,
 } from "../src/utils/crypto.util.ts";
+import {
+  CONTENT_V2_HEADER_LENGTH,
+  encryptContentV2,
+} from "../src/utils/contentV2.util.ts";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function transport(stored, recordSize, latency = 0) {
@@ -188,4 +192,60 @@ test("exact encrypted metadata avoids the legacy configuration request", async (
   });
   assert.deepEqual(await old.read(0, 10), new Uint8Array(10).fill(11));
   assert.equal(legacyCalls, 1, "legacy layouts still request their fallback");
+});
+
+test("media prefetch overlaps the next authenticated v2 records and serves them from memory", async () => {
+  const key = await generateEncryptionKey();
+  const context = { fileId: "v2.f1", shareId: "v2.s1" };
+  const plain = new Uint8Array(6_000_000).map((_, i) => (i * 7) % 253);
+  const stored = await encryptContentV2(key, context, plain);
+  const network = transport(stored, undefined, 40);
+  const source = await createPreviewByteSource(
+    network.fetch,
+    key,
+    undefined,
+    undefined,
+    context,
+  );
+  const ahead = new AbortController();
+  assert.deepEqual(await source.read(0, 1024), plain.slice(0, 1024));
+  const before = network.reads.length;
+  source.prefetch(1024, 6_000_000, ahead.signal);
+  await delay(400);
+  assert.equal(network.peak, 3, "prefetch keeps the existing concurrency");
+  const loaded = network.reads.length;
+  assert.equal(loaded - before, 5, "the five following records, once each");
+  for (let start = 1024; start < 6_000_000; start += 1024 * 1024) {
+    const end = Math.min(6_000_000, start + 1024 * 1024);
+    assert.deepEqual(await source.read(start, end), plain.slice(start, end));
+  }
+  assert.equal(network.reads.length, loaded, "playback reads hit the cache");
+  assert.ok(
+    network.reads.every(([s]) => s === 0 || s >= CONTENT_V2_HEADER_LENGTH),
+  );
+});
+
+test("media prefetch stays within half the cache and stops when its stream closes", async () => {
+  const size = 64 * 1024 * 1024;
+  const network = transport(new Uint8Array(size).fill(5), undefined, 30);
+  const source = await createPreviewByteSource(network.fetch);
+  const bounded = new AbortController();
+  source.prefetch(0, size, bounded.signal);
+  await delay(500);
+  assert.equal(
+    network.reads.length - 1,
+    12,
+    "24 MiB budget, 12 MiB prepared ahead at most",
+  );
+
+  const closed = new AbortController();
+  const started = network.reads.length;
+  source.prefetch(32 * 1024 * 1024, 40 * 1024 * 1024, closed.signal);
+  await delay(5);
+  closed.abort();
+  await delay(200);
+  assert.ok(
+    network.reads.length - started <= 3,
+    "queued windows never reach the network after the stream closed",
+  );
 });

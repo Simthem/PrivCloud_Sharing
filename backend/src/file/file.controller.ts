@@ -193,7 +193,14 @@ export class FileController {
     @Req() req: Request,
   ) {
     const maxChunkBytes = getUploadChunkLimit(!!req.user);
-    const request = this.parseMultipartInitialization(body, maxChunkBytes);
+    // A file that fits in one part goes to storage directly too: relayed
+    // through the API, its bytes were inspected by the WAF, and a challenge
+    // or a false positive on the content stalled the whole share.
+    const request = this.parseMultipartInitialization(
+      body,
+      maxChunkBytes,
+      true,
+    );
     return this.fileService.initializeMultipartUpload(request, shareId);
   }
 
@@ -206,7 +213,11 @@ export class FileController {
     @Req() req: Request,
   ) {
     const maxChunkBytes = getUploadChunkLimit(!!req.user);
-    const request = this.parseMultipartInitialization(body, maxChunkBytes);
+    const request = this.parseMultipartInitialization(
+      body,
+      maxChunkBytes,
+      true,
+    );
     const chunkIndex = body?.chunkIndex;
     const contentLength = body?.contentLength;
     if (
@@ -241,7 +252,7 @@ export class FileController {
     @Req() req: Request,
   ) {
     const maxChunkBytes = getUploadChunkLimit(!!req.user);
-    return this.authorizeMultipartParts(body, shareId, maxChunkBytes);
+    return this.authorizeMultipartParts(body, shareId, maxChunkBytes, true);
   }
 
   private async authorizeMultipartParts(
@@ -312,7 +323,11 @@ export class FileController {
     @Req() req: Request,
   ) {
     const maxChunkBytes = getUploadChunkLimit(!!req.user);
-    const request = this.parseMultipartInitialization(body, maxChunkBytes);
+    const request = this.parseMultipartInitialization(
+      body,
+      maxChunkBytes,
+      true,
+    );
     return this.fileService.completeMultipartUpload(request, shareId);
   }
 

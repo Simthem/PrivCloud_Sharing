@@ -173,7 +173,22 @@ const CreateUploadModalBody = ({
     return undefined;
   };
 
-  const generatedLink = generateShareId(options.shareIdLength);
+  const [generatedLink] = useState(() =>
+    generateShareId(options.shareIdLength),
+  );
+  // Asked as the modal opens rather than when Share is pressed, so the answer
+  // is ready by then and the upload starts one round trip sooner. An edited
+  // link is still checked on submit, and the server refuses an id taken in
+  // the meantime.
+  const generatedLinkCheck = useRef<Promise<boolean> | null>(null);
+  useEffect(() => {
+    generatedLinkCheck.current = shareService
+      .isShareIdAvailable(generatedLink)
+      .catch(() => false);
+  }, [generatedLink]);
+  const isLinkAvailable = async (link: string) =>
+    (link === generatedLink && (await generatedLinkCheck.current)) ||
+    shareService.isShareIdAvailable(link);
 
   const [showNotSignedInAlert, setShowNotSignedInAlert] = useState(true);
 
@@ -329,7 +344,7 @@ const CreateUploadModalBody = ({
   }, [teamFolders]);
 
   const onSubmit = form.onSubmit(async (values) => {
-    if (!(await shareService.isShareIdAvailable(values.link))) {
+    if (!(await isLinkAvailable(values.link))) {
       form.setFieldError("link", t("upload.modal.link.error.taken"));
     } else {
       const expirationString = form.values.never_expires
@@ -846,6 +861,15 @@ const SimplifiedCreateUploadModalModal = ({
 
   const [showNotSignedInAlert, setShowNotSignedInAlert] = useState(true);
 
+  // Found while the form is filled in, so Share does not wait for it. The
+  // server still refuses an id taken in the meantime.
+  const preparedLink = useRef<Promise<string | undefined> | null>(null);
+  useEffect(() => {
+    preparedLink.current = generateAvailableLink(options.shareIdLength).catch(
+      () => undefined,
+    );
+  }, [options.shareIdLength]);
+
   const validationSchema = yup.object().shape({
     name: yup
       .string()
@@ -863,12 +887,12 @@ const SimplifiedCreateUploadModalModal = ({
   });
 
   const onSubmit = form.onSubmit(async (values) => {
-    const link = await generateAvailableLink(options.shareIdLength).catch(
-      () => {
+    const link =
+      (await preparedLink.current) ??
+      (await generateAvailableLink(options.shareIdLength).catch(() => {
         toast.error(t("upload.modal.link.error.taken"));
         return undefined;
-      },
-    );
+      }));
 
     if (!link) {
       return;

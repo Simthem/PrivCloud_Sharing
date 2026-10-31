@@ -1,4 +1,5 @@
 import {
+  PREVIEW_READ_AHEAD_BYTES,
   PREVIEW_READ_BYTES,
   type PreviewByteSource,
 } from "./previewRange.util";
@@ -61,10 +62,14 @@ async function ensurePreviewWorker() {
           return;
         }
         const request = new AbortController();
+        // Records prepared ahead of this response. A seek closes the response,
+        // which drops whatever this one had not consumed yet.
+        const ahead = new AbortController();
         let reading = false;
         const abort = () => {
           session.abort.signal.removeEventListener("abort", abort);
           request.abort();
+          ahead.abort();
           port.onmessage = null;
           port.close();
         };
@@ -109,6 +114,13 @@ async function ensurePreviewWorker() {
               request.signal,
             );
             request.signal.throwIfAborted();
+            // The worker asks for one window at a time and waits for it. Without
+            // this, every MiB paid a full round trip and playback outran it.
+            session.source.prefetch?.(
+              command.end,
+              command.end + PREVIEW_READ_AHEAD_BYTES,
+              ahead.signal,
+            );
             if (
               !(bytes.buffer instanceof ArrayBuffer) ||
               bytes.byteLength !== command.end - command.start

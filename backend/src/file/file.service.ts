@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -616,6 +617,34 @@ export class FileService {
     if (share.uploadLocked) {
       this.logger.warn("Upload rejected because the share is completed");
       throw new BadRequestException("Share is already completed");
+    }
+
+    // A file already stored, sent again by a client that never got the answer:
+    // a dropped connection, or an app killed between the server accepting the
+    // file and recording it. The resend rewrote the stored object, then failed
+    // on the existing record with a 500 the client retried until it gave the
+    // file up. It is now answered as stored, and nothing is written. The same
+    // rule as an already completed multipart upload.
+    if (file.id) {
+      const stored = await this.prisma.file.findUnique({
+        where: { id: file.id },
+        select: { shareId: true, size: true },
+      });
+      if (stored) {
+        if (stored.shareId !== shareId) {
+          throw new BadRequestException("File ID is already in use");
+        }
+        if (chunk.total === 1 && stored.size !== String(chunkBytes)) {
+          throw new ConflictException(
+            "Another file is already stored under this ID",
+            "file_already_stored",
+          );
+        }
+        this.logger.log(
+          `Upload resent after completion, answered as stored: share=redacted fileId=${file.id}`,
+        );
+        return { ...file, alreadyCompleted: true };
+      }
     }
     // The format is decided when a file starts: a v1 upload already under way
     // when v2 writes are turned on still completes, in v1.

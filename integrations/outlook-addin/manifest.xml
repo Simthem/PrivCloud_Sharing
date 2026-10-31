@@ -5,7 +5,7 @@
   xmlns:mailappor="http://schemas.microsoft.com/office/mailappversionoverrides/1.0"
   xsi:type="MailApp">
   <Id>5b7d42f8-6848-4f38-92c1-1c6cdd68a8f5</Id>
-  <Version>1.26.2.0</Version>
+  <Version>1.26.3.0</Version>
   <ProviderName>PrivCloud</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="PrivCloud" />

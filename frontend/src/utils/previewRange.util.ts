@@ -21,6 +21,13 @@ export type PreviewByteSource = {
     _end: number,
     _signal?: AbortSignal,
   ) => Promise<Uint8Array<ArrayBuffer>>;
+  /**
+   * Starts loading this range into the source's bounded cache without waiting
+   * for it. Media playback calls it ahead of the position being read, so the
+   * next reads find their records instead of paying a round trip each.
+   * Aborting the signal drops what was not read yet.
+   */
+  prefetch?: (_start: number, _end: number, _signal: AbortSignal) => void;
 };
 type RangeFetcher = (
   _start: number,
@@ -28,6 +35,8 @@ type RangeFetcher = (
   _signal?: AbortSignal,
 ) => Promise<Response>;
 export const PREVIEW_READ_BYTES = 1024 * 1024;
+/** How far ahead of a media read the next bytes are prepared. */
+export const PREVIEW_READ_AHEAD_BYTES = 8 * 1024 * 1024;
 
 /**
  * A range must really be partial: never buffer a server's full-file fallback.
@@ -213,6 +222,44 @@ export async function createPreviewByteSource(
   );
   let legacyRecord = cachedRecord;
   cachedRecord = null;
+  const readBlock = (
+    blockSize: number,
+    index: number,
+    readSignal?: AbortSignal,
+  ) =>
+    cache.read(
+      `${blockSize}:${index}`,
+      async (loadSignal) => {
+        if (!key)
+          return readStored(
+            index * blockSize,
+            Math.min(size, (index + 1) * blockSize),
+            loadSignal,
+          );
+        if (v2) {
+          const [storedStart, storedEnd] = v2.recordRange(index);
+          const stored = await readStored(storedStart, storedEnd, loadSignal);
+          loadSignal.throwIfAborted();
+          return v2.decryptRecord(index, stored);
+        }
+        if (index === cachedIndex && legacyRecord) {
+          const first = legacyRecord;
+          legacyRecord = null;
+          return first;
+        }
+        const storedStart = index * encryptedRecordSize;
+        const encrypted = await readStored(
+          storedStart,
+          Math.min(encryptedSize, storedStart + encryptedRecordSize),
+          loadSignal,
+        );
+        loadSignal.throwIfAborted();
+        return new Uint8Array(await decryptFile(encrypted.buffer, key));
+      },
+      readSignal,
+    );
+  // Playback windows: the block size read() picks for a MiB read.
+  const playbackBlockSize = key ? recordSize : PREVIEW_READ_BYTES;
   return {
     size,
     async read(start, end, readSignal) {
@@ -237,44 +284,9 @@ export async function createPreviewByteSource(
       const first = Math.floor(start / blockSize);
       const last = Math.floor((end - 1) / blockSize);
       const blocks = await Promise.all(
-        Array.from({ length: last - first + 1 }, (_, n) => {
-          const index = first + n;
-          return cache.read(
-            `${blockSize}:${index}`,
-            async (loadSignal) => {
-              if (!key)
-                return readStored(
-                  index * blockSize,
-                  Math.min(size, (index + 1) * blockSize),
-                  loadSignal,
-                );
-              if (v2) {
-                const [storedStart, storedEnd] = v2.recordRange(index);
-                const stored = await readStored(
-                  storedStart,
-                  storedEnd,
-                  loadSignal,
-                );
-                loadSignal.throwIfAborted();
-                return v2.decryptRecord(index, stored);
-              }
-              if (index === cachedIndex && legacyRecord) {
-                const first = legacyRecord;
-                legacyRecord = null;
-                return first;
-              }
-              const storedStart = index * encryptedRecordSize;
-              const encrypted = await readStored(
-                storedStart,
-                Math.min(encryptedSize, storedStart + encryptedRecordSize),
-                loadSignal,
-              );
-              loadSignal.throwIfAborted();
-              return new Uint8Array(await decryptFile(encrypted.buffer, key));
-            },
-            readSignal,
-          );
-        }),
+        Array.from({ length: last - first + 1 }, (_, n) =>
+          readBlock(blockSize, first + n, readSignal),
+        ),
       );
       readSignal?.throwIfAborted();
       signal?.throwIfAborted();
@@ -287,6 +299,28 @@ export async function createPreviewByteSource(
         result.set(blocks[n].subarray(from - base, to - base), from - start);
       }
       return result;
+    },
+    prefetch(start, end, aheadSignal) {
+      if (signal?.aborted || aheadSignal.aborted) return;
+      const from = Math.max(0, start);
+      const to = Math.min(size, end);
+      if (
+        !Number.isSafeInteger(from) ||
+        !Number.isSafeInteger(to) ||
+        to <= from
+      )
+        return;
+      const first = Math.floor(from / playbackBlockSize);
+      // At most half the cache ahead, so the window being played is never
+      // evicted by the one being prepared. Large legacy records get none.
+      const last = Math.min(
+        Math.floor((to - 1) / playbackBlockSize),
+        first + Math.floor(budget / 2 / playbackBlockSize) - 1,
+      );
+      // The same authenticated loads as read(): a prefetched record reaches
+      // the player only once a read asks for it, after its tag was verified.
+      for (let index = first; index <= last; index++)
+        readBlock(playbackBlockSize, index, aheadSignal).catch(() => undefined);
     },
   };
 }

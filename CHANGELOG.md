@@ -1,3 +1,42 @@
+## [1.26.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.2...v1.26.3) (2026-10-30)
+
+### Bug Fixes
+
+- Send a file that fits in one part straight to storage, like a larger
+  one. Relayed through the API, its bytes crossed the WAF in front of it,
+  which answered every attempt with a 468 challenge and held a whole share
+  back for up to two hours. The owner multipart routes now accept a single
+  part with the same checks as the Companion's, and a backend still without
+  them is answered by the relay as before.
+- Play video previews without stalling once the first seconds are played.
+  The preview read the next MiB only after the player had consumed the
+  previous one, one storage round trip each, so a high bitrate video
+  outran it. Media reads now prepare up to 8 MiB ahead through the same
+  authenticated record reads, within the existing memory budget, and drop
+  that window when the player seeks or closes. Measured with a 25 Mbit/s
+  video and 300 ms of storage latency: 45 s of stalls in 90 s before, none
+  after the start.
+- Answer a file sent again after the server stored it as stored, without
+  rewriting anything. A client that lost the answer (dropped connection,
+  app killed in between) resent it, the object was rewritten and the
+  existing record made the request fail with a 500, retried until the file
+  was given up. Different bytes under a stored ID are refused with 409.
+- Keep the views of a share deleted before it expires in the administration
+  statistics. The total was the sum of the shares still stored. A database
+  trigger now keeps a platform view total, correct whichever application
+  colour counts the view, starting from the highest total ever recorded.
+- Move the upload gauge as soon as the first bytes leave. It advanced only
+  when a whole part was acknowledged, and parts of tens of megabytes shared
+  between several lanes kept a share at 0% for many seconds after Share.
+  Each part sent straight to storage now reports its bytes on the wire
+  through XMLHttpRequest, with the same signed URL, body and CORS rules, and
+  the gauge never goes back. Measured with 50 ms of latency at 5 MB/s on a
+  200 MB file: first movement after 13 to 14 s before, 1.1 s after.
+- Check the generated share link while the share modal is open instead of
+  when Share is pressed, one round trip less before the upload starts. An
+  edited link is still checked on submit and the server still refuses an
+  id taken in the meantime.
+
 ## [1.26.2](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.1...v1.26.2) (2026-10-29)
 
 ### Security

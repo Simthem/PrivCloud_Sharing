@@ -201,7 +201,7 @@ export class AdminStatsService {
     const shareWindowStartedAt = new Date(
       now.getTime() - SHARE_USAGE_WINDOW_MS,
     );
-    const [users, shares, viewAggregate, storageBytes] = await Promise.all([
+    const [users, shares, views, storageBytes] = await Promise.all([
       this.prisma.user.count(),
       // The public edition has no immutable quota ledger, so count the
       // surviving shares created inside the same rolling window.
@@ -210,16 +210,33 @@ export class AdminStatsService {
           createdAt: { gt: shareWindowStartedAt, lte: now },
         },
       }),
-      this.prisma.share.aggregate({ _sum: { views: true } }),
+      this.platformViews(),
       this.totalStorageBytes(),
     ]);
 
     return {
       users,
       shares,
-      views: viewAggregate._sum.views ?? 0,
+      views,
       storageBytes,
     };
+  }
+
+  /**
+   * Every view the platform served. Share.views leaves with its share, so the
+   * sum of the shares still stored dropped each time a user deleted one
+   * before it expired. The database keeps this total itself (migration
+   * platform_view_total), whichever application colour counted the view.
+   * Without its row, the views of the shares still stored.
+   */
+  private async platformViews(): Promise<number> {
+    const total = await this.prisma.platformViewTotal.findUnique({
+      where: { id: 1 },
+      select: { views: true },
+    });
+    if (total) return total.views;
+    const stored = await this.prisma.share.aggregate({ _sum: { views: true } });
+    return stored._sum.views ?? 0;
   }
 
   /**

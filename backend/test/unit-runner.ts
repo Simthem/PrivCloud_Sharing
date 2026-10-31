@@ -17,6 +17,8 @@ const specs = [
   "test/pending-upload-access.spec.ts",
   "test/share-completion-recovery.spec.ts",
   "test/upload-preservation.spec.ts",
+  "test/upload-resend-idempotency.spec.ts",
+  "test/owner-single-part-upload.spec.ts",
   "test/signing-request-validation.spec.ts",
   ...collectSpecs(path.resolve("src")),
   ...collectSpecs(path.resolve("test")),

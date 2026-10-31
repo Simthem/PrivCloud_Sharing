@@ -813,6 +813,91 @@ async function runBatch(opts) {
   var serverFairShare = 0;
   var uploadedPlainBytes = 0;
   var completedProgressChunks = new Set();
+  // Bytes of each part already on the wire, in plaintext terms. The gauge
+  // used to move only when a whole part was acknowledged, so a share sat at
+  // 0% for as long as its first parts took to send. What is reported never
+  // goes back: a part that fails and is sent again only holds the gauge still.
+  var partBytesOnWire = new Map();
+  var reportedPlainBytes = 0;
+  var lastWireReportAt = 0;
+  var WIRE_REPORT_INTERVAL_MS = 250;
+  function postProgress(chunkIndex, fromWire) {
+    var now = Date.now();
+    if (fromWire && now - lastWireReportAt < WIRE_REPORT_INTERVAL_MS) return;
+    var onWire = 0;
+    partBytesOnWire.forEach(function (bytes) {
+      onWire += bytes;
+    });
+    reportedPlainBytes = Math.max(
+      reportedPlainBytes,
+      Math.min(file.size, uploadedPlainBytes + onWire),
+    );
+    lastWireReportAt = now;
+    self.postMessage({
+      type: "progress",
+      chunkIndex: chunkIndex,
+      totalChunks: totalChunks,
+      fileId: fileId,
+      uploadedBytes: reportedPlainBytes,
+    });
+  }
+  // fetch() cannot tell how much of a request body has been sent, and
+  // XMLHttpRequest can. Same signed URL, same body, no credentials either.
+  // Settles like fetch: a response with ok, status and headers, a TypeError
+  // on a network failure, an AbortError when the signal fires.
+  function putWithProgress(url, body, signal, onSent) {
+    if (typeof XMLHttpRequest === "undefined") {
+      return fetch(url, {
+        method: "PUT",
+        body: body,
+        credentials: "omit",
+        signal: signal,
+      });
+    }
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      var onAbort = function () {
+        xhr.abort();
+      };
+      var settle = function () {
+        if (signal) signal.removeEventListener("abort", onAbort);
+      };
+      xhr.open("PUT", url, true);
+      xhr.withCredentials = false;
+      xhr.upload.onprogress = function (event) {
+        if (event.lengthComputable && event.total > 0) {
+          onSent(event.loaded, event.total);
+        }
+      };
+      xhr.onload = function () {
+        settle();
+        resolve({
+          ok: xhr.status >= 200 && xhr.status < 300,
+          status: xhr.status,
+          headers: {
+            get: function (name) {
+              return xhr.getResponseHeader(name);
+            },
+          },
+          body: null,
+        });
+      };
+      xhr.onerror = function () {
+        settle();
+        reject(new TypeError("Network request failed"));
+      };
+      xhr.onabort = function () {
+        settle();
+        reject(new DOMException("The operation was aborted.", "AbortError"));
+      };
+      if (signal && signal.aborted) {
+        reject(new DOMException("The operation was aborted.", "AbortError"));
+        return;
+      }
+      if (signal) signal.addEventListener("abort", onAbort);
+      xhr.send(body);
+    });
+  }
   var initialWindowPrewarmed = false;
   var plannedFlowPopulationReached = plannedFileConcurrency <= 1;
 
@@ -1089,10 +1174,15 @@ async function runBatch(opts) {
   }
 
   async function initializeMultipartSession() {
+    // A file that fits in one part also asks for a storage session, so its
+    // bytes go to storage directly instead of through the API and the WAF in
+    // front of it. A backend without single-part sessions refuses the layout
+    // with a 400, and the file then takes the relay as before.
+    var singlePart = totalChunks === 1 && file.size > 0;
     if (
       !serverManagedWindow ||
       startChunk !== 0 ||
-      totalChunks < 2 ||
+      (totalChunks < 2 && !singlePart) ||
       !crypto ||
       typeof crypto.randomUUID !== "function"
     ) {
@@ -1165,7 +1255,10 @@ async function runBatch(opts) {
           return { ready: false, fatal: false };
         }
 
-        if ([404, 405, 415, 501].indexOf(response.status) !== -1) {
+        if (
+          [404, 405, 415, 501].indexOf(response.status) !== -1 ||
+          (singlePart && response.status === 400)
+        ) {
           console.warn(
             "[upload] multipart init unavailable -> status=" +
               response.status +
@@ -1981,12 +2074,25 @@ async function runBatch(opts) {
             return { fallback: true, reason: "storage-invalid-slot-grant" };
           }
 
-          var response = await fetch(candidate.url, {
-            method: "PUT",
-            body: body,
-            credentials: "omit",
-            signal: signal,
-          });
+          var response;
+          var partBounds = getChunkBounds(chunkIndex);
+          var partPlainBytes = Math.max(0, partBounds.to - partBounds.from);
+          try {
+            response = await putWithProgress(
+              candidate.url,
+              body,
+              signal,
+              function (sent, total) {
+                partBytesOnWire.set(
+                  chunkIndex,
+                  Math.floor((Math.min(sent, total) / total) * partPlainBytes),
+                );
+                postProgress(chunkIndex, true);
+              },
+            );
+          } finally {
+            partBytesOnWire.delete(chunkIndex);
+          }
           if (response.ok) {
             releaseDirectSlot(grant.leaseId, "success", 0);
             released = true;
@@ -2427,13 +2533,7 @@ async function runBatch(opts) {
                   reconciledBounds.to - reconciledBounds.from,
                 );
               }
-              self.postMessage({
-                type: "progress",
-                chunkIndex: chunkIndex,
-                totalChunks: totalChunks,
-                fileId: fileId,
-                uploadedBytes: uploadedPlainBytes,
-              });
+              postProgress(chunkIndex, false);
               return {
                 ok: true,
                 uploadTransport: uploadTransport,
@@ -2686,13 +2786,7 @@ async function runBatch(opts) {
             completedBounds.to - completedBounds.from,
           );
         }
-        self.postMessage({
-          type: "progress",
-          chunkIndex: chunkIndex,
-          totalChunks: totalChunks,
-          fileId: fileId,
-          uploadedBytes: uploadedPlainBytes,
-        });
+        postProgress(chunkIndex, false);
         return {
           ok: true,
           uploadTransport: jsonResult.uploadTransport,

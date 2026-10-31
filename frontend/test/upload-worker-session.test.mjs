@@ -43,6 +43,7 @@ async function transfer(options = {}) {
     expiredPuts: 0,
     forbiddenPuts: 0,
     firstReads: new Map(),
+    progressAt: [],
   };
   const schedule = (fn, delay) => {
     const id = ++sequence;
@@ -78,6 +79,7 @@ async function transfer(options = {}) {
   const self = {
     navigator: { deviceMemory: 8, hardwareConcurrency: 8 },
     postMessage(message) {
+      if (message.type === "progress") stats.progressAt.push([now, message.uploadedBytes]);
       messages.push(message);
       if (message.type === "direct-pool-config" && options.initialWindow && !initialWindowApplied) {
         initialWindowApplied = true;
@@ -153,6 +155,8 @@ async function transfer(options = {}) {
     );
     const parsed = new URL(url, "https://app.example.test");
     if (parsed.pathname.endsWith("/multipart/init")) {
+      if (options.rejectSinglePart && JSON.parse(init.body).totalChunks === 1)
+        return json({ message: "Invalid multipart layout" }, 400);
       if (options.wafControlStage === "init" && !challenges.has("init")) {
         blockedEpisode = "init";
         return html(401);
@@ -247,7 +251,43 @@ async function transfer(options = {}) {
     });
   };
   self.fetch = fetch;
+  // A browser XMLHttpRequest over the same storage: the body leaves in four
+  // steps spread over the part's storage delay, then the answer arrives.
+  class FakeXMLHttpRequest {
+    constructor() {
+      this.upload = {};
+      this.status = 0;
+    }
+    open(method, url) {
+      assert.equal(method, "PUT");
+      this.url = url;
+    }
+    getResponseHeader() {
+      return null;
+    }
+    abort() {
+      this.aborted = true;
+      this.onabort?.();
+    }
+    send(body) {
+      const total = body.size ?? body.byteLength;
+      for (const step of [1, 2, 3])
+        schedule(() => {
+          if (!this.aborted)
+            this.upload.onprogress?.({ lengthComputable: true, loaded: (total * step) / 4, total });
+        }, ((options.storageDelay ?? 0) * step) / 4);
+      fetch(this.url, { method: "PUT", body, signal: new AbortController().signal }).then(
+        (response) => {
+          if (this.aborted) return;
+          this.status = response.status;
+          this.onload?.();
+        },
+        () => this.onerror?.(),
+      );
+    }
+  }
   const context = vm.createContext({
+    ...(options.xhr && { XMLHttpRequest: FakeXMLHttpRequest, DOMException }),
     self,
     fetch,
     AbortController,
@@ -475,4 +515,38 @@ test("a refused signature renews the part without cooling the storage origin dow
   const outcomes = f.messages.filter((message) => message.type === "release-direct-slot").map((message) => message.outcome);
   assert.equal(outcomes.includes("transient"), false, "a 403 paused the origin");
   assert.equal(outcomes.includes("cancelled"), true);
+});
+
+test("the gauge follows the bytes on the wire and never goes back", async () => {
+  const f = await transfer({ size: 182_000_000, xhr: true, initialWindow: 1, storageDelay: 8_000 });
+  assert.equal(f.terminal.type, "batch-complete");
+  assert.equal(f.complete, true);
+  const progress = f.stats.progressAt;
+  assert.ok(progress.length > 0, "no progress was reported");
+  assert.ok(progress[0][0] < f.stats.firstStorageCompletionAt, "the first progress waited for a whole part");
+  assert.ok(progress[0][1] > 0);
+  for (let index = 1; index < progress.length; index++)
+    assert.ok(progress[index][1] >= progress[index - 1][1], `progress went back at ${progress[index][0]}ms`);
+  assert.ok(progress.at(-1)[1] <= 182_000_000);
+});
+
+test("without XMLHttpRequest the gauge still moves part by part", async () => {
+  const f = await transfer({ size: 182_000_000, initialWindow: 1, storageDelay: 8_000 });
+  assert.equal(f.complete, true);
+  assert.ok(f.stats.progressAt[0][0] >= f.stats.firstStorageCompletionAt);
+});
+
+test("a file that fits in one part goes to storage without the API relay", async () => {
+  const f = await transfer({ size: 40_800, chunkBytes: CHUNK_BYTES, firstBytes: CHUNK_BYTES });
+  assert.equal(f.terminal.type, "batch-complete");
+  assert.equal(f.complete, true);
+  assert.equal(f.uploaded.size, 1);
+  assert.equal(f.stats.relays, 0, "the file body went through the API");
+});
+
+test("a backend without single-part sessions still receives the file by relay", async () => {
+  const f = await transfer({ size: 40_800, chunkBytes: CHUNK_BYTES, firstBytes: CHUNK_BYTES, rejectSinglePart: true });
+  assert.equal(f.terminal.type, "batch-complete");
+  assert.equal(f.stats.relays, 1);
+  assert.equal(f.uploaded.size, 0);
 });

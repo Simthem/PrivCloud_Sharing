@@ -1580,6 +1580,14 @@ model UsageSnapshot {
   backfilled Boolean @default(false)
 }
 
+// Every view shares received on this platform, one row with id 1. Share.views
+// leaves with its share. A database trigger adds each view here, so a share
+// deleted before it expires keeps its views in the administration statistics.
+model PlatformViewTotal {
+  id    Int @id @default(1)
+  views Int @default(0)
+}
+
 // Authenticated, Team-scoped collections. Subject/note are collaboration
 // metadata, like folder names. File encryption remains on the Share.
 model TeamFileRequest {

@@ -142,6 +142,7 @@ function fakePrisma(options: {
   users?: Date[];
   shares?: number;
   views?: number;
+  platformViews?: number;
   files?: { id: string; size: string }[];
   snapshots?: UsageSnapshotRow[];
 }) {
@@ -186,6 +187,12 @@ function fakePrisma(options: {
     },
     shareQuotaEvent: {
       count: async () => options.shares ?? 0,
+    },
+    platformViewTotal: {
+      findUnique: async () =>
+        options.platformViews === undefined
+          ? null
+          : { views: options.platformViews },
     },
     file: {
       findMany: async (query: {
@@ -477,6 +484,20 @@ testCase(
       "users",
       "views",
     ]);
+  },
+);
+
+testCase(
+  "a share deleted before it expires keeps its views in the platform total",
+  async () => {
+    // Share.views of the shares still stored adds up to 3. The platform total
+    // kept by the database also holds the views of the deleted ones.
+    const prisma = fakePrisma({ shares: 4, views: 3, platformViews: 20 });
+    const service = new AdminStatsService(prisma as never);
+
+    const series = await service.getUsageSeries(1);
+
+    assert.equal(series.totals.views, 20);
   },
 );
 
