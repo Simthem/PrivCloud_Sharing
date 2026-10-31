@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-backend",
-  "version": "1.26.3",
+  "version": "1.26.4",
   "scripts": {
     "build": "nest build",
     "postinstall": "[ -f prisma/schema.prisma ] && prisma generate || true",
@@ -112,9 +112,9 @@
     "axios": "1.20.0",
     "fast-xml-parser": "5.7.2",
     "effect": "^3.20.0",
-    "glob": "^13.0.6",
+    "glob": "14.0.3",
     "jws": "^3.2.3",
-    "minimatch": "^10.2.3",
+    "minimatch": "11.0.3",
     "multer": "2.5.0",
     "serialize-javascript": "^7.0.3",
     "qs": "6.17.0",
@@ -158,7 +158,8 @@
     "deepmerge": "$deepmerge",
     "deepmerge-ts": ">=8.0.0",
     "mysql2": ">=3.23.1",
-    "proxy-addr": ">=2.0.8"
+    "proxy-addr": ">=2.0.8",
+    "joi": "18.3.1"
   },
   "allowScripts": {
     "argon2@0.41.1": true,

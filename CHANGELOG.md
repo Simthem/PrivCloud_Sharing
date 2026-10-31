@@ -1,3 +1,14 @@
+## [1.26.4](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.3...v1.26.4) (2026-10-31)
+
+### Security
+
+- Force minimatch 11.0.3 in the backend, frontend and documentation for
+  GHSA-g3hv-75wg-m249, glob 14.0.3 in the backend for GHSA-3g3m-2fjr-6pw4,
+  and joi 18.3.1 in the backend and 17.13.9 in the documentation for
+  GHSA-4528-x5fx-h6hg. Force follow-redirects 1.16.2 in the documentation
+  for GHSA-mrwp-f3q8-3g9p. A test checks every copy in the locks against the
+  affected ranges.
+
 ## [1.26.3](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.2...v1.26.3) (2026-10-30)
 
 ### Bug Fixes

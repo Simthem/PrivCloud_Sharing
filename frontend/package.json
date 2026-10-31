@@ -1,6 +1,6 @@
 {
   "name": "privcloud-sharing-frontend",
-  "version": "1.26.3",
+  "version": "1.26.4",
   "scripts": {
     "dev": "node scripts/copy-pdf-worker.mjs && next dev --webpack",
     "prebuild": "node ../scripts/build-public-verification.mjs && node scripts/copy-pdf-worker.mjs && node scripts/build-photo-registration.mjs && node scripts/build-image-decoders.mjs && node scripts/build-video-decoders.mjs && sh scripts/strip-legacy-polyfills.sh",
@@ -91,9 +91,7 @@
     "tar": "^7.5.10",
     "diff": "^8.0.3",
     "js-yaml": "5.4.2",
-    "minimatch@^10.0.0": {
-      "brace-expansion": "5.0.12"
-    },
+    "minimatch": "11.0.3",
     "picomatch": ">=4.0.4",
     "axios": "1.20.0",
     "next": "16.4.1",
