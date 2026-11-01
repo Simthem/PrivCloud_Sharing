@@ -76,4 +76,3 @@ export function assertEmailVerificationAccess(
     deletionAt: state.deletionAt?.toISOString(),
   });
 }
-

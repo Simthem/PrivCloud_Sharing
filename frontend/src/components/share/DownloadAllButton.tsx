@@ -99,7 +99,7 @@ const DownloadAllButton = ({
     return () => {
       clearInterval(timer);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isE2EEncrypted]);
 
   return (

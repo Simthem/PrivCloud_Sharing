@@ -101,7 +101,9 @@ export const useStyles = createStyles((theme) => ({
           ? rgba(theme.colors[theme.primaryColor][9], 0.25)
           : theme.colors[theme.primaryColor][0],
       color:
-        theme.colors[theme.primaryColor][theme.other.colorScheme === "dark" ? 3 : 7],
+        theme.colors[theme.primaryColor][
+          theme.other.colorScheme === "dark" ? 3 : 7
+        ],
     },
   },
 

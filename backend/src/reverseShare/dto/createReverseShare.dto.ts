@@ -33,7 +33,7 @@ export class CreateReverseShareDTO {
   @IsBoolean()
   publicAccess: boolean;
 
-   // E2E: K_rs encrypted by the owner's master key (base64url)
+  // E2E: K_rs encrypted by the owner's master key (base64url)
   @IsOptional()
   @IsString()
   encryptedReverseShareKey?: string;

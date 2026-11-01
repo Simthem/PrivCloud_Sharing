@@ -51,7 +51,10 @@ export class AccessGrantController {
   @Post("bulk")
   @UseGuards(JwtGuard)
   @Throttle({ default: { ttl: minutes(1), limit: 10 } })
-  async createBulkGrants(@GetUser() user: User, @Body() dto: BulkCreateGrantsDTO) {
+  async createBulkGrants(
+    @GetUser() user: User,
+    @Body() dto: BulkCreateGrantsDTO,
+  ) {
     const result = await this.grantService.createBulkGrants(user.id, dto);
 
     // Send notifications + emails for successful grants (non-blocking)
@@ -65,7 +68,10 @@ export class AccessGrantController {
   private async sendGrantNotifications(
     actor: User,
     dto: BulkCreateGrantsDTO,
-    result: { success: number; results: Array<{ recipientUserId: string; result: any }> },
+    result: {
+      success: number;
+      results: Array<{ recipientUserId: string; result: any }>;
+    },
   ) {
     if (result.success === 0) return;
 
@@ -90,7 +96,9 @@ export class AccessGrantController {
     } else if (firstGrant?.fileId) {
       const file = await this.prisma.file.findUnique({
         where: { id: firstGrant.fileId },
-        include: { share: { include: { teamFolder: { include: { team: true } } } } },
+        include: {
+          share: { include: { teamFolder: { include: { team: true } } } },
+        },
       });
       if (file) {
         fileName = file.name;
@@ -101,22 +109,26 @@ export class AccessGrantController {
     }
 
     // Notify each successful recipient
-    const successfulRecipients = result.results.filter((r) => r.result !== null);
+    const successfulRecipients = result.results.filter(
+      (r) => r.result !== null,
+    );
 
     // Log E2E_SHARE activity in the team feed (admin visibility)
     if (teamId && successfulRecipients.length > 0) {
-      this.prisma.teamAccessLog.create({
-        data: {
-          teamId,
-          action: "E2E_SHARE",
-          actorEmail: actor.email,
-          actorName: actor.username,
-          folderId: folderId || undefined,
-          fileName: fileName || `${successfulRecipients.length} fichier(s) partagé(s) E2E`,
-        },
-      }).catch(() =>
-        this.logger.debug("Failed to log E2E_SHARE activity"),
-      );
+      this.prisma.teamAccessLog
+        .create({
+          data: {
+            teamId,
+            action: "E2E_SHARE",
+            actorEmail: actor.email,
+            actorName: actor.username,
+            folderId: folderId || undefined,
+            fileName:
+              fileName ||
+              `${successfulRecipients.length} fichier(s) partagé(s) E2E`,
+          },
+        })
+        .catch(() => this.logger.debug("Failed to log E2E_SHARE activity"));
     }
 
     for (const { recipientUserId } of successfulRecipients) {
@@ -124,7 +136,8 @@ export class AccessGrantController {
       const recipientGrant = dto.grants.find(
         (g) => g.recipientUserId === recipientUserId,
       );
-      const encryptedNotification = recipientGrant?.encryptedNotification || null;
+      const encryptedNotification =
+        recipientGrant?.encryptedNotification || null;
 
       // In-app team notification
       if (teamId) {
@@ -142,7 +155,8 @@ export class AccessGrantController {
               ? undefined
               : {
                   shareId: shareId || undefined,
-                  highlightFileId: firstGrant?.fileId || teamFileId || undefined,
+                  highlightFileId:
+                    firstGrant?.fileId || teamFileId || undefined,
                 },
             encryptedMetadata: encryptedNotification || undefined,
           })
@@ -197,7 +211,11 @@ export class AccessGrantController {
     @Query("teamFileId") teamFileId?: string,
     @Query("shareId") shareId?: string,
   ) {
-    return this.grantService.getMyGrants(user.id, { fileId, teamFileId, shareId });
+    return this.grantService.getMyGrants(user.id, {
+      fileId,
+      teamFileId,
+      shareId,
+    });
   }
 
   /**
@@ -273,7 +291,9 @@ export class AccessGrantController {
     @Query("limit") limit?: string,
   ) {
     return this.grantService.getTeamShares(user.id, teamId, {
-      receivedPage: receivedPage ? Number.parseInt(receivedPage, 10) : undefined,
+      receivedPage: receivedPage
+        ? Number.parseInt(receivedPage, 10)
+        : undefined,
       sentPage: sentPage ? Number.parseInt(sentPage, 10) : undefined,
       limit: limit ? Number.parseInt(limit, 10) : undefined,
     });

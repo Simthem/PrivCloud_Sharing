@@ -110,8 +110,11 @@
   display: none;
 }
 
-.encryptionDetails summary {
-  cursor: pointer;
+.encryptionDetailsToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
   font-size: var(--mantine-font-size-xs);
 }
 
@@ -167,8 +170,16 @@
     margin-bottom: 12px;
   }
 
+  /* Top-aligned so the rotation button stays put while the details unfold
+     beside it. The toggle is as tall as that button to keep their centers
+     level. */
   .encryptionActions {
     gap: 6px;
+    align-items: flex-start;
+  }
+
+  .encryptionDetailsToggle {
+    min-height: 26px;
   }
 
   .encryptionDescription {
@@ -178,6 +189,13 @@
   .encryptionDetails,
   .mobileOnly {
     display: block;
+  }
+
+  /* The details take the room left on their line, folded or not, so their
+     text wraps the same way while it unfolds and once it is open. */
+  .encryptionDetails {
+    flex: 1 1 0;
+    min-width: 0;
   }
 
   .desktopOnly {

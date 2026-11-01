@@ -309,17 +309,23 @@ const SigningDetailPage = () => {
       const pdfDoc = await PDFDocument.load(decryptedBuf);
       // Keep the exact decrypted source approved by the signers inside the
       // sealed PDF so the WebAuthn manifest hash stays checkable offline.
-      await pdfDoc.attach(new Uint8Array(decryptedBuf), "privcloud-source.pdf", {
-        mimeType: "application/pdf",
-        description: `Source document SHA-256 ${sourceSha256}`,
-      });
+      await pdfDoc.attach(
+        new Uint8Array(decryptedBuf),
+        "privcloud-source.pdf",
+        {
+          mimeType: "application/pdf",
+          description: `Source document SHA-256 ${sourceSha256}`,
+        },
+      );
       for (const entry of Array.isArray(sigData.pageRotations)
         ? sigData.pageRotations
         : []) {
         const page = pdfDoc.getPages()[entry.page - 1];
         if (page && [90, 180, 270].includes(entry.rotation)) {
           page.setRotation(
-            degrees(normalizedPdfRotation(page.getRotation().angle + entry.rotation)),
+            degrees(
+              normalizedPdfRotation(page.getRotation().angle + entry.rotation),
+            ),
           );
         }
       }
@@ -1047,7 +1053,6 @@ const SigningDetailPage = () => {
                   style={{
                     minWidth: 0,
                     overflowWrap: "anywhere",
-                    hyphens: "auto",
                     lineHeight: 1.2,
                   }}
                 >

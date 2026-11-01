@@ -228,7 +228,8 @@ testCase("SHARE_DEK_V1 creation honours the write flag", () => {
 
   withFlags({}, () => {
     assert.throws(
-      () => service().resolveCreateCryptoData(dek, owner as never, false, false),
+      () =>
+        service().resolveCreateCryptoData(dek, owner as never, false, false),
       (error: unknown) =>
         error instanceof ConflictException &&
         (error.getResponse() as { error?: string }).error ===
@@ -275,69 +276,75 @@ testCase("SHARE_DEK_V1 creation honours the write flag", () => {
   );
 });
 
-testCase("create DTO accepts only a 60-byte base64url wrapped key", async () => {
-  const base = {
-    id: "share-1",
-    expiration: "1-day",
-    security: {},
-    isE2EEncrypted: true,
-  };
-  const valid = plainToInstance(CreateShareDTO, {
-    ...base,
-    cryptoScheme: 2,
-    wrappedShareKey: WRAPPED,
-    wrappedShareKeyAlgorithm: SHARE_KEY_WRAP_ALGORITHM,
-  });
-  assert.equal((await validate(valid)).length, 0);
+testCase(
+  "create DTO accepts only a 60-byte base64url wrapped key",
+  async () => {
+    const base = {
+      id: "share-1",
+      expiration: "1-day",
+      security: {},
+      isE2EEncrypted: true,
+    };
+    const valid = plainToInstance(CreateShareDTO, {
+      ...base,
+      cryptoScheme: 2,
+      wrappedShareKey: WRAPPED,
+      wrappedShareKeyAlgorithm: SHARE_KEY_WRAP_ALGORITHM,
+    });
+    assert.equal((await validate(valid)).length, 0);
 
-  for (const invalid of [
-    { cryptoScheme: 3 },
-    { cryptoScheme: "2" },
-    { wrappedShareKey: "A".repeat(79) },
-    { wrappedShareKey: "A".repeat(81) },
-    { wrappedShareKey: `${"A".repeat(79)}=` },
-    { wrappedShareKeyAlgorithm: "AES-KW" },
-  ]) {
-    const dto = plainToInstance(CreateShareDTO, { ...base, ...invalid });
-    assert.ok((await validate(dto)).length > 0, JSON.stringify(invalid));
-  }
+    for (const invalid of [
+      { cryptoScheme: 3 },
+      { cryptoScheme: "2" },
+      { wrappedShareKey: "A".repeat(79) },
+      { wrappedShareKey: "A".repeat(81) },
+      { wrappedShareKey: `${"A".repeat(79)}=` },
+      { wrappedShareKeyAlgorithm: "AES-KW" },
+    ]) {
+      const dto = plainToInstance(CreateShareDTO, { ...base, ...invalid });
+      assert.ok((await validate(dto)).length > 0, JSON.stringify(invalid));
+    }
 
-  const rewrap = plainToInstance(UpdateWrappedShareKeyDTO, {
-    wrappedShareKey: WRAPPED,
-    expectedVersion: 1,
-  });
-  assert.equal((await validate(rewrap)).length, 0);
-  const badRewrap = plainToInstance(UpdateWrappedShareKeyDTO, {
-    wrappedShareKey: WRAPPED,
-    expectedVersion: 0,
-  });
-  assert.ok((await validate(badRewrap)).length > 0);
-});
+    const rewrap = plainToInstance(UpdateWrappedShareKeyDTO, {
+      wrappedShareKey: WRAPPED,
+      expectedVersion: 1,
+    });
+    assert.equal((await validate(rewrap)).length, 0);
+    const badRewrap = plainToInstance(UpdateWrappedShareKeyDTO, {
+      wrappedShareKey: WRAPPED,
+      expectedVersion: 0,
+    });
+    assert.ok((await validate(badRewrap)).length > 0);
+  },
+);
 
-testCase("public share DTO exposes the scheme but never the wrapped key", () => {
-  const row = {
-    id: "s1",
-    cryptoScheme: 2,
-    wrappedShareKey: WRAPPED,
-    wrappedShareKeyAlgorithm: SHARE_KEY_WRAP_ALGORITHM,
-    wrappedShareKeyVersion: 1,
-    files: [],
-  };
-  const publicDto = new ShareDTO().from(row as never) as unknown as Record<
-    string,
-    unknown
-  >;
-  assert.equal(publicDto.cryptoScheme, 2);
-  assert.equal("wrappedShareKey" in publicDto, false);
-  assert.equal("wrappedShareKeyVersion" in publicDto, false);
+testCase(
+  "public share DTO exposes the scheme but never the wrapped key",
+  () => {
+    const row = {
+      id: "s1",
+      cryptoScheme: 2,
+      wrappedShareKey: WRAPPED,
+      wrappedShareKeyAlgorithm: SHARE_KEY_WRAP_ALGORITHM,
+      wrappedShareKeyVersion: 1,
+      files: [],
+    };
+    const publicDto = new ShareDTO().from(row as never) as unknown as Record<
+      string,
+      unknown
+    >;
+    assert.equal(publicDto.cryptoScheme, 2);
+    assert.equal("wrappedShareKey" in publicDto, false);
+    assert.equal("wrappedShareKeyVersion" in publicDto, false);
 
-  const ownerDto = new MyShareDTO().from(row as never) as unknown as Record<
-    string,
-    unknown
-  >;
-  assert.equal(ownerDto.wrappedShareKey, WRAPPED);
-  assert.equal(ownerDto.wrappedShareKeyVersion, 1);
-});
+    const ownerDto = new MyShareDTO().from(row as never) as unknown as Record<
+      string,
+      unknown
+    >;
+    assert.equal(ownerDto.wrappedShareKey, WRAPPED);
+    assert.equal(ownerDto.wrappedShareKeyVersion, 1);
+  },
+);
 
 testCase("rewrap is compare-and-set and owner-only", async () => {
   let stored = { version: 1, wrapped: "old" };
@@ -353,7 +360,10 @@ testCase("rewrap is compare-and-set and owner-only", async () => {
           args.where.cryptoScheme === SHARE_DEK_V1 &&
           args.where.wrappedShareKeyVersion === stored.version;
         if (!matches) return { count: 0 };
-        stored = { version: stored.version + 1, wrapped: args.data.wrappedShareKey };
+        stored = {
+          version: stored.version + 1,
+          wrapped: args.data.wrappedShareKey,
+        };
         return { count: 1 };
       },
       findUnique: async (args: { where: { id: string } }) =>
@@ -591,7 +601,9 @@ testCase("migration is additive and keeps legacy rows valid", () => {
   assert.throws(
     () =>
       db
-        .prepare(`UPDATE "Share" SET "wrappedShareKey" = NULL WHERE "id" = 'dek'`)
+        .prepare(
+          `UPDATE "Share" SET "wrappedShareKey" = NULL WHERE "id" = 'dek'`,
+        )
         .run(),
     /Share\.wrappedShareKey/,
   );

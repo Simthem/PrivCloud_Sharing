@@ -44,13 +44,8 @@ function polyEval(coeffs: Uint8Array, x: number): number {
   return r;
 }
 
-function shamirSplit(
-  secret: Uint8Array,
-  t: number,
-  n: number,
-): Uint8Array[] {
-  if (t < 2 || t > n || n > 255)
-    throw new Error("Invalid threshold/total");
+function shamirSplit(secret: Uint8Array, t: number, n: number): Uint8Array[] {
+  if (t < 2 || t > n || n > 255) throw new Error("Invalid threshold/total");
 
   const shares: Uint8Array[] = [];
   for (let i = 0; i < n; i++) shares.push(new Uint8Array(secret.length));
@@ -118,10 +113,7 @@ function fletcher16(data: Uint8Array): [number, number] {
 function toBase64Url(buf: Uint8Array): string {
   let bin = "";
   for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
-  return btoa(bin)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function fromBase64Url(s: string): Uint8Array {

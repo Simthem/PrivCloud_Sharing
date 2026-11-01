@@ -52,16 +52,18 @@ testCase("admin inventory selects only operational fields", async () => {
     share: {
       findMany: async ({ select }: { select: Record<string, unknown> }) => {
         selection = select;
-        return [{
-          adminAuditId: "opaque-audit-reference",
-          createdAt: new Date("2026-08-21T10:00:00.000Z"),
-          expiration: new Date("2026-08-28T10:00:00.000Z"),
-          uploadLocked: true,
-          isE2EEncrypted: true,
-          views: 3,
-          creator: { username: "alice" },
-          files: [{ size: "42" }, { size: "8" }],
-        }];
+        return [
+          {
+            adminAuditId: "opaque-audit-reference",
+            createdAt: new Date("2026-08-21T10:00:00.000Z"),
+            expiration: new Date("2026-08-28T10:00:00.000Z"),
+            uploadLocked: true,
+            isE2EEncrypted: true,
+            views: 3,
+            creator: { username: "alice" },
+            files: [{ size: "42" }, { size: "8" }],
+          },
+        ];
       },
     },
   };
@@ -81,32 +83,35 @@ testCase("admin inventory selects only operational fields", async () => {
   assert.equal(result[0].fileCount, 2);
 });
 
-testCase("platform admin role does not grant foreign-share ownership", async () => {
-  const guard = new ShareOwnerGuard(
-    { get: () => true } as never,
-    {
-      share: {
-        findUnique: async () => ({
-          id: "foreign-share",
-          creatorId: "owner-1",
-          teamFolderId: null,
-          reverseShare: null,
-          security: null,
-        }),
-      },
-    } as never,
-    {} as never,
-  );
-  const request = {
-    params: { id: "foreign-share" },
-    user: { id: "platform-admin", isAdmin: true },
-    cookies: {},
-  };
-  const context = {
-    switchToHttp: () => ({ getRequest: () => request }),
-  };
+testCase(
+  "platform admin role does not grant foreign-share ownership",
+  async () => {
+    const guard = new ShareOwnerGuard(
+      { get: () => true } as never,
+      {
+        share: {
+          findUnique: async () => ({
+            id: "foreign-share",
+            creatorId: "owner-1",
+            teamFolderId: null,
+            reverseShare: null,
+            security: null,
+          }),
+        },
+      } as never,
+      {} as never,
+    );
+    const request = {
+      params: { id: "foreign-share" },
+      user: { id: "platform-admin", isAdmin: true },
+      cookies: {},
+    };
+    const context = {
+      switchToHttp: () => ({ getRequest: () => request }),
+    };
 
-  assert.equal(await guard.canActivate(context as never), false);
-});
+    assert.equal(await guard.canActivate(context as never), false);
+  },
+);
 
 void run();

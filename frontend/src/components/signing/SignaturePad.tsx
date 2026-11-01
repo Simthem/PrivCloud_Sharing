@@ -33,7 +33,11 @@ const SignaturePad = ({
 
   // --- Helpers: get coordinates from mouse or touch event --------
   const getCoords = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    (
+      e:
+        | React.MouseEvent<HTMLCanvasElement>
+        | React.TouchEvent<HTMLCanvasElement>,
+    ) => {
       const canvas = canvasRef.current;
       if (!canvas) return { x: 0, y: 0 };
       const rect = canvas.getBoundingClientRect();
@@ -54,7 +58,11 @@ const SignaturePad = ({
 
   // --- Draw mode -------------------------------------------------
   const startDraw = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    (
+      e:
+        | React.MouseEvent<HTMLCanvasElement>
+        | React.TouchEvent<HTMLCanvasElement>,
+    ) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
@@ -70,7 +78,11 @@ const SignaturePad = ({
   );
 
   const draw = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    (
+      e:
+        | React.MouseEvent<HTMLCanvasElement>
+        | React.TouchEvent<HTMLCanvasElement>,
+    ) => {
       if (!isDrawing.current) return;
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -88,7 +100,11 @@ const SignaturePad = ({
   );
 
   const endDraw = useCallback(
-    (e?: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    (
+      e?:
+        | React.MouseEvent<HTMLCanvasElement>
+        | React.TouchEvent<HTMLCanvasElement>,
+    ) => {
       if ("touches" in (e || {})) (e as React.TouchEvent)?.preventDefault?.();
       isDrawing.current = false;
       const canvas = canvasRef.current;
@@ -245,10 +261,10 @@ const SignaturePad = ({
               value={typedText}
               onChange={(e) => handleTypedChange(e.currentTarget.value)}
               size="lg"
-              style={{ fontFamily: "\"Dancing Script\", cursive", width: "80%" }}
+              style={{ fontFamily: '"Dancing Script", cursive', width: "80%" }}
               styles={{
                 input: {
-                  fontFamily: "\"Dancing Script\", \"Segoe Script\", cursive",
+                  fontFamily: '"Dancing Script", "Segoe Script", cursive',
                   fontSize: 28,
                   textAlign: "center",
                 },

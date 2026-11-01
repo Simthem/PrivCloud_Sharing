@@ -216,12 +216,18 @@ export class SigningEvidenceService {
       evidenceJsonKey: `evidence/${documentId}/evidence.json`,
       evidenceSignatureKey: `evidence/${documentId}/evidence.p7s`,
     };
-    await this.fileService.storeFileByKey(keys.forensicEvidenceKey, forensicBytes);
+    await this.fileService.storeFileByKey(
+      keys.forensicEvidenceKey,
+      forensicBytes,
+    );
     await this.fileService.storeFileByKey(
       keys.forensicEvidenceSignatureKey,
       forensicSignature,
     );
-    await this.fileService.storeFileByKey(keys.evidenceJsonKey, attestationBytes);
+    await this.fileService.storeFileByKey(
+      keys.evidenceJsonKey,
+      attestationBytes,
+    );
     await this.fileService.storeFileByKey(
       keys.evidenceSignatureKey,
       attestationSignature,
@@ -235,7 +241,11 @@ export class SigningEvidenceService {
         finalDocumentHash,
       },
     });
-    return { ...keys, finalDocumentHash, forensicEvidenceSha256: forensicSha256 };
+    return {
+      ...keys,
+      finalDocumentHash,
+      forensicEvidenceSha256: forensicSha256,
+    };
   }
 
   /** The attestation shared with the parties of the request. */

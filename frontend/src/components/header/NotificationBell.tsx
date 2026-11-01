@@ -59,7 +59,8 @@ const NotificationBell = () => {
   useEffect(() => {
     const handler = () => checkSubscription();
     window.addEventListener("push-subscription-changed", handler);
-    return () => window.removeEventListener("push-subscription-changed", handler);
+    return () =>
+      window.removeEventListener("push-subscription-changed", handler);
   }, [checkSubscription]);
 
   if (!mounted || !pushEnabled || !vapidPublicKey || !supported) return null;
@@ -101,7 +102,7 @@ const NotificationBell = () => {
             msg.includes("registration failed") ||
             msg.includes("permission denied") ||
             msg.includes("not allowed") ||
-            (typeof (navigator as any).brave?.isBrave === "function")
+            typeof (navigator as any).brave?.isBrave === "function"
           ) {
             toast.error(t("account.notify.push.browser-blocked"));
           } else {

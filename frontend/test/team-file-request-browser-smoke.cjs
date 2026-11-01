@@ -38,9 +38,7 @@ const readTranslation = (expression) => {
     ts.isBinaryExpression(expression) &&
     expression.operatorToken.kind === ts.SyntaxKind.PlusToken
   )
-    return (
-      readTranslation(expression.left) + readTranslation(expression.right)
-    );
+    return readTranslation(expression.left) + readTranslation(expression.right);
   throw new Error("Unsupported translation expression");
 };
 const labels = Object.fromEntries(
@@ -425,6 +423,12 @@ const root=createRoot(document.getElementById("root"));window.showSettings=()=>{
       await evaluate(
         "new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))",
       );
+      // The native client folds the metrics of a phone behind a one-line
+      // summary: unfold them before measuring the cards.
+      const unfolded = await evaluate(
+        `(()=>{const summary=document.querySelector('#dashboard-fixture [aria-controls="team-metrics-detail"]');if(!summary||summary.getAttribute('aria-expanded')==='true')return false;summary.click();return true;})()`,
+      );
+      if (unfolded) await evaluate("new Promise(r=>setTimeout(r,500))");
       const layout = await evaluate(`(()=>{
         const bounds=n=>{const r=n.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,height:r.height};};
         return {width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,metrics:bounds(document.querySelector('[data-team-metrics]')),values:bounds(document.querySelector('[data-storage-values]')),gauge:bounds(document.querySelector('[data-storage-gauge]')),banner:bounds(document.querySelector('#dashboard-fixture [role="alert"]')),cards:[...document.querySelector('[data-team-metrics]').children].map(bounds)};
@@ -487,22 +491,22 @@ const root=createRoot(document.getElementById("root"));window.showSettings=()=>{
       sessionId,
     );
     await evaluate("new Promise(r=>requestAnimationFrame(r))");
-    await evaluate(
-      "document.querySelector('#dashboard-fixture button').click()",
-    );
-    assert.equal(await evaluate("window.rotationClicks"), 1);
-    await evaluate(
-      "document.querySelector('#dashboard-fixture summary').click()",
-    );
+    // The details unfold the description and, in the native client, the
+    // rotation itself. On the web the rotation stays next to them.
+    const detailsToggle = "#dashboard-fixture [role=alert] [aria-expanded]";
+    await evaluate(`document.querySelector('${detailsToggle}').click()`);
+    await evaluate("new Promise(r=>setTimeout(r,500))");
     assert.equal(
       await evaluate(
-        "document.querySelector('#dashboard-fixture details').open",
+        `document.querySelector('${detailsToggle}').getAttribute('aria-expanded')`,
       ),
-      true,
+      "true",
     );
     await evaluate(
-      "document.querySelector('#dashboard-fixture summary').click()",
+      "[...document.querySelectorAll('#dashboard-fixture [role=alert] button:not([aria-expanded])')].find(n=>n.getClientRects().length).click()",
     );
+    assert.equal(await evaluate("window.rotationClicks"), 1);
+    await evaluate(`document.querySelector('${detailsToggle}').click()`);
     await call(
       "Emulation.setDeviceMetricsOverride",
       { width: 980, height: 900, deviceScaleFactor: 1, mobile: false },
@@ -585,7 +589,7 @@ const root=createRoot(document.getElementById("root"));window.showSettings=()=>{
     );
     await evaluate("window.showDashboard()");
     await waitFor(
-      "!!document.querySelector('[role=tablist]') && !!document.querySelector('[data-team-metrics]') && !!document.querySelector('details')",
+      "!!document.querySelector('[role=tablist]') && !!document.querySelector('[data-team-metrics]') && !!document.querySelector('[role=alert] [aria-expanded]')",
     );
     for (const width of [320, 390, 680, 980]) {
       await call(

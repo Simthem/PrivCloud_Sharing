@@ -2,10 +2,7 @@ export const DOWNLOAD_DISK_BATCH_SIZE = 32 * 1024 * 1024;
 export const DOWNLOAD_PROGRESS_INTERVAL_MS = 250;
 export const MAX_IN_MEMORY_DOWNLOAD_SIZE = 512 * 1024 * 1024;
 
-type ProgressCallback = (
-  _downloadedBytes: number,
-  _totalBytes: number,
-) => void;
+type ProgressCallback = (_downloadedBytes: number, _totalBytes: number) => void;
 
 const defaultNow = (): number =>
   typeof performance !== "undefined" ? performance.now() : Date.now();

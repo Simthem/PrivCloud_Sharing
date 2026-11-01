@@ -29,7 +29,10 @@ export class CryptoIdentityController {
   @Post("keys")
   @UseGuards(JwtGuard)
   @Throttle({ default: { ttl: hours(1), limit: 10 } })
-  async registerKey(@GetUser() user: User, @Body() dto: RegisterIdentityKeyDTO) {
+  async registerKey(
+    @GetUser() user: User,
+    @Body() dto: RegisterIdentityKeyDTO,
+  ) {
     return this.identityService.registerKey(user.id, dto);
   }
 

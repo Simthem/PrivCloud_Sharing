@@ -18,35 +18,64 @@ export async function loadLocaleMessages(
   code: string,
 ): Promise<Record<string, string>> {
   switch (code) {
-    case "ar-EG": return (await import("./translations/ar-EG")).default;
-    case "cs-CZ": return (await import("./translations/cs-CZ")).default;
-    case "da-DK": return (await import("./translations/da-DK")).default;
-    case "de-DE": return (await import("./translations/de-DE")).default;
-    case "el-GR": return (await import("./translations/el-GR")).default;
-    case "es-ES": return (await import("./translations/es-ES")).default;
-    case "et-EE": return (await import("./translations/et-EE")).default;
-    case "fi-FI": return (await import("./translations/fi-FI")).default;
-    case "fr-FR": return (await import("./translations/fr-FR")).default;
-    case "hr-HR": return (await import("./translations/hr-HR")).default;
-    case "hu-HU": return (await import("./translations/hu-HU")).default;
-    case "it-IT": return (await import("./translations/it-IT")).default;
-    case "ja-JP": return (await import("./translations/ja-JP")).default;
-    case "ko-KR": return (await import("./translations/ko-KR")).default;
-    case "nl-BE": return (await import("./translations/nl-BE")).default;
-    case "pl-PL": return (await import("./translations/pl-PL")).default;
-    case "pt-BR": return (await import("./translations/pt-BR")).default;
-    case "ru-RU": return (await import("./translations/ru-RU")).default;
-    case "sl-SI": return (await import("./translations/sl-SI")).default;
-    case "sr-CS": return (await import("./translations/sr-CS")).default;
-    case "sr-SP": return (await import("./translations/sr-SP")).default;
-    case "sv-SE": return (await import("./translations/sv-SE")).default;
-    case "th-TH": return (await import("./translations/th-TH")).default;
-    case "tr-TR": return (await import("./translations/tr-TR")).default;
-    case "uk-UA": return (await import("./translations/uk-UA")).default;
-    case "vi-VN": return (await import("./translations/vi-VN")).default;
-    case "zh-CN": return (await import("./translations/zh-CN")).default;
-    case "zh-TW": return (await import("./translations/zh-TW")).default;
-    default: return english;
+    case "ar-EG":
+      return (await import("./translations/ar-EG")).default;
+    case "cs-CZ":
+      return (await import("./translations/cs-CZ")).default;
+    case "da-DK":
+      return (await import("./translations/da-DK")).default;
+    case "de-DE":
+      return (await import("./translations/de-DE")).default;
+    case "el-GR":
+      return (await import("./translations/el-GR")).default;
+    case "es-ES":
+      return (await import("./translations/es-ES")).default;
+    case "et-EE":
+      return (await import("./translations/et-EE")).default;
+    case "fi-FI":
+      return (await import("./translations/fi-FI")).default;
+    case "fr-FR":
+      return (await import("./translations/fr-FR")).default;
+    case "hr-HR":
+      return (await import("./translations/hr-HR")).default;
+    case "hu-HU":
+      return (await import("./translations/hu-HU")).default;
+    case "it-IT":
+      return (await import("./translations/it-IT")).default;
+    case "ja-JP":
+      return (await import("./translations/ja-JP")).default;
+    case "ko-KR":
+      return (await import("./translations/ko-KR")).default;
+    case "nl-BE":
+      return (await import("./translations/nl-BE")).default;
+    case "pl-PL":
+      return (await import("./translations/pl-PL")).default;
+    case "pt-BR":
+      return (await import("./translations/pt-BR")).default;
+    case "ru-RU":
+      return (await import("./translations/ru-RU")).default;
+    case "sl-SI":
+      return (await import("./translations/sl-SI")).default;
+    case "sr-CS":
+      return (await import("./translations/sr-CS")).default;
+    case "sr-SP":
+      return (await import("./translations/sr-SP")).default;
+    case "sv-SE":
+      return (await import("./translations/sv-SE")).default;
+    case "th-TH":
+      return (await import("./translations/th-TH")).default;
+    case "tr-TR":
+      return (await import("./translations/tr-TR")).default;
+    case "uk-UA":
+      return (await import("./translations/uk-UA")).default;
+    case "vi-VN":
+      return (await import("./translations/vi-VN")).default;
+    case "zh-CN":
+      return (await import("./translations/zh-CN")).default;
+    case "zh-TW":
+      return (await import("./translations/zh-TW")).default;
+    default:
+      return english;
   }
 }
 

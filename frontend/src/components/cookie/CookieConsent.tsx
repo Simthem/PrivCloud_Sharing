@@ -56,7 +56,12 @@ const CookieConsent = () => {
         marginRight: "auto",
       }}
     >
-      <Text size="sm" fw={600} mb="sm" style={{ color: "var(--mantine-color-text)" }}>
+      <Text
+        size="sm"
+        fw={600}
+        mb="sm"
+        style={{ color: "var(--mantine-color-text)" }}
+      >
         {t("cookie.banner.message")}{" "}
         {hasPrivacy && (
           <Anchor size="sm" href={privacyUrl} underline="always">

@@ -1,5 +1,6 @@
-import { Alert, Button, Text } from "@mantine/core";
-import { TbKey, TbLockOpen } from "react-icons/tb";
+import { Alert, Button, Collapse, Text, UnstyledButton } from "@mantine/core";
+import { useDisclosure, useId } from "@mantine/hooks";
+import { TbChevronRight, TbKey, TbLockOpen } from "react-icons/tb";
 import useTranslate from "../../hooks/useTranslate.hook";
 import styles from "./TeamDashboard.module.css";
 
@@ -11,6 +12,8 @@ export default function TeamEncryptionStatus({
   onRotate: () => void;
 }) {
   const t = useTranslate();
+  const [detailsOpened, details] = useDisclosure(false);
+  const detailsId = useId();
   return (
     <Alert
       icon={<TbLockOpen size={18} />}
@@ -22,10 +25,27 @@ export default function TeamEncryptionStatus({
         <Text size="sm" className={styles.encryptionDescription}>
           {t("team.dashboard.e2e.banner.activeDesc")}
         </Text>
-        <details className={styles.encryptionDetails}>
-          <summary>{t("team.dashboard.e2e.details")}</summary>
-          <Text size="xs">{t("team.dashboard.e2e.banner.activeDesc")}</Text>
-        </details>
+        <div className={styles.encryptionDetails}>
+          <UnstyledButton
+            className={styles.encryptionDetailsToggle}
+            aria-expanded={detailsOpened}
+            aria-controls={detailsId}
+            onClick={details.toggle}
+          >
+            <TbChevronRight
+              size={12}
+              data-disclosure-chevron
+              data-opened={detailsOpened || undefined}
+              aria-hidden
+            />
+            {t("team.dashboard.e2e.details")}
+          </UnstyledButton>
+          <Collapse in={detailsOpened} id={detailsId}>
+            <Text size="xs" pt={6}>
+              {t("team.dashboard.e2e.banner.activeDesc")}
+            </Text>
+          </Collapse>
+        </div>
         {canRotate && (
           <Button
             size="compact-sm"

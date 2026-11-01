@@ -3,6 +3,7 @@ import {
   Badge,
   Box,
   Card,
+  Collapse,
   Group,
   Image,
   SimpleGrid,
@@ -14,7 +15,6 @@ import {
 import { useModals } from "@mantine/modals";
 import { useMemo, useState } from "react";
 import {
-  TbChevronDown,
   TbChevronRight,
   TbDownload,
   TbEye,
@@ -68,10 +68,7 @@ const FileCardGrid = ({
 
   if (isLoading || !share) {
     return (
-      <SimpleGrid
-        cols={{ base: 1, sm: 2, md: 3 }}
-        spacing="md"
-      >
+      <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
         {[...Array(6)].map((_, i) => (
           <Card key={i} withBorder shadow="sm" radius="md" p="md">
             <Skeleton height={120} mb="sm" />
@@ -129,8 +126,8 @@ const FileCardGrid = ({
             <Text
               size="sm"
               fw={500}
-              lineClamp={1}
-              style={{ overflowWrap: "anywhere", hyphens: "auto" }}
+              truncate="end"
+              style={{ overflowWrap: "anywhere" }}
             >
               {shouldUseTree ? file.name : displayPath}
             </Text>
@@ -145,7 +142,9 @@ const FileCardGrid = ({
             <ActionIcon
               size={28}
               variant="light"
-              onClick={() => showFilePreviewModal(share.id, file, modals, e2eKey)}
+              onClick={() =>
+                showFilePreviewModal(share.id, file, modals, e2eKey)
+              }
             >
               <TbEye size={16} />
             </ActionIcon>
@@ -214,11 +213,11 @@ const FileCardGrid = ({
             style={{ cursor: "pointer" }}
           >
             <ActionIcon variant="subtle" size={24}>
-              {collapsed ? (
-                <TbChevronRight size={16} />
-              ) : (
-                <TbChevronDown size={16} />
-              )}
+              <TbChevronRight
+                size={16}
+                data-disclosure-chevron
+                data-opened={!collapsed || undefined}
+              />
             </ActionIcon>
             <TbFolder size={18} style={{ flexShrink: 0 }} />
             <Text size="sm" fw={600} truncate="end" style={{ minWidth: 0 }}>
@@ -228,11 +227,11 @@ const FileCardGrid = ({
               {t("fileTree.items", { count: node.fileCount })}
             </Text>
           </Group>
-          {!collapsed && (
+          <Collapse in={!collapsed}>
             <Stack gap="sm" pl={26}>
               {renderGridNodes(node.children, depth + 1)}
             </Stack>
-          )}
+          </Collapse>
         </Box>,
       );
     });
@@ -246,10 +245,7 @@ const FileCardGrid = ({
   }
 
   return (
-    <SimpleGrid
-      cols={{ base: 1, sm: 2, md: 3 }}
-      spacing="md"
-    >
+    <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
       {files.map((file) => {
         return renderFileCard(file);
       })}

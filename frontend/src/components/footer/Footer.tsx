@@ -1,4 +1,12 @@
-import { ActionIcon, Anchor, Box, Group, SimpleGrid, Stack, Text } from "@mantine/core";
+import {
+  ActionIcon,
+  Anchor,
+  Box,
+  Group,
+  SimpleGrid,
+  Stack,
+  Text,
+} from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import Link from "next/link";
 import { TbBrandGithub, TbBrandLinkedin } from "react-icons/tb";
@@ -40,11 +48,7 @@ const Footer = () => {
             </Anchor>
             <br />
             Secured infrastructure by{" "}
-            <Anchor
-              size="sm"
-              href="https://www.stprive.net/"
-              target="_blank"
-            >
+            <Anchor size="sm" href="https://www.stprive.net/" target="_blank">
               THEMIOT Informatique - Consultant Cybersécurité
             </Anchor>
           </Text>
@@ -104,11 +108,7 @@ const Footer = () => {
             </Anchor>{" "}
             <br />
             Secured infrastructure by{" "}
-            <Anchor
-              size="sm"
-              href="https://www.stprive.net/"
-              target="_blank"
-            >
+            <Anchor size="sm" href="https://www.stprive.net/" target="_blank">
               THEMIOT Informatique - Consultant Cybersécurité
             </Anchor>
           </Text>

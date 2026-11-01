@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  OnApplicationBootstrap,
-} from "@nestjs/common";
+import { Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
 import * as crypto from "crypto";
 import { downloadTrustedList } from "./trusted-list-download.util";
 import { ConfigService } from "src/config/config.service";
@@ -105,8 +101,16 @@ export class TrustedListMonitorService implements OnApplicationBootstrap {
         `List issued: ${list.issuedAt?.toISOString() || "unknown"}`,
         `Next update announced: ${nextUpdate?.toISOString() || "unknown"}`,
       );
-      const anchoring = await this.checkListSigner(list.territory, signed, checkedAt);
-      const evaluation = evaluatePinnedTsa(list, pinnedTsaFingerprints(), checkedAt);
+      const anchoring = await this.checkListSigner(
+        list.territory,
+        signed,
+        checkedAt,
+      );
+      const evaluation = evaluatePinnedTsa(
+        list,
+        pinnedTsaFingerprints(),
+        checkedAt,
+      );
       result = anchoring.ok && evaluation.result === "OK" ? "OK" : "ALERT";
       lines.push(...anchoring.lines, ...evaluation.lines);
     } catch (error: any) {
@@ -166,7 +170,8 @@ export class TrustedListMonitorService implements OnApplicationBootstrap {
       `List signer certificate: SHA-256 ${signed.signerSha256}, ` +
         `${signerValid ? "valid" : "NOT VALID"} until ${new Date(signed.signer.validTo).toISOString()}`,
     ];
-    const lotlUrl = process.env.SIGNING_TSA_LOTL_URL?.trim() || DEFAULT_LOTL_URL;
+    const lotlUrl =
+      process.env.SIGNING_TSA_LOTL_URL?.trim() || DEFAULT_LOTL_URL;
     const lotlXml = await this.download(lotlUrl);
     const lotl = verifyTrustedListSignature(lotlXml.toString("utf8"));
     const pointers = parseListPointers(lotl.signedXml);
@@ -187,7 +192,8 @@ export class TrustedListMonitorService implements OnApplicationBootstrap {
       `EU List of Trusted Lists signer listed in its own EU pointer: ${lotlSelfListed ? "YES" : "NO"}`,
       `List signer authorized by the EU List of Trusted Lists for ${territory || "unknown"}: ${authorized ? "YES" : "NO"}`,
       `Certificates allowed to sign the EU List of Trusted Lists are published in the Official Journal: ${
-        officialJournalReferences(lotl.signedXml).join(", ") || "reference not found"
+        officialJournalReferences(lotl.signedXml).join(", ") ||
+        "reference not found"
       }`,
     );
     return { ok: signerValid && authorized && lotlSelfListed, lines };
@@ -221,9 +227,7 @@ export class TrustedListMonitorService implements OnApplicationBootstrap {
     for (const { email } of administrators) {
       await this.emailService
         .sendMail(email, subject, body)
-        .catch(() =>
-          this.logger.error("Trusted List trace delivery failed"),
-        );
+        .catch(() => this.logger.error("Trusted List trace delivery failed"));
     }
   }
 

@@ -65,7 +65,8 @@ const Body = ({
     <Stack>
       <form
         onSubmit={form.onSubmit(async (values) => {
-          const { setPasswordManually: _setPasswordManually, ...payload } = values;
+          const { setPasswordManually: _setPasswordManually, ...payload } =
+            values;
           userService
             .create(payload)
             .then(() => {

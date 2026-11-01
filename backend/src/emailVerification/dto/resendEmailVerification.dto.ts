@@ -5,4 +5,3 @@ export class ResendEmailVerificationDTO {
   @MaxLength(254)
   email: string;
 }
-

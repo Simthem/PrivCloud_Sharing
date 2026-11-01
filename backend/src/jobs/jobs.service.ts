@@ -90,7 +90,10 @@ export class JobsService {
       let deletedShares = 0;
       for (const expiredShare of expiredShares) {
         try {
-          await this.fileService.deleteAllFiles(expiredShare.id, expiredShare.storageProvider);
+          await this.fileService.deleteAllFiles(
+            expiredShare.id,
+            expiredShare.storageProvider,
+          );
         } catch {
           this.logger.warn("Failed to delete files for an expired share");
           // Retain the database reference when storage deletion failed.
@@ -170,16 +173,30 @@ export class JobsService {
         if ((unfinishedShare._count?.files || 0) > 0) continue;
         // A WAF challenge can stop the first init before any part exists. An
         // authenticated owner's S3 share must remain discoverable for retry.
-        if (unfinishedShare.creatorId && unfinishedShare.storageProvider === "S3") continue;
+        if (
+          unfinishedShare.creatorId &&
+          unfinishedShare.storageProvider === "S3"
+        )
+          continue;
 
         // Protect transfers still handled by an older pre-heartbeat process.
         // S3 multipart timestamps and local file mtimes remain authoritative
         // even when the old backend cannot update the Share row.
         try {
-          if (await this.fileService.hasPendingMultipartUpload(unfinishedShare.id, unfinishedShare.storageProvider)) continue;
-          if (await this.fileService.hasCompletedUploadData(
-            unfinishedShare.id, unfinishedShare.storageProvider,
-          )) continue;
+          if (
+            await this.fileService.hasPendingMultipartUpload(
+              unfinishedShare.id,
+              unfinishedShare.storageProvider,
+            )
+          )
+            continue;
+          if (
+            await this.fileService.hasCompletedUploadData(
+              unfinishedShare.id,
+              unfinishedShare.storageProvider,
+            )
+          )
+            continue;
           const storageActivity =
             await this.fileService.getRecentUploadActivity(
               unfinishedShare.id,
@@ -223,17 +240,34 @@ export class JobsService {
         // Delete files FIRST, then DB record. If file deletion fails
         // the DB record survives and we can retry next cycle.
         try {
-          if (await this.fileService.hasPendingMultipartUpload(unfinishedShare.id, unfinishedShare.storageProvider)) {
-            await this.prisma.share.updateMany({ where: { id: unfinishedShare.id, uploadCleanupStartedAt: cleanupStartedAt }, data: { uploadCleanupStartedAt: null } });
+          if (
+            await this.fileService.hasPendingMultipartUpload(
+              unfinishedShare.id,
+              unfinishedShare.storageProvider,
+            )
+          ) {
+            await this.prisma.share.updateMany({
+              where: {
+                id: unfinishedShare.id,
+                uploadCleanupStartedAt: cleanupStartedAt,
+              },
+              data: { uploadCleanupStartedAt: null },
+            });
             continue;
           }
           // Recheck S3 after the database claim. Completion can have raced the
           // first probe, or succeeded before its database response was lost.
-          if (await this.fileService.hasCompletedUploadData(
-            unfinishedShare.id, unfinishedShare.storageProvider,
-          )) {
+          if (
+            await this.fileService.hasCompletedUploadData(
+              unfinishedShare.id,
+              unfinishedShare.storageProvider,
+            )
+          ) {
             await this.prisma.share.updateMany({
-              where: { id: unfinishedShare.id, uploadCleanupStartedAt: cleanupStartedAt },
+              where: {
+                id: unfinishedShare.id,
+                uploadCleanupStartedAt: cleanupStartedAt,
+              },
               data: { uploadCleanupStartedAt: null },
             });
             continue;
@@ -272,7 +306,9 @@ export class JobsService {
             },
             data: { uploadCleanupStartedAt: null },
           });
-          this.logger.warn("Cleanup claim changed before unfinished share deletion");
+          this.logger.warn(
+            "Cleanup claim changed before unfinished share deletion",
+          );
         }
       }
 
@@ -495,7 +531,9 @@ export class JobsService {
             await this.fileService.deleteAllFiles(share.id);
           }
         } catch {
-          this.logger.warn("Could not delete data for an expired unverified account");
+          this.logger.warn(
+            "Could not delete data for an expired unverified account",
+          );
           await this.prisma.user.updateMany({
             where: {
               id: candidate.id,

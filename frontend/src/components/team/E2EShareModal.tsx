@@ -121,7 +121,11 @@ const E2EShareModal = ({
       // Create grants for each file
       for (const file of files) {
         // Backend requires EXACTLY one of fileId, teamFileId, shareId
-        const target: { fileId?: string; teamFileId?: string; shareId?: string } = {};
+        const target: {
+          fileId?: string;
+          teamFileId?: string;
+          shareId?: string;
+        } = {};
         if (file.teamFileId) target.teamFileId = file.teamFileId;
         else target.fileId = file.fileId;
 
@@ -166,9 +170,7 @@ const E2EShareModal = ({
       onClose();
     },
     onError: (err: any) => {
-      toast.error(
-        err?.message || t("team.e2e.share.error"),
-      );
+      toast.error(err?.message || t("team.e2e.share.error"));
     },
   });
 
@@ -186,7 +188,8 @@ const E2EShareModal = ({
       .filter((m) => {
         const userId = m.user!.id;
         const hasKey = keyStatus.get(userId);
-        const isUploader = uploaderUserIds.has(userId) &&
+        const isUploader =
+          uploaderUserIds.has(userId) &&
           files.every((f) => f.uploadedByUserId === userId);
         return hasKey && !isUploader;
       })
@@ -214,7 +217,12 @@ const E2EShareModal = ({
       centered
     >
       <Stack gap="md">
-        <Card withBorder p="sm" radius="sm" bg="var(--mantine-color-blue-light)">
+        <Card
+          withBorder
+          p="sm"
+          radius="sm"
+          bg="var(--mantine-color-blue-light)"
+        >
           <Text size="xs" c="dimmed">
             {t("team.e2e.share.desc")}
           </Text>
@@ -226,7 +234,7 @@ const E2EShareModal = ({
             {t("team.e2e.share.filesLabel")}
           </Text>
           {files.slice(0, 5).map((f) => (
-            <Text key={f.fileId} size="xs" c="dimmed" lineClamp={1}>
+            <Text key={f.fileId} size="xs" c="dimmed" truncate="end">
               • {f.name}
             </Text>
           ))}
@@ -243,11 +251,7 @@ const E2EShareModal = ({
             {t("team.e2e.share.recipientsLabel")}
           </Text>
           {hasAnyKeyHolder && (
-            <Button
-              size="xs"
-              variant="subtle"
-              onClick={selectAllEligible}
-            >
+            <Button size="xs" variant="subtle" onClick={selectAllEligible}>
               {t("team.e2e.share.selectAll")}
             </Button>
           )}
@@ -266,7 +270,8 @@ const E2EShareModal = ({
             {eligibleMembers.map((member) => {
               const userId = member.user!.id;
               const hasKey = keyStatus.get(userId) ?? false;
-              const isUploader = uploaderUserIds.has(userId) &&
+              const isUploader =
+                uploaderUserIds.has(userId) &&
                 files.every((f) => f.uploadedByUserId === userId);
               const canSelect = hasKey && !isUploader;
               const isSelected = selectedMembers.has(userId);
@@ -284,18 +289,22 @@ const E2EShareModal = ({
                   onClick={() => canSelect && toggleMember(userId)}
                 >
                   <Group justify="space-between" wrap="nowrap">
-                    <Group gap="sm" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
+                    <Group
+                      gap="sm"
+                      wrap="nowrap"
+                      style={{ minWidth: 0, flex: 1 }}
+                    >
                       <Checkbox
                         size="sm"
                         checked={isSelected}
                         disabled={!canSelect}
                         onChange={() => canSelect && toggleMember(userId)}
                       />
-                      <Text size="sm" fw={500} lineClamp={1}>
+                      <Text size="sm" fw={500} truncate="end">
                         {member.user?.username || member.user?.email || userId}
                       </Text>
                       {member.user?.email && member.user.username && (
-                        <Text size="xs" c="dimmed" lineClamp={1}>
+                        <Text size="xs" c="dimmed" truncate="end">
                           {member.user.email}
                         </Text>
                       )}
@@ -375,7 +384,9 @@ const E2EShareModal = ({
             leftSection={<TbLock size={16} />}
             disabled={selectedMembers.size === 0}
             loading={grantMutation.isPending}
-            onClick={() => { setTimeout(() => grantMutation.mutate(), 0); }}
+            onClick={() => {
+              setTimeout(() => grantMutation.mutate(), 0);
+            }}
           >
             {t("team.e2e.share.submit", { count: selectedMembers.size })}
           </Button>

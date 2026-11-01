@@ -94,7 +94,10 @@ export class EmailService {
     options: { messageId?: string; replyTo?: string; sender?: MailSender } = {},
   ) {
     const sender = options.sender ?? "general";
-    const replyTo = options.replyTo || this.config.get("email.replyToEmail")?.trim() || undefined;
+    const replyTo =
+      options.replyTo ||
+      this.config.get("email.replyToEmail")?.trim() ||
+      undefined;
     const senderName =
       this.config.get("email.senderName")?.trim() ||
       this.config.get("general.appName");

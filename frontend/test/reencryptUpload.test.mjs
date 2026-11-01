@@ -35,9 +35,6 @@ test("accepts results only from the exact trusted re-encryption Worker", () => {
     trustedEvent(activeWorker, { ...validResult, status: 600 }),
     trustedEvent(activeWorker, null),
   ]) {
-    assert.equal(
-      isTrustedWorkerResultEvent(event, activeWorker),
-      false,
-    );
+    assert.equal(isTrustedWorkerResultEvent(event, activeWorker), false);
   }
 });

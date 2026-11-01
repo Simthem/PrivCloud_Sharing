@@ -76,6 +76,11 @@ const TEXT_SAFE_APPLICATION_TYPES = new Set([
 
 const EXTENSION_MIME_FALLBACK: Record<string, string> = {
   ...RAW_IMAGE_EXTENSIONS,
+  // Camcorder and DivX videos, previewed by the media engine.
+  ".mts": "video/mp2t",
+  ".m2ts": "video/mp2t",
+  ".m2t": "video/mp2t",
+  ".divx": "video/x-msvideo",
   ".log": "text/plain",
   ".out": "text/plain",
   ".err": "text/plain",
@@ -231,6 +236,9 @@ const isLikelyUtf8Text = (bytes: Uint8Array): boolean => {
 };
 
 const HEIF_BRANDS = new Set(["heic", "heix", "heim", "heis", "hevc", "hevx"]);
+// iTunes audio, audiobooks and protected audio. M4V videos list "M4A " among
+// their compatible brands, so only the major brand counts.
+const AUDIO_MP4_BRANDS = new Set(["M4A ", "M4B ", "M4P ", "F4A ", "F4B "]);
 
 /** Major and compatible brands of an ISO media file (MP4, HEIF, AVIF, CR3). */
 const isoMediaMimeType = (bytes: Uint8Array): string => {
@@ -239,6 +247,7 @@ const isoMediaMimeType = (bytes: Uint8Array): string => {
       ? ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0
       : 0;
   const end = Math.min(bytes.length, Math.max(16, size));
+  const major = String.fromCharCode(...bytes.subarray(8, 12));
   const brands = new Set<string>();
   for (let offset = 8; offset + 4 <= end; offset += 4) {
     if (offset === 12) continue; // minor version
@@ -248,8 +257,70 @@ const isoMediaMimeType = (bytes: Uint8Array): string => {
   if (brands.has("avif") || brands.has("avis")) return "image/avif";
   if ([...brands].some((brand) => HEIF_BRANDS.has(brand))) return "image/heic";
   if (brands.has("mif1") || brands.has("msf1")) return "image/heif";
+  if (AUDIO_MP4_BRANDS.has(major)) return "audio/mp4";
+  if (major === "qt  ") return "video/quicktime";
   return "video/mp4";
 };
+
+/** Matroska and WebM share the EBML header. Its DocType tells them apart. */
+const ebmlMimeType = (bytes: Uint8Array): string => {
+  const header = bytes.subarray(0, 64);
+  for (let at = 4; at + 3 <= header.length; at++) {
+    if (header[at] !== 0x42 || header[at + 1] !== 0x82) continue;
+    // DocType is short: its size always fits a one-byte EBML number.
+    if (!(header[at + 2] & 0x80)) break;
+    const end = at + 3 + (header[at + 2] & 0x7f);
+    if (end > header.length) break;
+    const docType = String.fromCharCode(...header.subarray(at + 3, end));
+    return docType === "webm" ? "video/webm" : "video/x-matroska";
+  }
+  // Matroska reads every WebM file, the reverse is not true.
+  return "video/x-matroska";
+};
+
+/**
+ * Canon CR2 and Adobe DNG raw photos are TIFF files: CR2 marks its header,
+ * DNG has a DNGVersion tag in its first directory. Other TIFF-based raw
+ * formats are told apart by their extension.
+ */
+const tiffMimeType = (bytes: Uint8Array): string => {
+  if (hasAsciiAt(bytes, 8, "CR")) return RAW_IMAGE_EXTENSIONS[".cr2"];
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const little = bytes[0] === 0x49;
+  const directory = bytes.length >= 8 ? view.getUint32(4, little) : 0;
+  if (directory >= 8 && directory + 2 <= bytes.length) {
+    const entries = view.getUint16(directory, little);
+    for (let n = 0; n < entries; n++) {
+      const entry = directory + 2 + n * 12;
+      if (entry + 2 > bytes.length) break;
+      if (view.getUint16(entry, little) === 0xc612) {
+        return RAW_IMAGE_EXTENSIONS[".dng"];
+      }
+    }
+  }
+  return "image/tiff";
+};
+
+/** MPEG transport stream: a sync byte every 188 bytes, or 192 in M2TS. */
+const isTransportStream = (bytes: Uint8Array): boolean =>
+  [
+    [0, 188],
+    [4, 192],
+  ].some(
+    ([start, packet]) =>
+      bytes.length >= start + packet * 3 &&
+      [0, 1, 2, 3]
+        .map((index) => start + index * packet)
+        .every((at) => at >= bytes.length || bytes[at] === 0x47),
+  );
+
+/**
+ * Names shared by a text format and a binary one: TypeScript sources and MPEG
+ * transport streams (.ts, .mts), text keys and Keynote presentations (.key),
+ * public keys and Publisher documents (.pub). Their first bytes decide.
+ */
+export const isContentDecidedName = (fileName?: string): boolean =>
+  !!fileName && /\.(?:ts|mts|key|pub)$/i.test(fileName);
 
 /** Detect previewable formats from a decrypted byte prefix. */
 export const sniffPreviewMimeType = (bytes: Uint8Array): string | null => {
@@ -280,12 +351,19 @@ export const sniffPreviewMimeType = (bytes: Uint8Array): string | null => {
   }
   if (hasAsciiAt(bytes, 0, "OggS")) return "audio/ogg";
   if (hasAsciiAt(bytes, 0, "ID3")) return "audio/mpeg";
+  if (hasAsciiAt(bytes, 0, "fLaC")) return "audio/flac";
+  if (
+    hasAsciiAt(bytes, 0, "FORM") &&
+    (hasAsciiAt(bytes, 8, "AIFF") || hasAsciiAt(bytes, 8, "AIFC"))
+  ) {
+    return "audio/aiff";
+  }
   if (bytes.length >= 2 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) {
     return "audio/mpeg";
   }
   if (hasAsciiAt(bytes, 4, "ftyp")) return isoMediaMimeType(bytes);
   if (hasAsciiAt(bytes, 0, "II*\0") || hasAsciiAt(bytes, 0, "MM\0*")) {
-    return "image/tiff";
+    return tiffMimeType(bytes);
   }
   if (hasAsciiAt(bytes, 0, "IIRO") || hasAsciiAt(bytes, 0, "IIRS")) {
     return RAW_IMAGE_EXTENSIONS[".orf"];
@@ -295,9 +373,39 @@ export const sniffPreviewMimeType = (bytes: Uint8Array): string | null => {
     return RAW_IMAGE_EXTENSIONS[".raf"];
   }
   if (startsWithBytes(bytes, [0x1a, 0x45, 0xdf, 0xa3])) {
-    return "video/webm";
+    return ebmlMimeType(bytes);
   }
+  if (hasAsciiAt(bytes, 0, "RIFF") && hasAsciiAt(bytes, 8, "AVI ")) {
+    return "video/x-msvideo";
+  }
+  if (
+    startsWithBytes(bytes, [0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11])
+  ) {
+    return "video/x-ms-asf";
+  }
+  if (hasAsciiAt(bytes, 0, "FLV\x01")) return "video/x-flv";
+  if (startsWithBytes(bytes, [0x00, 0x00, 0x01, 0xba])) return "video/mpeg";
+  if (isTransportStream(bytes)) return "video/mp2t";
   if (isLikelyUtf8Text(bytes)) return "text/plain";
+  return null;
+};
+
+/**
+ * Type of a file whose name is shared by a text format and a binary one, from
+ * its first bytes: the text type its name gives, a transport stream, or null
+ * for any other binary content. Legacy encodings and UTF-16 count as text.
+ */
+export const contentDecidedMimeType = (
+  textMimeType: string,
+  bytes: Uint8Array,
+): string | null => {
+  const detected = sniffPreviewMimeType(bytes);
+  if (detected === "video/mp2t") return detected;
+  const utf16 =
+    (bytes[0] === 0xff && bytes[1] === 0xfe) ||
+    (bytes[0] === 0xfe && bytes[1] === 0xff);
+  if (detected === "text/plain" || utf16 || (!detected && !bytes.includes(0)))
+    return textMimeType;
   return null;
 };
 

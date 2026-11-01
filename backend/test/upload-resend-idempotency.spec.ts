@@ -4,7 +4,9 @@ import { BadRequestException, ConflictException } from "@nestjs/common";
 import { FileService } from "src/file/file.service";
 import { createUnitTestRunner } from "./unit-test";
 
-const { testCase, run } = createUnitTestRunner("Upload resent after completion");
+const { testCase, run } = createUnitTestRunner(
+  "Upload resent after completion",
+);
 
 const FILE_ID = "6f1d2c7e-8a4b-4c3d-9e2f-1a2b3c4d5e6f";
 
@@ -67,25 +69,37 @@ testCase("a new file still reaches storage", async () => {
   assert.equal(writes.length, 1);
 });
 
-testCase("the same file sent again is answered as stored, unwritten", async () => {
-  const { service, writes } = serviceWith({ shareId: "share-1", size: "10" });
-  const result = await send(service, Buffer.alloc(10));
-  assert.equal(writes.length, 0);
-  assert.equal((result as { alreadyCompleted?: boolean }).alreadyCompleted, true);
-  assert.equal(result.id, FILE_ID);
-});
+testCase(
+  "the same file sent again is answered as stored, unwritten",
+  async () => {
+    const { service, writes } = serviceWith({ shareId: "share-1", size: "10" });
+    const result = await send(service, Buffer.alloc(10));
+    assert.equal(writes.length, 0);
+    assert.equal(
+      (result as { alreadyCompleted?: boolean }).alreadyCompleted,
+      true,
+    );
+    assert.equal(result.id, FILE_ID);
+  },
+);
 
-testCase("the last part of a stored chunked file is answered as stored", async () => {
-  const { service, writes } = serviceWith({ shareId: "share-1", size: "25" });
-  await send(service, Buffer.alloc(5), 3);
-  assert.equal(writes.length, 0);
-});
+testCase(
+  "the last part of a stored chunked file is answered as stored",
+  async () => {
+    const { service, writes } = serviceWith({ shareId: "share-1", size: "25" });
+    await send(service, Buffer.alloc(5), 3);
+    assert.equal(writes.length, 0);
+  },
+);
 
-testCase("different bytes under a stored ID are refused, unwritten", async () => {
-  const { service, writes } = serviceWith({ shareId: "share-1", size: "10" });
-  await assert.rejects(send(service, Buffer.alloc(11)), ConflictException);
-  assert.equal(writes.length, 0);
-});
+testCase(
+  "different bytes under a stored ID are refused, unwritten",
+  async () => {
+    const { service, writes } = serviceWith({ shareId: "share-1", size: "10" });
+    await assert.rejects(send(service, Buffer.alloc(11)), ConflictException);
+    assert.equal(writes.length, 0);
+  },
+);
 
 testCase("an ID stored in another share is refused, unwritten", async () => {
   const { service, writes } = serviceWith({ shareId: "share-2", size: "10" });

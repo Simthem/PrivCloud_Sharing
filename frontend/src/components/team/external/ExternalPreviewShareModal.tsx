@@ -1,4 +1,4 @@
-import { visibleCopyToken } from "../../../utils/visibleCopyMark.util"
+import { visibleCopyToken } from "../../../utils/visibleCopyMark.util";
 import {
   ActionIcon,
   Alert,
@@ -12,17 +12,17 @@ import {
   Select,
   Stack,
   Text,
-} from "@mantine/core"
-import { startAuthentication } from "@simplewebauthn/browser"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import dayjs from "dayjs"
-import { useEffect, useRef, useState } from "react"
-import { useIntl } from "react-intl"
-import { TbEyeCheck, TbFingerprint, TbLock, TbTrash } from "react-icons/tb"
-import useTranslate from "../../../hooks/useTranslate.hook"
-import { fetchFilePreviewSource } from "../../../services/share.service"
-import teamExternalService from "../../../services/teamExternal.service"
-import { resolveFileMimeType } from "../../../utils/filePreview.util"
+} from "@mantine/core";
+import { startAuthentication } from "@simplewebauthn/browser";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import dayjs from "dayjs";
+import { useEffect, useRef, useState } from "react";
+import { useIntl } from "react-intl";
+import { TbEyeCheck, TbFingerprint, TbLock, TbTrash } from "react-icons/tb";
+import useTranslate from "../../../hooks/useTranslate.hook";
+import { fetchFilePreviewSource } from "../../../services/share.service";
+import teamExternalService from "../../../services/teamExternal.service";
+import { resolveFileMimeType } from "../../../utils/filePreview.util";
 import {
   encryptExternalManifest,
   encryptExternalPage,
@@ -30,33 +30,33 @@ import {
   generatePreviewKeyBytes,
   importPreviewKey,
   wrapPreviewKeyForContractor,
-} from "../../../utils/externalPreviewCrypto.util"
+} from "../../../utils/externalPreviewCrypto.util";
 import {
   buildWatermark,
   externalPreviewKind,
-} from "../../../utils/externalPreviewLayout.util"
-import { TEAM_PROFILE_LIMITS } from "../../../utils/fileMetadata.util"
+} from "../../../utils/externalPreviewLayout.util";
+import { TEAM_PROFILE_LIMITS } from "../../../utils/fileMetadata.util";
 import {
   useSaveTeamProfile,
   useTeamProfile,
-} from "../../../utils/teamProfile.util"
-import { ExternalPreviewError } from "../../../utils/externalPreviewRaster.util"
-import { markPattern, newMarkId } from "../../../utils/forensicMark.util"
-import { hashPreviewSource, sha256Hex } from "../../../utils/sha256Stream.util"
+} from "../../../utils/teamProfile.util";
+import { ExternalPreviewError } from "../../../utils/externalPreviewRaster.util";
+import { markPattern, newMarkId } from "../../../utils/forensicMark.util";
+import { hashPreviewSource, sha256Hex } from "../../../utils/sha256Stream.util";
 import {
   encryptRegisterLabel,
   loadTeamAuditKey,
-} from "../../../utils/teamAudit.util"
+} from "../../../utils/teamAudit.util";
 import ApprovalPasskeyRequired, {
   useAccountPasskeys,
-} from "./ApprovalPasskeyRequired"
+} from "./ApprovalPasskeyRequired";
 
 export type ExternalShareFile = {
-  id: string
-  shareId: string
-  name: string
-  isE2EEncrypted: boolean
-}
+  id: string;
+  shareId: string;
+  name: string;
+  isE2EEncrypted: boolean;
+};
 
 type Phase =
   | { kind: "idle" }
@@ -65,7 +65,7 @@ type Phase =
   | { kind: "approving" }
   | { kind: "uploading"; done: number; total: number }
   | { kind: "done"; pages: number }
-  | { kind: "error"; message: string }
+  | { kind: "error"; message: string };
 
 const ERROR_KEYS: Record<string, string> = {
   unsupported: "team.external.share.error.unsupported",
@@ -76,10 +76,10 @@ const ERROR_KEYS: Record<string, string> = {
   approval_passkey_required: "team.external.share.error.passkey",
   approval_cancelled: "team.external.share.error.approvalCancelled",
   team_key_unavailable: "team.external.share.error.teamKey",
-}
+};
 
 export function canShareWithContractor(fileName: string) {
-  return externalPreviewKind(resolveFileMimeType(fileName)) !== null
+  return externalPreviewKind(resolveFileMimeType(fileName)) !== null;
 }
 
 export default function ExternalPreviewShareModal({
@@ -89,125 +89,125 @@ export default function ExternalPreviewShareModal({
   file,
   teamKeyB64,
 }: {
-  opened: boolean
-  onClose: () => void
-  teamId: string
-  file: ExternalShareFile | null
-  teamKeyB64: string | null
+  opened: boolean;
+  onClose: () => void;
+  teamId: string;
+  file: ExternalShareFile | null;
+  teamKeyB64: string | null;
 }) {
-  const t = useTranslate()
-  const intl = useIntl()
-  const queryClient = useQueryClient()
-  const [seatId, setSeatId] = useState<string | null>(null)
-  const [phase, setPhase] = useState<Phase>({ kind: "idle" })
-  const controller = useRef<AbortController | null>(null)
+  const t = useTranslate();
+  const intl = useIntl();
+  const queryClient = useQueryClient();
+  const [seatId, setSeatId] = useState<string | null>(null);
+  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  const controller = useRef<AbortController | null>(null);
 
   // Company details of the team, prefilled and editable for this preview.
-  const { data: teamProfile } = useTeamProfile(teamId, opened)
-  const saveTeamProfile = useSaveTeamProfile(teamId)
-  const [companyName, setCompanyName] = useState("")
-  const [mention, setMention] = useState("")
-  const [details, setDetails] = useState("")
-  const [rememberProfile, setRememberProfile] = useState(false)
+  const { data: teamProfile } = useTeamProfile(teamId, opened);
+  const saveTeamProfile = useSaveTeamProfile(teamId);
+  const [companyName, setCompanyName] = useState("");
+  const [mention, setMention] = useState("");
+  const [details, setDetails] = useState("");
+  const [rememberProfile, setRememberProfile] = useState(false);
   useEffect(() => {
-    if (!opened) return
-    setCompanyName(teamProfile?.profile?.companyName ?? "")
-    setMention(teamProfile?.profile?.mention ?? "")
-    setDetails(teamProfile?.profile?.details ?? "")
-    setRememberProfile(false)
-  }, [opened, teamProfile])
+    if (!opened) return;
+    setCompanyName(teamProfile?.profile?.companyName ?? "");
+    setMention(teamProfile?.profile?.mention ?? "");
+    setDetails(teamProfile?.profile?.details ?? "");
+    setRememberProfile(false);
+  }, [opened, teamProfile]);
   const profileChanged =
     companyName.trim() !== (teamProfile?.profile?.companyName ?? "") ||
     mention.trim() !== (teamProfile?.profile?.mention ?? "") ||
-    details.trim() !== (teamProfile?.profile?.details ?? "")
+    details.trim() !== (teamProfile?.profile?.details ?? "");
 
   const { data: seatList } = useQuery({
     queryKey: ["team-external-seats", teamId],
     queryFn: () => teamExternalService.listSeats(teamId),
     enabled: opened && !!teamId,
-  })
+  });
   const activeSeats = (seatList?.seats ?? []).filter(
     (seat) => seat.status === "ACTIVE",
-  )
+  );
   const { data: previews } = useQuery({
     queryKey: ["team-external-previews", teamId],
     queryFn: () => teamExternalService.listPreviews(teamId),
     enabled: opened && !!teamId,
-  })
+  });
   const existingCopies = (previews ?? []).filter(
     (preview) =>
       preview.sourceFileId === file?.id && preview.status === "READY",
-  )
+  );
   const seatLabel = (seatId: string) => {
-    const seat = seatList?.seats.find((candidate) => candidate.id === seatId)
-    return seat?.displayName || seat?.email || ""
-  }
+    const seat = seatList?.seats.find((candidate) => candidate.id === seatId);
+    return seat?.displayName || seat?.email || "";
+  };
   const removeCopy = useMutation({
     mutationFn: (previewId: string) =>
       teamExternalService.deletePreview(teamId, previewId),
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: ["team-external-previews", teamId],
-      })
+      });
       void queryClient.invalidateQueries({
         queryKey: ["team-external-seats", teamId],
-      })
+      });
     },
-  })
+  });
 
   useEffect(() => {
     if (!opened) {
-      controller.current?.abort()
-      setPhase({ kind: "idle" })
-      setSeatId(null)
+      controller.current?.abort();
+      setPhase({ kind: "idle" });
+      setSeatId(null);
     }
-  }, [opened])
+  }, [opened]);
 
   useEffect(() => {
     if (opened && !seatId && activeSeats.length === 1) {
-      setSeatId(activeSeats[0].id)
+      setSeatId(activeSeats[0].id);
     }
-  }, [opened, seatId, activeSeats])
+  }, [opened, seatId, activeSeats]);
 
   const busy =
     phase.kind === "rendering" ||
     phase.kind === "sealing" ||
     phase.kind === "approving" ||
-    phase.kind === "uploading"
-  const { data: passkeys } = useAccountPasskeys(opened)
+    phase.kind === "uploading";
+  const { data: passkeys } = useAccountPasskeys(opened);
   const hasPasskey =
-    (passkeys?.passkeys.length ?? 0) + (passkeys?.signingPasskeys ?? 0) > 0
+    (passkeys?.passkeys.length ?? 0) + (passkeys?.signingPasskeys ?? 0) > 0;
 
   const share = async () => {
-    if (!file || !seatId) return
-    const abort = new AbortController()
-    controller.current = abort
-    const keyBytes = generatePreviewKeyBytes()
-    let auditKey: Uint8Array | null = null
-    let createdPreviewId: string | null = null
+    if (!file || !seatId) return;
+    const abort = new AbortController();
+    controller.current = abort;
+    const keyBytes = generatePreviewKeyBytes();
+    let auditKey: Uint8Array | null = null;
+    let createdPreviewId: string | null = null;
     try {
-      setPhase({ kind: "rendering", pages: 0 })
-      const recipient = await teamExternalService.getSeatKeys(teamId, seatId)
+      setPhase({ kind: "rendering", pages: 0 });
+      const recipient = await teamExternalService.getSeatKeys(teamId, seatId);
       // Every copy carries its own invisible mark, derived from the team
       // audit key that only administrators can unwrap.
-      auditKey = await loadTeamAuditKey(teamId, { create: true })
-      if (!auditKey) throw new Error("team_key_unavailable")
-      const markId = newMarkId()
+      auditKey = await loadTeamAuditKey(teamId, { create: true });
+      if (!auditKey) throw new Error("team_key_unavailable");
+      const markId = newMarkId();
       const source = await fetchFilePreviewSource(
         file.shareId,
         file.id,
         file.isE2EEncrypted ? teamKeyB64 : null,
         abort.signal,
-      )
+      );
       const company = companyName.trim()
         ? {
             companyName: companyName.trim(),
             mention: mention.trim() || undefined,
             details: details.trim() || undefined,
           }
-        : undefined
+        : undefined;
       if (company && rememberProfile && teamProfile?.keyAvailable) {
-        await saveTeamProfile(company)
+        await saveTeamProfile(company);
       }
       const watermark = {
         ...buildWatermark({
@@ -220,9 +220,9 @@ export default function ExternalPreviewShareModal({
         forensic: await markPattern(auditKey, markId),
         robustForensic: true,
         visibleToken: await visibleCopyToken(auditKey, markId),
-      }
+      };
       // The renderer is heavy (pdf.js, Office parsers): load it on demand.
-      const { renderExternalPreview } = await import("./renderExternalPreview")
+      const { renderExternalPreview } = await import("./renderExternalPreview");
       const pages = await renderExternalPreview({
         source,
         mimeType: resolveFileMimeType(file.name),
@@ -231,11 +231,11 @@ export default function ExternalPreviewShareModal({
         signal: abort.signal,
         onProgress: (count, done, total) =>
           setPhase({ kind: "rendering", pages: count, done, total }),
-      })
+      });
 
-      const previewId = crypto.randomUUID()
-      const key = await importPreviewKey(keyBytes)
-      const wrapping = await wrapPreviewKeyForContractor(keyBytes, recipient)
+      const previewId = crypto.randomUUID();
+      const key = await importPreviewKey(keyBytes);
+      const wrapping = await wrapPreviewKeyForContractor(keyBytes, recipient);
       const encryptedManifest = await encryptExternalManifest(key, previewId, {
         v: EXTERNAL_MANIFEST_VERSION,
         title: file.name,
@@ -246,24 +246,24 @@ export default function ExternalPreviewShareModal({
           height: page.height,
           ...(page.label ? { label: page.label } : {}),
         })),
-      })
+      });
       // What the passkey signs: the original, every page as shown and as
       // stored. The server refuses the copy if a stored page differs.
-      setPhase({ kind: "sealing" })
-      const sourceSha256 = await hashPreviewSource(source, abort.signal)
-      const sealedPages: Uint8Array[] = []
-      const pageHashes = []
+      setPhase({ kind: "sealing" });
+      const sourceSha256 = await hashPreviewSource(source, abort.signal);
+      const sealedPages: Uint8Array[] = [];
+      const pageHashes = [];
       for (let index = 0; index < pages.length; index++) {
-        abort.signal.throwIfAborted()
-        const image = new Uint8Array(await pages[index].image.arrayBuffer())
-        const sealed = await encryptExternalPage(key, previewId, index, image)
-        sealedPages.push(sealed)
+        abort.signal.throwIfAborted();
+        const image = new Uint8Array(await pages[index].image.arrayBuffer());
+        const sealed = await encryptExternalPage(key, previewId, index, image);
+        sealedPages.push(sealed);
         pageHashes.push({
           plainSha256: await sha256Hex(image),
           cipherSha256: await sha256Hex(sealed),
           width: pages[index].width,
           height: pages[index].height,
-        })
+        });
       }
       await teamExternalService.createPreview(teamId, {
         id: previewId,
@@ -272,8 +272,8 @@ export default function ExternalPreviewShareModal({
         pageCount: pages.length,
         encryptedManifest,
         ...wrapping,
-      })
-      createdPreviewId = previewId
+      });
+      createdPreviewId = previewId;
       const ceremony = await teamExternalService.prepareIssuance(
         teamId,
         previewId,
@@ -284,17 +284,17 @@ export default function ExternalPreviewShareModal({
           visibleMarkAlgorithm: "privcloud:visible-copy:v1",
           robustMarkAlgorithm: "privcloud:forensic-multiscale:v2",
         },
-      )
-      setPhase({ kind: "approving" })
-      let assertion
+      );
+      setPhase({ kind: "approving" });
+      let assertion;
       try {
         assertion = await startAuthentication({
           optionsJSON: ceremony.options as unknown as Parameters<
             typeof startAuthentication
           >[0]["optionsJSON"],
-        })
+        });
       } catch {
-        throw new Error("approval_cancelled")
+        throw new Error("approval_cancelled");
       }
       await teamExternalService.approveIssuance(teamId, previewId, {
         challengeId: ceremony.challengeId,
@@ -305,69 +305,69 @@ export default function ExternalPreviewShareModal({
           previewId,
           file.name,
         ),
-      })
+      });
       for (let index = 0; index < sealedPages.length; index++) {
-        abort.signal.throwIfAborted()
-        setPhase({ kind: "uploading", done: index, total: pages.length })
+        abort.signal.throwIfAborted();
+        setPhase({ kind: "uploading", done: index, total: pages.length });
         await teamExternalService.uploadPage(
           teamId,
           previewId,
           index,
           sealedPages[index],
           abort.signal,
-        )
+        );
       }
-      await teamExternalService.completePreview(teamId, previewId)
-      createdPreviewId = null
-      setPhase({ kind: "done", pages: pages.length })
+      await teamExternalService.completePreview(teamId, previewId);
+      createdPreviewId = null;
+      setPhase({ kind: "done", pages: pages.length });
       void queryClient.invalidateQueries({
         queryKey: ["team-external-seats", teamId],
-      })
+      });
       void queryClient.invalidateQueries({
         queryKey: ["team-external-previews", teamId],
-      })
+      });
       void queryClient.invalidateQueries({
         queryKey: ["team-external-issuances", teamId],
-      })
+      });
     } catch (error) {
       // An unfinished copy is withdrawn at once rather than left for the
       // hourly purge.
       if (createdPreviewId) {
         void teamExternalService
           .deletePreview(teamId, createdPreviewId)
-          .catch(() => undefined)
+          .catch(() => undefined);
       }
-      if (abort.signal.aborted) return
+      if (abort.signal.aborted) return;
       const code =
         error instanceof ExternalPreviewError
           ? error.code
           : ((error as { response?: { data?: { error?: string } } })?.response
               ?.data?.error ??
             (error as Error)?.message ??
-            "")
+            "");
       setPhase({
         kind: "error",
         message: t(ERROR_KEYS[code] ?? "team.external.share.error.generic"),
-      })
+      });
     } finally {
-      keyBytes.fill(0)
-      auditKey?.fill(0)
+      keyBytes.fill(0);
+      auditKey?.fill(0);
     }
-  }
+  };
 
   const progressValue =
     phase.kind === "uploading"
       ? (phase.done / Math.max(1, phase.total)) * 100
       : phase.kind === "rendering" && phase.total
         ? ((phase.done ?? 0) / phase.total) * 100
-        : undefined
+        : undefined;
 
   return (
     <Modal
       opened={opened}
       onClose={() => {
-        controller.current?.abort()
-        onClose()
+        controller.current?.abort();
+        onClose();
       }}
       title={t("team.external.share.title")}
       size="lg"
@@ -522,8 +522,8 @@ export default function ExternalPreviewShareModal({
           <Button
             variant="default"
             onClick={() => {
-              controller.current?.abort()
-              onClose()
+              controller.current?.abort();
+              onClose();
             }}
           >
             {phase.kind === "done"
@@ -544,5 +544,5 @@ export default function ExternalPreviewShareModal({
         </Group>
       </Stack>
     </Modal>
-  )
+  );
 }

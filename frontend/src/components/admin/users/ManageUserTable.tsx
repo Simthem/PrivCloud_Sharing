@@ -73,7 +73,7 @@ const ManageUserTable = ({
                 <Group justify="space-between" wrap="nowrap" align="flex-start">
                   <Box style={{ minWidth: 0, flex: 1 }}>
                     <Group gap={6} wrap="nowrap" mb={2}>
-                      <Text size="sm" fw={600} lineClamp={1}>
+                      <Text size="sm" fw={600} truncate="end">
                         {user.username}
                       </Text>
                       {user.isLdap && <Badge size="xs">LDAP</Badge>}
@@ -100,7 +100,7 @@ const ManageUserTable = ({
                         </Badge>
                       )}
                     </Group>
-                    <Text size="xs" c="dimmed" lineClamp={1} mb={6}>
+                    <Text size="xs" c="dimmed" truncate="end" mb={6}>
                       {user.email}
                     </Text>
                     <Group gap="xs" wrap="wrap">

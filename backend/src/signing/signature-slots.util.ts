@@ -89,8 +89,7 @@ export function splitSignatureArea(
   });
   // In PDF coordinates the grid grows towards the bottom edge of the page.
   // Lift it as a whole rather than letting the renderer pile the last rows up.
-  const lift =
-    yAxis === "up" ? Math.max(0, ...grid.map((rect) => -rect.y)) : 0;
+  const lift = yAxis === "up" ? Math.max(0, ...grid.map((rect) => -rect.y)) : 0;
   return grid.map((rect) => ({ ...rect, y: rect.y + lift }));
 }
 
@@ -134,7 +133,12 @@ export function resolveSignatureSlots(
       (_, index) => index % shared.length === fieldIndex,
     );
     const areas = splitSignatureArea(
-      { x: field.posX, y: field.posY, width: field.width, height: field.height },
+      {
+        x: field.posX,
+        y: field.posY,
+        width: field.width,
+        height: field.height,
+      },
       group.length,
       {
         minWidth: MIN_SIGNATURE_SLOT_POINTS.width,
@@ -178,7 +182,10 @@ export function defaultSignatureSlotPosition(input: {
   const available = input.rightEdge - (input.pageWidth - input.rightEdge);
   const columns = Math.max(
     1,
-    Math.min(input.count, Math.floor((available + gap) / (input.boxWidth + gap))),
+    Math.min(
+      input.count,
+      Math.floor((available + gap) / (input.boxWidth + gap)),
+    ),
   );
   const rows = Math.ceil(input.count / columns);
   const column = input.index % columns;

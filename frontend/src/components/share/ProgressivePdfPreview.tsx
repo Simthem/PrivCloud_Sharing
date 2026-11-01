@@ -9,6 +9,8 @@ import {
   Text,
 } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
+import { TbChevronLeft, TbChevronRight } from "react-icons/tb";
+import { useIntl } from "react-intl";
 import { fetchFilePreviewSource } from "../../services/share.service";
 import { readPreviewBytes } from "../../utils/previewRange.util";
 
@@ -24,6 +26,12 @@ export default function ProgressivePdfPreview({
   e2eKey?: string | null;
   onError: () => void;
 }) {
+  const intl = useIntl();
+  const label = (id: string, defaultMessage: string) =>
+    intl.formatMessage({
+      id: `share.modal.file-preview.pdf.${id}`,
+      defaultMessage,
+    });
   const canvas = useRef<HTMLCanvasElement>(null);
   const [document, setDocument] = useState<
     import("pdfjs-dist").PDFDocumentProxy | null
@@ -130,14 +138,14 @@ export default function ProgressivePdfPreview({
       <Group justify="center">
         <Button
           variant="default"
-          aria-label="Previous page"
+          aria-label={label("previous-page", "Previous page")}
           disabled={!document || page <= 1 || busy}
           onClick={() => setPage((n) => n - 1)}
         >
-          ←
+          <TbChevronLeft size={18} />
         </Button>
         <NumberInput
-          aria-label="PDF page"
+          aria-label={label("page", "PDF page")}
           min={1}
           max={document?.numPages || 1}
           value={page}
@@ -154,14 +162,14 @@ export default function ProgressivePdfPreview({
               setPage(value);
           }}
         />
-        <Text>/ {document?.numPages || "…"}</Text>
+        {document && <Text>/ {document.numPages}</Text>}
         <Button
           variant="default"
-          aria-label="Next page"
+          aria-label={label("next-page", "Next page")}
           disabled={!document || page >= document.numPages || busy}
           onClick={() => setPage((n) => n + 1)}
         >
-          →
+          <TbChevronRight size={18} />
         </Button>
       </Group>
       <ZoomablePreview key={fileId} onZoomChange={setZoom}>

@@ -967,7 +967,10 @@ export class FileService {
 
   async hasPendingMultipartUpload(shareId: string, storageProvider?: string) {
     const storage = this.getStorageService(storageProvider);
-    return storage === this.s3FileService && await this.s3FileService.hasPendingMultipartUpload(shareId);
+    return (
+      storage === this.s3FileService &&
+      (await this.s3FileService.hasPendingMultipartUpload(shareId))
+    );
   }
 
   async getZip(shareId: string): Promise<Readable> {

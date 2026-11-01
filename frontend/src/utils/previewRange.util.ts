@@ -36,7 +36,7 @@ type RangeFetcher = (
 ) => Promise<Response>;
 export const PREVIEW_READ_BYTES = 1024 * 1024;
 /** How far ahead of a media read the next bytes are prepared. */
-export const PREVIEW_READ_AHEAD_BYTES = 8 * 1024 * 1024;
+export const PREVIEW_READ_AHEAD_BYTES = 24 * 1024 * 1024;
 
 /**
  * A range must really be partial: never buffer a server's full-file fallback.
@@ -212,12 +212,13 @@ export async function createPreviewByteSource(
       ? encryptedSize -
         Math.ceil(encryptedSize / encryptedRecordSize) * ENCRYPTION_OVERHEAD
       : encryptedSize;
-  // Three independent reads hide round-trip latency without unbounded prefetch.
+  // Five independent reads keep a high bitrate video ahead of playback when
+  // every request pays a storage round trip, without unbounded prefetch.
   // Large historical GCM records retain at most one record and load one at a time.
-  const budget = Math.max(24 * 1024 * 1024, key ? recordSize : 0);
+  const budget = Math.max(48 * 1024 * 1024, key ? recordSize : 0);
   const cache = createPreviewReadCache(
     budget,
-    key ? Math.max(1, Math.min(3, Math.floor(budget / recordSize))) : 3,
+    key ? Math.max(1, Math.min(5, Math.floor(budget / recordSize))) : 5,
     signal,
   );
   let legacyRecord = cachedRecord;

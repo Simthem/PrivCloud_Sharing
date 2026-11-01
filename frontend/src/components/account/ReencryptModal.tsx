@@ -1,8 +1,27 @@
-import { Modal, Progress, Stack, Text, Group, Button, Alert, List } from "@mantine/core";
-import { TbAlertTriangle, TbCheck, TbLock, TbRefresh, TbX } from "react-icons/tb";
+import {
+  Modal,
+  Progress,
+  Stack,
+  Text,
+  Group,
+  Button,
+  Alert,
+  List,
+} from "@mantine/core";
+import {
+  TbAlertTriangle,
+  TbCheck,
+  TbLock,
+  TbRefresh,
+  TbX,
+} from "react-icons/tb";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
-import { reencryptAll, ReencryptProgress, ReencryptResult } from "../../utils/reencrypt.util";
+import {
+  reencryptAll,
+  ReencryptProgress,
+  ReencryptResult,
+} from "../../utils/reencrypt.util";
 
 interface Props {
   opened: boolean;
@@ -12,7 +31,13 @@ interface Props {
   onError: (_err: string) => void;
 }
 
-const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) => {
+const ReencryptModal = ({
+  opened,
+  oldKey,
+  newKey,
+  onSuccess,
+  onError,
+}: Props) => {
   const intl = useIntl();
   const [progress, setProgress] = useState<ReencryptProgress | null>(null);
   const [result, setResult] = useState<ReencryptResult | null>(null);
@@ -53,7 +78,8 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
         );
       }
     } catch (e: any) {
-      const msg = e?.message ?? intl.formatMessage({ id: "reencrypt.error.generic" });
+      const msg =
+        e?.message ?? intl.formatMessage({ id: "reencrypt.error.generic" });
       setError(msg);
       onError(msg);
     } finally {
@@ -133,14 +159,25 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
               {error}
             </Alert>
           ) : done && !hasPartialFailures ? (
-            <Alert icon={<TbCheck size={18} />} title={intl.formatMessage({ id: "reencrypt.done.title" })} color="green">
+            <Alert
+              icon={<TbCheck size={18} />}
+              title={intl.formatMessage({ id: "reencrypt.done.title" })}
+              color="green"
+            >
               <FormattedMessage
                 id="reencrypt.done.message"
-                values={{ count: result?.filesReencrypted ?? 0, skipped: result?.filesSkipped ?? 0 }}
+                values={{
+                  count: result?.filesReencrypted ?? 0,
+                  skipped: result?.filesSkipped ?? 0,
+                }}
               />
             </Alert>
           ) : done && hasPartialFailures ? (
-            <Alert icon={<TbAlertTriangle size={18} />} title={intl.formatMessage({ id: "reencrypt.partial.title" })} color="orange">
+            <Alert
+              icon={<TbAlertTriangle size={18} />}
+              title={intl.formatMessage({ id: "reencrypt.partial.title" })}
+              color="orange"
+            >
               <FormattedMessage
                 id="reencrypt.partial.message"
                 values={{
@@ -171,7 +208,9 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
               <Progress.Root
                 size="lg"
                 mt="sm"
-                aria-label={intl.formatMessage({ id: "reencrypt.progress.label" })}
+                aria-label={intl.formatMessage({
+                  id: "reencrypt.progress.label",
+                })}
               >
                 <Progress.Section value={pct} animated={!done}>
                   {totalItems > 0 && (
@@ -185,7 +224,10 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
                   <FormattedMessage
                     id="reencrypt.progress.files"
                     values={{
-                      current: Math.min((progress.filesDone ?? 0) + 1, progress.filesTotal),
+                      current: Math.min(
+                        (progress.filesDone ?? 0) + 1,
+                        progress.filesTotal,
+                      ),
                       total: progress.filesTotal,
                       name: progress.currentFile ?? "",
                     }}
@@ -198,7 +240,10 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
                   <FormattedMessage
                     id="reencrypt.progress.reverseShares"
                     values={{
-                      current: Math.min((progress.reverseSharesDone ?? 0) + 1, progress.reverseSharesTotal),
+                      current: Math.min(
+                        (progress.reverseSharesDone ?? 0) + 1,
+                        progress.reverseSharesTotal,
+                      ),
                       total: progress.reverseSharesTotal,
                     }}
                   />
@@ -225,11 +270,7 @@ const ReencryptModal = ({ opened, oldKey, newKey, onSuccess, onError }: Props) =
 
         {done && !hasPartialFailures && (
           <Group justify="right">
-            <Button
-              variant="light"
-              color="green"
-              onClick={() => onSuccess()}
-            >
+            <Button variant="light" color="green" onClick={() => onSuccess()}>
               <FormattedMessage id="reencrypt.button.close" />
             </Button>
           </Group>

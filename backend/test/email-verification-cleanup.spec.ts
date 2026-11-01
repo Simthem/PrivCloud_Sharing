@@ -32,7 +32,9 @@ void (async () => {
   service.logger = { log: () => {}, warn: () => {} };
   service.runExclusive = async (_name, job) => job();
   let smtpEnabled = true;
-  service.config = { get: (key: string) => (key === "smtp.enabled" ? smtpEnabled : undefined) };
+  service.config = {
+    get: (key: string) => (key === "smtp.enabled" ? smtpEnabled : undefined),
+  };
   service.fileService = {
     deleteAllFiles: async (shareId: string) => {
       assert.equal(shareId, "share-1");
@@ -57,10 +59,7 @@ void (async () => {
       },
       deleteMany: async ({ where }) => {
         assert.equal(where.id, "new-unverified-user");
-        assert.equal(
-          where.emailVerificationDeletionStartedAt,
-          claimStartedAt,
-        );
+        assert.equal(where.emailVerificationDeletionStartedAt, claimStartedAt);
         events.push("database");
         return { count: 1 };
       },
@@ -87,4 +86,3 @@ void (async () => {
 
   console.log("6 expired unverified account cleanup tests passed");
 })();
-

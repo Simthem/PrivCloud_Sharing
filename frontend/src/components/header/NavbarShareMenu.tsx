@@ -1,7 +1,13 @@
 import { Collapse, Menu, UnstyledButton } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import Link from "next/link";
-import { TbArrowLoopLeft, TbChevronRight, TbLink, TbSend, TbSignature } from "react-icons/tb";
+import {
+  TbArrowLoopLeft,
+  TbChevronRight,
+  TbLink,
+  TbSend,
+  TbSignature,
+} from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import { useStyles } from "./Header.styles";
 import useUser from "../../hooks/user.hook";
@@ -80,7 +86,12 @@ const NavbarShareMneu = ({
         </UnstyledButton>
       </Menu.Target>
       <Menu.Dropdown>
-        <Menu.Item component={Link} href="/account/shares" leftSection={<TbLink />} onClick={onNavigate}>
+        <Menu.Item
+          component={Link}
+          href="/account/shares"
+          leftSection={<TbLink />}
+          onClick={onNavigate}
+        >
           <FormattedMessage id="navbar.links.shares" />
         </Menu.Item>
         <Menu.Item

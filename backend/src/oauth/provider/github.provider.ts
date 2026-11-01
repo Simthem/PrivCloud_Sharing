@@ -3,7 +3,11 @@ import { ConfigService } from "../../config/config.service";
 import { OAuthCallbackDto } from "../dto/oauthCallback.dto";
 import { OAuthSignInDto } from "../dto/oauthSignIn.dto";
 import { ErrorPageException } from "../exceptions/errorPage.exception";
-import { AuthEndpointResult, OAuthProvider, OAuthToken } from "./oauthProvider.interface";
+import {
+  AuthEndpointResult,
+  OAuthProvider,
+  OAuthToken,
+} from "./oauthProvider.interface";
 
 @Injectable()
 export class GitHubProvider implements OAuthProvider<GitHubToken> {

@@ -758,7 +758,10 @@ export class PdfSigningService implements OnModuleInit {
       return;
     }
     const maxAgeDays =
-      Number.parseInt(process.env.SIGNING_TSA_TRUSTED_LIST_MAX_AGE_DAYS || "", 10) || 7;
+      Number.parseInt(
+        process.env.SIGNING_TSA_TRUSTED_LIST_MAX_AGE_DAYS || "",
+        10,
+      ) || 7;
     const latest = await this.prisma?.trustedListCheck.findFirst({
       orderBy: { checkedAt: "desc" },
     });
@@ -1379,8 +1382,10 @@ export class PdfSigningService implements OnModuleInit {
       if (method === "ADMIN_VERIFIED_EMAIL_ACCOUNT") {
         return "Adresse e-mail vérifiée par un administrateur";
       }
-      if (method === "LDAP_ACCOUNT") return "Identité fournie par l'annuaire LDAP";
-      if (method === "OIDC_ACCOUNT") return "Identité fournie par le fournisseur OIDC";
+      if (method === "LDAP_ACCOUNT")
+        return "Identité fournie par l'annuaire LDAP";
+      if (method === "OIDC_ACCOUNT")
+        return "Identité fournie par le fournisseur OIDC";
       return "Aucune vérification enregistrée";
     };
 
@@ -1648,7 +1653,8 @@ export class PdfSigningService implements OnModuleInit {
       ? pages[wmPageIdx]
       : undefined;
 
-    const { width: sigRawWidth, height: sigRawHeight } = signaturePage.getSize();
+    const { width: sigRawWidth, height: sigRawHeight } =
+      signaturePage.getSize();
     const sigGeometry = {
       width: sigRawWidth,
       height: sigRawHeight,
@@ -1755,10 +1761,7 @@ export class PdfSigningService implements OnModuleInit {
     }
 
     const signatureTextWidth = signatureText
-      ? Math.min(
-          font.widthOfTextAtSize(signatureText, 14),
-          signatureMaxWidth,
-        )
+      ? Math.min(font.widthOfTextAtSize(signatureText, 14), signatureMaxWidth)
       : 0;
     const approvalWidth = addMention
       ? Math.min(font.widthOfTextAtSize(approvalText, 9), signatureMaxWidth)
@@ -1842,10 +1845,7 @@ export class PdfSigningService implements OnModuleInit {
       {
         x: innerX,
         y:
-          contentPosition.y +
-          contentHeight -
-          paddingY -
-          (addMention ? 26 : 12),
+          contentPosition.y + contentHeight - paddingY - (addMention ? 26 : 12),
       },
       sigGeometry,
     );

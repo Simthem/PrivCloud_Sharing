@@ -124,7 +124,7 @@ test("cancelling one overlapping media request leaves its other reader usable", 
   assert.equal(network.reads.length, 2, "both readers share the network read");
 });
 
-test("closing the preview cancels active and queued work, with at most three network reads", async () => {
+test("closing the preview cancels active and queued work, with at most five network reads", async () => {
   const lifetime = new AbortController();
   const network = transport(new Uint8Array(12 * 1024 * 1024), undefined, 30);
   const source = await createPreviewByteSource(
@@ -146,17 +146,17 @@ test("closing the preview cancels active and queued work, with at most three net
         result.status === "rejected" && result.reason.name === "AbortError",
     ),
   );
-  assert.equal(network.peak, 3);
+  assert.equal(network.peak, 5);
   assert.equal(
     network.reads.length,
-    4,
+    6,
     "queued reads never reach the network after close",
   );
   await assert.rejects(source.read(0, 10), { name: "AbortError" });
 });
 
 test("the preview evicts old windows instead of retaining a whole large file", async () => {
-  const size = 40 * 1024 * 1024;
+  const size = 80 * 1024 * 1024;
   const reads = [];
   const source = await createPreviewByteSource(async (start, end) => {
     reads.push(start);
@@ -165,10 +165,10 @@ test("the preview evicts old windows instead of retaining a whole large file", a
       headers: { "Content-Range": `bytes ${start}-${end}/${size}` },
     });
   });
-  for (let i = 0; i < 30; i++)
+  for (let i = 0; i < 60; i++)
     await source.read(i * 1024 * 1024, (i + 1) * 1024 * 1024);
   const count = reads.length;
-  await source.read(29 * 1024 * 1024, 30 * 1024 * 1024);
+  await source.read(59 * 1024 * 1024, 60 * 1024 * 1024);
   assert.equal(reads.length, count, "recent playback remains cached");
   await source.read(0, 1024 * 1024);
   assert.equal(reads.length, count + 1, "old playback was evicted");
@@ -212,7 +212,7 @@ test("media prefetch overlaps the next authenticated v2 records and serves them 
   const before = network.reads.length;
   source.prefetch(1024, 6_000_000, ahead.signal);
   await delay(400);
-  assert.equal(network.peak, 3, "prefetch keeps the existing concurrency");
+  assert.equal(network.peak, 5, "prefetch reads five records at once");
   const loaded = network.reads.length;
   assert.equal(loaded - before, 5, "the five following records, once each");
   for (let start = 1024; start < 6_000_000; start += 1024 * 1024) {
@@ -234,8 +234,8 @@ test("media prefetch stays within half the cache and stops when its stream close
   await delay(500);
   assert.equal(
     network.reads.length - 1,
-    12,
-    "24 MiB budget, 12 MiB prepared ahead at most",
+    24,
+    "48 MiB budget, 24 MiB prepared ahead at most",
   );
 
   const closed = new AbortController();
@@ -245,7 +245,7 @@ test("media prefetch stays within half the cache and stops when its stream close
   closed.abort();
   await delay(200);
   assert.ok(
-    network.reads.length - started <= 3,
+    network.reads.length - started <= 5,
     "queued windows never reach the network after the stream closed",
   );
 });

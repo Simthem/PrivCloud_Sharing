@@ -45,9 +45,7 @@ const Shares = () => {
           .removeFromAdminInventory(share.reference)
           .then(() =>
             setShares((current) =>
-              current.filter(
-                ({ reference }) => reference !== share.reference,
-              ),
+              current.filter(({ reference }) => reference !== share.reference),
             ),
           )
           .catch(toast.axiosError);

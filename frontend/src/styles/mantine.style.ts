@@ -1,7 +1,17 @@
 import { createTheme, MantineColorScheme } from "@mantine/core";
+import {
+  COLLAPSE_DURATION,
+  DRAWER_TRANSITION_PROPS,
+  MODAL_TRANSITION_PROPS,
+  MOTION_EASING,
+  POPOVER_TRANSITION_PROPS,
+} from "./motion.style";
 
 // Predefined color palettes selectable by the administrator
-export const COLOR_PALETTES: Record<string, { colors: Record<string, string[]>; primaryColor: string }> = {
+export const COLOR_PALETTES: Record<
+  string,
+  { colors: Record<string, string[]>; primaryColor: string }
+> = {
   victoria: {
     colors: {
       victoria: [
@@ -117,8 +127,12 @@ export const wcagLuminance = (hex: string): number => {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 };
 
-export function buildTheme(paletteName?: string, colorScheme: MantineColorScheme = "dark") {
-  const palette = COLOR_PALETTES[paletteName ?? "victoria"] ?? COLOR_PALETTES.victoria;
+export function buildTheme(
+  paletteName?: string,
+  colorScheme: MantineColorScheme = "dark",
+) {
+  const palette =
+    COLOR_PALETTES[paletteName ?? "victoria"] ?? COLOR_PALETTES.victoria;
   const isDark = colorScheme === "dark";
 
   const luminance = wcagLuminance;
@@ -137,7 +151,8 @@ export function buildTheme(paletteName?: string, colorScheme: MantineColorScheme
     const c = color ?? theme.primaryColor;
     const shade = isDark ? 6 : 8;
     const bgHex = theme.colors[c]?.[shade];
-    if (!bgHex || typeof bgHex !== "string" || !bgHex.startsWith("#")) return {};
+    if (!bgHex || typeof bgHex !== "string" || !bgHex.startsWith("#"))
+      return {};
     return luminance(bgHex) > 0.183 ? { color: theme.black } : {};
   };
 
@@ -172,8 +187,25 @@ export function buildTheme(paletteName?: string, colorScheme: MantineColorScheme
     primaryColor: palette.primaryColor,
     primaryShade: { light: 8, dark: 6 },
     other: { colorScheme },
+    respectReducedMotion: true,
     components: {
+      Popover: {
+        defaultProps: { transitionProps: POPOVER_TRANSITION_PROPS },
+      },
+      Drawer: {
+        defaultProps: { transitionProps: DRAWER_TRANSITION_PROPS },
+      },
+      Collapse: {
+        defaultProps: {
+          transitionDuration: COLLAPSE_DURATION,
+          transitionTimingFunction: MOTION_EASING,
+        },
+      },
+      Accordion: {
+        defaultProps: { transitionDuration: COLLAPSE_DURATION },
+      },
       Modal: {
+        defaultProps: { transitionProps: MODAL_TRANSITION_PROPS },
         styles: (theme: any) => ({
           title: {
             fontSize: theme.fontSizes.lg,
@@ -189,11 +221,14 @@ export function buildTheme(paletteName?: string, colorScheme: MantineColorScheme
           return {
             root: {
               ...filled,
-              ...(props.variant === "light" ? lightVariantColor(theme, props.color) : {}),
+              ...(props.variant === "light"
+                ? lightVariantColor(theme, props.color)
+                : {}),
               ...(props.variant === "outline" && isDark
                 ? {
                     color: theme.colors[props.color ?? theme.primaryColor]?.[3],
-                    borderColor: theme.colors[props.color ?? theme.primaryColor]?.[4],
+                    borderColor:
+                      theme.colors[props.color ?? theme.primaryColor]?.[4],
                   }
                 : {}),
             },
@@ -201,7 +236,12 @@ export function buildTheme(paletteName?: string, colorScheme: MantineColorScheme
               fontWeight: 600,
               ...filled,
               ...(props.variant === "subtle"
-                ? { color: theme.colors[props.color ?? theme.primaryColor]?.[isDark ? 3 : 8] }
+                ? {
+                    color:
+                      theme.colors[props.color ?? theme.primaryColor]?.[
+                        isDark ? 3 : 8
+                      ],
+                  }
                 : {}),
             },
           };
@@ -210,16 +250,24 @@ export function buildTheme(paletteName?: string, colorScheme: MantineColorScheme
       ActionIcon: {
         styles: (theme: any, props: any) => ({
           root: {
-            ...(!props.variant || props.variant === "filled" ? filledTextColor(theme, props.color) : {}),
-            ...(props.variant === "light" ? lightVariantColor(theme, props.color) : {}),
+            ...(!props.variant || props.variant === "filled"
+              ? filledTextColor(theme, props.color)
+              : {}),
+            ...(props.variant === "light"
+              ? lightVariantColor(theme, props.color)
+              : {}),
           },
         }),
       },
       ThemeIcon: {
         styles: (theme: any, props: any) => ({
           root: {
-            ...(!props.variant || props.variant === "filled" ? filledTextColor(theme, props.color) : {}),
-            ...(props.variant === "light" ? lightVariantColor(theme, props.color) : {}),
+            ...(!props.variant || props.variant === "filled"
+              ? filledTextColor(theme, props.color)
+              : {}),
+            ...(props.variant === "light"
+              ? lightVariantColor(theme, props.color)
+              : {}),
           },
         }),
       },
@@ -234,8 +282,12 @@ export function buildTheme(paletteName?: string, colorScheme: MantineColorScheme
       Badge: {
         styles: (theme: any, props: any) => ({
           root: {
-            ...(!props.variant || props.variant === "filled" ? filledTextColor(theme, props.color) : {}),
-            ...(props.variant === "light" ? lightVariantColor(theme, props.color) : {}),
+            ...(!props.variant || props.variant === "filled"
+              ? filledTextColor(theme, props.color)
+              : {}),
+            ...(props.variant === "light"
+              ? lightVariantColor(theme, props.color)
+              : {}),
           },
         }),
       },
@@ -249,7 +301,8 @@ export function buildTheme(paletteName?: string, colorScheme: MantineColorScheme
         styles: (theme: any) => ({
           input: isDark ? { color: theme.white } : {},
           option: {
-            "&[data-selected], &[data-selected][data-hovered]": onPrimaryBg(theme),
+            "&[data-selected], &[data-selected][data-hovered]":
+              onPrimaryBg(theme),
           },
         }),
       },
@@ -262,7 +315,8 @@ export function buildTheme(paletteName?: string, colorScheme: MantineColorScheme
         styles: (theme: any) => ({
           input: isDark ? { color: theme.white } : {},
           option: {
-            "&[data-selected], &[data-selected][data-hovered]": onPrimaryBg(theme),
+            "&[data-selected], &[data-selected][data-hovered]":
+              onPrimaryBg(theme),
           },
         }),
       },
@@ -273,7 +327,9 @@ export function buildTheme(paletteName?: string, colorScheme: MantineColorScheme
           if (!colors) return {};
           return {
             root: isDark
-              ? { backgroundColor: `rgba(${parseInt(colors[6]?.slice(1,3),16)}, ${parseInt(colors[6]?.slice(3,5),16)}, ${parseInt(colors[6]?.slice(5,7),16)}, 0.15)` }
+              ? {
+                  backgroundColor: `rgba(${parseInt(colors[6]?.slice(1, 3), 16)}, ${parseInt(colors[6]?.slice(3, 5), 16)}, ${parseInt(colors[6]?.slice(5, 7), 16)}, 0.15)`,
+                }
               : { backgroundColor: colors[0] },
             title: { color: colors[isDark ? 4 : 7], fontWeight: 600 },
           };

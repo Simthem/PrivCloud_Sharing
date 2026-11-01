@@ -124,8 +124,8 @@ test("large or highly fragmented code has bounded parse and rendering budgets", 
   const limited = parseCodeHighlight(source, "javascript");
   assert.equal(limited.limited, true);
   assert.equal(isCodeHighlight(limited), true);
-  assert.equal(limited.tokens.map(token => token.text).join(""), source);
-  assert.ok(limited.tokens.some(token => token.classes.length > 0));
+  assert.equal(limited.tokens.map((token) => token.text).join(""), source);
+  assert.ok(limited.tokens.some((token) => token.classes.length > 0));
   assert.equal(limited.tokens.at(-1).classes.length, 0);
   assert.throws(
     () => parseCodeHighlight("hello", "unknown-language"),

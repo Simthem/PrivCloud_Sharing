@@ -78,7 +78,9 @@ const AdminTeams = () => {
   // Delete team modal
   const [deleteOpened, { open: openDelete, close: closeDelete }] =
     useDisclosure(false);
-  const [deleteTeamTarget, setDeleteTeamTarget] = useState<AdminTeam | null>(null);
+  const [deleteTeamTarget, setDeleteTeamTarget] = useState<AdminTeam | null>(
+    null,
+  );
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -244,7 +246,12 @@ const AdminTeams = () => {
             <Paper key={team.id} withBorder p="sm">
               <Stack gap={4}>
                 <Group justify="space-between" wrap="nowrap">
-                  <Text fw={500} size="sm" truncate style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    fw={500}
+                    size="sm"
+                    truncate
+                    style={{ flex: 1, minWidth: 0 }}
+                  >
                     {team.name}
                   </Text>
                   <Group gap={4} wrap="nowrap" style={{ flexShrink: 0 }}>
@@ -258,22 +265,53 @@ const AdminTeams = () => {
                 </Text>
                 <Group gap="xs" mt={4}>
                   <Tooltip label={t("admin.teams.action.join")}>
-                    <ActionIcon variant="subtle" color="green" size="sm" onClick={() => handleJoinTeam(team.id)}>
+                    <ActionIcon
+                      variant="subtle"
+                      color="green"
+                      size="sm"
+                      onClick={() => handleJoinTeam(team.id)}
+                    >
                       <TbLogin size={16} />
                     </ActionIcon>
                   </Tooltip>
                   <Tooltip label={t("admin.teams.action.add-member")}>
-                    <ActionIcon variant="subtle" color="blue" size="sm" onClick={() => { setSelectedTeam(team); openAddMember(); }}>
+                    <ActionIcon
+                      variant="subtle"
+                      color="blue"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedTeam(team);
+                        openAddMember();
+                      }}
+                    >
                       <TbUserPlus size={16} />
                     </ActionIcon>
                   </Tooltip>
                   <Tooltip label={t("admin.teams.action.max-members")}>
-                    <ActionIcon variant="subtle" color="orange" size="sm" onClick={() => { setSelectedTeam(team); setNewMaxMembers(team.maxMembers); openMaxMembers(); }}>
+                    <ActionIcon
+                      variant="subtle"
+                      color="orange"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedTeam(team);
+                        setNewMaxMembers(team.maxMembers);
+                        openMaxMembers();
+                      }}
+                    >
                       <TbSettings size={16} />
                     </ActionIcon>
                   </Tooltip>
                   <Tooltip label="Supprimer l'équipe">
-                    <ActionIcon variant="subtle" color="red" size="sm" onClick={() => { setDeleteTeamTarget(team); setDeleteConfirmName(""); openDelete(); }}>
+                    <ActionIcon
+                      variant="subtle"
+                      color="red"
+                      size="sm"
+                      onClick={() => {
+                        setDeleteTeamTarget(team);
+                        setDeleteConfirmName("");
+                        openDelete();
+                      }}
+                    >
                       <TbTrash size={16} />
                     </ActionIcon>
                   </Tooltip>
@@ -283,102 +321,102 @@ const AdminTeams = () => {
           ))}
         </Stack>
       ) : (
-      <div style={{ overflowX: "auto" }}>
-      <Table striped highlightOnHover style={{ minWidth: 600 }}>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>
-              <FormattedMessage id="admin.teams.col.name" />
-            </Table.Th>
-            <Table.Th>
-              <FormattedMessage id="admin.teams.col.owner" />
-            </Table.Th>
-            <Table.Th>
-              <FormattedMessage id="admin.teams.col.members" />
-            </Table.Th>
-            <Table.Th>
-              <FormattedMessage id="admin.teams.col.max" />
-            </Table.Th>
-            <Table.Th>
-              <FormattedMessage id="admin.teams.col.actions" />
-            </Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {teams.map((team) => (
-            <Table.Tr key={team.id}>
-              <Table.Td>
-                <Text fw={500}>{team.name}</Text>
-              </Table.Td>
-              <Table.Td>
-                <Text size="sm">{team.owner?.email || "-"}</Text>
-              </Table.Td>
-              <Table.Td>
-                <Badge variant="light" color="blue">
-                  {team.members?.length || 0}
-                </Badge>
-              </Table.Td>
-              <Table.Td>
-                <Badge variant="light" color="gray">
-                  {team.maxMembers}
-                </Badge>
-              </Table.Td>
-              <Table.Td>
-                <Group gap="xs">
-                  <Tooltip label={t("admin.teams.action.join")}>
-                    <ActionIcon
-                      variant="subtle"
-                      color="green"
-                      onClick={() => handleJoinTeam(team.id)}
-                    >
-                      <TbLogin size={18} />
-                    </ActionIcon>
-                  </Tooltip>
-                  <Tooltip label={t("admin.teams.action.add-member")}>
-                    <ActionIcon
-                      variant="subtle"
-                      color="blue"
-                      onClick={() => {
-                        setSelectedTeam(team);
-                        openAddMember();
-                      }}
-                    >
-                      <TbUserPlus size={18} />
-                    </ActionIcon>
-                  </Tooltip>
-                  <Tooltip label={t("admin.teams.action.max-members")}>
-                    <ActionIcon
-                      variant="subtle"
-                      color="orange"
-                      onClick={() => {
-                        setSelectedTeam(team);
-                        setNewMaxMembers(team.maxMembers);
-                        openMaxMembers();
-                      }}
-                    >
-                      <TbSettings size={18} />
-                    </ActionIcon>
-                  </Tooltip>
-                  <Tooltip label="Supprimer l'équipe">
-                    <ActionIcon
-                      variant="subtle"
-                      color="red"
-                      onClick={() => {
-                        setDeleteTeamTarget(team);
-                        setDeleteConfirmName("");
-                        openDelete();
-                      }}
-                    >
-                      <TbTrash size={18} />
-                    </ActionIcon>
-                  </Tooltip>
-                </Group>
-              </Table.Td>
-            </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
-      </div>
+        <div style={{ overflowX: "auto" }}>
+          <Table striped highlightOnHover style={{ minWidth: 600 }}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>
+                  <FormattedMessage id="admin.teams.col.name" />
+                </Table.Th>
+                <Table.Th>
+                  <FormattedMessage id="admin.teams.col.owner" />
+                </Table.Th>
+                <Table.Th>
+                  <FormattedMessage id="admin.teams.col.members" />
+                </Table.Th>
+                <Table.Th>
+                  <FormattedMessage id="admin.teams.col.max" />
+                </Table.Th>
+                <Table.Th>
+                  <FormattedMessage id="admin.teams.col.actions" />
+                </Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {teams.map((team) => (
+                <Table.Tr key={team.id}>
+                  <Table.Td>
+                    <Text fw={500}>{team.name}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm">{team.owner?.email || "-"}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Badge variant="light" color="blue">
+                      {team.members?.length || 0}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Badge variant="light" color="gray">
+                      {team.maxMembers}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Group gap="xs">
+                      <Tooltip label={t("admin.teams.action.join")}>
+                        <ActionIcon
+                          variant="subtle"
+                          color="green"
+                          onClick={() => handleJoinTeam(team.id)}
+                        >
+                          <TbLogin size={18} />
+                        </ActionIcon>
+                      </Tooltip>
+                      <Tooltip label={t("admin.teams.action.add-member")}>
+                        <ActionIcon
+                          variant="subtle"
+                          color="blue"
+                          onClick={() => {
+                            setSelectedTeam(team);
+                            openAddMember();
+                          }}
+                        >
+                          <TbUserPlus size={18} />
+                        </ActionIcon>
+                      </Tooltip>
+                      <Tooltip label={t("admin.teams.action.max-members")}>
+                        <ActionIcon
+                          variant="subtle"
+                          color="orange"
+                          onClick={() => {
+                            setSelectedTeam(team);
+                            setNewMaxMembers(team.maxMembers);
+                            openMaxMembers();
+                          }}
+                        >
+                          <TbSettings size={18} />
+                        </ActionIcon>
+                      </Tooltip>
+                      <Tooltip label="Supprimer l'équipe">
+                        <ActionIcon
+                          variant="subtle"
+                          color="red"
+                          onClick={() => {
+                            setDeleteTeamTarget(team);
+                            setDeleteConfirmName("");
+                            openDelete();
+                          }}
+                        >
+                          <TbTrash size={18} />
+                        </ActionIcon>
+                      </Tooltip>
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </div>
       )}
 
       {teams.length === 0 && (
@@ -503,8 +541,9 @@ const AdminTeams = () => {
         <Stack>
           <Alert color="red" title="Action irréversible">
             Cette action supprimera définitivement l&apos;équipe{" "}
-            <strong>{deleteTeamTarget?.name}</strong>, tous ses membres, dossiers
-            et fichiers partagés. Cette opération est <strong>irréversible</strong>.
+            <strong>{deleteTeamTarget?.name}</strong>, tous ses membres,
+            dossiers et fichiers partagés. Cette opération est{" "}
+            <strong>irréversible</strong>.
           </Alert>
           <TextInput
             label={`Tapez le nom de l'équipe pour confirmer`}
@@ -517,7 +556,9 @@ const AdminTeams = () => {
             leftSection={<TbTrash size={16} />}
             onClick={handleDeleteTeam}
             loading={deleteLoading}
-            disabled={deleteConfirmName.trim() !== (deleteTeamTarget?.name || "")}
+            disabled={
+              deleteConfirmName.trim() !== (deleteTeamTarget?.name || "")
+            }
             fullWidth
           >
             Supprimer définitivement

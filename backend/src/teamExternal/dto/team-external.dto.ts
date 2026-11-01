@@ -49,12 +49,12 @@ export class UpdateExternalSeatDTO {
 
 export class ExternalRevocationWatchDTO {
   @IsIn(["NONE", "EMAIL", "PUSH", "BOTH"])
-  mode: "NONE" | "EMAIL" | "PUSH" | "BOTH"
+  mode: "NONE" | "EMAIL" | "PUSH" | "BOTH";
 }
 
 export class EvidenceDownloadOptionsDTO {
   @IsIn(["certificate", "evidence", "pattern"])
-  kind: "certificate" | "evidence" | "pattern"
+  kind: "certificate" | "evidence" | "pattern";
 }
 
 export class CreateExternalPreviewDTO {
@@ -118,11 +118,11 @@ export class ApproveIssuanceDTO extends PasskeyResponseDTO {
 export class PrepareIssuanceDTO {
   @IsOptional()
   @Matches(/^privcloud:forensic-multiscale:v2$/)
-  robustMarkAlgorithm?: "privcloud:forensic-multiscale:v2"
+  robustMarkAlgorithm?: "privcloud:forensic-multiscale:v2";
 
   @IsOptional()
   @Matches(/^privcloud:visible-copy:v1$/)
-  visibleMarkAlgorithm?: "privcloud:visible-copy:v1"
+  visibleMarkAlgorithm?: "privcloud:visible-copy:v1";
 
   @Matches(/^[a-f0-9]{32}$/)
   markId: string;

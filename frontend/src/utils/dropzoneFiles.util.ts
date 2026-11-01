@@ -42,7 +42,8 @@ const IGNORED_FILE_NAMES = new Set([".DS_Store", "Thumbs.db"]);
 const isFileEntry = (
   entry: LegacyFileSystemEntry,
 ): entry is LegacyFileSystemFileEntry =>
-  entry.isFile && typeof (entry as LegacyFileSystemFileEntry).file === "function";
+  entry.isFile &&
+  typeof (entry as LegacyFileSystemFileEntry).file === "function";
 
 const isDirectoryEntry = (
   entry: LegacyFileSystemEntry,
@@ -79,7 +80,10 @@ const readFileEntry = (
   entry: LegacyFileSystemFileEntry,
 ): Promise<UploadPathFile> =>
   new Promise((resolve, reject) => {
-    entry.file((file) => resolve(attachUploadRelativePath(file, entry.fullPath)), reject);
+    entry.file(
+      (file) => resolve(attachUploadRelativePath(file, entry.fullPath)),
+      reject,
+    );
   });
 
 const readEntry = async (

@@ -15,7 +15,10 @@ for (const name of ["Caddyfile", "Caddyfile.trust-proxy"]) {
     assert.doesNotMatch(caddyfile, /^\s*\??Content-Security-Policy\s/m);
     assert.match(caddyfile, /lb_try_duration 5s/);
     assert.match(caddyfile, /lb_try_interval 250ms/);
-    assert.match(caddyfile, /@safeline_keepalive\s*\{[^}]*path \/[^}]*query _sl=\*/s);
+    assert.match(
+      caddyfile,
+      /@safeline_keepalive\s*\{[^}]*path \/[^}]*query _sl=\*/s,
+    );
     assert.match(caddyfile, /respond @safeline_keepalive 204/);
   });
 }

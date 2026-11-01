@@ -50,8 +50,7 @@ export function pdfSafeText(text: string, font: EncodableFont): string {
       continue;
     }
     const fallback =
-      LATIN_FALLBACKS[char] ??
-      char.normalize("NFD").replace(/[̀-ͯ]/g, "");
+      LATIN_FALLBACKS[char] ?? char.normalize("NFD").replace(/[̀-ͯ]/g, "");
     result += fallback && encodable(fallback) ? fallback : "?";
   }
   return result;

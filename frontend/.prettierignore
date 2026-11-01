@@ -1,1 +1,13 @@
 /src/i18n/translations/*
+
+# Byte-pinned by the public verification: the published measurements and
+# snapshots identify these sources by their SHA-256.
+/src/utils/forensicDecision.util.ts
+/src/utils/forensicMark.util.ts
+/src/utils/fragmentCopyMark.util.ts
+/src/utils/photoRegistrationCore.util.ts
+/src/utils/robustCopyMark.util.ts
+/src/utils/visibleCopyMark.util.ts
+
+# Test inputs are kept byte for byte.
+/test/fixtures/

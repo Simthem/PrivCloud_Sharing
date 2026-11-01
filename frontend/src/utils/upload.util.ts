@@ -1,6 +1,11 @@
 import { contentV2FileId } from "./shareContentContext.util";
 import { scheduleUploadInterval } from "./uploadClock.util";
-import { fingerprintUploadFile, getUploadResumeEntry, rememberUploadResumeEntry, forgetUploadResumeEntry } from "./uploadResume.util";
+import {
+  fingerprintUploadFile,
+  getUploadResumeEntry,
+  rememberUploadResumeEntry,
+  forgetUploadResumeEntry,
+} from "./uploadResume.util";
 import { contentWriteScheme } from "./contentV2.util";
 import { contentPolicy, noteContentV2Required } from "./contentPolicy.util";
 import { arrayBufferToBase64Url, base64UrlToArrayBuffer } from "./crypto.util";
@@ -837,26 +842,37 @@ export async function uploadFileViaWorker(
   // Do not trust caller arithmetic here: the Worker uses a variable-size
   // bootstrap part, so its total and bounds must come from one authoritative
   // layout calculation.
-  const { initialChunkSize, totalChunks } = resume ?? getUploadChunkLayout(
-    file.size,
-    chunkSize,
-  );
+  const { initialChunkSize, totalChunks } =
+    resume ?? getUploadChunkLayout(file.size, chunkSize);
 
-  const cryptoChunkSize = resume?.cryptoChunkSize ?? (isE2E ? Math.min(E2E_CRYPTO_RECORD_SIZE, chunkSize) : chunkSize);
+  const cryptoChunkSize =
+    resume?.cryptoChunkSize ??
+    (isE2E ? Math.min(E2E_CRYPTO_RECORD_SIZE, chunkSize) : chunkSize);
 
   if (file instanceof File) {
-    await rememberUploadResumeEntry(file, {
-      shareId, fileId, name: file.name, relativePath, size: file.size,
-      lastModified: file.lastModified,
-      fingerprint: resume?.fingerprint ?? await fingerprintUploadFile(file),
-      chunkSize, initialChunkSize, totalChunks,
-      cryptoChunkSize,
-      encryptedMetadata, savedAt: Date.now(),
-      ...(contentNonce && {
-        contentScheme: 2 as const,
-        contentNonce: arrayBufferToBase64Url(contentNonce.slice().buffer),
-      }),
-    }, cryptoKey);
+    await rememberUploadResumeEntry(
+      file,
+      {
+        shareId,
+        fileId,
+        name: file.name,
+        relativePath,
+        size: file.size,
+        lastModified: file.lastModified,
+        fingerprint: resume?.fingerprint ?? (await fingerprintUploadFile(file)),
+        chunkSize,
+        initialChunkSize,
+        totalChunks,
+        cryptoChunkSize,
+        encryptedMetadata,
+        savedAt: Date.now(),
+        ...(contentNonce && {
+          contentScheme: 2 as const,
+          contentNonce: arrayBufferToBase64Url(contentNonce.slice().buffer),
+        }),
+      },
+      cryptoKey,
+    );
   }
 
   // Single Worker for the entire upload: no mid-transfer recycling.

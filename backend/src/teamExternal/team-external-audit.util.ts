@@ -39,8 +39,8 @@ export type IssuanceInput = {
   markId: string;
   sourceSha256: string;
   pages: IssuancePageInput[];
-  visibleMarkAlgorithm?: "privcloud:visible-copy:v1"
-  robustMarkAlgorithm?: "privcloud:forensic-multiscale:v2"
+  visibleMarkAlgorithm?: "privcloud:visible-copy:v1";
+  robustMarkAlgorithm?: "privcloud:forensic-multiscale:v2";
 };
 
 export type IssuanceManifest = {
@@ -53,8 +53,8 @@ export type IssuanceManifest = {
   accessExpiresAt: string;
   copy: {
     markAlgorithm?: "privcloud:forensic-mark:v1";
-    visibleMarkAlgorithm?: "privcloud:visible-copy:v1"
-    robustMarkAlgorithm?: "privcloud:forensic-multiscale:v2"
+    visibleMarkAlgorithm?: "privcloud:visible-copy:v1";
+    robustMarkAlgorithm?: "privcloud:forensic-multiscale:v2";
     previewId: string;
     sourceFileId: string;
     sourceSha256: string;
@@ -73,8 +73,10 @@ export function isValidIssuanceInput(
   const input = value as Partial<IssuanceInput>;
   return (
     typeof input.markId === "string" &&
-    (input.visibleMarkAlgorithm === undefined || input.visibleMarkAlgorithm === "privcloud:visible-copy:v1") &&
-    (input.robustMarkAlgorithm === undefined || input.robustMarkAlgorithm === "privcloud:forensic-multiscale:v2") &&
+    (input.visibleMarkAlgorithm === undefined ||
+      input.visibleMarkAlgorithm === "privcloud:visible-copy:v1") &&
+    (input.robustMarkAlgorithm === undefined ||
+      input.robustMarkAlgorithm === "privcloud:forensic-multiscale:v2") &&
     MARK_ID.test(input.markId) &&
     typeof input.sourceSha256 === "string" &&
     SHA256_HEX.test(input.sourceSha256) &&
@@ -119,8 +121,12 @@ export function buildIssuanceManifest(input: {
     accessExpiresAt: input.accessExpiresAt.toISOString(),
     copy: {
       markAlgorithm: "privcloud:forensic-mark:v1",
-      ...(input.client.visibleMarkAlgorithm ? { visibleMarkAlgorithm: input.client.visibleMarkAlgorithm } : {}),
-      ...(input.client.robustMarkAlgorithm ? { robustMarkAlgorithm: input.client.robustMarkAlgorithm } : {}),
+      ...(input.client.visibleMarkAlgorithm
+        ? { visibleMarkAlgorithm: input.client.visibleMarkAlgorithm }
+        : {}),
+      ...(input.client.robustMarkAlgorithm
+        ? { robustMarkAlgorithm: input.client.robustMarkAlgorithm }
+        : {}),
       previewId: input.previewId,
       sourceFileId: input.sourceFileId,
       sourceSha256: input.client.sourceSha256,
@@ -228,24 +234,29 @@ export function auditEventHash(event: AuditEventContent) {
 
 /** Historical format confirmed in early deployed journals. Read only. */
 export function legacyAuditEventHash(event: AuditEventContent) {
-  return sha256Hex(canonicalJson({
-    protocol: AUDIT_EVENT_PROTOCOL,
-    teamId: event.teamId,
-    seq: event.seq,
-    at: event.at.toISOString(),
-    kind: event.kind,
-    previewId: event.previewId,
-    seatId: event.seatId,
-    actorEmail: event.actorEmail,
-    pageIndex: event.pageIndex,
-    prevHash: event.prevHash,
-  }))
+  return sha256Hex(
+    canonicalJson({
+      protocol: AUDIT_EVENT_PROTOCOL,
+      teamId: event.teamId,
+      seq: event.seq,
+      at: event.at.toISOString(),
+      kind: event.kind,
+      previewId: event.previewId,
+      seatId: event.seatId,
+      actorEmail: event.actorEmail,
+      pageIndex: event.pageIndex,
+      prevHash: event.prevHash,
+    }),
+  );
 }
 
-export function auditEventHashFormat(event: AuditEventContent & { hash: string }) {
-  if (auditEventHash(event) === event.hash) return "split-v1" as const
-  if (legacyAuditEventHash(event) === event.hash) return "legacy-flat-v1" as const
-  return null
+export function auditEventHashFormat(
+  event: AuditEventContent & { hash: string },
+) {
+  if (auditEventHash(event) === event.hash) return "split-v1" as const;
+  if (legacyAuditEventHash(event) === event.hash)
+    return "legacy-flat-v1" as const;
+  return null;
 }
 
 /**
@@ -257,35 +268,45 @@ export function verifyAuditChain(
   events: (AuditEventContent & { hash: string })[],
   anchors: { seq: number; hash: string }[],
 ): {
-  valid: boolean
-  brokenAtSeq: number | null
-  reason?: "content_hash_mismatch" | "genesis_mismatch" | "sequence_gap" | "previous_hash_mismatch" | "anchor_mismatch" | "format_downgrade"
+  valid: boolean;
+  brokenAtSeq: number | null;
+  reason?:
+    | "content_hash_mismatch"
+    | "genesis_mismatch"
+    | "sequence_gap"
+    | "previous_hash_mismatch"
+    | "anchor_mismatch"
+    | "format_downgrade";
 } {
   const bySeq = new Map<number, string>();
   let previous: (AuditEventContent & { hash: string }) | null = null;
-  let splitSeen = false
+  let splitSeen = false;
   for (const event of events) {
-    const format = auditEventHashFormat(event)
+    const format = auditEventHashFormat(event);
     const reason = !format
       ? "content_hash_mismatch"
       : splitSeen && format === "legacy-flat-v1"
         ? "format_downgrade"
-      : event.seq === 1 && event.prevHash !== AUDIT_CHAIN_START
-        ? "genesis_mismatch"
-        : previous && event.seq !== previous.seq + 1
-          ? "sequence_gap"
-          : previous && event.prevHash !== previous.hash
-            ? "previous_hash_mismatch"
-            : null
-    if (reason) return { valid: false, brokenAtSeq: event.seq, reason }
-    if (format === "split-v1") splitSeen = true
+        : event.seq === 1 && event.prevHash !== AUDIT_CHAIN_START
+          ? "genesis_mismatch"
+          : previous && event.seq !== previous.seq + 1
+            ? "sequence_gap"
+            : previous && event.prevHash !== previous.hash
+              ? "previous_hash_mismatch"
+              : null;
+    if (reason) return { valid: false, brokenAtSeq: event.seq, reason };
+    if (format === "split-v1") splitSeen = true;
     bySeq.set(event.seq, event.hash);
     previous = event;
   }
   for (const anchor of anchors) {
     const hash = bySeq.get(anchor.seq);
     if (hash !== undefined && hash !== anchor.hash) {
-      return { valid: false, brokenAtSeq: anchor.seq, reason: "anchor_mismatch" }
+      return {
+        valid: false,
+        brokenAtSeq: anchor.seq,
+        reason: "anchor_mismatch",
+      };
     }
   }
   return { valid: true, brokenAtSeq: null };

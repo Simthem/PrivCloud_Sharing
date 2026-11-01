@@ -246,19 +246,16 @@ testCase(
 // Route guards
 // ---------------------------------------------------------------------------
 
-testCase(
-  "admin and contractor routes require an authenticated session",
-  () => {
-    assert.deepEqual(
-      Reflect.getMetadata(GUARDS_METADATA, TeamExternalAdminController),
-      [AuthenticatedUserGuard],
-    );
-    assert.deepEqual(
-      Reflect.getMetadata(GUARDS_METADATA, TeamExternalContractorController),
-      [AuthenticatedUserGuard],
-    );
-  },
-);
+testCase("admin and contractor routes require an authenticated session", () => {
+  assert.deepEqual(
+    Reflect.getMetadata(GUARDS_METADATA, TeamExternalAdminController),
+    [AuthenticatedUserGuard],
+  );
+  assert.deepEqual(
+    Reflect.getMetadata(GUARDS_METADATA, TeamExternalContractorController),
+    [AuthenticatedUserGuard],
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Contractor side
@@ -516,85 +513,88 @@ testCase("only an admin of an active team manages contractors", async () => {
   assert.deepEqual(where!.team, { isActive: true });
 });
 
-testCase("external seats are unlimited by default and retain invitation isolation", async () => {
-  const future = new Date(Date.now() + 10 * DAY);
-  const seats = [
-    {
-      id: "a",
-      email: "a@example.test",
-      status: "ACTIVE",
-      userId: "a",
-      inviteExpiresAt: future,
-      accessExpiresAt: future,
-    },
-    {
-      id: "b",
-      email: "b@example.test",
-      status: "PENDING",
-      userId: null,
-      inviteExpiresAt: future,
-      accessExpiresAt: future,
-    },
-  ];
-  let upserts = 0;
-  const tx = {
-    $executeRaw: async () => 1,
-    teamExternalSeat: {
-      findMany: async () => seats,
-      upsert: async () => {
-        upserts++;
-        return { id: "c", tokenHash: "h" };
+testCase(
+  "external seats are unlimited by default and retain invitation isolation",
+  async () => {
+    const future = new Date(Date.now() + 10 * DAY);
+    const seats = [
+      {
+        id: "a",
+        email: "a@example.test",
+        status: "ACTIVE",
+        userId: "a",
+        inviteExpiresAt: future,
+        accessExpiresAt: future,
       },
-    },
-    teamExternalPreview: { updateMany: async () => ({ count: 0 }) },
-    teamExternalRevocationWatch: { updateMany: async () => ({ count: 0 }) },
-  };
-  const external = service({
-    ...adminMembership,
-    team: { findUnique: async () => ({ name: "Team" }) },
-    teamInvitation: {
-      findFirst: async (args: { where: { email: string } }) =>
-        args.where.email === "pending@example.test" ? { id: "invite" } : null,
-    },
-    teamMember: {
-      findFirst: async (args: { where: { user?: unknown } }) =>
-        args.where.user ? null : { id: "member" },
-    },
-    $transaction: async (callback: (client: typeof tx) => unknown) =>
-      callback(tx),
-  });
-  const accessExpiresAt = new Date(Date.now() + 5 * DAY).toISOString();
-  await external.inviteSeat(TEAM, admin as never, {
-    email: "c@example.test",
-    accessExpiresAt,
-  });
-  assert.equal(upserts, 1);
-  await rejects(
-    external.inviteSeat(TEAM, admin as never, {
-      email: "a@example.test",
+      {
+        id: "b",
+        email: "b@example.test",
+        status: "PENDING",
+        userId: null,
+        inviteExpiresAt: future,
+        accessExpiresAt: future,
+      },
+    ];
+    let upserts = 0;
+    const tx = {
+      $executeRaw: async () => 1,
+      teamExternalSeat: {
+        findMany: async () => seats,
+        upsert: async () => {
+          upserts++;
+          return { id: "c", tokenHash: "h" };
+        },
+      },
+      teamExternalPreview: { updateMany: async () => ({ count: 0 }) },
+      teamExternalRevocationWatch: { updateMany: async () => ({ count: 0 }) },
+    };
+    const external = service({
+      ...adminMembership,
+      team: { findUnique: async () => ({ name: "Team" }) },
+      teamInvitation: {
+        findFirst: async (args: { where: { email: string } }) =>
+          args.where.email === "pending@example.test" ? { id: "invite" } : null,
+      },
+      teamMember: {
+        findFirst: async (args: { where: { user?: unknown } }) =>
+          args.where.user ? null : { id: "member" },
+      },
+      $transaction: async (callback: (client: typeof tx) => unknown) =>
+        callback(tx),
+    });
+    const accessExpiresAt = new Date(Date.now() + 5 * DAY).toISOString();
+    await external.inviteSeat(TEAM, admin as never, {
+      email: "c@example.test",
       accessExpiresAt,
-    }),
-    409,
-  );
-  await rejects(
-    external.inviteSeat(TEAM, admin as never, {
-      email: "pending@example.test",
+    });
+    assert.equal(upserts, 1);
+    await rejects(
+      external.inviteSeat(TEAM, admin as never, {
+        email: "a@example.test",
+        accessExpiresAt,
+      }),
+      409,
+    );
+    await rejects(
+      external.inviteSeat(TEAM, admin as never, {
+        email: "pending@example.test",
+        accessExpiresAt,
+      }),
+      409,
+    );
+    assert.equal(upserts, 1);
+    seats[1].status = "REVOKED";
+    const result = await external.inviteSeat(TEAM, admin as never, {
+      email: "c@example.test",
       accessExpiresAt,
-    }),
-    409,
-  );
-  assert.equal(upserts, 1);
-  seats[1].status = "REVOKED";
-  const result = await external.inviteSeat(TEAM, admin as never, {
-    email: "c@example.test",
-    accessExpiresAt,
-  });
-  assert.equal(upserts, 2);
-  assert.match(
-    result.inviteUrl,
-    /^https:\/\/app\/external\/invite\/[A-Za-z0-9_-]{43}$/,
-  );
-});
+    });
+    assert.equal(upserts, 2);
+    assert.match(
+      result.inviteUrl,
+      /^https:\/\/app\/external\/invite\/[A-Za-z0-9_-]{43}$/,
+    );
+  },
+);
 
 testCase(
   "a copy needs a usable seat, a hybrid wrapping and a source of the same team",

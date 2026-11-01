@@ -1,4 +1,7 @@
-import { scheduleUploadInterval, scheduleUploadTimeout } from "./uploadClock.util";
+import {
+  scheduleUploadInterval,
+  scheduleUploadTimeout,
+} from "./uploadClock.util";
 
 const CHANNEL = "safeline-challenge";
 const COMPLETE = "safeline-challenge-complete";
@@ -27,8 +30,14 @@ export async function probeSafeLineSession(
       // Drain the response so the proxy sees a completed request. Cancelling
       // after headers generated broken pipes on every maintenance probe.
       await page.arrayBuffer();
-      if (page.status === 468 ||
-          ([401, 403].includes(page.status) && (page.headers.get("content-type") || "").toLowerCase().includes("text/html"))) return "challenge";
+      if (
+        page.status === 468 ||
+        ([401, 403].includes(page.status) &&
+          (page.headers.get("content-type") || "")
+            .toLowerCase()
+            .includes("text/html"))
+      )
+        return "challenge";
       if (!page.ok) return "unavailable";
     }
     const response = await fetch(`/api/configs?_sl_validate=${Date.now()}`, {
@@ -43,8 +52,15 @@ export async function probeSafeLineSession(
         .toLowerCase()
         .includes("application/json");
     await response.arrayBuffer();
-    if (response.status === 468 || (response.ok && !valid) ||
-        ([401, 403].includes(response.status) && (response.headers.get("content-type") || "").toLowerCase().includes("text/html"))) return "challenge";
+    if (
+      response.status === 468 ||
+      (response.ok && !valid) ||
+      ([401, 403].includes(response.status) &&
+        (response.headers.get("content-type") || "")
+          .toLowerCase()
+          .includes("text/html"))
+    )
+      return "challenge";
     if (valid && checkPage) popupNeedsUserGesture = false;
     return valid ? "valid" : "unavailable";
   } catch {

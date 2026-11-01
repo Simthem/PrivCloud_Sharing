@@ -436,7 +436,9 @@ testCase("lets an account remove only its own signing passkeys", async () => {
 });
 
 testCase("reads a Trusted List only through its verified XML signature", () => {
-  const operator = createTestCertificate({ commonName: "Test Scheme Operator" });
+  const operator = createTestCertificate({
+    commonName: "Test Scheme Operator",
+  });
   const list =
     '<TrustServiceStatusList xmlns="http://uri.etsi.org/02231/v2#"><SchemeInformation>' +
     "<TSLSequenceNumber>7</TSLSequenceNumber><SchemeTerritory>FR</SchemeTerritory>" +
@@ -465,16 +467,27 @@ testCase("reads a Trusted List only through its verified XML signature", () => {
   assert.equal(parseTrustedList(verified.signedXml).territory, "FR");
   assert.equal(parseTrustedList(verified.signedXml).sequenceNumber, "7");
   assert.throws(
-    () => verifyTrustedListSignature(signedList.replace("granted", "withdrawn")),
+    () =>
+      verifyTrustedListSignature(signedList.replace("granted", "withdrawn")),
     /invalid/,
   );
   assert.throws(() => verifyTrustedListSignature(list), /exactly one/);
 
   const pointers = [
-    { territory: "FR", location: null, certificateSha256: [verified.signerSha256] },
+    {
+      territory: "FR",
+      location: null,
+      certificateSha256: [verified.signerSha256],
+    },
   ];
-  assert.equal(listSignerIsAuthorized(pointers, "FR", verified.signerSha256), true);
-  assert.equal(listSignerIsAuthorized(pointers, "ES", verified.signerSha256), false);
+  assert.equal(
+    listSignerIsAuthorized(pointers, "FR", verified.signerSha256),
+    true,
+  );
+  assert.equal(
+    listSignerIsAuthorized(pointers, "ES", verified.signerSha256),
+    false,
+  );
   assert.equal(listSignerIsAuthorized(pointers, "FR", "0".repeat(64)), false);
 });
 

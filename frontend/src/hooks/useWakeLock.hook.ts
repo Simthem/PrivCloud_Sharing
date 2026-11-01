@@ -68,7 +68,10 @@ const useWakeLock = () => {
       }
     } catch {
       failuresRef.current += 1;
-      if (failuresRef.current >= MAX_CONSECUTIVE_FAILURES && handlerRef.current) {
+      if (
+        failuresRef.current >= MAX_CONSECUTIVE_FAILURES &&
+        handlerRef.current
+      ) {
         document.removeEventListener("visibilitychange", handlerRef.current);
         handlerRef.current = null;
       }
@@ -82,9 +85,9 @@ const useWakeLock = () => {
     // visibilitychange event (each creates a rejected Promise that
     // pressures the GC over very long uploads).
     try {
-      const status = await navigator.permissions.query(
-        { name: "screen-wake-lock" as PermissionName },
-      );
+      const status = await navigator.permissions.query({
+        name: "screen-wake-lock" as PermissionName,
+      });
       if (status.state === "denied") return;
     } catch {
       // permissions.query() may not support this name -- try anyway

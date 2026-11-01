@@ -1,3 +1,126 @@
+## [1.26.5](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.4...v1.26.5) (2026-11-01)
+
+### Features
+
+- Play every common video format in previews, end-to-end encrypted or not:
+  AVI (Xvid, DivX), Matroska, WMV and ASF, FLV, MPEG program and transport
+  streams (camcorder `.mts` and `.m2ts`), 3GP, Ogg Theora, and MP4 or
+  QuickTime files whose pictures or sound the browser cannot decode (MPEG-4
+  Part 2, PCM, AC-3). A media engine built from FFmpeg 9.0 demuxes the file
+  in a dedicated worker, keeps the pictures the browser decodes, re-encodes
+  the others with WebCodecs and converts the sound to AAC. The browser's own
+  player then plays fragmented MP4 through MediaSource, up to 60 s ahead of
+  the position like a streaming player. Bytes are decrypted in the page only:
+  the worker receives plain bytes and has no network access of its own. The
+  engine is LGPL only, without GPL or nonfree parts, built without network
+  from sources pinned by SHA-256 in an Emscripten image pinned by digest,
+  and every build checks the served files against the reviewed digests.
+- Soften the motion of the interface, on phones first. Menus, selects and
+  popovers grow out of the control that opened them, dialogs rise slightly
+  as they fade in, drawers and folding sections decelerate into place, and
+  a tab's content fades in instead of replacing the previous one at once.
+  Folding sections, such as the folders of a share, the shares a reverse
+  share received and a team's statistics on phones, unfold and fold
+  smoothly: their content eases in item after item and their chevron turns
+  with them. Nothing moves for users whose system asks for reduced motion.
+
+### Bug Fixes
+
+- Give every video preview the same controls: play, position with what is
+  already loaded, volume, playback speed from 0.25x to 2x, picture in
+  picture where the browser offers it, full screen and keyboard shortcuts.
+  Firefox's own controls have no speed, and HEVC videos decoded on the
+  device had no speed at all.
+- Play previews in Safari and the other WebKit browsers through MediaSource.
+  Media streamed there by the preview service worker showed no picture and
+  its seeks never ended.
+- Open a `.mts` or `.ts` file whose bytes are an MPEG transport stream as a
+  video, not as TypeScript source.
+- Unfold a team's encryption details, and the key rotation they hold on
+  phones, instead of showing them at once. The rotation button and the
+  details stay in place while they open.
+- Open the preview of a file by clicking its name in a team folder, like
+  the eye button. A click with Ctrl, Cmd, Shift or Alt, or a middle click,
+  still opens the share the file belongs to.
+- Show long names on a single line cut at the end, from their first
+  letter, in every browser. Names were wrapped then clamped to one line, and
+  Firefox could keep a nearly empty first line: a team folder showed a few
+  letters of a file name, or only an ellipsis. Names are no longer
+  hyphenated either, which stops phones from inserting hyphens that are not
+  part of a name, and folder rows show the full name on hover.
+- Name the page buttons of PDF previews in the reader's language and draw
+  them as icons, instead of English labels and arrow characters.
+- Refuse the preview of a Keynote `.key` presentation or a Publisher `.pub`
+  document instead of showing their bytes as text. Text keys with these
+  names still open as text.
+- Tell Matroska from WebM, MP4 sound from MP4 video and DNG or CR2 raw
+  photos from plain TIFF images when a file is recognised from its first
+  bytes. FLAC and AIFF sound are recognised too.
+- Never count the creator of a share as one of its visitors. Opening or
+  previewing their own files added a view, and a creator who set a view
+  limit could exhaust it. Direct file reads and visit tokens now recognise
+  the signed-in creator before counting, and the creator is not held to the
+  limit.
+- Count a visit token within the view limit atomically. Concurrent visitors
+  could all pass the limit check before any of them was counted.
+- Keep high bitrate video previews ahead of playback. Three reads at once,
+  each paying a storage round trip, delivered about 3 MB/s with 300 ms of
+  storage latency, below a 40 Mbit/s phone video. Previews now read five
+  ranges at once and prepare 24 MiB ahead while the video plays, within a
+  48 MiB budget. A preview left paused prepares 2 MiB instead of 8, so
+  opening a video no longer loads much more than its first pictures.
+  Measured with a 40 Mbit/s video, 300 ms of storage latency and 3 MB/s per
+  connection: 3 stalls and 2.3 s stopped in 30 s before, one 0.9 s wait at
+  the start and 16 s buffered after.
+
+### Security
+
+- Ship libstdc++ and libgcc_s from Debian's gcc-16 16.2.0-4 in the runtime
+  image for CVE-2026-95619 and CVE-2026-102010, which Debian leaves unfixed
+  in trixie. The packages are pinned on snapshot.debian.org by SHA-512 and
+  need glibc 2.38 at most, below the runtime's 2.41: Node, sharp and argon2
+  load them unchanged, and the build fails if a newer glibc is required.
+- State in the image's OpenVEX document why glibc's CVE-2026-84243,
+  CVE-2010-4756, CVE-2018-20796, CVE-2019-9192 and CVE-2019-1010023, which
+  no Debian release fixes, do not affect it: every process gets its
+  environment from the container configuration only, and no binary in the
+  image calls glob, the POSIX regex functions or ldd. CVE-2019-1010022,
+  CVE-2019-1010024 and CVE-2019-1010025 are stated as limits of exploit
+  mitigations that glibc does not treat as security issues: they only help
+  after a separate memory corruption bug.
+- Base the runtime on the distroless digest carrying tzdata 2026f. glibc,
+  CA certificates and the other packages are unchanged.
+
+### Maintenance
+
+- Format the frontend and backend sources and tests with the repository's
+  Prettier settings. The watermark sources whose bytes the public
+  verification pins, and the test fixtures, are listed in `.prettierignore`
+  so that `npm run format` leaves them untouched.
+
+### CI/CD
+
+- Pin the OpenSSL and Node builder cache images by digest, like every
+  other base image, so that a republished cache changes the build only once
+  its digest is reviewed. Another cache image comes with its digest in the
+  `OPENSSL_BUILDER_SHA256` and `NODE_BUILDER_SHA256` build arguments.
+- Build the media engine as the unprivileged user of its Emscripten image,
+  and give its files-only export stage a `USER` and an explicit
+  `HEALTHCHECK NONE`, as the container compliance checks require. The built
+  files are byte-identical.
+
+### Tests
+
+- Give the forensic mark detection tests fixed keys and mark ids. A rare
+  random draw left a capture unnamed and failed the suite now and then.
+- Load the frontend's TypeScript as ES modules in tests, without Node's
+  MODULE_TYPELESS_PACKAGE_JSON warning on every module, and the pdf.js build
+  meant for Node. Signature placement reads PDF text without pdf.js warnings
+  about the standard fonts only rendering needs.
+- Follow the new encryption details and the folded statistics of the
+  native client in the team dashboard browser test, which looked for the
+  former `<details>` element and measured statistics a phone keeps folded.
+
 ## [1.26.4](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.3...v1.26.4) (2026-10-31)
 
 ### Security

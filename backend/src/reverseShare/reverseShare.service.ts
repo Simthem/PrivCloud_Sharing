@@ -15,7 +15,11 @@ export class ReverseShareService {
     private fileService: FileService,
   ) {}
 
-  async create(data: CreateReverseShareDTO, creatorId: string, encryptedNameAllowed = false) {
+  async create(
+    data: CreateReverseShareDTO,
+    creatorId: string,
+    encryptedNameAllowed = false,
+  ) {
     const expirationDate = parseRelativeDateToAbsolute(data.shareExpiration);
 
     // An encrypted name needs K_rs, replaces the readable one and follows the
@@ -28,8 +32,6 @@ export class ReverseShareService {
         throw new BadRequestException("reverse_share_name_invalid");
       }
     }
-
-
 
     // Reverse share link expiration is independent from individual share
     // expiration (share.maxExpiration).  The link expiration controls how
@@ -79,7 +81,6 @@ export class ReverseShareService {
     });
   }
 
-
   async getAllByUser(userId: string) {
     const reverseShares = await this.prisma.reverseShare.findMany({
       where: {
@@ -120,7 +121,8 @@ export class ReverseShareService {
     if (!reverseShare) return false;
 
     const neverExpires = reverseShare.shareExpiration.getTime() === 0;
-    const isExpired = !neverExpires && new Date() > reverseShare.shareExpiration;
+    const isExpired =
+      !neverExpires && new Date() > reverseShare.shareExpiration;
     // Personal links (never-expiring) have unlimited uses
     const remainingUsesExceeded =
       !neverExpires && reverseShare.remainingUses <= 0;

@@ -16,21 +16,47 @@ test("a ready file borrows idle slots while sibling workers wait for authenticat
   const waiting = coordinator.registerFlow();
   coordinator.registerFlow();
   coordinator.registerFlow();
-  coordinator.configure({ originCount: 1, connectionsPerOrigin: 6, maxConcurrency: 6 });
+  coordinator.configure({
+    originCount: 1,
+    connectionsPerOrigin: 6,
+    maxConcurrency: 6,
+  });
   const grants = [];
-  const requests = Array.from({ length: 6 }, () => coordinator.acquireDirect(healthy, [CANDIDATES[0]])
-    .then((grant) => { grants.push(grant); }, () => {}));
+  const requests = Array.from({ length: 6 }, () =>
+    coordinator.acquireDirect(healthy, [CANDIDATES[0]]).then(
+      (grant) => {
+        grants.push(grant);
+      },
+      () => {},
+    ),
+  );
   try {
     await flushPromises();
-    assert.equal(coordinator.activeDirectCount, 6, "idle workers reserved usable sockets");
+    assert.equal(
+      coordinator.activeDirectCount,
+      6,
+      "idle workers reserved usable sockets",
+    );
     assert.equal(windows.at(-1), 6);
     const siblingGrants = [];
     for (let i = 0; i < 3; i++) {
-      requests.push(coordinator.acquireDirect(waiting, [CANDIDATES[0]]).then((grant) => { siblingGrants.push(grant); }, () => {}));
+      requests.push(
+        coordinator.acquireDirect(waiting, [CANDIDATES[0]]).then(
+          (grant) => {
+            siblingGrants.push(grant);
+          },
+          () => {},
+        ),
+      );
     }
-    for (const grant of grants.slice(0, 3)) coordinator.releaseDirect(grant.leaseId);
+    for (const grant of grants.slice(0, 3))
+      coordinator.releaseDirect(grant.leaseId);
     await flushPromises();
-    assert.equal(siblingGrants.length, 3, "a resumed sibling was starved by the borrowing file");
+    assert.equal(
+      siblingGrants.length,
+      3,
+      "a resumed sibling was starved by the borrowing file",
+    );
     assert.equal(coordinator.activeDirectCount, 6);
     assert.equal(windows.at(-1), 3);
   } finally {
@@ -44,14 +70,28 @@ test("a ready file also borrows spare slots while a sibling has its last part in
   const windows = [];
   const tail = coordinator.registerFlow();
   const healthy = coordinator.registerFlow((window) => windows.push(window));
-  coordinator.configure({ originCount: 1, connectionsPerOrigin: 6, maxConcurrency: 6 });
+  coordinator.configure({
+    originCount: 1,
+    connectionsPerOrigin: 6,
+    maxConcurrency: 6,
+  });
   await coordinator.acquireDirect(tail, [CANDIDATES[0]]);
   const grants = [];
-  const requests = Array.from({ length: 5 }, () => coordinator.acquireDirect(healthy, [CANDIDATES[0]])
-    .then((grant) => { grants.push(grant); }, () => {}));
+  const requests = Array.from({ length: 5 }, () =>
+    coordinator.acquireDirect(healthy, [CANDIDATES[0]]).then(
+      (grant) => {
+        grants.push(grant);
+      },
+      () => {},
+    ),
+  );
   try {
     await flushPromises();
-    assert.equal(grants.length, 5, "the last sibling part reserved empty sockets");
+    assert.equal(
+      grants.length,
+      5,
+      "the last sibling part reserved empty sockets",
+    );
     assert.equal(coordinator.activeDirectCount, 6);
     assert.equal(windows.at(-1), 5);
   } finally {
@@ -69,9 +109,7 @@ test("bounds and fairly drains 100 upload flows across two origins", async () =>
     relayFallbackConcurrency: 2,
   });
 
-  const flowIds = Array.from({ length: 100 }, () =>
-    coordinator.registerFlow(),
-  );
+  const flowIds = Array.from({ length: 100 }, () => coordinator.registerFlow());
   const grants = [];
   const outcomes = flowIds.map((flowId) =>
     coordinator.acquireDirect(flowId, CANDIDATES).then(
@@ -113,8 +151,9 @@ test("bounds and fairly drains 100 upload flows across two origins", async () =>
   assert.equal(coordinator.activeDirectCount, 0);
   assert.equal(coordinator.activeRelayCount, 0);
   assert.equal(
-    settled.filter(({ error }) => error?.message === "Upload flow was cancelled")
-      .length,
+    settled.filter(
+      ({ error }) => error?.message === "Upload flow was cancelled",
+    ).length,
     76,
   );
 });
@@ -164,8 +203,9 @@ test("uses the relay global budget independently of the per-flow fallback hint",
   const settled = await Promise.all(outcomes);
   assert.equal(coordinator.activeRelayCount, 0);
   assert.equal(
-    settled.filter(({ error }) => error?.message === "Upload flow was cancelled")
-      .length,
+    settled.filter(
+      ({ error }) => error?.message === "Upload flow was cancelled",
+    ).length,
     4,
   );
 });

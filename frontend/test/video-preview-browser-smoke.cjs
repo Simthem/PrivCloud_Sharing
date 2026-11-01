@@ -68,10 +68,7 @@ export const fetchDecryptedFile=unused,fetchFileBuffer=unused;`,
 export default function dynamic(load){const Lazy=React.lazy(()=>load().then(m=>({default:m.default||m})));return function Dynamic(props){return React.createElement(React.Suspense,{fallback:null},React.createElement(Lazy,props));};}`,
   );
   const componentCss = write("component-styles.css", "");
-  const cssLoader = path.join(
-    __dirname,
-    "browser-css-capture-loader.cjs",
-  );
+  const cssLoader = path.join(__dirname, "browser-css-capture-loader.cjs");
   const cssCapture = require(cssLoader);
   const loader = write(
     "loader.cjs",
@@ -350,7 +347,10 @@ async function main() {
       ],
     ]);
     const structuralCss = fs
-      .readFileSync(path.join(root, "node_modules/@mantine/core/styles.css"), "utf8")
+      .readFileSync(
+        path.join(root, "node_modules/@mantine/core/styles.css"),
+        "utf8",
+      )
       .replace(/@import\s+"([^"]+)";/g, (_, specifier) =>
         fs.readFileSync(require.resolve(specifier), "utf8"),
       );
@@ -375,16 +375,21 @@ async function main() {
           body: fs.readFileSync(path.join(directory, name)),
         });
     const decoders = path.join(root, "public/video-decoders");
-    for (const name of fs.readdirSync(decoders))
-      resources.set(`/video-decoders/${name}`, {
+    for (const name of fs.readdirSync(decoders, { recursive: true })) {
+      const file = path.join(decoders, name);
+      if (!fs.statSync(file).isFile()) continue;
+      resources.set(`/video-decoders/${name.split(path.sep).join("/")}`, {
         type: name.endsWith(".wasm")
           ? "application/wasm"
           : /\.m?js$/.test(name)
             ? "text/javascript"
             : "text/plain",
-        body: fs.readFileSync(path.join(decoders, name)),
-        policy: name === "hevc.worker.js" ? workerPolicy : undefined,
+        body: fs.readFileSync(file),
+        policy: /^(hevc|media)\.worker\.js$/.test(name)
+          ? workerPolicy
+          : undefined,
       });
+    }
     const media = new Map(generatedVideos);
     for (const name of fs.readdirSync(fixtures))
       media.set(name, fs.readFileSync(path.join(fixtures, name)));
@@ -631,6 +636,14 @@ async function main() {
     // Fullscreen must keep the existing canvas/audio and work when the API is
     // absent or rejects, as on mobile WebViews. Escape restores focus and scroll.
     const checkFullscreen = async (nativePlayer = false) => {
+      if (nativePlayer)
+        // The shared controls replace the browser's, fullscreen included.
+        assert.equal(
+          await evaluate(
+            `!document.querySelector('video').controls && !!${label("Vitesse de lecture")}`,
+          ),
+          true,
+        );
       const media = nativePlayer ? "video" : "canvas";
       await evaluate(
         `window.keptMedia=document.querySelector('${media}');window.keptAudio=document.querySelector('audio');window.oldOverflow=document.body.style.overflow`,
@@ -768,13 +781,14 @@ async function main() {
       0,
     );
 
-    // 6. A codec neither Chrome nor the fallback decodes is named.
+    // 6. A codec Chrome does not decode plays through the media engine:
+    // re-encoded on the device, then MediaSource in the browser player.
     await show("mpeg4-quadrants.mp4");
-    const message = await waitFor(
-      "(()=>{const t=document.body.innerText;return t.includes('MPEG-4 Part 2')&&t})()",
-      "unsupported codec message",
+    await waitFor(
+      "(()=>{const v=document.querySelector('video');return v&&v.src.startsWith('blob:')&&v.videoWidth===64&&v.readyState>=2})()",
+      "MPEG-4 Part 2 through the media engine",
+      60000,
     );
-    assert.match(message, /Format vidéo non pris en charge/);
 
     // 7. An MP4 with sound only is played as sound, not as a black frame.
     await show("aac-only.mp4");
@@ -939,7 +953,7 @@ async function main() {
 
     assert.ok(requested.includes("/video-decoders/libde265.wasm"));
     console.log(
-      "real Chrome without HEVC: HEVC in MP4 and QuickTime, with and without sound, rotated and 10-bit, decoded on the device under the production CSP, the sound alone through Media Source, reading what is played; H.264 native, other codecs named, sound-only files played as sound",
+      "real Chrome without HEVC: HEVC in MP4 and QuickTime, with and without sound, rotated and 10-bit, decoded on the device under the production CSP, the sound alone through Media Source, reading what is played; H.264 native, other codecs through the media engine, sound-only files played as sound",
     );
   } finally {
     browser?.kill("SIGKILL");

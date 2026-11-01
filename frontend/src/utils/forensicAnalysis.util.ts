@@ -1,19 +1,19 @@
-import type { MarkAnalysis, Pixels } from "./forensicMark.util"
-import { COPY_TOKEN, type CopyMarkCandidate } from "./visibleCopyMark.util"
+import type { MarkAnalysis, Pixels } from "./forensicMark.util";
+import { COPY_TOKEN, type CopyMarkCandidate } from "./visibleCopyMark.util";
 
 export type ForensicAnalysis = MarkAnalysis & {
-  visibleMarkIds?: string[]
-  minimumScore?: number
-  fragmentHypotheses?: number
-}
+  visibleMarkIds?: string[];
+  minimumScore?: number;
+  fragmentHypotheses?: number;
+};
 import {
   isMarkId,
   MARK_DETECTION_THRESHOLD,
   MARK_MIN_SCORE_GAP,
   MARK_TILE,
-} from "./forensicMark.util"
+} from "./forensicMark.util";
 
-const DEDICATED_WORKER_MESSAGE_ORIGIN = ""
+const DEDICATED_WORKER_MESSAGE_ORIGIN = "";
 
 export function isForensicAnalysis(
   value: ForensicAnalysis,
@@ -29,7 +29,7 @@ export function isForensicAnalysis(
       candidate.scale > 0 &&
       Number.isFinite(candidate.falseMatchLog10) &&
       candidate.falseMatchLog10 <= 0,
-    )
+    );
   if (
     !value ||
     (value.minimumScore !== undefined &&
@@ -61,10 +61,10 @@ export function isForensicAnalysis(
       value.compatible.length ||
     (value.status === "match") !== Boolean(value.best)
   )
-    return false
+    return false;
   if (value.status === "ambiguous_multiple_sources")
-    return value.compatible.length > 1
-  if (value.status === "inconclusive") return value.compatible.length <= 1
+    return value.compatible.length > 1;
+  if (value.status === "inconclusive") return value.compatible.length <= 1;
   return (
     detection(value.best) &&
     value.best!.score >= (value.minimumScore ?? MARK_DETECTION_THRESHOLD) &&
@@ -73,7 +73,7 @@ export function isForensicAnalysis(
     value.best!.score === value.topScore &&
     value.runnerUpScore < MARK_DETECTION_THRESHOLD &&
     value.topScore - value.runnerUpScore >= MARK_MIN_SCORE_GAP
-  )
+  );
 }
 
 /** One local worker per analysis. No keys or images are sent over the network. */
@@ -82,8 +82,8 @@ export async function createForensicAnalyzer(
   signal: AbortSignal,
   onPhase?: (_phase: "fragment") => void,
 ) {
-  signal.throwIfAborted()
-  const ids = new Set(candidates.map((candidate) => candidate.markId))
+  signal.throwIfAborted();
+  const ids = new Set(candidates.map((candidate) => candidate.markId));
   if (
     candidates.length > 1000 ||
     ids.size !== candidates.length ||
@@ -102,32 +102,32 @@ export async function createForensicAnalyzer(
         ),
     )
   )
-    throw new Error("Invalid or oversized forensic candidates")
+    throw new Error("Invalid or oversized forensic candidates");
   const worker = new Worker(
     new URL("./forensicAnalysis.worker.ts", import.meta.url),
-  )
-  let id = 0
+  );
+  let id = 0;
   let pending: {
-    id: number
-    resolve: (_value: ForensicAnalysis) => void
-    reject: (_reason: unknown) => void
-  } | null = null
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let closed = false
+    id: number;
+    resolve: (_value: ForensicAnalysis) => void;
+    reject: (_reason: unknown) => void;
+  } | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let closed = false;
   const close = () => {
-    if (closed) return
-    closed = true
-    worker.onmessage = null
-    worker.terminate()
-    clearTimeout(timer)
-    signal.removeEventListener("abort", close)
-    pending?.reject(new DOMException("Analysis stopped", "AbortError"))
-    pending = null
-  }
-  signal.addEventListener("abort", close, { once: true })
-  worker.addEventListener("error", close)
+    if (closed) return;
+    closed = true;
+    worker.onmessage = null;
+    worker.terminate();
+    clearTimeout(timer);
+    signal.removeEventListener("abort", close);
+    pending?.reject(new DOMException("Analysis stopped", "AbortError"));
+    pending = null;
+  };
+  signal.addEventListener("abort", close, { once: true });
+  worker.addEventListener("error", close);
   worker.onmessage = (event: MessageEvent) => {
-    if (event.origin !== DEDICATED_WORKER_MESSAGE_ORIGIN) return
+    if (event.origin !== DEDICATED_WORKER_MESSAGE_ORIGIN) return;
     if (
       !event.isTrusted ||
       event.source !== null ||
@@ -136,30 +136,30 @@ export async function createForensicAnalyzer(
       closed ||
       !pending
     )
-      return
-    const reply = event.data
-    if (!reply || typeof reply !== "object" || reply.id !== pending.id) return
+      return;
+    const reply = event.data;
+    if (!reply || typeof reply !== "object" || reply.id !== pending.id) return;
     if (reply.type === "phase" && reply.phase === "fragment") {
-      onPhase?.("fragment")
-      return
+      onPhase?.("fragment");
+      return;
     }
     if (reply.type === "error") {
-      close()
-      return
+      close();
+      return;
     }
-    if (reply.type !== "ready" && reply.type !== "result") return
+    if (reply.type !== "ready" && reply.type !== "result") return;
     if (reply.type === "result") {
-      const value = reply.result as ForensicAnalysis
+      const value = reply.result as ForensicAnalysis;
       if (!isForensicAnalysis(value, ids)) {
-        close()
-        return
+        close();
+        return;
       }
     }
-    clearTimeout(timer)
-    const current = pending
-    pending = null
-    current.resolve(reply.result)
-  }
+    clearTimeout(timer);
+    const current = pending;
+    pending = null;
+    current.resolve(reply.result);
+  };
   const request = (
     type: string,
     payload: object,
@@ -167,26 +167,26 @@ export async function createForensicAnalyzer(
   ) =>
     new Promise<ForensicAnalysis>((resolve, reject) => {
       if (closed || pending) {
-        reject(new Error("Analysis worker unavailable"))
-        return
+        reject(new Error("Analysis worker unavailable"));
+        return;
       }
-      pending = { id: ++id, resolve, reject }
-      timer = setTimeout(close, 120_000)
-      worker.postMessage({ id, type, ...payload }, transfer)
-    })
+      pending = { id: ++id, resolve, reject };
+      timer = setTimeout(close, 120_000);
+      worker.postMessage({ id, type, ...payload }, transfer);
+    });
   try {
     await request("init", { candidates }, [
       ...new Set(
         candidates.map((candidate) => candidate.pattern.buffer as ArrayBuffer),
       ),
-    ])
+    ]);
     return {
       analyse: (pixels: Pixels) =>
         request("analyse", { pixels }, [pixels.data.buffer as ArrayBuffer]),
       close,
-    }
+    };
   } catch (error) {
-    close()
-    throw error
+    close();
+    throw error;
   }
 }

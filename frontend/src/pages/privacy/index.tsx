@@ -32,7 +32,9 @@ const PrivacyPolicy = () => {
           overrides: {
             h1: {
               component: ({ children, ...props }: any) => (
-                <Title order={2} mt="lg" mb="sm" {...props}>{children}</Title>
+                <Title order={2} mt="lg" mb="sm" {...props}>
+                  {children}
+                </Title>
               ),
             },
             pre: {

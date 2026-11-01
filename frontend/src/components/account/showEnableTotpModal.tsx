@@ -78,7 +78,9 @@ const CreateEnableTotpModal = ({
       "\n" +
       "-".repeat(40) +
       "\n\n" +
-      codes.map((c, i) => `${String(i + 1).padStart(2, " ")}. ${c}`).join("\n") +
+      codes
+        .map((c, i) => `${String(i + 1).padStart(2, " ")}. ${c}`)
+        .join("\n") +
       "\n\n" +
       t("account.modal.totp.backup.fileFooter");
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });

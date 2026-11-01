@@ -533,9 +533,16 @@ const TeamSettings = () => {
                   },
                 ]}
               />
-              <Button mt="md" variant="light" loading={updateMutation.isPending}
-                disabled={Number(keyRotationIntervalDays) === team.keyRotationIntervalDays || !name.trim()}
-                onClick={() => updateMutation.mutate()}>
+              <Button
+                mt="md"
+                variant="light"
+                loading={updateMutation.isPending}
+                disabled={
+                  Number(keyRotationIntervalDays) ===
+                    team.keyRotationIntervalDays || !name.trim()
+                }
+                onClick={() => updateMutation.mutate()}
+              >
                 {t("team.settings.info.save")}
               </Button>
             </Paper>

@@ -23,9 +23,7 @@ const isSafeFileName = (name: string) =>
   !CONTROL_CHARS.test(name);
 
 const isSafePathSegment = (segment: string) =>
-  isSafeFileName(segment) &&
-  segment !== "." &&
-  !/^[A-Za-z]:$/.test(segment);
+  isSafeFileName(segment) && segment !== "." && !/^[A-Za-z]:$/.test(segment);
 
 export function normalizeClientRelativePath(
   rawPath: string | undefined | null,
@@ -80,7 +78,8 @@ export function attachUploadRelativePath<T extends UploadPathFile>(
   rawPath?: string,
 ): T {
   const relativePath =
-    normalizeClientRelativePath(rawPath, file.name) || getUploadRelativePath(file);
+    normalizeClientRelativePath(rawPath, file.name) ||
+    getUploadRelativePath(file);
 
   if (!relativePath) return file;
 

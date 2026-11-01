@@ -52,7 +52,7 @@ export const millimetersToPoints = (millimeters: number) =>
   (finiteOr(millimeters, 0) * 72) / 25.4;
 
 export const normalizedPdfRotation = (rotation: number) =>
-  ((Math.round(finiteOr(rotation, 0) / 90) * 90) % 360 + 360) % 360;
+  (((Math.round(finiteOr(rotation, 0) / 90) * 90) % 360) + 360) % 360;
 
 /** Dimensions as displayed by a PDF viewer, after the page /Rotate is applied. */
 export const pageSizePoints = (page: PdfPageLayout) => {

@@ -29,7 +29,11 @@ const TableSortIcon = ({
           })
         }
       >
-        {sort.direction === "asc" ? <TbChevronDown size={14} /> : <TbChevronUp size={14} />}
+        {sort.direction === "asc" ? (
+          <TbChevronDown size={14} />
+        ) : (
+          <TbChevronUp size={14} />
+        )}
       </ActionIcon>
     );
   } else {

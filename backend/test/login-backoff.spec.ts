@@ -11,26 +11,32 @@ const policy = {
 };
 const now = new Date("2026-09-19T12:00:00.000Z");
 
-testCase("locks on the configured threshold and doubles subsequent delays", () => {
-  const initial = nextLoginFailureState({
-    previousAttempts: 4,
-    lastFailedLoginAt: new Date(now.getTime() - 60_000),
-    now,
-    policy,
-  });
-  assert.equal(initial.attempts, 5);
-  assert.equal(initial.retryAfterSeconds, 180);
-  assert.equal(initial.lockedUntil?.toISOString(), "2026-09-19T12:03:00.000Z");
+testCase(
+  "locks on the configured threshold and doubles subsequent delays",
+  () => {
+    const initial = nextLoginFailureState({
+      previousAttempts: 4,
+      lastFailedLoginAt: new Date(now.getTime() - 60_000),
+      now,
+      policy,
+    });
+    assert.equal(initial.attempts, 5);
+    assert.equal(initial.retryAfterSeconds, 180);
+    assert.equal(
+      initial.lockedUntil?.toISOString(),
+      "2026-09-19T12:03:00.000Z",
+    );
 
-  const repeated = nextLoginFailureState({
-    previousAttempts: initial.attempts,
-    lastFailedLoginAt: initial.lastFailedLoginAt,
-    now,
-    policy,
-  });
-  assert.equal(repeated.attempts, 6);
-  assert.equal(repeated.retryAfterSeconds, 360);
-});
+    const repeated = nextLoginFailureState({
+      previousAttempts: initial.attempts,
+      lastFailedLoginAt: initial.lastFailedLoginAt,
+      now,
+      policy,
+    });
+    assert.equal(repeated.attempts, 6);
+    assert.equal(repeated.retryAfterSeconds, 360);
+  },
+);
 
 testCase("caps delays and forgets failures outside the rolling window", () => {
   const capped = nextLoginFailureState({

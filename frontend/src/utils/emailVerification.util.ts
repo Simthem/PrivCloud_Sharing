@@ -42,4 +42,3 @@ export const takeInvitedSignUpEmail = (): string => {
 export const isEmailVerificationRequiredError = (error: any): boolean =>
   error?.response?.status === 403 &&
   error?.response?.data?.error === "email_verification_required";
-

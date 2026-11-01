@@ -1,25 +1,13 @@
+import "@mantine/core/styles/Menu.css";
 import "@mantine/core/styles/Slider.css";
-import {
-  ActionIcon,
-  Box,
-  Center,
-  Group,
-  Loader,
-  Slider,
-  Text,
-} from "@mantine/core";
+import { Center, Loader } from "@mantine/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  TbMaximize,
-  TbMinimize,
-  TbPlayerPauseFilled,
-  TbPlayerPlayFilled,
-  TbVolume,
-  TbVolume3,
-} from "react-icons/tb";
-import { useIntl } from "react-intl";
 import { createProgressiveMediaUrl } from "../../utils/previewMedia.util";
 import { fetchFilePreviewSource } from "../../services/share.service";
+import {
+  canUseMediaEngine,
+  MediaEnginePlayback,
+} from "../../utils/mediaEngine.util";
 import {
   HEVC_FORMATS,
   type Mp4AudioTrack,
@@ -37,19 +25,11 @@ import {
   SoftwareVideoPlayback,
 } from "../../utils/softwareVideoPlayback.util";
 
-import PreviewFullscreen from "./PreviewFullscreen";
-
-const SEEK_STEP_SECONDS = 5;
-
-const formatTime = (seconds: number) => {
-  const total = Math.max(0, Math.floor(seconds));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const rest = String(total % 60).padStart(2, "0");
-  return hours
-    ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}`
-    : `${minutes}:${rest}`;
-};
+import VideoControls, {
+  type PlayerActions,
+  type PlayerState,
+  useVideoElementPlayer,
+} from "./VideoControls";
 
 type Software = {
   track: Mp4VideoTrack;
@@ -61,6 +41,8 @@ type Software = {
 type Plan =
   | { kind: "audio"; source: PreviewByteSource }
   | { kind: "software"; software: Software }
+  /** Demuxed and, when needed, re-encoded on the device for MediaSource. */
+  | { kind: "engine"; source: PreviewByteSource }
   | {
       kind: "native";
       source: PreviewByteSource;
@@ -70,8 +52,20 @@ type Plan =
       codec: string | null;
     };
 
+/**
+ * The index names HEVC tracks fully and others by sample entry only: those
+ * are asked about with a typical codec string, which every browser parses.
+ */
+const PROBE_CODECS: Record<string, string> = {
+  avc1: "avc1.640028",
+  avc3: "avc3.640028",
+  mp4v: "mp4v.20.8",
+  vp09: "vp09.00.40.08",
+  av01: "av01.0.08M.08",
+};
+
 const browserDecodes = (codec: string) => {
-  const type = `video/mp4; codecs="${codec}"`;
+  const type = `video/mp4; codecs="${PROBE_CODECS[codec] ?? codec}"`;
   return (
     (typeof MediaSource === "function" && MediaSource.isTypeSupported(type)) ||
     document.createElement("video").canPlayType(type) !== ""
@@ -79,11 +73,28 @@ const browserDecodes = (codec: string) => {
 };
 
 /**
+ * Safari and the other WebKit browsers stall on media streamed by a service
+ * worker (no picture, seeks that never end): MediaSource through the engine
+ * plays there, by copying H.264 or HEVC without re-encoding them.
+ */
+const streamsThroughEngine = () =>
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|CriOS|Edg|Firefox|FxiOS/.test(navigator.userAgent);
+
+/** Containers the browser plays by itself, tried before the engine. */
+const browserContainer = (mimeType: string) =>
+  (mimeType === "video/webm" || mimeType === "video/ogg") &&
+  document.createElement("video").canPlayType(mimeType) !== "";
+
+/**
  * Video preview. The index of an MP4 or QuickTime file is read first, which
  * costs a few small reads: an HEVC track the browser cannot decode is decoded
  * on the device, a file without pictures is played as sound, and the browser
- * player shows the rest. Starting the browser player on HEVC it cannot decode
- * would download much of the file before it gives up.
+ * player shows the rest. Every other format (AVI, Matroska, WMV, FLV, MPEG
+ * streams, codecs the browser lacks...) goes through the media engine, which
+ * hands the browser player a stream it can decode. Starting the browser
+ * player on a track it cannot decode would download much of the file before
+ * it gives up.
  */
 export default function VideoPlayer({
   shareId,
@@ -105,9 +116,10 @@ export default function VideoPlayer({
   /** Codec name when known, null when the file could not be read. */
   onUnsupported: (_codec: string | null) => void;
 }) {
-  const intl = useIntl();
   const [plan, setPlan] = useState<Plan | null>(null);
   const [nativeMedia, setNativeMedia] = useState<string | null>(null);
+  // Reads ahead of the browser player while it plays, none while paused.
+  const playing = useRef<((_on: boolean) => void) | null>(null);
   const unsupported = useRef(onUnsupported);
   unsupported.current = onUnsupported;
 
@@ -126,36 +138,45 @@ export default function VideoPlayer({
         signal,
       ).catch(() => null);
       if (signal.aborted) return;
-      // Not an MP4 or QuickTime file: the browser player decides alone.
+      const engine = canUseMediaEngine();
+      const webkit = engine && streamsThroughEngine();
+      const native = {
+        kind: "native" as const,
+        source: opened,
+        software: null,
+        codec: null,
+      };
+      // Not an MP4 or QuickTime file: the engine reads every other container.
       if (!index)
-        return setPlan({
-          kind: "native",
-          source: opened,
-          software: null,
-          codec: null,
-        });
+        return setPlan(
+          engine && (webkit || !browserContainer(mimeType))
+            ? { kind: "engine", source: opened }
+            : native,
+        );
       if (!index.video) return setPlan({ kind: "audio", source: opened });
+      if (webkit) return setPlan({ kind: "engine", source: opened });
       const software =
         HEVC_FORMATS.has(index.video.format) && canDecodeVideoInSoftware()
           ? { track: index.video, audioTrack: index.audio, source: opened }
           : null;
-      setPlan(
-        software && !browserDecodes(index.video.codec)
-          ? { kind: "software", software }
-          : {
-              kind: "native",
-              source: opened,
-              software,
-              codec: videoCodecName(index.video.format),
-            },
-      );
+      const decodes = browserDecodes(index.video.codec);
+      if (software && !decodes) return setPlan({ kind: "software", software });
+      // Pictures or sound (PCM, AC-3...) the browser player would not play.
+      if (engine && (!decodes || (index.hasAudio && !index.audio)))
+        return setPlan({ kind: "engine", source: opened });
+      setPlan({
+        ...native,
+        software,
+        codec: videoCodecName(index.video.format),
+      });
     })().catch(() => {
       if (!signal.aborted) unsupported.current(null);
     });
     return () => controller.abort();
-  }, [shareId, fileId, e2eKey, source]);
+  }, [shareId, fileId, e2eKey, source, mimeType]);
 
-  const browserSource = plan && plan.kind !== "software" ? plan.source : null;
+  const browserSource =
+    plan?.kind === "native" || plan?.kind === "audio" ? plan.source : null;
   useEffect(() => {
     if (!browserSource) return;
     const controller = new AbortController();
@@ -165,7 +186,10 @@ export default function VideoPlayer({
       .then((media) => {
         release = media.release;
         if (controller.signal.aborted) release();
-        else setNativeMedia(media.url);
+        else {
+          playing.current = media.playing;
+          setNativeMedia(media.url);
+        }
       })
       .catch(() => {
         if (controller.signal.aborted) return;
@@ -176,6 +200,7 @@ export default function VideoPlayer({
       });
     return () => {
       controller.abort();
+      playing.current = null;
       release?.();
     };
   }, [browserSource, mimeType, mediaSrc, e2eKey]);
@@ -188,7 +213,10 @@ export default function VideoPlayer({
     );
   }, [plan]);
 
-  if (!plan || (plan.kind !== "software" && !nativeMedia))
+  if (
+    !plan ||
+    ((plan.kind === "native" || plan.kind === "audio") && !nativeMedia)
+  )
     return (
       <Center mih={200}>
         <Loader />
@@ -202,6 +230,8 @@ export default function VideoPlayer({
           controls
           preload="metadata"
           style={{ width: "100%" }}
+          onPlay={() => playing.current?.(true)}
+          onPause={() => playing.current?.(false)}
           onError={() => unsupported.current(null)}
         />
       </Center>
@@ -215,65 +245,116 @@ export default function VideoPlayer({
         onError={failed}
       />
     );
-  const undecodable = () =>
-    plan.software
-      ? setPlan({ kind: "software", software: plan.software })
-      : unsupported.current(plan.codec);
+  if (plan.kind === "engine")
+    return (
+      <EngineVideoPlayer
+        source={plan.source}
+        mimeType={mimeType}
+        onError={() => unsupported.current(null)}
+      />
+    );
+  const undecodable = () => {
+    if (plan.software) setPlan({ kind: "software", software: plan.software });
+    else if (canUseMediaEngine())
+      setPlan({ kind: "engine", source: plan.source });
+    else unsupported.current(plan.codec);
+  };
   return (
-    <PreviewFullscreen>
-      {({ fullscreen, toggleFullscreen }) => (
-        <Box
-          style={{
-            height: fullscreen ? "100%" : undefined,
-            position: "relative",
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-          }}
-        >
-          <video
-            src={nativeMedia!}
-            width="100%"
-            controls
-            playsInline
-            preload="metadata"
-            style={{
-              maxHeight: fullscreen ? "calc(100dvh - 48px)" : "65vh",
-              minHeight: 0,
-              objectFit: "contain",
-            }}
-            onLoadedMetadata={(event) => {
-              // Sound without pictures, although the index found a video track.
-              if (plan.codec && !event.currentTarget.videoWidth) undecodable();
-            }}
-            onError={(event) => {
-              const code = event.currentTarget.error?.code;
-              if (
-                code === MediaError.MEDIA_ERR_DECODE ||
-                code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
-              )
-                undecodable();
-              else unsupported.current(null);
-            }}
-          />
-          <Group justify="flex-end" p={4}>
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              onClick={toggleFullscreen}
-              aria-label={intl.formatMessage({
-                id: fullscreen
-                  ? "share.modal.file-preview.video.exit-fullscreen"
-                  : "share.modal.file-preview.video.fullscreen",
-              })}
-            >
-              {fullscreen ? <TbMinimize /> : <TbMaximize />}
-            </ActionIcon>
-          </Group>
-        </Box>
-      )}
-    </PreviewFullscreen>
+    <VideoElementPlayer
+      src={nativeMedia!}
+      onPlaying={(on) => playing.current?.(on)}
+      onLoadedMetadata={(video) => {
+        // Sound without pictures: the browser skipped a video track it cannot
+        // decode (Theora in Chrome, HEVC...).
+        if (!video.videoWidth) undecodable();
+      }}
+      onError={(code) => {
+        if (
+          code === MediaError.MEDIA_ERR_DECODE ||
+          code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
+        )
+          undecodable();
+        else unsupported.current(null);
+      }}
+    />
   );
+}
+
+/** A browser video element under the shared controls. */
+function VideoElementPlayer({
+  src,
+  onVideo,
+  onPlaying,
+  onLoadedMetadata,
+  onError,
+}: {
+  src?: string;
+  onVideo?: (_video: HTMLVideoElement | null) => void;
+  onPlaying?: (_on: boolean) => void;
+  onLoadedMetadata?: (_video: HTMLVideoElement) => void;
+  onError?: (_code: number | undefined) => void;
+}) {
+  const [video, setVideo] = useState<HTMLVideoElement | null>(null);
+  const { state, actions } = useVideoElementPlayer(video);
+  const attach = useCallback(
+    (element: HTMLVideoElement | null) => {
+      setVideo(element);
+      onVideo?.(element);
+    },
+    [onVideo],
+  );
+  return (
+    <VideoControls state={state} actions={actions}>
+      {(maxHeight) => (
+        <video
+          ref={attach}
+          src={src}
+          width="100%"
+          playsInline
+          preload="metadata"
+          style={{
+            display: "block",
+            maxHeight,
+            minHeight: 0,
+            objectFit: "contain",
+          }}
+          onPlay={() => onPlaying?.(true)}
+          onPause={() => onPlaying?.(false)}
+          onLoadedMetadata={(event) => onLoadedMetadata?.(event.currentTarget)}
+          onError={(event) => onError?.(event.currentTarget.error?.code)}
+        />
+      )}
+    </VideoControls>
+  );
+}
+
+/** Formats and codecs the browser lacks, through the media engine. */
+function EngineVideoPlayer({
+  source,
+  mimeType,
+  onError,
+}: {
+  source: PreviewByteSource;
+  mimeType: string;
+  onError: () => void;
+}) {
+  const [video, setVideo] = useState<HTMLVideoElement | null>(null);
+  const failed = useRef(onError);
+  failed.current = onError;
+  useEffect(() => {
+    if (!video) return;
+    let playback: MediaEnginePlayback;
+    try {
+      playback = new MediaEnginePlayback(video, source, mimeType, () =>
+        failed.current(),
+      );
+    } catch {
+      failed.current();
+      return;
+    }
+    return () => playback.destroy();
+  }, [video, source, mimeType]);
+  return <VideoElementPlayer onVideo={setVideo} />;
 }
 
 function SoftwareVideoPlayer({
@@ -287,22 +368,21 @@ function SoftwareVideoPlayer({
   source: PreviewByteSource;
   onError: () => void;
 }) {
-  const intl = useIntl();
   const canvas = useRef<HTMLCanvasElement>(null);
   const audio = useRef<HTMLAudioElement>(null);
   const player = useRef<SoftwareVideoPlayback | null>(null);
   const failed = useRef(onError);
   failed.current = onError;
-  const [state, setState] = useState<SoftwarePlaybackState | null>(null);
-  const [scrub, setScrub] = useState<number | null>(null);
+  const [playback, setPlayback] = useState<SoftwarePlaybackState | null>(null);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
+  const [rate, setRate] = useState(1);
 
   useEffect(() => {
     if (!canvas.current) return;
-    let playback: SoftwareVideoPlayback;
+    let created: SoftwareVideoPlayback;
     try {
-      playback = new SoftwareVideoPlayback({
+      created = new SoftwareVideoPlayback({
         track,
         audioTrack,
         read: (start, end, signal) =>
@@ -310,198 +390,88 @@ function SoftwareVideoPlayer({
         size: source.size,
         canvas: canvas.current,
         audio: audio.current,
-        onChange: setState,
+        onChange: setPlayback,
         onError: () => failed.current(),
       });
     } catch {
       failed.current();
       return;
     }
-    player.current = playback;
+    player.current = created;
     return () => {
-      playback.destroy();
+      created.destroy();
       player.current = null;
     };
   }, [track, audioTrack, source]);
 
-  const toggle = () => {
-    if (!player.current || !state) return;
-    if (state.playing) player.current.pause();
-    else player.current.play();
+  const state: PlayerState | null = playback && {
+    ready: playback.ready,
+    playing: playback.playing,
+    busy: playback.waiting && playback.playing,
+    currentTime: playback.currentTime,
+    duration: playback.duration,
+    bufferedEnd: playback.currentTime,
+    hasAudio: !!audioTrack,
+    volume,
+    muted,
+    rate,
   };
-  const seekBy = (seconds: number) => {
-    if (player.current)
-      player.current.seek(player.current.currentTime + seconds);
+  const actions: PlayerActions = {
+    toggle: () => {
+      if (!player.current || !playback) return;
+      if (playback.playing) player.current.pause();
+      else player.current.play();
+    },
+    seek: (time) => player.current?.seek(time),
+    seekBy: (seconds) => {
+      if (player.current)
+        player.current.seek(player.current.currentTime + seconds);
+    },
+    setVolume: (value) => {
+      if (!audio.current) return;
+      audio.current.volume = value;
+      audio.current.muted = value === 0;
+    },
+    toggleMute: () => {
+      if (!audio.current) return;
+      audio.current.muted = !audio.current.muted;
+      if (!audio.current.muted && audio.current.volume === 0)
+        audio.current.volume = 1;
+    },
+    setRate: (value) => {
+      player.current?.setPlaybackRate(value);
+      setRate(value);
+    },
   };
-  const toggleMute = () => {
-    if (!audio.current) return;
-    audio.current.muted = !muted;
-    setMuted(!muted);
-  };
-  const changeVolume = (value: number) => {
-    if (!audio.current) return;
-    audio.current.volume = value;
-    audio.current.muted = value === 0;
-  };
-  const label = (id: string, defaultMessage: string) =>
-    intl.formatMessage({
-      id: `share.modal.file-preview.video.${id}`,
-      defaultMessage,
-    });
-
-  const duration = state?.duration || 0;
-  const current = scrub ?? state?.currentTime ?? 0;
-  const busy = !state?.ready || (state.waiting && state.playing);
 
   return (
-    <PreviewFullscreen>
-      {({ fullscreen, toggleFullscreen }) => (
-        <Box
-          tabIndex={0}
-          onKeyDown={(event) => {
-            if (
-              event.target instanceof Element &&
-              event.target.closest("button, input, [role=slider]")
-            )
-              return;
-            if (event.key === " " || event.key === "k") toggle();
-            else if (event.key === "ArrowLeft") seekBy(-SEEK_STEP_SECONDS);
-            else if (event.key === "ArrowRight") seekBy(SEEK_STEP_SECONDS);
-            else return;
-            event.preventDefault();
-          }}
-          style={{
-            display: "flex",
-            height: fullscreen ? "100%" : undefined,
-            flexDirection: "column",
-            justifyContent: "center",
-            background: "#000",
-            borderRadius: fullscreen ? 0 : 8,
-            overflow: "hidden",
-            outline: "none",
-          }}
-        >
-          <Box
-            pos="relative"
-            onClick={toggle}
+    <>
+      <VideoControls state={state} actions={actions}>
+        {(maxHeight) => (
+          <canvas
+            ref={canvas}
+            // Sized like the browser video element: full width, picture
+            // contained within the height limit.
             style={{
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              minHeight: 200,
-              flex: fullscreen ? 1 : undefined,
-              cursor: state?.ready ? "pointer" : "default",
+              display: "block",
+              width: "100%",
+              height: "auto",
+              maxHeight,
+              objectFit: "contain",
             }}
-          >
-            <canvas
-              ref={canvas}
-              // Sized like the native video element: full width, picture
-              // contained within the height limit.
-              style={{
-                display: "block",
-                width: "100%",
-                height: "auto",
-                maxHeight: fullscreen ? "calc(100dvh - 90px)" : "65vh",
-                objectFit: "contain",
-              }}
-            />
-            {busy && (
-              <Center pos="absolute" inset={0}>
-                <Loader color="gray" />
-              </Center>
-            )}
-          </Box>
-          {audioTrack && (
-            <audio
-              ref={audio}
-              hidden
-              onVolumeChange={(event) => {
-                setVolume(event.currentTarget.volume);
-                setMuted(event.currentTarget.muted);
-              }}
-            />
-          )}
-          <Box px="sm" pt={8}>
-            <Slider
-              min={0}
-              max={duration || 1}
-              step={0.1}
-              value={Math.min(current, duration || 1)}
-              disabled={!state?.ready}
-              label={formatTime}
-              onChange={setScrub}
-              onChangeEnd={(value) => {
-                player.current?.seek(value);
-                setScrub(null);
-              }}
-              thumbLabel={label("seek", "Playback position")}
-              color="gray"
-              size="sm"
-            />
-          </Box>
-          <Group gap={6} wrap="nowrap" px="sm" py={8} c="gray.3">
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              disabled={!state?.ready}
-              onClick={toggle}
-              aria-label={
-                state?.playing ? label("pause", "Pause") : label("play", "Play")
-              }
-            >
-              {state?.playing ? (
-                <TbPlayerPauseFilled />
-              ) : (
-                <TbPlayerPlayFilled />
-              )}
-            </ActionIcon>
-            <Text size="xs" style={{ fontVariantNumeric: "tabular-nums" }}>
-              {formatTime(current)} / {formatTime(duration)}
-            </Text>
-            <Box style={{ flex: 1 }} />
-            {audioTrack && (
-              <Group gap={4} wrap="nowrap" style={{ flexShrink: 0 }}>
-                <ActionIcon
-                  variant="subtle"
-                  color="gray"
-                  onClick={toggleMute}
-                  aria-label={
-                    muted ? label("unmute", "Unmute") : label("mute", "Mute")
-                  }
-                >
-                  {muted || volume === 0 ? <TbVolume3 /> : <TbVolume />}
-                </ActionIcon>
-                <Slider
-                  style={{ width: 80, flexShrink: 0 }}
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={muted ? 0 : volume}
-                  onChange={changeVolume}
-                  label={(value) => `${Math.round(value * 100)}%`}
-                  thumbLabel={label("volume", "Volume")}
-                  color="gray"
-                  size="sm"
-                />
-              </Group>
-            )}
-            {
-              <ActionIcon
-                variant="subtle"
-                color="gray"
-                onClick={toggleFullscreen}
-                aria-label={
-                  fullscreen
-                    ? label("exit-fullscreen", "Exit full screen")
-                    : label("fullscreen", "Full screen")
-                }
-              >
-                {fullscreen ? <TbMinimize /> : <TbMaximize />}
-              </ActionIcon>
-            }
-          </Group>
-        </Box>
+          />
+        )}
+      </VideoControls>
+      {audioTrack && (
+        <audio
+          ref={audio}
+          hidden
+          onVolumeChange={(event) => {
+            setVolume(event.currentTarget.volume);
+            setMuted(event.currentTarget.muted);
+          }}
+        />
       )}
-    </PreviewFullscreen>
+    </>
   );
 }

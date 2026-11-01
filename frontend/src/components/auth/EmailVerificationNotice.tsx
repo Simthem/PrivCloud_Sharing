@@ -24,12 +24,27 @@ const EmailVerificationNotice = ({ user }: { user: CurrentUser }) => {
 
   return (
     <Container size="lg" mt="md">
-      <Alert color="orange" title={french ? "E-mail à vérifier" : "Verify your email"}>
+      <Alert
+        color="orange"
+        title={french ? "E-mail à vérifier" : "Verify your email"}
+      >
         <Group justify="space-between" align="center">
           <Text size="sm">
             {french
-              ? "Validez " + user.email + ". L'accès sera bloqué le " + blockedAt + " et le compte supprimé le " + deletionAt + "."
-              : "Verify " + user.email + ". Access will be blocked on " + blockedAt + " and the account deleted on " + deletionAt + "."}
+              ? "Validez " +
+                user.email +
+                ". L'accès sera bloqué le " +
+                blockedAt +
+                " et le compte supprimé le " +
+                deletionAt +
+                "."
+              : "Verify " +
+                user.email +
+                ". Access will be blocked on " +
+                blockedAt +
+                " and the account deleted on " +
+                deletionAt +
+                "."}
           </Text>
           <Button
             component={Link}
@@ -47,4 +62,3 @@ const EmailVerificationNotice = ({ user }: { user: CurrentUser }) => {
 };
 
 export default EmailVerificationNotice;
-

@@ -77,10 +77,11 @@ const AdminConfigInput = ({
   };
 
   const selectOptions = CONFIG_SELECT_OPTIONS[configVariable.key];
-  const selectValue =
-    selectOptions?.some((option) => option.value === form.values.stringValue)
-      ? form.values.stringValue
-      : configVariable.defaultValue;
+  const selectValue = selectOptions?.some(
+    (option) => option.value === form.values.stringValue,
+  )
+    ? form.values.stringValue
+    : configVariable.defaultValue;
 
   return (
     <Stack align="end">
@@ -95,8 +96,7 @@ const AdminConfigInput = ({
             if (value) onValueChange(configVariable, value);
           }}
         />
-      ) : configVariable.type == "string" &&
-        selectOptions ? (
+      ) : configVariable.type == "string" && selectOptions ? (
         <Select
           style={{ width: "100%" }}
           disabled={!configVariable.allowEdit}

@@ -1383,13 +1383,43 @@ export class ShareService {
   }
 
   async increaseViewCount(share: Share) {
+    // SECURITY: Use atomic increment to prevent race conditions on concurrent views
     await this.prisma.share.update({
       where: { id: share.id },
-      data: { views: share.views + 1 },
+      data: { views: { increment: 1 } },
     });
   }
 
-  async getShareToken(shareId: string, password: string) {
+  /**
+   * Counts one visit, within the view limit when the share sets one. The
+   * creator opening their own share is not a visitor: they are neither
+   * counted nor held to the limit.
+   */
+  async countVisit(
+    share: Share & { security?: { maxViews: number | null } | null },
+    visitorId?: string,
+  ) {
+    if (share.creatorId && share.creatorId === visitorId) return;
+
+    // SECURITY: Atomic conditional increment. Concurrent visits cannot all
+    // pass the limit and all be counted.
+    if (share.security?.maxViews) {
+      const result = await this.prisma.share.updateMany({
+        where: { id: share.id, views: { lt: share.security.maxViews } },
+        data: { views: { increment: 1 } },
+      });
+      if (result.count === 0) {
+        throw new ForbiddenException(
+          "Maximum views exceeded",
+          "share_max_views_exceeded",
+        );
+      }
+      return;
+    }
+    await this.increaseViewCount(share);
+  }
+
+  async getShareToken(shareId: string, password: string, visitorId?: string) {
     const share = await this.prisma.share.findFirst({
       where: { id: shareId },
       include: {
@@ -1414,15 +1444,9 @@ export class ShareService {
       }
     }
 
-    if (share.security?.maxViews && share.security.maxViews <= share.views) {
-      throw new ForbiddenException(
-        "Maximum views exceeded",
-        "share_max_views_exceeded",
-      );
-    }
+    await this.countVisit(share, visitorId);
 
     const token = await this.generateShareToken(shareId);
-    await this.increaseViewCount(share);
     return token;
   }
 

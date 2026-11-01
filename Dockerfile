@@ -2,8 +2,13 @@
 # build would silently reuse their amd64 content on the other platforms, so the
 # release workflow pins platforms to linux/amd64. Use Dockerfile.full-build,
 # which rebuilds OpenSSL and Node from source, to target another architecture.
+# Both are pinned by digest, like every other base image: a republished cache
+# changes the build only once its new digest is reviewed here. Another cache
+# image needs its own digest argument too.
 ARG OPENSSL_BUILDER_IMAGE=simthem/privcloud-sharing:openssl-builder-cache
+ARG OPENSSL_BUILDER_SHA256=408cb280c0aab7bbb65b1348b1de49f14991a6560a1b423a6c90750936774d63
 ARG NODE_BUILDER_IMAGE=simthem/privcloud-sharing:node-builder-cache
+ARG NODE_BUILDER_SHA256=63155ec852c57692b4dd8b3262a6072d9526b7c4d8fe9f2b12b4f16c4fe9470e
 
 # ---------------------------
 # Stage 0: Build Caddy from source with patched Go dependencies
@@ -227,7 +232,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /runtime-init ./runtime
 # To switch back: replace the FROM line below with:
 #   FROM debian:trixie-slim AS openssl-builder
 # and restore the full build instructions.
-FROM ${OPENSSL_BUILDER_IMAGE} AS openssl-builder
+FROM ${OPENSSL_BUILDER_IMAGE}@sha256:${OPENSSL_BUILDER_SHA256} AS openssl-builder
 # CVE-2026-34743: use Debian's patched Trixie xz/liblzma backport and fail the
 # build if the cache image cannot provide the exact reviewed package version.
 RUN apt-get update && \
@@ -256,7 +261,7 @@ RUN apt-get update && \
 # To switch back: replace the FROM line below with:
 #   FROM debian:trixie-slim AS node-builder
 # and restore the full build instructions (--shared-openssl, --without-npm, etc.).
-FROM ${NODE_BUILDER_IMAGE} AS node-builder
+FROM ${NODE_BUILDER_IMAGE}@sha256:${NODE_BUILDER_SHA256} AS node-builder
 COPY --from=openssl-builder /usr/local/openssl /usr/local/openssl
 # CVE-2026-34743: keep the exported Node builder cache on the same patched
 # xz-utils/liblzma5 pair as the OpenSSL builder cache.
@@ -517,11 +522,49 @@ WORKDIR /opt/app
 COPY ./reverse-proxy /opt/app/reverse-proxy
 
 # ---------------------------
+# Stage 5b: C++ runtime libraries with the fixed libstdc++
+# ---------------------------
+# CVE-2026-95619 / CVE-2026-102010: Debian fixes these libstdc++ flaws in
+# gcc-16 16.2.0-4 and not for trixie (no-dsa). Node and its native addons
+# (sharp, argon2) load libstdc++.so.6 and libgcc_s.so.1, whose ABI newer
+# releases keep, and these two only need glibc 2.38, below the runtime's 2.41.
+# The packages come from snapshot.debian.org and are checked by SHA-512. The
+# build fails if either library asks for a newer glibc than the runtime has.
+FROM base AS cxx-runtime
+ARG TARGETARCH
+ARG CXX_RUNTIME_URL=https://snapshot.debian.org/archive/debian/20261025T024052Z/pool/main/g/gcc-16
+RUN set -eu; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "$arch" in \
+        amd64) triplet=x86_64-linux-gnu; \
+            stdcxx=b6adccd4a3a451da2f4b81b41e199e40819d6d6084bea860f1dcf286657e9ccaad98ffbf05bee48392061c0fe142d294d58ac9730317ae6d9287b46bf02828d5; \
+            gcc_s=a2ca20f047696078c258a6af27424a9e35f5f7f1bb50ca54ff53ec5e2868476c61e83f0d012fc0c0a9921734b5fe9583a9834e9e4db07a82cc57e94ef1b574e4 ;; \
+        arm64) triplet=aarch64-linux-gnu; \
+            stdcxx=8b077af748dd2ccc64cf92f531133f206dc0d6be0a782214265fd08cd7f178c24be2f9aafb1caad1cc2f2c9a351ef8d3074002d3bca6d4a81df3614e26eacc63; \
+            gcc_s=c0e1e03c0e555a9bf02dadc87018925c4624a3008651e2fdc14eb2a70f6030280b811b4e7b989cc697c510d8b6b0723df59d3378295c8da79525d7de23217377 ;; \
+        *) echo "No pinned C++ runtime for $arch" >&2; exit 1 ;; \
+    esac; \
+    cd /tmp; \
+    curl -fsSL "$CXX_RUNTIME_URL/libstdc++6_16.2.0-4_${arch}.deb" -o libstdc++6.deb; \
+    curl -fsSL "$CXX_RUNTIME_URL/libgcc-s1_16.2.0-4_${arch}.deb" -o libgcc-s1.deb; \
+    printf '%s  %s\n' "$stdcxx" libstdc++6.deb "$gcc_s" libgcc-s1.deb | sha512sum -c -; \
+    dpkg-deb -x libstdc++6.deb cxx; \
+    dpkg-deb -x libgcc-s1.deb cxx; \
+    mkdir /cxx; \
+    cp -L "cxx/usr/lib/$triplet/libstdc++.so.6" "cxx/usr/lib/$triplet/libgcc_s.so.1" /cxx/; \
+    for lib in /cxx/libstdc++.so.6 /cxx/libgcc_s.so.1; do \
+        newest="$(grep -aoE 'GLIBC_2\.[0-9]+' "$lib" | sort -uV | tail -n 1)"; \
+        test "$(printf '%s\n' "$newest" GLIBC_2.41 | sort -V | tail -n 1)" = GLIBC_2.41; \
+    done; \
+    rm -rf cxx libstdc++6.deb libgcc-s1.deb
+
+# ---------------------------
 # Stage 6: Assemble only the two C++ runtime libraries required by Node
 # ---------------------------
 # This stage is never published. It avoids installing a package manager in the
 # final image while keeping native Node addons (sharp, argon2) operational.
 FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS runtime-layout
+COPY --from=cxx-runtime /cxx/ /incoming-cxx/
 # The multiarch triplet depends on the target platform (x86_64-linux-gnu on
 # amd64, aarch64-linux-gnu on arm64), so it is derived at build time instead of
 # being hardcoded: a hardcoded x86_64 path makes every non-amd64 leg of a
@@ -540,10 +583,8 @@ RUN set -eu; \
         /runtime/home/privcloud-sharing/.config/caddy \
         /runtime/home/privcloud-sharing/.local/share/caddy \
         /runtime/opt/app/backend/data; \
-    cp -L "/usr/lib/${TRIPLET}/libstdc++.so.6" \
-        "${LIBDIR}/libstdc++.so.6"; \
-    cp -L "/lib/${TRIPLET}/libgcc_s.so.1" \
-        "${LIBDIR}/libgcc_s.so.1"; \
+    mv /incoming-cxx/libstdc++.so.6 /incoming-cxx/libgcc_s.so.1 "${LIBDIR}/"; \
+    rmdir /incoming-cxx; \
     mv /incoming/libssl.so.3 "${LIBDIR}/libssl.so.3"; \
     mv /incoming/libcrypto.so.3 "${LIBDIR}/libcrypto.so.3"; \
     rmdir /incoming; \
@@ -561,7 +602,8 @@ RUN set -eu; \
 # CVE-2026-5450 / CVE-2026-5928: this digest contains Debian's
 # libc6 2.41-12+deb13u4 security update.
 # DSA-6572-1: it also contains ca-certificates 20250419+deb13u1.
-FROM gcr.io/distroless/base-nossl-debian13:latest@sha256:ca1c7e6a875e59345ae6ff182a1e0930f0ca1ffef23a9b830f8823ab348ad5dd AS runner
+# Its time zone rules are tzdata 2026f.
+FROM gcr.io/distroless/base-nossl-debian13:latest@sha256:d710a5c8bfe4cf7e726d7e1afd73e363a9fb02c2a11ad893d2d6185c1b9a89cb AS runner
 
 ENV NODE_ENV=docker
 ENV HOME=/home/privcloud-sharing

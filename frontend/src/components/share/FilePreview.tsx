@@ -26,6 +26,8 @@ import {
   isOfficePreviewMimeType,
   isPreviewMimeTypeSupported,
   isTextBasedMimeType,
+  contentDecidedMimeType,
+  isContentDecidedName,
   sniffPreviewMimeType,
 } from "../../utils/filePreview.util";
 
@@ -104,6 +106,8 @@ const FilePreviewContext = React.createContext<{
   fileName?: string;
   fileSizeBytes?: number;
   e2eKey?: string | null;
+  /** Type from the name, kept when the bytes show no video. */
+  declaredMimeType?: string;
   setMimeType: Dispatch<SetStateAction<string>>;
   setIsNotSupported: Dispatch<SetStateAction<boolean>>;
 }>({
@@ -286,12 +290,19 @@ const FilePreview = ({
   e2eKey?: string | null;
 }) => {
   const [isNotSupported, setIsNotSupported] = useState(false);
-  const [resolvedMimeType, setResolvedMimeType] = useState(mimeType);
+  // A camcorder .mts is no TypeScript and a Keynote .key no text key: their
+  // first bytes decide.
+  const sniffFirst =
+    isContentDecidedName(fileName) && isTextBasedMimeType(mimeType);
+  const declaredMimeType = sniffFirst ? mimeType : "";
+  const [resolvedMimeType, setResolvedMimeType] = useState(
+    sniffFirst ? "" : mimeType,
+  );
 
   useEffect(() => {
-    setResolvedMimeType(mimeType);
+    setResolvedMimeType(sniffFirst ? "" : mimeType);
     setIsNotSupported(false);
-  }, [mimeType, shareId, fileId, e2eKey]);
+  }, [mimeType, sniffFirst, shareId, fileId, e2eKey]);
 
   if (isNotSupported)
     return (
@@ -308,6 +319,7 @@ const FilePreview = ({
           fileName,
           fileSizeBytes,
           e2eKey,
+          declaredMimeType,
           setMimeType: setResolvedMimeType,
           setIsNotSupported,
         }}
@@ -336,6 +348,7 @@ const FileTypeDetector = () => {
     fileId,
     fileSizeBytes,
     e2eKey,
+    declaredMimeType,
     setMimeType,
     setIsNotSupported,
   } = React.useContext(FilePreviewContext);
@@ -353,7 +366,14 @@ const FileTypeDetector = () => {
     )
       .then(({ buffer: prefix }) => {
         if (!active) return;
-        const detected = sniffPreviewMimeType(new Uint8Array(prefix));
+        const bytes = new Uint8Array(prefix);
+        if (declaredMimeType) {
+          const decided = contentDecidedMimeType(declaredMimeType, bytes);
+          if (decided) setMimeType(decided);
+          else setIsNotSupported(true);
+          return;
+        }
+        const detected = sniffPreviewMimeType(bytes);
         if (
           detected &&
           isPreviewMimeTypeSupported(detected, {
@@ -374,7 +394,15 @@ const FileTypeDetector = () => {
       active = false;
       controller.abort();
     };
-  }, [shareId, fileId, fileSizeBytes, e2eKey, setMimeType, setIsNotSupported]);
+  }, [
+    shareId,
+    fileId,
+    fileSizeBytes,
+    e2eKey,
+    declaredMimeType,
+    setMimeType,
+    setIsNotSupported,
+  ]);
 
   return (
     <Center style={{ minHeight: 200 }}>

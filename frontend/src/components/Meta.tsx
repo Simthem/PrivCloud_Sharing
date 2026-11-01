@@ -43,7 +43,10 @@ const Meta = ({
   return (
     <Head>
       <title>{metaTitle}</title>
-      <meta name="robots" content={noIndex ? "noindex, nofollow" : "index, follow"} />
+      <meta
+        name="robots"
+        content={noIndex ? "noindex, nofollow" : "index, follow"}
+      />
       <link rel="canonical" href={canonical} />
       {!noIndex && (
         <>
@@ -62,7 +65,10 @@ const Meta = ({
       <meta property="og:image" content={resolvedOgImage} />
       <meta property="og:site_name" content={siteName} />
       <meta property="og:locale" content={ogLocale} />
-      <meta property="og:locale:alternate" content={urlLocale === "en" ? "fr_FR" : "en_US"} />
+      <meta
+        property="og:locale:alternate"
+        content={urlLocale === "en" ? "fr_FR" : "en_US"}
+      />
 
       {/* Twitter Card */}
       <meta name="twitter:card" content="summary" />
@@ -76,7 +82,10 @@ const Meta = ({
       {ogType === "article" && (
         <>
           <meta property="article:author" content="Simon Thémiot" />
-          <meta property="article:publisher" content="https://www.stprive.net/" />
+          <meta
+            property="article:publisher"
+            content="https://www.stprive.net/"
+          />
         </>
       )}
     </Head>

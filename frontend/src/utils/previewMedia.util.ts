@@ -6,8 +6,18 @@ import {
 
 const sessions = new Map<
   string,
-  { source: PreviewByteSource; mimeType: string; abort: AbortController }
+  {
+    source: PreviewByteSource;
+    mimeType: string;
+    abort: AbortController;
+    playing: boolean;
+  }
 >();
+/**
+ * A paused preview prepares only the start of playback, so opening a video
+ * never loads much more than its first pictures. Playing reads further.
+ */
+const PAUSED_READ_AHEAD_BYTES = 2 * PREVIEW_READ_BYTES;
 let listening = false;
 let workerReady: Promise<void> | undefined;
 
@@ -118,7 +128,10 @@ async function ensurePreviewWorker() {
             // this, every MiB paid a full round trip and playback outran it.
             session.source.prefetch?.(
               command.end,
-              command.end + PREVIEW_READ_AHEAD_BYTES,
+              command.end +
+                (session.playing
+                  ? PREVIEW_READ_AHEAD_BYTES
+                  : PAUSED_READ_AHEAD_BYTES),
               ahead.signal,
             );
             if (
@@ -237,12 +250,20 @@ export async function createProgressiveMediaUrl(
   signal.throwIfAborted();
   const token = crypto.randomUUID();
   const abort = new AbortController();
-  sessions.set(token, { source, mimeType, abort });
+  const session = { source, mimeType, abort, playing: false };
+  sessions.set(token, session);
   const release = () => {
     signal.removeEventListener("abort", release);
     abort.abort();
     sessions.delete(token);
   };
   signal.addEventListener("abort", release, { once: true });
-  return { url: `/__privcloud_preview__/${token}`, release };
+  return {
+    url: `/__privcloud_preview__/${token}`,
+    release,
+    /** Called by the player when it starts or stops playing. */
+    playing: (on: boolean) => {
+      session.playing = on;
+    },
+  };
 }

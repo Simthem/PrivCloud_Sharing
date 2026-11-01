@@ -8,10 +8,7 @@ import { OAuthToken } from "./oauthProvider.interface";
 
 @Injectable()
 export class OidcProvider extends GenericOidcProvider {
-  constructor(
-    config: ConfigService,
-    jwtService: JwtService,
-  ) {
+  constructor(config: ConfigService, jwtService: JwtService) {
     super(
       "oidc",
       ["oauth.oidc-enabled", "oauth.oidc-discoveryUri"],

@@ -48,9 +48,8 @@ export const ALTCHA_AUTO_SELECT_OPTIONS = asSelectOptions(ALTCHA_AUTO_MODES);
 export const ALTCHA_CODE_CHALLENGE_DISPLAY_SELECT_OPTIONS = asSelectOptions(
   ALTCHA_CODE_CHALLENGE_DISPLAY_MODES,
 );
-export const ALTCHA_DISPLAY_SELECT_OPTIONS = asSelectOptions(
-  ALTCHA_DISPLAY_MODES,
-);
+export const ALTCHA_DISPLAY_SELECT_OPTIONS =
+  asSelectOptions(ALTCHA_DISPLAY_MODES);
 export const ALTCHA_TYPE_SELECT_OPTIONS = asSelectOptions(ALTCHA_TYPE_MODES);
 
 const normalizeStandardAlias = (value: string) =>
@@ -82,11 +81,7 @@ export const normalizeAltchaWidgetOptions = (
       ALTCHA_CODE_CHALLENGE_DISPLAY_MODES,
       "standard",
     ),
-    display: normalizeOption(
-      options.display,
-      ALTCHA_DISPLAY_MODES,
-      "standard",
-    ),
+    display: normalizeOption(options.display, ALTCHA_DISPLAY_MODES, "standard"),
     language: normalizeString(options.language, "fr-fr"),
     theme: normalizeString(options.theme, "lime"),
     type: normalizeOption(options.type, ALTCHA_TYPE_MODES, "checkbox"),

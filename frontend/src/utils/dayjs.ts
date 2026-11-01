@@ -42,9 +42,34 @@ import et from "dayjs/locale/et";
 
 // Locale object map - referenced values prevent tree-shaking
 const localeData: Record<string, ILocale> = {
-  de, fr, "pt-br": ptBr, da, es, "zh-cn": zhCn, "zh-tw": zhTw,
-  fi, ru, uk, th, "sr-cyrl": srCyrl, sr, nl, ja, pl, sv, it, el,
-  sl, ar, hu, ko, tr, cs, vi, hr, et,
+  de,
+  fr,
+  "pt-br": ptBr,
+  da,
+  es,
+  "zh-cn": zhCn,
+  "zh-tw": zhTw,
+  fi,
+  ru,
+  uk,
+  th,
+  "sr-cyrl": srCyrl,
+  sr,
+  nl,
+  ja,
+  pl,
+  sv,
+  it,
+  el,
+  sl,
+  ar,
+  hu,
+  ko,
+  tr,
+  cs,
+  vi,
+  hr,
+  et,
 };
 
 // Map application locale codes (e.g. "fr-FR") to dayjs locale names (e.g. "fr")

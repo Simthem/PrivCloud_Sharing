@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Checkbox,
+  Collapse,
   Group,
   Skeleton,
   Stack,
@@ -13,9 +14,8 @@ import {
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { useModals } from "@mantine/modals";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 import {
-  TbChevronDown,
   TbChevronRight,
   TbDownload,
   TbEye,
@@ -42,6 +42,7 @@ import {
   flattenFileTree,
   hasNestedFilePaths,
   type FileTreeFolderNode,
+  type FileTreeNode,
 } from "../../utils/fileTree.util";
 
 const FileList = ({
@@ -72,13 +73,17 @@ const FileList = ({
   const selectedAbortRef = useRef<AbortController | null>(null);
 
   // -- Per-file download tracking (progress + cancellation) --
-  const [downloads, setDownloads] = useState<Map<string, { progress: number; controller: AbortController }>>(new Map());
+  const [downloads, setDownloads] = useState<
+    Map<string, { progress: number; controller: AbortController }>
+  >(new Map());
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
     new Set(),
   );
 
   // -- Long press for mobile --
-  const [longPressTimer, setLongPressTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [longPressTimer, setLongPressTimer] = useState<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
   const toggleFolder = useCallback((folderPath: string) => {
     setCollapsedFolders((prev) => {
@@ -106,12 +111,15 @@ const FileList = ({
     });
   }, [files]);
 
-  const handleLongPressStart = useCallback((fileId: string) => {
-    const timer = setTimeout(() => {
-      toggleSelection(fileId);
-    }, 500);
-    setLongPressTimer(timer);
-  }, [toggleSelection]);
+  const handleLongPressStart = useCallback(
+    (fileId: string) => {
+      const timer = setTimeout(() => {
+        toggleSelection(fileId);
+      }, 500);
+      setLongPressTimer(timer);
+    },
+    [toggleSelection],
+  );
 
   const handleLongPressEnd = useCallback(() => {
     if (longPressTimer) {
@@ -128,7 +136,12 @@ const FileList = ({
     if (selectedFiles.length === 1) {
       const file = selectedFiles[0];
       if (share.isE2EEncrypted && e2eKey) {
-        await shareService.downloadFileE2E(share.id, file.id, file.name, e2eKey);
+        await shareService.downloadFileE2E(
+          share.id,
+          file.id,
+          file.name,
+          e2eKey,
+        );
       } else {
         await shareService.downloadFile(share.id, file.id);
       }
@@ -193,7 +206,8 @@ const FileList = ({
       setDownloads((prev) => {
         const next = new Map(prev);
         const entry = next.get(file.id);
-        if (entry) next.set(file.id, { ...entry, progress: Math.min(pct, 100) });
+        if (entry)
+          next.set(file.id, { ...entry, progress: Math.min(pct, 100) });
         return next;
       });
     };
@@ -201,13 +215,18 @@ const FileList = ({
     try {
       if (share.isE2EEncrypted && e2eKey) {
         await shareService.downloadFileE2E(
-          share.id, file.id, file.name, e2eKey,
+          share.id,
+          file.id,
+          file.name,
+          e2eKey,
           updateProgress,
           controller.signal,
         );
       } else {
         await shareService.downloadFileWithProgress(
-          share.id, file.id, file.name,
+          share.id,
+          file.id,
+          file.name,
           updateProgress,
           controller.signal,
         );
@@ -294,9 +313,7 @@ const FileList = ({
   const selectionActive = selectedIds.size > 0;
   const allSelected = files.length > 0 && selectedIds.size === files.length;
 
-  const renderMobileFolderCard = (
-    folder: FileTreeFolderNode<FileMetaData>,
-  ) => {
+  const renderMobileFolderCard = (folder: FileTreeFolderNode<FileMetaData>) => {
     const collapsed = collapsedFolders.has(folder.path);
 
     return (
@@ -314,11 +331,11 @@ const FileList = ({
           style={{ cursor: "pointer" }}
         >
           <ActionIcon variant="subtle" size={24}>
-            {collapsed ? (
-              <TbChevronRight size={16} />
-            ) : (
-              <TbChevronDown size={16} />
-            )}
+            <TbChevronRight
+              size={16}
+              data-disclosure-chevron
+              data-opened={!collapsed || undefined}
+            />
           </ActionIcon>
           <TbFolder size={18} style={{ flexShrink: 0 }} />
           <Text size="sm" fw={600} truncate="end" style={{ minWidth: 0 }}>
@@ -331,6 +348,24 @@ const FileList = ({
       </Card>
     );
   };
+
+  // A folder's content unfolds under its card. The gap above it is padding
+  // inside the Collapse, so it opens and closes with the content.
+  const renderMobileTree = (nodes: FileTreeNode<FileMetaData>[]): ReactNode[] =>
+    nodes.map((node) =>
+      node.type === "file" ? (
+        renderMobileFileCard(node.file, node.depth)
+      ) : (
+        <Box key={node.key}>
+          {renderMobileFolderCard(node)}
+          <Collapse in={!collapsedFolders.has(node.path)}>
+            <Stack gap="xs" pt="xs">
+              {renderMobileTree(node.children)}
+            </Stack>
+          </Collapse>
+        </Box>
+      ),
+    );
 
   const renderMobileFileCard = (file: FileMetaData, depth = 0) => {
     const selected = selectedIds.has(file.id);
@@ -385,8 +420,8 @@ const FileList = ({
               <Text
                 size="sm"
                 fw={500}
-                lineClamp={1}
-                style={{ overflowWrap: "anywhere", hyphens: "auto" }}
+                truncate="end"
+                style={{ overflowWrap: "anywhere" }}
               >
                 {shouldUseTree ? file.name : getFileDisplayPath(file)}
               </Text>
@@ -445,13 +480,11 @@ const FileList = ({
     );
   };
 
-  const renderDesktopFolderRow = (
-    folder: FileTreeFolderNode<FileMetaData>,
-  ) => {
+  const renderDesktopFolderRow = (folder: FileTreeFolderNode<FileMetaData>) => {
     const collapsed = collapsedFolders.has(folder.path);
 
     return (
-      <tr key={folder.key}>
+      <tr key={folder.key} data-reveal>
         {files.length > 1 && <td style={{ width: 40 }} />}
         <td>
           <Group
@@ -465,11 +498,11 @@ const FileList = ({
             }}
           >
             <ActionIcon variant="subtle" size={24}>
-              {collapsed ? (
-                <TbChevronRight size={16} />
-              ) : (
-                <TbChevronDown size={16} />
-              )}
+              <TbChevronRight
+                size={16}
+                data-disclosure-chevron
+                data-opened={!collapsed || undefined}
+              />
             </ActionIcon>
             <TbFolder size={18} style={{ flexShrink: 0 }} />
             <Text size="sm" fw={600} truncate="end" style={{ minWidth: 0 }}>
@@ -490,6 +523,7 @@ const FileList = ({
   const renderDesktopFileRow = (file: FileMetaData, depth = 0) => (
     <tr
       key={file.id}
+      data-reveal
       onTouchStart={() => handleLongPressStart(file.id)}
       onTouchEnd={handleLongPressEnd}
       onTouchCancel={handleLongPressEnd}
@@ -511,8 +545,7 @@ const FileList = ({
           gap="xs"
           wrap="nowrap"
           style={{
-            paddingLeft:
-              shouldUseTree ? depth * 22 + 32 : 0,
+            paddingLeft: shouldUseTree ? depth * 22 + 32 : 0,
             minWidth: 0,
           }}
         >
@@ -521,7 +554,6 @@ const FileList = ({
             size="sm"
             style={{
               overflowWrap: "anywhere",
-              hyphens: "auto",
               minWidth: 0,
             }}
           >
@@ -622,16 +654,18 @@ const FileList = ({
                 </Card>
               ))
             : shouldUseTree
-              ? visibleTreeNodes.map((node) =>
-                  node.type === "folder"
-                    ? renderMobileFolderCard(node)
-                    : renderMobileFileCard(node.file, node.depth),
-                )
+              ? renderMobileTree(fileTree)
               : sortedFiles.map((file) => renderMobileFileCard(file))}
         </Stack>
       ) : (
         /* --- Desktop: table layout --- */
-        <Box style={{ display: "block", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <Box
+          style={{
+            display: "block",
+            overflowX: "auto",
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
           <Table>
             <thead>
               <tr>
@@ -648,13 +682,21 @@ const FileList = ({
                 <th style={{ textAlign: "left" }}>
                   <Group gap="xs">
                     <FormattedMessage id="share.table.name" />
-                    <TableSortIcon sort={sort} setSort={setSort} property="name" />
+                    <TableSortIcon
+                      sort={sort}
+                      setSort={setSort}
+                      property="name"
+                    />
                   </Group>
                 </th>
                 <th style={{ textAlign: "left" }}>
                   <Group gap="xs">
                     <FormattedMessage id="share.table.size" />
-                    <TableSortIcon sort={sort} setSort={setSort} property="size" />
+                    <TableSortIcon
+                      sort={sort}
+                      setSort={setSort}
+                      property="size"
+                    />
                   </Group>
                 </th>
                 <th style={{ textAlign: "left" }}></th>

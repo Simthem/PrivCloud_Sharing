@@ -32,7 +32,7 @@ const NewTeamPage = () => {
     if (user === null) {
       router.replace("/auth/signIn?redirect=/team/new");
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const form = useForm({
@@ -93,16 +93,24 @@ const NewTeamPage = () => {
           <Paper withBorder p="lg">
             <Stack gap="md">
               <TextInput
-                label={intl.formatMessage({ id: "team.create.modal.name-label" })}
-                description={intl.formatMessage({ id: "team.create.modal.name-hint" })}
+                label={intl.formatMessage({
+                  id: "team.create.modal.name-label",
+                })}
+                description={intl.formatMessage({
+                  id: "team.create.modal.name-hint",
+                })}
                 placeholder="Mon Équipe @Work"
                 required
                 {...form.getInputProps("name")}
               />
 
               <Textarea
-                label={intl.formatMessage({ id: "team.create.modal.description-label" })}
-                placeholder={intl.formatMessage({ id: "team.create.modal.description-placeholder" })}
+                label={intl.formatMessage({
+                  id: "team.create.modal.description-label",
+                })}
+                placeholder={intl.formatMessage({
+                  id: "team.create.modal.description-placeholder",
+                })}
                 {...form.getInputProps("description")}
               />
 
@@ -112,9 +120,16 @@ const NewTeamPage = () => {
 
               <Divider />
 
-              <Alert variant="light" color="blue" title="Fonctionnalités Team" radius="md">
+              <Alert
+                variant="light"
+                color="blue"
+                title="Fonctionnalités Team"
+                radius="md"
+              >
                 <Stack gap={4}>
-                  <Text size="sm">• Dossiers partagés avec gestion des accès</Text>
+                  <Text size="sm">
+                    • Dossiers partagés avec gestion des accès
+                  </Text>
                   <Text size="sm">• Métriques et journal d'accès</Text>
                   <Text size="sm">• Rapports périodiques configurables</Text>
                 </Stack>

@@ -7,7 +7,10 @@ import {
 } from "@nestjs/common";
 import { randomBytes } from "crypto";
 import { PrismaService } from "src/prisma/prisma.service";
-import { CreateEnrollmentTokenDTO, ConsumeEnrollmentTokenDTO } from "./dto/crypto.dto";
+import {
+  CreateEnrollmentTokenDTO,
+  ConsumeEnrollmentTokenDTO,
+} from "./dto/crypto.dto";
 
 @Injectable()
 export class EnrollmentTokenService {
@@ -28,7 +31,9 @@ export class EnrollmentTokenService {
     // Validate team access if purpose is TEAM_JOIN
     if (dto.purpose === "TEAM_JOIN") {
       if (!dto.teamId) {
-        throw new BadRequestException("teamId is required for TEAM_JOIN tokens");
+        throw new BadRequestException(
+          "teamId is required for TEAM_JOIN tokens",
+        );
       }
 
       // Creator must be team owner/admin

@@ -105,8 +105,9 @@ const stripMutableFields = <T extends FileTreeItem>(
   };
 };
 
-export const hasNestedFilePaths = <T extends FileTreeItem>(files: T[]): boolean =>
-  files.some((file) => getFilePathSegments(file).length > 1);
+export const hasNestedFilePaths = <T extends FileTreeItem>(
+  files: T[],
+): boolean => files.some((file) => getFilePathSegments(file).length > 1);
 
 export const buildFileTree = <T extends FileTreeItem>(
   files: T[],

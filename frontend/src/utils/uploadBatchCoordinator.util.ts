@@ -232,8 +232,10 @@ export class UploadBatchCoordinator {
     } else if (outcome === "transient" || outcome === "network") {
       origin.consecutiveFailures += 1;
       const exponential =
-        Math.min(250 * 2 ** Math.min(origin.consecutiveFailures - 1, 7), 30_000) +
-        Math.floor(Math.random() * 500);
+        Math.min(
+          250 * 2 ** Math.min(origin.consecutiveFailures - 1, 7),
+          30_000,
+        ) + Math.floor(Math.random() * 500);
       origin.cooldownUntil =
         Date.now() +
         Math.min(
@@ -298,10 +300,14 @@ export class UploadBatchCoordinator {
     }
   }
 
-  private getDirectWindow(flowId: string, demand = this.getDirectDemand()): number {
-    const population = demand.size === 0
-      ? this.flows.size
-      : demand.size + (demand.has(flowId) ? 0 : 1);
+  private getDirectWindow(
+    flowId: string,
+    demand = this.getDirectDemand(),
+  ): number {
+    const population =
+      demand.size === 0
+        ? this.flows.size
+        : demand.size + (demand.has(flowId) ? 0 : 1);
     const fairWindow = Math.max(
       1,
       Math.ceil(this.maxDirectConcurrency / Math.max(1, population)),
@@ -322,9 +328,13 @@ export class UploadBatchCoordinator {
   }
 
   private getDirectDemand(): Set<string> {
-    return new Set(this.flowOrder.filter((flowId) =>
-      (this.directActiveByFlow.get(flowId) ?? 0) > 0 ||
-      (this.directQueues.get(flowId)?.length ?? 0) > 0));
+    return new Set(
+      this.flowOrder.filter(
+        (flowId) =>
+          (this.directActiveByFlow.get(flowId) ?? 0) > 0 ||
+          (this.directQueues.get(flowId)?.length ?? 0) > 0,
+      ),
+    );
   }
 
   private getOrigin(origin: string): OriginState {
@@ -340,8 +350,11 @@ export class UploadBatchCoordinator {
     candidates: UploadDirectSlotCandidate[],
     now: number,
   ): { candidateIndex: number; origin: string } | null {
-    let selected: { candidateIndex: number; origin: string; active: number } | null =
-      null;
+    let selected: {
+      candidateIndex: number;
+      origin: string;
+      active: number;
+    } | null = null;
     candidates.forEach((candidate, candidateIndex) => {
       const state = this.getOrigin(candidate.origin);
       if (
@@ -351,7 +364,11 @@ export class UploadBatchCoordinator {
         return;
       }
       if (!selected || state.active < selected.active) {
-        selected = { candidateIndex, origin: candidate.origin, active: state.active };
+        selected = {
+          candidateIndex,
+          origin: candidate.origin,
+          active: state.active,
+        };
       }
     });
     return selected;
@@ -410,13 +427,17 @@ export class UploadBatchCoordinator {
     }
     let earliest = Number.POSITIVE_INFINITY;
     for (const state of this.origins.values()) {
-      if (state.cooldownUntil > now) earliest = Math.min(earliest, state.cooldownUntil);
+      if (state.cooldownUntil > now)
+        earliest = Math.min(earliest, state.cooldownUntil);
     }
     if (!Number.isFinite(earliest)) return;
-    this.cooldownTimer = scheduleUploadTimeout(() => {
-      this.cooldownTimer = null;
-      this.drain();
-    }, Math.max(1, earliest - now));
+    this.cooldownTimer = scheduleUploadTimeout(
+      () => {
+        this.cooldownTimer = null;
+        this.drain();
+      },
+      Math.max(1, earliest - now),
+    );
   }
 
   private drainRelay(): void {

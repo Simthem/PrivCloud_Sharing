@@ -18,10 +18,7 @@ const error = (message: string, config?: Omit<NotificationData, "message">) =>
 const axiosError = (axiosError: any) =>
   error(axiosError?.response?.data?.message ?? "An unknown error occurred");
 
-const success = (
-  message: string,
-  config?: Omit<NotificationData, "message">,
-) =>
+const success = (message: string, config?: Omit<NotificationData, "message">) =>
   showNotification({
     icon: <TbCheck />,
     color: "green",

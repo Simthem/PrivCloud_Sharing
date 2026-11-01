@@ -63,12 +63,16 @@ export class RotateIdentityKeyDTO {
 export class CreateAccessGrantDTO {
   @IsString()
   @MaxLength(1024)
-  @Matches(/^[A-Za-z0-9_-]+$/, { message: "encryptedFileKey must be base64url" })
+  @Matches(/^[A-Za-z0-9_-]+$/, {
+    message: "encryptedFileKey must be base64url",
+  })
   encryptedFileKey: string;
 
   @IsString()
   @MaxLength(256)
-  @Matches(/^[A-Za-z0-9_-]+$/, { message: "ephemeralPublicKey must be base64url" })
+  @Matches(/^[A-Za-z0-9_-]+$/, {
+    message: "ephemeralPublicKey must be base64url",
+  })
   ephemeralPublicKey: string;
 
   @IsString()

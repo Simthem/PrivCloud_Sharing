@@ -136,12 +136,10 @@ function spreadsheetRuns(
   if (!node) return [];
   const rich = children(node, N.sheet, "r");
   if (rich.length)
-    return rich
-      .slice(0, 256)
-      .map((run) => ({
-        text: budget.take(first(run, N.sheet, "t")?.textContent ?? ""),
-        style: spreadsheetTextStyle(first(run, N.sheet, "rPr"), palette),
-      }));
+    return rich.slice(0, 256).map((run) => ({
+      text: budget.take(first(run, N.sheet, "t")?.textContent ?? ""),
+      style: spreadsheetTextStyle(first(run, N.sheet, "rPr"), palette),
+    }));
   return [
     {
       text: budget.take(

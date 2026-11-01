@@ -30,7 +30,11 @@ type FileSystemWriteChunkType =
   | ArrayBufferView
   | Blob
   | string
-  | { type: "write"; position?: number; data: ArrayBuffer | ArrayBufferView | Blob | string }
+  | {
+      type: "write";
+      position?: number;
+      data: ArrayBuffer | ArrayBufferView | Blob | string;
+    }
   | { type: "seek"; position: number }
   | { type: "truncate"; size: number };
 
@@ -43,5 +47,7 @@ interface SaveFilePickerOptions {
 }
 
 interface Window {
-  showSaveFilePicker?(options?: SaveFilePickerOptions): Promise<FileSystemFileHandle>;
+  showSaveFilePicker?(
+    options?: SaveFilePickerOptions,
+  ): Promise<FileSystemFileHandle>;
 }

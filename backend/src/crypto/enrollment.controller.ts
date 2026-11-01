@@ -12,7 +12,10 @@ import { JwtGuard } from "src/auth/guard/jwt.guard";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { User } from "@prisma/client";
 import { EnrollmentTokenService } from "./enrollment.service";
-import { CreateEnrollmentTokenDTO, ConsumeEnrollmentTokenDTO } from "./dto/crypto.dto";
+import {
+  CreateEnrollmentTokenDTO,
+  ConsumeEnrollmentTokenDTO,
+} from "./dto/crypto.dto";
 
 @Controller("crypto/enrollment")
 export class EnrollmentTokenController {

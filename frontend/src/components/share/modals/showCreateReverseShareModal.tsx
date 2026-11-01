@@ -171,9 +171,7 @@ const Body = ({
         <Stack align="stretch">
           <Select
             label={t("account.reverseShares.modal.link-type.label")}
-            description={t(
-              "account.reverseShares.modal.link-type.description",
-            )}
+            description={t("account.reverseShares.modal.link-type.description")}
             data={[
               {
                 value: "personal",
@@ -187,93 +185,93 @@ const Body = ({
             {...form.getInputProps("linkType")}
           />
           {form.values.linkType === "limited" && (
-          <div>
-            <Grid align={form.errors.expiration_num ? "center" : "flex-end"}>
-              <Grid.Col span={{ base: 12, xs: 6 }}>
-                <NumberInput
-                  min={1}
-                  max={99999}
-                  decimalScale={0}
-                  variant="filled"
-                  label={t("account.reverseShares.modal.expiration.label")}
-                  disabled={form.values.never_expires}
-                  {...form.getInputProps("expiration_num")}
-                />
-              </Grid.Col>
-              <Grid.Col span={{ base: 12, xs: 6 }}>
-                <Select
-                  {...form.getInputProps("expiration_unit")}
-                  disabled={form.values.never_expires}
-                  data={[
-                    // Set the label to singular if the number is 1, else plural
-                    {
-                      value: "-minutes",
-                      label:
-                        form.values.expiration_num == 1
-                          ? t("upload.modal.expires.minute-singular")
-                          : t("upload.modal.expires.minute-plural"),
-                    },
-                    {
-                      value: "-hours",
-                      label:
-                        form.values.expiration_num == 1
-                          ? t("upload.modal.expires.hour-singular")
-                          : t("upload.modal.expires.hour-plural"),
-                    },
-                    {
-                      value: "-days",
-                      label:
-                        form.values.expiration_num == 1
-                          ? t("upload.modal.expires.day-singular")
-                          : t("upload.modal.expires.day-plural"),
-                    },
-                    {
-                      value: "-weeks",
-                      label:
-                        form.values.expiration_num == 1
-                          ? t("upload.modal.expires.week-singular")
-                          : t("upload.modal.expires.week-plural"),
-                    },
-                    {
-                      value: "-months",
-                      label:
-                        form.values.expiration_num == 1
-                          ? t("upload.modal.expires.month-singular")
-                          : t("upload.modal.expires.month-plural"),
-                    },
-                    {
-                      value: "-years",
-                      label:
-                        form.values.expiration_num == 1
-                          ? t("upload.modal.expires.year-singular")
-                          : t("upload.modal.expires.year-plural"),
-                    },
-                  ]}
-                />
-              </Grid.Col>
-            </Grid>
-            <Checkbox
-              mt="xs"
-              label={t("upload.modal.expires.never-long")}
-              {...form.getInputProps("never_expires", { type: "checkbox" })}
-            />
-            <Text
-              mt="sm"
-              fs="italic"
-              size="xs"
-              style={{
-                color: "var(--mantine-color-gray-6)",
-              }}
-            >
-              {getExpirationPreview(
-                {
-                  expiresOn: t("account.reverseShare.expires-on"),
-                  neverExpires: t("account.reverseShare.never-expires"),
-                },
-                form,
-              )}
-            </Text>
-          </div>
+            <div>
+              <Grid align={form.errors.expiration_num ? "center" : "flex-end"}>
+                <Grid.Col span={{ base: 12, xs: 6 }}>
+                  <NumberInput
+                    min={1}
+                    max={99999}
+                    decimalScale={0}
+                    variant="filled"
+                    label={t("account.reverseShares.modal.expiration.label")}
+                    disabled={form.values.never_expires}
+                    {...form.getInputProps("expiration_num")}
+                  />
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, xs: 6 }}>
+                  <Select
+                    {...form.getInputProps("expiration_unit")}
+                    disabled={form.values.never_expires}
+                    data={[
+                      // Set the label to singular if the number is 1, else plural
+                      {
+                        value: "-minutes",
+                        label:
+                          form.values.expiration_num == 1
+                            ? t("upload.modal.expires.minute-singular")
+                            : t("upload.modal.expires.minute-plural"),
+                      },
+                      {
+                        value: "-hours",
+                        label:
+                          form.values.expiration_num == 1
+                            ? t("upload.modal.expires.hour-singular")
+                            : t("upload.modal.expires.hour-plural"),
+                      },
+                      {
+                        value: "-days",
+                        label:
+                          form.values.expiration_num == 1
+                            ? t("upload.modal.expires.day-singular")
+                            : t("upload.modal.expires.day-plural"),
+                      },
+                      {
+                        value: "-weeks",
+                        label:
+                          form.values.expiration_num == 1
+                            ? t("upload.modal.expires.week-singular")
+                            : t("upload.modal.expires.week-plural"),
+                      },
+                      {
+                        value: "-months",
+                        label:
+                          form.values.expiration_num == 1
+                            ? t("upload.modal.expires.month-singular")
+                            : t("upload.modal.expires.month-plural"),
+                      },
+                      {
+                        value: "-years",
+                        label:
+                          form.values.expiration_num == 1
+                            ? t("upload.modal.expires.year-singular")
+                            : t("upload.modal.expires.year-plural"),
+                      },
+                    ]}
+                  />
+                </Grid.Col>
+              </Grid>
+              <Checkbox
+                mt="xs"
+                label={t("upload.modal.expires.never-long")}
+                {...form.getInputProps("never_expires", { type: "checkbox" })}
+              />
+              <Text
+                mt="sm"
+                fs="italic"
+                size="xs"
+                style={{
+                  color: "var(--mantine-color-gray-6)",
+                }}
+              >
+                {getExpirationPreview(
+                  {
+                    expiresOn: t("account.reverseShare.expires-on"),
+                    neverExpires: t("account.reverseShare.never-expires"),
+                  },
+                  form,
+                )}
+              </Text>
+            </div>
           )}
           <FileSizeInput
             label={t("account.reverseShares.modal.max-size.label")}
@@ -308,7 +306,10 @@ const Body = ({
             })}
           />
           <Accordion>
-            <Accordion.Item value="description" style={{ borderBottom: "none" }}>
+            <Accordion.Item
+              value="description"
+              style={{ borderBottom: "none" }}
+            >
               <Accordion.Control>
                 <FormattedMessage id="account.reverseShares.modal.additional-options.title" />
               </Accordion.Control>

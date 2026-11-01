@@ -1,4 +1,4 @@
-const ts = require("typescript")
+const ts = require("typescript");
 
 module.exports = function transform(source) {
   return ts.transpileModule(source, {
@@ -8,5 +8,5 @@ module.exports = function transform(source) {
       module: ts.ModuleKind.ESNext,
       jsx: ts.JsxEmit.ReactJSX,
     },
-  }).outputText
-}
+  }).outputText;
+};

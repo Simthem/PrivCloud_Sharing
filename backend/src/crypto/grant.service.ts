@@ -34,7 +34,9 @@ export class AccessGrantService {
    */
   async createGrant(grantorId: string, dto: CreateAccessGrantDTO) {
     // Validate that EXACTLY one target is specified (prevents cross-resource grants)
-    const _grantTargets = [dto.fileId, dto.teamFileId, dto.shareId].filter(Boolean);
+    const _grantTargets = [dto.fileId, dto.teamFileId, dto.shareId].filter(
+      Boolean,
+    );
     if (_grantTargets.length === 0) {
       throw new BadRequestException(
         "Exactly one of fileId, teamFileId, or shareId must be specified",
@@ -94,14 +96,13 @@ export class AccessGrantService {
         },
       });
 
-      void this.logTeamGrantEvent(
-        grantorId,
-        dto,
-        "E2E_SHARE",
-        updated.id,
-      );
+      void this.logTeamGrantEvent(grantorId, dto, "E2E_SHARE", updated.id);
 
-      return { id: updated.id, action: "updated", dekVersion: updated.dekVersion };
+      return {
+        id: updated.id,
+        action: "updated",
+        dekVersion: updated.dekVersion,
+      };
     }
 
     // Create new grant
@@ -150,7 +151,9 @@ export class AccessGrantService {
     } else if (dto.fileId) {
       const file = await this.prisma.file.findUnique({
         where: { id: dto.fileId },
-        select: { share: { select: { teamFolder: { select: { teamId: true } } } } },
+        select: {
+          share: { select: { teamFolder: { select: { teamId: true } } } },
+        },
       });
       teamId = file?.share.teamFolder?.teamId;
     } else if (dto.shareId) {
@@ -223,7 +226,11 @@ export class AccessGrantService {
       throw new BadRequestException("Maximum 50 grants per bulk request");
     }
 
-    const results: Array<{ recipientUserId: string; result: any; error?: string }> = [];
+    const results: Array<{
+      recipientUserId: string;
+      result: any;
+      error?: string;
+    }> = [];
 
     for (const grant of dto.grants) {
       try {
@@ -251,7 +258,10 @@ export class AccessGrantService {
    * The client uses these to decrypt files it has access to.
    * SECURITY: Filters out grants for team files the user no longer has access to.
    */
-  async getMyGrants(userId: string, filters?: { fileId?: string; teamFileId?: string; shareId?: string }) {
+  async getMyGrants(
+    userId: string,
+    filters?: { fileId?: string; teamFileId?: string; shareId?: string },
+  ) {
     const where: any = { userId, status: "ACTIVE" };
 
     if (filters?.fileId) where.fileId = filters.fileId;
@@ -374,7 +384,9 @@ export class AccessGrantService {
             },
           });
           if (!membership) {
-            throw new ForbiddenException("Only the grantor or a team admin can revoke grants");
+            throw new ForbiddenException(
+              "Only the grantor or a team admin can revoke grants",
+            );
           }
         }
       } else {
@@ -436,7 +448,12 @@ export class AccessGrantService {
           where: { id: target.fileId },
           select: {
             name: true,
-            share: { select: { teamFolderId: true, teamFolder: { select: { teamId: true } } } },
+            share: {
+              select: {
+                teamFolderId: true,
+                teamFolder: { select: { teamId: true } },
+              },
+            },
           },
         });
         teamId = file?.share.teamFolder?.teamId || null;
@@ -529,7 +546,9 @@ export class AccessGrantService {
     });
 
     if (!membership) {
-      throw new ForbiddenException("Only team owner/admin can revoke all grants for a team file");
+      throw new ForbiddenException(
+        "Only team owner/admin can revoke all grants for a team file",
+      );
     }
 
     const result = await this.prisma.accessGrant.updateMany({
@@ -556,15 +575,18 @@ export class AccessGrantService {
   ) {
     await this.ensureActiveTeamMembership(userId, teamId);
 
-    const receivedPage = Number.isFinite(options.receivedPage) && (options.receivedPage || 0) > 0
-      ? Math.floor(options.receivedPage as number)
-      : 1;
-    const sentPage = Number.isFinite(options.sentPage) && (options.sentPage || 0) > 0
-      ? Math.floor(options.sentPage as number)
-      : 1;
-    const limit = Number.isFinite(options.limit) && (options.limit || 0) > 0
-      ? Math.min(Math.floor(options.limit as number), 100)
-      : 25;
+    const receivedPage =
+      Number.isFinite(options.receivedPage) && (options.receivedPage || 0) > 0
+        ? Math.floor(options.receivedPage as number)
+        : 1;
+    const sentPage =
+      Number.isFinite(options.sentPage) && (options.sentPage || 0) > 0
+        ? Math.floor(options.sentPage as number)
+        : 1;
+    const limit =
+      Number.isFinite(options.limit) && (options.limit || 0) > 0
+        ? Math.min(Math.floor(options.limit as number), 100)
+        : 25;
 
     const receivedWhere: Prisma.AccessGrantWhereInput = {
       userId,
@@ -739,7 +761,10 @@ export class AccessGrantService {
   /**
    * Validate that the grantor has access to the target resource.
    */
-  private async validateGrantorAccess(grantorId: string, dto: CreateAccessGrantDTO) {
+  private async validateGrantorAccess(
+    grantorId: string,
+    dto: CreateAccessGrantDTO,
+  ) {
     if (dto.fileId) {
       const file = await this.prisma.file.findUnique({
         where: { id: dto.fileId },
@@ -780,7 +805,9 @@ export class AccessGrantService {
           }
         }
       } else if (file.share.creatorId !== grantorId) {
-        throw new ForbiddenException("You don't have access to grant permissions on this file");
+        throw new ForbiddenException(
+          "You don't have access to grant permissions on this file",
+        );
       }
     }
 
@@ -820,7 +847,11 @@ export class AccessGrantService {
       }
 
       // Check canShareE2E permission (non-admin members)
-      if (folderAccess && !["OWNER", "ADMIN"].includes(membership.role) && !folderAccess.canShareE2E) {
+      if (
+        folderAccess &&
+        !["OWNER", "ADMIN"].includes(membership.role) &&
+        !folderAccess.canShareE2E
+      ) {
         throw new ForbiddenException(
           "You do not have permission to share files with E2E encryption in this folder",
         );
@@ -870,7 +901,11 @@ export class AccessGrantService {
 
   private async canReadGrant(
     userId: string,
-    grant: { fileId?: string | null; teamFileId?: string | null; shareId?: string | null },
+    grant: {
+      fileId?: string | null;
+      teamFileId?: string | null;
+      shareId?: string | null;
+    },
   ) {
     try {
       if (grant.teamFileId) {
@@ -1016,7 +1051,9 @@ export class AccessGrantService {
       !folderAccess.canDownload ||
       !["READ", "WRITE", "ADMIN"].includes(folderAccess.permission)
     ) {
-      throw new ForbiddenException("You no longer have access to this team file");
+      throw new ForbiddenException(
+        "You no longer have access to this team file",
+      );
     }
   }
 }

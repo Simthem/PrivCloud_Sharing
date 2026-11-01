@@ -18,13 +18,15 @@ const getOAuthIcon = (provider: string) => {
 };
 
 const getOAuthColor = (provider: string): string => {
-  return {
-    google: "red",
-    microsoft: "blue",
-    github: "gray",
-    discord: "violet",
-    oidc: "teal",
-  }[provider] ?? "gray";
+  return (
+    {
+      google: "red",
+      microsoft: "blue",
+      github: "gray",
+      discord: "violet",
+      oidc: "teal",
+    }[provider] ?? "gray"
+  );
 };
 
 const unlinkOAuth = (provider: string) => {

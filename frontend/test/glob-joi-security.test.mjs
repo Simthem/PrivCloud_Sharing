@@ -22,13 +22,16 @@ const advisories = {
 function compare(left, right) {
   const a = left.split(".").map(Number);
   const b = right.split(".").map(Number);
-  return a.map((part, index) => part - b[index]).find((part) => part !== 0) ?? 0;
+  return (
+    a.map((part, index) => part - b[index]).find((part) => part !== 0) ?? 0
+  );
 }
 
 function isAffected(name, version) {
   assert.match(version, /^\d+\.\d+\.\d+$/, `${name}@${version}`);
   return advisories[name].some(
-    ([first, fixed]) => compare(version, first) >= 0 && compare(version, fixed) < 0,
+    ([first, fixed]) =>
+      compare(version, first) >= 0 && compare(version, fixed) < 0,
   );
 }
 
@@ -36,7 +39,9 @@ function scope(name) {
   const manifestUrl = new URL(`../../${name}/package.json`, import.meta.url);
   return {
     manifest: JSON.parse(readFileSync(manifestUrl, "utf8")),
-    lock: JSON.parse(readFileSync(new URL("./package-lock.json", manifestUrl), "utf8")),
+    lock: JSON.parse(
+      readFileSync(new URL("./package-lock.json", manifestUrl), "utf8"),
+    ),
   };
 }
 
@@ -46,7 +51,11 @@ test("frontend, backend and docs locks hold no copy affected by the October 30 a
     for (const [path, pkg] of Object.entries(lock.packages)) {
       const family = path.match(/(?:^|\/)node_modules\/([^/]+)$/)?.[1];
       if (!family || !advisories[family]) continue;
-      assert.equal(isAffected(family, pkg.version), false, `${name}/${path}: ${pkg.version}`);
+      assert.equal(
+        isAffected(family, pkg.version),
+        false,
+        `${name}/${path}: ${pkg.version}`,
+      );
     }
   }
 });

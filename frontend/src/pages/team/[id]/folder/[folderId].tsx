@@ -30,6 +30,7 @@ import {
   ThemeIcon,
   Title,
   Tooltip,
+  UnstyledButton,
 } from "@mantine/core";
 import {
   TbArrowLeft,
@@ -59,7 +60,10 @@ import {
 import Meta from "../../../../components/Meta";
 import RequestSignatureModal from "../../../../components/signing/RequestSignatureModal";
 import E2EShareModal from "../../../../components/team/E2EShareModal";
-import ExternalPreviewShareModal, { canShareWithContractor, type ExternalShareFile } from "../../../../components/team/external/ExternalPreviewShareModal";
+import ExternalPreviewShareModal, {
+  canShareWithContractor,
+  type ExternalShareFile,
+} from "../../../../components/team/external/ExternalPreviewShareModal";
 import useOpenedShares from "../../../../hooks/useOpenedShares.hook";
 import { openFileName } from "../../../../utils/fileMetadata.util";
 import teamService from "../../../../services/team.service";
@@ -927,6 +931,19 @@ const TeamFolderPage = () => {
                   const file = node.file;
                   const isPdf = /\.pdf$/i.test(file.name || "");
                   const fp = resolveFilePerms(file.id);
+                  const canPreview =
+                    fp.canDownload &&
+                    shareService.doesFileSupportPreview(file.name, {
+                      fileSizeBytes: parseInt(file.size),
+                      isE2EEncrypted: file.isE2EEncrypted,
+                    });
+                  const openPreview = () =>
+                    showFilePreviewModal(
+                      file.shareId,
+                      file,
+                      modals,
+                      file.isE2EEncrypted ? teamKeyB64 : null,
+                    );
                   const isHighlighted = activeHighlight === file.id;
                   return (
                     <Card
@@ -976,21 +993,36 @@ const TeamFolderPage = () => {
                             }
                             style={{ flexShrink: 0 }}
                           />
-                          <Text
-                            size="sm"
-                            fw={600}
-                            lineClamp={1}
+                          {/* The name opens the preview, like the eye button. */}
+                          <UnstyledButton
+                            component={canPreview ? "button" : "span"}
+                            onClick={canPreview ? openPreview : undefined}
                             style={{
+                              display: "block",
                               minWidth: 0,
                               flex: 1,
-                              overflowWrap: "anywhere",
-                              hyphens: "auto",
+                              textAlign: "start",
+                              cursor: canPreview ? "pointer" : "default",
                             }}
                           >
-                            {shouldUseTree
-                              ? file.name
-                              : getFileDisplayPath(file)}
-                          </Text>
+                            <Text
+                              size="sm"
+                              fw={600}
+                              truncate="end"
+                              style={{
+                                overflowWrap: "anywhere",
+                              }}
+                              title={
+                                shouldUseTree
+                                  ? file.name
+                                  : getFileDisplayPath(file)
+                              }
+                            >
+                              {shouldUseTree
+                                ? file.name
+                                : getFileDisplayPath(file)}
+                            </Text>
+                          </UnstyledButton>
                           {myFileAccess[file.id] && (
                             <Tooltip label={t("team.folder.fileRights")}>
                               <ThemeIcon
@@ -1006,27 +1038,16 @@ const TeamFolderPage = () => {
                         </Group>
                       </Group>
                       <Group gap={8} wrap="wrap" mt={6}>
-                        {fp.canDownload &&
-                          shareService.doesFileSupportPreview(file.name, {
-                            fileSizeBytes: parseInt(file.size),
-                            isE2EEncrypted: file.isE2EEncrypted,
-                          }) && (
-                            <ActionIcon
-                              variant="light"
-                              size={32}
-                              color="teal"
-                              onClick={() =>
-                                showFilePreviewModal(
-                                  file.shareId,
-                                  file,
-                                  modals,
-                                  file.isE2EEncrypted ? teamKeyB64 : null,
-                                )
-                              }
-                            >
-                              <TbEye size={16} />
-                            </ActionIcon>
-                          )}
+                        {canPreview && (
+                          <ActionIcon
+                            variant="light"
+                            size={32}
+                            color="teal"
+                            onClick={openPreview}
+                          >
+                            <TbEye size={16} />
+                          </ActionIcon>
+                        )}
                         <ActionIcon
                           variant="light"
                           size={32}
@@ -1207,6 +1228,19 @@ const TeamFolderPage = () => {
                     const file = node.file;
                     const isPdf = /\.pdf$/i.test(file.name || "");
                     const fp = resolveFilePerms(file.id);
+                    const canPreview =
+                      fp.canDownload &&
+                      shareService.doesFileSupportPreview(file.name, {
+                        fileSizeBytes: parseInt(file.size),
+                        isE2EEncrypted: file.isE2EEncrypted,
+                      });
+                    const openPreview = () =>
+                      showFilePreviewModal(
+                        file.shareId,
+                        file,
+                        modals,
+                        file.isE2EEncrypted ? teamKeyB64 : null,
+                      );
                     const isHighlighted = activeHighlight === file.id;
                     return (
                       <Table.Tr
@@ -1244,6 +1278,20 @@ const TeamFolderPage = () => {
                                 textDecoration: "none",
                                 color: "inherit",
                               }}
+                              onClick={(event) => {
+                                // A plain click previews the file. A click
+                                // with a modifier still opens the share.
+                                if (
+                                  !canPreview ||
+                                  event.metaKey ||
+                                  event.ctrlKey ||
+                                  event.shiftKey ||
+                                  event.altKey
+                                )
+                                  return;
+                                event.preventDefault();
+                                openPreview();
+                              }}
                             >
                               <Group
                                 gap="xs"
@@ -1266,13 +1314,17 @@ const TeamFolderPage = () => {
                                 <Text
                                   size="sm"
                                   fw={500}
-                                  lineClamp={1}
+                                  truncate="end"
                                   style={{
                                     cursor: "pointer",
                                     minWidth: 0,
                                     overflowWrap: "anywhere",
-                                    hyphens: "auto",
                                   }}
+                                  title={
+                                    shouldUseTree
+                                      ? file.name
+                                      : getFileDisplayPath(file)
+                                  }
                                 >
                                   {shouldUseTree
                                     ? file.name
@@ -1314,13 +1366,17 @@ const TeamFolderPage = () => {
                               <Text
                                 size="sm"
                                 fw={500}
-                                lineClamp={1}
+                                truncate="end"
                                 c="dimmed"
                                 style={{
                                   minWidth: 0,
                                   overflowWrap: "anywhere",
-                                  hyphens: "auto",
                                 }}
+                                title={
+                                  shouldUseTree
+                                    ? file.name
+                                    : getFileDisplayPath(file)
+                                }
                               >
                                 {shouldUseTree
                                   ? file.name
@@ -1368,33 +1424,22 @@ const TeamFolderPage = () => {
                         </Table.Td>
                         <Table.Td>
                           <Group gap={4} wrap="nowrap">
-                            {fp.canDownload &&
-                              shareService.doesFileSupportPreview(file.name, {
-                                fileSizeBytes: parseInt(file.size),
-                                isE2EEncrypted: file.isE2EEncrypted,
-                              }) && (
-                                <Tooltip
-                                  label={intl.formatMessage({
-                                    id: "team.folder.action.preview",
-                                  })}
+                            {canPreview && (
+                              <Tooltip
+                                label={intl.formatMessage({
+                                  id: "team.folder.action.preview",
+                                })}
+                              >
+                                <ActionIcon
+                                  variant="light"
+                                  size={30}
+                                  color="teal"
+                                  onClick={openPreview}
                                 >
-                                  <ActionIcon
-                                    variant="light"
-                                    size={30}
-                                    color="teal"
-                                    onClick={() =>
-                                      showFilePreviewModal(
-                                        file.shareId,
-                                        file,
-                                        modals,
-                                        file.isE2EEncrypted ? teamKeyB64 : null,
-                                      )
-                                    }
-                                  >
-                                    <TbEye size={16} />
-                                  </ActionIcon>
-                                </Tooltip>
-                              )}
+                                  <TbEye size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                            )}
                             <Tooltip
                               label={intl.formatMessage({
                                 id: "team.folder.action.download",
@@ -1661,11 +1706,10 @@ const TeamFolderPage = () => {
                           <Text
                             size="sm"
                             fw={600}
-                            lineClamp={1}
+                            truncate="end"
                             style={{
                               minWidth: 0,
                               overflowWrap: "anywhere",
-                              hyphens: "auto",
                             }}
                           >
                             {share.name || share.id}
@@ -1684,7 +1728,7 @@ const TeamFolderPage = () => {
                         <Text
                           size="xs"
                           c="dimmed"
-                          lineClamp={1}
+                          truncate="end"
                           style={{ overflowWrap: "anywhere" }}
                         >
                           {share.files.map((f) => f.name).join(", ")}
@@ -1826,10 +1870,9 @@ const TeamFolderPage = () => {
                           <Text
                             size="sm"
                             fw={500}
-                            lineClamp={1}
+                            truncate="end"
                             style={{
                               overflowWrap: "anywhere",
-                              hyphens: "auto",
                             }}
                           >
                             {rule.user?.username ||
@@ -2035,9 +2078,8 @@ const TeamFolderPage = () => {
                                 style={{
                                   minWidth: 140,
                                   overflowWrap: "anywhere",
-                                  hyphens: "auto",
                                 }}
-                                lineClamp={1}
+                                truncate="end"
                               >
                                 {r.fileName}
                               </Text>
@@ -2274,9 +2316,8 @@ const TeamFolderPage = () => {
                                 minWidth: 0,
                                 flex: 1,
                                 overflowWrap: "anywhere",
-                                hyphens: "auto",
                               }}
-                              lineClamp={1}
+                              truncate="end"
                             >
                               {m.user?.email || m.id}
                             </Text>

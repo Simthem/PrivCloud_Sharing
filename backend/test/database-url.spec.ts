@@ -20,10 +20,7 @@ test("SQLite URLs resolve to the same filesystem path for CLI and runtime", () =
 });
 
 test("the container seed is independent from the omitted backend source tree", () => {
-  const seed = readFileSync(
-    path.resolve("prisma/seed/config.seed.ts"),
-    "utf8",
-  );
+  const seed = readFileSync(path.resolve("prisma/seed/config.seed.ts"), "utf8");
 
   assert.doesNotMatch(seed, /from ["']\.\.\/\.\.\/src\//);
   assert.match(seed, /if \(path\.isAbsolute\(filePath\)\) return filePath/);

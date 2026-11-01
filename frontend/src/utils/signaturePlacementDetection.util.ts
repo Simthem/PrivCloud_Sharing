@@ -164,6 +164,9 @@ export async function detectSignaturePlacement(
   }
   const pdf = await pdfjs.getDocument({
     data: new Uint8Array(pdfBytes.slice(0)),
+    // Text positions need no glyph outlines: the missing standard font
+    // data only matters to rendering, so its warnings are left out.
+    verbosity: pdfjs.VerbosityLevel.ERRORS,
   }).promise;
 
   const preferredWidth = DEFAULT_SIGNATURE_FIELD_MM.width * POINTS_PER_MM;

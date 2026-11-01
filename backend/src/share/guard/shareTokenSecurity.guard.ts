@@ -61,6 +61,14 @@ export class ShareTokenSecurity extends JwtGuard {
           requireDownload: true,
         },
       );
+    } else {
+      // Optional here: a signed-in creator asking for a visit token of their
+      // own share must not count as a visitor.
+      try {
+        await super.canActivate(context);
+      } catch {
+        // Anonymous visitor
+      }
     }
 
     return true;

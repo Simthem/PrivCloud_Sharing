@@ -11,7 +11,10 @@ const QRCodeSVG = dynamic(
 );
 import { copyToClipboard } from "../../utils/clipboard.util";
 
-const showQrCodeModal = (modals: ReturnType<typeof useModals>, link: string) => {
+const showQrCodeModal = (
+  modals: ReturnType<typeof useModals>,
+  link: string,
+) => {
   const t = translateOutsideContext();
   return modals.openModal({
     title: t("common.modal.qr-code.title"),

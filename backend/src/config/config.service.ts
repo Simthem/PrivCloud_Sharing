@@ -10,10 +10,7 @@ import * as argon from "argon2";
 import { EventEmitter } from "events";
 import * as fs from "fs";
 import { PrismaService } from "src/prisma/prisma.service";
-import {
-  isValidTimespanString,
-  stringToTimespan,
-} from "src/utils/date.util";
+import { isValidTimespanString, stringToTimespan } from "src/utils/date.util";
 import { parse as yamlParse } from "yaml";
 import { YamlConfig } from "../../prisma/seed/config.seed";
 import { CONFIG_FILE } from "src/constants";
@@ -257,10 +254,7 @@ export class ConfigService extends EventEmitter {
         `Config variable must be of type ${configVariable.type}`,
       );
     }
-    if (
-      configVariable.type === "timespan" &&
-      !isValidTimespanString(value)
-    ) {
+    if (configVariable.type === "timespan" && !isValidTimespanString(value)) {
       throw new BadRequestException(
         "Config variable must be a non-negative integer followed by a supported time unit",
       );
@@ -290,7 +284,8 @@ export class ConfigService extends EventEmitter {
       {
         key: "share.shareIdLength",
         condition: (value: number) => value >= 8 && value <= 50,
-        message: "Share ID length must be between 8 and 50 (values below 8 are vulnerable to brute-force enumeration)",
+        message:
+          "Share ID length must be between 8 and 50 (values below 8 are vulnerable to brute-force enumeration)",
       },
       {
         key: "share.zipCompressionLevel",

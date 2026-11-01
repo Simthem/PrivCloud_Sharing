@@ -60,15 +60,21 @@ const Header = () => {
       setIsTeamUser((current) => (current ? false : current));
       return;
     }
-    teamService.getTeamStatus().then((status) => {
-      const inTeam = !!(status.ownsTeam || status.isTeamMember);
-      setIsTeamUser(inTeam);
-      if (status.ownsTeam && status.ownedTeamId) {
-        setHomeLink(`/team/${status.ownedTeamId}`);
-      } else {
+    teamService
+      .getTeamStatus()
+      .then((status) => {
+        const inTeam = !!(status.ownsTeam || status.isTeamMember);
+        setIsTeamUser(inTeam);
+        if (status.ownsTeam && status.ownedTeamId) {
+          setHomeLink(`/team/${status.ownedTeamId}`);
+        } else {
+          setHomeLink("/upload");
+        }
+      })
+      .catch(() => {
         setHomeLink("/upload");
-      }
-    }).catch(() => { setHomeLink("/upload"); setIsTeamUser(false); });
+        setIsTeamUser(false);
+      });
   }, [user]);
 
   const authenticatedLinks: NavLink[] = [
@@ -187,16 +193,16 @@ const Header = () => {
           {user && !isTeamUser && !isMobileViewport && <NotificationBell />}
           <Group>{items} </Group>
         </Group>
-          <Group gap={8} wrap="nowrap" hiddenFrom="sm">
-            {user && isTeamUser && isMobileViewport && <TeamNotificationPanel />}
-            {user && !isTeamUser && isMobileViewport && <NotificationBell />}
-            <Burger
-              opened={opened}
-              onClick={() => toggleOpened.toggle()}
-              size="sm"
-              aria-label="Toggle navigation menu"
-            />
-          </Group>
+        <Group gap={8} wrap="nowrap" hiddenFrom="sm">
+          {user && isTeamUser && isMobileViewport && <TeamNotificationPanel />}
+          {user && !isTeamUser && isMobileViewport && <NotificationBell />}
+          <Burger
+            opened={opened}
+            onClick={() => toggleOpened.toggle()}
+            size="sm"
+            aria-label="Toggle navigation menu"
+          />
+        </Group>
       </Container>
       <Portal>
         <Transition

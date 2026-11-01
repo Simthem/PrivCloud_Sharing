@@ -26,8 +26,13 @@ test("takes the signature format from the bytes", () => {
   const jpeg = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
   assert.equal(parseSignatureData(png, "TYPE").format, "png");
   assert.equal(parseSignatureData(jpeg, "UPLOAD").format, "jpg");
-  assert.throws(() => parseSignatureData("data:image/webp;base64,UklGRg==", "UPLOAD"));
-  assert.deepEqual(parseSignatureData("  Zoë Dupont ", "TYPE"), { kind: "text", text: "Zoë Dupont" });
+  assert.throws(() =>
+    parseSignatureData("data:image/webp;base64,UklGRg==", "UPLOAD"),
+  );
+  assert.deepEqual(parseSignatureData("  Zoë Dupont ", "TYPE"), {
+    kind: "text",
+    text: "Zoë Dupont",
+  });
   assert.throws(() => parseSignatureData("Zoë Dupont", "DRAW"));
   assert.throws(() => parseSignatureData("x".repeat(121), "TYPE"));
 });

@@ -485,7 +485,9 @@ export const createRefreshingDirectRangeFetcher = <
     stale: Authorization,
     signal: AbortSignal,
   ): Promise<Authorization> => {
-    if (getAuthorizationKey(currentAuthorization) !== getAuthorizationKey(stale)) {
+    if (
+      getAuthorizationKey(currentAuthorization) !== getAuthorizationKey(stale)
+    ) {
       return Promise.resolve(currentAuthorization);
     }
     if (!refreshPromise) {

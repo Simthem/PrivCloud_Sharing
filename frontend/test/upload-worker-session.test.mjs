@@ -14,8 +14,14 @@ async function transfer(options = {}) {
   const chunkBytes = options.chunkBytes ?? CHUNK_BYTES;
   const firstBytes = options.firstBytes ?? FIRST_BYTES;
   const totalChunks = 1 + Math.ceil((size - firstBytes) / chunkBytes);
-  const partSize = index => Math.min(index === 0 ? firstBytes : chunkBytes, size - (index === 0 ? 0 : firstBytes + (index - 1) * chunkBytes));
-  const wireSize = index => partSize(index) + (options.isE2E ? Math.ceil(partSize(index) / 500_000) * 28 : 0);
+  const partSize = (index) =>
+    Math.min(
+      index === 0 ? firstBytes : chunkBytes,
+      size - (index === 0 ? 0 : firstBytes + (index - 1) * chunkBytes),
+    );
+  const wireSize = (index) =>
+    partSize(index) +
+    (options.isE2E ? Math.ceil(partSize(index) / 500_000) * 28 : 0);
   let now = 0,
     sequence = 0,
     terminal,
@@ -73,17 +79,31 @@ async function transfer(options = {}) {
     uploadOriginCount: 1,
     uploadConnectionsPerOrigin: 6,
     uploadMaxConcurrency: 6,
-    uploadedParts: (options.savedIndexes ?? []).map(index => ({ partNumber: index + 1, size: wireSize(index) })),
+    uploadedParts: (options.savedIndexes ?? []).map((index) => ({
+      partNumber: index + 1,
+      size: wireSize(index),
+    })),
   };
-  for (const index of options.savedIndexes ?? []) uploaded.set(index, wireSize(index));
+  for (const index of options.savedIndexes ?? [])
+    uploaded.set(index, wireSize(index));
   const self = {
     navigator: { deviceMemory: 8, hardwareConcurrency: 8 },
     postMessage(message) {
-      if (message.type === "progress") stats.progressAt.push([now, message.uploadedBytes]);
+      if (message.type === "progress")
+        stats.progressAt.push([now, message.uploadedBytes]);
       messages.push(message);
-      if (message.type === "direct-pool-config" && options.initialWindow && !initialWindowApplied) {
+      if (
+        message.type === "direct-pool-config" &&
+        options.initialWindow &&
+        !initialWindowApplied
+      ) {
         initialWindowApplied = true;
-        self.onmessage({ data: { type: "direct-window-update", maxParallel: options.initialWindow } });
+        self.onmessage({
+          data: {
+            type: "direct-window-update",
+            maxParallel: options.initialWindow,
+          },
+        });
       }
       if (
         [
@@ -166,7 +186,10 @@ async function transfer(options = {}) {
     if (parsed.pathname.endsWith("/multipart/part-urls")) {
       const payload = JSON.parse(init.body);
       const index = payload.parts[0].chunkIndex;
-      if (options.wafControlStage === "authorization" && !challenges.has("authorization")) {
+      if (
+        options.wafControlStage === "authorization" &&
+        !challenges.has("authorization")
+      ) {
         blockedEpisode = "authorization";
         return html(401);
       }
@@ -184,9 +207,17 @@ async function transfer(options = {}) {
           ? html(200)
           : html(episode % 3 === 1 ? 468 : 403);
       }
-      for (const part of payload.parts) assert.equal((options.savedIndexes ?? []).includes(part.chunkIndex), false, "saved part was authorized again");
+      for (const part of payload.parts)
+        assert.equal(
+          (options.savedIndexes ?? []).includes(part.chunkIndex),
+          false,
+          "saved part was authorized again",
+        );
       stats.authorizationRequests++;
-      if (options.authorizationDelay) await new Promise((resolve) => schedule(resolve, options.authorizationDelay));
+      if (options.authorizationDelay)
+        await new Promise((resolve) =>
+          schedule(resolve, options.authorizationDelay),
+        );
       return json({
         ...pool,
         parts: payload.parts.map(({ chunkIndex, contentLength }) => ({
@@ -210,14 +241,27 @@ async function transfer(options = {}) {
         return json({}, 403);
       }
       if (options.storageDelay) {
-        if (stats.storageActive === 0 && stats.lastStorageCompletion !== null) stats.idleGaps.push(now - stats.lastStorageCompletion);
+        if (stats.storageActive === 0 && stats.lastStorageCompletion !== null)
+          stats.idleGaps.push(now - stats.lastStorageCompletion);
         stats.storageActive++;
-        if (stats.storageCompletions === 0) stats.beforeFirstStorageCompletion = Math.max(stats.beforeFirstStorageCompletion, stats.storageActive);
-        if (index === 0 && options.growWindow) schedule(() => self.onmessage({ data: { type: "direct-window-update", maxParallel: 6 } }), 2000);
+        if (stats.storageCompletions === 0)
+          stats.beforeFirstStorageCompletion = Math.max(
+            stats.beforeFirstStorageCompletion,
+            stats.storageActive,
+          );
+        if (index === 0 && options.growWindow)
+          schedule(
+            () =>
+              self.onmessage({
+                data: { type: "direct-window-update", maxParallel: 6 },
+              }),
+            2000,
+          );
         await new Promise((resolve) => schedule(resolve, options.storageDelay));
         stats.storageActive--;
         stats.storageCompletions++;
-        if (stats.firstStorageCompletionAt === null) stats.firstStorageCompletionAt = now;
+        if (stats.firstStorageCompletionAt === null)
+          stats.firstStorageCompletionAt = now;
         stats.lastStorageCompletion = now;
       }
       assert.equal(uploaded.has(index), false, "saved part was uploaded again");
@@ -226,7 +270,10 @@ async function transfer(options = {}) {
     }
     if (parsed.pathname.endsWith("/multipart/complete")) {
       stats.completions++;
-      if (options.wafControlStage === "complete" && !challenges.has("complete")) {
+      if (
+        options.wafControlStage === "complete" &&
+        !challenges.has("complete")
+      ) {
         blockedEpisode = "complete";
         return html(401);
       }
@@ -237,7 +284,9 @@ async function transfer(options = {}) {
       assert.equal(uploaded.size, totalChunks);
       assert.equal(
         [...uploaded.values()].reduce((sum, value) => sum + value, 0),
-        Array.from({ length: totalChunks }, (_, index) => wireSize(index)).reduce((sum, value) => sum + value, 0),
+        Array.from({ length: totalChunks }, (_, index) =>
+          wireSize(index),
+        ).reduce((sum, value) => sum + value, 0),
       );
       complete = true;
       return json({ id: FILE_ID, uploadComplete: true });
@@ -272,11 +321,22 @@ async function transfer(options = {}) {
     send(body) {
       const total = body.size ?? body.byteLength;
       for (const step of [1, 2, 3])
-        schedule(() => {
-          if (!this.aborted)
-            this.upload.onprogress?.({ lengthComputable: true, loaded: (total * step) / 4, total });
-        }, ((options.storageDelay ?? 0) * step) / 4);
-      fetch(this.url, { method: "PUT", body, signal: new AbortController().signal }).then(
+        schedule(
+          () => {
+            if (!this.aborted)
+              this.upload.onprogress?.({
+                lengthComputable: true,
+                loaded: (total * step) / 4,
+                total,
+              });
+          },
+          ((options.storageDelay ?? 0) * step) / 4,
+        );
+      fetch(this.url, {
+        method: "PUT",
+        body,
+        signal: new AbortController().signal,
+      }).then(
         (response) => {
           if (this.aborted) return;
           this.status = response.status;
@@ -297,11 +357,17 @@ async function transfer(options = {}) {
     Number,
     Math,
     Promise,
-    crypto: options.isE2E ? {
-      randomUUID: () => globalThis.crypto.randomUUID(),
-      getRandomValues: array => globalThis.crypto.getRandomValues(array),
-      subtle: { importKey: async () => ({}), encrypt: async (_algorithm, _key, plain) => new Uint8Array(plain.byteLength + 16).buffer },
-    } : globalThis.crypto,
+    crypto: options.isE2E
+      ? {
+          randomUUID: () => globalThis.crypto.randomUUID(),
+          getRandomValues: (array) => globalThis.crypto.getRandomValues(array),
+          subtle: {
+            importKey: async () => ({}),
+            encrypt: async (_algorithm, _key, plain) =>
+              new Uint8Array(plain.byteLength + 16).buffer,
+          },
+        }
+      : globalThis.crypto,
     encodeURIComponent,
     Date: class extends Date {
       static now() {
@@ -309,7 +375,8 @@ async function transfer(options = {}) {
       }
     },
     performance: { now: () => now },
-    setTimeout: (fn, delay) => schedule(fn, options.clampWorkerTimers ? Math.max(delay, 60_000) : delay),
+    setTimeout: (fn, delay) =>
+      schedule(fn, options.clampWorkerTimers ? Math.max(delay, 60_000) : delay),
     clearTimeout: (id) => timers.delete(id),
     console: { info() {}, warn() {}, error() {}, log() {} },
   });
@@ -340,13 +407,27 @@ async function transfer(options = {}) {
         slice(from, to) {
           assert.ok(from >= 0 && to <= size && to > from);
           stats.reads++;
-          const index = from < firstBytes ? 0 : 1 + Math.floor((from - firstBytes) / chunkBytes);
-          assert.equal((options.savedIndexes ?? []).includes(index), false, "saved bytes were read again");
-          return { size: to - from, async arrayBuffer() {
-            if (!stats.firstReads.has(index)) stats.firstReads.set(index, now);
-            if (options.prepareDelay) await new Promise(resolve => schedule(resolve, options.prepareDelay));
-            return new ArrayBuffer(to - from);
-          } };
+          const index =
+            from < firstBytes
+              ? 0
+              : 1 + Math.floor((from - firstBytes) / chunkBytes);
+          assert.equal(
+            (options.savedIndexes ?? []).includes(index),
+            false,
+            "saved bytes were read again",
+          );
+          return {
+            size: to - from,
+            async arrayBuffer() {
+              if (!stats.firstReads.has(index))
+                stats.firstReads.set(index, now);
+              if (options.prepareDelay)
+                await new Promise((resolve) =>
+                  schedule(resolve, options.prepareDelay),
+                );
+              return new ArrayBuffer(to - from);
+            },
+          };
         },
       },
     },
@@ -374,10 +455,22 @@ test("361.7 GB crosses 17.8 GB and renews authentication while the WAF takes 45 
 });
 
 test("released sibling slots refill a live worker immediately while authorizations are cached", async () => {
-  const f = await transfer({ size: 632_000_000, initialWindow: 1, growWindow: true, storageDelay: 10_000 });
+  const f = await transfer({
+    size: 632_000_000,
+    initialWindow: 1,
+    growWindow: true,
+    storageDelay: 10_000,
+  });
   assert.equal(f.terminal.type, "batch-complete");
-  assert.equal(f.stats.beforeFirstStorageCompletion, 6, "window update waited for another API response");
-  assert.ok(f.now < 40_000, `Unused sockets stretched the transfer to ${f.now}ms`);
+  assert.equal(
+    f.stats.beforeFirstStorageCompletion,
+    6,
+    "window update waited for another API response",
+  );
+  assert.ok(
+    f.now < 40_000,
+    `Unused sockets stretched the transfer to ${f.now}ms`,
+  );
 });
 
 test("a long direct upload survives repeated 468, HTML 403 and HTML 200 challenges", async () => {
@@ -445,7 +538,6 @@ test("unavailable renewal remains retryable without claiming that authentication
   }
 });
 
-
 test("HTML 401 control responses renew WAF without cycling valid account tokens", async () => {
   for (const wafControlStage of ["init", "authorization", "complete"]) {
     const f = await transfer({ size: 132_000_000, wafControlStage });
@@ -457,41 +549,89 @@ test("HTML 401 control responses renew WAF without cycling valid account tokens"
   }
 });
 
-
 test("the next authorization batch arrives while cached parts still transfer", async () => {
-  const f = await transfer({ size: 1_982_000_000, storageDelay: 1_000, authorizationDelay: 2_000 });
+  const f = await transfer({
+    size: 1_982_000_000,
+    storageDelay: 1_000,
+    authorizationDelay: 2_000,
+  });
   assert.equal(f.terminal.type, "batch-complete");
   assert.equal(f.stats.authorizationRequests, Math.ceil(f.totalChunks / 12));
-  assert.ok(Math.max(0, ...f.stats.idleGaps) < 1_000, `API authorization left all sockets idle for ${Math.max(...f.stats.idleGaps)}ms`);
+  assert.ok(
+    Math.max(0, ...f.stats.idleGaps) < 1_000,
+    `API authorization left all sockets idle for ${Math.max(...f.stats.idleGaps)}ms`,
+  );
   assert.equal(f.stats.relays, 0);
 });
 
-
 test("a verified control reply wakes the worker even when its timers are clamped", async () => {
-  for (const renewal of [{ authAt: 0, refreshDelay: 1_000 }, { wafControlStage: "init", challengeDelay: 1_000 }]) {
-    const f = await transfer({ size: 132_000_000, clampWorkerTimers: true, ...renewal });
+  for (const renewal of [
+    { authAt: 0, refreshDelay: 1_000 },
+    { wafControlStage: "init", challengeDelay: 1_000 },
+  ]) {
+    const f = await transfer({
+      size: 132_000_000,
+      clampWorkerTimers: true,
+      ...renewal,
+    });
     assert.equal(f.terminal.type, "batch-complete");
-    assert.ok(f.now < 5_000, `The verified response waited until ${f.now}ms for a timer`);
+    assert.ok(
+      f.now < 5_000,
+      `The verified response waited until ${f.now}ms for a timer`,
+    );
   }
 });
 
-
 test("one bounded E2E lookahead overlaps reading with PUT and can be disabled for native buffers", async () => {
-  const common = { size: 7_000_000, chunkBytes: 1_000_000, firstBytes: 1_000_000, isE2E: true, initialWindow: 1, prepareDelay: 2_000, storageDelay: 1_000 };
+  const common = {
+    size: 7_000_000,
+    chunkBytes: 1_000_000,
+    firstBytes: 1_000_000,
+    isE2E: true,
+    initialWindow: 1,
+    prepareDelay: 2_000,
+    storageDelay: 1_000,
+  };
   const buffered = await transfer(common);
   const native = await transfer({ ...common, preparedBodyLookahead: false });
   assert.equal(buffered.terminal.type, "batch-complete");
   assert.equal(native.terminal.type, "batch-complete");
-  assert.equal(buffered.complete, true); assert.equal(native.complete, true);
-  assert.ok(buffered.stats.firstReads.get(1) < buffered.stats.firstStorageCompletionAt, "next ciphertext was not prepared during the live PUT");
-  assert.ok(native.stats.firstReads.get(1) >= native.stats.firstStorageCompletionAt, "native buffers gained an extra body");
-  assert.ok(buffered.now < native.now, "ciphertext preparation left the network idle");
-  assert.equal(buffered.stats.reads, 7, "lookahead read the same bytes more than once");
+  assert.equal(buffered.complete, true);
+  assert.equal(native.complete, true);
+  assert.ok(
+    buffered.stats.firstReads.get(1) < buffered.stats.firstStorageCompletionAt,
+    "next ciphertext was not prepared during the live PUT",
+  );
+  assert.ok(
+    native.stats.firstReads.get(1) >= native.stats.firstStorageCompletionAt,
+    "native buffers gained an extra body",
+  );
+  assert.ok(
+    buffered.now < native.now,
+    "ciphertext preparation left the network idle",
+  );
+  assert.equal(
+    buffered.stats.reads,
+    7,
+    "lookahead read the same bytes more than once",
+  );
 });
 
 test("authorization lookahead skips saved batches and handles a resumed batch boundary", async () => {
-  const savedIndexes = [0, 1, 2, 3, 4, ...Array.from({ length: 12 }, (_, i) => 12 + i)];
-  const f = await transfer({ size: 1_782_000_000, savedIndexes, storageDelay: 1_000, authorizationDelay: 2_000 });
+  const savedIndexes = [
+    0,
+    1,
+    2,
+    3,
+    4,
+    ...Array.from({ length: 12 }, (_, i) => 12 + i),
+  ];
+  const f = await transfer({
+    size: 1_782_000_000,
+    savedIndexes,
+    storageDelay: 1_000,
+    authorizationDelay: 2_000,
+  });
   assert.equal(f.terminal.type, "batch-complete");
   assert.equal(f.stats.reads, f.totalChunks - savedIndexes.length);
   assert.equal(f.stats.authorizationRequests, 2);
@@ -512,32 +652,57 @@ test("a refused signature renews the part without cooling the storage origin dow
   assert.equal(f.complete, true);
   assert.equal(f.stats.forbiddenPuts, 1);
   assert.equal(f.stats.relays, 0);
-  const outcomes = f.messages.filter((message) => message.type === "release-direct-slot").map((message) => message.outcome);
-  assert.equal(outcomes.includes("transient"), false, "a 403 paused the origin");
+  const outcomes = f.messages
+    .filter((message) => message.type === "release-direct-slot")
+    .map((message) => message.outcome);
+  assert.equal(
+    outcomes.includes("transient"),
+    false,
+    "a 403 paused the origin",
+  );
   assert.equal(outcomes.includes("cancelled"), true);
 });
 
 test("the gauge follows the bytes on the wire and never goes back", async () => {
-  const f = await transfer({ size: 182_000_000, xhr: true, initialWindow: 1, storageDelay: 8_000 });
+  const f = await transfer({
+    size: 182_000_000,
+    xhr: true,
+    initialWindow: 1,
+    storageDelay: 8_000,
+  });
   assert.equal(f.terminal.type, "batch-complete");
   assert.equal(f.complete, true);
   const progress = f.stats.progressAt;
   assert.ok(progress.length > 0, "no progress was reported");
-  assert.ok(progress[0][0] < f.stats.firstStorageCompletionAt, "the first progress waited for a whole part");
+  assert.ok(
+    progress[0][0] < f.stats.firstStorageCompletionAt,
+    "the first progress waited for a whole part",
+  );
   assert.ok(progress[0][1] > 0);
   for (let index = 1; index < progress.length; index++)
-    assert.ok(progress[index][1] >= progress[index - 1][1], `progress went back at ${progress[index][0]}ms`);
+    assert.ok(
+      progress[index][1] >= progress[index - 1][1],
+      `progress went back at ${progress[index][0]}ms`,
+    );
   assert.ok(progress.at(-1)[1] <= 182_000_000);
 });
 
 test("without XMLHttpRequest the gauge still moves part by part", async () => {
-  const f = await transfer({ size: 182_000_000, initialWindow: 1, storageDelay: 8_000 });
+  const f = await transfer({
+    size: 182_000_000,
+    initialWindow: 1,
+    storageDelay: 8_000,
+  });
   assert.equal(f.complete, true);
   assert.ok(f.stats.progressAt[0][0] >= f.stats.firstStorageCompletionAt);
 });
 
 test("a file that fits in one part goes to storage without the API relay", async () => {
-  const f = await transfer({ size: 40_800, chunkBytes: CHUNK_BYTES, firstBytes: CHUNK_BYTES });
+  const f = await transfer({
+    size: 40_800,
+    chunkBytes: CHUNK_BYTES,
+    firstBytes: CHUNK_BYTES,
+  });
   assert.equal(f.terminal.type, "batch-complete");
   assert.equal(f.complete, true);
   assert.equal(f.uploaded.size, 1);
@@ -545,7 +710,12 @@ test("a file that fits in one part goes to storage without the API relay", async
 });
 
 test("a backend without single-part sessions still receives the file by relay", async () => {
-  const f = await transfer({ size: 40_800, chunkBytes: CHUNK_BYTES, firstBytes: CHUNK_BYTES, rejectSinglePart: true });
+  const f = await transfer({
+    size: 40_800,
+    chunkBytes: CHUNK_BYTES,
+    firstBytes: CHUNK_BYTES,
+    rejectSinglePart: true,
+  });
   assert.equal(f.terminal.type, "batch-complete");
   assert.equal(f.stats.relays, 1);
   assert.equal(f.uploaded.size, 0);

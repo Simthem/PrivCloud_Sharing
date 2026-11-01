@@ -34,7 +34,7 @@ const TeamStatusChecker = () => {
 
     sessionStorage.setItem(key, "1");
     open();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, user]);
 
   const handleClose = () => {

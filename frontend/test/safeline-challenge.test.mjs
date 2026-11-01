@@ -18,16 +18,28 @@ test("HTML denials request verification while JSON authorization failures remain
       for (const contentType of ["text/html", "application/json"]) {
         let drained = 0;
         globalThis.fetch = async () => ({
-          ok: false, status,
+          ok: false,
+          status,
           headers: { get: () => contentType },
-          arrayBuffer: async () => { drained++; return new ArrayBuffer(0); },
+          arrayBuffer: async () => {
+            drained++;
+            return new ArrayBuffer(0);
+          },
         });
-        assert.equal(await probeSafeLineSession(), contentType === "text/html" ? "challenge" : "unavailable");
-        assert.equal(await probeSafeLineSession(true), contentType === "text/html" ? "challenge" : "unavailable");
+        assert.equal(
+          await probeSafeLineSession(),
+          contentType === "text/html" ? "challenge" : "unavailable",
+        );
+        assert.equal(
+          await probeSafeLineSession(true),
+          contentType === "text/html" ? "challenge" : "unavailable",
+        );
         assert.equal(drained, 2);
       }
     }
-  } finally { globalThis.fetch = saved; }
+  } finally {
+    globalThis.fetch = saved;
+  }
 });
 function browserFixture() {
   const names = [
@@ -150,7 +162,8 @@ function browserFixture() {
         drained++;
         return new ArrayBuffer(0);
       },
-      body: { cancel: async () => {
+      body: {
+        cancel: async () => {
           cancelled++;
         },
       },
@@ -182,7 +195,11 @@ function browserFixture() {
         }
       await tick();
     },
-    counts: () => ({ popupClosed, windowClosed, opened, removed,
+    counts: () => ({
+      popupClosed,
+      windowClosed,
+      opened,
+      removed,
       drained,
       cancelled,
     }),

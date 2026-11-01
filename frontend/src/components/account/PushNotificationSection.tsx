@@ -52,7 +52,11 @@ const PushNotificationSection = () => {
 
   useEffect(() => {
     if (supported && pushEnabled && vapidPublicKey) checkSubscription();
-    if (mounted && "Notification" in window && Notification.permission === "denied") {
+    if (
+      mounted &&
+      "Notification" in window &&
+      Notification.permission === "denied"
+    ) {
       setPermissionDenied(true);
     }
   }, [mounted, supported, pushEnabled, vapidPublicKey, checkSubscription]);
@@ -86,7 +90,7 @@ const PushNotificationSection = () => {
           msg.includes("registration failed") ||
           msg.includes("permission denied") ||
           msg.includes("not allowed") ||
-          (typeof (navigator as any).brave?.isBrave === "function")
+          typeof (navigator as any).brave?.isBrave === "function"
         ) {
           setPushBlocked(true);
           toast.error(t("account.notify.push.browser-blocked"));

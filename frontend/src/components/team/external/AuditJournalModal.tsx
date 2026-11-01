@@ -7,14 +7,14 @@ import {
   ScrollArea,
   Stack,
   Text,
-} from "@mantine/core"
-import dayjs from "dayjs"
-import { useState } from "react"
-import useTranslate from "../../../hooks/useTranslate.hook"
+} from "@mantine/core";
+import dayjs from "dayjs";
+import { useState } from "react";
+import useTranslate from "../../../hooks/useTranslate.hook";
 import type {
   ExternalAuditEvent,
   ExternalJournal,
-} from "../../../services/teamExternal.service"
+} from "../../../services/teamExternal.service";
 
 /** Journal of one copy, with the verification of the whole team chain. */
 export default function AuditJournalModal({
@@ -23,30 +23,30 @@ export default function AuditJournalModal({
   journal,
   onDiagnostic,
 }: {
-  opened: boolean
-  onClose: () => void
+  opened: boolean;
+  onClose: () => void;
   // Undefined while loading.
-  journal: ExternalJournal | undefined
-  onDiagnostic?: () => Promise<void>
+  journal: ExternalJournal | undefined;
+  onDiagnostic?: () => Promise<void>;
 }) {
-  const t = useTranslate()
-  const [downloading, setDownloading] = useState(false)
-  const [downloadError, setDownloadError] = useState(false)
+  const t = useTranslate();
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(false);
   const downloadDiagnostic = async () => {
-    setDownloading(true)
-    setDownloadError(false)
+    setDownloading(true);
+    setDownloadError(false);
     try {
-      await onDiagnostic?.()
+      await onDiagnostic?.();
     } catch {
-      setDownloadError(true)
+      setDownloadError(true);
     } finally {
-      setDownloading(false)
+      setDownloading(false);
     }
-  }
+  };
   const eventLabel = (event: ExternalAuditEvent) =>
     event.kind === "PAGE"
       ? t("team.audit.journal.page", { page: (event.pageIndex ?? 0) + 1 })
-      : t(`team.audit.journal.${event.kind.toLowerCase()}`)
+      : t(`team.audit.journal.${event.kind.toLowerCase()}`);
 
   return (
     <Modal
@@ -124,5 +124,5 @@ export default function AuditJournalModal({
         </Stack>
       )}
     </Modal>
-  )
+  );
 }

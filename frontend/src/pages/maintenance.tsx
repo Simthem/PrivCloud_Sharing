@@ -1,10 +1,4 @@
-import {
-  Center,
-  Stack,
-  Text,
-  ThemeIcon,
-  Title,
-} from "@mantine/core";
+import { Center, Stack, Text, ThemeIcon, Title } from "@mantine/core";
 import { createStyles } from "@mantine/emotion";
 import { keyframes } from "@emotion/react";
 import { TbTool } from "react-icons/tb";

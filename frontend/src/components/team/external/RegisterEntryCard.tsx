@@ -6,51 +6,51 @@ import {
   Stack,
   Text,
   Tooltip,
-} from "@mantine/core"
-import dayjs from "dayjs"
-import { useRef, useState } from "react"
+} from "@mantine/core";
+import dayjs from "dayjs";
+import { useRef, useState } from "react";
 import {
   TbCertificate,
   TbFileZip,
   TbListDetails,
   TbFingerprint,
-} from "react-icons/tb"
-import useTranslate from "../../../hooks/useTranslate.hook"
-import type { ExternalIssuance } from "../../../services/teamExternal.service"
-import { saveBlobToDevice } from "../../../utils/saveBlob.util"
-import toast from "../../../utils/toast.util"
+} from "react-icons/tb";
+import useTranslate from "../../../hooks/useTranslate.hook";
+import type { ExternalIssuance } from "../../../services/teamExternal.service";
+import { saveBlobToDevice } from "../../../utils/saveBlob.util";
+import toast from "../../../utils/toast.util";
 
 export const contractorLabel = (row: ExternalIssuance) =>
   row.contractorName
     ? `${row.contractorName} (${row.contractorEmail})`
-    : row.contractorEmail
+    : row.contractorEmail;
 
 /**
  * Certificate and evidence bundle downloads of register entries, wherever
  * they are fetched from: the team settings or the platform evidence vault.
  */
 export function useRegisterDownloads(fetchers: {
-  certificate: (_row: ExternalIssuance) => Promise<Blob>
-  evidence: (_row: ExternalIssuance) => Promise<Blob>
+  certificate: (_row: ExternalIssuance) => Promise<Blob>;
+  evidence: (_row: ExternalIssuance) => Promise<Blob>;
 }) {
-  const t = useTranslate()
-  const [downloading, setDownloading] = useState<string | null>(null)
-  const activeDownload = useRef(false)
+  const t = useTranslate();
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const activeDownload = useRef(false);
   const save = async (
     row: ExternalIssuance,
     kind: "certificate" | "evidence",
   ) => {
-    if (activeDownload.current) return
-    activeDownload.current = true
-    setDownloading(`${row.id}:${kind}`)
-    const stem = `${dayjs(row.issuedAt).format("YYYY-MM-DD")}-${row.id.slice(0, 8)}`
+    if (activeDownload.current) return;
+    activeDownload.current = true;
+    setDownloading(`${row.id}:${kind}`);
+    const stem = `${dayjs(row.issuedAt).format("YYYY-MM-DD")}-${row.id.slice(0, 8)}`;
     try {
       await saveBlobToDevice(
         await fetchers[kind](row),
         kind === "certificate"
           ? `certificat-${stem}.pdf`
           : `dossier-de-preuve-${stem}.zip`,
-      )
+      );
     } catch (error) {
       if (
         !(
@@ -58,19 +58,19 @@ export function useRegisterDownloads(fetchers: {
           ["NotAllowedError", "AbortError"].includes(error.name)
         )
       )
-        toast.error(t("team.audit.certificate.error"))
+        toast.error(t("team.audit.certificate.error"));
     } finally {
-      activeDownload.current = false
-      setDownloading(null)
+      activeDownload.current = false;
+      setDownloading(null);
     }
-  }
+  };
   return {
     busy: downloading !== null,
     isDownloading: (row: ExternalIssuance, kind: "certificate" | "evidence") =>
       downloading === `${row.id}:${kind}`,
     certificate: (row: ExternalIssuance) => save(row, "certificate"),
     evidence: (row: ExternalIssuance) => save(row, "evidence"),
-  }
+  };
 }
 
 /** One register entry: who received which copy, and its evidence. */
@@ -82,15 +82,15 @@ export default function RegisterEntryCard({
   onPatternExport,
   exportingPattern,
 }: {
-  row: ExternalIssuance
+  row: ExternalIssuance;
   // Decrypted with the team audit key, null when it cannot be.
-  title: string | null
-  downloads: ReturnType<typeof useRegisterDownloads>
-  onJournal: () => void
-  onPatternExport?: () => void
-  exportingPattern?: boolean
+  title: string | null;
+  downloads: ReturnType<typeof useRegisterDownloads>;
+  onJournal: () => void;
+  onPatternExport?: () => void;
+  exportingPattern?: boolean;
 }) {
-  const t = useTranslate()
+  const t = useTranslate();
   return (
     <Paper withBorder p="sm">
       <Group justify="space-between" wrap="nowrap" align="start">
@@ -178,5 +178,5 @@ export default function RegisterEntryCard({
         </Group>
       </Group>
     </Paper>
-  )
+  );
 }

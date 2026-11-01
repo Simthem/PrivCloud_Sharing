@@ -395,7 +395,11 @@ export class SigningE2EService {
         webauthnTransactionManifest: string | null;
       }>;
       fields: Array<{
-        fieldValues: Array<{ recipientId: string; fieldId: string; value: string }>;
+        fieldValues: Array<{
+          recipientId: string;
+          fieldId: string;
+          value: string;
+        }>;
       }>;
     },
     sourceDocumentHash: string | undefined,

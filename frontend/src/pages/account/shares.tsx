@@ -318,7 +318,6 @@ const MyShares = () => {
                             cursor: "pointer",
                             overflowWrap: "anywhere",
                             wordBreak: "break-word",
-                            hyphens: "auto",
                           }}
                         >
                           {shareDisplayName(share)}
@@ -328,7 +327,7 @@ const MyShares = () => {
                         <Text
                           size="xs"
                           c="dimmed"
-                          lineClamp={1}
+                          truncate="end"
                           style={{ overflowWrap: "anywhere" }}
                         >
                           {shareInfoOf(share).description}
@@ -552,7 +551,7 @@ const MyShares = () => {
                             </Text>
                           </Link>
                           {shareInfoOf(share).description && (
-                            <Text size="xs" c="dimmed" lineClamp={1}>
+                            <Text size="xs" c="dimmed" truncate="end">
                               {shareInfoOf(share).description}
                             </Text>
                           )}
@@ -560,7 +559,7 @@ const MyShares = () => {
                             <Text
                               size="xs"
                               c="dimmed"
-                              lineClamp={1}
+                              truncate="end"
                               style={{ overflowWrap: "anywhere" }}
                             >
                               {share.id}

@@ -1,4 +1,12 @@
-import { Badge, Button, Group, Space, Text, TextInput, Title } from "@mantine/core";
+import {
+  Badge,
+  Button,
+  Group,
+  Space,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import { useEffect, useMemo, useState } from "react";
 import { TbPlus, TbSearch } from "react-icons/tb";

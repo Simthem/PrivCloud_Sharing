@@ -78,6 +78,7 @@ module.exports = {
       ...[
         "/image-decoders/decoder.worker.js",
         "/video-decoders/hevc.worker.js",
+        "/video-decoders/media.worker.js",
       ].map((source) => ({
         source,
         headers: [

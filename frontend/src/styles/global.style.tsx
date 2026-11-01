@@ -1,6 +1,8 @@
 import { MantineTheme } from "@mantine/core";
 import { Global } from "@mantine/emotion";
 
+import { MOTION_EASING } from "./motion.style";
+
 const GlobalStyle = () => {
   return (
     <Global
@@ -109,8 +111,53 @@ const GlobalStyle = () => {
               WebkitLineClamp: "unset",
               overflowWrap: "anywhere",
               wordBreak: "normal",
-              hyphens: "auto",
             },
+        },
+        // Floating dropdowns grow from the side of their control. Only the
+        // Popover transition sets a transform on these elements.
+        '[data-position^="bottom"]': { transformOrigin: "top center" },
+        '[data-position="bottom-start"]': { transformOrigin: "top left" },
+        '[data-position="bottom-end"]': { transformOrigin: "top right" },
+        '[data-position^="top"]': { transformOrigin: "bottom center" },
+        '[data-position="top-start"]': { transformOrigin: "bottom left" },
+        '[data-position="top-end"]': { transformOrigin: "bottom right" },
+        '[data-position^="left"]': { transformOrigin: "right center" },
+        '[data-position^="right"]': { transformOrigin: "left center" },
+        // A tab's content fades in when it is shown instead of replacing the
+        // previous one at once. Opacity only: a transform would move fixed
+        // descendants during the animation.
+        ".mantine-Tabs-panel": {
+          animation: `tab-panel-enter 200ms ${MOTION_EASING}`,
+        },
+        "@keyframes tab-panel-enter": {
+          from: { opacity: 0 },
+          to: { opacity: 1 },
+        },
+        // What a disclosure reveals eases in, one item after the other when
+        // the items number themselves with --reveal-order.
+        "[data-reveal]": {
+          animation: `reveal-enter 260ms ${MOTION_EASING} both`,
+          animationDelay: "calc(min(var(--reveal-order, 0), 8) * 35ms)",
+        },
+        "@keyframes reveal-enter": {
+          from: { opacity: 0, transform: "translateY(-6px)" },
+          to: { opacity: 1, transform: "none" },
+        },
+        // Chevrons of disclosures turn with them: a quarter turn to the
+        // right by default, a half turn for those pointing down.
+        "[data-disclosure-chevron]": {
+          flexShrink: 0,
+          transition: `transform 240ms ${MOTION_EASING}`,
+        },
+        "[data-disclosure-chevron][data-opened]": {
+          transform: "rotate(90deg)",
+        },
+        '[data-disclosure-chevron="down"][data-opened]': {
+          transform: "rotate(180deg)",
+        },
+        "@media (prefers-reduced-motion: reduce)": {
+          ".mantine-Tabs-panel, [data-reveal]": { animation: "none" },
+          "[data-disclosure-chevron]": { transition: "none" },
         },
         "@keyframes progress-stripes": {
           from: { backgroundPosition: "0 0" },

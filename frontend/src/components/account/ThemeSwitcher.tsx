@@ -1,10 +1,5 @@
 import "@mantine/core/styles/SegmentedControl.css";
-import {
-  Box,
-  Center,
-  SegmentedControl,
-  Stack,
-} from "@mantine/core";
+import { Box, Center, SegmentedControl, Stack } from "@mantine/core";
 import { useState } from "react";
 import { TbDeviceLaptop, TbMoon, TbSun } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";

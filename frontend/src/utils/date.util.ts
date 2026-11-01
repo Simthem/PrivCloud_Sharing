@@ -21,10 +21,7 @@ export const getExpirationPreview = (
   if (value === "never") return messages.neverExpires;
 
   const expirationDate = dayjs()
-    .add(
-      parseInt(value.split("-")[0]),
-      value.split("-")[1] as ManipulateType,
-    )
+    .add(parseInt(value.split("-")[0]), value.split("-")[1] as ManipulateType)
     .toDate();
 
   return messages.expiresOn.replace(

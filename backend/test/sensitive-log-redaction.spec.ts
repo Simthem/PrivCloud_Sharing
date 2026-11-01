@@ -55,8 +55,14 @@ const shareSources = [
   .map(read)
   .join("\n");
 
-assert.doesNotMatch(authSource, /logger\.[a-z]+\([^;]*(?:dto\.(?:email|username)|\.message)/s);
-assert.doesNotMatch(ldapSource, /inspect\(|logger\.[a-z]+\([^;]*\$\{username\}/s);
+assert.doesNotMatch(
+  authSource,
+  /logger\.[a-z]+\([^;]*(?:dto\.(?:email|username)|\.message)/s,
+);
+assert.doesNotMatch(
+  ldapSource,
+  /inspect\(|logger\.[a-z]+\([^;]*\$\{username\}/s,
+);
 assert.doesNotMatch(oauthFilterSource, /JSON\.stringify\([^)]*request\.query/);
 assert.doesNotMatch(cacheSource, /logger\.[a-z]+\([^;]*redisUrl/s);
 assert.doesNotMatch(shareSources, /logger\.[a-z]+\([^;]*shareId/s);

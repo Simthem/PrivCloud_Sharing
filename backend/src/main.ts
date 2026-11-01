@@ -147,7 +147,10 @@ async function bootstrap() {
         const issues = collectValidationIssues(errors);
         logger.warn(
           `Validation failed: ${JSON.stringify(
-            issues.map(({ property, codes }) => ({ property, constraints: codes })),
+            issues.map(({ property, codes }) => ({
+              property,
+              constraints: codes,
+            })),
           )}`,
         );
         const messages = issues.flatMap(({ property, messages }) =>

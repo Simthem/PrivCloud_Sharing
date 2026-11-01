@@ -33,8 +33,9 @@ export async function requestNotificationPermission(): Promise<void> {
  */
 function playBeep(): void {
   try {
-    const ctx = new (window.AudioContext ||
-      (window as any).webkitAudioContext)();
+    const ctx = new (
+      window.AudioContext || (window as any).webkitAudioContext
+    )();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
@@ -54,7 +55,9 @@ function playBeep(): void {
         g2.gain.value = 0.3;
         osc2.start();
         osc2.stop(ctx.currentTime + 0.25);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }, 400);
     setTimeout(() => {
       try {
@@ -68,7 +71,9 @@ function playBeep(): void {
         osc3.stop(ctx.currentTime + 0.25);
         // Close context after last beep
         setTimeout(() => ctx.close().catch(() => {}), 500);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }, 800);
   } catch {
     // AudioContext not available -- silent fail

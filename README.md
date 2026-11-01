@@ -273,13 +273,16 @@ docker compose build
 docker compose up -d
 ```
 
-The default `Dockerfile` can use prebuilt OpenSSL/Node builder cache images via
-these build args:
+The default `Dockerfile` uses prebuilt OpenSSL/Node builder cache images, each
+pinned by its SHA-256 digest. Another cache image is selected with its name and
+its digest:
 
 ```bash
 docker build \
-  --build-arg OPENSSL_BUILDER_IMAGE=simthem/privcloud-sharing:openssl-builder-cache \
-  --build-arg NODE_BUILDER_IMAGE=simthem/privcloud-sharing:node-builder-cache \
+  --build-arg OPENSSL_BUILDER_IMAGE=registry.example/openssl-builder-cache \
+  --build-arg OPENSSL_BUILDER_SHA256=<digest of that image> \
+  --build-arg NODE_BUILDER_IMAGE=registry.example/node-builder-cache \
+  --build-arg NODE_BUILDER_SHA256=<digest of that image> \
   -t privcloud-sharing:local .
 ```
 

@@ -29,7 +29,11 @@ interface CreateTeamModalProps {
   mandatory?: boolean;
 }
 
-const CreateTeamModal = ({ opened, onClose, mandatory }: CreateTeamModalProps) => {
+const CreateTeamModal = ({
+  opened,
+  onClose,
+  mandatory,
+}: CreateTeamModalProps) => {
   const router = useRouter();
   const queryClient = useQueryClient();
   const intl = useIntl();
@@ -71,10 +75,7 @@ const CreateTeamModal = ({ opened, onClose, mandatory }: CreateTeamModalProps) =
       }
 
       toast.success(
-        intl.formatMessage(
-          { id: "team.create.success" },
-          { name: team.name },
-        ),
+        intl.formatMessage({ id: "team.create.success" }, { name: team.name }),
       );
       queryClient.invalidateQueries({ queryKey: ["teams.list"] });
       queryClient.invalidateQueries({ queryKey: ["teams.status"] });
@@ -123,14 +124,18 @@ const CreateTeamModal = ({ opened, onClose, mandatory }: CreateTeamModalProps) =
 
           <TextInput
             label={intl.formatMessage({ id: "team.create.modal.name-label" })}
-            description={intl.formatMessage({ id: "team.create.modal.name-hint" })}
+            description={intl.formatMessage({
+              id: "team.create.modal.name-hint",
+            })}
             placeholder="Mon Équipe @Work"
             required
             {...form.getInputProps("name")}
           />
 
           <Textarea
-            label={intl.formatMessage({ id: "team.create.modal.description-label" })}
+            label={intl.formatMessage({
+              id: "team.create.modal.description-label",
+            })}
             placeholder={intl.formatMessage({
               id: "team.create.modal.description-placeholder",
             })}

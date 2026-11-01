@@ -121,23 +121,13 @@ export class FileSecurityGuard extends ShareSecurityGuard {
       // An unfinished upload is inspected by its uploader, not visited.
       if (share.uploadLocked === false) return true;
 
-      // SECURITY: Atomic check-and-increment to prevent TOCTOU race on maxViews.
-      // If maxViews is set, use a conditional update that only increments if views < maxViews.
-      if (share.security?.maxViews) {
-        const result = await this._prisma.share.updateMany({
-          where: { id: share.id, views: { lt: share.security.maxViews } },
-          data: { views: { increment: 1 } },
-        });
-        if (result.count === 0) {
-          throw new ForbiddenException(
-            "Maximum views exceeded",
-            "share_max_views_exceeded",
-          );
-        }
-      } else {
-        // No maxViews constraint - just increment
-        await this._shareService.increaseViewCount(share);
-      }
+      // The creator previewing their own files is recognised by their session
+      // and never counted as a visitor.
+      if (!request.user) await this.softAuthenticate(context);
+      await this._shareService.countVisit(
+        share,
+        (request.user as User | undefined)?.id,
+      );
 
       // A direct visit gets the same signed access token as the share page.
       // Subsequent Office/PDF/media ranges and S3 authorizations belong to that

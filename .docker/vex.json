@@ -3,8 +3,8 @@
   "@id": "https://github.com/Simthem/PrivCloud_Sharing/vex/2026-07-21",
   "author": "simthem <privcloud-sharing maintainer>",
   "role": "maintainer",
-  "timestamp": "2026-07-21T12:00:00Z",
-  "version": 3,
+  "timestamp": "2026-11-01T00:00:00Z",
+  "version": 4,
   "tooling": "manual review",
   "statements": [
     {
@@ -43,6 +43,118 @@
       "status": "not_affected",
       "justification": "vulnerable_code_not_in_execute_path",
       "impact_statement": "pgx/v5 is a transitive dependency pulled into the Caddy build via the smallstep/certificates module (Caddy -> smallstep/certificates -> pgx). The vulnerable code paths are pgproto3.Backend.Receive and pgproto3.Bind.Decode, which implement the PostgreSQL wire protocol (frontend/backend message parsing). These functions are only invoked when a Go application acts as a PostgreSQL server or client using the pgx driver. In this image, Caddy is used exclusively as an HTTP/HTTPS reverse proxy -- it never opens any PostgreSQL connection, does not import pgproto3, and does not call any pgx function at runtime. The application backend (NestJS/Prisma) connects to PostgreSQL via its own Node.js driver (@prisma/client), completely independent from Go/pgx. Furthermore, exploiting CVE-2026-33815 requires a malicious PostgreSQL server sending crafted wire-protocol messages to trigger the out-of-bounds write, which is impossible since Caddy has no PostgreSQL interaction whatsoever. The Caddy binary is statically compiled (CGO_ENABLED=0) with -trimpath and stripped symbols; pgx object code may be linked but is dead code never reached at runtime. We pin pgx/v5@v5.9.2 to satisfy CVE-2026-33816 and GHSA-j88v-2chj-qfwx (separate, fixed vulnerabilities). CVE-2026-33815 has no upstream fix as of v5.9.2 (GO-2026-4771: 'all versions, no known fixed'). This VEX statement will be reviewed when a fixed pgx version is released."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-84243",
+        "description": "glibc gettext accepts LANGUAGE entries with a path and loads a message catalog from anywhere"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/glibc@2.41-12+deb13u4?os_name=debian&os_version=13"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_cannot_be_controlled_by_adversary",
+      "impact_statement": "Exploitation needs an attacker who sets the LANGUAGE environment variable of a process and places a crafted message catalog. Every process in this image gets its environment from the container configuration chosen by the operator: runtime-init execs the entrypoint with that environment unchanged, the entrypoint only adds DATABASE_URL, and no request, upload, setting or file read at runtime writes an environment variable. The image ships no message catalog, no shell and no setuid program."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2010-4756",
+        "description": "glibc glob() resource exhaustion through crafted patterns"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/glibc@2.41-12+deb13u4?os_name=debian&os_version=13"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "No ELF file in the image imports glob, glob64, glob_pattern_p or wordexp, the entry points of the affected glob implementation. Node, its native addons and the Prisma engines match file patterns in JavaScript or in their own code."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2018-20796",
+        "description": "glibc POSIX regex uncontrolled recursion in check_dst_limits_calc_pos_1"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/glibc@2.41-12+deb13u4?os_name=debian&os_version=13"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "No ELF file in the image imports regcomp, regexec or the GNU re_* functions, the only entry points of the affected regex engine. Regular expressions run in V8's own engine or in the libraries' own code."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2019-9192",
+        "description": "glibc POSIX regex uncontrolled recursion in check_dst_limits_calc_pos_1"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/glibc@2.41-12+deb13u4?os_name=debian&os_version=13"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "No ELF file in the image imports regcomp, regexec or the GNU re_* functions, the only entry points of the affected regex engine. Regular expressions run in V8's own engine or in the libraries' own code."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2019-1010023",
+        "description": "glibc ldd can run code from a crafted ELF file"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/glibc@2.41-12+deb13u4?os_name=debian&os_version=13"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is reached by running ldd on a crafted file. The distroless runtime has no ldd and no shell to run it."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2019-1010022",
+        "description": "glibc stack protector bypass from a thread stack overflow"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/glibc@2.41-12+deb13u4?os_name=debian&os_version=13"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_cannot_be_controlled_by_adversary",
+      "impact_statement": "The stack canary of a thread can be reached by a stack buffer overflow in that thread. This is a limit of an exploit mitigation, not a flaw an adversary can trigger: it only helps after a separate memory corruption bug in the same process, which would be a vulnerability of its own. glibc does not treat it as a security issue (sourceware bug 22850) and no release changes this behaviour."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2019-1010024",
+        "description": "glibc ASLR weakened by the cache of thread stacks and heaps"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/glibc@2.41-12+deb13u4?os_name=debian&os_version=13"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_cannot_be_controlled_by_adversary",
+      "impact_statement": "Reused thread stacks and heaps make their addresses easier to predict. This is a limit of an exploit mitigation, not a flaw an adversary can trigger: it only helps after a separate memory corruption bug in the same process, which would be a vulnerability of its own. glibc does not treat it as a security issue (sourceware bug 22852) and no release changes this behaviour."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2019-1010025",
+        "description": "glibc heap addresses of new threads can be guessed"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/glibc@2.41-12+deb13u4?os_name=debian&os_version=13"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_cannot_be_controlled_by_adversary",
+      "impact_statement": "The heap address of a new thread can be guessed from other addresses. This is a limit of an exploit mitigation, not a flaw an adversary can trigger: it only helps after a separate memory corruption bug in the same process, which would be a vulnerability of its own. glibc does not treat it as a security issue (sourceware bug 22853) and no release changes this behaviour."
     }
   ]
 }

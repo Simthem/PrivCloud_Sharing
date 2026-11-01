@@ -63,7 +63,9 @@ export const reconcileSignerContributions = async (input: {
     if (manifestJson !== signer.webauthnTransactionManifest) {
       report("the signed manifest is not canonical");
     }
-    if ((await input.sha256Hex(utf8(manifestJson))) !== signer.signingIntentHash) {
+    if (
+      (await input.sha256Hex(utf8(manifestJson))) !== signer.signingIntentHash
+    ) {
       report("the signed manifest does not match the recorded intent hash");
     }
     if (manifest.action !== "SIGN") report("the signed action is not SIGN");

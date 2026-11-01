@@ -227,11 +227,10 @@ export class DownloadNotificationService {
           digestLines.join("\n"),
           "weekly",
         );
-        } catch {
-      this.logger.error("Failed to send weekly download summary");
+      } catch {
+        this.logger.error("Failed to send weekly download summary");
         continue;
       }
-
     }
 
     // Mark all processed events as notified
@@ -246,7 +245,14 @@ export class DownloadNotificationService {
 
   // --- Send digest for a single share --------------------------------------
   private async sendDigestForShare(
-    share: { id: string; name: string | null; isE2EEncrypted: boolean; creatorId: string | null; senderEmail: string | null; creator?: { email: string | null } | null },
+    share: {
+      id: string;
+      name: string | null;
+      isE2EEncrypted: boolean;
+      creatorId: string | null;
+      senderEmail: string | null;
+      creator?: { email: string | null } | null;
+    },
     count: number,
   ) {
     const recipientEmail = share.creator?.email ?? share.senderEmail;

@@ -106,7 +106,10 @@ test("closes an area only when the run encloses one", () => {
     closeAreaPath(segment, 100),
     "M 0.00 99.00 L 10.00 98.00 L 10.00 100.00 L 0.00 100.00 Z",
   );
-  assert.equal(closeAreaPath({ d: "M 0.00 99.00", estimated: false }, 100), null);
+  assert.equal(
+    closeAreaPath({ d: "M 0.00 99.00", estimated: false }, 100),
+    null,
+  );
 });
 
 test("spreads date ticks and keeps both ends", () => {

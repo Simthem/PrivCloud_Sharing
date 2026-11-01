@@ -178,6 +178,7 @@ export class SoftwareVideoPlayback {
   private settling = false;
   private wallBase = 0;
   private wallStart = 0;
+  private rate = 1;
   private colorSpace = true;
   private animation = 0;
   private lastState = "";
@@ -250,7 +251,8 @@ export class SoftwareVideoPlayback {
       this.audio && !this.audio.ended
         ? this.audio.currentTime
         : this.playing
-          ? this.wallBase + (performance.now() - this.wallStart) / 1000
+          ? this.wallBase +
+            ((performance.now() - this.wallStart) / 1000) * this.rate
           : this.wallBase;
     return Math.min(Math.max(time, 0), this.duration);
   }
@@ -269,6 +271,15 @@ export class SoftwareVideoPlayback {
     });
     this.emit(true);
     this.schedule();
+  }
+
+  /** Pictures follow the sound, which keeps its pitch at any speed. */
+  setPlaybackRate(rate: number) {
+    if (this.destroyed || !Number.isFinite(rate) || rate <= 0) return;
+    this.wallBase = this.currentTime;
+    this.wallStart = performance.now();
+    this.rate = rate;
+    if (this.audio) this.audio.playbackRate = rate;
   }
 
   pause() {

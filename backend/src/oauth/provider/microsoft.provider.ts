@@ -5,10 +5,7 @@ import { Injectable } from "@nestjs/common";
 
 @Injectable()
 export class MicrosoftProvider extends GenericOidcProvider {
-  constructor(
-    config: ConfigService,
-    jwtService: JwtService,
-  ) {
+  constructor(config: ConfigService, jwtService: JwtService) {
     super(
       "microsoft",
       ["oauth.microsoft-enabled", "oauth.microsoft-tenant"],

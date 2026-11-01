@@ -11,64 +11,64 @@ import {
   Stack,
   Text,
   Title,
-} from "@mantine/core"
-import { useQuery } from "@tanstack/react-query"
-import { modals } from "@mantine/modals"
-import dayjs from "dayjs"
-import Link from "next/link"
-import { useEffect, useRef, useState } from "react"
-import { TbPhotoSearch, TbShieldCheck } from "react-icons/tb"
-import useTranslate from "../../../hooks/useTranslate.hook"
+} from "@mantine/core";
+import { useQuery } from "@tanstack/react-query";
+import { modals } from "@mantine/modals";
+import dayjs from "dayjs";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import { TbPhotoSearch, TbShieldCheck } from "react-icons/tb";
+import useTranslate from "../../../hooks/useTranslate.hook";
 import teamExternalService, {
   type ExternalIssuance,
-} from "../../../services/teamExternal.service"
+} from "../../../services/teamExternal.service";
 import {
   MARK_DETECTION_THRESHOLD,
   MARK_SCORE_CEILING,
   markPattern,
   type MarkDetection,
-} from "../../../utils/forensicMark.util"
-import { createForensicAnalyzer } from "../../../utils/forensicAnalysis.util"
-import { createPhotoRegistrar } from "../../../utils/photoRegistration.util"
+} from "../../../utils/forensicMark.util";
+import { createForensicAnalyzer } from "../../../utils/forensicAnalysis.util";
+import { createPhotoRegistrar } from "../../../utils/photoRegistration.util";
 import {
   referenceDigest,
   referenceImages,
-} from "../../../utils/referenceImages.util"
-import { forensicDecision } from "../../../utils/forensicDecision.util"
-import { saveBlobToDevice } from "../../../utils/saveBlob.util"
-import { exportCopyPattern } from "../../../utils/copyPatternExport.util"
-import toast from "../../../utils/toast.util"
-import { visibleCopyToken } from "../../../utils/visibleCopyMark.util"
-import type { ForensicAnalysis } from "../../../utils/forensicAnalysis.util"
+} from "../../../utils/referenceImages.util";
+import { forensicDecision } from "../../../utils/forensicDecision.util";
+import { saveBlobToDevice } from "../../../utils/saveBlob.util";
+import { exportCopyPattern } from "../../../utils/copyPatternExport.util";
+import toast from "../../../utils/toast.util";
+import { visibleCopyToken } from "../../../utils/visibleCopyMark.util";
+import type { ForensicAnalysis } from "../../../utils/forensicAnalysis.util";
 import {
   decryptRegisterLabel,
   loadTeamAuditKey,
-} from "../../../utils/teamAudit.util"
+} from "../../../utils/teamAudit.util";
 import {
   isPdf,
   SuspectFileError,
   suspectImages,
-} from "../../../utils/suspectImages.util"
-import AuditJournalModal from "./AuditJournalModal"
+} from "../../../utils/suspectImages.util";
+import AuditJournalModal from "./AuditJournalModal";
 import RegisterEntryCard, {
   contractorLabel,
   useRegisterDownloads,
-} from "./RegisterEntryCard"
+} from "./RegisterEntryCard";
 
-type RegisterRow = ExternalIssuance & { title: string | null }
+type RegisterRow = ExternalIssuance & { title: string | null };
 
 type Verdict =
   | {
-      kind: "match"
-      detection: MarkDetection
-      minimumScore?: number
-      row: RegisterRow
-      page?: number
+      kind: "match";
+      detection: MarkDetection;
+      minimumScore?: number;
+      row: RegisterRow;
+      page?: number;
     }
   | { kind: "none" }
   | { kind: "visible_marker"; markId: string; row: RegisterRow }
   | { kind: "ambiguous"; compatibleCount: number }
-  | { kind: "error"; message: string }
+  | { kind: "error"; message: string };
 
 /**
  * Register of the copies issued to contractors, their certificates and
@@ -76,34 +76,34 @@ type Verdict =
  * Titles are decrypted here, and a suspect image never leaves the browser.
  */
 export default function TeamAuditPanel({ teamId }: { teamId: string }) {
-  const t = useTranslate()
-  const [journalFor, setJournalFor] = useState<RegisterRow | null>(null)
-  const [checking, setChecking] = useState(false)
-  const [exportingPattern, setExportingPattern] = useState<string | null>(null)
-  const patternBusy = useRef(false)
-  const [progress, setProgress] = useState<string | null>(null)
-  const [verdict, setVerdict] = useState<Verdict | null>(null)
-  const analysisAbort = useRef<AbortController | null>(null)
-  const [suspectFile, setSuspectFile] = useState<File | null>(null)
-  const [referenceUsed, setReferenceUsed] = useState(false)
+  const t = useTranslate();
+  const [journalFor, setJournalFor] = useState<RegisterRow | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [exportingPattern, setExportingPattern] = useState<string | null>(null);
+  const patternBusy = useRef(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [verdict, setVerdict] = useState<Verdict | null>(null);
+  const analysisAbort = useRef<AbortController | null>(null);
+  const [suspectFile, setSuspectFile] = useState<File | null>(null);
+  const [referenceUsed, setReferenceUsed] = useState(false);
   const previousChecks = useRef<{
-    signature: string
-    results: { analysis: ForensicAnalysis; page?: number }[]
-  } | null>(null)
-  useEffect(() => () => analysisAbort.current?.abort(), [])
+    signature: string;
+    results: { analysis: ForensicAnalysis; page?: number }[];
+  } | null>(null);
+  useEffect(() => () => analysisAbort.current?.abort(), []);
   const downloads = useRegisterDownloads({
     certificate: (row) =>
       teamExternalService.downloadCertificate(teamId, row.id),
     evidence: (row) => teamExternalService.downloadEvidence(teamId, row.id),
-  })
+  });
 
   const { data: register, isLoading } = useQuery({
     queryKey: ["team-external-issuances", teamId],
     queryFn: async (): Promise<RegisterRow[]> => {
-      const rows = await teamExternalService.listIssuances(teamId)
+      const rows = await teamExternalService.listIssuances(teamId);
       const auditKey = await loadTeamAuditKey(teamId, { create: false }).catch(
         () => null,
-      )
+      );
       try {
         return await Promise.all(
           rows.map(async (row) => ({
@@ -117,40 +117,42 @@ export default function TeamAuditPanel({ teamId }: { teamId: string }) {
                 )
               : null,
           })),
-        )
+        );
       } finally {
-        auditKey?.fill(0)
+        auditKey?.fill(0);
       }
     },
-  })
+  });
 
   const { data: journal } = useQuery({
     queryKey: ["team-external-journal", teamId, journalFor?.previewId],
     queryFn: () =>
       teamExternalService.getJournal(teamId, journalFor!.previewId),
     enabled: !!journalFor,
-  })
+  });
 
   const checkImage = async (file: File | null) => {
-    if (!file || !register) return
-    setSuspectFile(file)
-    setReferenceUsed(false)
-    previousChecks.current = null
-    setChecking(true)
-    setVerdict(null)
-    analysisAbort.current?.abort()
-    const controller = new AbortController()
-    analysisAbort.current = controller
-    let auditKey: Uint8Array | null = null
-    let analyzer: Awaited<ReturnType<typeof createForensicAnalyzer>> | undefined
+    if (!file || !register) return;
+    setSuspectFile(file);
+    setReferenceUsed(false);
+    previousChecks.current = null;
+    setChecking(true);
+    setVerdict(null);
+    analysisAbort.current?.abort();
+    const controller = new AbortController();
+    analysisAbort.current = controller;
+    let auditKey: Uint8Array | null = null;
+    let analyzer:
+      | Awaited<ReturnType<typeof createForensicAnalyzer>>
+      | undefined;
     try {
-      auditKey = await loadTeamAuditKey(teamId, { create: false })
+      auditKey = await loadTeamAuditKey(teamId, { create: false });
       if (!auditKey || register.length === 0) {
-        setVerdict({ kind: "none" })
-        return
+        setVerdict({ kind: "none" });
+        return;
       }
-      const key = auditKey
-      if (register.length > 1000) throw new Error("Candidate budget exceeded")
+      const key = auditKey;
+      if (register.length > 1000) throw new Error("Candidate budget exceeded");
       const candidates = await Promise.all(
         register.map(async (row) => ({
           markId: row.markId,
@@ -159,38 +161,38 @@ export default function TeamAuditPanel({ teamId }: { teamId: string }) {
           robust:
             row.robustMarkAlgorithm === "privcloud:forensic-multiscale:v2",
         })),
-      )
+      );
       analyzer = await createForensicAnalyzer(
         candidates,
         controller.signal,
         () => {
           if (!controller.signal.aborted)
-            setProgress(t("team.audit.check.fragment"))
+            setProgress(t("team.audit.check.fragment"));
         },
-      )
+      );
       // Every page contributes, so a later ambiguity cannot be hidden by a match.
-      let analysed = 0
-      const results: { analysis: ForensicAnalysis; page?: number }[] = []
+      let analysed = 0;
+      const results: { analysis: ForensicAnalysis; page?: number }[] = [];
       for await (const image of suspectImages(file, controller.signal)) {
-        analysed++
+        analysed++;
         if (image.page) {
-          setProgress(t("team.audit.check.progress", { page: image.page }))
+          setProgress(t("team.audit.check.progress", { page: image.page }));
         }
-        controller.signal.throwIfAborted()
+        controller.signal.throwIfAborted();
         results.push({
           analysis: await analyzer.analyse(image.pixels),
           page: image.page,
-        })
+        });
       }
-      const decision = forensicDecision(results)
-      controller.signal.throwIfAborted()
+      const decision = forensicDecision(results);
+      controller.signal.throwIfAborted();
       previousChecks.current = {
         signature: register
           .map((row) => row.markId + row.robustMarkAlgorithm)
           .sort()
           .join(","),
         results,
-      }
+      };
       const row =
         decision.kind === "match" || decision.kind === "visible_marker"
           ? register.find(
@@ -200,7 +202,7 @@ export default function TeamAuditPanel({ teamId }: { teamId: string }) {
                   ? decision.detection.markId
                   : decision.markId),
             )
-          : undefined
+          : undefined;
       setVerdict(
         decision.kind === "match" || decision.kind === "visible_marker"
           ? row
@@ -209,9 +211,9 @@ export default function TeamAuditPanel({ teamId }: { teamId: string }) {
           : analysed === 0 && isPdf(file)
             ? { kind: "error", message: t("team.audit.check.emptyPdf") }
             : decision,
-      )
+      );
     } catch (error) {
-      if (controller.signal.aborted) return
+      if (controller.signal.aborted) return;
       setVerdict({
         kind: "error",
         message: t(
@@ -219,47 +221,49 @@ export default function TeamAuditPanel({ teamId }: { teamId: string }) {
             ? "team.audit.check.tooLarge"
             : "team.audit.check.error",
         ),
-      })
+      });
     } finally {
-      analyzer?.close()
-      auditKey?.fill(0)
+      analyzer?.close();
+      auditKey?.fill(0);
       if (analysisAbort.current === controller) {
-        analysisAbort.current = null
-        setProgress(null)
-        setChecking(false)
+        analysisAbort.current = null;
+        setProgress(null);
+        setChecking(false);
       }
     }
-  }
+  };
 
   const checkReference = async (original: File | null) => {
-    if (!original || !suspectFile || !register || checking) return
-    const previous = previousChecks.current
+    if (!original || !suspectFile || !register || checking) return;
+    const previous = previousChecks.current;
     const signature = register
       .map((row) => row.markId + row.robustMarkAlgorithm)
       .sort()
-      .join(",")
+      .join(",");
     if (!previous || previous.signature !== signature) {
-      toast.error(t("team.audit.reference.recheck"))
-      return
+      toast.error(t("team.audit.reference.recheck"));
+      return;
     }
-    analysisAbort.current?.abort()
-    const controller = new AbortController()
-    analysisAbort.current = controller
-    const deadline = setTimeout(() => controller.abort("deadline"), 180_000)
-    setChecking(true)
-    setProgress(t("team.audit.reference.preparing"))
-    let key: Uint8Array | null = null
-    let analyzer: Awaited<ReturnType<typeof createForensicAnalyzer>> | undefined
-    let registrar: Awaited<ReturnType<typeof createPhotoRegistrar>> | undefined
+    analysisAbort.current?.abort();
+    const controller = new AbortController();
+    analysisAbort.current = controller;
+    const deadline = setTimeout(() => controller.abort("deadline"), 180_000);
+    setChecking(true);
+    setProgress(t("team.audit.reference.preparing"));
+    let key: Uint8Array | null = null;
+    let analyzer:
+      | Awaited<ReturnType<typeof createForensicAnalyzer>>
+      | undefined;
+    let registrar: Awaited<ReturnType<typeof createPhotoRegistrar>> | undefined;
     try {
-      const digest = await referenceDigest(original, controller.signal)
+      const digest = await referenceDigest(original, controller.signal);
       if (!register.some((row) => row.sourceSha256 === digest)) {
-        toast.error(t("team.audit.reference.mismatch"))
-        return
+        toast.error(t("team.audit.reference.mismatch"));
+        return;
       }
-      key = await loadTeamAuditKey(teamId, { create: false })
-      if (!key) throw new Error("Audit key unavailable")
-      const auditKey = key
+      key = await loadTeamAuditKey(teamId, { create: false });
+      if (!key) throw new Error("Audit key unavailable");
+      const auditKey = key;
       const candidates = await Promise.all(
         register.map(async (row) => ({
           markId: row.markId,
@@ -268,15 +272,15 @@ export default function TeamAuditPanel({ teamId }: { teamId: string }) {
           robust:
             row.robustMarkAlgorithm === "privcloud:forensic-multiscale:v2",
         })),
-      )
-      analyzer = await createForensicAnalyzer(candidates, controller.signal)
+      );
+      analyzer = await createForensicAnalyzer(candidates, controller.signal);
       for await (const image of suspectImages(suspectFile, controller.signal)) {
-        registrar = await createPhotoRegistrar(image.pixels, controller.signal)
-        break
+        registrar = await createPhotoRegistrar(image.pixels, controller.signal);
+        break;
       }
-      if (!registrar) throw new Error("No photograph to register")
-      const results = [...previous.results]
-      let geometries = 0
+      if (!registrar) throw new Error("No photograph to register");
+      const results = [...previous.results];
+      let geometries = 0;
       for await (const reference of referenceImages(
         original,
         controller.signal,
@@ -286,17 +290,17 @@ export default function TeamAuditPanel({ teamId }: { teamId: string }) {
             page: reference.page,
             total: reference.total,
           }),
-        )
-        const registered = await registrar.register(reference.pixels)
-        if (!registered) continue
-        geometries++
+        );
+        const registered = await registrar.register(reference.pixels);
+        if (!registered) continue;
+        geometries++;
         results.push({
           analysis: await analyzer.analyse(registered.pixels),
           page: reference.page,
-        })
+        });
       }
-      controller.signal.throwIfAborted()
-      const decision = forensicDecision(results)
+      controller.signal.throwIfAborted();
+      const decision = forensicDecision(results);
       const row =
         decision.kind === "match" || decision.kind === "visible_marker"
           ? register.find(
@@ -306,17 +310,17 @@ export default function TeamAuditPanel({ teamId }: { teamId: string }) {
                   ? decision.detection.markId
                   : decision.markId),
             )
-          : undefined
-      setReferenceUsed(geometries > 0)
-      previousChecks.current = { signature, results }
+          : undefined;
+      setReferenceUsed(geometries > 0);
+      previousChecks.current = { signature, results };
       if (decision.kind === "match" || decision.kind === "visible_marker")
         setVerdict(
           row && row.sourceSha256 === digest
             ? { ...decision, row }
             : { kind: "none" },
-        )
-      else setVerdict(decision)
-      if (!geometries) toast.error(t("team.audit.reference.noGeometry"))
+        );
+      else setVerdict(decision);
+      if (!geometries) toast.error(t("team.audit.reference.noGeometry"));
     } catch {
       if (!controller.signal.aborted || controller.signal.reason === "deadline")
         toast.error(
@@ -325,46 +329,46 @@ export default function TeamAuditPanel({ teamId }: { teamId: string }) {
               ? "team.audit.reference.timeout"
               : "team.audit.reference.error",
           ),
-        )
+        );
     } finally {
-      clearTimeout(deadline)
-      registrar?.close()
-      analyzer?.close()
-      key?.fill(0)
+      clearTimeout(deadline);
+      registrar?.close();
+      analyzer?.close();
+      key?.fill(0);
       if (analysisAbort.current === controller) {
-        analysisAbort.current = null
-        setChecking(false)
-        setProgress(null)
+        analysisAbort.current = null;
+        setChecking(false);
+        setProgress(null);
       }
     }
-  }
+  };
 
   const downloadPattern = async (row: ExternalIssuance) => {
-    if (patternBusy.current) return
-    patternBusy.current = true
-    setExportingPattern(row.id)
-    let key: Uint8Array | null = null
+    if (patternBusy.current) return;
+    patternBusy.current = true;
+    setExportingPattern(row.id);
+    let key: Uint8Array | null = null;
     try {
       const permission = await teamExternalService.authorizePatternExport(
         teamId,
         row.id,
-      )
+      );
       if (
         permission.markId !== row.markId ||
         permission.robustMarkAlgorithm !== row.robustMarkAlgorithm
       )
-        throw new Error("Pattern export does not match the authorized copy")
-      key = await loadTeamAuditKey(teamId, { create: false })
-      if (!key) throw new Error("Audit key unavailable")
+        throw new Error("Pattern export does not match the authorized copy");
+      key = await loadTeamAuditKey(teamId, { create: false });
+      if (!key) throw new Error("Audit key unavailable");
       const json = await exportCopyPattern(
         key,
         row.markId,
         row.robustMarkAlgorithm,
-      )
+      );
       await saveBlobToDevice(
         new Blob([json], { type: "application/json" }),
         `diagnostic-motif-${row.markId.slice(0, 8)}.json`,
-      )
+      );
     } catch (error) {
       if (
         !(
@@ -372,13 +376,13 @@ export default function TeamAuditPanel({ teamId }: { teamId: string }) {
           ["NotAllowedError", "AbortError"].includes(error.name)
         )
       )
-        toast.error(t("team.audit.pattern.error"))
+        toast.error(t("team.audit.pattern.error"));
     } finally {
-      key?.fill(0)
-      patternBusy.current = false
-      setExportingPattern(null)
+      key?.fill(0);
+      patternBusy.current = false;
+      setExportingPattern(null);
     }
-  }
+  };
 
   return (
     <Paper withBorder p="lg" mb="lg">
@@ -421,7 +425,7 @@ export default function TeamAuditPanel({ teamId }: { teamId: string }) {
                       cancel: t("common.button.cancel"),
                     },
                     onConfirm: () => {
-                      void downloadPattern(row)
+                      void downloadPattern(row);
                     },
                   })
                 }
@@ -581,10 +585,10 @@ export default function TeamAuditPanel({ teamId }: { teamId: string }) {
         onClose={() => setJournalFor(null)}
         journal={journal}
         onDiagnostic={async () => {
-          const blob = await teamExternalService.getJournalDiagnostic(teamId)
-          await saveBlobToDevice(blob, "diagnostic-journal-prive.json")
+          const blob = await teamExternalService.getJournalDiagnostic(teamId);
+          await saveBlobToDevice(blob, "diagnostic-journal-prive.json");
         }}
       />
     </Paper>
-  )
+  );
 }

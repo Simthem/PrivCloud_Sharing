@@ -5,4 +5,3 @@ export class VerifyEmailDTO {
   @Length(43, 43)
   token: string;
 }
-

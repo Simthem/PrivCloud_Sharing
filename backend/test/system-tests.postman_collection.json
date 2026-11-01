@@ -1197,14 +1197,128 @@
 							"response": []
 						},
 						{
+							"name": "Get share token - First visitor",
+							"event": [
+								{
+									"listen": "prerequest",
+									"script": {
+										"exec": [
+											"// A visitor, not the signed-in creator of the share",
+											"pm.request.headers.remove(\"Cookie\");"
+										],
+										"type": "text/javascript"
+									}
+								},
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"pm.test(\"Status code is 200\",  () => {",
+											"    pm.response.to.have.status(200);",
+											"});"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"password\" : \"share-password\"\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{API_URL}}/shares/:shareId/token",
+									"host": [
+										"{{API_URL}}"
+									],
+									"path": [
+										"shares",
+										":shareId",
+										"token"
+									],
+									"variable": [
+										{
+											"key": "shareId",
+											"value": "test-share"
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
 							"name": "Get share token - Visitor limit exceeded",
 							"event": [
+								{
+									"listen": "prerequest",
+									"script": {
+										"exec": [
+											"// A visitor, not the signed-in creator of the share",
+											"pm.request.headers.remove(\"Cookie\");"
+										],
+										"type": "text/javascript"
+									}
+								},
 								{
 									"listen": "test",
 									"script": {
 										"exec": [
 											"pm.test(\"Status code is 403\",  () => {",
 											"    pm.response.to.have.status(403);",
+											"});"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"password\" : \"share-password\"\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{API_URL}}/shares/:shareId/token",
+									"host": [
+										"{{API_URL}}"
+									],
+									"path": [
+										"shares",
+										":shareId",
+										"token"
+									],
+									"variable": [
+										{
+											"key": "shareId",
+											"value": "test-share"
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Get share token - Creator past the visitor limit",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"pm.test(\"Status code is 200\",  () => {",
+											"    pm.response.to.have.status(200);",
 											"});"
 										],
 										"type": "text/javascript"

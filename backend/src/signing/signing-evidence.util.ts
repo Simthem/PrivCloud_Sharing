@@ -137,7 +137,10 @@ export function parseAuthenticatorEvidence(response: {
     userHandle?: string;
   };
 }) {
-  const authData = Buffer.from(response.response.authenticatorData, "base64url");
+  const authData = Buffer.from(
+    response.response.authenticatorData,
+    "base64url",
+  );
   if (authData.length < 37) throw new Error("Authenticator data is truncated");
   const flags = authData[32];
   return {
@@ -199,9 +202,12 @@ export function reconcileSignerContribution(input: {
     problems.push("the signed manifest is not canonical");
   }
   if (hashSigningTransactionManifest(manifest) !== input.signingIntentHash) {
-    problems.push("the signed manifest does not match the recorded intent hash");
+    problems.push(
+      "the signed manifest does not match the recorded intent hash",
+    );
   }
-  if (manifest.action !== "SIGN") problems.push("the signed action is not SIGN");
+  if (manifest.action !== "SIGN")
+    problems.push("the signed action is not SIGN");
   if (manifest.documentId !== input.documentId) {
     problems.push("the signed manifest names another document");
   }

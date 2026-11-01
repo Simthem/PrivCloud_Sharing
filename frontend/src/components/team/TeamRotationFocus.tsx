@@ -15,7 +15,8 @@ export default function TeamRotationFocus({
   const t = useTranslate();
   const region = useRef<HTMLDivElement>(null);
   const [highlighted, setHighlighted] = useState(false);
-  const targetRequested = router.isReady && router.asPath.split("#")[1] === "e2e-rotation";
+  const targetRequested =
+    router.isReady && router.asPath.split("#")[1] === "e2e-rotation";
   const teamPath = router.asPath.split(/[?#]/, 1)[0];
 
   useEffect(() => {
@@ -24,7 +25,9 @@ export default function TeamRotationFocus({
       return;
     }
     setHighlighted(true);
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
     region.current?.scrollIntoView({
       behavior: reducedMotion ? "auto" : "smooth",
       block: "center",
@@ -38,7 +41,12 @@ export default function TeamRotationFocus({
     <Box
       ref={region}
       id={ready ? "e2e-rotation" : undefined}
-      className={[styles.rotationTarget, highlighted && styles.rotationHighlight].filter(Boolean).join(" ")}
+      className={[
+        styles.rotationTarget,
+        highlighted && styles.rotationHighlight,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       role="region"
       aria-label={t("team.settings.rotation.title")}
       tabIndex={-1}

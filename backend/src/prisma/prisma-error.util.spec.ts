@@ -12,14 +12,8 @@ assert.equal(
   describeUserUniqueConflict({ meta: { constraint: "User_email_key" } }),
   "email",
 );
-assert.equal(
-  describeUserUniqueConflict({ meta: {} }),
-  "email or username",
-);
-assert.equal(
-  describeUserUniqueConflict({}),
-  "email or username",
-);
+assert.equal(describeUserUniqueConflict({ meta: {} }), "email or username");
+assert.equal(describeUserUniqueConflict({}), "email or username");
 assert.equal(
   describeUserUniqueConflict({
     meta: {
@@ -45,13 +39,10 @@ assert.equal(
   }),
   "email or username",
 );
-assert.deepEqual(
-  createUserUniqueConflictResponse({ meta: {} }),
-  {
-    code: "user_unique_conflict",
-    field: "email or username",
-    message: "A user with this email or username already exists",
-  },
-);
+assert.deepEqual(createUserUniqueConflictResponse({ meta: {} }), {
+  code: "user_unique_conflict",
+  field: "email or username",
+  message: "A user with this email or username already exists",
+});
 
 console.log("prisma unique-conflict metadata checks passed");

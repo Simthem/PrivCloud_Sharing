@@ -60,7 +60,8 @@ const AcceptInvitePage = () => {
           const masterKey = await importKeyFromBase64(userKeyB64);
           wrappedTeamKey = await wrapReverseShareKey(teamKey, masterKey);
           const parsedVersion = Number.parseInt(
-            new URLSearchParams(window.location.hash.slice(1)).get("version") || "",
+            new URLSearchParams(window.location.hash.slice(1)).get("version") ||
+              "",
             10,
           );
           if (Number.isFinite(parsedVersion)) keyVersion = parsedVersion;
@@ -76,7 +77,9 @@ const AcceptInvitePage = () => {
       if (data.encryptedTeamKey && !extractTeamKeyFromHash()) {
         // For now, the encryptedTeamKey is only usable if we implement
         // server-side key transport. The primary path is URL fragment.
-        console.info("[E2E] Invitation has encryptedTeamKey but no fragment key");
+        console.info(
+          "[E2E] Invitation has encryptedTeamKey but no fragment key",
+        );
       }
       // Refresh user context so hasTeamMembership is up-to-date before navigating
       await refreshUser();
@@ -88,7 +91,9 @@ const AcceptInvitePage = () => {
   if (!tokenStr) {
     return (
       <Container size="sm" mt="xl" px={0}>
-        <Alert color="red">{intl.formatMessage({ id: "team.invite.invalid-link" })}</Alert>
+        <Alert color="red">
+          {intl.formatMessage({ id: "team.invite.invalid-link" })}
+        </Alert>
       </Container>
     );
   }
@@ -99,7 +104,9 @@ const AcceptInvitePage = () => {
         <Paper withBorder p="xl" ta="center">
           <Stack align="center" gap="md">
             <TbUsersGroup size={48} />
-            <Title order={3}>{intl.formatMessage({ id: "team.invite.title" })}</Title>
+            <Title order={3}>
+              {intl.formatMessage({ id: "team.invite.title" })}
+            </Title>
             <InvitationAuthChoice
               queryKey={`team:${tokenStr}`}
               loadAccount={() => teamService.getInvitationAccount(tokenStr)}
@@ -116,8 +123,12 @@ const AcceptInvitePage = () => {
         <Paper withBorder p="xl" ta="center">
           <Stack align="center" gap="md">
             <TbCheck size={64} color="var(--mantine-color-green-6)" />
-            <Title order={3}>{intl.formatMessage({ id: "team.invite.accepted-title" })}</Title>
-            <Text c="dimmed">{intl.formatMessage({ id: "team.invite.accepted-redirect" })}</Text>
+            <Title order={3}>
+              {intl.formatMessage({ id: "team.invite.accepted-title" })}
+            </Title>
+            <Text c="dimmed">
+              {intl.formatMessage({ id: "team.invite.accepted-redirect" })}
+            </Text>
           </Stack>
         </Paper>
       </Container>
@@ -131,7 +142,9 @@ const AcceptInvitePage = () => {
         <Paper withBorder p="xl" ta="center">
           <Stack align="center" gap="md">
             <TbUsersGroup size={48} color="var(--mantine-color-blue-6)" />
-            <Title order={3}>{intl.formatMessage({ id: "team.invite.join-title" })}</Title>
+            <Title order={3}>
+              {intl.formatMessage({ id: "team.invite.join-title" })}
+            </Title>
             <Text c="dimmed">
               {intl.formatMessage({ id: "team.invite.join-description" })}
             </Text>
@@ -149,14 +162,20 @@ const AcceptInvitePage = () => {
                   {intl.formatMessage({ id: "team.invite.e2e-required-title" })}
                 </Text>
                 <Text size="sm" c="dimmed">
-                  {intl.formatMessage({ id: "team.invite.e2e-required-description" })}
+                  {intl.formatMessage({
+                    id: "team.invite.e2e-required-description",
+                  })}
                 </Text>
                 <Button
                   variant="light"
                   color="orange"
                   size="xs"
                   mt="sm"
-                  onClick={() => router.push(`/account#e2e?redirect=/team/invite/${tokenStr}`)}
+                  onClick={() =>
+                    router.push(
+                      `/account#e2e?redirect=/team/invite/${tokenStr}`,
+                    )
+                  }
                 >
                   {intl.formatMessage({ id: "team.invite.e2e-setup-button" })}
                 </Button>
@@ -167,7 +186,11 @@ const AcceptInvitePage = () => {
               size="lg"
               onClick={() => acceptMutation.mutate()}
               loading={acceptMutation.isPending}
-              disabled={needsKeyGeneration || acceptMutation.isSuccess || acceptMutation.isPending}
+              disabled={
+                needsKeyGeneration ||
+                acceptMutation.isSuccess ||
+                acceptMutation.isPending
+              }
             >
               {intl.formatMessage({ id: "team.invite.accept-button" })}
             </Button>

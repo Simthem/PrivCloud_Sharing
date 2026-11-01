@@ -16,7 +16,11 @@ import { EnrollmentTokenService } from "./enrollment.service";
     AccessGrantController,
     EnrollmentTokenController,
   ],
-  providers: [CryptoIdentityService, AccessGrantService, EnrollmentTokenService],
+  providers: [
+    CryptoIdentityService,
+    AccessGrantService,
+    EnrollmentTokenService,
+  ],
   exports: [CryptoIdentityService, AccessGrantService, EnrollmentTokenService],
 })
 export class CryptoModule {}

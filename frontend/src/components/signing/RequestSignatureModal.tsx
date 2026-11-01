@@ -308,7 +308,9 @@ export default function RequestSignatureModal({
     .map((recipient) => recipient.email.trim())
     .join("\n");
   const manualSignatureFieldsKey = form.values.fields
-    .filter((field) => field.type === "SIGNATURE" && field.autoDetected !== true)
+    .filter(
+      (field) => field.type === "SIGNATURE" && field.autoDetected !== true,
+    )
     .map((field) => field.recipientEmail.trim())
     .join("\n");
 
@@ -965,7 +967,9 @@ export default function RequestSignatureModal({
                       style={{ flex: 1.5 }}
                       description={
                         ineligibleEmails.has(
-                          form.values.recipients[idx].email.trim().toLowerCase(),
+                          form.values.recipients[idx].email
+                            .trim()
+                            .toLowerCase(),
                         ) ? (
                           <Text span size="xs" c="orange">
                             {t("signing.new.reinforced.ineligible")}

@@ -48,7 +48,10 @@ export async function highlightCodePreview(
         finish();
         return;
       }
-      finish({ ...result, limited: result.limited || text.length > prefix.length });
+      finish({
+        ...result,
+        limited: result.limited || text.length > prefix.length,
+      });
     };
     worker.postMessage({ id: 1, type: "highlight", text: prefix, language });
   });

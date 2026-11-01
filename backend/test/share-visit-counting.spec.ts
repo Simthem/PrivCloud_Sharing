@@ -56,6 +56,7 @@ function fixture(maxViews: number | null = null) {
   const prisma = {
     share: {
       findUnique: async () => share,
+      findFirst: async () => share,
       updateMany: async () => {
         if (maxViews && share.views >= maxViews) return { count: 0 };
         share.views++;
@@ -67,6 +68,20 @@ function fixture(maxViews: number | null = null) {
     increaseViewCount: async () => {
       share.views++;
     },
+    countVisit: (visited: VisitShare, visitorId?: string) =>
+      ShareService.prototype.countVisit.call(
+        service as unknown as ShareService,
+        visited as unknown as Parameters<ShareService["countVisit"]>[0],
+        visitorId,
+      ),
+    getShareToken: (password: string, visitorId?: string) =>
+      ShareService.prototype.getShareToken.call(
+        service as unknown as ShareService,
+        share.id,
+        password,
+        visitorId,
+      ),
+    prisma,
     generateShareToken: async () => jwt.sign({ shareId: share.id }),
     verifyShareToken: async (id: string, token: string) => {
       try {
@@ -118,7 +133,7 @@ function fixture(maxViews: number | null = null) {
     } as unknown as ExecutionContext;
     return { allowed: await guard.canActivate(context), response };
   }
-  return { share, visit, teamAccess };
+  return { share, visit, teamAccess, service };
 }
 testCase(
   "Office/PDF/media ranges, direct authorizations and other files reuse one counted visit at maxViews=1",
@@ -148,6 +163,47 @@ testCase(
   },
 );
 
+testCase(
+  "the creator previewing their own files is never counted, even at the view limit",
+  async () => {
+    const f = fixture(1);
+    f.share.creatorId = "owner";
+    for (const range of ["bytes=0-1023", "bytes=2048-4095", "bytes=9000-9999"])
+      assert.equal(
+        (await f.visit({ cookies: {}, range, user: { id: "owner" } })).allowed,
+        true,
+      );
+    assert.equal(f.share.views, 0);
+    await f.visit({ cookies: {}, user: { id: "visitor" } });
+    assert.equal(f.share.views, 1);
+    assert.equal(
+      (await f.visit({ cookies: {}, user: { id: "owner" } })).allowed,
+      true,
+    );
+    assert.equal(f.share.views, 1);
+    await assert.rejects(
+      f.visit({ cookies: {}, user: { id: "visitor" } }),
+      (error: HttpException) => error.getStatus() === 403,
+    );
+  },
+);
+testCase(
+  "a visit token is counted for visitors and never for the creator",
+  async () => {
+    const f = fixture(1);
+    f.share.creatorId = "owner";
+    assert.equal(typeof (await f.service.getShareToken("", "owner")), "string");
+    assert.equal(f.share.views, 0);
+    assert.equal(typeof (await f.service.getShareToken("")), "string");
+    assert.equal(f.share.views, 1);
+    await assert.rejects(
+      f.service.getShareToken(""),
+      (error: HttpException) => error.getStatus() === 403,
+    );
+    assert.equal(typeof (await f.service.getShareToken("", "owner")), "string");
+    assert.equal(f.share.views, 1);
+  },
+);
 testCase(
   "passwords, private reverse shares, Team access and expiry are checked before counting",
   async () => {

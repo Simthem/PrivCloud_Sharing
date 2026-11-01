@@ -107,21 +107,23 @@ const FileList = <T extends FileListItem = FileListItem>({
   ));
 
   return (
-    <div style={isUploading ? { opacity: 0.6, pointerEvents: "none" } : undefined}>
-    <Table>
-      <thead>
-        <tr>
-          <th style={{ textAlign: "left" }}>
-            <FormattedMessage id="upload.filelist.name" />
-          </th>
-          <th style={{ textAlign: "left" }}>
-            <FormattedMessage id="upload.filelist.size" />
-          </th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>{rows}</tbody>
-    </Table>
+    <div
+      style={isUploading ? { opacity: 0.6, pointerEvents: "none" } : undefined}
+    >
+      <Table>
+        <thead>
+          <tr>
+            <th style={{ textAlign: "left" }}>
+              <FormattedMessage id="upload.filelist.name" />
+            </th>
+            <th style={{ textAlign: "left" }}>
+              <FormattedMessage id="upload.filelist.size" />
+            </th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>{rows}</tbody>
+      </Table>
     </div>
   );
 };

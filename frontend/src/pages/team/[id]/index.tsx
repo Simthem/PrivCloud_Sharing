@@ -76,7 +76,10 @@ import {
 import { useIntl } from "react-intl";
 import TeamFileRequests from "../../../components/team/TeamFileRequests";
 import Meta from "../../../components/Meta";
-import teamService, { AccessLog, TeamSearchIndex } from "../../../services/team.service";
+import teamService, {
+  AccessLog,
+  TeamSearchIndex,
+} from "../../../services/team.service";
 import signingService from "../../../services/signing.service";
 import {
   generateEncryptionKey,
@@ -1790,10 +1793,9 @@ const TeamDashboard = () => {
                           <Text
                             size="xs"
                             c="dimmed"
-                            lineClamp={1}
+                            truncate="end"
                             style={{
                               overflowWrap: "anywhere",
-                              hyphens: "auto",
                             }}
                           >
                             {log.fileName || log.folder?.name}
@@ -2041,12 +2043,11 @@ const TeamDashboard = () => {
                             <Text
                               fw={600}
                               size="sm"
-                              lineClamp={1}
+                              truncate="end"
                               style={{
                                 flex: 1,
                                 minWidth: 0,
                                 overflowWrap: "anywhere",
-                                hyphens: "auto",
                               }}
                             >
                               {doc.fileName ||
@@ -2222,7 +2223,6 @@ const TeamDashboard = () => {
                                     flex: 1,
                                     minWidth: 0,
                                     overflowWrap: "anywhere",
-                                    hyphens: "auto",
                                   }}
                                 >
                                   {doc.fileName ||
@@ -2405,12 +2405,11 @@ const TeamDashboard = () => {
                               <Text
                                 fw={600}
                                 size="sm"
-                                lineClamp={1}
+                                truncate="end"
                                 style={{
                                   flex: 1,
                                   minWidth: 0,
                                   overflowWrap: "anywhere",
-                                  hyphens: "auto",
                                 }}
                               >
                                 {doc.fileName ||
@@ -2423,7 +2422,7 @@ const TeamDashboard = () => {
                               <Text
                                 size="xs"
                                 c="dimmed"
-                                lineClamp={1}
+                                truncate="end"
                                 fs="italic"
                                 mb={4}
                                 style={{ overflowWrap: "anywhere" }}
@@ -2525,7 +2524,6 @@ const TeamDashboard = () => {
                                           flex: 1,
                                           minWidth: 0,
                                           overflowWrap: "anywhere",
-                                          hyphens: "auto",
                                         }}
                                       >
                                         {doc.fileName ||
@@ -2540,7 +2538,7 @@ const TeamDashboard = () => {
                                       <Text
                                         size="xs"
                                         c="dimmed"
-                                        lineClamp={1}
+                                        truncate="end"
                                         fs="italic"
                                         ml={20}
                                         style={{ overflowWrap: "anywhere" }}
@@ -2667,8 +2665,8 @@ const TeamDashboard = () => {
                 <Text
                   size="xs"
                   c="dimmed"
-                  lineClamp={1}
-                  style={{ overflowWrap: "anywhere", hyphens: "auto" }}
+                  truncate="end"
+                  style={{ overflowWrap: "anywhere" }}
                 >
                   {rotateProgress.currentFile}
                 </Text>
@@ -3417,7 +3415,7 @@ const TeamSearchPanel = ({
                   className={searchStyles.secondaryText}
                   size="xs"
                   c="dimmed"
-                  lineClamp={1}
+                  truncate="end"
                 >
                   {result.secondary || "-"}
                 </Text>
@@ -3585,9 +3583,9 @@ const TeamSharesPanel = ({ teamId }: { teamId: string }) => {
                 <Text
                   size="sm"
                   fw={600}
-                  lineClamp={1}
+                  truncate="end"
                   mb={4}
-                  style={{ overflowWrap: "anywhere", hyphens: "auto" }}
+                  style={{ overflowWrap: "anywhere" }}
                 >
                   {share.fileInfo?.fileName || "-"}
                 </Text>
@@ -3643,8 +3641,8 @@ const TeamSharesPanel = ({ teamId }: { teamId: string }) => {
                     <Text
                       size="sm"
                       fw={500}
-                      lineClamp={1}
-                      style={{ overflowWrap: "anywhere", hyphens: "auto" }}
+                      truncate="end"
+                      style={{ overflowWrap: "anywhere" }}
                     >
                       {share.fileInfo?.fileName || "-"}
                     </Text>
@@ -3724,9 +3722,9 @@ const TeamSharesPanel = ({ teamId }: { teamId: string }) => {
                 <Text
                   size="sm"
                   fw={600}
-                  lineClamp={1}
+                  truncate="end"
                   mb={4}
-                  style={{ overflowWrap: "anywhere", hyphens: "auto" }}
+                  style={{ overflowWrap: "anywhere" }}
                 >
                   {share.fileInfo?.fileName || "-"}
                 </Text>
@@ -3779,7 +3777,7 @@ const TeamSharesPanel = ({ teamId }: { teamId: string }) => {
               {sent.map((share) => (
                 <Table.Tr key={share.id}>
                   <Table.Td>
-                    <Text size="sm" fw={500} lineClamp={1}>
+                    <Text size="sm" fw={500} truncate="end">
                       {share.fileInfo?.fileName || "-"}
                     </Text>
                   </Table.Td>

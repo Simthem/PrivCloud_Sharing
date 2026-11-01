@@ -26,7 +26,7 @@ export class ReverseShareDTO {
   @Expose()
   publicAccess: boolean;
 
-   // E2E: indicates whether the reverse share expects encrypted files
+  // E2E: indicates whether the reverse share expects encrypted files
   @Expose()
   isE2EEncrypted: boolean;
 
@@ -38,8 +38,9 @@ export class ReverseShareDTO {
     const result = plainToClass(ReverseShareDTO, partial, {
       excludeExtraneousValues: true,
     });
-     // Derived: a reverse share is E2E if it has an encryptedReverseShareKey
-    result.isE2EEncrypted = !!(partial as Record<string, unknown>).encryptedReverseShareKey;
+    // Derived: a reverse share is E2E if it has an encryptedReverseShareKey
+    result.isE2EEncrypted = !!(partial as Record<string, unknown>)
+      .encryptedReverseShareKey;
     return result;
   }
 }

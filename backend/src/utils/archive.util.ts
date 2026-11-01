@@ -1,9 +1,7 @@
 import archiver = require("archiver");
 
 type ArchiverV8Module = {
-  ZipArchive: new (
-    options?: archiver.ArchiverOptions,
-  ) => archiver.Archiver;
+  ZipArchive: new (options?: archiver.ArchiverOptions) => archiver.Archiver;
 };
 
 const { ZipArchive } = archiver as unknown as ArchiverV8Module;

@@ -17,7 +17,7 @@ export interface PdfPageRotation {
 }
 
 export const normalizedPdfRotation = (rotation: number) =>
-  ((Math.round(rotation / 90) * 90) % 360 + 360) % 360;
+  (((Math.round(rotation / 90) * 90) % 360) + 360) % 360;
 
 /** Apply requester-selected clockwise rotations without mutating the source file. */
 export async function applyPdfPageRotations(

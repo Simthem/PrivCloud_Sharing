@@ -213,7 +213,9 @@ const VerifyEmailPage = () => {
             {status === "verifying" && (
               <Group justify="center">
                 <Loader size="sm" />
-                <Text>{french ? "Validation en cours..." : "Verifying..."}</Text>
+                <Text>
+                  {french ? "Validation en cours..." : "Verifying..."}
+                </Text>
               </Group>
             )}
             {status === "verified" && (

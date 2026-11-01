@@ -246,7 +246,9 @@ export class CryptoIdentityService {
   async getPublicKeysForUsers(userIds: string[]) {
     if (userIds.length === 0) return [];
     if (userIds.length > 100) {
-      throw new BadRequestException("Cannot lookup more than 100 users at once");
+      throw new BadRequestException(
+        "Cannot lookup more than 100 users at once",
+      );
     }
 
     const keys = await this.prisma.userIdentityKey.findMany({

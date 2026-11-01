@@ -24,7 +24,7 @@ export class ReverseShareTokenWithShares extends OmitType(ReverseShareDTO, [
   @Type(() => MyShareSecurityDTO)
   security: MyShareSecurityDTO;
 
-   // E2E: encrypted reverse share key (so the owner can decrypt received files)
+  // E2E: encrypted reverse share key (so the owner can decrypt received files)
   @Expose()
   encryptedReverseShareKey?: string;
 

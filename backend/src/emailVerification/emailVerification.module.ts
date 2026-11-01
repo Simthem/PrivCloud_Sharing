@@ -10,4 +10,3 @@ import { EmailVerificationService } from "./emailVerification.service";
   exports: [EmailVerificationService],
 })
 export class EmailVerificationModule {}
-

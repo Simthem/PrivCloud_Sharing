@@ -52,9 +52,18 @@ testCase("summarizes compliance events and flags actionable anomalies", () => {
   assert.equal(summary.totals.e2eShares, 1);
   assert.equal(summary.totals.deletions, 1);
   assert.equal(summary.topActors[0].email, "alice@example.com");
-  assert.equal(summary.anomalies.some((item) => item.code === "DOWNLOAD_BURST"), true);
-  assert.equal(summary.anomalies.some((item) => item.code === "BULK_DELETE"), true);
-  assert.equal(summary.anomalies.some((item) => item.code === "TEAM_KEY_INCOMPLETE"), true);
+  assert.equal(
+    summary.anomalies.some((item) => item.code === "DOWNLOAD_BURST"),
+    true,
+  );
+  assert.equal(
+    summary.anomalies.some((item) => item.code === "BULK_DELETE"),
+    true,
+  );
+  assert.equal(
+    summary.anomalies.some((item) => item.code === "TEAM_KEY_INCOMPLETE"),
+    true,
+  );
 });
 
 void run();

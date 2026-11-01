@@ -688,7 +688,7 @@ const WebDavImportModal = ({
               <Text
                 size="xs"
                 c="dimmed"
-                lineClamp={1}
+                truncate="end"
                 style={{ flex: 1, minWidth: 0 }}
               >
                 {currentUrl}
@@ -792,7 +792,7 @@ const WebDavImportModal = ({
                           <Text
                             size="sm"
                             fw={entry.isDirectory ? 500 : 400}
-                            lineClamp={1}
+                            truncate="end"
                           >
                             {entry.name}
                           </Text>

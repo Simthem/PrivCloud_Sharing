@@ -76,6 +76,7 @@ before_push.sh
 !/frontend/public/image-decoders/decoder.worker.js
 /frontend/public/video-decoders/*
 !/frontend/public/video-decoders/hevc.worker.js
+!/frontend/public/video-decoders/media.worker.js
 
 frontend/public/forensic/*
 !frontend/public/forensic/registration.worker.js

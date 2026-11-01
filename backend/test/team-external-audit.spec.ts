@@ -130,33 +130,33 @@ testCase(
     const input = {
       ...description,
       visibleMarkAlgorithm: "privcloud:visible-copy:v1" as const,
-    }
-    assert.equal(isValidIssuanceInput(input, input.pages.length), true)
+    };
+    assert.equal(isValidIssuanceInput(input, input.pages.length), true);
     assert.equal(
       manifest(input).copy.visibleMarkAlgorithm,
       input.visibleMarkAlgorithm,
-    )
+    );
     assert.equal(
       isValidIssuanceInput(
         { ...input, visibleMarkAlgorithm: "unknown" },
         input.pages.length,
       ),
       false,
-    )
-    const current = manifest()
+    );
+    const current = manifest();
     const visible = {
       ...current,
       copy: {
         ...current.copy,
         visibleMarkAlgorithm: input.visibleMarkAlgorithm,
       },
-    }
+    };
     assert.notEqual(
       issuanceChallenge(visible).hash,
       issuanceChallenge(current).hash,
-    )
+    );
   },
-)
+);
 
 testCase(
   "the signed manifest binds the whole-page multiscale carrier and rejects unknown versions",
@@ -164,30 +164,30 @@ testCase(
     const input = {
       ...description,
       robustMarkAlgorithm: "privcloud:forensic-multiscale:v2" as const,
-    }
-    assert.equal(isValidIssuanceInput(input, input.pages.length), true)
+    };
+    assert.equal(isValidIssuanceInput(input, input.pages.length), true);
     assert.equal(
       manifest(input).copy.robustMarkAlgorithm,
       input.robustMarkAlgorithm,
-    )
+    );
     assert.equal(
       isValidIssuanceInput(
         { ...input, robustMarkAlgorithm: "unknown" },
         input.pages.length,
       ),
       false,
-    )
-    const current = manifest()
+    );
+    const current = manifest();
     const robust = {
       ...current,
       copy: { ...current.copy, robustMarkAlgorithm: input.robustMarkAlgorithm },
-    }
+    };
     assert.notEqual(
       issuanceChallenge(robust).hash,
       issuanceChallenge(current).hash,
-    )
+    );
   },
-)
+);
 
 testCase("a copy description is checked field by field", () => {
   assert.equal(isValidIssuanceInput(description, 2), true);
@@ -234,74 +234,74 @@ testCase("the journal reveals an edited, removed or reordered event", () => {
 testCase(
   "journal diagnostics distinguish content, sequence, genesis and anchors without rewriting events",
   () => {
-    const events = chain(3)
+    const events = chain(3);
     const edited = events.map((event) =>
       event.seq === 1
         ? { ...event, actorEmail: "different@example.test" }
         : event,
-    )
-    assert.equal(verifyAuditChain(edited, []).reason, "content_hash_mismatch")
+    );
+    assert.equal(verifyAuditChain(edited, []).reason, "content_hash_mismatch");
     assert.equal(
       verifyAuditChain([events[0], events[2]], []).reason,
       "sequence_gap",
-    )
+    );
     assert.equal(
       verifyAuditChain(events, [{ seq: 1, hash: HEX("f") }]).reason,
       "anchor_mismatch",
-    )
-    const genesis = { ...events[0], prevHash: HEX("a") }
+    );
+    const genesis = { ...events[0], prevHash: HEX("a") };
     assert.equal(
       verifyAuditChain([{ ...genesis, hash: auditEventHash(genesis) }], [])
         .reason,
       "genesis_mismatch",
-    )
-    const relinked = { ...events[1], prevHash: HEX("b") }
+    );
+    const relinked = { ...events[1], prevHash: HEX("b") };
     assert.equal(
       verifyAuditChain(
         [events[0], { ...relinked, hash: auditEventHash(relinked) }],
         [],
       ).reason,
       "previous_hash_mismatch",
-    )
-    assert.equal(verifyAuditChain(events, []).valid, true)
+    );
+    assert.equal(verifyAuditChain(events, []).valid, true);
   },
-)
+);
 
 testCase(
   "historical flat events remain verifiable before the split format without changing stored hashes",
   () => {
-    const events = chain(4)
+    const events = chain(4);
     for (let index = 0; index < events.length; index++) {
-      if (index > 0) events[index].prevHash = events[index - 1].hash
+      if (index > 0) events[index].prevHash = events[index - 1].hash;
       events[index].hash =
         index < 2
           ? legacyAuditEventHash(events[index])
-          : auditEventHash(events[index])
+          : auditEventHash(events[index]);
     }
-    const stored = events.map((event) => event.hash)
+    const stored = events.map((event) => event.hash);
     assert.equal(
       verifyAuditChain(events, [{ seq: 4, hash: stored[3] }]).valid,
       true,
-    )
+    );
     assert.deepEqual(
       events.map((event) => event.hash),
       stored,
-    )
+    );
     assert.equal(
       verifyAuditChain(
         [{ ...events[0], pageIndex: 99 }, ...events.slice(1)],
         [],
       ).valid,
       false,
-    )
+    );
     assert.equal(
       verifyAuditChain(events, [{ seq: 4, hash: HEX("f") }]).valid,
       false,
-    )
-    events[3].hash = legacyAuditEventHash(events[3])
-    assert.equal(verifyAuditChain(events, []).reason, "format_downgrade")
+    );
+    events[3].hash = legacyAuditEventHash(events[3]);
+    assert.equal(verifyAuditChain(events, []).reason, "format_downgrade");
   },
-)
+);
 
 testCase("events extend the chain of their team under a lock", async () => {
   const [first, second] = chain(2);
@@ -344,9 +344,9 @@ testCase(
         teamMember: { findFirst: async () => null },
       }).journalDiagnostic(TEAM, admin as never),
       403,
-    )
-    const [event] = chain(1)
-    const broken = { ...event, pageIndex: 99 }
+    );
+    const [event] = chain(1);
+    const broken = { ...event, pageIndex: 99 };
     const service = auditService({
       teamExternalAuditAnchor: { findMany: async () => [] },
       teamExternalAuditEvent: {
@@ -355,21 +355,21 @@ testCase(
         findUnique: async ({
           where,
         }: {
-          where: { teamId_seq: { teamId: string; seq: number } }
+          where: { teamId_seq: { teamId: string; seq: number } };
         }) => {
-          assert.deepEqual(where, { teamId_seq: { teamId: TEAM, seq: 1 } })
-          return broken
+          assert.deepEqual(where, { teamId_seq: { teamId: TEAM, seq: 1 } });
+          return broken;
         },
       },
-    })
-    const result = await service.journalDiagnostic(TEAM, admin as never)
-    assert.equal(result.verification.valid, false)
-    assert.equal(result.verification.reason, "content_hash_mismatch")
-    assert.equal(result.event?.storedHash, event.hash)
-    assert.notEqual(result.event?.calculatedHash, event.hash)
-    assert.equal(broken.hash, event.hash)
+    });
+    const result = await service.journalDiagnostic(TEAM, admin as never);
+    assert.equal(result.verification.valid, false);
+    assert.equal(result.verification.reason, "content_hash_mismatch");
+    assert.equal(result.event?.storedHash, event.hash);
+    assert.notEqual(result.event?.calculatedHash, event.hash);
+    assert.equal(broken.hash, event.hash);
   },
-)
+);
 
 testCase(
   "a truncated or fully deleted journal cannot hide an existing anchor",
@@ -556,7 +556,7 @@ testCase(
       "issuance",
       admin as never,
       {} as never,
-    )
+    );
     assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");
     const { PDFDocument } = await import("pdf-lib");
     const document = await PDFDocument.load(pdf);
@@ -879,7 +879,7 @@ testCase(
   "pattern export authorization rechecks membership and records no secret",
   async () => {
     const confirmations: unknown[] = [],
-      logs: Record<string, unknown>[] = []
+      logs: Record<string, unknown>[] = [];
     const service = auditService({
       teamExternalIssuance: {
         findFirst: async () => ({
@@ -889,54 +889,54 @@ testCase(
       },
       teamAccessLog: {
         create: async ({ data }: { data: Record<string, unknown> }) => {
-          logs.push(data)
+          logs.push(data);
         },
       },
-    })
+    });
     Object.assign(service, {
       approval: {
         verifyTeamEvidence: async (...args: unknown[]) => {
-          confirmations.push(args)
+          confirmations.push(args);
         },
       },
-    })
+    });
     const result = await service.authorizePatternExport(
       TEAM,
       "issuance",
       admin as never,
       {} as never,
-    )
-    assert.equal(result.markId, description.markId)
-    assert.equal((confirmations[0] as unknown[])[3], "pattern")
-    assert.equal(logs.length, 1)
-    assert.equal(logs[0].action, "EXTERNAL_PATTERN_EXPORT_AUTHORIZED")
+    );
+    assert.equal(result.markId, description.markId);
+    assert.equal((confirmations[0] as unknown[])[3], "pattern");
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0].action, "EXTERNAL_PATTERN_EXPORT_AUTHORIZED");
     assert.deepEqual(Object.keys(result).sort(), [
       "markId",
       "robustMarkAlgorithm",
-    ])
+    ]);
   },
-)
+);
 
 testCase(
   "a lost administrator role prevents pattern permission after confirmation",
   async () => {
     let active = true,
-      logged = false
+      logged = false;
     const service = auditService({
       teamMember: { findFirst: async () => (active ? { id: "member" } : null) },
       teamAccessLog: {
         create: async () => {
-          logged = true
+          logged = true;
         },
       },
-    })
+    });
     Object.assign(service, {
       approval: {
         verifyTeamEvidence: async () => {
-          active = false
+          active = false;
         },
       },
-    })
+    });
     await rejects(
       service.authorizePatternExport(
         TEAM,
@@ -945,9 +945,9 @@ testCase(
         {} as never,
       ),
       403,
-    )
-    assert.equal(logged, false)
+    );
+    assert.equal(logged, false);
   },
-)
+);
 
 void run();

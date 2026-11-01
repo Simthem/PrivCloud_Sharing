@@ -42,16 +42,19 @@ testCase("refuses a malformed timespan before persisting it", async () => {
     locked: false,
   };
   let writes = 0;
-  const service = new ConfigService([record] as never, {
-    config: {
-      findUnique: async () => record,
-      update: async () => {
-        writes++;
-        return record;
+  const service = new ConfigService(
+    [record] as never,
+    {
+      config: {
+        findUnique: async () => record,
+        update: async () => {
+          writes++;
+          return record;
+        },
+        findMany: async () => [record],
       },
-      findMany: async () => [record],
-    },
-  } as never);
+    } as never,
+  );
 
   await assert.rejects(
     () => service.update("general.sessionDuration", "three months"),

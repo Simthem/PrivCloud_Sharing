@@ -215,12 +215,11 @@ const SigningIndexPage = () => {
                     <Text
                       fw={600}
                       size="sm"
-                      lineClamp={1}
+                      truncate="end"
                       style={{
                         flex: 1,
                         minWidth: 0,
                         overflowWrap: "anywhere",
-                        hyphens: "auto",
                       }}
                     >
                       {doc.fileName || doc.title || t("signing.no-title")}
@@ -564,12 +563,11 @@ const SigningIndexPage = () => {
                       <Text
                         fw={600}
                         size="sm"
-                        lineClamp={1}
+                        truncate="end"
                         style={{
                           flex: 1,
                           minWidth: 0,
                           overflowWrap: "anywhere",
-                          hyphens: "auto",
                         }}
                       >
                         {doc.fileName || doc.title || t("signing.no-title")}
@@ -749,7 +747,7 @@ const SigningIndexPage = () => {
                         <Text
                           fw={600}
                           size="sm"
-                          lineClamp={1}
+                          truncate="end"
                           style={{ flex: 1 }}
                         >
                           {doc.fileName ||
@@ -865,7 +863,7 @@ const SigningIndexPage = () => {
                                 <Text
                                   size="xs"
                                   c="dimmed"
-                                  lineClamp={1}
+                                  truncate="end"
                                   fs="italic"
                                   ml={20}
                                 >
