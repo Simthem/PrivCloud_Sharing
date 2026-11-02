@@ -273,27 +273,45 @@ docker compose build
 docker compose up -d
 ```
 
-The default `Dockerfile` uses prebuilt OpenSSL/Node builder cache images, each
-pinned by its SHA-256 digest. Another cache image is selected with its name and
-its digest:
+The default `Dockerfile` uses OpenSSL/Node builder cache images pinned by
+registry manifest digest. The cache registry for this repository is
+`simthem/privcloud-sharing`. Refresh the caches from `Dockerfile.full-build`, whose
+exported stages contain verified OpenSSL 3.5.9 LTS and Node.js 24.22.2 builds
+and upgraded Debian packages:
 
 ```bash
-docker build \
-  --build-arg OPENSSL_BUILDER_IMAGE=registry.example/openssl-builder-cache \
-  --build-arg OPENSSL_BUILDER_SHA256=<digest of that image> \
-  --build-arg NODE_BUILDER_IMAGE=registry.example/node-builder-cache \
-  --build-arg NODE_BUILDER_SHA256=<digest of that image> \
-  -t privcloud-sharing:local .
+docker buildx build --platform linux/amd64 --pull --no-cache \
+  -f Dockerfile.full-build --target openssl-builder \
+  --build-arg BUILD_JOBS=4 --provenance=false --load \
+  -t simthem/privcloud-sharing:openssl-builder-cache .
+docker buildx build --platform linux/amd64 \
+  --no-cache-filter node-source-builder,node-builder \
+  -f Dockerfile.full-build --target node-builder \
+  --build-arg BUILD_JOBS=4 --provenance=false --load \
+  -t simthem/privcloud-sharing:node-builder-cache .
+trivy image --scanners vuln simthem/privcloud-sharing:openssl-builder-cache
+trivy image --scanners vuln simthem/privcloud-sharing:node-builder-cache
 ```
 
-If you want to rebuild the heavy OpenSSL and Node stages from source, use
-`Dockerfile.full-build`:
+`BUILD_JOBS` bounds parallel C/C++ compilation (default: 4). Both caches
+start from clean Debian stages, without the compiler dependencies. The Node
+cache includes its shared OpenSSL libraries and checks its version and linkage.
+Rebuild the exported stages without cache to refresh Debian security updates.
+
+After reviewing the scans and publishing the two cache images, retrieve their
+**registry manifest digests** with `docker buildx imagetools inspect`. Update
+`OPENSSL_BUILDER_SHA256` and `NODE_BUILDER_SHA256` and the OpenSSL/Node version assertions in `Dockerfile`
+together. A local image ID is a configuration digest and cannot replace a
+registry manifest digest. Republishing a tag alone does not update a pinned build.
+
+To build the complete application directly from source, use:
 
 ```bash
 docker build -f Dockerfile.full-build -t privcloud-sharing:full-build .
 ```
 
-That path is slower but useful for reproducibility audits and cache refreshes.
+Cache-stage validation does not replace building and testing the final application
+image after updating its cache references.
 
 ## Local release checks
 

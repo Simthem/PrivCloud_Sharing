@@ -205,14 +205,13 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /runtime-init ./runtime
     && go version -m /runtime-init | head -n 1 | grep -F 'go1.26.10'
 
 # ---------------------------
-# Stage 0c: Build the exact OpenSSL 3.6.4 release
+# Stage 0c: Build the exact OpenSSL 3.5.9 release
 # ---------------------------
-# CVE-2026-2673 (HIGH): affects OpenSSL 3.5.0-3.5.5 AND 3.6.0-3.6.1.
-# The fix is included since OpenSSL 3.6.2. Pinning the reviewed 3.6.4 release
-# commit avoids silently following the openssl-3.6 development branch to a new
-# version. Its archive is verified before any source from it is executed.
+# OpenSSL 3.6 is end-of-life. Use the maintained 3.5 LTS security release.
+# Verify the official release archive before executing any source from it.
 # ABI-compatible: libssl.so.3 / libcrypto.so.3 soname unchanged across 3.x.
 FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS openssl-source-builder
+ARG BUILD_JOBS=4
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY=localhost,127.0.0.1,::1
@@ -224,82 +223,81 @@ RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
         build-essential ca-certificates curl perl && \
-    OPENSSL_SOURCE_URL=https://github.com/openssl/openssl/archive/d3c1b1169b3569ff3069e5b399f47b2b28e03d79.tar.gz && \
+    OPENSSL_SOURCE_URL=https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz && \
     curl -fsSL "$OPENSSL_SOURCE_URL" -o /tmp/openssl.tar.gz && \
-    echo 'd311d429297d4f1f39e5620fcbfb39775956c352784a30fa9fcc41ee951f519485b72ab48aadaa7c739f3b5cd680031aff5117076570b01e484e98cab6566787  /tmp/openssl.tar.gz' | sha512sum -c - && \
+    echo '603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a  /tmp/openssl.tar.gz' | sha256sum -c - && \
     tar xzf /tmp/openssl.tar.gz -C . --strip-components=1 && \
     # Assert the release identity before compiling it.
-    grep -qx 'PATCH=4' VERSION.dat && \
+    grep -qx 'MAJOR=3' VERSION.dat && \
+    grep -qx 'MINOR=5' VERSION.dat && \
+    grep -qx 'PATCH=9' VERSION.dat && \
     grep -qx 'PRE_RELEASE_TAG=' VERSION.dat && \
     grep -E '^(MAJOR|MINOR|PATCH|PRE_RELEASE_TAG)=' VERSION.dat && \
-    # Build shared libraries only (no static, no tests, no docs)
+    # Build shared libraries without tests or docs.
     ./Configure --prefix=/usr/local/openssl --openssldir=/usr/local/openssl/ssl \
       --libdir=lib shared no-tests no-docs && \
-    make -j"$(nproc)" && \
+    make -j"${BUILD_JOBS}" && \
     make install_sw && \
-    # Verify the built version (must use its own libs, not Debian's 3.5.5)
+    # Verify the built version using its own libraries instead of Debian's.
     OPENSSL_VERSION="$(LD_LIBRARY_PATH=/usr/local/openssl/lib /usr/local/openssl/bin/openssl version)" && \
     echo "$OPENSSL_VERSION" && \
-    printf '%s\n' "$OPENSSL_VERSION" | grep -q '^OpenSSL 3[.]6[.]4 ' && \
+    printf '%s\n' "$OPENSSL_VERSION" | grep -q '^OpenSSL 3[.]5[.]9 ' && \
     cd / && rm -rf /openssl-src && \
     apt-get purge -y --auto-remove build-essential curl perl && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache
 
 FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS openssl-builder
-# CVE-2026-34743: pin the exported builder to Debian's patched xz/liblzma pair.
+# Refresh all installed Debian packages, including perl-base, glibc, gzip,
+# util-linux and liblzma. Keep compiler dependencies in the source stage only.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        xz-utils=5.8.1-1+deb13u1 \
-        liblzma5=5.8.1-1+deb13u1 && \
-    test "$(dpkg-query -W -f='${Version}' xz-utils)" = "5.8.1-1+deb13u1" && \
-    test "$(dpkg-query -W -f='${Version}' liblzma5)" = "5.8.1-1+deb13u1" && \
+    apt-get upgrade -y && \
+    dpkg --compare-versions "$(dpkg-query -W -f='${Version}' liblzma5)" ge '5.8.1-1+deb13u1' && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 COPY --from=openssl-source-builder /usr/local/openssl /usr/local/openssl
+ENV LD_LIBRARY_PATH=/usr/local/openssl/lib
 RUN OPENSSL_VERSION="$(LD_LIBRARY_PATH=/usr/local/openssl/lib /usr/local/openssl/bin/openssl version)" && \
     echo "$OPENSSL_VERSION" && \
-    printf '%s\n' "$OPENSSL_VERSION" | grep -q '^OpenSSL 3[.]6[.]4 '
+    printf '%s\n' "$OPENSSL_VERSION" | grep -q '^OpenSSL 3[.]5[.]9 '
 
 # ---------------------------
-# Stage 0d: Build Node.js from source with the exact OpenSSL 3.6.4 release
+# Stage 0d: Build Node.js from source with the exact OpenSSL 3.5.9 release
 # ---------------------------
-# CVE-2026-2673 (HIGH): Node 24 embeds OpenSSL 3.5.5 statically.
-# Replacing .so files on the host does NOT fix the binary scan detection.
-# We compile Node.js from source with --shared-openssl pointing to our
-# OpenSSL 3.6.4 release libs, so the node binary links dynamically against the
-# patched OpenSSL instead of embedding the vulnerable version.
+# Build Node against the same reviewed OpenSSL release used by the final image.
+# Dynamic linkage keeps the Node cache and its shared libraries consistent.
 FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS node-source-builder
+ARG BUILD_JOBS=4
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY=localhost,127.0.0.1,::1
 ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY}
 ENV http_proxy=${HTTP_PROXY} https_proxy=${HTTPS_PROXY}
 ENV NO_PROXY=${NO_PROXY}
-# Copy our pre-built OpenSSL 3.6.4 release headers + libs
+# Copy our pre-built OpenSSL 3.5.9 release headers + libs
 COPY --from=openssl-builder /usr/local/openssl /usr/local/openssl
 WORKDIR /node-src
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
         build-essential ca-certificates curl python3 python3-setuptools && \
-    # Use the exact Node.js version from the official image.
+    # Pin the maintained Node.js 24 LTS release and verify its source archive.
     mkdir -p /node-artifact && \
-    NODE_SOURCE_URL=https://nodejs.org/dist/v24.17.0/node-v24.17.0.tar.gz && \
+    NODE_SOURCE_URL=https://nodejs.org/dist/v24.22.2/node-v24.22.2.tar.gz && \
     curl -fsSL "$NODE_SOURCE_URL" -o /tmp/node.tar.gz && \
-    echo '66a10e05fa7875ff1d7d669de405ea6ce8725f2352bd07550f520dea2f880825  /tmp/node.tar.gz' | sha256sum -c - && \
+    echo 'b2f5443a34a38d863e87c0f5f80c03630fc16917dfe16f26c1cec44c0b542959  /tmp/node.tar.gz' | sha256sum -c - && \
     tar xzf /tmp/node.tar.gz -C . --strip-components=1 && \
     # Configure with shared (dynamic) OpenSSL -> node binary will NOT embed OpenSSL.
-    # --shared-openssl : link dynamically against our 3.6.4 release libs.
+    # --shared-openssl : link dynamically against our 3.5.9 release libs.
     # --without-npm    : runtime starts with node + local project binaries only.
     # --without-corepack: not needed at runtime.
-    # Default ICU (small-icu) is sufficient -- frontend handles i18n via react-intl.
     ./configure \
       --shared-openssl \
       --shared-openssl-includes=/usr/local/openssl/include \
       --shared-openssl-libpath=/usr/local/openssl/lib \
       --without-npm \
       --without-corepack && \
-    make -j"$(nproc)" && \
-    test "$(LD_LIBRARY_PATH=/usr/local/openssl/lib out/Release/node -p 'process.versions.openssl')" = "3.6.4" && \
+    make -j"${BUILD_JOBS}" && \
+    test "$(LD_LIBRARY_PATH=/usr/local/openssl/lib out/Release/node --version)" = "v24.22.2" && \
+    test "$(LD_LIBRARY_PATH=/usr/local/openssl/lib out/Release/node -p 'process.versions.openssl')" = "3.5.9" && \
     strip out/Release/node && \
     cp out/Release/node /node-artifact/node && \
     cd / && rm -rf /node-src && \
@@ -307,17 +305,23 @@ RUN apt-get update && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache
 
 FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS node-builder
-# CVE-2026-34743: keep the exported Node builder on the same patched pair.
+# Refresh the exported OS independently of the source compilation layer.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        xz-utils=5.8.1-1+deb13u1 \
-        liblzma5=5.8.1-1+deb13u1 && \
-    test "$(dpkg-query -W -f='${Version}' xz-utils)" = "5.8.1-1+deb13u1" && \
-    test "$(dpkg-query -W -f='${Version}' liblzma5)" = "5.8.1-1+deb13u1" && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends libstdc++6 && \
+    dpkg --compare-versions "$(dpkg-query -W -f='${Version}' liblzma5)" ge '5.8.1-1+deb13u1' && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
     mkdir -p /node-src/out/Release /node-artifact
 COPY --from=node-source-builder /node-artifact/node /node-src/out/Release/node
 COPY --from=node-source-builder /node-artifact/node /node-artifact/node
+COPY --from=openssl-builder /usr/local/openssl /usr/local/openssl
+ENV LD_LIBRARY_PATH=/usr/local/openssl/lib
+RUN test "$(/node-artifact/node --version)" = "v24.22.2" && \
+    test "$(/node-artifact/node -p 'process.versions.openssl')" = "3.5.9" && \
+    NODE_LINKS="$(ldd /node-artifact/node)" && \
+    echo "$NODE_LINKS" && \
+    printf '%s\n' "$NODE_LINKS" | grep -q '/usr/local/openssl/lib/libssl[.]so[.]3' && \
+    printf '%s\n' "$NODE_LINKS" | grep -q '/usr/local/openssl/lib/libcrypto[.]so[.]3'
 
 # ---------------------------
 # Stage 1: Base  (Debian Bookworm slim)

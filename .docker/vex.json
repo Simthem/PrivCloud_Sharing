@@ -3,8 +3,8 @@
   "@id": "https://github.com/Simthem/PrivCloud_Sharing/vex/2026-07-21",
   "author": "simthem <privcloud-sharing maintainer>",
   "role": "maintainer",
-  "timestamp": "2026-11-01T00:00:00Z",
-  "version": 4,
+  "timestamp": "2026-11-02T17:40:58Z",
+  "version": 5,
   "tooling": "manual review",
   "statements": [
     {
@@ -155,6 +155,47 @@
       "status": "not_affected",
       "justification": "vulnerable_code_cannot_be_controlled_by_adversary",
       "impact_statement": "The heap address of a new thread can be guessed from other addresses. This is a limit of an exploit mitigation, not a flaw an adversary can trigger: it only helps after a separate memory corruption bug in the same process, which would be a vulnerability of its own. glibc does not treat it as a security issue (sourceware bug 22853) and no release changes this behaviour."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-115455",
+        "description": "libstdc++ wide-character input into std::bitset can corrupt the stack"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/gcc-16@16.2.0-4?distro=debian"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The affected operation is wchar_t input-stream extraction into std::bitset, implemented in the C++ <bitset> header. The final Docker stages import only libstdc++.so.6 and libgcc_s.so.1 from gcc-16 16.2.0-4, without the GCC 16 headers or compiler. Node 24.22.2 does not use wide-stream bitset extraction. The reviewed linux/amd64 runtime ELF files expose no bitset input-extraction instantiation; the bitset operation found in libvips is narrow-character output, outside this flaw. The three repositories pin identical Sharp/libvips and Argon2 amd64 artifacts. This assessment covers the shipped linux/amd64 runtime, not builder images, other architectures or arbitrary native extensions. Reassess when the Node/native dependency set or input-processing code changes. Upstream fix: https://gcc.gnu.org/cgit/gcc/commit/?id=5d419c69ce2e6b86d7da75f18736904885674219"
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-114690",
+        "description": "libstdc++ GNU parallel-mode search writes beyond its internal buffer"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/gcc-16@16.2.0-4?distro=debian"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in the header-only __gnu_parallel search implementation, enabled by _GLIBCXX_PARALLEL or explicit use of the parallel headers. The Node source build enables neither mode. The reviewed linux/amd64 runtime ELF files contain no GNU parallel search symbols or OpenMP imports and have no libgomp/libomp dependency. The final stages copy only the two GCC 16 runtime libraries and cannot compile uploaded C++ code. The three repositories pin the same amd64 native artifacts. This assessment is limited to that runtime configuration; reassess for another architecture, an OpenMP/parallel-mode build or a new native addon. Upstream fix: https://gcc.gnu.org/git/?p=gcc.git;a=commit;h=c1f32b67510f6f9998deadaef5090b6663adb979"
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-114691",
+        "description": "libstdc++ std::vector<bool> constructors can overflow for element counts near SIZE_MAX"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/gcc-16@16.2.0-4?distro=debian"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "The upstream fix changes header-defined std::vector<bool> constructors. Absence of a compiler or GCC headers at runtime does not prove absence of already instantiated template code. Node/V8 uses vector<bool>; the inspected sized constructors use existing Wasm tag-vector lengths or Maglev graph block counts, while other inspected uses grow existing containers. No attacker-controlled count near SIZE_MAX has been established. However, the complete reachability of inlined vector<bool> constructors in the prebuilt native dependency graph has not been established from source. Therefore this CVE is not declared not_affected and must remain visible until that source-level review is complete or corrected build headers and rebuilt artifacts are verified. Upstream fix: https://gcc.gnu.org/git/?p=gcc.git;a=commit;h=2fd8866591b5aea7098835f80ab7e176382175ae"
     }
   ]
 }

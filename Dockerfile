@@ -6,9 +6,9 @@
 # changes the build only once its new digest is reviewed here. Another cache
 # image needs its own digest argument too.
 ARG OPENSSL_BUILDER_IMAGE=simthem/privcloud-sharing:openssl-builder-cache
-ARG OPENSSL_BUILDER_SHA256=408cb280c0aab7bbb65b1348b1de49f14991a6560a1b423a6c90750936774d63
+ARG OPENSSL_BUILDER_SHA256=d122f209ed8940be51f03484db12bfc013d4c16fc3369785b61018f4ad5e22f5
 ARG NODE_BUILDER_IMAGE=simthem/privcloud-sharing:node-builder-cache
-ARG NODE_BUILDER_SHA256=63155ec852c57692b4dd8b3262a6072d9526b7c4d8fe9f2b12b4f16c4fe9470e
+ARG NODE_BUILDER_SHA256=ff330fc2af5c8645603dcb2c7d4be23cb6c6580253a7c9ebcd9c85f623692e8c
 
 # ---------------------------
 # Stage 0: Build Caddy from source with patched Go dependencies
@@ -217,63 +217,38 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /runtime-init ./runtime
     && go version -m /runtime-init | head -n 1 | grep -F 'go1.26.10'
 
 # ---------------------------
-# Stage 0c: Reuse the OpenSSL 3.6.4 branch snapshot
+# Stage 0c: Reuse the verified OpenSSL 3.5.9 LTS release
 # ---------------------------
-# CVE-2026-2673 (HIGH): affects OpenSSL 3.5.0-3.5.5 AND 3.6.0-3.6.1.
-# The fix is included since OpenSSL 3.6.2. The reviewed cache currently comes
-# from the openssl-3.6 development branch and identifies as 3.6.4 after its
-# pre-release tag is removed. This is a branch snapshot, not a tagged 3.6.4
-# release; the assertion below prevents a mutable cache tag from changing the
-# advertised OpenSSL version silently.
-# ABI-compatible: libssl.so.3 / libcrypto.so.3 soname unchanged across 3.x.
-#
-# CACHE MODE: using a pre-built OpenSSL builder image.
-# To rebuild from source: see original stage in git history.
-# To switch back: replace the FROM line below with:
-#   FROM debian:trixie-slim AS openssl-builder
-# and restore the full build instructions.
+# Rebuild this cache with the openssl-builder target in Dockerfile.full-build.
+# Keep its reviewed registry digest and the version assertion in sync.
+# libssl.so.3 / libcrypto.so.3 retain the OpenSSL 3.x ABI.
 FROM ${OPENSSL_BUILDER_IMAGE}@sha256:${OPENSSL_BUILDER_SHA256} AS openssl-builder
-# CVE-2026-34743: use Debian's patched Trixie xz/liblzma backport and fail the
-# build if the cache image cannot provide the exact reviewed package version.
+# Refresh all installed Debian packages. Require the liblzma security backport
+# while accepting newer fixes, without forcing a downgrade of rebuilt caches.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        xz-utils=5.8.1-1+deb13u1 \
-        liblzma5=5.8.1-1+deb13u1 && \
-    test "$(dpkg-query -W -f='${Version}' xz-utils)" = "5.8.1-1+deb13u1" && \
-    test "$(dpkg-query -W -f='${Version}' liblzma5)" = "5.8.1-1+deb13u1" && \
+    apt-get upgrade -y && \
+    dpkg --compare-versions "$(dpkg-query -W -f='${Version}' liblzma5)" ge '5.8.1-1+deb13u1' && \
     OPENSSL_VERSION="$(LD_LIBRARY_PATH=/usr/local/openssl/lib /usr/local/openssl/bin/openssl version)" && \
     echo "$OPENSSL_VERSION" && \
-    printf '%s\n' "$OPENSSL_VERSION" | grep -q '^OpenSSL 3[.]6[.]4 ' && \
+    printf '%s\n' "$OPENSSL_VERSION" | grep -q '^OpenSSL 3[.]5[.]9 ' && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------
-# Stage 0d: Reuse Node.js with the OpenSSL 3.6.4 runtime snapshot
+# Stage 0d: Reuse Node.js 24.22.2 linked against OpenSSL 3.5.9
 # ---------------------------
-# CVE-2026-2673 (HIGH): Node 24 embeds OpenSSL 3.5.5 statically.
-# This cache contains a dynamically linked Node binary. Its
-# process.versions.openssl value describes the headers used to compile that
-# cache (currently 3.5.6); the effective libraries are the asserted 3.6.4
-# snapshot copied below. ldd checks prevent an accidental fallback to the
-# cache image's system libssl/libcrypto.
-#
-# CACHE MODE: using a pre-built Node.js builder image.
-# To rebuild from source: see original stage in git history.
-# To switch back: replace the FROM line below with:
-#   FROM debian:trixie-slim AS node-builder
-# and restore the full build instructions (--shared-openssl, --without-npm, etc.).
+# Rebuild this cache with the node-builder target in Dockerfile.full-build.
+# Check both the compiled versions and the effective shared-library paths.
 FROM ${NODE_BUILDER_IMAGE}@sha256:${NODE_BUILDER_SHA256} AS node-builder
 COPY --from=openssl-builder /usr/local/openssl /usr/local/openssl
-# CVE-2026-34743: keep the exported Node builder cache on the same patched
-# xz-utils/liblzma5 pair as the OpenSSL builder cache.
+# Refresh the Node cache OS independently and accept newer liblzma fixes.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        xz-utils=5.8.1-1+deb13u1 \
-        liblzma5=5.8.1-1+deb13u1 && \
-    test "$(dpkg-query -W -f='${Version}' xz-utils)" = "5.8.1-1+deb13u1" && \
-    test "$(dpkg-query -W -f='${Version}' liblzma5)" = "5.8.1-1+deb13u1" && \
+    apt-get upgrade -y && \
+    dpkg --compare-versions "$(dpkg-query -W -f='${Version}' liblzma5)" ge '5.8.1-1+deb13u1' && \
     OPENSSL_VERSION="$(LD_LIBRARY_PATH=/usr/local/openssl/lib /usr/local/openssl/bin/openssl version)" && \
     echo "$OPENSSL_VERSION" && \
-    printf '%s\n' "$OPENSSL_VERSION" | grep -q '^OpenSSL 3[.]6[.]4 ' && \
+    printf '%s\n' "$OPENSSL_VERSION" | grep -q '^OpenSSL 3[.]5[.]9 ' && \
+    test "$(LD_LIBRARY_PATH=/usr/local/openssl/lib /node-artifact/node --version)" = "v24.22.2" && \
+    test "$(LD_LIBRARY_PATH=/usr/local/openssl/lib /node-artifact/node -p 'process.versions.openssl')" = "3.5.9" && \
     NODE_LINKS="$(LD_LIBRARY_PATH=/usr/local/openssl/lib ldd /node-artifact/node)" && \
     echo "$NODE_LINKS" && \
     printf '%s\n' "$NODE_LINKS" | grep -q '/usr/local/openssl/lib/libssl[.]so[.]3' && \

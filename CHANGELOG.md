@@ -1,3 +1,45 @@
+## Unreleased
+
+### Tests
+
+- Add a database-free Nest application-context regression test proving that
+  ConfigController resolves StepUpService through the existing module imports
+  and exports, with storage and mail providers replaced by fixtures.
+
+### Security
+
+- Document CVE-2026-115455 and CVE-2026-114690 as outside the shipped
+  linux/amd64 runtime execution paths in OpenVEX. Keep CVE-2026-114691
+  under investigation because precompiled vector<bool> template code cannot
+  be excluded solely from the absence of runtime compiler headers.
+- Rebuild the OpenSSL and Node builder caches from verified OpenSSL 3.5.9 LTS
+  and Node.js 24.22.2 sources. Refresh all Debian packages in the exported
+  stages, allow newer liblzma security backports, and omit unnecessary xz tools.
+- Pin the refreshed builder cache manifests in the default Dockerfile and
+  verify Node/OpenSSL versions and dynamic linkage when consuming them.
+- Include and verify the shared OpenSSL libraries in the standalone Node cache.
+  Keep compilation dependencies in separate source stages and limit parallel
+  compilation with `BUILD_JOBS` (default: 4).
+- Node.js 24.22.2 includes fixes for CVE-2026-111497 (Brotli memory
+  corruption with possible code execution), CVE-2026-56848 (HTTP/2
+  use-after-free), CVE-2026-56846 (HTTP/2 memory exhaustion),
+  CVE-2026-58043 (Permission Model filesystem bypass), CVE-2026-105482
+  (DNS name truncation), and CVE-2026-105483, CVE-2026-106069 and
+  CVE-2026-106072 (TLS hostname/IP certificate validation bypasses).
+- OpenSSL 3.5.9 LTS includes fixes for CVE-2026-84782 (DTLS heap disclosure
+  or crash), CVE-2026-63072 (CMS key-unwrapping heap overflow), and
+  CVE-2026-75803 (empty-ciphertext AEAD tag verification in EVP_Cipher).
+- Refresh Debian security backports for Perl (CVE-2026-8376,
+  CVE-2026-13221, CVE-2026-42496 and CVE-2026-57433), glibc
+  (CVE-2026-5450), PCRE2 (CVE-2026-86145 and CVE-2026-103111), SQLite
+  (CVE-2026-11824), util-linux (CVE-2026-53615), and liblzma
+  (CVE-2026-34743). These are dependency/cache updates, **NOT** claims that
+  each upstream issue was exploitable in the final application image.
+
+The updated builder caches are pinned by digest. Rebuild the application image
+with this Dockerfile to use them. Republishing a cache tag or pulling an older
+application image does not update its bundled runtime.
+
 ## [1.26.5](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.4...v1.26.5) (2026-11-01)
 
 ### Features
