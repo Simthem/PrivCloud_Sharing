@@ -8,6 +8,7 @@ import {
 import { PrismaService } from "src/prisma/prisma.service";
 import * as crypto from "crypto";
 import * as fs from "fs";
+import type { IncomingMessage } from "http";
 import * as https from "https";
 import * as path from "path";
 import {
@@ -45,7 +46,7 @@ import {
   readTime,
 } from "./asn1-der.util";
 import { readPkcs12 } from "./pkcs12.util";
-import type { PDFDocument } from "pdf-lib";
+import type { PDFDocument, PDFImage } from "pdf-lib";
 
 /**
  * PdfSigningService handles the cryptographic signing of PDF documents
@@ -247,7 +248,7 @@ export class PdfSigningService implements OnModuleInit {
           this.logger.log(
             `PDF signed with timestamp (PAdES-B-T): ${signedPdf.length} bytes`,
           );
-        } catch (tsaError: any) {
+        } catch (tsaError) {
           if (this.tsaRequired) throw tsaError;
           this.logger.warn(
             "TSA timestamp embedding failed; SIGNING_TSA_REQUIRED=false: PDF remains PAdES-B-B without timestamp.",
@@ -300,7 +301,7 @@ export class PdfSigningService implements OnModuleInit {
           this.logger.log(
             `Detached PAdES-B-T CMS created (${cmsDer.length} bytes)`,
           );
-        } catch (tsaError: any) {
+        } catch (tsaError) {
           if (this.tsaRequired) throw tsaError;
           this.logger.warn(
             "TSA timestamp embedding failed; SIGNING_TSA_REQUIRED=false: CMS remains PAdES-B-B without timestamp.",
@@ -1261,7 +1262,7 @@ export class PdfSigningService implements OnModuleInit {
           },
           timeout: 10_000, // 10s per TSA attempt
         },
-        (res: any) => {
+        (res: IncomingMessage) => {
           if (res.statusCode !== 200) {
             res.resume();
             reject(new Error(`HTTP ${res.statusCode}`));
@@ -1739,7 +1740,7 @@ export class PdfSigningService implements OnModuleInit {
       : defaultPosition.y;
     const paddingX = 8;
     const paddingY = 8;
-    let signatureImage: any = null;
+    let signatureImage: PDFImage | null = null;
     let signatureImageWidth = 0;
     let signatureImageHeight = 0;
     const signatureMaxWidth = Math.max(20, signatureBoxWidth - paddingX * 2);

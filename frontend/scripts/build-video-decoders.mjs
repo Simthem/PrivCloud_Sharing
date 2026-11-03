@@ -20,9 +20,9 @@ export const MEDIA_ENGINE_FILES = {
   "libav-6.10.9.0-privcloud.mjs":
     "e07d02a7426f788db1fbe22a911667b3a30cd0d3bfad59473f4f0d01fdff1eaa",
   "libav-6.10.9.0-privcloud.wasm.mjs":
-    "aae4599ee86feb37acfb9e0e2d7ccd0ec4436492ee9f67fbfd39fb24ebacff01",
+    "97a10d8fc5ac64c7286ca624f2eb61d92ce447b575e285c5b94e8598e01c4ca4",
   "libav-6.10.9.0-privcloud.wasm.wasm":
-    "0de8258ea9639ebb349df4eaef4cbdf33dc2d3fc05abf260c12f0483cbf653dd",
+    "6990913fda048ec0e5d55b8cf2d3f1455c69d3f08754d2f43000d675078afa32",
   "FFMPEG_COPYING.LGPLv2.1":
     "246041b6ecf9bc32d718a62c57877c78b5eb397b6467e74ed7ae2626ab189c30",
   "LIBAVJS_LICENSE.md":

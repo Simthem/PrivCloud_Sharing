@@ -929,7 +929,7 @@ export class FileController {
         ? contentDisposition(fileMetaData.name)
         : contentDisposition(fileMetaData.name, { type: "inline" });
 
-      const rangeHeaders: Record<string, any> = {
+      const rangeHeaders: Record<string, string | number> = {
         "Content-Type": forceDownload
           ? "application/octet-stream"
           : contentType,
@@ -957,7 +957,7 @@ export class FileController {
     }
 
     // --- Full response ---
-    const headers: Record<string, any> = {
+    const headers: Record<string, string | number> = {
       "Content-Type": contentType,
       "Content-Length": fileSize,
       "Accept-Ranges": "bytes",

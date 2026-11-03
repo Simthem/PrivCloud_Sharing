@@ -28,6 +28,7 @@ import {
   ContentScheme,
 } from "./content-scheme.util";
 import { touchShareUploadActivity } from "src/share/upload-activity.util";
+import { UploadShare } from "./upload-share.type";
 
 type MultipartUploadRequest = {
   id: string;
@@ -807,7 +808,7 @@ export class FileService {
    * Resolve the instance-configured limit. Reverse-share and Team limits are
    * ordinary self-hosting controls.
    */
-  private getCachedShareLimit(shareId: string, share: any): number {
+  private getCachedShareLimit(shareId: string, share: UploadShare): number {
     const cached = this.shareLimitCache.get(shareId);
     if (cached && Date.now() - cached.ts < FileService.SHARE_LIMIT_TTL) {
       return cached.limit;

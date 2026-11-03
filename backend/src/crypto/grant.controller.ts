@@ -70,7 +70,7 @@ export class AccessGrantController {
     dto: BulkCreateGrantsDTO,
     result: {
       success: number;
-      results: Array<{ recipientUserId: string; result: any }>;
+      results: Array<{ recipientUserId: string; result: unknown }>;
     },
   ) {
     if (result.success === 0) return;

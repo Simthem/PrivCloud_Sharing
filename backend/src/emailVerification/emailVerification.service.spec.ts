@@ -20,7 +20,11 @@ void (async () => {
   const prisma = {
     emailVerificationToken: {
       findMany: async () => storedTokens,
-      deleteMany: async ({ where }: { where: any }) => {
+      deleteMany: async ({
+        where,
+      }: {
+        where: { tokenHash?: { in?: string[] } };
+      }) => {
         deletedHashes = where?.tokenHash?.in;
         return { count: deletedHashes?.length ?? 0 };
       },

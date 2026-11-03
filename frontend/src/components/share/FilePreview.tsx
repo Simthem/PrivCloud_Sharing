@@ -23,6 +23,7 @@ import {
 } from "../../services/share.service";
 import {
   E2E_BLOB_PREVIEW_MAX_SIZE,
+  isModelPreviewMimeType,
   isOfficePreviewMimeType,
   isPreviewMimeTypeSupported,
   isTextBasedMimeType,
@@ -38,6 +39,7 @@ const SourceCodePreview = dynamic(() => import("./SourceCodePreview"), {
 });
 
 import { createProgressiveMediaUrl } from "../../utils/previewMedia.util";
+import { canUseMediaEngine } from "../../utils/mediaEngine.util";
 import type { PreviewByteSource } from "../../utils/previewRange.util";
 import { readRawRangePreview } from "../../utils/rawPreview.util";
 import {
@@ -49,6 +51,7 @@ import {
   imageDecoderFormat,
 } from "../../utils/imageFormats.util";
 const OfficePreview = dynamic(() => import("./OfficePreview"), { ssr: false });
+const ModelPreview = dynamic(() => import("./ModelPreview"), { ssr: false });
 const ProgressivePdfPreview = dynamic(() => import("./ProgressivePdfPreview"), {
   ssr: false,
 });
@@ -418,6 +421,8 @@ const FileDecider = () => {
     return <OfficeFilePreview />;
   } else if (mimeType == "application/pdf") {
     return <PdfPreview />;
+  } else if (isModelPreviewMimeType(mimeType)) {
+    return <ModelFilePreview />;
   } else if (mimeType.startsWith("video/")) {
     return <VideoPreview />;
   } else if (mimeType.startsWith("image/")) {
@@ -442,8 +447,53 @@ const FileDecider = () => {
   }
 };
 
+const EngineAudioPlayer = dynamic(
+  () => import("./VideoPlayer").then((module) => module.EngineAudioPlayer),
+  { ssr: false },
+);
+
+const browserPlaysAudio = (mimeType: string) =>
+  document.createElement("audio").canPlayType(mimeType) !== "";
+
+/** Sound the browser plays itself, the media engine otherwise. */
 const AudioPreview = () => {
-  const { setIsNotSupported } = React.useContext(FilePreviewContext);
+  const { mimeType, setIsNotSupported } = React.useContext(FilePreviewContext);
+  const [engine, setEngine] = useState(
+    () => !browserPlaysAudio(mimeType) && canUseMediaEngine(),
+  );
+  if (engine) return <EngineAudioPreview />;
+  return (
+    <BrowserAudioPreview
+      onUndecodable={() =>
+        canUseMediaEngine() ? setEngine(true) : setIsNotSupported(true)
+      }
+    />
+  );
+};
+
+const EngineAudioPreview = () => {
+  const { mimeType, setIsNotSupported } = React.useContext(FilePreviewContext);
+  const media = useProgressiveMediaUrl(false);
+  if (!media?.source)
+    return (
+      <Center mih={200}>
+        <Loader />
+      </Center>
+    );
+  return (
+    <EngineAudioPlayer
+      source={media.source}
+      mimeType={mimeType}
+      onError={() => setIsNotSupported(true)}
+    />
+  );
+};
+
+const BrowserAudioPreview = ({
+  onUndecodable,
+}: {
+  onUndecodable: () => void;
+}) => {
   const media = useProgressiveMediaUrl();
   if (!media)
     return (
@@ -458,7 +508,7 @@ const AudioPreview = () => {
         controls
         preload="metadata"
         style={{ width: "100%" }}
-        onError={() => setIsNotSupported(true)}
+        onError={onUndecodable}
       />
     </Center>
   );
@@ -726,6 +776,24 @@ const OfficeFilePreview = () => {
   );
   return (
     <OfficePreview
+      shareId={shareId}
+      fileId={fileId}
+      mimeType={mimeType}
+      e2eKey={e2eKey}
+      onError={onError}
+    />
+  );
+};
+
+const ModelFilePreview = () => {
+  const { shareId, fileId, mimeType, e2eKey, setIsNotSupported } =
+    React.useContext(FilePreviewContext);
+  const onError = React.useCallback(
+    () => setIsNotSupported(true),
+    [setIsNotSupported],
+  );
+  return (
+    <ModelPreview
       shareId={shareId}
       fileId={fileId}
       mimeType={mimeType}

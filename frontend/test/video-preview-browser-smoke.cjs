@@ -236,10 +236,30 @@ async function main() {
     "3M",
     path.join(directory, "h264-long.mp4"),
   ]);
-  const generatedVideos = new Map([
-    ["hevc-long.mp4", fs.readFileSync(path.join(directory, "hevc-long.mp4"))],
-    ["h264-long.mp4", fs.readFileSync(path.join(directory, "h264-long.mp4"))],
-  ]);
+  // Sound Chrome does not play: Windows Media Audio and AIFF.
+  for (const [name, codec] of [
+    ["tone.wma", "wmav2"],
+    ["tone.aiff", "pcm_s16be"],
+  ])
+    execFileSync("ffmpeg", [
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=440:sample_rate=44100",
+      "-t",
+      "8",
+      "-c:a",
+      codec,
+      path.join(directory, name),
+    ]);
+  const generatedVideos = new Map(
+    ["hevc-long.mp4", "h264-long.mp4", "tone.wma", "tone.aiff"].map((name) => [
+      name,
+      fs.readFileSync(path.join(directory, name)),
+    ]),
+  );
   for (const [name, bytes] of [...generatedVideos])
     generatedVideos.set(name + ".e2e", encrypt(bytes));
   let browser, server, send, session;
@@ -796,6 +816,31 @@ async function main() {
       "(()=>{const a=document.querySelector('audio[controls]');return a&&!document.querySelector('video')&&a.readyState>=1})()",
       "sound-only MP4",
     );
+
+    // Sound the browser cannot play goes through the media engine.
+    for (const [name, type] of [
+      ["tone.wma", "audio/x-ms-wma"],
+      ["tone.aiff", "audio/aiff"],
+    ]) {
+      assert.equal(
+        await evaluate(
+          `document.createElement("audio").canPlayType(${JSON.stringify(type)})`,
+        ),
+        "",
+      );
+      await show(name, type);
+      await waitFor(
+        "(()=>{const a=document.querySelector('audio');return a&&a.src.startsWith('blob:')&&a.readyState>=1})()",
+        `${name} through the media engine`,
+        60000,
+      );
+      await evaluate("document.querySelector('audio').play()");
+      await waitFor(
+        "(()=>{const a=document.querySelector('audio');return a.currentTime>=1.5&&!a.error})()",
+        `${name} playback`,
+        30000,
+      );
+    }
 
     // 8. A long recording: playback reads what it plays, pictures and sound
     // sharing each downloaded block, instead of the whole file.

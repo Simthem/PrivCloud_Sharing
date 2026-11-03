@@ -328,6 +328,30 @@ function VideoElementPlayer({
   );
 }
 
+/** Plays `source` in `element` through the media engine. */
+function useMediaEngine(
+  element: HTMLMediaElement | null,
+  source: PreviewByteSource,
+  mimeType: string,
+  onError: () => void,
+) {
+  const failed = useRef(onError);
+  failed.current = onError;
+  useEffect(() => {
+    if (!element) return;
+    let playback: MediaEnginePlayback;
+    try {
+      playback = new MediaEnginePlayback(element, source, mimeType, () =>
+        failed.current(),
+      );
+    } catch {
+      failed.current();
+      return;
+    }
+    return () => playback.destroy();
+  }, [element, source, mimeType]);
+}
+
 /** Formats and codecs the browser lacks, through the media engine. */
 function EngineVideoPlayer({
   source,
@@ -339,22 +363,32 @@ function EngineVideoPlayer({
   onError: () => void;
 }) {
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
-  const failed = useRef(onError);
-  failed.current = onError;
-  useEffect(() => {
-    if (!video) return;
-    let playback: MediaEnginePlayback;
-    try {
-      playback = new MediaEnginePlayback(video, source, mimeType, () =>
-        failed.current(),
-      );
-    } catch {
-      failed.current();
-      return;
-    }
-    return () => playback.destroy();
-  }, [video, source, mimeType]);
+  useMediaEngine(video, source, mimeType, onError);
   return <VideoElementPlayer onVideo={setVideo} />;
+}
+
+/** Sound the browser cannot play (WMA, AIFF outside Safari, AMR...), through the media engine. */
+export function EngineAudioPlayer({
+  source,
+  mimeType,
+  onError,
+}: {
+  source: PreviewByteSource;
+  mimeType: string;
+  onError: () => void;
+}) {
+  const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
+  useMediaEngine(audio, source, mimeType, onError);
+  return (
+    <Center mih={120}>
+      <audio
+        ref={setAudio}
+        controls
+        preload="metadata"
+        style={{ width: "100%" }}
+      />
+    </Center>
+  );
 }
 
 function SoftwareVideoPlayer({

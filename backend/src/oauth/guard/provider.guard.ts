@@ -18,7 +18,7 @@ export class ProviderGuard implements CanActivate {
     const provider = request.params.provider;
     return (
       this.platforms.includes(provider) &&
-      this.config.get(`oauth.${provider}-enabled`)
+      this.config.getOAuth(provider, "enabled")
     );
   }
 }

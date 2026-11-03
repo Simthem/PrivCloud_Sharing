@@ -2,6 +2,7 @@
 
 # Byte-pinned by the public verification: the published measurements and
 # snapshots identify these sources by their SHA-256.
+/scripts/build-photo-registration.mjs
 /src/utils/forensicDecision.util.ts
 /src/utils/forensicMark.util.ts
 /src/utils/fragmentCopyMark.util.ts
@@ -11,3 +12,6 @@
 
 # Test inputs are kept byte for byte.
 /test/fixtures/
+
+# Media engine recipe and build output, pinned by digest.
+/scripts/media-engine/

@@ -3,8 +3,8 @@
   "@id": "https://github.com/Simthem/PrivCloud_Sharing/vex/2026-07-21",
   "author": "simthem <privcloud-sharing maintainer>",
   "role": "maintainer",
-  "timestamp": "2026-11-02T17:40:58Z",
-  "version": 5,
+  "timestamp": "2026-11-03T09:00:00Z",
+  "version": 6,
   "tooling": "manual review",
   "statements": [
     {
@@ -194,8 +194,9 @@
           "@id": "pkg:deb/debian/gcc-16@16.2.0-4?distro=debian"
         }
       ],
-      "status": "under_investigation",
-      "impact_statement": "The upstream fix changes header-defined std::vector<bool> constructors. Absence of a compiler or GCC headers at runtime does not prove absence of already instantiated template code. Node/V8 uses vector<bool>; the inspected sized constructors use existing Wasm tag-vector lengths or Maglev graph block counts, while other inspected uses grow existing containers. No attacker-controlled count near SIZE_MAX has been established. However, the complete reachability of inlined vector<bool> constructors in the prebuilt native dependency graph has not been established from source. Therefore this CVE is not declared not_affected and must remain visible until that source-level review is complete or corrected build headers and rebuilt artifacts are verified. Upstream fix: https://gcc.gnu.org/git/?p=gcc.git;a=commit;h=2fd8866591b5aea7098835f80ab7e176382175ae"
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is in the header-defined std::vector<bool> constructors, so it lives in code compiled with the affected headers, not in the runtime library itself. The final Docker stages take only libstdc++.so.6 and libgcc_s.so.1 from gcc-16 16.2.0-4, without headers or compiler. The shipped libstdc++.so.6.0.36 exports no std::vector<bool> or _Bvector symbol, and the GCC 16 runtime sources it is built from (libstdc++-v3/src and libsupc++) never use std::vector<bool>, so the vulnerable constructors are not present in what this package ships. Node, Sharp/libvips and Argon2 are compiled by their own builder toolchains and are not part of this package. Their sized vector<bool> uses reviewed in V8 take Wasm tag counts or Maglev block counts bounded far below SIZE_MAX. Reassess when the runtime libraries or the native dependency set change. Upstream fix: https://gcc.gnu.org/git/?p=gcc.git;a=commit;h=2fd8866591b5aea7098835f80ab7e176382175ae"
     }
   ]
 }

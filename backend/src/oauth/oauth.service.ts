@@ -21,24 +21,16 @@ export class OAuthService {
   private readonly logger = new Logger(OAuthService.name);
 
   available(): string[] {
-    return this.platforms
-      .map((platform) => [
-        platform,
-        this.config.get(`oauth.${platform}-enabled`),
-      ])
-      .filter(([_, enabled]) => enabled)
-      .map(([platform, _]) => platform);
+    return this.platforms.filter((platform) =>
+      this.config.getOAuth(platform, "enabled"),
+    );
   }
 
   availableProviders(): Record<string, OAuthProvider<unknown>> {
     return Object.fromEntries(
-      Object.entries(this.oAuthProviders)
-        .map(([providerName, provider]) => [
-          [providerName, provider],
-          this.config.get(`oauth.${providerName}-enabled`),
-        ])
-        .filter(([_, enabled]) => enabled)
-        .map(([provider, _]) => provider),
+      Object.entries(this.oAuthProviders).filter(([providerName]) =>
+        this.config.getOAuth(providerName, "enabled"),
+      ),
     );
   }
 

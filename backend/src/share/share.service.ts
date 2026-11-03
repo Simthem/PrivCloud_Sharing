@@ -409,7 +409,9 @@ export class ShareService {
       }
       share.recipients = [];
       if (share.security) {
-        share.security = { password: share.security.password } as any;
+        share.security = {
+          password: share.security.password,
+        } as typeof share.security;
       }
     }
 

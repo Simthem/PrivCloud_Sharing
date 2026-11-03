@@ -228,7 +228,7 @@ export class AccessGrantService {
 
     const results: Array<{
       recipientUserId: string;
-      result: any;
+      result: unknown;
       error?: string;
     }> = [];
 
@@ -236,11 +236,11 @@ export class AccessGrantService {
       try {
         const result = await this.createGrant(grantorId, grant);
         results.push({ recipientUserId: grant.recipientUserId, result });
-      } catch (err: any) {
+      } catch (err) {
         results.push({
           recipientUserId: grant.recipientUserId,
           result: null,
-          error: err.message,
+          error: err instanceof Error ? err.message : String(err),
         });
       }
     }
@@ -262,7 +262,7 @@ export class AccessGrantService {
     userId: string,
     filters?: { fileId?: string; teamFileId?: string; shareId?: string },
   ) {
-    const where: any = { userId, status: "ACTIVE" };
+    const where: Prisma.AccessGrantWhereInput = { userId, status: "ACTIVE" };
 
     if (filters?.fileId) where.fileId = filters.fileId;
     if (filters?.teamFileId) where.teamFileId = filters.teamFileId;
@@ -704,7 +704,9 @@ export class AccessGrantService {
     const userMap = Object.fromEntries(users.map((u) => [u.id, u]));
 
     // Normalize results: unify teamFile-based and file-based grants into a common shape
-    const normalizeGrant = (g: any) => {
+    const normalizeGrant = (
+      g: (typeof received)[number] | (typeof sent)[number],
+    ) => {
       if (g.teamFile) {
         return {
           fileId: g.teamFile.id,

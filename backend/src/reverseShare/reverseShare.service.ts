@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { ConfigService } from "src/config/config.service";
 import { FileService } from "src/file/file.service";
@@ -41,7 +42,7 @@ export class ReverseShareService {
 
     const globalMaxShareSize = this.config.get("share.maxSize");
 
-    if (globalMaxShareSize < data.maxShareSize)
+    if (globalMaxShareSize < Number(data.maxShareSize))
       throw new BadRequestException(
         `Max share size can't be greater than ${globalMaxShareSize} bytes.`,
       );
@@ -137,7 +138,7 @@ export class ReverseShareService {
 
     if (!existing) throw new BadRequestException("Reverse share not found");
 
-    const updateData: Record<string, any> = {};
+    const updateData: Prisma.ReverseShareUpdateInput = {};
 
     if (data.shareExpiration !== undefined) {
       // Personal links (never-expiring) must not have their expiration changed.

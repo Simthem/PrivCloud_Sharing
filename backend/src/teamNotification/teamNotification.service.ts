@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { fileRequestServiceMessage } from "src/teamFileRequest/team-file-request-i18n";
 import { Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "src/prisma/prisma.service";
@@ -187,7 +188,7 @@ export class TeamNotificationService {
     const eligibleMembers = members.filter((m) => {
       if (!opts?.folderId) return true;
       if (m.role === "OWNER" || m.role === "ADMIN") return true;
-      return (m as any).folderAccess?.length > 0;
+      return "folderAccess" in m && m.folderAccess.length > 0;
     });
 
     if (eligibleMembers.length === 0) return [];
@@ -264,7 +265,7 @@ export class TeamNotificationService {
       offset?: number;
     },
   ) {
-    const where: any = { userId };
+    const where: Prisma.TeamNotificationWhereInput = { userId };
     if (opts?.teamId) where.teamId = opts.teamId;
     if (opts?.unreadOnly) where.isRead = false;
     const pagination = normalizeNotificationPagination(
@@ -333,7 +334,7 @@ export class TeamNotificationService {
    * Mark all notifications as read for a user (optionally scoped to a team).
    */
   async markAllAsRead(userId: string, teamId?: string) {
-    const where: any = { userId, isRead: false };
+    const where: Prisma.TeamNotificationWhereInput = { userId, isRead: false };
     if (teamId) where.teamId = teamId;
 
     const result = await this.prisma.teamNotification.updateMany({
@@ -348,7 +349,7 @@ export class TeamNotificationService {
    * Get unread notification count (for badge display).
    */
   async getUnreadCount(userId: string, teamId?: string) {
-    const where: any = { userId, isRead: false };
+    const where: Prisma.TeamNotificationWhereInput = { userId, isRead: false };
     if (teamId) where.teamId = teamId;
 
     return this.prisma.teamNotification.count({ where });
@@ -358,7 +359,7 @@ export class TeamNotificationService {
    * Delete all notifications for a user (optionally scoped to a team).
    */
   async deleteAll(userId: string, teamId?: string) {
-    const where: any = { userId };
+    const where: Prisma.TeamNotificationWhereInput = { userId };
     if (teamId) where.teamId = teamId;
 
     const result = await this.prisma.teamNotification.deleteMany({ where });

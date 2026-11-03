@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
 import { MODULE_METADATA } from "@nestjs/common/constants";
+import type { Provider } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { ConfigModule } from "src/config/config.module";
 import { ConfigController } from "src/config/config.controller";
@@ -19,7 +20,7 @@ const { testCase, run } = createUnitTestRunner("config module injection");
 testCase(
   "ConfigController resolves the exported StepUpService without a database",
   async () => {
-    const originalConfigProviders = Reflect.getMetadata(
+    const originalConfigProviders: Provider[] = Reflect.getMetadata(
       MODULE_METADATA.PROVIDERS,
       ConfigModule,
     );
@@ -42,8 +43,8 @@ testCase(
     // Replace only dependencies that access storage or external services.
     Reflect.defineMetadata(
       MODULE_METADATA.PROVIDERS,
-      originalConfigProviders.map((provider: any) => {
-        const token = provider.provide ?? provider;
+      originalConfigProviders.map((provider) => {
+        const token = "provide" in provider ? provider.provide : provider;
         return replacements.has(token)
           ? { provide: token, useValue: replacements.get(token) }
           : provider;
@@ -73,7 +74,10 @@ testCase(
         const controller = app.get(ConfigController);
         const stepUp = app.get(StepUpService);
         assert.ok(stepUp instanceof StepUpService);
-        assert.equal((controller as any).stepUp, stepUp);
+        assert.equal(
+          (controller as unknown as { stepUp: StepUpService }).stepUp,
+          stepUp,
+        );
       } finally {
         await app.close();
       }

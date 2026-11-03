@@ -40,12 +40,15 @@ import { markUploadRequestStarted } from "./file/upload-timing.util";
 // dependencies on Node 24+. The API is deprecated but still works; the warning
 // is noise we cannot fix upstream.
 const _originalEmit = process.emit.bind(process);
-(process as any).emit = (event: string, ...args: any[]) => {
-  if (event === "warning" && args[0]?.code === "DEP0060") {
+process.emit = ((event: string, ...args: unknown[]) => {
+  if (
+    event === "warning" &&
+    (args[0] as { code?: unknown } | undefined)?.code === "DEP0060"
+  ) {
     return false;
   }
-  return _originalEmit(event, ...args);
-};
+  return (_originalEmit as (...values: unknown[]) => boolean)(event, ...args);
+}) as typeof process.emit;
 
 // global-agent (loaded via NODE_OPTIONS --require) patches http/https.globalAgent
 // but does NOT patch the native fetch() built-in de Node.js 24.

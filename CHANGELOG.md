@@ -1,4 +1,29 @@
-## Unreleased
+## [1.26.6](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.5...v1.26.6) (2026-11-03)
+
+### Features
+
+- Play sound the browser cannot read (WMA, AIFF outside Safari, AMR, CAF...)
+  through the media engine, which now demuxes audio files and decodes
+  big-endian and floating point PCM.
+- Preview EPUB books chapter by chapter, Pages, Numbers and Keynote packages
+  through the picture they store, and STL, OBJ, PLY and self-contained glTF
+  models in an interactive 3D view.
+
+### Code quality
+
+- Remove every explicit `any` from the backend and forbid new ones with
+  `@typescript-eslint/no-explicit-any`. `ConfigService.get` now returns the
+  type the configuration seed declares for each key, and OAuth settings read
+  for a provider named at run time go through `getOAuth`.
+- Format the frontend and backend scripts, tests and Prisma notes with
+  Prettier, except the files byte-pinned by the public verification and the
+  media engine build output.
+- Compare the reverse share size limit with the requested size as numbers, and
+  read the SMTP switch of team invitations as the boolean it is.
+
+### Dependencies
+
+- Upgrade the frontend to React 19 and react-intl 7.
 
 ### Tests
 
@@ -9,9 +34,12 @@
 ### Security
 
 - Document CVE-2026-115455 and CVE-2026-114690 as outside the shipped
-  linux/amd64 runtime execution paths in OpenVEX. Keep CVE-2026-114691
-  under investigation because precompiled vector<bool> template code cannot
-  be excluded solely from the absence of runtime compiler headers.
+  linux/amd64 runtime execution paths in OpenVEX. Declare CVE-2026-114691 not
+  affected: the gcc-16 libstdc++.so.6 shipped in the image neither exports nor
+  builds any std::vector<bool> constructor.
+- Build Caddy with golang.org/x/crypto 2f1f834330b2, the first commit fixing
+  GO-2026-5932 (no release yet), with golang.org/x/sys v0.49.0 and
+  golang.org/x/text v0.43.0 that it requires.
 - Rebuild the OpenSSL and Node builder caches from verified OpenSSL 3.5.9 LTS
   and Node.js 24.22.2 sources. Refresh all Debian packages in the exported
   stages, allow newer liblzma security backports, and omit unnecessary xz tools.

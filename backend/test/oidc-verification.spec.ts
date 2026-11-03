@@ -34,6 +34,9 @@ const config = {
           : key.endsWith("-clientSecret")
             ? fixtureCredentials.clientSecret
             : undefined,
+  getOAuth(provider: string, setting: string) {
+    return this.get(`oauth.${provider}-${setting}`);
+  },
   addListener: () => {},
 };
 let keys: Awaited<ReturnType<typeof generateKeyPair>>;

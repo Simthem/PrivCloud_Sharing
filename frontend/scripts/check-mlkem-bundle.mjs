@@ -14,7 +14,9 @@ function javascriptFiles(directory) {
 }
 
 if (!existsSync(chunksRoot)) {
-  throw new Error("Missing .next/static/chunks; cannot verify the ML-KEM bundle");
+  throw new Error(
+    "Missing .next/static/chunks, cannot verify the ML-KEM bundle",
+  );
 }
 
 const chunks = javascriptFiles(chunksRoot).map((path) => ({
@@ -29,7 +31,9 @@ const brokenChunks = chunks.filter(({ source }) =>
 );
 
 if (mlKemChunks.length === 0) {
-  throw new Error("ML-KEM implementation is missing from the production bundle");
+  throw new Error(
+    "ML-KEM implementation is missing from the production bundle",
+  );
 }
 if (brokenChunks.length > 0) {
   throw new Error(
@@ -37,4 +41,6 @@ if (brokenChunks.length > 0) {
   );
 }
 
-console.log(`[ML-KEM] production bundle verified (${mlKemChunks.length} chunk(s))`);
+console.log(
+  `[ML-KEM] production bundle verified (${mlKemChunks.length} chunk(s))`,
+);

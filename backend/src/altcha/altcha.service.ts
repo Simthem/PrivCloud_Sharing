@@ -8,7 +8,7 @@ import {
   type Payload,
 } from "altcha-lib";
 import { deriveKey as derivePbkdf2Key } from "altcha-lib/algorithms/pbkdf2";
-import { ConfigService } from "src/config/config.service";
+import { ConfigKey, ConfigService } from "src/config/config.service";
 
 const DEFAULT_ALGORITHM = "PBKDF2/SHA-256";
 const DEFAULT_COST = 5000;
@@ -200,7 +200,7 @@ export class AltchaService {
   }
 
   private getNumber(
-    key: `${string}.${string}`,
+    key: ConfigKey,
     fallback: number,
     min: number,
     max: number,

@@ -41,6 +41,8 @@ async function probe() {
           : key === "general.appUrl"
             ? "https://app.invalid"
             : "fixture-secret",
+      getOAuth: (_provider: string, setting: string) =>
+        setting === "clientId" ? "fixture-client" : "fixture-secret",
       addListener: (_event: string, listener: (key: string) => void) => {
         onUpdate = listener;
       },

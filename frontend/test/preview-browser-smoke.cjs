@@ -242,6 +242,36 @@ const transpile = (name) =>
         parts: [{ offset: 0, bytes: Buffer.from(bytes) }],
       });
     }
+    const stl = Buffer.from(
+      "solid tetra\n" +
+        [
+          [0, 0, 0, 1, 0, 0, 0, 1, 0],
+          [0, 0, 0, 0, 1, 0, 0, 0, 1],
+          [0, 0, 0, 0, 0, 1, 1, 0, 0],
+          [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        ]
+          .map(
+            (v) =>
+              `facet normal 0 0 0\nouter loop\nvertex ${v.slice(0, 3).join(" ")}\nvertex ${v.slice(3, 6).join(" ")}\nvertex ${v.slice(6).join(" ")}\nendloop\nendfacet\n`,
+          )
+          .join("") +
+        "endsolid tetra\n",
+    );
+    assets.set("stl", { size: stl.length, parts: [{ offset: 0, bytes: stl }] });
+    const epub = Buffer.from(
+      officeFixtures.officePackage({
+        "META-INF/container.xml":
+          '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>',
+        "book.opf":
+          '<package xmlns="http://www.idpf.org/2007/opf"><manifest><item id="a" href="a.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="a"/></spine></package>',
+        "a.xhtml":
+          '<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>Il était une fois</h1><p onclick="alert(1)">Un <em>livre</em></p></body></html>',
+      }),
+    );
+    assets.set("epub", {
+      size: epub.length,
+      parts: [{ offset: 0, bytes: epub }],
+    });
     const XLSX = require("xlsx");
     for (const [name, bookType] of [
       ["xls", "biff8"],
@@ -314,15 +344,15 @@ const transpile = (name) =>
       `
 import React from 'react';import {createRoot} from 'react-dom/client';import {MantineProvider} from '@mantine/core';import {IntlProvider} from 'react-intl';
 import Zoom from ${JSON.stringify(path.join(root, "src/components/share/ZoomablePreview.tsx"))};
-import Pdf from ${JSON.stringify(path.join(root, "src/components/share/ProgressivePdfPreview.tsx"))};import Office from ${JSON.stringify(path.join(root, "src/components/share/OfficePreview.tsx"))};
+import Pdf from ${JSON.stringify(path.join(root, "src/components/share/ProgressivePdfPreview.tsx"))};import Office from ${JSON.stringify(path.join(root, "src/components/share/OfficePreview.tsx"))};import Model from ${JSON.stringify(path.join(root, "src/components/share/ModelPreview.tsx"))};
 import Rotation from ${JSON.stringify(path.join(root, "src/components/team/TeamRotationSchedule.tsx"))};
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
 import messages from ${JSON.stringify(path.join(root, "src/i18n/translations/fr-FR.ts"))};
 const root=createRoot(document.getElementById('root'));window.uiErrors=[];const onError=()=>window.uiErrors.push('preview failed');
 window.showZoom=()=>root.render(<MantineProvider deduplicateCssVariables={false}><IntlProvider locale='fr' messages={messages}><Zoom><img alt='zoom fixture' draggable={false} style={{width:'100%',display:'block'}} src='data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="1000" height="1200"%3E%3Crect width="1000" height="1200" fill="teal"/%3E%3C/svg%3E'/></Zoom></IntlProvider></MantineProvider>);
 window.showPdf=()=>root.render(<MantineProvider deduplicateCssVariables={false}><IntlProvider locale='fr'><Pdf shareId='fixture' fileId='pdf' e2eKey='fixture' onError={onError}/></IntlProvider></MantineProvider>);
-window.showOffice=(name='odt')=>root.render(<MantineProvider deduplicateCssVariables={false}><IntlProvider locale='fr'><Office key={name} shareId='fixture' fileId={name} mimeType={name==='xls'?'application/vnd.ms-excel':name==='xlsb'?'application/vnd.ms-excel.sheet.binary.macroenabled.12':''} e2eKey='fixture' onError={onError}/></IntlProvider></MantineProvider>);
-window.showRotation=(mode='upcoming')=>{window.rotationStatus={policy:{nextDueAt:new Date(Date.now()+5*86400000).toISOString(),isDue:mode==='due',reminderActive:mode==='due'},activeRotation:mode==='paused'?{status:'PAUSED',processedFiles:2,totalFiles:5}:null};const client=new QueryClient();root.render(<MantineProvider deduplicateCssVariables={false}><IntlProvider locale='fr' messages={messages}><QueryClientProvider key={mode} client={client}><Rotation teamId='fixture-team'/></QueryClientProvider></IntlProvider></MantineProvider>);};window.uiReady=true;`,
+window.showOffice=(name='odt')=>root.render(<MantineProvider deduplicateCssVariables={false}><IntlProvider locale='fr'><Office key={name} shareId='fixture' fileId={name} mimeType={name==='epub'?'application/epub+zip':name==='xls'?'application/vnd.ms-excel':name==='xlsb'?'application/vnd.ms-excel.sheet.binary.macroenabled.12':''} e2eKey='fixture' onError={onError}/></IntlProvider></MantineProvider>);
+window.showModel=(name)=>root.render(<MantineProvider deduplicateCssVariables={false}><Model key={name} shareId='fixture' fileId={name} mimeType='model/stl' e2eKey='fixture' onError={onError}/></MantineProvider>);window.showRotation=(mode='upcoming')=>{window.rotationStatus={policy:{nextDueAt:new Date(Date.now()+5*86400000).toISOString(),isDue:mode==='due',reminderActive:mode==='due'},activeRotation:mode==='paused'?{status:'PAUSED',processedFiles:2,totalFiles:5}:null};const client=new QueryClient();root.render(<MantineProvider deduplicateCssVariables={false}><IntlProvider locale='fr' messages={messages}><QueryClientProvider key={mode} client={client}><Rotation teamId='fixture-team'/></QueryClientProvider></IntlProvider></MantineProvider>);};window.uiReady=true;`,
     );
     await new Promise((resolve, reject) =>
       webpack(
@@ -510,6 +540,7 @@ window.previewOffice=async()=>{const zip=await openPreviewZip(await window.sourc
         "--headless=new",
         `--ignore-certificate-errors-spki-list=${certificatePin}`,
         "--disable-gpu",
+        "--enable-unsafe-swiftshader",
         "--no-first-run",
         "--disable-background-networking",
         "--autoplay-policy=no-user-gesture-required",
@@ -1009,6 +1040,27 @@ window.previewOffice=async()=>{const zip=await openPreviewZip(await window.sourc
         `${name} worker second sheet`,
       );
     }
+    await evaluate("window.showOffice('epub')");
+    await wait(
+      () =>
+        evaluate(
+          "document.querySelector('#root')?.textContent.includes('Un livre')",
+        ),
+      "EPUB chapter",
+    );
+    assert.equal(
+      await evaluate("document.querySelector('#root [onclick]') === null"),
+      true,
+    );
+    await evaluate("window.showModel('stl')");
+    await wait(
+      () =>
+        evaluate(
+          "(()=>{const c=document.querySelector('#root canvas');return !!c&&c.width>0&&c.height>0})()",
+        ),
+      "STL model",
+    );
+    await screenshot("stl");
     await evaluate("window.showOffice('pptx')");
     await wait(
       () =>

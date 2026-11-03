@@ -7,6 +7,12 @@ import {
   RAW_IMAGE_EXTENSIONS,
 } from "./imageFormats.util";
 import { isLegacySpreadsheetMimeType } from "./legacySpreadsheetPreview.util";
+import {
+  isModelPreviewMimeType,
+  MODEL_PREVIEW_MAX_SIZE,
+} from "./modelPreview.util";
+
+export { isModelPreviewMimeType };
 
 export const E2E_BLOB_PREVIEW_MAX_SIZE = 200 * 1024 * 1024;
 
@@ -81,6 +87,14 @@ const EXTENSION_MIME_FALLBACK: Record<string, string> = {
   ".m2ts": "video/mp2t",
   ".m2t": "video/mp2t",
   ".divx": "video/x-msvideo",
+  ".pages": "application/vnd.apple.pages",
+  ".numbers": "application/vnd.apple.numbers",
+  ".epub": "application/epub+zip",
+  ".stl": "model/stl",
+  ".obj": "model/obj",
+  ".ply": "model/x-ply",
+  ".glb": "model/gltf-binary",
+  ".gltf": "model/gltf+json",
   ".log": "text/plain",
   ".out": "text/plain",
   ".err": "text/plain",
@@ -401,6 +415,9 @@ export const contentDecidedMimeType = (
 ): string | null => {
   const detected = sniffPreviewMimeType(bytes);
   if (detected === "video/mp2t") return detected;
+  // Keynote presentations share the .key name with key files.
+  if (startsWithBytes(bytes, [0x50, 0x4b, 0x03, 0x04]))
+    return "application/vnd.apple.keynote";
   const utf16 =
     (bytes[0] === 0xff && bytes[1] === 0xfe) ||
     (bytes[0] === 0xfe && bytes[1] === 0xff);
@@ -430,6 +447,12 @@ export const isPreviewMimeTypeSupported = (
     return false;
   // Decoded on the device from a full copy of the file.
   if (
+    isModelPreviewMimeType(mimeType) &&
+    options?.fileSizeBytes != null &&
+    options.fileSizeBytes > MODEL_PREVIEW_MAX_SIZE
+  )
+    return false;
+  if (
     imageDecoderFormat(mimeType) &&
     !rawRanges &&
     options?.fileSizeBytes != null &&
@@ -441,6 +464,7 @@ export const isPreviewMimeTypeSupported = (
     mimeType.startsWith("video/") ||
     mimeType.startsWith("audio/") ||
     mimeType === "application/pdf" ||
+    isModelPreviewMimeType(mimeType) ||
     isTextBasedMimeType(mimeType) ||
     isOfficePreviewMimeType(mimeType)
   );
@@ -460,6 +484,10 @@ export const isOfficePreviewMimeType = (mimeType: string): boolean => {
       value,
     ) ||
     [
+      "application/epub+zip",
+      "application/vnd.apple.pages",
+      "application/vnd.apple.numbers",
+      "application/vnd.apple.keynote",
       "application/rtf",
       "text/rtf",
       "text/csv",

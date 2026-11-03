@@ -26,7 +26,7 @@ export class AltchaGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<Request>();
 
     // Skip captcha for authenticated users (guard placed after JwtGuard/CreateShareGuard).
-    if ((request as any).user) {
+    if ("user" in request && request.user) {
       return true;
     }
 

@@ -14,7 +14,7 @@ export function parseRelativeDateToAbsolute(relativeDate: string) {
     .toDate();
 }
 
-type Timespan = {
+export type Timespan = {
   value: number;
   unit: "minutes" | "hours" | "days" | "weeks" | "months" | "years";
 };

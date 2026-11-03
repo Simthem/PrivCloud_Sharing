@@ -74,7 +74,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
         endpoint +
         "?" +
         new URLSearchParams({
-          client_id: this.config.get(`oauth.${this.name}-clientId`),
+          client_id: this.config.getOAuth(this.name, "clientId"),
           response_type: "code",
           scope:
             this.name == "oidc"
@@ -96,8 +96,8 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
     const redirectUri = this.getRedirectUri();
 
     const body = new URLSearchParams({
-      client_id: this.config.get(`oauth.${this.name}-clientId`),
-      client_secret: this.config.get(`oauth.${this.name}-clientSecret`),
+      client_id: this.config.getOAuth(this.name, "clientId"),
+      client_secret: this.config.getOAuth(this.name, "clientSecret"),
       grant_type: "authorization_code",
       code: query.code,
       redirect_uri: redirectUri,
@@ -309,7 +309,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
     try {
       const jwks = await this.getRemoteJwks();
       const configuration = await this.getConfiguration();
-      const clientId = this.config.get(`oauth.${this.name}-clientId`);
+      const clientId = this.config.getOAuth(this.name, "clientId");
 
       const { payload } = await jose.jwtVerify(idToken, jwks, {
         issuer: this.getExpectedIssuers(configuration),

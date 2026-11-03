@@ -18,7 +18,13 @@ import {
   SignatureLevel,
 } from "./dto/createSignatureRequest.dto";
 import { RejectDocumentDTO, SignDocumentDTO } from "./dto/signDocument.dto";
-import { User, Prisma } from "@prisma/client";
+import {
+  File,
+  Prisma,
+  SignatureDocument,
+  SignatureRecipient,
+  User,
+} from "@prisma/client";
 import { deliverSigningCompletionEmails } from "./signing-mail.util";
 import { resolveSigningIdentityProof } from "./signing-identity.util";
 import { appendSignatureAuditEvent } from "./signing-audit.util";
@@ -59,6 +65,16 @@ const SIGNING_EMAIL_OTP_MAX_FAILURES = 5;
 // Failures accumulate across codes: requesting a new code must not reset the
 // guessing budget of someone who only holds a leaked signing link.
 const SIGNING_EMAIL_OTP_MAX_TOTAL_FAILURES = 15;
+
+/** What the signing emails read from the document and its recipient. */
+type SigningMailDocument = Pick<
+  SignatureDocument,
+  "id" | "fileName" | "message" | "signatureLevel" | "isE2EEncrypted"
+>;
+type SigningMailRecipient = Pick<
+  SignatureRecipient,
+  "email" | "name" | "signingToken" | "userId"
+>;
 
 @Injectable()
 export class SigningService {
@@ -116,8 +132,8 @@ export class SigningService {
       );
     }
 
-    let share: any;
-    let file: any;
+    let share: Prisma.ShareGetPayload<{ include: { files: true } }>;
+    let file: File;
 
     if (dto.teamId) {
       // --- Team context: verify membership + share belongs to team folder ---
@@ -172,7 +188,7 @@ export class SigningService {
         }
       }
 
-      file = share.files.find((f: any) => f.id === dto.fileId);
+      file = share.files.find((f) => f.id === dto.fileId);
       if (!file) {
         throw new NotFoundException("File not found in this share");
       }
@@ -186,7 +202,7 @@ export class SigningService {
         throw new NotFoundException("Share not found or access denied");
       }
 
-      file = share.files.find((f: any) => f.id === dto.fileId);
+      file = share.files.find((f) => f.id === dto.fileId);
       if (!file) {
         throw new NotFoundException("File not found in this share");
       }
@@ -2133,7 +2149,7 @@ export class SigningService {
           },
           { scope: "pdf-seal", documentId },
         );
-      } catch (signingError: any) {
+      } catch (signingError) {
         // SECURITY: Fail-closed - mark document as SIGNING_FAILED, do NOT mark COMPLETED
         this.logger.error("Document signing failed");
         await this.prisma.signatureDocument.update({
@@ -2271,8 +2287,8 @@ export class SigningService {
    * Send a signing invitation email to a recipient.
    */
   private async sendSigningInvitation(
-    document: any,
-    recipient: any,
+    document: SigningMailDocument,
+    recipient: SigningMailRecipient,
     isReminder = false,
   ): Promise<boolean> {
     const baseUrl = await this.configService.get("general.appUrl");
@@ -2314,8 +2330,8 @@ export class SigningService {
    * Send a CC notification to a carbon-copy recipient.
    */
   private async sendCcNotification(
-    document: any,
-    recipient: any,
+    document: SigningMailDocument,
+    recipient: SigningMailRecipient,
     creator: User,
   ): Promise<boolean> {
     const body =
@@ -2342,8 +2358,8 @@ export class SigningService {
    * Send the E2E key in a separate email when the sender explicitly opts in.
    */
   private async sendE2EKeyEmail(
-    document: any,
-    recipient: any,
+    document: SigningMailDocument,
+    recipient: SigningMailRecipient,
     e2eKey: string,
   ): Promise<boolean> {
     const subject = `Clé de déchiffrement E2E - ${document.fileName}`;

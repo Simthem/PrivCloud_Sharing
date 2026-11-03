@@ -51,6 +51,7 @@ import {
   AdaptiveTransferScheduler,
   TransferSchedulerAllocation,
 } from "./adaptive-transfer-scheduler";
+import { UploadShare } from "./upload-share.type";
 
 const S3_MIN_MULTIPART_PART_BYTES = 5 * 1024 * 1024;
 const DEFAULT_DOWNLOAD_PART_BYTES = 16 * 1024 * 1024;
@@ -206,6 +207,14 @@ const endpointBypassesProxy = (endpoint: string, noProxy: string): boolean => {
   return noProxy
     .split(",")
     .some((pattern) => matchesNoProxyPattern(hostname, pattern));
+};
+
+/** Fields the AWS SDK sets on the errors it throws. */
+type S3Failure = {
+  name?: string;
+  Code?: string;
+  message?: unknown;
+  $metadata?: { httpStatusCode?: number };
 };
 
 @Injectable()
@@ -615,7 +624,8 @@ export class S3FileService {
    * session no longer exists on the S3 side.  This is a non-recoverable
    * state: the client must restart the upload from chunk 0.
    */
-  private isS3UploadGone(error: any): boolean {
+  private isS3UploadGone(failure: unknown): boolean {
+    const error = (failure ?? {}) as S3Failure;
     if (!error) return false;
     // AWS SDK v3: error.name or error.Code set to 'NoSuchUpload'
     if (error.name === "NoSuchUpload" || error.Code === "NoSuchUpload")
@@ -632,7 +642,8 @@ export class S3FileService {
   }
 
   /** Return true when the object was already removed from S3. */
-  private isS3ObjectGone(error: any): boolean {
+  private isS3ObjectGone(failure: unknown): boolean {
+    const error = (failure ?? {}) as S3Failure;
     if (!error) return false;
     if (error.name === "NoSuchKey" || error.Code === "NoSuchKey") return true;
     if (error.$metadata?.httpStatusCode === 404) return true;
@@ -1841,7 +1852,7 @@ export class S3FileService {
     },
     shareId: string,
     _clientChunkSize?: number,
-    _share?: any,
+    _share?: UploadShare,
     effectiveLimit?: number,
     contentLength?: number,
     encryptionChunkSize?: number,
@@ -3310,7 +3321,7 @@ export class S3FileService {
     }
 
     const archive = createZipArchive({
-      zlib: { level: parseInt(compressionLevel) },
+      zlib: { level: compressionLevel },
     });
 
     archive.on("error", () => {

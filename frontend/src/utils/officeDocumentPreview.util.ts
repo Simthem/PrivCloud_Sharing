@@ -29,10 +29,18 @@ import {
 } from "./spreadsheetPreview.util";
 import { odpSlidePage, powerpointSlidePage } from "./presentationPreview.util";
 import { parseRtfPreview } from "./rtfPreview.util";
+import { openEpubDocument } from "./epubPreview.util";
+import { openIworkDocument } from "./iworkPreview.util";
 import {
   isLegacySpreadsheetMimeType,
   openLegacySpreadsheet,
 } from "./legacySpreadsheetPreview.util";
+
+const IWORK_MIME_TYPES = new Set([
+  "application/vnd.apple.pages",
+  "application/vnd.apple.numbers",
+  "application/vnd.apple.keynote",
+]);
 
 function delimitedSeparator(text: string, mimeType: string): string {
   if (mimeType === "text/tab-separated-values") return "\t";
@@ -61,6 +69,10 @@ export async function openOfficeDocument(
   const normalized = mimeType.toLowerCase().split(";")[0];
   if (isLegacySpreadsheetMimeType(normalized))
     return openLegacySpreadsheet(source, signal);
+  if (normalized === "application/epub+zip")
+    return openEpubDocument(source, signal, parser);
+  if (IWORK_MIME_TYPES.has(normalized))
+    return openIworkDocument(source, signal);
   if (
     [
       "text/csv",

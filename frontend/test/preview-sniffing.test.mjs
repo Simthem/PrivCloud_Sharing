@@ -192,12 +192,16 @@ test("names shared by text and binary formats are decided by their content", () 
     "text/plain",
   );
 
-  // A Keynote presentation is a ZIP package, a Publisher document an OLE2 file.
+  // A Keynote presentation is a ZIP package, shown by its saved picture. A
+  // Publisher document is an OLE2 file.
   const keynote = zipSync({
     "Index/Document.iwa": strToU8("slides"),
     "Metadata/Properties.plist": strToU8("<plist/>"),
   });
-  assert.equal(contentDecidedMimeType("text/plain", keynote), null);
+  assert.equal(
+    contentDecidedMimeType("text/plain", keynote),
+    "application/vnd.apple.keynote",
+  );
   const publisher = bytes([
     0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0,
   ]);

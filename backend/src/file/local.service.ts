@@ -24,6 +24,7 @@ import { SHARE_DIRECTORY } from "../constants";
 import { Readable } from "stream";
 import { MAX_UPLOAD_CHUNK_BYTES } from "./upload-limit.util";
 import { contentHeaderBytes, ContentScheme } from "./content-scheme.util";
+import { UploadShare } from "./upload-share.type";
 
 // link() reports these where the filesystem has no hard links.
 const HARD_LINK_UNSUPPORTED = new Set([
@@ -91,7 +92,7 @@ export class LocalFileService {
     },
     shareId: string,
     clientChunkSize?: number,
-    share?: any,
+    share?: UploadShare,
     callerEffectiveLimit?: number,
     encryptionChunkSize?: number,
   ) {
@@ -141,7 +142,7 @@ export class LocalFileService {
     },
     shareId: string,
     clientChunkSize?: number,
-    share?: any,
+    share?: UploadShare,
     callerEffectiveLimit?: number,
     encryptionChunkSize?: number,
   ) {

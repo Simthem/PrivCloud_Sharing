@@ -10,8 +10,13 @@ import * as argon from "argon2";
 import { EventEmitter } from "events";
 import * as fs from "fs";
 import { PrismaService } from "src/prisma/prisma.service";
-import { isValidTimespanString, stringToTimespan } from "src/utils/date.util";
+import {
+  isValidTimespanString,
+  stringToTimespan,
+  Timespan,
+} from "src/utils/date.util";
 import { parse as yamlParse } from "yaml";
+import type { configVariables } from "../../prisma/seed/config.seed";
 import { YamlConfig } from "../../prisma/seed/config.seed";
 import { CONFIG_FILE } from "src/constants";
 
@@ -44,6 +49,26 @@ export function withContentV2Default<
  * ConfigService extends EventEmitter to allow listening for config updates,
  * now only `update` event will be emitted.
  */
+type ConfigVariables = typeof configVariables;
+/** Every "category.name" key the seed declares. */
+export type ConfigKey = {
+  [C in keyof ConfigVariables]: `${C & string}.${keyof ConfigVariables[C] & string}`;
+}[keyof ConfigVariables];
+type ValueOfType<T> = T extends { type: "number" | "filesize" }
+  ? number
+  : T extends { type: "boolean" }
+    ? boolean
+    : T extends { type: "timespan" }
+      ? Timespan
+      : string;
+/** The value `get` returns for a key, from the type the seed gives it. */
+export type ConfigValue<K extends ConfigKey = ConfigKey> =
+  K extends `${infer C extends keyof ConfigVariables}.${infer N}`
+    ? N extends keyof ConfigVariables[C]
+      ? ValueOfType<ConfigVariables[C][N]>
+      : never
+    : never;
+
 @Injectable()
 export class ConfigService extends EventEmitter {
   yamlConfig?: YamlConfig;
@@ -122,7 +147,21 @@ export class ConfigService extends EventEmitter {
     });
   }
 
-  get(key: `${string}.${string}`): any {
+  get<K extends ConfigKey>(key: K): ConfigValue<K> {
+    return this.read(key) as ConfigValue<K>;
+  }
+
+  /** A setting of an OAuth provider whose name is only known at run time. */
+  getOAuth<S extends string>(
+    provider: string,
+    setting: S,
+  ): ConfigValue<Extract<ConfigKey, `oauth.${string}-${S}`>> {
+    return this.read(`oauth.${provider}-${setting}`) as ConfigValue<
+      Extract<ConfigKey, `oauth.${string}-${S}`>
+    >;
+  }
+
+  private read(key: string): string | number | boolean | Timespan {
     const configVariable = this.configVariables.filter(
       (variable) => `${variable.category}.${variable.name}` == key,
     )[0];

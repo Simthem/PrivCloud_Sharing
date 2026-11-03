@@ -19,7 +19,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { User } from "@prisma/client";
+import { Prisma, Team, TeamFolder, TeamMember, User } from "@prisma/client";
 import * as argon from "argon2";
 import { FILE_META_V1 } from "src/file/file-metadata-scheme";
 import { PrismaService } from "src/prisma/prisma.service";
@@ -153,6 +153,36 @@ function encryptedNameOf(file: TeamFileRow) {
       }
     : {};
 }
+
+/**
+ * Member fields the team responses expose. Lists select only some of them,
+ * and the user comes as each query includes it.
+ */
+type SerializableMember = Pick<TeamMember, "id"> &
+  Partial<
+    Pick<
+      TeamMember,
+      | "id"
+      | "userId"
+      | "role"
+      | "isActive"
+      | "createdAt"
+      | "canViewActivity"
+      | "canViewSignatures"
+      | "pushNotifMode"
+    >
+  > & { user?: unknown };
+/** Folder fields the team responses expose. */
+type SerializableFolder = Pick<
+  TeamFolder,
+  | "id"
+  | "name"
+  | "description"
+  | "parentId"
+  | "color"
+  | "createdAt"
+  | "updatedAt"
+> & { _count?: unknown };
 
 @Injectable()
 export class TeamService {
@@ -308,8 +338,8 @@ export class TeamService {
     if (!team) throw new NotFoundException("Team not found");
     const serialized = this.serializeTeam(team);
     // Add hasTeamKey boolean to each member (non-sensitive: just whether their key is set)
-    serialized.members = serialized.members.map((m: any) => {
-      const raw = team.members.find((rm: any) => rm.id === m.id);
+    serialized.members = serialized.members.map((m) => {
+      const raw = team.members.find((rm) => rm.id === m.id);
       const keyStatus =
         raw?.wrappedTeamKey && raw.teamKeyVersion === team.keyVersion
           ? "CURRENT"
@@ -610,8 +640,7 @@ export class TeamService {
     await this.assertNotExternalContractor(teamId, email, existingUser?.id);
 
     const baseUrl = await this.configService.get("general.appUrl");
-    const smtpEnabled = await this.configService.get("smtp.enabled");
-    const canSendEmail = smtpEnabled === true || smtpEnabled === "true";
+    const canSendEmail = await this.configService.get("smtp.enabled");
     const invitation = await this.prisma.$transaction(async (transaction) => {
       const createdInvitation = await transaction.teamInvitation.upsert({
         where: { email_teamId: { email, teamId } },
@@ -2566,7 +2595,16 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     }
 
     // Derive canDownload/canDelete/canRequestSignature/canShareE2E from permission level
-    const accessData: Record<string, any> = { permission: dto.permission };
+    const accessData: Pick<
+      Prisma.TeamFolderAccessUncheckedCreateInput,
+      | "permission"
+      | "canDownload"
+      | "canDelete"
+      | "canRequestSignature"
+      | "canShareE2E"
+    > = {
+      permission: dto.permission,
+    };
     if (dto.permission === "NONE") {
       accessData.canDownload = false;
       accessData.canDelete = false;
@@ -3503,7 +3541,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     );
     const skip = (page - 1) * limit;
 
-    const where: any = { teamId };
+    const where: Prisma.TeamAccessLogWhereInput = { teamId };
     if (options.action) where.action = options.action;
 
     const [logs, total] = await Promise.all([
@@ -3656,7 +3694,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       where: { userId_teamId: { userId, teamId } },
     });
 
-    const link = await (this.prisma as any).teamGuestLink.create({
+    const link = await this.prisma.teamGuestLink.create({
       data: {
         label: dto.label || null,
         permission: dto.permission || "READ",
@@ -3714,7 +3752,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     });
     if (!folder) throw new NotFoundException("Folder not found");
 
-    return (this.prisma as any).teamGuestLink.findMany({
+    return this.prisma.teamGuestLink.findMany({
       where: { teamId, folderId, isActive: true },
       select: {
         id: true,
@@ -3736,12 +3774,12 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
   async revokeGuestLink(teamId: string, linkId: string, userId: string) {
     await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
 
-    const link = await (this.prisma as any).teamGuestLink.findFirst({
+    const link = await this.prisma.teamGuestLink.findFirst({
       where: { id: linkId, teamId },
     });
     if (!link) throw new NotFoundException("Guest link not found");
 
-    await (this.prisma as any).teamGuestLink.update({
+    await this.prisma.teamGuestLink.update({
       where: { id: linkId },
       data: { isActive: false },
     });
@@ -4308,7 +4346,10 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
   /**
    * Serialize team for JSON response (BigInt -> number conversion).
    */
-  private serializeTeam(team: any) {
+  private serializeTeam<
+    M extends SerializableMember = SerializableMember,
+    F extends SerializableFolder = SerializableFolder,
+  >(team: Team & { members?: M[]; sharedFolders?: F[] }) {
     return {
       ...team,
       maxShareSize: this.optionalNumber(team.maxShareSize),

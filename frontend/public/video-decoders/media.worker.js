@@ -3,6 +3,8 @@
 // through the browser's own player: FFmpeg demuxes the file, keeps the
 // pictures the browser decodes and re-encodes the others with WebCodecs, the
 // sound becomes AAC, and fragmented MP4 goes to MediaSource in the page.
+// Sound files the browser cannot play (WMA, AIFF, AMR...) take the same path
+// without pictures.
 // A module worker served with its own CSP allowing WebAssembly (see
 // next.config.js). It reads only the bytes the page sends: keys and
 // authorization stay in the page. One worker per video, terminated with it.
@@ -36,6 +38,19 @@ const FORMAT_HINTS = {
   "video/3gpp": "mov",
   "video/quicktime": "mov",
   "video/mp4": "mov",
+  "audio/x-ms-wma": "asf",
+  "audio/aiff": "aiff",
+  "audio/x-aiff": "aiff",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/x-caf": "caf",
+  "audio/mpeg": "mp3",
+  "audio/flac": "flac",
+  "audio/aac": "aac",
+  "audio/ac3": "ac3",
+  "audio/amr": "amr",
+  "audio/ogg": "ogg",
+  "audio/mp4": "mov",
 };
 
 let libav = null;
@@ -243,7 +258,7 @@ async function open(message) {
     streams.find((stream) => stream.codec_type === type) || null;
   const videoStream = first(libav.AVMEDIA_TYPE_VIDEO);
   const audioStream = first(libav.AVMEDIA_TYPE_AUDIO);
-  if (!videoStream) throw new Error("unsupported");
+  if (!videoStream && !audioStream) throw new Error("unsupported");
   const microseconds = async (lo, hi) => {
     const low = await libav[lo](fmt);
     const high = await libav[hi](fmt);
@@ -264,6 +279,23 @@ async function open(message) {
     ),
   );
 
+  if (videoStream) await openVideo(videoStream);
+  if (audioStream) {
+    const audioParameters = await libav.ff_copyout_codecpar(
+      audioStream.codecpar,
+    );
+    if (AAC_RATES.includes(audioParameters.sample_rate))
+      audio = {
+        stream: audioStream,
+        rate: audioParameters.sample_rate,
+        channels: Math.min(2, Math.max(1, audioParameters.channels || 2)),
+      };
+  }
+  if (!video && !audio) throw new Error("unsupported");
+  self.postMessage({ type: "ready", duration, hasAudio: !!audio });
+}
+
+async function openVideo(videoStream) {
   const parameters = await libav.ff_copyout_codecpar(videoStream.codecpar);
   const copy =
     supported[
@@ -295,18 +327,6 @@ async function open(message) {
     video.width = width;
     video.height = height;
   }
-  if (audioStream) {
-    const audioParameters = await libav.ff_copyout_codecpar(
-      audioStream.codecpar,
-    );
-    if (AAC_RATES.includes(audioParameters.sample_rate))
-      audio = {
-        stream: audioStream,
-        rate: audioParameters.sample_rate,
-        channels: Math.min(2, Math.max(1, audioParameters.channels || 2)),
-      };
-  }
-  self.postMessage({ type: "ready", duration, hasAudio: !!audio });
 }
 
 /** Converts decoded sound of any layout to planar float, mono or stereo. */
@@ -354,13 +374,13 @@ function planarFloat(frame, channels) {
 /** One pipeline from a keyframe: demuxing to the muxer's output. */
 async function createPipeline(state) {
   const streams = [];
-  if (video.copy) {
+  if (video?.copy) {
     streams.push({
       codecpar: video.stream.codecpar,
       num: video.stream.time_base_num,
       den: video.stream.time_base_den,
     });
-  } else {
+  } else if (video) {
     const [, decoder, decodePacket, decodeFrame] = await libav.ff_init_decoder(
       video.stream.codec_id,
       {
@@ -479,13 +499,18 @@ function releaseCopied(state, ended) {
 async function drain(state, ended) {
   if (!state.oc) {
     const known =
+      !video ||
       video.copy ||
       state.description ||
       (!video.config.avc && state.chunks.length);
     if (!known) return;
     await startMuxer(state);
   }
-  const ready = video.copy ? state.copied.splice(0) : takeVideoChunks(state);
+  const ready = !video
+    ? []
+    : video.copy
+      ? state.copied.splice(0)
+      : takeVideoChunks(state);
   ready.push(...state.queued.audio.splice(0));
   await writePackets(state, ready);
   if (ended) {
@@ -497,13 +522,13 @@ async function drain(state, ended) {
 
 async function startMuxer(state) {
   const pars = [];
-  if (video.copy) {
+  if (video?.copy) {
     pars.push([
       video.stream.codecpar,
       video.stream.time_base_num,
       video.stream.time_base_den,
     ]);
-  } else {
+  } else if (video) {
     const par = await libav.avcodec_parameters_alloc();
     await libav.ff_copyin_codecpar(par, {
       codec_type: libav.AVMEDIA_TYPE_VIDEO,
@@ -815,9 +840,18 @@ async function run(myEpoch, time) {
       ended = result === libav.AVERROR_EOF;
       if (result < 0 && !ended && result !== -libav.EAGAIN)
         throw new Error("demux");
-      const videoPackets = byStream[video.stream.index] || [];
+      const videoPackets = video ? byStream[video.stream.index] || [] : [];
       const audioPackets = audio ? byStream[audio.stream.index] || [] : [];
-      if (state.base === null) {
+      if (state.base === null && !video) {
+        const first = audioPackets.find(
+          (item) => !isNoTimestamp(item.pts, item.ptshi),
+        );
+        if (!first) {
+          if (ended) break;
+          continue;
+        }
+        state.base = audioTime(first);
+      } else if (state.base === null) {
         const first = videoPackets.find((item) => item.flags & 1) || null;
         if (!first) {
           if (ended) break;
@@ -832,7 +866,7 @@ async function run(myEpoch, time) {
         );
         videoPackets.splice(0, videoPackets.indexOf(first));
       }
-      if (video.copy) {
+      if (video?.copy) {
         const { time_base_num: num, time_base_den: den } = video.stream;
         const offset = Math.round((state.base * den) / num);
         for (const item of videoPackets) {
@@ -855,7 +889,7 @@ async function run(myEpoch, time) {
           );
         }
         releaseCopied(state, ended);
-      } else {
+      } else if (video) {
         await decodeVideo(state, videoPackets, ended);
         if (ended)
           await state.encoder.flush().catch(() => {
@@ -866,13 +900,13 @@ async function run(myEpoch, time) {
         const keep = audioPackets.filter(
           (item) =>
             isNoTimestamp(item.pts, item.ptshi) ||
-            seconds(
-              item.pts,
-              item.ptshi,
-              audio.stream.time_base_num,
-              audio.stream.time_base_den,
-            ) >= state.base,
+            audioTime(item) >= state.base,
         );
+        // Without pictures, the sound decides how far the pipeline went.
+        if (!video)
+          for (const item of keep)
+            if (!isNoTimestamp(item.pts, item.ptshi))
+              state.until = Math.max(state.until, audioTime(item));
         state.queued.audio.push(...(await codeAudio(state, keep, ended)));
       }
       if (myEpoch !== epoch) break;
@@ -881,6 +915,15 @@ async function run(myEpoch, time) {
   } finally {
     await closePipeline(state);
   }
+}
+
+function audioTime(item) {
+  return seconds(
+    item.pts,
+    item.ptshi,
+    audio.stream.time_base_num,
+    audio.stream.time_base_den,
+  );
 }
 
 function restart(nextEpoch, time) {

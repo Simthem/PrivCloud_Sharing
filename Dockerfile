@@ -72,6 +72,8 @@ RUN test "$(grep -Fc '[]interpreter.Interpretable{reqAttr}' modules/caddyhttp/ce
 # SNYK-GOLANG-GOOPENTELEMETRYIO* (HIGH x4) : go.opentelemetry.io/otel < 1.43.0
 # SNYK-GOLANG-GITHUBCOMYUINGOLDMARKRENDERERHTML-15838406 (MEDIUM) : goldmark XSS < 1.7.17
 # SNYK-GOLANG-GOLANGORGXCRYPTOSSH* (HIGH x5 + MEDIUM x7) : golang.org/x/crypto/ssh{,/agent} < 0.52.0
+# GO-2026-5932 : golang.org/x/crypto/openpgp, fixed after v0.58.0 by commit 2f1f834330b2 (no tag yet).
+#   That commit needs golang.org/x/sys v0.49.0 and golang.org/x/text v0.43.0, pinned below with it.
 # CVE-2026-46600 : golang.org/x/net < 0.56.0
 # CVE-2026-78661, CVE-2026-97045 : golang.org/x/net/html < 0.62.0
 # CVE-2026-56852 : golang.org/x/text < 0.39.0
@@ -89,8 +91,8 @@ RUN test "$(grep -Fc '[]interpreter.Interpretable{reqAttr}' modules/caddyhttp/ce
 # reviewed v0.30.0 release, which contains the sentinel-field fix, and verify
 # the compiled binary below so a transitive downgrade fails the image build.
 RUN go get golang.org/x/net@v0.62.0 \
-    && go get golang.org/x/text@v0.41.0 \
-    && go get golang.org/x/crypto@v0.56.0 \
+    && go get golang.org/x/text@v0.43.0 \
+    && go get golang.org/x/crypto@v0.58.1-0.20261009181718-2f1f834330b2 \
     && go get github.com/yuin/goldmark@v1.7.17 \
     && go get google.golang.org/grpc@v1.83.2 \
     && go get github.com/go-jose/go-jose/v3@v3.0.5 \
@@ -108,7 +110,7 @@ RUN go get golang.org/x/net@v0.62.0 \
     && go get go.opentelemetry.io/otel/exporters/stdout/stdoutlog@v0.21.0 \
     && go get github.com/quic-go/quic-go/http3@v0.59.1 \
     && go get github.com/go-chi/chi/v5@v5.5.0 \
-    && go get golang.org/x/sys@v0.47.0 \
+    && go get golang.org/x/sys@v0.49.0 \
     && go get github.com/smallstep/certificates@v0.30.2 \
     && go get go.etcd.io/bbolt@cae11e991754 \
     && go mod tidy \
@@ -121,9 +123,9 @@ RUN go get golang.org/x/net@v0.62.0 \
     && go mod tidy \
     && go mod edit \
         -replace=golang.org/x/net=golang.org/x/net@v0.62.0 \
-        -replace=golang.org/x/text=golang.org/x/text@v0.41.0 \
-        -replace=golang.org/x/crypto=golang.org/x/crypto@v0.56.0 \
-        -replace=golang.org/x/sys=golang.org/x/sys@v0.47.0 \
+        -replace=golang.org/x/text=golang.org/x/text@v0.43.0 \
+        -replace=golang.org/x/crypto=golang.org/x/crypto@v0.58.1-0.20261009181718-2f1f834330b2 \
+        -replace=golang.org/x/sys=golang.org/x/sys@v0.49.0 \
         -replace=github.com/go-chi/chi/v5=github.com/go-chi/chi/v5@v5.5.0 \
         -replace=go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptrace-grpc=go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptrace-grpc@v1.45.0 \
         -replace=go.opentelemetry.io/otel/log=go.opentelemetry.io/otel/log@v0.21.0 \
@@ -142,8 +144,8 @@ RUN go get golang.org/x/net@v0.62.0 \
     && echo "=== Security replace pins verification ===" \
     && grep -E 'replace|x/net|x/text|x/crypto|x/sys|go-chi/chi/v5' go.mod \
     && test "$(go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' golang.org/x/net)" = "v0.62.0" \
-    && test "$(go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' golang.org/x/text)" = "v0.41.0" \
-    && go list -m golang.org/x/crypto | grep 'v0.56.0' \
+    && test "$(go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' golang.org/x/text)" = "v0.43.0" \
+    && go list -m golang.org/x/crypto | grep 'v0.58.1-0.20261009181718-2f1f834330b2' \
     && go list -m github.com/go-chi/chi/v5 | grep 'v5.5.0' \
     && test "$(go list -m -f '{{.Version}}' google.golang.org/grpc)" = "v1.83.2" \
     && test "$(go list -m -f '{{.Version}}' github.com/google/cel-go)" = "v0.30.0" \

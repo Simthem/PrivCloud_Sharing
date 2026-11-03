@@ -176,13 +176,13 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
 /**
- * Plays a file the browser cannot open itself in a browser video element:
+ * Plays a file the browser cannot open itself in a browser media element:
  * the media worker turns it into fragmented MP4, appended to MediaSource well
  * ahead of the position like a streaming player. Bytes come from `source`,
  * so encrypted files are decrypted in this page only.
  */
 export class MediaEnginePlayback {
-  private readonly video: HTMLVideoElement;
+  private readonly video: HTMLMediaElement;
   private readonly source: PreviewByteSource;
   private readonly onError: (_unsupported: boolean) => void;
   private readonly worker: Worker;
@@ -204,7 +204,7 @@ export class MediaEnginePlayback {
   private destroyed = false;
 
   constructor(
-    video: HTMLVideoElement,
+    video: HTMLMediaElement,
     source: PreviewByteSource,
     mimeType: string,
     onError: (_unsupported: boolean) => void,
@@ -434,7 +434,10 @@ export class MediaEnginePlayback {
         init.length < MAX_INIT_BYTES
       )
         return;
-      const type = `video/mp4; codecs="${codecs}"`;
+      const kind = codecs?.split(",").every((codec) => codec.startsWith("mp4a"))
+        ? "audio"
+        : "video";
+      const type = `${kind}/mp4; codecs="${codecs}"`;
       if (!codecs || !mediaSourceClass()?.isTypeSupported(type))
         return this.fail(true);
       try {

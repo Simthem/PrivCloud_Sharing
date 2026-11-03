@@ -31,12 +31,14 @@ export const configVariables = {
     },
     metaDescriptionEn: {
       type: "string",
-      defaultValue: "The secure alternative to WeTransfer. Send files with end-to-end encryption and zero-knowledge privacy. No account required. Open-source and GDPR-compliant.",
+      defaultValue:
+        "The secure alternative to WeTransfer. Send files with end-to-end encryption and zero-knowledge privacy. No account required. Open-source and GDPR-compliant.",
       secret: false,
     },
     metaDescriptionFr: {
       type: "string",
-      defaultValue: "L'alternative sécurisée à WeTransfer. Envoyez vos fichiers avec un chiffrement de bout en bout et une confidentialité zéro connaissance. Aucun compte requis. Open-source et conforme au RGPD.",
+      defaultValue:
+        "L'alternative sécurisée à WeTransfer. Envoyez vos fichiers avec un chiffrement de bout en bout et une confidentialité zéro connaissance. Aucun compte requis. Open-source et conforme au RGPD.",
       secret: false,
     },
     colorPalette: {
@@ -213,7 +215,7 @@ export const configVariables = {
     downloadNotificationMessage: {
       type: "text",
       defaultValue:
-        "Bonjour,\n\nVotre partage \"{shareName}\" a été téléchargé le {date}.\n\nConsulter votre partage : {shareUrl}\n\nPrivCloud_Sharing 🔒",
+        'Bonjour,\n\nVotre partage "{shareName}" a été téléchargé le {date}.\n\nConsulter votre partage : {shareUrl}\n\nPrivCloud_Sharing 🔒',
     },
     downloadDigestSubject: {
       type: "string",
@@ -596,7 +598,7 @@ export const configVariables = {
         "You have the right to:\n\n" +
         "- **Access** your personal data\n" +
         "- **Rectify** inaccurate data\n" +
-        "- **Erase** your data (\"right to be forgotten\")\n" +
+        '- **Erase** your data ("right to be forgotten")\n' +
         "- **Restrict** processing\n" +
         "- **Data portability** (receive your data in a structured format)\n" +
         "- **Object** to processing\n" +
@@ -610,7 +612,7 @@ export const configVariables = {
         "and affected users without undue delay, as required by GDPR Art. 33-34.\n\n" +
         "## 9. Changes to This Policy\n\n" +
         "We may update this privacy policy from time to time. The latest version is always " +
-        "available on this page with the \"Last updated\" date.",
+        'available on this page with the "Last updated" date.',
       secret: false,
     },
     privacyPolicyUrl: {
@@ -789,7 +791,7 @@ export const configVariables = {
       secret: false,
     },
   },
-} satisfies ConfigVariables;
+} as const satisfies ConfigVariables;
 
 export type YamlConfig = {
   [Category in keyof typeof configVariables]: {

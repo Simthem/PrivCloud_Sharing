@@ -11,7 +11,16 @@ import {
 } from "@simplewebauthn/server/helpers";
 import xmlCrypto from "xml-crypto";
 import xmldom from "@xmldom/xmldom";
-import { PDFDocument, PDFDict, PDFName, PDFArray, PDFRawStream, PDFString, PDFHexString, decodePDFRawStream } from "pdf-lib";
+import {
+  PDFDocument,
+  PDFDict,
+  PDFName,
+  PDFArray,
+  PDFRawStream,
+  PDFString,
+  PDFHexString,
+  decodePDFRawStream,
+} from "pdf-lib";
 
 const DOMAIN = "PrivCloud-Signature-v2";
 const AUDIT_PROTOCOL = "privcloud-signing-audit-v1";
@@ -27,7 +36,12 @@ const HASH_BY_OID = {
   "2.16.840.1.101.3.4.2.2": "sha384",
   "2.16.840.1.101.3.4.2.3": "sha512",
 };
-const COSE_ALGORITHMS = { "-7": "ES256", "-8": "EdDSA", "-35": "ES384", "-257": "RS256" };
+const COSE_ALGORITHMS = {
+  "-7": "ES256",
+  "-8": "EdDSA",
+  "-35": "ES384",
+  "-257": "RS256",
+};
 const digest = (value) => createHash("sha256").update(value).digest();
 const hex = (value) => digest(value).toString("hex");
 const normalized = (value) => {
@@ -74,10 +88,14 @@ function printReport() {
     if (!sections.has(section)) sections.set(section, []);
     sections.get(section).push({ label, value });
   }
-  const rank = (section) => SECTION_RANK.findIndex((pattern) => pattern.test(section));
+  const rank = (section) =>
+    SECTION_RANK.findIndex((pattern) => pattern.test(section));
   const ordered = [...sections.keys()]
     .map((section, index) => ({ section, index }))
-    .sort((left, right) => rank(left.section) - rank(right.section) || left.index - right.index);
+    .sort(
+      (left, right) =>
+        rank(left.section) - rank(right.section) || left.index - right.index,
+    );
   const width = Math.max(34, ...report.map(({ label }) => label.length + 4));
   for (const { section } of ordered) {
     console.log(`\n${section}\n${"-".repeat(section.length)}`);
@@ -106,7 +124,8 @@ const OCTET_STRING = 4;
 function readAsn1(bytes, start, limit, depth) {
   if (depth > 64) fail("ASN.1 nesting is too deep");
   let offset = start;
-  const take = () => (offset < limit ? bytes[offset++] : fail("Truncated ASN.1 value"));
+  const take = () =>
+    offset < limit ? bytes[offset++] : fail("Truncated ASN.1 value");
   const first = take();
   let type = first & 0x1f;
   if (type === 0x1f) {
@@ -169,14 +188,20 @@ function derOf(node) {
   for (let rest = content.length; rest > 0; rest = Math.floor(rest / 256)) {
     length.unshift(rest % 256);
   }
-  const header = content.length < 0x80 ? [content.length] : [0x80 | length.length, ...length];
+  const header =
+    content.length < 0x80
+      ? [content.length]
+      : [0x80 | length.length, ...length];
   return Buffer.concat([node.identifier, Buffer.from(header), content]);
 }
 const isContext = (node, type) =>
   node.tagClass === CONTEXT_SPECIFIC && node.type === type;
-const isUniversal = (node, type) => node.tagClass === UNIVERSAL && node.type === type;
+const isUniversal = (node, type) =>
+  node.tagClass === UNIVERSAL && node.type === type;
 const octets = (node) =>
-  Array.isArray(node.value) ? Buffer.concat(node.value.map(octets)) : Buffer.from(node.value);
+  Array.isArray(node.value)
+    ? Buffer.concat(node.value.map(octets))
+    : Buffer.from(node.value);
 function oidOf(node) {
   const arcs = [];
   let arc = 0n;
@@ -198,9 +223,20 @@ function certificateDetails(der) {
     const result = spawnSync(
       "openssl",
       [
-        "x509", "-inform", "DER", "-in", join(dir, "cert.der"), "-noout",
-        "-subject", "-issuer", "-fingerprint", "-sha256", "-startdate", "-enddate",
-        "-ext", "extendedKeyUsage",
+        "x509",
+        "-inform",
+        "DER",
+        "-in",
+        join(dir, "cert.der"),
+        "-noout",
+        "-subject",
+        "-issuer",
+        "-fingerprint",
+        "-sha256",
+        "-startdate",
+        "-enddate",
+        "-ext",
+        "extendedKeyUsage",
       ],
       { encoding: "utf8" },
     );
@@ -220,31 +256,42 @@ function certificateDetails(der) {
   });
 }
 
-const commonName = (subject) => subject.match(/CN\s*=\s*([^,/]+)/)?.[1]?.trim() || subject;
+const commonName = (subject) =>
+  subject.match(/CN\s*=\s*([^,/]+)/)?.[1]?.trim() || subject;
 const pemOf = (der) =>
-  `-----BEGIN CERTIFICATE-----\n${der.toString("base64").match(/.{1,64}/g).join("\n")}\n-----END CERTIFICATE-----\n`;
+  `-----BEGIN CERTIFICATE-----\n${der
+    .toString("base64")
+    .match(/.{1,64}/g)
+    .join("\n")}\n-----END CERTIFICATE-----\n`;
 
 /** Certificates of a PEM bundle, as DER. */
 function pemCertificates(path) {
-  return [...readFileSync(path, "utf8").matchAll(
-    /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/g,
-  )].map((match) => Buffer.from(match[1].replace(/\s/g, ""), "base64"));
+  return [
+    ...readFileSync(path, "utf8").matchAll(
+      /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/g,
+    ),
+  ].map((match) => Buffer.from(match[1].replace(/\s/g, ""), "base64"));
 }
 
 /** Integer node as hex, without the sign padding byte. */
-const integerHex = (node) => Buffer.from(node.value).toString("hex").replace(/^00(?=[0-9a-f]{2})/, "");
+const integerHex = (node) =>
+  Buffer.from(node.value)
+    .toString("hex")
+    .replace(/^00(?=[0-9a-f]{2})/, "");
 
 /** Certificates, signature value and RFC 3161 token of a CMS SignedData. */
 function cmsStructure(cms) {
   const signedData = asn1Of(cms).value[1].value[0];
-  const certificates = (signedData.value.find((node) => isContext(node, 0))?.value || [])
-    .map(derOf);
+  const certificates = (
+    signedData.value.find((node) => isContext(node, 0))?.value || []
+  ).map(derOf);
   const signerInfo = signedData.value[signedData.value.length - 1].value[0];
   const signatureValue = octets(
     signerInfo.value.find((node) => isUniversal(node, OCTET_STRING)),
   );
   let timestampToken = null;
-  for (const attribute of signerInfo.value.find((node) => isContext(node, 1))?.value || []) {
+  for (const attribute of signerInfo.value.find((node) => isContext(node, 1))
+    ?.value || []) {
     if (oidOf(attribute.value[0]) === OID_TIMESTAMP_TOKEN) {
       timestampToken = derOf(attribute.value[1].value[0]);
     }
@@ -255,8 +302,9 @@ function cmsStructure(cms) {
 /** Fields of the TSTInfo carried by an RFC 3161 token. */
 function timestampInfo(token) {
   const signedData = asn1Of(token).value[1].value[0];
-  const certificates = (signedData.value.find((node) => isContext(node, 0))?.value || [])
-    .map(derOf);
+  const certificates = (
+    signedData.value.find((node) => isContext(node, 0))?.value || []
+  ).map(derOf);
   const tstInfo = asn1Of(octets(signedData.value[2].value[1].value[0]));
   const imprint = tstInfo.value[2];
   const genTime = Buffer.from(tstInfo.value[4].value).toString("latin1");
@@ -292,7 +340,11 @@ const responseToken = (response) => derOf(asn1Of(response).value[1]);
  * dated status history, read from the signed content only.
  */
 function trustedListServices(xml) {
-  const tag = (name) => new RegExp(`<(?:\\w+:)?${name}\\b[^>]*>([\\s\\S]*?)</(?:\\w+:)?${name}>`, "g");
+  const tag = (name) =>
+    new RegExp(
+      `<(?:\\w+:)?${name}\\b[^>]*>([\\s\\S]*?)</(?:\\w+:)?${name}>`,
+      "g",
+    );
   const first = (block, name) => tag(name).exec(block)?.[1]?.trim() || null;
   const services = [];
   for (const [, block] of xml.matchAll(tag("TSPService"))) {
@@ -314,7 +366,9 @@ function trustedListServices(xml) {
       .map(([, base64]) => Buffer.from(base64.replace(/\s/g, ""), "base64"))
       .filter((der) => der.length > 0);
     services.push({
-      name: (first(first(information, "ServiceName") || "", "Name") || "unnamed").replace(/\s+/g, " "),
+      name: (
+        first(first(information, "ServiceName") || "", "Name") || "unnamed"
+      ).replace(/\s+/g, " "),
       certificates,
       fingerprints: certificates.map((der) => hex(der)),
       history: history.sort((left, right) => left.start - right.start),
@@ -327,8 +381,13 @@ const uriTail = (uri) => (uri || "").split("/").pop();
 
 const XMLDSIG = "http://www.w3.org/2000/09/xmldsig#";
 const ENVELOPED = "http://www.w3.org/2000/09/xmldsig#enveloped-signature";
-const listTag = (name) => new RegExp(`<(?:\\w+:)?${name}\\b[^>]*>([\\s\\S]*?)</(?:\\w+:)?${name}>`, "g");
-const listText = (block, name) => listTag(name).exec(block)?.[1]?.trim() || null;
+const listTag = (name) =>
+  new RegExp(
+    `<(?:\\w+:)?${name}\\b[^>]*>([\\s\\S]*?)</(?:\\w+:)?${name}>`,
+    "g",
+  );
+const listText = (block, name) =>
+  listTag(name).exec(block)?.[1]?.trim() || null;
 const subjectOf = (certificate) => certificate.subject.split("\n").join(", ");
 
 /**
@@ -337,15 +396,30 @@ const subjectOf = (certificate) => certificate.subject.split("\n").join(", ");
  * signature covers is returned, so nothing added around it can be read.
  */
 function signedList(xml, label) {
-  const root = new xmldom.DOMParser().parseFromString(xml, "text/xml").documentElement;
+  const root = new xmldom.DOMParser().parseFromString(
+    xml,
+    "text/xml",
+  ).documentElement;
   const signatures = Array.from(root?.childNodes || []).filter(
-    (node) => node.nodeType === 1 && node.localName === "Signature" && node.namespaceURI === XMLDSIG,
+    (node) =>
+      node.nodeType === 1 &&
+      node.localName === "Signature" &&
+      node.namespaceURI === XMLDSIG,
   );
-  if (signatures.length !== 1) fail(`${label}: not exactly one enveloped XML signature`);
-  const certificate = signatures[0].getElementsByTagNameNS(XMLDSIG, "X509Certificate")[0]?.textContent;
+  if (signatures.length !== 1)
+    fail(`${label}: not exactly one enveloped XML signature`);
+  const certificate = signatures[0].getElementsByTagNameNS(
+    XMLDSIG,
+    "X509Certificate",
+  )[0]?.textContent;
   if (!certificate) fail(`${label}: the XML signature carries no certificate`);
-  const signer = new X509Certificate(Buffer.from(certificate.replace(/\s/g, ""), "base64"));
-  const signature = new xmlCrypto.SignedXml({ publicCert: signer.toString(), getCertFromKeyInfo: () => null });
+  const signer = new X509Certificate(
+    Buffer.from(certificate.replace(/\s/g, ""), "base64"),
+  );
+  const signature = new xmlCrypto.SignedXml({
+    publicCert: signer.toString(),
+    getCertFromKeyInfo: () => null,
+  });
   signature.loadSignature(signatures[0]);
   let valid = false;
   try {
@@ -353,11 +427,18 @@ function signedList(xml, label) {
   } catch {
     valid = false;
   }
-  if (!valid) fail(`${label}: invalid XML signature, the list was modified or is not the published one`);
+  if (!valid)
+    fail(
+      `${label}: invalid XML signature, the list was modified or is not the published one`,
+    );
   const whole = signature
     .getReferences()
-    .find((reference) => reference.uri === "" && reference.transforms.includes(ENVELOPED));
-  if (!whole?.signedReference) fail(`${label}: the XML signature does not cover the whole list`);
+    .find(
+      (reference) =>
+        reference.uri === "" && reference.transforms.includes(ENVELOPED),
+    );
+  if (!whole?.signedReference)
+    fail(`${label}: the XML signature does not cover the whole list`);
   return {
     signedXml: whole.signedReference,
     signer,
@@ -368,18 +449,47 @@ function signedList(xml, label) {
 
 function reportListHeader(section, raw, list) {
   note(section, "File SHA-256", hex(raw));
-  note(section, "Territory", listText(list.signedXml, "SchemeTerritory") || "unknown");
-  note(section, "Sequence number", listText(list.signedXml, "TSLSequenceNumber") || "unknown");
-  note(section, "Issued", listText(list.signedXml, "ListIssueDateTime") || "unknown");
-  note(section, "Next update", listText(listText(list.signedXml, "NextUpdate") || "", "dateTime") || "unknown");
-  note(section, "Signature", `VALID (${list.algorithm}, enveloped, covers the whole list)`);
+  note(
+    section,
+    "Territory",
+    listText(list.signedXml, "SchemeTerritory") || "unknown",
+  );
+  note(
+    section,
+    "Sequence number",
+    listText(list.signedXml, "TSLSequenceNumber") || "unknown",
+  );
+  note(
+    section,
+    "Issued",
+    listText(list.signedXml, "ListIssueDateTime") || "unknown",
+  );
+  note(
+    section,
+    "Next update",
+    listText(listText(list.signedXml, "NextUpdate") || "", "dateTime") ||
+      "unknown",
+  );
+  note(
+    section,
+    "Signature",
+    `VALID (${list.algorithm}, enveloped, covers the whole list)`,
+  );
   note(section, "Signer", subjectOf(list.signer));
   note(section, "Signer certificate", `SHA-256 ${list.signerSha256}`);
   const issued = new Date(listText(list.signedXml, "ListIssueDateTime"));
   const validAtIssue =
-    new Date(list.signer.validFrom) <= issued && issued <= new Date(list.signer.validTo);
-  note(section, "Signer certificate at issue time", validAtIssue ? "VALID" : "NOT VALID");
-  if (!validAtIssue) fail(`${section}: the signer certificate was not valid when the list was issued`);
+    new Date(list.signer.validFrom) <= issued &&
+    issued <= new Date(list.signer.validTo);
+  note(
+    section,
+    "Signer certificate at issue time",
+    validAtIssue ? "VALID" : "NOT VALID",
+  );
+  if (!validAtIssue)
+    fail(
+      `${section}: the signer certificate was not valid when the list was issued`,
+    );
 }
 
 /** Pointers of the EU List of Trusted Lists, with the certificates allowed to sign each list. */
@@ -395,33 +505,66 @@ const listPointers = (signedXml) =>
 /** Checks that the EU List of Trusted Lists authorizes the national list signer. */
 function reportListAnchoring(territory, list) {
   if (!lotlFile) {
-    note("Trusted List", "Signer authorized by the EU List of Trusted Lists", "NOT CHECKED (use --lotl eu-lotl.xml)");
+    note(
+      "Trusted List",
+      "Signer authorized by the EU List of Trusted Lists",
+      "NOT CHECKED (use --lotl eu-lotl.xml)",
+    );
     return false;
   }
   const raw = readFileSync(lotlFile);
   const xml = raw.toString("utf8");
-  if (!/PointersToOtherTSL/.test(xml)) fail(`${lotlFile} is not the EU List of Trusted Lists (https://ec.europa.eu/tools/lotl/eu-lotl.xml)`);
+  if (!/PointersToOtherTSL/.test(xml))
+    fail(
+      `${lotlFile} is not the EU List of Trusted Lists (https://ec.europa.eu/tools/lotl/eu-lotl.xml)`,
+    );
   const section = "EU List of Trusted Lists";
   const lotl = signedList(xml, lotlFile);
   reportListHeader(section, raw, lotl);
   const pointers = listPointers(lotl.signedXml);
   const selfListed = pointers.some(
-    (pointer) => pointer.territory === "EU" && pointer.fingerprints.includes(lotl.signerSha256),
+    (pointer) =>
+      pointer.territory === "EU" &&
+      pointer.fingerprints.includes(lotl.signerSha256),
   );
-  note(section, "Signer listed in its own EU pointer", selfListed ? "YES" : "NO");
-  if (!selfListed) fail("the EU List of Trusted Lists is not signed by a certificate it lists for itself");
-  const journal = [...new Set(lotl.signedXml.match(/https?:\/\/eur-lex\.europa\.eu\/[^<\s"]+/g) || [])];
-  note(section, "Official Journal publication", journal.join(", ") || "reference not found");
-  note(section, "Anchor", "compare the signer certificate above with the certificates published in the Official Journal");
+  note(
+    section,
+    "Signer listed in its own EU pointer",
+    selfListed ? "YES" : "NO",
+  );
+  if (!selfListed)
+    fail(
+      "the EU List of Trusted Lists is not signed by a certificate it lists for itself",
+    );
+  const journal = [
+    ...new Set(
+      lotl.signedXml.match(/https?:\/\/eur-lex\.europa\.eu\/[^<\s"]+/g) || [],
+    ),
+  ];
+  note(
+    section,
+    "Official Journal publication",
+    journal.join(", ") || "reference not found",
+  );
+  note(
+    section,
+    "Anchor",
+    "compare the signer certificate above with the certificates published in the Official Journal",
+  );
   const authorized = pointers.some(
-    (pointer) => pointer.territory === territory && pointer.fingerprints.includes(list.signerSha256),
+    (pointer) =>
+      pointer.territory === territory &&
+      pointer.fingerprints.includes(list.signerSha256),
   );
   note(
     "Trusted List",
     "Signer authorized by the EU List of Trusted Lists",
     authorized ? `YES (pointer for ${territory})` : "NO",
   );
-  if (!authorized) fail(`the Trusted List signer is not authorized by the EU List of Trusted Lists for ${territory}`);
+  if (!authorized)
+    fail(
+      `the Trusted List signer is not authorized by the EU List of Trusted Lists for ${territory}`,
+    );
   return true;
 }
 
@@ -442,39 +585,60 @@ function trustedList() {
   }
   const list = signedList(xml, trustedListFile);
   reportListHeader("Trusted List", raw, list);
-  trustedListAnchored = reportListAnchoring(listText(list.signedXml, "SchemeTerritory"), list);
+  trustedListAnchored = reportListAnchoring(
+    listText(list.signedXml, "SchemeTerritory"),
+    list,
+  );
   const services = trustedListServices(list.signedXml);
-  if (services.length === 0) fail(`${trustedListFile} lists no trust service in its signed content`);
+  if (services.length === 0)
+    fail(`${trustedListFile} lists no trust service in its signed content`);
   return (trustedListCache = services);
 }
 
 function reportTrustedList(section, genTime, chainDers) {
   if (!trustedListFile) {
-    note(section, "Qualified trust service", "NOT CHECKED (use --trusted-list)");
+    note(
+      section,
+      "Qualified trust service",
+      "NOT CHECKED (use --trusted-list)",
+    );
     return;
   }
   const chainFingerprints = new Set(chainDers.map((der) => hex(der)));
   const service = trustedList().find((candidate) =>
-    candidate.fingerprints.some((fingerprint) => chainFingerprints.has(fingerprint)),
+    candidate.fingerprints.some((fingerprint) =>
+      chainFingerprints.has(fingerprint),
+    ),
   );
   if (!service) {
-    note(section, "Qualified trust service", "NO (TSA not found in the Trusted List)");
+    note(
+      section,
+      "Qualified trust service",
+      "NO (TSA not found in the Trusted List)",
+    );
     return;
   }
-  const atGeneration = service.history.filter((entry) => entry.start <= genTime).pop();
+  const atGeneration = service.history
+    .filter((entry) => entry.start <= genTime)
+    .pop();
   const qualified =
-    uriTail(atGeneration?.type) === "QTST" && uriTail(atGeneration?.status) === "granted";
+    uriTail(atGeneration?.type) === "QTST" &&
+    uriTail(atGeneration?.status) === "granted";
   note(section, "Qualified trust service", qualified ? "YES" : "NO");
   note(section, "Trusted List service", service.name);
   note(
     section,
     "Trusted List service type",
-    uriTail(atGeneration?.type) === "QTST" ? "Qualified time stamp (QTST)" : uriTail(atGeneration?.type) || "unknown",
+    uriTail(atGeneration?.type) === "QTST"
+      ? "Qualified time stamp (QTST)"
+      : uriTail(atGeneration?.type) || "unknown",
   );
   note(
     section,
     "Trusted List status at generation time",
-    atGeneration ? uriTail(atGeneration.status).toUpperCase() : "NO STATUS BEFORE THAT DATE",
+    atGeneration
+      ? uriTail(atGeneration.status).toUpperCase()
+      : "NO STATUS BEFORE THAT DATE",
   );
   note(
     section,
@@ -499,44 +663,81 @@ function reportTimestamp(label, structure) {
     writeFileSync(join(dir, "token.der"), token);
     const result = spawnSync(
       "openssl",
-      ["cms", "-verify", "-noverify", "-inform", "DER", "-in", join(dir, "token.der"), "-out", "/dev/null"],
+      [
+        "cms",
+        "-verify",
+        "-noverify",
+        "-inform",
+        "DER",
+        "-in",
+        join(dir, "token.der"),
+        "-out",
+        "/dev/null",
+      ],
       { encoding: "utf8" },
     );
-    if (result.status !== 0) fail(`${label}: RFC 3161 token signature is invalid`);
+    if (result.status !== 0)
+      fail(`${label}: RFC 3161 token signature is invalid`);
   });
   note(section, "RFC3161 token", "VALID (TSA signature)");
-  const expected = createHash(info.algorithm).update(structure.signatureValue).digest();
+  const expected = createHash(info.algorithm)
+    .update(structure.signatureValue)
+    .digest();
   if (!expected.equals(info.hashed)) {
     fail(`${label}: RFC 3161 timestamp does not cover this signature`);
   }
   note(section, "Message imprint", "MATCH (signature value)");
-  note(section, "Hash algorithm", info.algorithm.toUpperCase().replace("SHA", "SHA-"));
+  note(
+    section,
+    "Hash algorithm",
+    info.algorithm.toUpperCase().replace("SHA", "SHA-"),
+  );
 
   const exchange = timestampExchanges.get(hex(structure.signatureValue));
   if (exchange) {
     const nonce = requestNonce(Buffer.from(exchange.requestBase64, "base64"));
-    if (nonce !== info.nonce) fail(`${label}: timestamp nonce differs from the archived request`);
+    if (nonce !== info.nonce)
+      fail(`${label}: timestamp nonce differs from the archived request`);
     note(section, "Nonce", `MATCH (${nonce})`);
-    if (!responseToken(Buffer.from(exchange.responseBase64, "base64")).equals(token)) {
+    if (
+      !responseToken(Buffer.from(exchange.responseBase64, "base64")).equals(
+        token,
+      )
+    ) {
       fail(`${label}: archived TSA response differs from the embedded token`);
     }
-    note(section, "Archived response (.tsr)", `token identical, from ${exchange.tsaUrl}`);
+    note(
+      section,
+      "Archived response (.tsr)",
+      `token identical, from ${exchange.tsaUrl}`,
+    );
   } else {
-    note(section, "Nonce", info.nonce ? `${info.nonce} (request not archived here)` : "ABSENT");
+    note(
+      section,
+      "Nonce",
+      info.nonce ? `${info.nonce} (request not archived here)` : "ABSENT",
+    );
   }
-  note(section, "Generation time", info.time.toISOString().replace(".000Z", "Z"));
+  note(
+    section,
+    "Generation time",
+    info.time.toISOString().replace(".000Z", "Z"),
+  );
   note(section, "Policy OID", info.policy);
   note(section, "Serial number", info.serial);
 
   const certificates = info.certificates.map(certificateDetails);
-  const signer = certificates.find((certificate) => /Time Stamping/i.test(certificate.eku));
+  const signer = certificates.find((certificate) =>
+    /Time Stamping/i.test(certificate.eku),
+  );
   if (!signer) {
     note(section, "TSA signer", "certificate not included in the token");
     return;
   }
   note(section, "TSA signer", signer.subject);
   note(section, "TSA certificate", `SHA-256 ${signer.fingerprint}`);
-  if (!signer.ekuCritical) fail(`${label}: TSA certificate timeStamping usage is not critical`);
+  if (!signer.ekuCritical)
+    fail(`${label}: TSA certificate timeStamping usage is not critical`);
   note(section, "TSA EKU", "timeStamping (critical)");
   if (info.time < signer.notBefore || info.time > signer.notAfter) {
     fail(`${label}: TSA certificate was not valid at generation time`);
@@ -554,44 +755,66 @@ function reportTimestamp(label, structure) {
       : [];
   let anchor = null;
   if (anchorDers.length === 0) {
-    note(section, "TSA intermediate chain", "NOT CHECKED (use --trusted-list or --tsa-ca)");
+    note(
+      section,
+      "TSA intermediate chain",
+      "NOT CHECKED (use --trusted-list or --tsa-ca)",
+    );
   } else {
     withTempDir((dir) => {
       writeFileSync(join(dir, "anchors.pem"), anchorDers.map(pemOf).join(""));
       writeFileSync(join(dir, "signer.pem"), pemOf(signer.der));
       writeFileSync(
         join(dir, "untrusted.pem"),
-        certificates.filter((certificate) => certificate !== signer).map((certificate) => pemOf(certificate.der)).join("") || pemOf(signer.der),
+        certificates
+          .filter((certificate) => certificate !== signer)
+          .map((certificate) => pemOf(certificate.der))
+          .join("") || pemOf(signer.der),
       );
       const result = spawnSync(
         "openssl",
         [
-          "verify", "-attime", String(Math.floor(info.time.getTime() / 1000)),
-          "-purpose", "timestampsign",
+          "verify",
+          "-attime",
+          String(Math.floor(info.time.getTime() / 1000)),
+          "-purpose",
+          "timestampsign",
           ...(fromTrustedList ? ["-partial_chain"] : []),
-          "-CAfile", join(dir, "anchors.pem"),
-          "-untrusted", join(dir, "untrusted.pem"), join(dir, "signer.pem"),
+          "-CAfile",
+          join(dir, "anchors.pem"),
+          "-untrusted",
+          join(dir, "untrusted.pem"),
+          join(dir, "signer.pem"),
         ],
         { encoding: "utf8" },
       );
       if (result.status !== 0) {
-        fail(`${label}: TSA certificate chain rejected (${(result.stdout + result.stderr).trim()})`);
+        fail(
+          `${label}: TSA certificate chain rejected (${(result.stdout + result.stderr).trim()})`,
+        );
       }
     });
     // The anchor that ends the chain: an anchor that is itself in the token
     // chain, or else the anchor that issued its last certificate.
-    const tokenFingerprints = new Set(certificates.map((certificate) => hex(certificate.der)));
-    const tokenX509 = certificates.map((certificate) => new X509Certificate(certificate.der));
+    const tokenFingerprints = new Set(
+      certificates.map((certificate) => hex(certificate.der)),
+    );
+    const tokenX509 = certificates.map(
+      (certificate) => new X509Certificate(certificate.der),
+    );
     const issued = (der) => {
       try {
         const candidate = new X509Certificate(der);
-        return tokenX509.some((certificate) => certificate.checkIssued(candidate));
+        return tokenX509.some((certificate) =>
+          certificate.checkIssued(candidate),
+        );
       } catch {
         return false;
       }
     };
     const anchorDer =
-      anchorDers.find((der) => tokenFingerprints.has(hex(der))) || anchorDers.find(issued);
+      anchorDers.find((der) => tokenFingerprints.has(hex(der))) ||
+      anchorDers.find(issued);
     anchor = anchorDer ? certificateDetails(anchorDer) : null;
     note(section, "TSA intermediate chain", "VALID at generation time");
     note(
@@ -599,13 +822,16 @@ function reportTimestamp(label, structure) {
       "TSA trust anchor",
       `${anchor?.subject || "unknown"}${fromTrustedList ? " (from the Trusted List)" : ""}`,
     );
-    note(section, "TSA trust anchor fingerprint", `SHA-256 ${anchor?.fingerprint || "unknown"}`);
+    note(
+      section,
+      "TSA trust anchor fingerprint",
+      `SHA-256 ${anchor?.fingerprint || "unknown"}`,
+    );
   }
-  reportTrustedList(
-    section,
-    info.time,
-    [...info.certificates, ...(anchor ? [anchor.der] : [])],
-  );
+  reportTrustedList(section, info.time, [
+    ...info.certificates,
+    ...(anchor ? [anchor.der] : []),
+  ]);
 }
 
 /**
@@ -618,21 +844,39 @@ function inspectCms(cms, label, caFile) {
   try {
     structure = cmsStructure(cms);
   } catch {
-    note("CMS", `${label} structure`, "unreadable by the report, signature itself VALID");
+    note(
+      "CMS",
+      `${label} structure`,
+      "unreadable by the report, signature itself VALID",
+    );
     return;
   }
   const certificates = structure.certificates.map(certificateDetails);
   if (certificates[0]) {
-    note("CMS", `${label} certificate`, `SHA-256 ${certificates[0].fingerprint}`);
-    note("CMS", `${label} chain`, certificates.map((certificate) => commonName(certificate.subject)).join(" > "));
+    note(
+      "CMS",
+      `${label} certificate`,
+      `SHA-256 ${certificates[0].fingerprint}`,
+    );
+    note(
+      "CMS",
+      `${label} chain`,
+      certificates
+        .map((certificate) => commonName(certificate.subject))
+        .join(" > "),
+    );
   }
   if (caFile) {
     const anchors = new Set(pemCertificates(caFile).map(hex));
-    const anchored = certificates.some((certificate) => anchors.has(hex(certificate.der)));
+    const anchored = certificates.some((certificate) =>
+      anchors.has(hex(certificate.der)),
+    );
     note(
       "CMS",
       `${label} trust`,
-      anchored ? "VALID, ends at the trust anchor" : "VALID against the trust anchor",
+      anchored
+        ? "VALID, ends at the trust anchor"
+        : "VALID against the trust anchor",
     );
   } else {
     note("CMS", `${label} trust`, "NOT CHECKED (use --ca)");
@@ -647,11 +891,15 @@ function inspectCms(cms, label, caFile) {
 function cmsSignerHint(cmsPath, caFile) {
   if (!caFile) return "";
   try {
-    const signer = certificateDetails(cmsStructure(readFileSync(cmsPath)).certificates[0]);
+    const signer = certificateDetails(
+      cmsStructure(readFileSync(cmsPath)).certificates[0],
+    );
     const selfSigned = signer.subject === signer.issuer;
     return (
       `\nSealed by: ${signer.subject} (SHA-256 ${signer.fingerprint})` +
-      (selfSigned ? ", a self-signed certificate" : `, issued by ${signer.issuer}`) +
+      (selfSigned
+        ? ", a self-signed certificate"
+        : `, issued by ${signer.issuer}`) +
       `\nThis certificate does not chain to ${caFile}. If it was the platform seal ` +
       "certificate when the record was made, add it to the --ca file."
     );
@@ -686,7 +934,9 @@ function verifyCms(content, cmsBase64, label, caFile) {
       { encoding: "utf8" },
     );
     if (result.status !== 0) {
-      fail(`${label}: invalid CMS signature (${result.stderr.trim()})${cmsSignerHint(cmsPath, caFile)}`);
+      fail(
+        `${label}: invalid CMS signature (${result.stderr.trim()})${cmsSignerHint(cmsPath, caFile)}`,
+      );
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -696,12 +946,17 @@ function verifyCms(content, cmsBase64, label, caFile) {
 }
 
 function exactDerObject(buffer, label) {
-  if (buffer.length < 2 || buffer[0] !== 0x30) fail(`${label}: invalid DER sequence`);
+  if (buffer.length < 2 || buffer[0] !== 0x30)
+    fail(`${label}: invalid DER sequence`);
   let headerLength = 2;
   let bodyLength = buffer[1];
   if ((bodyLength & 0x80) !== 0) {
     const lengthBytes = bodyLength & 0x7f;
-    if (lengthBytes === 0 || lengthBytes > 4 || buffer.length < 2 + lengthBytes) {
+    if (
+      lengthBytes === 0 ||
+      lengthBytes > 4 ||
+      buffer.length < 2 + lengthBytes
+    ) {
       fail(`${label}: invalid DER length`);
     }
     headerLength += lengthBytes;
@@ -733,7 +988,8 @@ function verifyPdfSeal(pdf, caFile) {
     length1 <= 0 ||
     start2 <= length1 ||
     start2 + length2 !== pdf.length
-  ) fail("PDF PAdES seal: invalid or incomplete ByteRange");
+  )
+    fail("PDF PAdES seal: invalid or incomplete ByteRange");
   const gap = pdf.subarray(length1, start2).toString("latin1");
   const contents = gap.match(/<([0-9A-Fa-f\s]+)>/);
   if (!contents) fail("PDF PAdES seal: Contents is missing");
@@ -749,7 +1005,10 @@ function verifyPdfSeal(pdf, caFile) {
 }
 
 async function embeddedSource(pdf) {
-  const doc = await PDFDocument.load(pdf, { ignoreEncryption: true, updateMetadata: false });
+  const doc = await PDFDocument.load(pdf, {
+    ignoreEncryption: true,
+    updateMetadata: false,
+  });
   const names = doc.catalog.lookupMaybe(PDFName.of("Names"), PDFDict);
   const tree = names?.lookupMaybe(PDFName.of("EmbeddedFiles"), PDFDict);
   const pending = tree ? [tree] : [];
@@ -762,13 +1021,15 @@ async function embeddedSource(pdf) {
     const entries = node.lookupMaybe(PDFName.of("Names"), PDFArray);
     for (let index = 0; entries && index + 1 < entries.size(); index += 2) {
       const name = entries.lookup(index);
-      if (!(name instanceof PDFString || name instanceof PDFHexString)) continue;
+      if (!(name instanceof PDFString || name instanceof PDFHexString))
+        continue;
       if (name.decodeText() !== SOURCE_ATTACHMENT) continue;
       const stream = entries
         .lookup(index + 1, PDFDict)
         .lookup(PDFName.of("EF"), PDFDict)
         .lookup(PDFName.of("F"));
-      if (!(stream instanceof PDFRawStream)) fail("embedded source is not a stream");
+      if (!(stream instanceof PDFRawStream))
+        fail("embedded source is not a stream");
       return Buffer.from(decodePDFRawStream(stream).decode());
     }
   }
@@ -783,10 +1044,14 @@ async function verifyWebAuthn(record, signer, sourceHash, documentId, caFile) {
   if (!evidence || !transaction?.manifest) fail("missing WebAuthn evidence");
   const manifestBytes = Buffer.from(canonical(transaction.manifest));
   const manifestHash = hex(manifestBytes);
-  if (manifestHash !== transaction.manifestSha256) fail("manifest hash mismatch");
-  if (transaction.manifest.documentSha256 !== sourceHash) fail("source hash mismatch");
-  if (transaction.manifest.documentId !== documentId) fail("document ID mismatch");
-  if (transaction.manifest.recipientId !== record.recipientId) fail("recipient mismatch");
+  if (manifestHash !== transaction.manifestSha256)
+    fail("manifest hash mismatch");
+  if (transaction.manifest.documentSha256 !== sourceHash)
+    fail("source hash mismatch");
+  if (transaction.manifest.documentId !== documentId)
+    fail("document ID mismatch");
+  if (transaction.manifest.recipientId !== record.recipientId)
+    fail("recipient mismatch");
   if (transaction.manifest.action !== "SIGN") fail("signer action is not SIGN");
   if (transaction.manifest.signerAccountId !== record.signer?.privcloudUserId) {
     fail("account binding mismatch");
@@ -796,15 +1061,21 @@ async function verifyWebAuthn(record, signer, sourceHash, documentId, caFile) {
     !consent ||
     hex(Buffer.from(consent.text, "utf8")) !== consent.textSha256 ||
     consent.textSha256 !== signer.consentSha256
-  ) fail("consent hash mismatch");
+  )
+    fail("consent hash mismatch");
   if (!applied) fail("applied contribution is missing");
   if (transaction.manifest.signatureType !== applied.signatureType) {
     fail("applied signature type differs from the signed one");
   }
-  if (transaction.manifest.signatureDataSha256 !== applied.signatureDataSha256) {
+  if (
+    transaction.manifest.signatureDataSha256 !== applied.signatureDataSha256
+  ) {
     fail("applied signature image differs from the signed one");
   }
-  if (canonical(transaction.manifest.fieldValues) !== canonical(applied.fieldValues)) {
+  if (
+    canonical(transaction.manifest.fieldValues) !==
+    canonical(applied.fieldValues)
+  ) {
     fail("applied field values differ from the signed ones");
   }
 
@@ -818,17 +1089,27 @@ async function verifyWebAuthn(record, signer, sourceHash, documentId, caFile) {
     .digest("base64url");
   if (challenge !== transaction.challengeBase64Url) fail("challenge mismatch");
 
-  const clientDataBytes = Buffer.from(evidence.clientDataJSONBase64Url, "base64url");
+  const clientDataBytes = Buffer.from(
+    evidence.clientDataJSONBase64Url,
+    "base64url",
+  );
   const clientData = JSON.parse(clientDataBytes.toString("utf8"));
-  if (clientData.type !== "webauthn.get") fail("invalid WebAuthn ceremony type");
+  if (clientData.type !== "webauthn.get")
+    fail("invalid WebAuthn ceremony type");
   if (clientData.challenge !== challenge) fail("client challenge mismatch");
   if (clientData.origin !== evidence.origin) fail("origin mismatch");
   const originHost = new URL(evidence.origin).hostname;
-  if (originHost !== evidence.rpId && !originHost.endsWith(`.${evidence.rpId}`)) {
+  if (
+    originHost !== evidence.rpId &&
+    !originHost.endsWith(`.${evidence.rpId}`)
+  ) {
     fail("origin outside the RP ID");
   }
 
-  const authData = Buffer.from(evidence.authenticatorDataBase64Url, "base64url");
+  const authData = Buffer.from(
+    evidence.authenticatorDataBase64Url,
+    "base64url",
+  );
   if (authData.length < 37) fail("truncated authenticator data");
   if (!digest(evidence.rpId).subarray(0, 32).equals(authData.subarray(0, 32))) {
     fail("RP ID hash mismatch");
@@ -839,7 +1120,10 @@ async function verifyWebAuthn(record, signer, sourceHash, documentId, caFile) {
   const valid = await verifySignature({
     signature: Buffer.from(evidence.signatureBase64Url, "base64url"),
     data: signedBytes,
-    credentialPublicKey: Buffer.from(evidence.publicKeyCoseBase64Url, "base64url"),
+    credentialPublicKey: Buffer.from(
+      evidence.publicKeyCoseBase64Url,
+      "base64url",
+    ),
   });
   if (!valid) fail("invalid WebAuthn assertion signature");
 
@@ -850,13 +1134,18 @@ async function verifyWebAuthn(record, signer, sourceHash, documentId, caFile) {
   if (
     evidence.enrollmentRecord.publicKeyCoseBase64Url !==
     evidence.publicKeyCoseBase64Url
-  ) fail("enrollment public key mismatch");
+  )
+    fail("enrollment public key mismatch");
   // The signed enrollment is what ties the public key to the account.
   if (
     evidence.enrollmentRecord.identity?.privcloudUserId !==
     transaction.manifest.signerAccountId
-  ) fail("enrollment account mismatch");
-  if (evidence.enrollmentRecord.rpId && evidence.enrollmentRecord.rpId !== evidence.rpId) {
+  )
+    fail("enrollment account mismatch");
+  if (
+    evidence.enrollmentRecord.rpId &&
+    evidence.enrollmentRecord.rpId !== evidence.rpId
+  ) {
     fail("enrollment RP ID mismatch");
   }
   verifyCms(
@@ -871,7 +1160,11 @@ async function verifyWebAuthn(record, signer, sourceHash, documentId, caFile) {
   ).get(cose.COSEKEYS.alg);
   const section = `WebAuthn ${id}`;
   note(section, "Credential ID", "present");
-  note(section, "Public key", `valid (${COSE_ALGORITHMS[algorithm] || algorithm})`);
+  note(
+    section,
+    "Public key",
+    `valid (${COSE_ALGORITHMS[algorithm] || algorithm})`,
+  );
   note(section, "Enrollment record", "signature valid, same key and account");
   note(section, "RP ID", `${evidence.rpId} (expected)`);
   note(section, "Origin", `${evidence.origin} (expected)`);
@@ -905,18 +1198,22 @@ function verifyAudit(events) {
       createdAt: event.createdAt,
       previousEventHash: event.previousEventHash,
     });
-    if (hex(canonicalEvent) !== event.eventHash) fail("invalid audit event hash");
+    if (hex(canonicalEvent) !== event.eventHash)
+      fail("invalid audit event hash");
     previous = event.eventHash;
   }
 }
 
 function readEnvelope(path, envelopeFormat, payloadFormat, caFile, label) {
   const envelope = JSON.parse(readFileSync(path, "utf8"));
-  if (envelope.format !== envelopeFormat) fail(`${label}: unknown envelope format`);
+  if (envelope.format !== envelopeFormat)
+    fail(`${label}: unknown envelope format`);
   const bytes = Buffer.from(envelope.payloadCanonicalBase64, "base64");
   const payload = JSON.parse(bytes.toString("utf8"));
-  if (canonical(payload) !== bytes.toString("utf8")) fail(`${label}: payload is not canonical`);
-  if (payload.format !== payloadFormat) fail(`${label}: unknown payload format`);
+  if (canonical(payload) !== bytes.toString("utf8"))
+    fail(`${label}: payload is not canonical`);
+  if (payload.format !== payloadFormat)
+    fail(`${label}: unknown payload format`);
   for (const exchange of envelope.timestampExchanges || []) {
     timestampExchanges.set(exchange.messageImprint, exchange);
   }
@@ -959,7 +1256,11 @@ async function main() {
     anchors.forEach((anchor, index) => {
       const suffix = anchors.length > 1 ? ` ${index + 1}` : "";
       note("CMS", `Trust anchor${suffix}`, anchor.subject);
-      note("CMS", `Trust anchor${suffix} fingerprint`, `SHA-256 ${anchor.fingerprint}`);
+      note(
+        "CMS",
+        `Trust anchor${suffix} fingerprint`,
+        `SHA-256 ${anchor.fingerprint}`,
+      );
     });
   }
 
@@ -976,14 +1277,22 @@ async function main() {
     fail("final document hash mismatch");
   }
   note("Attestation", "Canonicalization", "VALID");
-  note("Attestation", "Final PDF hash", `${payload.document.finalSha256} MATCH`);
+  note(
+    "Attestation",
+    "Final PDF hash",
+    `${payload.document.finalSha256} MATCH`,
+  );
   verifyPdfSeal(documentBytes, caFile);
   let previous = null;
   for (const event of payload.auditTrail) {
     if (event.previousEventHash !== previous) fail("broken audit-chain link");
     previous = event.eventHash;
   }
-  note("Attestation", "Audit chain links", `${payload.auditTrail.length} events, VALID`);
+  note(
+    "Attestation",
+    "Audit chain links",
+    `${payload.auditTrail.length} events, VALID`,
+  );
   const tsaCheck = payload.tsaTrustedListCheck;
   note(
     "Attestation",
@@ -1014,11 +1323,18 @@ async function main() {
   if (reinforced) {
     if (signedSigners.length === 0) fail("reinforced evidence has no signer");
     for (const signer of signedSigners) {
-      if (signer.authenticationMethod !== "WEBAUTHN" || !signer.transactionBound) {
-        fail(`signer ${signer.evidenceId || signer.recipientId} is not backed by a bound WebAuthn transaction`);
+      if (
+        signer.authenticationMethod !== "WEBAUTHN" ||
+        !signer.transactionBound
+      ) {
+        fail(
+          `signer ${signer.evidenceId || signer.recipientId} is not backed by a bound WebAuthn transaction`,
+        );
       }
       if (!signer.forensicRecordSha256) {
-        fail(`signer ${signer.evidenceId || signer.recipientId} has no forensic record hash`);
+        fail(
+          `signer ${signer.evidenceId || signer.recipientId} has no forensic record hash`,
+        );
       }
     }
   }
@@ -1034,8 +1350,13 @@ async function main() {
         ? []
         : [payload.document.sourceSha256].filter(Boolean),
   );
-  if (expectedSourceHashes.size > 1) fail("signers approved different source documents");
-  if (sourceHash && expectedSourceHashes.size > 0 && !expectedSourceHashes.has(sourceHash)) {
+  if (expectedSourceHashes.size > 1)
+    fail("signers approved different source documents");
+  if (
+    sourceHash &&
+    expectedSourceHashes.size > 0 &&
+    !expectedSourceHashes.has(sourceHash)
+  ) {
     fail("source document does not match the hash approved by the signers");
   }
   note(
@@ -1077,22 +1398,34 @@ async function main() {
     for (const signer of payload.signers) {
       if (!signer.forensicRecordSha256) continue;
       const item = bySigner.get(signer.recipientId);
-      if (!item?.forensicRecord) fail(`forensic record missing for ${signer.evidenceId}`);
+      if (!item?.forensicRecord)
+        fail(`forensic record missing for ${signer.evidenceId}`);
       const recordHash = hex(Buffer.from(canonical(item.forensicRecord)));
       if (
         recordHash !== item.forensicRecordSha256 ||
         recordHash !== signer.forensicRecordSha256
-      ) fail(`forensic record of ${signer.evidenceId} does not match its hash`);
+      )
+        fail(`forensic record of ${signer.evidenceId} does not match its hash`);
       if (item.forensicRecord.evidenceId !== signer.evidenceId) {
-        fail(`forensic record of ${signer.evidenceId} carries another identifier`);
+        fail(
+          `forensic record of ${signer.evidenceId} carries another identifier`,
+        );
       }
       const authentication = item.forensicRecord.authentication || {};
       if (
         authentication.documentSha256 !== signer.documentSha256 ||
         authentication.intentSha256 !== signer.intentSha256
-      ) fail(`forensic record of ${signer.evidenceId} differs from the attestation`);
-      if (canonical(item.appliedContribution) !== canonical(signer.appliedContribution)) {
-        fail(`applied contribution of ${signer.evidenceId} differs from the attestation`);
+      )
+        fail(
+          `forensic record of ${signer.evidenceId} differs from the attestation`,
+        );
+      if (
+        canonical(item.appliedContribution) !==
+        canonical(signer.appliedContribution)
+      ) {
+        fail(
+          `applied contribution of ${signer.evidenceId} differs from the attestation`,
+        );
       }
       note("Forensic", `Record ${signer.evidenceId}`, "hash MATCH");
       note(
@@ -1103,7 +1436,9 @@ async function main() {
       note(
         "Forensic",
         `Raw WebAuthn assertion ${signer.evidenceId}`,
-        authentication.webauthn?.signatureBase64Url ? "present" : "not applicable",
+        authentication.webauthn?.signatureBase64Url
+          ? "present"
+          : "not applicable",
       );
     }
     if (reinforced) {
@@ -1122,9 +1457,19 @@ async function main() {
     if (
       canonical(forensicEvents.map((event) => event.eventHash)) !==
       canonical(payload.auditTrail.map((event) => event.eventHash))
-    ) fail("forensic audit trail differs from the attestation");
-    verifyAudit(forensicEvents.map((event) => ({ ...event, documentId: payload.document.id })));
-    note("Forensic", "Audit chain", `${forensicEvents.length} events recomputed, VALID`);
+    )
+      fail("forensic audit trail differs from the attestation");
+    verifyAudit(
+      forensicEvents.map((event) => ({
+        ...event,
+        documentId: payload.document.id,
+      })),
+    );
+    note(
+      "Forensic",
+      "Audit chain",
+      `${forensicEvents.length} events recomputed, VALID`,
+    );
     forensicChecked = true;
   }
 
@@ -1157,9 +1502,11 @@ async function main() {
       "Note: end-to-end encrypted request, the pages were rendered in the requester's browser. The approved content is the embedded source checked above against every signed manifest.",
     );
   }
-  console.log(caFile
-    ? `CMS signatures and certificate chain: VALID against ${caFile}`
-    : "CMS signatures: mathematically valid (rerun with --ca to validate certificate trust)");
+  console.log(
+    caFile
+      ? `CMS signatures and certificate chain: VALID against ${caFile}`
+      : "CMS signatures: mathematically valid (rerun with --ca to validate certificate trust)",
+  );
   if (verbose) printReport();
 }
 

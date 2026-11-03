@@ -90,7 +90,8 @@ const PushNotificationSection = () => {
           msg.includes("registration failed") ||
           msg.includes("permission denied") ||
           msg.includes("not allowed") ||
-          typeof (navigator as any).brave?.isBrave === "function"
+          typeof (navigator as Navigator & { brave?: { isBrave?: unknown } })
+            .brave?.isBrave === "function"
         ) {
           setPushBlocked(true);
           toast.error(t("account.notify.push.browser-blocked"));

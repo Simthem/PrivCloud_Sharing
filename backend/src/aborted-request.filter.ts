@@ -11,6 +11,14 @@ import {
 import { BaseExceptionFilter } from "@nestjs/core";
 import { Request, Response } from "express";
 
+/** Error raised by the body parser when the client hangs up mid-request. */
+type AbortedRequest = Error & {
+  code?: string;
+  type?: string;
+  received?: number;
+  expected?: number;
+};
+
 /**
  * Global exception filter that silences categories of expected errors
  * so they don't pollute logs with full stack traces:
@@ -44,7 +52,7 @@ export class AbortedRequestFilter
       const res = ctx.getResponse<Response>();
 
       this.logger.warn(
-        `Client aborted ${req.method} ${req.url} (received ${(exception as any).received ?? "?"}/${(exception as any).expected ?? "?"} bytes)`,
+        `Client aborted ${req.method} ${req.url} (received ${exception.received ?? "?"}/${exception.expected ?? "?"} bytes)`,
       );
 
       // The socket is already dead -- only send a response if still writable.
@@ -121,22 +129,23 @@ export class AbortedRequestFilter
     super(applicationRef);
   }
 
-  private isAbortedRequest(exception: unknown): boolean {
+  private isAbortedRequest(exception: unknown): exception is AbortedRequest {
     if (!(exception instanceof Error)) return false;
-    const err = exception as any;
+    const err: AbortedRequest = exception;
     return (
       err.code === "ECONNABORTED" ||
       err.type === "request.aborted" ||
-      (err.message && err.message.includes("request aborted"))
+      err.message.includes("request aborted")
     );
   }
 
   private isExpectedShareSecurityError(exception: unknown): boolean {
     if (!(exception instanceof HttpException)) return false;
     const body = exception.getResponse();
-    if (typeof body === "object" && body !== null) {
-      return AbortedRequestFilter.EXPECTED_SHARE_ERRORS.has(
-        (body as any).error,
+    if (typeof body === "object" && body !== null && "error" in body) {
+      return (
+        typeof body.error === "string" &&
+        AbortedRequestFilter.EXPECTED_SHARE_ERRORS.has(body.error)
       );
     }
     return false;
@@ -179,7 +188,7 @@ export class AbortedRequestFilter
     const body = exception.getResponse();
     // NestJS guards produce { statusCode: 403, message: "Forbidden resource" }
     if (typeof body === "object" && body !== null) {
-      return (body as any).message === "Forbidden resource";
+      return "message" in body && body.message === "Forbidden resource";
     }
     return exception.message === "Forbidden resource";
   }

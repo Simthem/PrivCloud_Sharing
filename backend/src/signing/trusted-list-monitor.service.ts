@@ -113,12 +113,17 @@ export class TrustedListMonitorService implements OnApplicationBootstrap {
       );
       result = anchoring.ok && evaluation.result === "OK" ? "OK" : "ALERT";
       lines.push(...anchoring.lines, ...evaluation.lines);
-    } catch (error: any) {
+    } catch (error) {
       result = "ERROR";
-      const cause = error?.cause?.message || error?.code;
+      const failure = (error ?? {}) as {
+        cause?: { message?: string };
+        code?: string;
+        message?: string;
+      };
+      const cause = failure.cause?.message || failure.code;
       lines.push(
-        `The list could not be read: ${error?.message || error}` +
-          (cause && cause !== error?.message ? ` (${cause})` : ""),
+        `The list could not be read: ${failure.message || error}` +
+          (cause && cause !== failure.message ? ` (${cause})` : ""),
       );
     }
     lines.push(`Result: ${result}`);

@@ -320,7 +320,7 @@ export class OAuthController {
       // Re-throw HttpException / ErrorPageException so NestJS filters handle them
       if (
         error instanceof ErrorPageException ||
-        (error instanceof Error && (error as any).status)
+        (error instanceof Error && "status" in error && error.status)
       ) {
         throw error;
       }

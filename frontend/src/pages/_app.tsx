@@ -476,7 +476,8 @@ function App({
   // (the restriction is lifted again on blur).
   useEffect(() => {
     const isIOS =
-      /iPad|iPhone/.test(navigator.userAgent) && !(window as any).MSStream;
+      /iPad|iPhone/.test(navigator.userAgent) &&
+      !(window as Window & { MSStream?: unknown }).MSStream;
     if (!isIOS) return;
 
     const viewport = document.querySelector<HTMLMetaElement>("[name=viewport]");

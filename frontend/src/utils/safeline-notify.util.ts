@@ -34,7 +34,9 @@ export async function requestNotificationPermission(): Promise<void> {
 function playBeep(): void {
   try {
     const ctx = new (
-      window.AudioContext || (window as any).webkitAudioContext
+      window.AudioContext ||
+      (window as Window & { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext
     )();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();

@@ -66,15 +66,12 @@ export class ShareOwnerGuard extends JwtGuard {
       // a share-scoped session cookie whose SHA-256 hash matches the stored token.
       const anonymousSession =
         request.cookies?.[anonymousShareSessionCookieName(shareId)];
-      if (anonymousSession && (share as any).anonymousSessionToken) {
+      if (anonymousSession && share.anonymousSessionToken) {
         const actual = crypto
           .createHash("sha256")
           .update(anonymousSession)
           .digest();
-        const expected = Buffer.from(
-          (share as any).anonymousSessionToken,
-          "hex",
-        );
+        const expected = Buffer.from(share.anonymousSessionToken, "hex");
         if (
           actual.length === expected.length &&
           crypto.timingSafeEqual(actual, expected)
