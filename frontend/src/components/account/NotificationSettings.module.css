@@ -1,0 +1,15 @@
+.heading {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+
+.preference {
+  padding: var(--mantine-spacing-md);
+  border-radius: var(--mantine-radius-md);
+  background: light-dark(
+    var(--mantine-color-gray-0),
+    rgba(255, 255, 255, 0.025)
+  );
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

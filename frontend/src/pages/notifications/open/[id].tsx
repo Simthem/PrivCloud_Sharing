@@ -60,6 +60,15 @@ export default function OpenEncryptedNotification() {
           }
         }
       }
+      if (
+        (notification.type === "SIGNATURE_REQUESTED" ||
+          notification.type === "SIGNATURE_COMPLETED") &&
+        !notification.encryptedMetadata
+      ) {
+        void markNotificationRead(notification.id);
+        await router.replace("/signing");
+        return;
+      }
       if (notification.type === "EXTERNAL_ACCESS_ENDED" && notification.team) {
         void markNotificationRead(notification.id);
         await router.replace(

@@ -10,15 +10,18 @@ import {
   getDefaultZIndex,
 } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
-import { TbFingerprint } from "react-icons/tb";
+import { TbFingerprint, TbMail } from "react-icons/tb";
 import useTranslate from "../../hooks/useTranslate.hook";
 import authService, { type StepUpMethods } from "../../services/auth.service";
 import passkeyService from "../../services/passkey.service";
+import signingService from "../../services/signing.service";
 import { setStepUpHandler } from "../../utils/stepUp.util";
 import toast from "../../utils/toast.util";
 
 // Only these providers state when the user really signed in (OIDC auth_time).
-const FRESH_SIGN_IN_PROVIDERS = ["google", "oidc"];
+const FRESH_SIGN_IN_PROVIDERS = ["google", "microsoft", "oidc"];
+
+const SIGNING_PASSKEY_SCOPE = /^signing\.passkey\.enroll:([A-Za-z0-9_-]+)$/;
 
 type Pending = { scope: string; resolve: (_confirmed: boolean) => void };
 
@@ -35,6 +38,7 @@ const StepUpHost = () => {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mailedCode, setMailedCode] = useState<string | null>(null);
   const returnHandled = useRef(false);
 
   useEffect(() => {
@@ -92,6 +96,7 @@ const StepUpHost = () => {
     setPassword("");
     setCode("");
     setError(null);
+    setMailedCode(null);
   };
 
   const refusal = (failure: unknown) => {
@@ -137,6 +142,48 @@ const StepUpHost = () => {
     }
   };
 
+  // A signing passkey can also be confirmed with a code mailed to the
+  // address of the request.
+  const enrollingRecipient =
+    pending?.scope.match(SIGNING_PASSKEY_SCOPE)?.[1] ?? null;
+
+  const sendMailedCode = async () => {
+    if (!enrollingRecipient) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await signingService.sendPasskeyEnrollmentCode(enrollingRecipient);
+      setMailedCode("");
+    } catch (failure) {
+      const status = (failure as { response?: { status?: number } })?.response
+        ?.status;
+      setError(
+        t(status === 400 ? "step-up.email.wait" : "step-up.email.send-error"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmWithMailedCode = async () => {
+    if (!enrollingRecipient || !mailedCode) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await signingService.confirmPasskeyEnrollment(
+        enrollingRecipient,
+        mailedCode.trim(),
+      );
+      close(true);
+    } catch (failure) {
+      const status = (failure as { response?: { status?: number } })?.response
+        ?.status;
+      setError(t(status === 400 ? "step-up.email.wrong" : "step-up.error"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // The server sends the user back to this page, if it is one it knows.
   const confirmWithProvider = (provider: string) => {
     close(false);
@@ -154,7 +201,11 @@ const StepUpHost = () => {
   );
   const needsCode = !!methods?.totp;
   const usable =
-    !!methods && (methods.password || methods.passkey || providers.length > 0);
+    !!methods &&
+    (methods.password ||
+      methods.passkey ||
+      providers.length > 0 ||
+      !!enrollingRecipient);
 
   return (
     <Modal
@@ -224,6 +275,41 @@ const StepUpHost = () => {
             )}
           </>
         )}
+        {enrollingRecipient &&
+          (mailedCode === null ? (
+            <Button
+              variant="light"
+              leftSection={<TbMail size={14} />}
+              loading={busy}
+              onClick={sendMailedCode}
+            >
+              {t("step-up.email.send")}
+            </Button>
+          ) : (
+            <Group align="end" wrap="nowrap">
+              <TextInput
+                style={{ flex: 1 }}
+                label={t("step-up.email.code")}
+                description={t("step-up.email.sent")}
+                placeholder="123456"
+                value={mailedCode}
+                onChange={(event) =>
+                  setMailedCode(event.currentTarget.value.replace(/\D/g, ""))
+                }
+                maxLength={6}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                data-autofocus
+              />
+              <Button
+                loading={busy}
+                disabled={mailedCode.length !== 6}
+                onClick={confirmWithMailedCode}
+              >
+                {t("step-up.confirm")}
+              </Button>
+            </Group>
+          ))}
         {error && <Alert color="red">{error}</Alert>}
         <Group justify="right">
           <Button variant="default" onClick={() => close(false)}>

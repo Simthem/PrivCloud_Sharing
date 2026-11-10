@@ -14,7 +14,10 @@ import {
   readOid,
   readSmallInteger,
 } from "src/signing/asn1-der.util";
-import { PdfSigningService } from "src/signing/pdf-signing.service";
+import {
+  describeTsaError,
+  PdfSigningService,
+} from "src/signing/pdf-signing.service";
 import {
   createTestCertificate,
   createTestPkcs12,
@@ -349,5 +352,23 @@ testCase(
     }
   },
 );
+
+testCase("a TSA failure names its cause without URL credentials", () => {
+  const credential = crypto.randomBytes(8).toString("hex");
+  const reset = Object.assign(new Error("socket hang up"), {
+    code: "ECONNRESET",
+  });
+  assert.equal(describeTsaError(reset), "ECONNRESET socket hang up");
+  assert.equal(
+    describeTsaError(
+      Object.assign(
+        new Error(`fetch https://user:${credential}@tsa.example.test/ failed`),
+        { cause: new Error("certificate has expired") },
+      ),
+    ),
+    "fetch https://***@tsa.example.test/ failed (certificate has expired)",
+  );
+  assert.equal(describeTsaError("boom"), "unknown error");
+});
 
 void run();

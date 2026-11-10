@@ -2,6 +2,7 @@ import axios from "axios";
 import Config, { AdminConfig, UpdateConfig } from "../types/config.type";
 import api from "./api.service";
 import { stringToTimespan } from "../utils/date.util";
+import type { Timespan } from "../types/timespan.type";
 import {
   getRuntimeUploadChunkConfigKey,
   UploadChunkProfileName,
@@ -16,8 +17,8 @@ const getRuntimeUploadMaxChunkSize = async (
   profile: UploadChunkProfileName,
 ): Promise<number | null> => {
   const configVariables = await list();
-  const hardLimit = get("runtime.uploadMaxChunkBytes", configVariables);
-  const profileLimit = get(
+  const hardLimit = getNumber("runtime.uploadMaxChunkBytes", configVariables);
+  const profileLimit = getNumber(
     getRuntimeUploadChunkConfigKey(profile),
     configVariables,
   );
@@ -37,7 +38,10 @@ const updateMany = async (data: UpdateConfig[]): Promise<AdminConfig[]> => {
   return (await api.patch("/configs/admin", data)).data;
 };
 
-const get = (key: string, configVariables: Config[]): any => {
+const get = (
+  key: string,
+  configVariables: Config[],
+): string | number | boolean | Timespan | null | undefined => {
   if (!configVariables) return null;
 
   const configVariable = configVariables.filter(
@@ -55,6 +59,12 @@ const get = (key: string, configVariables: Config[]): any => {
     return value;
   if (configVariable.type == "timespan") return stringToTimespan(value);
 };
+
+// Each setting has the type its configuration seed declares.
+const getString = (key: string, configVariables: Config[]) =>
+  get(key, configVariables) as string;
+const getNumber = (key: string, configVariables: Config[]) =>
+  get(key, configVariables) as number;
 
 const finishSetup = async (): Promise<AdminConfig[]> => {
   return (await api.post("/configs/admin/finishSetup")).data;
@@ -89,6 +99,8 @@ export default {
   getByCategory,
   updateMany,
   get,
+  getString,
+  getNumber,
   finishSetup,
   sendTestEmail,
   isNewReleaseAvailable,

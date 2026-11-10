@@ -98,7 +98,7 @@ const Header = () => {
     },
   ];
 
-  if (config.get("share.allowUnauthenticatedShares")) {
+  if (config.getBoolean("share.allowUnauthenticatedShares")) {
     unauthenticatedLinks.unshift({
       link: "/upload",
       icon: <TbUpload size={14} />,
@@ -106,13 +106,13 @@ const Header = () => {
     });
   }
 
-  if (config.get("general.showHomePage"))
+  if (config.getBoolean("general.showHomePage"))
     unauthenticatedLinks.unshift({
       link: "/",
       label: t("navbar.home"),
     });
 
-  if (config.get("share.allowRegistration"))
+  if (config.getBoolean("share.allowRegistration"))
     unauthenticatedLinks.push({
       link: "/auth/signUp",
       label: t("navbar.signup"),
@@ -185,7 +185,7 @@ const Header = () => {
         <Link href={user ? homeLink : "/"} passHref>
           <Group>
             <Logo height={35} width={35} />
-            <Text fw={600}>{config.get("general.appName")}</Text>
+            <Text fw={600}>{config.getString("general.appName")}</Text>
           </Group>
         </Link>
         <Group gap={5} className={classes.links}>

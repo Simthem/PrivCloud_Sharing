@@ -54,10 +54,12 @@ export class TeamNotificationController {
     @Query("unreadOnly") unreadOnly?: string,
     @Query("limit") limit?: string,
     @Query("offset") offset?: string,
+    @Query("pushOnly") pushOnly?: string,
   ) {
     return this.notificationService.getNotifications(user.id, {
       teamId,
       unreadOnly: unreadOnly === "true",
+      pushOnly: pushOnly === "true",
       limit: limit ? parseInt(limit, 10) : undefined,
       offset: offset ? parseInt(offset, 10) : undefined,
     });

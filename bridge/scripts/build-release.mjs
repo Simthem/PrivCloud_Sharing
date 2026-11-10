@@ -97,6 +97,10 @@ async function releaseEntries() {
       absolute: path.join(bridgeDirectory, "README.md"),
       relative: "package/README.md",
     },
+    {
+      absolute: path.join(repositoryDirectory, "LICENSE"),
+      relative: "package/LICENSE",
+    },
     ...(await collectFiles(path.join(bridgeDirectory, "src"), "package/src")),
     ...(await collectFiles(
       path.join(bridgeDirectory, "install"),

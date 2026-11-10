@@ -74,8 +74,12 @@ for (const dockerfile of ["Dockerfile", "Dockerfile.full-build"]) {
           cert: readFileSync(certificate),
           minVersion: "TLSv1.2",
         },
-        (request, response) =>
-          response.end(request.url === "/via-proxy" ? "proxy" : "direct"),
+        (request, response) => {
+          const tls = request.socket as import("node:tls").TLSSocket;
+          response.end(
+            request.url === "/via-proxy" ? `proxy:${tls.servername}` : "direct",
+          );
+        },
       );
       const directPort = await listen(direct);
       direct.on("connection", trackSocket);
@@ -189,7 +193,7 @@ for (const dockerfile of ["Dockerfile", "Dockerfile.full-build"]) {
           }).on("error", reject);
         });
         (async () => {
-          assert.equal(await get("https://proxy-fixture.invalid:${directPort}/via-proxy"), "proxy");
+          assert.equal(await get("https://proxy-fixture.invalid:${directPort}/via-proxy"), "proxy:proxy-fixture.invalid");
           assert.equal(await get("https://localhost:${directPort}/bypass"), "direct");
           const explicit = new https.Agent({ keepAlive: true });
           try {

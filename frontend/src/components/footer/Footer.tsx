@@ -9,26 +9,30 @@ import {
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import Link from "next/link";
-import { TbBrandGithub, TbBrandLinkedin } from "react-icons/tb";
+import { TbBrandGithub, TbBrandLinkedin } from "../core/shellIcons";
 import useConfig from "../../hooks/config.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
+
+const sourceUrl = `https://github.com/Simthem/PrivCloud_Sharing/tree/v${process.env.VERSION}`;
 
 const Footer = () => {
   const t = useTranslate();
   const config = useConfig();
   const hasImprint = !!(
-    config.get("legal.imprintUrl") || config.get("legal.imprintText")
+    config.getString("legal.imprintUrl") ||
+    config.getString("legal.imprintText")
   );
   const hasPrivacy = !!(
-    config.get("legal.privacyPolicyUrl") ||
-    config.get("legal.privacyPolicyText")
+    config.getString("legal.privacyPolicyUrl") ||
+    config.getString("legal.privacyPolicyText")
   );
   const imprintUrl =
-    (!config.get("legal.imprintText") && config.get("legal.imprintUrl")) ||
+    (!config.getString("legal.imprintText") &&
+      config.getString("legal.imprintUrl")) ||
     "/imprint";
   const privacyUrl =
-    (!config.get("legal.privacyPolicyText") &&
-      config.get("legal.privacyPolicyUrl")) ||
+    (!config.getString("legal.privacyPolicyText") &&
+      config.getString("legal.privacyPolicyUrl")) ||
     "/privacy";
 
   const isMobile = useMediaQuery("(max-width: 700px)");
@@ -39,11 +43,7 @@ const Footer = () => {
         <Stack gap={6} align="center">
           <Text size="sm" c="dimmed" fw={500} ta="center" lh={1.5}>
             Powered by{" "}
-            <Anchor
-              size="sm"
-              href="https://github.com/Simthem/PrivCloud_Sharing"
-              target="_blank"
-            >
+            <Anchor size="sm" href={sourceUrl} target="_blank">
               PrivCloud_Sharing
             </Anchor>
             <br />
@@ -52,7 +52,7 @@ const Footer = () => {
               THEMIOT Informatique - Consultant Cybersécurité
             </Anchor>
           </Text>
-          {config.get("legal.enabled") && (
+          {config.getBoolean("legal.enabled") && (
             <Text size="sm" c="dimmed" fw={500} ta="center">
               {hasImprint && (
                 <Anchor size="sm" href={imprintUrl}>
@@ -99,11 +99,7 @@ const Footer = () => {
           <div></div>
           <Text size="sm" c="dimmed" fw={500} ta="center">
             Powered by{" "}
-            <Anchor
-              size="sm"
-              href="https://github.com/Simthem/PrivCloud_Sharing"
-              target="_blank"
-            >
+            <Anchor size="sm" href={sourceUrl} target="_blank">
               PrivCloud_Sharing
             </Anchor>{" "}
             <br />
@@ -113,7 +109,7 @@ const Footer = () => {
             </Anchor>
           </Text>
           <div>
-            {config.get("legal.enabled") && (
+            {config.getBoolean("legal.enabled") && (
               <Text size="sm" c="dimmed" fw={500} ta="right">
                 {hasImprint && (
                   <Anchor size="sm" href={imprintUrl}>

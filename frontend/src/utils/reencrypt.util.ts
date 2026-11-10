@@ -1,3 +1,4 @@
+import { rewrapIdentityKeys } from "../services/crypto.service";
 import { contentWriteScheme } from "./contentV2.util";
 /**
  * Re-encryption utility for E2E key rotation.
@@ -40,6 +41,7 @@ import {
   getRuntimeReencryptChunkSize,
 } from "./reencryptChunk.util";
 import { applyContentPolicy, contentPolicy } from "./contentPolicy.util";
+import type { ThrownError } from "../types/thrownError.type";
 
 const REENCRYPT_CRYPTO_RECORD_SIZE = 1_000_000;
 const MAX_REENCRYPT_CHUNKS = 9_500;
@@ -162,7 +164,8 @@ async function updateReverseShareWithRetry(
     try {
       await shareService.updateReverseShare(rsId, data);
       return;
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       const status = e?.response?.status ?? e?.status;
       if (status === 468 && attempt < MAX_RETRIES) {
         try {
@@ -199,7 +202,8 @@ async function updateWrappedShareKeyWithRetry(
         expectedVersion,
       );
       return;
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       const status = e?.response?.status ?? e?.status;
       if (status === 468 && attempt < MAX_RETRIES) {
         try {
@@ -265,7 +269,8 @@ async function uploadChunkWithRetry(
         signal,
       );
       return;
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       if (signal?.aborted) signal.throwIfAborted();
 
       // Ownership of the transferred ArrayBuffer returns from the Worker on
@@ -309,6 +314,28 @@ async function uploadChunkWithRetry(
  * @param signal        - AbortSignal for cancellation
  * @returns Detailed result of the re-encryption operation
  */
+/** Identity and team keys follow the account to its new E2E key. */
+async function rewrapAccountKeys(oldKey: CryptoKey, newKey: CryptoKey) {
+  await rewrapIdentityKeys(oldKey, newKey).catch(() => undefined);
+  const teams = await teamService.getMyTeams().catch(() => []);
+  for (const team of teams) {
+    try {
+      const { wrappedTeamKey, memberKeyVersion } = await teamService.getTeamKey(
+        team.id,
+      );
+      if (!wrappedTeamKey) continue;
+      const teamKey = await unwrapReverseShareKey(wrappedTeamKey, oldKey);
+      await teamService.setTeamKey(
+        team.id,
+        await wrapReverseShareKey(teamKey, newKey),
+        memberKeyVersion,
+      );
+    } catch {
+      // A team key the old key cannot open is shared again by a team admin.
+    }
+  }
+}
+
 export async function reencryptAll(
   oldEncodedKey: string,
   newEncodedKey: string,
@@ -337,6 +364,7 @@ export async function reencryptAll(
   }, JWT_REFRESH_INTERVAL_MS);
 
   try {
+    await rewrapAccountKeys(oldKey, newKey);
     const allShares: MyShare[] = await shareService.getMyShares();
     // SHARE_DEK_V1 shares only rewrap K_share: their files and links stay
     // untouched. Every other E2E share is re-encrypted as before.
@@ -411,7 +439,8 @@ export async function reencryptAll(
         }
         shareKeysRewrapped++;
         reportShareCryptoEvent("rewrap_ok", SHARE_DEK_V1);
-      } catch (e: any) {
+      } catch (caughtValue) {
+        const e = caughtValue as ThrownError;
         console.error("Share key update failed");
         shareKeysFailed++;
         failedDetails.push(
@@ -546,7 +575,8 @@ export async function reencryptAll(
             });
 
             break; // success -- exit retry loop
-          } catch (e: any) {
+          } catch (caughtValue) {
+            const e = caughtValue as ThrownError;
             // User cancellation -- rethrow immediately
             if (e?.name === "AbortError" || e?.message?.includes("annulé"))
               throw e;
@@ -621,7 +651,8 @@ export async function reencryptAll(
         });
         progress.reverseSharesDone++;
         onProgress?.({ ...progress, failedDetails: [...failedDetails] });
-      } catch (e: any) {
+      } catch (caughtValue) {
+        const e = caughtValue as ThrownError;
         // Track reverse share failure but continue with others
         console.error("Reverse share key update failed");
         reverseSharesFailed++;
@@ -911,7 +942,8 @@ export async function reencryptTeam(
               oldKey,
               newKey,
             );
-          } catch (e: any) {
+          } catch (caughtValue) {
+            const e = caughtValue as ThrownError;
             filesFailed++;
             filesDone++;
             failedDetails.push(
@@ -938,7 +970,8 @@ export async function reencryptTeam(
               options?.rotationId,
               signal,
             );
-          } catch (e: any) {
+          } catch (caughtValue) {
+            const e = caughtValue as ThrownError;
             filesFailed++;
             filesDone++;
             failedDetails.push(`${file.id}: ${e?.message ?? "rename failed"}`);
@@ -1029,7 +1062,8 @@ export async function reencryptTeam(
             });
 
             break; // success
-          } catch (e: any) {
+          } catch (caughtValue) {
+            const e = caughtValue as ThrownError;
             if (e?.name === "AbortError" || e?.message?.includes("annulé"))
               throw e;
 

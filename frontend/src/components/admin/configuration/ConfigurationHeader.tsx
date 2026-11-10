@@ -39,7 +39,7 @@ const ConfigurationHeader = ({
         <Link href="/" passHref>
           <Group>
             <Logo height={35} width={35} />
-            <Text fw={600}>{config.get("general.appName")}</Text>
+            <Text fw={600}>{config.getString("general.appName")}</Text>
           </Group>
         </Link>
         <Button variant="light" component={Link} href="/admin" visibleFrom="sm">

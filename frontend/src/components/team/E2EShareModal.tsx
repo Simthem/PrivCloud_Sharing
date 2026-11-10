@@ -169,7 +169,7 @@ const E2EShareModal = ({
       setSelectedMembers(new Set());
       onClose();
     },
-    onError: (err: any) => {
+    onError: (err) => {
       toast.error(err?.message || t("team.e2e.share.error"));
     },
   });

@@ -2,6 +2,7 @@ import {
   FILE_META_V1,
   encryptedFilePlaceholderName,
 } from "./file-metadata-scheme";
+import { byName } from "../utils/sort.util";
 import {
   BadRequestException,
   HttpException,
@@ -3313,8 +3314,8 @@ export class S3FileService {
 
     const files = await this.prisma.file.findMany({
       where: { shareId },
-      orderBy: { name: "asc" },
     });
+    files.sort(byName);
 
     if (files.length === 0) {
       throw new NotFoundException("No files found for share");

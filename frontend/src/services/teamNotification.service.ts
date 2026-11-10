@@ -13,7 +13,7 @@ export interface TeamNotification {
   actorId?: string;
   metadata?: string;
   encryptedMetadata?: string;
-  team?: { id: string; name?: string; slug?: string };
+  team?: { id: string; name?: string; slug?: string } | null;
   teamFile?: { id: string; name?: string };
   folder?: { id: string; name?: string };
 }

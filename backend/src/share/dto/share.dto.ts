@@ -27,6 +27,9 @@ export class ShareDTO {
   creator: PublicUserDTO;
 
   @Expose()
+  ownedByViewer?: boolean;
+
+  @Expose()
   description: string;
 
   @Expose()

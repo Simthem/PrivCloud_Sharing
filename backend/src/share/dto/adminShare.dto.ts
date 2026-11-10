@@ -29,7 +29,7 @@ export class AdminShareDTO {
   isE2EEncrypted: boolean;
 
   @Expose()
-  status: "READY" | "UNFINISHED" | "INACTIVE" | "UPLOADING";
+  status: "READY" | "UNFINISHED" | "INACTIVE" | "UPLOADING" | "EXPIRED";
 
   from(partial: Partial<AdminShareDTO>) {
     return plainToClass(AdminShareDTO, partial, {

@@ -2,6 +2,7 @@ import {
   fileRequestServiceEmail,
   fileRequestServiceMessage,
 } from "./team-file-request-i18n";
+import { byName } from "../utils/sort.util";
 import {
   BadRequestException,
   ForbiddenException,
@@ -20,7 +21,10 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "src/prisma/prisma.service";
 import { TeamNotificationService } from "src/teamNotification/teamNotification.service";
 import { CreateTeamFileRequestDTO } from "./dto/create-team-file-request.dto";
-import { canWriteRequestFolder } from "./team-file-request-access";
+import {
+  canReadRequestFolder,
+  canWriteRequestFolder,
+} from "./team-file-request-access";
 import {
   isTeamFileMetaWriteEnabledFor,
   isValidEncryptedFileRequestInfo,
@@ -65,11 +69,11 @@ export class TeamFileRequestService {
         },
         sharedFolders: {
           include: { accessRules: true },
-          orderBy: { name: "asc" },
         },
       },
     });
     if (!team) throw new NotFoundException("Active team not found");
+    team.sharedFolders.sort(byName);
     return team;
   }
 
@@ -77,7 +81,7 @@ export class TeamFileRequestService {
     const team = await this.context(teamId, userId);
     const actor = team.members.find((m) => m.userId === userId);
     return team.sharedFolders
-      .filter((f) => canWriteRequestFolder(actor, f.accessRules))
+      .filter((f) => canReadRequestFolder(actor, f.accessRules))
       .map((f) => ({
         id: f.id,
         name: f.name,
@@ -115,8 +119,8 @@ export class TeamFileRequestService {
       const folder = team.sharedFolders.find((f) => f.id === dto.folderId);
       if (!folder) throw new NotFoundException("Destination folder not found");
       const actor = team.members.find((m) => m.userId === userId);
-      if (!canWriteRequestFolder(actor, folder.accessRules))
-        throw new ForbiddenException("Write access required");
+      if (!canReadRequestFolder(actor, folder.accessRules))
+        throw new ForbiddenException("Read access required");
       // An encrypted subject needs K_team on the requester's side, replaces
       // the readable subject and note, and follows FILE_META_V1_TEAM_WRITE.
       if (dto.encryptedInfo !== undefined) {
@@ -328,9 +332,9 @@ export class TeamFileRequestService {
         team.members.find((m) => m.userId === userId),
         folder.accessRules,
       );
-    const creatorCanWrite =
+    const creatorCanRead =
       !!folder &&
-      canWriteRequestFolder(
+      canReadRequestFolder(
         team.members.find((m) => m.userId === request.creatorId),
         folder.accessRules,
       );
@@ -351,7 +355,7 @@ export class TeamFileRequestService {
       canRespond:
         status === "OPEN" &&
         canWrite &&
-        creatorCanWrite &&
+        creatorCanRead &&
         recipients.some((r) => r.userId === userId),
       recipients: (request.creatorId === userId
         ? recipients

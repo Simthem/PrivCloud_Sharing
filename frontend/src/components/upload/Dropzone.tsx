@@ -1,7 +1,10 @@
 import "@mantine/dropzone/styles.css";
 import { Group, Text } from "@mantine/core";
 import { createStyles } from "@mantine/emotion";
-import { Dropzone as MantineDropzone } from "@mantine/dropzone";
+import {
+  Dropzone as MantineDropzone,
+  type FileWithPath,
+} from "@mantine/dropzone";
 import { ForwardedRef, useRef } from "react";
 import { TbCloudUpload } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
@@ -62,7 +65,7 @@ const Dropzone = ({
         disabled={isUploading}
         openRef={openRef as ForwardedRef<() => void>}
         getFilesFromEvent={getFilesFromDropEvent}
-        onDrop={(files: any[]) => {
+        onDrop={(files: FileWithPath[]) => {
           const fileSizeSum = files.reduce((n, { size }) => n + size, 0);
           const isUnlimited = maxShareSize >= Number.MAX_SAFE_INTEGER;
 
@@ -73,11 +76,13 @@ const Dropzone = ({
               }),
             );
           } else {
-            files = files.map((newFile) => {
-              newFile.uploadingProgress = 0;
-              return attachUploadRelativePath(newFile);
-            });
-            onFilesChanged(files);
+            onFilesChanged(
+              files.map((newFile) =>
+                attachUploadRelativePath(
+                  Object.assign(newFile, { uploadingProgress: 0 }),
+                ),
+              ),
+            );
           }
         }}
         className={classes.dropzone}

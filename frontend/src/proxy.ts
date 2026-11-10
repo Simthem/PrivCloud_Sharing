@@ -2,8 +2,11 @@ import { jwtDecode } from "jwt-decode";
 import { NextRequest, NextResponse } from "next/server";
 import {
   buildSignInRedirectPath,
+  isBrowserLanguageRoutePath,
   isEmailVerificationRoutePath,
   isProtectedTeamContextPath,
+  isTeamInvitationRoutePath,
+  prefersEnglish,
 } from "./utils/authRedirect.util";
 
 // This middleware redirects based on different conditions:
@@ -16,7 +19,14 @@ export const config = {
 };
 
 const CONFIG_CACHE_TTL = 60_000; // 1 minute
-let cachedConfig: any = null;
+type ConfigRow = {
+  key: string;
+  value?: string | null;
+  defaultValue?: string | null;
+  type?: string;
+};
+
+let cachedConfig: ConfigRow[] | null = null;
 let cachedAt = 0;
 
 export async function proxy(request: NextRequest) {
@@ -33,7 +43,7 @@ export async function proxy(request: NextRequest) {
       "/privacy",
       "/integrations",
     ]),
-    admin: new Routes(["/admin/*"]),
+    admin: new Routes(["/admin", "/admin/*"]),
     account: new Routes(["/account*"]),
     disabled: new Routes([]),
   };
@@ -55,19 +65,55 @@ export async function proxy(request: NextRequest) {
 
   // Inline config parser - avoids importing api.service.ts (uses BroadcastChannel)
   // which is incompatible with the Edge Runtime.
-  const getConfig = (key: string): any => {
+  const getConfig = <T = string>(key: string): T | null => {
     if (!configData) return null;
-    const cfg = (configData as any[]).find((v: any) => v.key === key);
+    const cfg = (configData as ConfigRow[]).find((v) => v.key === key);
     if (!cfg) return null;
     const value = cfg.value ?? cfg.defaultValue;
     if (cfg.type === "number" || cfg.type === "filesize")
-      return parseInt(value);
-    if (cfg.type === "boolean") return value === "true";
-    if (cfg.type === "string" || cfg.type === "text") return value;
-    return value;
+      return parseInt(value as string) as T;
+    if (cfg.type === "boolean") return (value === "true") as T;
+    return value as T;
   };
 
   const route = request.nextUrl.pathname;
+  const hasImprintText = !!(
+    getConfig("legal.imprintTextFr") ||
+    getConfig("legal.imprintTextEn") ||
+    getConfig("legal.imprintText")
+  );
+  const hasPrivacyText = !!(
+    getConfig("legal.privacyPolicyTextFr") ||
+    getConfig("legal.privacyPolicyTextEn") ||
+    getConfig("legal.privacyPolicyText")
+  );
+
+  // SEO locale routing: cookie-based redirect to the correct URL locale.
+  // First-time visitors (no cookie) and non-fr/en users stay on the
+  // requested URL locale - only explicit fr/en cookie triggers a redirect.
+  const cookieLang = request.cookies.get("language")?.value;
+  if (cookieLang) {
+    const urlLocale = request.nextUrl.locale;
+    if (cookieLang.startsWith("en") && urlLocale !== "en") {
+      const url = request.nextUrl.clone();
+      url.locale = "en";
+      return NextResponse.redirect(url);
+    }
+    if (cookieLang.startsWith("fr") && urlLocale !== "fr") {
+      const url = request.nextUrl.clone();
+      url.locale = "fr";
+      return NextResponse.redirect(url);
+    }
+  } else if (
+    request.nextUrl.locale === "fr" &&
+    isBrowserLanguageRoutePath(route) &&
+    prefersEnglish(request.headers.get("accept-language"))
+  ) {
+    const url = request.nextUrl.clone();
+    url.locale = "en";
+    return NextResponse.redirect(url);
+  }
+
   let user: { isAdmin: boolean; email: string } | null = null;
   const accessToken = request.cookies.get("access_token")?.value;
   const hasActiveSession = !!request.cookies.get("logged_in")?.value;
@@ -87,7 +133,12 @@ export async function proxy(request: NextRequest) {
   // anonymous uploads are enabled. Run this before maintenance/public routing
   // so authentication is always the first decision for this context.
   const requestedPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
-  if (isProtectedTeamContextPath(requestedPath) && !user && !hasActiveSession) {
+  if (
+    isProtectedTeamContextPath(requestedPath) &&
+    !isTeamInvitationRoutePath(route) &&
+    !user &&
+    !hasActiveSession
+  ) {
     const signInPath = buildSignInRedirectPath(requestedPath);
     const url = request.nextUrl.clone();
     const qIdx = signInPath.indexOf("?");
@@ -166,7 +217,8 @@ export async function proxy(request: NextRequest) {
     },
     // Admin privileges
     {
-      condition: routes.admin.contains(route) && !user?.isAdmin && !hasActiveSession,
+      // A known non-administrator is sent away, an expired session refreshes first.
+      condition: routes.admin.contains(route) && (user ? !user.isAdmin : !hasActiveSession),
       path: "/upload",
     },
     // Home page - also redirect when the session is still alive
@@ -178,12 +230,12 @@ export async function proxy(request: NextRequest) {
     },
     // Imprint redirect
     {
-      condition: route == "/imprint" && !getConfig("legal.imprintText") && getConfig("legal.imprintUrl"),
+      condition: route == "/imprint" && !hasImprintText && getConfig("legal.imprintUrl"),
       path: getConfig("legal.imprintUrl"),
     },
     // Privacy redirect
     {
-      condition: route == "/privacy" && !getConfig("legal.privacyPolicyText") && getConfig("legal.privacyPolicyUrl"),
+      condition: route == "/privacy" && !hasPrivacyText && getConfig("legal.privacyPolicyUrl"),
       path: getConfig("legal.privacyPolicyUrl"),
     },
   ];
@@ -194,7 +246,7 @@ export async function proxy(request: NextRequest) {
       if (path == "/auth/signIn") {
         path = path + "?redirect=" + encodeURIComponent(route);
       }
-      return NextResponse.redirect(new URL(path, request.url));
+      return NextResponse.redirect(new URL(path as string, request.url));
     }
   }
 

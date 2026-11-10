@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/router";
+import { useIntl } from "react-intl";
 import {
   Box,
   Button,
@@ -23,6 +24,7 @@ import teamService from "../../services/team.service";
 const TeamsIndexPage = () => {
   const router = useRouter();
   const { user } = useUser();
+  const intl = useIntl();
 
   useEffect(() => {
     if (user === null) {
@@ -38,7 +40,7 @@ const TeamsIndexPage = () => {
 
   return (
     <>
-      <Meta title="Mes équipes" />
+      <Meta title={intl.formatMessage({ id: "team.list.metaTitle" })} />
       <Container size="lg" mt="xl" px={0}>
         <Group justify="space-between" mb="lg">
           <Title order={2}>
@@ -120,7 +122,7 @@ const TeamsIndexPage = () => {
                       <Group gap={4}>
                         <TbFolder size={14} />
                         <Text size="sm">
-                          {(team as any)._count?.sharedFolders || 0} dossiers
+                          {team._count?.sharedFolders || 0} dossiers
                         </Text>
                       </Group>
                     </Group>

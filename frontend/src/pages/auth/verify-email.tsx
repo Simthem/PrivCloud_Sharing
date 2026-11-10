@@ -19,6 +19,7 @@ import authService from "../../services/auth.service";
 import {
   clearRememberedEmailVerificationEmail,
   getRememberedEmailVerificationEmail,
+  takeVerificationReturn,
   rememberEmailVerificationEmail,
 } from "../../utils/emailVerification.util";
 import toast from "../../utils/toast.util";
@@ -26,6 +27,7 @@ import {
   finalizePostAuthRedirectPath,
   safeRedirectPath,
 } from "../../utils/authRedirect.util";
+import type { ThrownError } from "../../types/thrownError.type";
 
 type VerificationStatus =
   | "waiting"
@@ -145,7 +147,8 @@ const VerifyEmailPage = () => {
             : `A link was already requested less than a minute ago. Wait ${retryAfterSeconds}s before requesting another one.`,
         );
       }
-    } catch (error: any) {
+    } catch (caughtValue) {
+      const error = caughtValue as ThrownError;
       const statusCode = error?.response?.status;
       if (statusCode === 429) {
         setCooldown(60);
@@ -184,10 +187,12 @@ const VerifyEmailPage = () => {
     }
     // Back to the invitation that led to the sign-up, Team key fragment
     // included (kept in this tab, never in the URL).
-    const redirect =
+    const storedReturn = takeVerificationReturn();
+    const redirect = safeRedirectPath(
       typeof router.query.redirect === "string"
-        ? safeRedirectPath(router.query.redirect)
-        : "/";
+        ? router.query.redirect
+        : storedReturn,
+    );
     if (redirect !== "/") {
       await router.replace(finalizePostAuthRedirectPath(redirect));
       return;

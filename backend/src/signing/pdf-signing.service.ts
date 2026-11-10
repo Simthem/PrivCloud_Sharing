@@ -28,6 +28,13 @@ import {
 import { pdfSafeText } from "./pdf-text.util";
 import { parseSignatureData, SignatureVisual } from "./signature-data.util";
 import { consentSha256For } from "./signing-evidence.util";
+import { dossierText } from "./signing-dossier-text";
+import {
+  SigningLanguage,
+  approvalMention,
+  approvalWatermark,
+  signingDateTime,
+} from "./signing-language";
 import {
   asn1,
   Asn1Node,
@@ -70,6 +77,17 @@ export type TimestampContext = {
   documentId?: string;
   webauthnCredentialId?: string;
 };
+/** Code and message of a TSA failure, without credentials a URL may hold. */
+export function describeTsaError(error: unknown) {
+  if (!(error instanceof Error)) return "unknown error";
+  const code = (error as NodeJS.ErrnoException).code;
+  const { cause } = error as { cause?: unknown };
+  const detail = cause instanceof Error ? ` (${cause.message})` : "";
+  return `${code ? `${code} ` : ""}${error.message}${detail}`
+    .replace(/\/\/[^/@\s]+@/g, "//***@")
+    .slice(0, 300);
+}
+
 @Injectable()
 export class PdfSigningService implements OnModuleInit {
   private readonly logger = new Logger(PdfSigningService.name);
@@ -720,11 +738,10 @@ export class PdfSigningService implements OnModuleInit {
         );
         accepted = { tsaUrl, response: tsResponse };
         break;
-      } catch {
-        const msg = `TSA ${label} failed`;
+      } catch (error) {
+        const msg = `TSA ${label} failed: ${describeTsaError(error)}`;
         errors.push(msg);
         this.logger.warn(msg);
-        // Continue to next fallback
       }
     }
 
@@ -1335,6 +1352,7 @@ export class PdfSigningService implements OnModuleInit {
   async generateCertificatePage(documentInfo: {
     documentId: string;
     fileName: string;
+    language: SigningLanguage;
     signedAt: Date;
     signers: Array<{
       name: string;
@@ -1362,33 +1380,15 @@ export class PdfSigningService implements OnModuleInit {
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const isReinforced = documentInfo.signatureLevel === "REINFORCED";
-    const authenticationLabel = (method?: string | null) => {
-      if (method === "EMAIL_OTP_CONSENT") {
-        return "Code e-mail à usage unique + consentement";
-      }
-      if (method === "WEBAUTHN") {
-        return "Passkey WebAuthn liée à la transaction";
-      }
-      return "Méthode non enregistrée";
-    };
+    const text = dossierText(documentInfo.language);
+    const dateTime = (date: Date) =>
+      signingDateTime(date, documentInfo.language);
+    const authenticationLabel = (method?: string | null) =>
+      text.authenticationMethod[method ?? ""] ?? text.authenticationMethod.none;
     // How the account or address behind the signer was checked. This is
     // account-level assurance, never a civil identity check.
-    const verificationLabel = (method?: string | null) => {
-      if (method === "EMAIL_OTP") {
-        return "Contrôle de l'adresse e-mail par code à usage unique";
-      }
-      if (method === "VERIFIED_EMAIL_ACCOUNT") {
-        return "Adresse e-mail vérifiée par lien de confirmation";
-      }
-      if (method === "ADMIN_VERIFIED_EMAIL_ACCOUNT") {
-        return "Adresse e-mail vérifiée par un administrateur";
-      }
-      if (method === "LDAP_ACCOUNT")
-        return "Identité fournie par l'annuaire LDAP";
-      if (method === "OIDC_ACCOUNT")
-        return "Identité fournie par le fournisseur OIDC";
-      return "Aucune vérification enregistrée";
-    };
+    const verificationLabel = (method?: string | null) =>
+      text.verificationMethod[method ?? ""] ?? text.verificationMethod.none;
 
     const { width: _width, height } = page.getSize();
     let y = height - 60;
@@ -1403,7 +1403,7 @@ export class PdfSigningService implements OnModuleInit {
       this.wrapPdfText(pdfSafeText(line, font), 470, 9);
 
     // Header
-    page.drawText("DOSSIER DE PREUVE DE SIGNATURE ÉLECTRONIQUE", {
+    page.drawText(text.title, {
       x: 50,
       y,
       size: 16,
@@ -1412,23 +1412,18 @@ export class PdfSigningService implements OnModuleInit {
     });
     y -= 30;
 
-    page.drawText(
-      isReinforced
-        ? "Niveau renforcé - compte attribué et confirmation WebAuthn"
-        : "Niveau standard - contrôle de l'adresse e-mail et consentement",
-      {
-        x: 50,
-        y,
-        size: 10,
-        font,
-        color: rgb(0.3, 0.3, 0.3),
-      },
-    );
+    page.drawText(text.subtitle(isReinforced), {
+      x: 50,
+      y,
+      size: 10,
+      font,
+      color: rgb(0.3, 0.3, 0.3),
+    });
     y -= 40;
 
     // Document info
     ensureSpace(40);
-    page.drawText("INFORMATIONS DU DOCUMENT", {
+    page.drawText(text.documentSection, {
       x: 50,
       y,
       size: 12,
@@ -1437,14 +1432,14 @@ export class PdfSigningService implements OnModuleInit {
     y -= 20;
 
     const lines = [
-      `Identifiant: ${documentInfo.documentId}`,
-      `Fichier: ${documentInfo.fileName}`,
-      `Niveau de preuve: ${isReinforced ? "Renforcé - compte vérifié + passkey" : "Standard - code e-mail + consentement"}`,
+      `${text.documentId}: ${documentInfo.documentId}`,
+      `${text.file}: ${documentInfo.fileName}`,
+      text.level(isReinforced),
       // Each hash names its exact scope: a file cannot contain its own hash,
       // so the final PDF hash lives in the attestation, not here.
-      `Empreinte du contenu signé (avant page de preuve et scellement): ${documentInfo.documentHash}`,
-      "Empreinte du fichier PDF final: figure dans l'attestation de preuve, un fichier ne pouvant contenir sa propre empreinte",
-      `Date de finalisation: ${documentInfo.signedAt.toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "medium", timeZone: "Europe/Paris" })}`,
+      `${text.contentHash}: ${documentInfo.documentHash}`,
+      text.finalHash,
+      `${text.finalizedAt}: ${dateTime(documentInfo.signedAt)}`,
     ];
 
     for (const line of lines.flatMap(wrapped)) {
@@ -1456,7 +1451,7 @@ export class PdfSigningService implements OnModuleInit {
 
     // Signers
     ensureSpace(40);
-    page.drawText("SIGNATAIRES", {
+    page.drawText(text.signersSection, {
       x: 50,
       y,
       size: 12,
@@ -1467,7 +1462,7 @@ export class PdfSigningService implements OnModuleInit {
     for (let i = 0; i < documentInfo.signers.length; i++) {
       const signer = documentInfo.signers[i];
       ensureSpace(30);
-      page.drawText(`Signataire ${i + 1}:`, {
+      page.drawText(text.signer(i + 1), {
         x: 70,
         y,
         size: 10,
@@ -1478,40 +1473,28 @@ export class PdfSigningService implements OnModuleInit {
       // Network data and account identifiers stay in the forensic dossier.
       // Its salted hash below lets anyone check a record disclosed later.
       const signerLines = [
-        `  Nom: ${signer.name}`,
-        `  Email: ${signer.email}`,
+        `  ${text.name}: ${signer.name}`,
+        `  ${text.email}: ${signer.email}`,
         ...(signer.evidenceId
-          ? [`  Identifiant de preuve: ${signer.evidenceId}`]
+          ? [`  ${text.evidenceId}: ${signer.evidenceId}`]
           : []),
-        "  Adresse IP: enregistrée dans le dossier probatoire",
-        `  Signé le: ${signer.signedAt.toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "medium", timeZone: "Europe/Paris" })}`,
-        `  Type de signature: ${signer.signatureType}`,
-        `  Authentification: ${authenticationLabel(signer.authenticationMethod)}`,
-        signer.accountAssigned
-          ? "  Attribution du signataire: compte PrivCloud attribué"
-          : "  Attribution du signataire: destinataire désigné par son adresse e-mail",
-        `  ${signer.accountAssigned ? "Vérification du compte" : "Vérification de l'adresse"}: ${verificationLabel(signer.identityVerificationMethod)}`,
-        ...(signer.webauthnUserVerified
-          ? ["  Vérification locale WebAuthn: oui"]
-          : []),
-        ...(signer.transactionBound
-          ? ["  Transaction liée au document: vérifiée"]
-          : []),
+        `  ${text.ipAddress}`,
+        `  ${text.signedAt}: ${dateTime(signer.signedAt)}`,
+        `  ${text.signatureType}: ${signer.signatureType}`,
+        `  ${text.authentication}: ${authenticationLabel(signer.authenticationMethod)}`,
+        `  ${text.attribution(Boolean(signer.accountAssigned))}`,
+        `  ${text.verification(Boolean(signer.accountAssigned))}: ${verificationLabel(signer.identityVerificationMethod)}`,
+        ...(signer.webauthnUserVerified ? [`  ${text.webauthnVerified}`] : []),
+        ...(signer.transactionBound ? [`  ${text.transactionBound}`] : []),
         ...(signer.signedDocumentHash
-          ? [
-              `  Empreinte du document source approuvé: ${signer.signedDocumentHash}`,
-            ]
+          ? [`  ${text.sourceHash}: ${signer.signedDocumentHash}`]
           : []),
-        `  Empreinte du texte de consentement: ${consentSha256For("SIGN")}`,
+        `  ${text.consentHash}: ${consentSha256For("SIGN")}`,
         ...(signer.signingIntentHash
-          ? [
-              `  Empreinte du manifeste de transaction: ${signer.signingIntentHash}`,
-            ]
+          ? [`  ${text.intentHash}: ${signer.signingIntentHash}`]
           : []),
         ...(signer.forensicRecordSha256
-          ? [
-              `  Empreinte du dossier probatoire: ${signer.forensicRecordSha256}`,
-            ]
+          ? [`  ${text.forensicHash}: ${signer.forensicRecordSha256}`]
           : []),
       ];
 
@@ -1526,7 +1509,7 @@ export class PdfSigningService implements OnModuleInit {
 
     // Legal notice
     ensureSpace(40);
-    page.drawText("MENTION LÉGALE", {
+    page.drawText(text.legalSection, {
       x: 50,
       y,
       size: 12,
@@ -1534,43 +1517,12 @@ export class PdfSigningService implements OnModuleInit {
     });
     y -= 20;
 
-    const levelSpecificLegalText = isReinforced
-      ? [
-          "Le profil renforcé de PrivCloud met en œuvre une signature électronique avancée conformément aux",
-          "exigences de l'article 26 du règlement eIDAS. Elle repose sur une assertion WebAuthn transactionnelle",
-          "et s'accompagne d'un scellement cryptographique CMS/PDF du dossier de preuve apposé par PrivCloud.",
-          "Chaque décision fait l'objet d'une assertion WebAuthn dont le challenge est dérivé d'un manifeste",
-          "liant le compte attribué, le consentement et l'empreinte exacte du document. La clé WebAuthn est",
-          "rattachée au compte par une preuve d'enrôlement signée. L'assertion brute, la clé publique et les",
-          "données réseau sont conservées dans un dossier probatoire scellé, communiqué en cas de contestation",
-          "et vérifiable hors ligne grâce aux empreintes ci-dessus. Il ne s'agit ni d'une identité civile",
-          "qualifiée, ni d'une signature électronique qualifiée (QES).",
-        ]
-      : [
-          "Le niveau standard exige un code à usage unique envoyé à l'adresse e-mail attribuée avant",
-          "la décision. Cette preuve établit le contrôle actuel de la boîte, pas l'identité civile de la",
-          "personne qui saisit le code ni une maîtrise personnelle exclusive et durable de cette adresse.",
-          "Le consentement est lié à l'empreinte du document. PrivCloud ne présente pas ce parcours comme",
-          "une signature avancée conforme à l'article 26, ni comme une signature électronique qualifiée.",
-        ];
     const legalText = [
-      "Le règlement eIDAS interdit de refuser l'effet juridique ou l'admissibilité d'une signature",
-      "au seul motif de sa forme électronique ou de son caractère non qualifié (article 25, paragraphe 1).",
+      ...text.legalIntro,
       "",
-      ...levelSpecificLegalText,
+      ...(isReinforced ? text.legalReinforced : text.legalStandard),
       "",
-      "Le fichier final comporte une signature CMS/PDF du serveur destinée à détecter toute modification.",
-      "Cette signature technique du serveur n'est pas la signature personnelle du signataire.",
-      "La piste d'audit est chaînée par SHA-256 à compter de l'activation de cette fonctionnalité.",
-      "Les adresses IP et identifiants techniques, conservés pour établir la preuve et prévenir la fraude,",
-      "ne sont pas diffusés aux parties. Chaque signataire peut obtenir les données qui le concernent.",
-      "Lorsque l'horodatage est activé, seule l'empreinte SHA-256 de la valeur de signature est",
-      "soumise à la TSA. La réponse RFC 3161 (empreinte, nonce, heure, signature et certificat TSA)",
-      "est vérifiée avant que son jeton cryptographique soit incorporé au CMS/PDF, le document n'est",
-      "alors finalisé que si ce jeton est valide, sauf dérogation serveur explicitement configurée.",
-      "",
-      "Le caractère qualifié de l'horodatage dépend du service TSA et du certificat effectivement employés,",
-      "tels qu'inscrits dans la Trusted List applicable. Il ne résulte pas du seul protocole RFC 3161.",
+      ...text.legalOutro,
     ];
 
     for (const line of legalText) {
@@ -1580,17 +1532,16 @@ export class PdfSigningService implements OnModuleInit {
     }
 
     // Footer on every page of the dossier
-    const generatedAt = new Date().toLocaleString("fr-FR", {
-      dateStyle: "long",
-      timeStyle: "medium",
-      timeZone: "Europe/Paris",
-    });
+    const generatedAt = dateTime(new Date());
     const pages = pdfDoc.getPages();
     pages.forEach((dossierPage, index) =>
       dossierPage.drawText(
-        pages.length > 1
-          ? `Généré par PrivCloud Sharing - ${generatedAt} - page ${index + 1}/${pages.length}`
-          : `Généré par PrivCloud Sharing - ${generatedAt}`,
+        text.footer(
+          generatedAt,
+          pages.length > 1
+            ? { index: index + 1, count: pages.length }
+            : undefined,
+        ),
         { x: 50, y: 30, size: 7, font, color: rgb(0.5, 0.5, 0.5) },
       ),
     );
@@ -1614,6 +1565,7 @@ export class PdfSigningService implements OnModuleInit {
     options: {
       addApprovalWatermark: boolean;
       addApprovalMention?: boolean;
+      language?: SigningLanguage;
       signaturePage?: number; // 1-based page number for signature (default: 1)
       watermarkPage?: number; // 1-based page number for watermark (default: same as signaturePage)
       signatureField?: {
@@ -1632,6 +1584,7 @@ export class PdfSigningService implements OnModuleInit {
 
     const pdfDoc = await PDFDocument.load(pdfBuffer);
     let pages = pdfDoc.getPages();
+    const language = options.language ?? "fr";
 
     // Resolve target pages (1-based -> 0-based index)
     const sigPageIdx =
@@ -1678,7 +1631,7 @@ export class PdfSigningService implements OnModuleInit {
         { x: wmVisualSize.width * 0.12, y: wmVisualSize.height * 0.38 },
         wmGeometry,
       );
-      watermarkPage.drawText("Bon pour Accord", {
+      watermarkPage.drawText(approvalWatermark(language), {
         x: watermarkOrigin.x,
         y: watermarkOrigin.y,
         size: 60,
@@ -1691,14 +1644,7 @@ export class PdfSigningService implements OnModuleInit {
 
     // Add "Lu et approuvé" mention + signature on the SIGNATURE page
     const addMention = options.addApprovalMention !== false;
-    const dateStr = signerInfo.signedDate.toLocaleDateString("fr-FR", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-      timeZone: "Europe/Paris",
-    });
-
-    const approvalText = `Lu et approuvé le ${dateStr}`;
+    const approvalText = approvalMention(signerInfo.signedDate, language);
     const nameText = pdfSafeText(signerInfo.name, fontBold);
     const signatureText = signerInfo.signatureText
       ? pdfSafeText(signerInfo.signatureText, font)

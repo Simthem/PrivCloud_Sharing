@@ -189,7 +189,13 @@ function transformText({ packageId, relative, text, baseUrl, version }) {
 
 async function packageEntries(descriptor, options) {
   const sourceDirectory = path.join(integrationsDirectory, descriptor.source);
-  const files = await collectFiles(sourceDirectory);
+  const files = [
+    ...(await collectFiles(sourceDirectory)),
+    {
+      absolute: path.join(repositoryDirectory, "LICENSE"),
+      relative: "LICENSE",
+    },
+  ];
   return Promise.all(
     files.map(async ({ absolute, relative }) => {
       let data = await readFile(absolute);

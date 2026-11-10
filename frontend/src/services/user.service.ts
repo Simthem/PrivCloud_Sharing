@@ -44,6 +44,9 @@ const getCurrentUser = async (
   }
 };
 
+const getCurrentUserStrict = async (): Promise<CurrentUser> =>
+  (await api.get("users/me")).data;
+
 // ─── E2E Encryption Key Management ─────────────────────────────
 
 const setEncryptionKeyHash = async (
@@ -105,6 +108,7 @@ export default {
   update,
   remove,
   getCurrentUser,
+  getCurrentUserStrict,
   updateCurrentUser,
   removeCurrentUser,
   setEncryptionKeyHash,

@@ -805,9 +805,17 @@ administrator audit references.
 - [integrations/PUBLISHING.md](./integrations/PUBLISHING.md)
 - [bridge/README.md](./bridge/README.md)
 
-## Credits
+## License and credits
 
-PrivCloud Sharing is a fork of
-[Pingvin Share](https://github.com/stonith404/pingvin-share). The original
-project is licensed under the
-[BSD 2-Clause License](https://github.com/stonith404/pingvin-share/blob/main/LICENSE).
+PrivCloud Sharing is distributed under **GNU AGPLv3-only** from the release
+that introduces this licensing change, while preserving the original BSD
+2-Clause terms for inherited code and the licenses of other third-party
+components. See [`LICENSE`](./LICENSE) and [`LICENSING.md`](./LICENSING.md).
+
+A separate commercial license may be negotiated for eligible contributions.
+See [`COMMERCIAL_LICENSING.md`](./COMMERCIAL_LICENSING.md).
+
+PrivCloud Sharing derives from [OttrBox](https://github.com/aottr/ottrbox),
+which derives from [Pingvin Share](https://github.com/stonith404/pingvin-share).
+Original attribution to Elias Schneider and A. Ottr - ShorkBytes is preserved
+in [`LICENSES/BSD-2-Clause-PingvinShare-OttrBox.txt`](./LICENSES/BSD-2-Clause-PingvinShare-OttrBox.txt).

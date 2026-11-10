@@ -8,16 +8,33 @@ import {
 
 export { safeRedirectPath } from "./authRedirect.util";
 
+// A remembered target can only be read once, and the app shell, the homepage
+// and the provider return all resolve the landing page at the same moment.
+const SHARED_TARGET_WINDOW_MS = 5_000;
+let sharedTarget: { path: string; until: number } | null = null;
+
 export async function resolvePostAuthRedirectPath(
   path?: string | null,
   user?: CurrentUser | null,
 ) {
+  if (path == null && sharedTarget && Date.now() < sharedTarget.until) {
+    return sharedTarget.path;
+  }
   const requestedPath = path ?? getRememberedPostAuthRedirectPath();
   const safePath = safeRedirectPath(requestedPath ?? undefined);
   const isDefaultDestination =
     !requestedPath || safePath === "/" || safePath === "/upload";
 
-  if (!isDefaultDestination) return finalizePostAuthRedirectPath(safePath);
+  if (!isDefaultDestination) {
+    const target = finalizePostAuthRedirectPath(safePath);
+    if (path == null) {
+      sharedTarget = {
+        path: target,
+        until: Date.now() + SHARED_TARGET_WINDOW_MS,
+      };
+    }
+    return target;
+  }
   if (!user?.hasTeamMembership && !user?.teamId) {
     return finalizePostAuthRedirectPath(
       user?.hasExternalAccess ? "/external" : "/upload",

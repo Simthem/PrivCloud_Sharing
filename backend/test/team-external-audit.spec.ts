@@ -57,7 +57,7 @@ function manifest(client: IssuanceInput = description) {
     team: { id: TEAM, name: "Équipe" },
     issuer: { userId: "admin", email: admin.email },
     contractor: { seatId: SEAT, email: "presta@example.test", name: "Presta" },
-    accessExpiresAt: new Date("2026-11-07T10:00:00Z"),
+    accessExpiresAt: new Date("2036-11-07T10:00:00Z"),
     previewId: PREVIEW,
     sourceFileId: FILE,
     client,

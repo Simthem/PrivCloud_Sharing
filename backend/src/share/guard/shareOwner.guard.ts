@@ -4,6 +4,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
+import { openToken } from "../../config/account-secrets";
 import { User } from "@prisma/client";
 import { Request } from "express";
 import * as crypto from "crypto";
@@ -57,7 +58,8 @@ export class ShareOwnerGuard extends JwtGuard {
         const { reverse_share_token } = request.cookies || {};
         if (
           reverse_share_token &&
-          share.reverseShare.token === reverse_share_token
+          openToken("reverseShare", share.reverseShare.token) ===
+            reverse_share_token
         ) {
           return true;
         }

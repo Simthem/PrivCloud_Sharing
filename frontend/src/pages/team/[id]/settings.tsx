@@ -48,10 +48,11 @@ import {
   TbSend,
 } from "react-icons/tb";
 import Meta from "../../../components/Meta";
-import teamService from "../../../services/team.service";
+import teamService, { type TeamMember } from "../../../services/team.service";
 import useUser from "../../../hooks/user.hook";
 import useTranslate from "../../../hooks/useTranslate.hook";
 import toast from "../../../utils/toast.util";
+import type { ThrownError } from "../../../types/thrownError.type";
 
 const TeamSettings = () => {
   const router = useRouter();
@@ -71,7 +72,7 @@ const TeamSettings = () => {
   // Determine current user role
   const myRole = useMemo(() => {
     if (!team?.members || !user.user) return null;
-    const me = team.members.find((m: any) => m.user?.id === user.user!.id);
+    const me = team.members.find((m) => m.user?.id === user.user!.id);
     return me?.role ?? null;
   }, [team, user.user]);
   const isTeamAdmin = myRole === "OWNER" || myRole === "ADMIN";
@@ -85,7 +86,7 @@ const TeamSettings = () => {
     useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState("");
-  const [selectedMember, setSelectedMember] = useState<any>(null);
+  const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
   const [memberModalOpen, setMemberModalOpen] = useState(false);
   const [removeMemberConfirm, setRemoveMemberConfirm] = useState(false);
 
@@ -93,7 +94,7 @@ const TeamSettings = () => {
   const { data: memberAccess, isLoading: memberAccessLoading } = useQuery({
     queryKey: ["team.memberAccess", teamIdStr, selectedMember?.id],
     queryFn: () =>
-      teamService.getMemberFolderAccess(teamIdStr, selectedMember?.id),
+      teamService.getMemberFolderAccess(teamIdStr, selectedMember!.id),
     enabled: !!teamIdStr && !!selectedMember?.id && memberModalOpen,
   });
 
@@ -126,7 +127,7 @@ const TeamSettings = () => {
       });
       queryClient.invalidateQueries({ queryKey: ["team", teamIdStr] });
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(
         err?.response?.data?.message || t("team.settings.toast.updateError"),
       ),
@@ -139,7 +140,7 @@ const TeamSettings = () => {
       toast.success(t("team.settings.toast.deleted"));
       router.push("/account");
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(
         err?.response?.data?.message || t("team.settings.toast.deleteError"),
       ),
@@ -154,7 +155,7 @@ const TeamSettings = () => {
       toast.success(t("team.settings.toast.pqNotificationUpdated"));
       queryClient.invalidateQueries({ queryKey: ["team", teamIdStr] });
     },
-    onError: (err: any) => {
+    onError: (err: ThrownError) => {
       setPqNotificationEncryptionEnabled(
         team?.pqNotificationEncryptionEnabled ?? false,
       );
@@ -174,7 +175,7 @@ const TeamSettings = () => {
       setRemoveMemberConfirm(false);
       queryClient.invalidateQueries({ queryKey: ["team", teamIdStr] });
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(
         err?.response?.data?.message || t("team.settings.toast.error"),
       ),
@@ -189,7 +190,7 @@ const TeamSettings = () => {
       permission: string;
     }) =>
       teamService.setFolderAccess(teamIdStr, folderId, {
-        memberId: selectedMember?.id,
+        memberId: selectedMember!.id,
         permission,
       }),
     onSuccess: (_data, { folderId, permission }) => {
@@ -199,7 +200,7 @@ const TeamSettings = () => {
       });
       toast.success(t("team.settings.toast.permissionUpdated"));
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(
         err?.response?.data?.message || t("team.settings.toast.error"),
       ),
@@ -207,7 +208,7 @@ const TeamSettings = () => {
 
   const removeFolderAccessMutation = useMutation({
     mutationFn: (folderId: string) =>
-      teamService.removeFolderAccess(teamIdStr, folderId, selectedMember?.id),
+      teamService.removeFolderAccess(teamIdStr, folderId, selectedMember!.id),
     onSuccess: (_data, folderId) => {
       updateMemberAccessCache(folderId, null);
       queryClient.invalidateQueries({
@@ -215,7 +216,7 @@ const TeamSettings = () => {
       });
       toast.success(t("team.settings.toast.accessRuleRemoved"));
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(
         err?.response?.data?.message || t("team.settings.toast.error"),
       ),
@@ -227,7 +228,7 @@ const TeamSettings = () => {
       toast.success(t("team.settings.toast.leftTeam"));
       router.push("/account");
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(
         err?.response?.data?.message || t("team.settings.toast.leaveError"),
       ),
@@ -236,7 +237,7 @@ const TeamSettings = () => {
   // Push notification preference (self-service)
   const myMembership = useMemo(() => {
     if (!team?.members || !user.user) return null;
-    return team.members.find((m: any) => m.user?.id === user.user!.id) ?? null;
+    return team.members.find((m) => m.user?.id === user.user!.id) ?? null;
   }, [team, user.user]);
 
   const [pushNotifMode, setPushNotifMode] = useState<string>("EVERY_FILE");
@@ -253,7 +254,7 @@ const TeamSettings = () => {
       toast.success(t("team.settings.toast.notifPrefUpdated"));
       queryClient.invalidateQueries({ queryKey: ["team", teamIdStr] });
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(
         err?.response?.data?.message || t("team.settings.toast.error"),
       ),
@@ -273,7 +274,7 @@ const TeamSettings = () => {
         queryKey: ["team.auditReports", teamIdStr],
       });
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(
         err?.response?.data?.message || t("team.settings.audit.sendError"),
       ),
@@ -339,7 +340,7 @@ const TeamSettings = () => {
   ) => {
     queryClient.setQueryData<
       | {
-          member: any;
+          member: TeamMember;
           folders: {
             id: string;
             name: string;
@@ -589,8 +590,8 @@ const TeamSettings = () => {
               {isMobile ? (
                 <Stack gap="xs">
                   {team.members
-                    ?.filter((m: any) => m.isActive !== false)
-                    ?.map((member: any) => (
+                    ?.filter((m) => m.isActive !== false)
+                    ?.map((member) => (
                       <Paper
                         key={member.id}
                         withBorder
@@ -656,8 +657,8 @@ const TeamSettings = () => {
                   </Table.Thead>
                   <Table.Tbody>
                     {team.members
-                      ?.filter((m: any) => m.isActive !== false)
-                      ?.map((member: any) => (
+                      ?.filter((m) => m.isActive !== false)
+                      ?.map((member) => (
                         <Table.Tr
                           key={member.id}
                           style={{

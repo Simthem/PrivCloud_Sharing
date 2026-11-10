@@ -1,5 +1,17 @@
 type Sha256Hex = (_bytes: Uint8Array) => Promise<string>;
 
+/** Fields read from a signer's WebAuthn transaction manifest. */
+type TransactionManifest = {
+  action?: unknown;
+  documentId?: unknown;
+  documentSha256?: unknown;
+  fieldValues?: unknown;
+  recipientId?: unknown;
+  signatureDataSha256?: unknown;
+  signatureType?: unknown;
+  signerAccountId?: unknown;
+};
+
 export type FinalizationSigner = {
   id: string;
   name: string;
@@ -52,7 +64,7 @@ export const reconcileSignerContributions = async (input: {
     if (!signer.webauthnTransactionManifest) continue;
     const report = (problem: string) =>
       problems.push(`${signer.name}: ${problem}`);
-    let manifest: any;
+    let manifest: TransactionManifest;
     try {
       manifest = JSON.parse(signer.webauthnTransactionManifest);
     } catch {

@@ -37,7 +37,7 @@ const Maintenance = () => {
   const t = useTranslate();
 
   const message =
-    config.get("general.maintenanceMessage") ||
+    config.getString("general.maintenanceMessage") ||
     t("maintenance.default-message");
 
   return (

@@ -224,6 +224,22 @@ export function encryptedFilePlaceholderName(fileId: string): string {
   return `encrypted-file-${fileId.slice(0, 8)}`;
 }
 
+/**
+ * File offered to a signature request. An encrypted name must be sent with
+ * the request, the server only holds its placeholder.
+ */
+export function signatureFileOf(file: {
+  id: string;
+  name?: string | null;
+  metadataScheme?: number | null;
+}): { id: string; name: string; encryptedName: boolean } {
+  return {
+    id: file.id,
+    name: file.name || file.id,
+    encryptedName: file.metadataScheme != null,
+  };
+}
+
 type EncryptedFileRow = {
   id: string;
   name: string;

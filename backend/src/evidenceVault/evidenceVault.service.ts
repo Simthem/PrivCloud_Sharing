@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma, User } from "@prisma/client";
+import { User } from "@prisma/client";
 import { createHash, randomBytes } from "crypto";
 import { AccountPasskeyService } from "src/passkey/accountPasskey.service";
 import { PasskeyResponseDTO } from "src/passkey/dto/passkey.dto";
@@ -89,6 +89,47 @@ export class EvidenceVaultService {
   // CONTENT
   // ===========================================================================
 
+  /** Encrypted addresses and manifests are searched once opened. */
+  private async matchingTeams(query: string) {
+    if (!query) {
+      return this.prisma.teamExternalIssuance.groupBy({
+        by: ["teamId"],
+        where: { status: "ISSUED" },
+        _max: { issuedAt: true },
+        orderBy: { _max: { issuedAt: "desc" } },
+        take: MAX_TEAMS,
+      });
+    }
+    const needle = query.toLowerCase();
+    const issuances = await this.prisma.teamExternalIssuance.findMany({
+      where: { status: "ISSUED" },
+      orderBy: { issuedAt: "desc" },
+      select: {
+        teamId: true,
+        contractorEmail: true,
+        issuerEmail: true,
+        manifest: true,
+        issuedAt: true,
+      },
+    });
+    const latest = new Map<string, Date>();
+    for (const issuance of issuances) {
+      const found =
+        issuance.teamId === query ||
+        [
+          issuance.contractorEmail,
+          issuance.issuerEmail,
+          issuance.manifest,
+        ].some((text) => text.toLowerCase().includes(needle));
+      if (found && !latest.has(issuance.teamId)) {
+        latest.set(issuance.teamId, issuance.issuedAt);
+      }
+    }
+    return [...latest]
+      .slice(0, MAX_TEAMS)
+      .map(([teamId, issuedAt]) => ({ teamId, _max: { issuedAt } }));
+  }
+
   /**
    * Teams holding register entries, most recent first, whether they still
    * exist or not. The search matches an address, a team name or an id.
@@ -98,26 +139,7 @@ export class EvidenceVaultService {
     if (query.length > MAX_SEARCH) {
       throw new BadRequestException("Search is too long");
     }
-    const where: Prisma.TeamExternalIssuanceWhereInput = {
-      status: "ISSUED",
-      ...(query
-        ? {
-            OR: [
-              { teamId: query },
-              { contractorEmail: { contains: query } },
-              { issuerEmail: { contains: query } },
-              { manifest: { contains: query } },
-            ],
-          }
-        : {}),
-    };
-    const matched = await this.prisma.teamExternalIssuance.groupBy({
-      by: ["teamId"],
-      where,
-      _max: { issuedAt: true },
-      orderBy: { _max: { issuedAt: "desc" } },
-      take: MAX_TEAMS,
-    });
+    const matched = await this.matchingTeams(query);
     const ids = matched.map((group) => group.teamId);
     if (ids.length === 0) return [];
     const [counts, latest, existing] = await Promise.all([

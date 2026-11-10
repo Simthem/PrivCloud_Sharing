@@ -21,6 +21,7 @@ import {
   validateProbeContentLength,
 } from "./probe/probe-validation.util";
 import { AbortedRequestFilter } from "./aborted-request.filter";
+import { trustProxySetting } from "./utils/trust-proxy.util";
 import {
   DATA_DIRECTORY,
   LOG_LEVEL_AVAILABLE,
@@ -309,8 +310,7 @@ async function bootstrap() {
     }),
   );
 
-  // Trust only the immediate upstream proxy (nginx)
-  app.set("trust proxy", 1);
+  app.set("trust proxy", trustProxySetting());
 
   await fs.promises.mkdir(`${DATA_DIRECTORY}/uploads/_temp`, {
     recursive: true,

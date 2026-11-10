@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
+import { TeamNotificationService } from "src/teamNotification/teamNotification.service";
 import { SigningE2EService } from "src/signing/signing-e2e.service";
 import { createUnitTestRunner } from "./unit-test";
 
@@ -29,6 +30,32 @@ testCase(
         teamCompletionNotification: "encrypted-b",
       },
     ];
+    const delivered: string[] = [];
+    const notificationService = new TeamNotificationService(
+      {
+        user: {
+          findUnique: async ({ where }: { where: { id: string } }) =>
+            where.id === "member-a"
+              ? {
+                  signaturePushEnabled: true,
+                  teamMemberships: [{ teamId: "team-1" }],
+                }
+              : null,
+        },
+        teamNotification: {
+          create: async ({ data }: { data: Record<string, unknown> }) => {
+            notifications.push(data);
+            return { id: "notice", ...data };
+          },
+        },
+      } as never,
+      {
+        sendToUser: async (userId: string) => {
+          assert.equal(completed, true);
+          delivered.push(userId);
+        },
+      } as never,
+    );
     const service = new SigningE2EService(
       {
         signatureDocument: {
@@ -49,20 +76,24 @@ testCase(
         signatureAuditEvent: {
           findFirst: async () => ({ id: "pades-event" }),
         },
-        signatureRecipient: { findMany: async () => recipients },
-        teamMember: { findMany: async () => [{ userId: "member-a" }] },
+        signatureRecipient: {
+          findMany: async () => recipients,
+        },
+        teamMember: {
+          findMany: async () => [{ userId: "member-a" }],
+        },
         teamAccessLog: { create: async () => ({}) },
         user: { findUnique: async () => null },
       } as never,
       { sendSigningMail: async () => undefined } as never,
-      { storeFileByKey: async () => (stored = true) } as never,
-      { get: () => "https://example.invalid" } as never,
-      {} as never,
       {
-        notify: async (params: Record<string, unknown>) => {
-          notifications.push(params);
+        storeFileByKey: async () => {
+          stored = true;
         },
       } as never,
+      { get: () => "https://privcloud.example" } as never,
+      {} as never,
+      notificationService,
       { createFinalEvidence: async () => ({}) } as never,
     );
     Object.assign(service, { createAuditEvent: async () => undefined });
@@ -74,6 +105,7 @@ testCase(
       "a".repeat(64),
     );
 
+    assert.deepEqual(delivered, ["member-a"]);
     assert.equal(stored, true);
     assert.equal(completed, true);
     assert.deepEqual(result, { status: "COMPLETED" });

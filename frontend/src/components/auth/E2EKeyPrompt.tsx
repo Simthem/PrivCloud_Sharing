@@ -100,7 +100,7 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
     setError("");
     const sanitized = value.replace(/[^A-Za-z0-9_-]/g, "");
     if (!sanitized) {
-      setError("Veuillez entrer votre clé de chiffrement.");
+      setError(intl.formatMessage({ id: "account.e2e.import.emptyError" }));
       return;
     }
     setLoading(true);
@@ -108,15 +108,15 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
       const ok = await verifyAndStore(sanitized);
       if (!ok) {
         setError(
-          "Cette clé ne correspond pas à celle enregistrée sur votre compte.",
+          intl.formatMessage({ id: "account.e2e.import.mismatchError" }),
         );
         return;
       }
-      toast.success("Clé chargée pour cette session.");
+      toast.success(intl.formatMessage({ id: "e2ePrompt.import.success" }));
       resetAll();
       onClose();
     } catch {
-      setError("Clé invalide.");
+      setError(intl.formatMessage({ id: "account.e2e.import.invalidError" }));
     } finally {
       setLoading(false);
     }
@@ -154,7 +154,9 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
     setRecoverError("");
     const filled = shardValues.filter((s) => s.trim().length > 0);
     if (filled.length < 2) {
-      setRecoverError("Entrez au moins 2 fragments.");
+      setRecoverError(
+        intl.formatMessage({ id: "account.e2e.recover.minShards" }),
+      );
       return;
     }
     setRecovering(true);
@@ -163,16 +165,15 @@ const E2EKeyPrompt = ({ opened, onClose, userId }: E2EKeyPromptProps) => {
       const ok = await verifyAndStore(encodedKey);
       if (!ok) {
         setRecoverError(
-          "La clé reconstituée ne correspond pas à celle de votre compte. " +
-            "Vérifiez que les fragments sont corrects.",
+          intl.formatMessage({ id: "account.e2e.recover.mismatch" }),
         );
         return;
       }
       setRecoveredKey(encodedKey);
       setMode("recovered");
-      toast.success("Clé reconstituée et chargée pour cette session.");
-    } catch (e: any) {
-      setRecoverError(e?.message ?? "Impossible de reconstituer la clé.");
+      toast.success(intl.formatMessage({ id: "e2ePrompt.recover.success" }));
+    } catch {
+      setRecoverError(intl.formatMessage({ id: "account.e2e.recover.error" }));
     } finally {
       setRecovering(false);
     }

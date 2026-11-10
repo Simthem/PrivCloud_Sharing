@@ -61,3 +61,17 @@ if (overrideRisk) {
 }
 
 require("global-agent").bootstrap();
+
+// global-agent 4 only builds the TLS options of a tunnel, server name included,
+// when the request says its endpoint is secure, and Node never says so.
+const https = require("https");
+const proxyAgent = https.globalAgent;
+if (proxyAgent && proxyAgent.protocol === "https:") {
+  const addRequest = proxyAgent.addRequest;
+  proxyAgent.addRequest = function (request, configuration) {
+    return addRequest.call(this, request, {
+      ...configuration,
+      secureEndpoint: true,
+    });
+  };
+}

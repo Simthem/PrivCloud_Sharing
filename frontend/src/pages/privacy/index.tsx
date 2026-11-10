@@ -1,3 +1,4 @@
+import type { ComponentPropsWithoutRef } from "react";
 import { Anchor, Divider, Title, useMantineColorScheme } from "@mantine/core";
 import DOMPurify from "isomorphic-dompurify";
 import { FormattedMessage } from "react-intl";
@@ -12,10 +13,11 @@ const PrivacyPolicy = () => {
   const { colorScheme } = useMantineColorScheme();
   const config = useConfig();
   const metaDesc =
-    config.get("legal.metaDescriptionPrivacy") || t("privacy.meta.description");
+    config.getString("legal.metaDescriptionPrivacy") ||
+    t("privacy.meta.description");
 
   // Sanitize Markdown content to prevent stored XSS via admin-controlled text
-  const rawMarkdown = config.get("legal.privacyPolicyText") || "";
+  const rawMarkdown = config.getString("legal.privacyPolicyText") || "";
   const sanitizedMarkdown = DOMPurify.sanitize(rawMarkdown, {
     ALLOWED_TAGS: [], // Strip ALL HTML tags - only pure Markdown syntax is kept
     KEEP_CONTENT: true, // Keep text content, just strip the tags
@@ -31,7 +33,10 @@ const PrivacyPolicy = () => {
           forceBlock: true,
           overrides: {
             h1: {
-              component: ({ children, ...props }: any) => (
+              component: ({
+                children,
+                ...props
+              }: ComponentPropsWithoutRef<"h1">) => (
                 <Title order={2} mt="lg" mb="sm" {...props}>
                   {children}
                 </Title>

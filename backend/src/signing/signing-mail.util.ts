@@ -1,3 +1,9 @@
+import {
+  SigningLanguage,
+  signingDateTime,
+  signingMails,
+} from "./signing-language";
+
 export interface SigningCompletionRecipient {
   email: string;
   name: string;
@@ -8,6 +14,7 @@ export interface SigningCompletionRecipient {
 
 interface SigningCompletionMailOptions {
   fileName: string;
+  language: SigningLanguage;
   documentUrl: string;
   teamId?: string | null;
   creator?: {
@@ -26,19 +33,20 @@ interface SigningCompletionMailOptions {
 export async function deliverSigningCompletionEmails(
   options: SigningCompletionMailOptions,
 ): Promise<{ sent: number; failed: number }> {
+  const mail = signingMails(options.language);
   const signersList = options.recipients
     .filter((recipient) => recipient.role === "SIGNER")
-    .map(
-      (recipient) =>
-        `  - ${recipient.name} (${recipient.email}) - signé le ${
-          recipient.signedAt
-            ? new Date(recipient.signedAt).toLocaleString("fr-FR", {
-                dateStyle: "long",
-                timeStyle: "short",
-                timeZone: "Europe/Paris",
-              })
-            : "N/A"
-        }`,
+    .map((recipient) =>
+      mail.signerLine(
+        `${recipient.name} (${recipient.email})`,
+        recipient.signedAt
+          ? signingDateTime(
+              new Date(recipient.signedAt),
+              options.language,
+              "short",
+            )
+          : "N/A",
+      ),
     )
     .join("\n");
 
@@ -61,16 +69,15 @@ export async function deliverSigningCompletionEmails(
   if (options.creator?.email) {
     await attempt(
       options.creator.email,
-      `Document signé par tous les signataires - ${options.fileName}`,
-      `Bonjour ${options.creator.username || ""},\n\n` +
-        `Le document "${options.fileName}" a été signé par l'ensemble des signataires et finalisé avec succès.\n\n` +
-        `Signataires :\n${signersList}\n\n` +
-        `La signature cryptographique PAdES a été appliquée.\n\n` +
-        `Consultez et téléchargez le document signé ici :\n${options.documentUrl}\n\n` +
-        (options.teamId
-          ? `Ce document est également visible dans l'espace de votre équipe.\n\n`
-          : "") +
-        `-- \nPrivCloud Sharing - Signature Électronique`,
+      mail.completedCreatorSubject(options.fileName),
+      mail.hello(options.creator.username || "") +
+        mail.completedCreatorBody({
+          file: options.fileName,
+          signers: signersList,
+          url: options.documentUrl,
+          team: Boolean(options.teamId),
+        }) +
+        mail.footer,
     );
   }
 
@@ -78,15 +85,15 @@ export async function deliverSigningCompletionEmails(
     options.recipients.map((recipient) =>
       attempt(
         recipient.email,
-        `Document signé - ${options.fileName}`,
-        `Bonjour ${recipient.name},\n\n` +
-          `Le document "${options.fileName}" a été signé par tous les signataires et la signature cryptographique PAdES a été appliquée.\n\n` +
-          `Signataires :\n${signersList}\n\n` +
-          (recipient.userId
-            ? `Vous pouvez consulter et télécharger le document signé depuis votre espace :\n${options.documentUrl}\n\n` +
-              `Ce document apparaît également dans votre rubrique "Documents reçus" de l'onglet Signature.\n\n`
-            : `Si vous avez un compte PrivCloud Sharing, connectez-vous pour retrouver ce document dans vos "Documents reçus".\n\n`) +
-          `-- \nPrivCloud Sharing - Signature Électronique`,
+        mail.completedSubject(options.fileName),
+        mail.hello(recipient.name) +
+          mail.completedBody({
+            file: options.fileName,
+            signers: signersList,
+            url: options.documentUrl,
+            account: Boolean(recipient.userId),
+          }) +
+          mail.footer,
       ),
     ),
   );

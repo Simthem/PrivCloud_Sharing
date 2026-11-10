@@ -9,7 +9,10 @@ import {
 import { User } from "@prisma/client";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
-import { PushSubscriptionDto } from "./dto/pushSubscription.dto";
+import {
+  PushSubscriptionDto,
+  PushUnsubscribeDto,
+} from "./dto/pushSubscription.dto";
 import { PushService } from "./push.service";
 
 @Controller("push")
@@ -30,7 +33,7 @@ export class PushController {
   @Delete("subscribe")
   @HttpCode(204)
   @UseGuards(JwtGuard)
-  async unsubscribe(@GetUser() user: User, @Body() body: { endpoint: string }) {
-    await this.pushService.unsubscribe(user.id, body.endpoint);
+  async unsubscribe(@GetUser() user: User, @Body() dto: PushUnsubscribeDto) {
+    await this.pushService.unsubscribe(user.id, dto.endpoint);
   }
 }

@@ -1,4 +1,11 @@
-import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+  OnModuleInit,
+} from "@nestjs/common";
+import { loadConfigKey } from "../config/config-encryption";
+import { convertSealedColumns, sealedColumnsExtension } from "./sealed-columns";
 import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { DATABASE_URL, resolveDbUrl } from "../constants";
@@ -12,8 +19,13 @@ type SqliteCount = {
 };
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnApplicationBootstrap
+{
   private readonly logger = new Logger(PrismaService.name);
+  private readonly columnKey = loadConfigKey();
+  private readonly storedRows: PrismaClient = this;
   private readonly dbPath: string;
 
   constructor() {
@@ -21,6 +33,26 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
     const adapter = new PrismaBetterSqlite3({ url: dbPath });
     super({ adapter });
     this.dbPath = dbPath;
+    if (this.columnKey) {
+      return this.$extends(
+        sealedColumnsExtension(this.columnKey),
+      ) as unknown as PrismaService;
+    }
+  }
+
+  /** Rows as stored, for the conversions that seal or open them. */
+  storedClient(): PrismaClient {
+    return this.storedRows;
+  }
+
+  /** Large tables convert behind a serving instance, which reads both forms. */
+  onApplicationBootstrap() {
+    if (!this.columnKey) return;
+    void convertSealedColumns(this.storedRows, this.columnKey).catch(
+      (error: unknown) => {
+        this.logger.error("Converting stored columns stopped", error);
+      },
+    );
   }
 
   async onModuleInit() {

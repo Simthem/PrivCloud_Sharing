@@ -4,6 +4,7 @@ import {
   Box,
   Card,
   Group,
+  Select,
   Skeleton,
   Stack,
   Table,
@@ -12,14 +13,41 @@ import {
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { useModals } from "@mantine/modals";
-import { TbCheck, TbEdit, TbTrash } from "react-icons/tb";
+import { useMemo, useState } from "react";
+import {
+  TbArrowDown,
+  TbArrowUp,
+  TbCheck,
+  TbEdit,
+  TbMailCheck,
+  TbTrash,
+  TbUsersGroup,
+} from "react-icons/tb";
 import { FormattedMessage, useIntl } from "react-intl";
 import useUser from "../../../hooks/user.hook";
 import User from "../../../types/user.type";
+import {
+  DEFAULT_USER_SORT,
+  sortUsers,
+  UserSort,
+  UserSortField,
+} from "../../../utils/userSort.util";
+import SortableHeader from "../SortableHeader";
 import showUpdateUserModal from "./showUpdateUserModal";
 
+const SORT_COLUMNS: {
+  field: UserSortField;
+  label: string;
+  hint?: string;
+}[] = [
+  { field: "username", label: "admin.users.table.username" },
+  { field: "email", label: "admin.users.table.email" },
+  { field: "created", label: "admin.users.table.created" },
+  { field: "admin", label: "admin.users.table.admin" },
+];
+
 const ManageUserTable = ({
-  users,
+  users: unsortedUsers,
   getUsers,
   deleteUser,
   isLoading,
@@ -33,6 +61,19 @@ const ManageUserTable = ({
   const intl = useIntl();
   const { user: currentUser } = useUser();
   const isMobile = useMediaQuery("(max-width: 680px)");
+  const [sort, setSort] = useState<UserSort>(DEFAULT_USER_SORT);
+  const users = useMemo(
+    () => sortUsers(unsortedUsers, sort),
+    [unsortedUsers, sort],
+  );
+
+  const handleSort = (field: UserSortField) => {
+    setSort((current) => ({
+      field,
+      direction:
+        current.field === field && current.direction === "asc" ? "desc" : "asc",
+    }));
+  };
 
   const fmtDate = (iso?: string | null) => {
     if (!iso) return "N/A";
@@ -58,9 +99,98 @@ const ManageUserTable = ({
       { username: user.username },
     );
 
+  const emailVerified = (user: User) =>
+    ["EMAIL_LINK", "ADMINISTRATOR"].includes(
+      user.emailVerificationSource || "",
+    );
+
+  const accountBadges = (user: User) => (
+    <>
+      {user.isLdap && <Badge size="xs">LDAP</Badge>}
+      {user.totpVerified && (
+        <Badge size="xs" color="teal" variant="light">
+          2FA
+        </Badge>
+      )}
+      {emailVerified(user) && (
+        <Tooltip
+          label={intl.formatMessage({ id: "admin.users.table.email-verified" })}
+          withArrow
+        >
+          <Badge
+            size="xs"
+            color="green"
+            variant="light"
+            px={4}
+            aria-label={intl.formatMessage({
+              id: "admin.users.table.email-verified",
+            })}
+            style={{ flexShrink: 0 }}
+          >
+            <TbMailCheck size={12} style={{ display: "block" }} />
+          </Badge>
+        </Tooltip>
+      )}
+    </>
+  );
+
+  const teamLine = ({ teams }: User) =>
+    !!teams?.length && (
+      <Tooltip
+        label={teams
+          .map(
+            ({ name, role }) =>
+              `${name} (${intl.formatMessage({
+                id: `team.role.${role.toLowerCase()}`,
+              })})`,
+          )
+          .join(", ")}
+        openDelay={300}
+        multiline
+        maw={320}
+        withArrow
+      >
+        <Group gap={4} wrap="nowrap">
+          <TbUsersGroup size={13} style={{ flexShrink: 0, opacity: 0.6 }} />
+          <Text size="xs" c="dimmed" truncate="end">
+            {teams.map(({ name }) => name).join(", ")}
+          </Text>
+        </Group>
+      </Tooltip>
+    );
+
   if (isMobile) {
     return (
       <Stack gap="sm">
+        <Group gap="xs" wrap="nowrap">
+          <Select
+            style={{ flex: 1 }}
+            aria-label={intl.formatMessage({ id: "admin.users.sort.label" })}
+            allowDeselect={false}
+            value={sort.field}
+            data={SORT_COLUMNS.map(({ field, label }) => ({
+              value: field,
+              label: intl.formatMessage({ id: label }),
+            }))}
+            onChange={(field) =>
+              field &&
+              setSort({ field: field as UserSortField, direction: "asc" })
+            }
+          />
+          <ActionIcon
+            variant="light"
+            size={36}
+            aria-label={intl.formatMessage({
+              id:
+                sort.direction === "asc"
+                  ? "admin.users.sort.ascending"
+                  : "admin.users.sort.descending",
+            })}
+            onClick={() => handleSort(sort.field)}
+          >
+            {sort.direction === "asc" ? <TbArrowUp /> : <TbArrowDown />}
+          </ActionIcon>
+        </Group>
         {isLoading
           ? [...Array(5)].map((_, i) => (
               <Card key={i} withBorder padding="sm" radius="md">
@@ -76,19 +206,7 @@ const ManageUserTable = ({
                       <Text size="sm" fw={600} truncate="end">
                         {user.username}
                       </Text>
-                      {user.isLdap && <Badge size="xs">LDAP</Badge>}
-                      {user.totpVerified && (
-                        <Badge size="xs" color="teal" variant="light">
-                          2FA
-                        </Badge>
-                      )}
-                      {["EMAIL_LINK", "ADMINISTRATOR"].includes(
-                        user.emailVerificationSource || "",
-                      ) && (
-                        <Badge size="xs" color="green" variant="light">
-                          <FormattedMessage id="admin.users.table.email-verified" />
-                        </Badge>
-                      )}
+                      {accountBadges(user)}
                       {user.isAdmin && (
                         <Badge
                           size="xs"
@@ -100,10 +218,11 @@ const ManageUserTable = ({
                         </Badge>
                       )}
                     </Group>
-                    <Text size="xs" c="dimmed" truncate="end" mb={6}>
+                    <Text size="xs" c="dimmed" truncate="end">
                       {user.email}
                     </Text>
-                    <Group gap="xs" wrap="wrap">
+                    {teamLine(user)}
+                    <Group gap="xs" wrap="wrap" mt={6}>
                       <Badge color={accessColor()} variant="light" size="sm">
                         Full access
                       </Badge>
@@ -150,61 +269,79 @@ const ManageUserTable = ({
 
   return (
     <Box style={{ display: "block", overflowX: "auto" }}>
-      <Table verticalSpacing="sm" highlightOnHover>
-        <thead>
-          <tr>
-            <th style={{ textAlign: "left" }}>
-              <FormattedMessage id="admin.users.table.username" />
-            </th>
-            <th style={{ textAlign: "left" }}>
-              <FormattedMessage id="admin.users.table.email" />
-            </th>
-            <th style={{ textAlign: "left" }}>
-              <FormattedMessage id="admin.users.table.access" />
-            </th>
-            <th style={{ textAlign: "left" }}>
-              <FormattedMessage id="admin.users.table.created" />
-            </th>
-            <th style={{ textAlign: "left" }}>
-              <FormattedMessage id="admin.users.table.admin" />
-            </th>
-            <th style={{ width: 1 }}></th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table
+        verticalSpacing="sm"
+        horizontalSpacing="xs"
+        highlightOnHover
+        styles={{ th: { whiteSpace: "nowrap" } }}
+      >
+        <Table.Thead>
+          <Table.Tr>
+            {SORT_COLUMNS.map(({ field, label, hint }) => (
+              <Table.Th
+                key={field}
+                style={{ textAlign: "left" }}
+                aria-sort={
+                  sort.field !== field
+                    ? "none"
+                    : sort.direction === "asc"
+                      ? "ascending"
+                      : "descending"
+                }
+              >
+                <Tooltip
+                  label={hint && intl.formatMessage({ id: hint })}
+                  disabled={!hint}
+                  withArrow
+                >
+                  <Box component="span" style={{ display: "inline-flex" }}>
+                    <SortableHeader
+                      field={field}
+                      currentField={sort.field}
+                      currentDir={sort.direction}
+                      onSort={handleSort}
+                    >
+                      <FormattedMessage id={label} />
+                    </SortableHeader>
+                  </Box>
+                </Tooltip>
+              </Table.Th>
+            ))}
+            <Table.Th style={{ width: 1 }}></Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
           {isLoading
             ? skeletonRows
             : users.map((user) => (
-                <tr key={user.id}>
-                  <td>
-                    {user.username}{" "}
-                    {user.isLdap ? (
-                      <Badge style={{ marginLeft: "1em" }}>LDAP</Badge>
-                    ) : null}
-                    {user.totpVerified && (
-                      <Badge size="xs" ml={6} color="teal" variant="light">
-                        2FA
-                      </Badge>
+                <Table.Tr key={user.id}>
+                  <Table.Td
+                    style={{ whiteSpace: "nowrap", overflowWrap: "normal" }}
+                  >
+                    {user.username}
+                    {(user.isLdap ||
+                      user.totpVerified ||
+                      emailVerified(user)) && (
+                      <Group gap={4} wrap="nowrap" mt={2}>
+                        {accountBadges(user)}
+                      </Group>
                     )}
-                    {["EMAIL_LINK", "ADMINISTRATOR"].includes(
-                      user.emailVerificationSource || "",
-                    ) && (
-                      <Badge size="xs" ml={6} color="green" variant="light">
-                        <FormattedMessage id="admin.users.table.email-verified" />
-                      </Badge>
-                    )}
-                  </td>
-                  <td>{user.email}</td>
-                  <td>
-                    <Badge color={accessColor()} variant="light">
-                      Full access
-                    </Badge>
-                  </td>
-                  <td>
-                    <Text size="sm">{fmtDate(user.createdAt)}</Text>
-                  </td>
-                  <td>{user.isAdmin && <TbCheck />}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>
+                  </Table.Td>
+                  <Table.Td style={{ maxWidth: 0, width: "100%" }}>
+                    <Tooltip label={user.email} openDelay={300} withArrow>
+                      <Text size="sm" truncate="end">
+                        {user.email}
+                      </Text>
+                    </Tooltip>
+                    {teamLine(user)}
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm" style={{ whiteSpace: "nowrap" }}>
+                      {fmtDate(user.createdAt)}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>{user.isAdmin && <TbCheck />}</Table.Td>
+                  <Table.Td style={{ whiteSpace: "nowrap" }}>
                     {/* One row, never wrapped: a wrapped delete button would
                         sit next to the following user's edit button. */}
                     <Group justify="flex-end" gap="md" wrap="nowrap">
@@ -240,39 +377,42 @@ const ManageUserTable = ({
                         </ActionIcon>
                       </Tooltip>
                     </Group>
-                  </td>
-                </tr>
+                  </Table.Td>
+                </Table.Tr>
               ))}
-        </tbody>
+        </Table.Tbody>
       </Table>
     </Box>
   );
 };
 
 const skeletonRows = [...Array(10)].map((v, i) => (
-  <tr key={i}>
-    <td>
+  <Table.Tr key={i}>
+    <Table.Td>
       <Skeleton key={i} height={20} />
-    </td>
-    <td>
+    </Table.Td>
+    <Table.Td>
       <Skeleton key={i} height={20} />
-    </td>
-    <td>
+    </Table.Td>
+    <Table.Td>
       <Skeleton key={i} height={20} />
-    </td>
-    <td>
+    </Table.Td>
+    <Table.Td>
       <Skeleton key={i} height={20} />
-    </td>
-    <td>
+    </Table.Td>
+    <Table.Td>
       <Skeleton key={i} height={20} />
-    </td>
-    <td>
+    </Table.Td>
+    <Table.Td>
       <Skeleton key={i} height={20} />
-    </td>
-    <td>
+    </Table.Td>
+    <Table.Td>
       <Skeleton key={i} height={20} />
-    </td>
-  </tr>
+    </Table.Td>
+    <Table.Td>
+      <Skeleton key={i} height={20} />
+    </Table.Td>
+  </Table.Tr>
 ));
 
 export default ManageUserTable;

@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { AxiosError } from "axios";
 import { useRouter } from "next/router";
+import { useIntl } from "react-intl";
 import {
   ActionIcon,
   Alert,
@@ -81,11 +82,20 @@ import {
   pageSizeMillimeters,
   normalizedPdfRotation,
 } from "../../utils/pdfPlacement.util";
-import { buildAutoSignatureFields } from "../../utils/signatureAutoFields.util";
+import {
+  buildAutoSignatureFields,
+  resolveAutoSignaturePlacement,
+} from "../../utils/signatureAutoFields.util";
 import {
   detectSignaturePlacement,
   type DetectedSignaturePlacement,
 } from "../../utils/signaturePlacementDetection.util";
+import {
+  approvalMentionPattern,
+  approvalWatermark,
+  signingLanguageOf,
+} from "../../utils/signingLanguage.util";
+import useUserKeyGeneration from "../../hooks/useUserKeyGeneration.hook";
 
 interface RecipientForm {
   name: string;
@@ -128,6 +138,7 @@ const NewSigningRequestPage = () => {
   const router = useRouter();
   const { user } = useUser();
   const t = useTranslate();
+  const intl = useIntl();
 
   const [createdRecipients, setCreatedRecipients] = useState<
     SignatureRecipient[] | null
@@ -165,6 +176,7 @@ const NewSigningRequestPage = () => {
     enabled: !!user,
   });
 
+  const keyGeneration = useUserKeyGeneration();
   // FILE_META_V1: the server lists every file of the user's shares with an
   // encrypted name. Their names are opened here and only PDF files are kept.
   const [signableFiles, setSignableFiles] = useState<SignableFile[]>();
@@ -221,6 +233,7 @@ const NewSigningRequestPage = () => {
             : await resolveOwnerShareKey(shareId, userKeyB64, {
                 cryptoScheme: entries[0].cryptoScheme,
                 wrappedShareKey: entries[0].wrappedShareKey,
+                encryptedReverseShareKey: entries[0].encryptedReverseShareKey,
               });
           const opened = await decryptShareFileNames<
             SignableFile & {
@@ -251,7 +264,7 @@ const NewSigningRequestPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [listedSignableFiles]);
+  }, [listedSignableFiles, keyGeneration]);
   const filesLoading =
     filesListLoading || (!!listedSignableFiles && !signableFiles);
 
@@ -259,13 +272,18 @@ const NewSigningRequestPage = () => {
   const fileSelectData = useMemo(() => {
     if (!signableFiles || signableFiles.length === 0) return [];
     const personalLabel = t("signing.new.personal-files");
+    const receivedLabel = t("signing.new.received-files");
     const groups: Record<string, { value: string; label: string }[]> = {};
     for (const f of [...signableFiles].sort(
-      (left, right) => Number(!left.teamId) - Number(!right.teamId),
+      (left, right) =>
+        Number(!left.teamId) - Number(!right.teamId) ||
+        Number(!!left.received) - Number(!!right.received),
     )) {
       const groupLabel = f.teamId
         ? `${f.teamName} / ${f.folderName}`
-        : personalLabel;
+        : f.received
+          ? receivedLabel
+          : personalLabel;
       if (!groups[groupLabel]) groups[groupLabel] = [];
       groups[groupLabel].push({
         value: `${f.shareId}::${f.fileId}`,
@@ -293,7 +311,7 @@ const NewSigningRequestPage = () => {
       customPageEnabled: false,
       signaturePage: 1,
       watermarkPage: 1,
-      watermarkSamePage: true,
+      watermarkSamePage: false,
       sendE2EKeyByEmail: false,
       selectedFile: "" as string,
       shareId: "",
@@ -407,7 +425,7 @@ const NewSigningRequestPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedFileValue, signableFiles]);
+  }, [selectedFileValue, signableFiles, keyGeneration]);
 
   // Read the selected PDF itself so page count, dimensions and preview match
   // the document rather than a hard-coded A4 canvas.
@@ -500,6 +518,27 @@ const NewSigningRequestPage = () => {
     };
   }, [selectedFileEntry, teamKeyB64]);
 
+  useEffect(() => {
+    if (form.isTouched("signaturePage")) return;
+    const touched = form.getTouched();
+    form.setFieldValue("signaturePage", detectedSignaturePlacement?.page ?? 1);
+    form.setTouched(touched);
+    // A late detection must not replace the requester's manual page choice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detectedSignaturePlacement?.page]);
+
+  // The preview opens the page the signature goes on, each time that page
+  // changes. The requester can still browse the other pages in between.
+  const signatureTargetPage = form.values.customPageEnabled
+    ? Number(form.values.signaturePage) || 1
+    : (detectedSignaturePlacement?.page ?? 1);
+  useEffect(() => {
+    if (pageLayouts.length === 0) return;
+    setPreviewPage(
+      Math.max(1, Math.min(pageLayouts.length, signatureTargetPage)),
+    );
+  }, [signatureTargetPage, pageLayouts.length]);
+
   const autoSignerEmailsKey = form.values.recipients
     .filter((recipient) => recipient.role === "SIGNER")
     .map((recipient) => recipient.email.trim())
@@ -515,7 +554,15 @@ const NewSigningRequestPage = () => {
     const fields = form.values.fields;
     const kept = fields.filter((field) => field.autoDetected !== true);
 
-    if (!detectedSignaturePlacement) {
+    const targetPage = form.values.customPageEnabled
+      ? form.values.signaturePage
+      : (detectedSignaturePlacement?.page ?? 1);
+    const automaticPlacement = resolveAutoSignaturePlacement(
+      detectedSignaturePlacement,
+      form.values.customPageEnabled ? targetPage : undefined,
+      getPageLayout(targetPage),
+    );
+    if (!automaticPlacement) {
       if (kept.length !== fields.length) form.setFieldValue("fields", kept);
       return;
     }
@@ -544,33 +591,34 @@ const NewSigningRequestPage = () => {
     }
 
     const detectedFields: FieldForm[] = buildAutoSignatureFields(
-      detectedSignaturePlacement,
+      automaticPlacement,
       signerEmails,
-      pageSizeMillimeters(getPageLayout(detectedSignaturePlacement.page)),
+      pageSizeMillimeters(getPageLayout(automaticPlacement.page)),
     ).map((placement) => ({
       ...placement,
       type: "SIGNATURE",
-      page: detectedSignaturePlacement.page,
+      page: automaticPlacement.page,
       required: true,
       label: "",
       autoDetected: true,
     }));
     form.setFieldValue("fields", [...kept, ...detectedFields]);
-    // The detected placement, the signers and their manual fields are the only
-    // triggers. Form updates are performed deliberately here so the
-    // suggestions become real editable fields, one per signer.
+    // Rebuild automatic suggestions when detection, recipients or the selected
+    // page changes. Individually edited fields stay in the kept list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     detectedSignaturePlacement,
     autoSignerEmailsKey,
     manualSignatureFieldsKey,
     pageLayouts,
+    form.values.customPageEnabled,
+    form.values.signaturePage,
   ]);
 
   const createMutation = useMutation({
     mutationFn: (data: CreateSignatureRequestPayload) =>
       signingService.createRequest(data),
-    onSuccess: (result: any) => {
+    onSuccess: (result) => {
       toast.success(t("signing.toast.created"));
       // Show signing links inline (with encryption key) instead of redirecting
       if (result?.recipients?.length) {
@@ -780,17 +828,19 @@ const NewSigningRequestPage = () => {
       initialsPlacement: values.initialsPlacement,
       initialsIncludeSignaturePage: values.initialsIncludeSignaturePage,
       signaturePage: targetPage,
-      watermarkPage:
-        values.addApprovalField &&
-        values.customPageEnabled &&
-        !values.watermarkSamePage
-          ? values.watermarkPage
-          : undefined,
+      watermarkPage: values.addApprovalField
+        ? values.customPageEnabled
+          ? values.watermarkSamePage
+            ? targetPage
+            : values.watermarkPage
+          : 1
+        : undefined,
       pageRotations: Object.entries(pageRotations).map(([page, rotation]) => ({
         page: Number(page),
         rotation,
       })),
       isE2EEncrypted: fileEntry?.isE2EEncrypted === true,
+      language: signingLanguageOf(intl.locale),
       sendE2EKeyByEmail: shouldEmailE2EKey,
       e2eKey: shouldEmailE2EKey ? teamKeyB64 || undefined : undefined,
       teamId: fileEntry?.teamId || undefined,
@@ -1073,14 +1123,36 @@ const NewSigningRequestPage = () => {
                 <Stack gap="md">
                   <Title order={4}>{t("signing.new.options")}</Title>
                   <Checkbox
-                    label={t("signing.new.option.approval-field")}
-                    description={t("signing.new.option.approval-field.desc")}
+                    label={intl.formatMessage(
+                      {
+                        id: "signing.modal.options.watermark-label",
+                        defaultMessage: 'Diagonal watermark "{text}"',
+                      },
+                      {
+                        text: approvalWatermark(signingLanguageOf(intl.locale)),
+                      },
+                    )}
+                    description={intl.formatMessage({
+                      id: "signing.new.option.approval-field.desc",
+                      defaultMessage:
+                        "Shows a semi-transparent diagonal watermark on the first page by default, or on the selected page",
+                    })}
                     {...form.getInputProps("addApprovalField", {
                       type: "checkbox",
                     })}
                   />
                   <Checkbox
-                    label={t("signing.new.option.approval-mention")}
+                    label={intl.formatMessage(
+                      {
+                        id: "signing.modal.options.mention-label",
+                        defaultMessage: 'Mention "{text}"',
+                      },
+                      {
+                        text: approvalMentionPattern(
+                          signingLanguageOf(intl.locale),
+                        ),
+                      },
+                    )}
                     description={t("signing.new.option.approval-mention.desc")}
                     {...form.getInputProps("addApprovalMention", {
                       type: "checkbox",

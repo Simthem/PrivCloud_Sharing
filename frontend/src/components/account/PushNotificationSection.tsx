@@ -1,131 +1,137 @@
-import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import {
+  Button,
+  Collapse,
+  Divider,
+  Group,
+  Paper,
+  Stack,
+  Text,
+  Title,
+} from "@mantine/core";
 import { TbBell, TbBellOff } from "react-icons/tb";
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useId, useState } from "react";
 import useConfig from "../../hooks/config.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import api from "../../services/api.service";
 import toast from "../../utils/toast.util";
+import type { ThrownError } from "../../types/thrownError.type";
+import classes from "./NotificationSettings.module.css";
 
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const raw = atob(base64);
-  const arr = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-  return arr;
+function urlBase64ToUint8Array(value: string) {
+  const base64 = (value + "=".repeat((4 - (value.length % 4)) % 4))
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
+  return Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
 }
 
-const PushNotificationSection = () => {
+export default function PushNotificationSection({
+  children,
+}: {
+  children?: ReactNode;
+}) {
   const config = useConfig();
   const t = useTranslate();
-
+  const preferencesId = useId();
   const [mounted, setMounted] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [pushBlocked, setPushBlocked] = useState(false);
-
-  const pushEnabled = config.get("pushNotifications.enabled");
-  const vapidPublicKey = config.get("pushNotifications.vapidPublicKey");
-
-  // Delay client-only checks until after hydration to avoid SSR mismatch (#418)
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
+  const pushEnabled = config.getBoolean("pushNotifications.enabled");
+  const vapidPublicKey = config.getString("pushNotifications.vapidPublicKey");
+  useEffect(() => setMounted(true), []);
   const supported =
     mounted &&
     typeof window !== "undefined" &&
     "serviceWorker" in navigator &&
-    "PushManager" in window;
-
+    "PushManager" in window &&
+    "Notification" in window;
+  const configured = pushEnabled && !!vapidPublicKey;
   const checkSubscription = useCallback(async () => {
-    if (!supported) return;
+    if (!supported || !configured) return;
+    setPermissionDenied(Notification.permission === "denied");
     try {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
-      setSubscribed(!!sub);
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      setSubscribed(!!subscription && Notification.permission === "granted");
     } catch {
-      // Non-critical
+      setSubscribed(false);
     }
-  }, [supported]);
-
+  }, [supported, configured]);
   useEffect(() => {
-    if (supported && pushEnabled && vapidPublicKey) checkSubscription();
-    if (
-      mounted &&
-      "Notification" in window &&
-      Notification.permission === "denied"
-    ) {
-      setPermissionDenied(true);
-    }
-  }, [mounted, supported, pushEnabled, vapidPublicKey, checkSubscription]);
-
-  if (!mounted || !pushEnabled || !vapidPublicKey) return null;
-  if (!supported) return null;
+    void checkSubscription();
+    window.addEventListener("push-subscription-changed", checkSubscription);
+    window.addEventListener("focus", checkSubscription);
+    return () => {
+      window.removeEventListener(
+        "push-subscription-changed",
+        checkSubscription,
+      );
+      window.removeEventListener("focus", checkSubscription);
+    };
+  }, [checkSubscription]);
+  if (!mounted) return null;
 
   const handleSubscribe = async () => {
+    if (loading) return;
     setLoading(true);
+    let created: PushSubscription | null = null;
     try {
       const permission = await Notification.requestPermission();
-      if (permission !== "granted") {
-        setPermissionDenied(true);
-        return;
-      }
-      setPermissionDenied(false);
-      const reg = await navigator.serviceWorker.ready;
-      let sub;
-      try {
-        sub = await reg.pushManager.subscribe({
+      setPermissionDenied(permission === "denied");
+      if (permission !== "granted") return;
+      const registration = await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+      const subscription =
+        existing ??
+        (await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-        });
-      } catch (pushErr: any) {
-        // Brave (and some hardened browsers) grant Notification permission
-        // but block pushManager.subscribe() because they block connections
-        // to Google's FCM/push service.  Detect this and show guidance.
-        const msg = pushErr?.message?.toLowerCase?.() ?? "";
-        if (
-          msg.includes("push service") ||
-          msg.includes("registration failed") ||
-          msg.includes("permission denied") ||
-          msg.includes("not allowed") ||
-          typeof (navigator as Navigator & { brave?: { isBrave?: unknown } })
-            .brave?.isBrave === "function"
-        ) {
-          setPushBlocked(true);
-          toast.error(t("account.notify.push.browser-blocked"));
-        } else {
-          toast.error(t("account.notify.push.error"));
-        }
-        return;
-      }
-      const json = sub.toJSON();
+        }));
+      if (!existing) created = subscription;
+      const json = subscription.toJSON();
       await api.post("/push/subscribe", {
         endpoint: json.endpoint,
         p256dh: json.keys?.p256dh,
         auth: json.keys?.auth,
       });
       setSubscribed(true);
+      setPushBlocked(false);
       window.dispatchEvent(new Event("push-subscription-changed"));
       toast.success(t("account.notify.push.enabled"));
-    } catch {
-      toast.error(t("account.notify.push.error"));
+    } catch (caught) {
+      if (created) await created.unsubscribe().catch(() => false);
+      const error = caught as ThrownError;
+      const message = error?.message?.toLowerCase?.() ?? "";
+      const blocked = [
+        "push service",
+        "registration failed",
+        "permission denied",
+        "not allowed",
+      ].some((part) => message.includes(part));
+      setPushBlocked(blocked);
+      toast.error(
+        t(
+          blocked
+            ? "account.notify.push.browser-blocked"
+            : "account.notify.push.error",
+        ),
+      );
     } finally {
       setLoading(false);
     }
   };
-
   const handleUnsubscribe = async () => {
+    if (loading) return;
     setLoading(true);
     try {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
-      if (sub) {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
         await api.delete("/push/subscribe", {
-          data: { endpoint: sub.endpoint },
+          data: { endpoint: subscription.endpoint },
         });
-        await sub.unsubscribe();
+        await subscription.unsubscribe();
       }
       setSubscribed(false);
       window.dispatchEvent(new Event("push-subscription-changed"));
@@ -136,52 +142,75 @@ const PushNotificationSection = () => {
       setLoading(false);
     }
   };
-
   return (
-    <Paper withBorder p="xl" mt="lg">
-      <Group mb="xs" gap="xs">
-        <TbBell size={20} />
-        <Title order={5}>{t("account.card.push.title")}</Title>
-      </Group>
-      <Text size="sm" c="dimmed" mb="md">
-        {t("account.card.push.description")}
-      </Text>
-      <Stack gap="xs">
-        {permissionDenied && !subscribed && (
-          <Text size="sm" c="red">
-            {t("account.card.push.permission-denied")}
+    <Paper
+      component="section"
+      withBorder
+      p="xl"
+      mt="lg"
+      radius="md"
+      data-testid="account-push-settings"
+      aria-label={t("account.card.push.title")}
+    >
+      <Group justify="space-between" align="flex-start" gap="lg" wrap="wrap">
+        <Stack gap="xs" className={classes.heading}>
+          <Group gap="xs">
+            <TbBell size={20} aria-hidden="true" />
+            <Title order={5}>{t("account.card.push.title")}</Title>
+          </Group>
+          <Text size="sm" c="dimmed">
+            {t("account.card.push.description")}
           </Text>
-        )}
-        {pushBlocked && !subscribed && (
-          <Text size="sm" c="orange">
-            {t("account.card.push.browser-blocked")}
-          </Text>
-        )}
-        <Group justify="right">
-          {subscribed ? (
-            <Button
-              leftSection={<TbBellOff size={16} />}
-              variant="light"
-              color="red"
-              loading={loading}
-              onClick={handleUnsubscribe}
-            >
-              {t("account.card.push.disable")}
-            </Button>
-          ) : (
-            <Button
-              leftSection={<TbBell size={16} />}
-              loading={loading}
-              onClick={handleSubscribe}
-              disabled={permissionDenied}
-            >
-              {t("account.card.push.enable")}
-            </Button>
+        </Stack>
+        <Button
+          leftSection={
+            subscribed ? <TbBellOff size={16} /> : <TbBell size={16} />
+          }
+          variant={subscribed ? "light" : "filled"}
+          color={subscribed ? "red" : undefined}
+          loading={loading}
+          disabled={
+            !supported || !configured || (!subscribed && permissionDenied)
+          }
+          onClick={subscribed ? handleUnsubscribe : handleSubscribe}
+          aria-expanded={subscribed}
+          aria-controls={preferencesId}
+        >
+          {t(
+            subscribed
+              ? "account.card.push.disable"
+              : "account.card.push.enable",
           )}
-        </Group>
-      </Stack>
+        </Button>
+      </Group>
+      {!configured && (
+        <Text size="sm" c="dimmed" mt="md">
+          {t("account.card.push.not-configured")}
+        </Text>
+      )}
+      {configured && !supported && (
+        <Text size="sm" c="dimmed" mt="md">
+          {t("account.card.push.unsupported")}
+        </Text>
+      )}
+      {permissionDenied && !subscribed && (
+        <Text size="sm" c="red" mt="md">
+          {t("account.card.push.permission-denied")}
+        </Text>
+      )}
+      {pushBlocked && !subscribed && (
+        <Text size="sm" c="orange" mt="md">
+          {t("account.card.push.browser-blocked")}
+        </Text>
+      )}
+      <Collapse in={subscribed} transitionDuration={200} id={preferencesId}>
+        {children && (
+          <>
+            <Divider my="lg" />
+            {children}
+          </>
+        )}
+      </Collapse>
     </Paper>
   );
-};
-
-export default PushNotificationSection;
+}

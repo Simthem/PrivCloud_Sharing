@@ -1,3 +1,82 @@
+## [1.26.7](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.6...v1.26.7) (2026-11-09)
+
+### License
+
+- Starting with this release, PrivCloud Sharing is distributed under
+  AGPL-3.0-only. Code inherited from Pingvin Share and OttrBox keeps its BSD
+  2-Clause terms and earlier releases keep their licenses. See `LICENSING.md`.
+
+### Features
+
+- Encrypt stored settings with `CONFIG_ENCRYPTION_KEY_FILE`, and sensitive
+  account data with `CONFIG_ENCRYPTION_MODE=full`, while retaining SQLite.
+- Linked providers keep their verified address and link from any signed-in account.
+- Signature requests, mails and evidence dossiers follow the requester's language.
+- Team invitations are sent in French and English.
+- Show received shares below their reverse link with readable file names. Let
+  share owners request signatures on their PDFs and preview the selected page.
+- Match advanced signing requests through verified provider addresses and
+  offer emailed passkey confirmation for accounts without a password.
+- Sort administration users by column and keep their names and badges readable.
+
+### Bug Fixes
+
+- Group account push controls into one responsive panel. Show signature and
+  download preferences only after device notifications are enabled, load the
+  signature switch stylesheet and keep saved choices when the panel closes.
+- Signature invitations and finalized-document alerts are available to every
+  signed-in account, including accounts with no team. Persist the preference
+  and account notifications without adding subscription or billing checks.
+- Signature requests deliver the source decryption key in an envelope encrypted
+  to the addressed account. Received-list and detail actions can open an encrypted
+  document on the first visit. Opening an existing request as its creator prepares
+  missing recipient envelopes without sending the key to the server.
+- Signers can open their own active invitation from received documents and
+  request details, in the same tab. The action respects signing order and
+  expiry, preserves an available E2E key, and never exposes another signer's
+  link. Reminder, cancellation and finalization controls belong to the requester.
+- Provider sign-up accepts an address the provider does not verify, and keeps
+  such accounts without an automatic verification deletion deadline. Existing
+  accounts link a provider through a verified address or mailed confirmation.
+  Address lookup works with SQLite, plain or encrypted columns, and Unicode
+  addresses.
+- Regenerating the E2E key rewraps identity and team keys. A loaded key repairs
+  unreadable identity keys, and the notification panel decrypts again when the
+  key becomes available.
+- The Companion is contacted when no local session is stored, and the reverse
+  share form respects the server's size ceiling.
+- Keep the reverse share table readable on the web: column headers no longer
+  break inside words and the action buttons stay on one row.
+- Once the upload completion dialog is validated, go to the list of shares
+  instead of an empty upload page.
+- Keep SNI and hostname validation on RFC 3161 requests through the HTTPS proxy
+  preload, and use a checksum-verified Go module if the Caddy archive is unavailable.
+
+### Security
+
+- Refresh affected dependency pins, including undici 7.30.2.
+- Apply an explicit administrator-role removal from a linked identity provider
+  at the next sign-in. An absent role claim leaves local rights unchanged.
+- Bound whole-archive ZIP extraction before allocation, including asynchronous
+  workers, to mitigate CVE-2026-122146 while preserving streamed ZIP downloads
+  and bounded Office previews. Installations and cached Docker builders verify
+  the local guard; the upstream dependency version remains 0.8.3.
+- Fail the Caddy build if go-chi RedirectSlashes is linked into the runtime
+  (CVE-2026-122132). Record the middleware exclusion and the unreachable
+  libstdc++ from_chars path (CVE-2026-115456) in the VEX statements.
+
+### Tests
+
+- Cover provider linking, sealed SQLite lookups, recipient key delivery,
+  push preferences, HTTPS journeys and public client packaging with regressions.
+
+### Code quality
+
+- Use typed configuration getters and error values throughout the public
+  frontend, and reject new explicit `any` annotations in lint checks.
+- Share name comparisons and sortable user-table helpers across the common
+  interface. Keep decrypted labels readable and omit sensitive exception details.
+
 ## [1.26.6](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.5...v1.26.6) (2026-11-03)
 
 ### Features

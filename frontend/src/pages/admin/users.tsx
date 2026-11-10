@@ -36,7 +36,10 @@ const Users = () => {
     return users.filter(
       (user) =>
         user.username.toLocaleLowerCase().includes(query) ||
-        user.email.toLocaleLowerCase().includes(query),
+        user.email.toLocaleLowerCase().includes(query) ||
+        user.teams?.some((team) =>
+          team.name.toLocaleLowerCase().includes(query),
+        ),
     );
   }, [search, users]);
 
@@ -101,7 +104,11 @@ const Users = () => {
         </Group>
         <Button
           onClick={() =>
-            showCreateUserModal(modals, config.get("smtp.enabled"), getUsers)
+            showCreateUserModal(
+              modals,
+              config.getBoolean("smtp.enabled"),
+              getUsers,
+            )
           }
           leftSection={<TbPlus size={20} />}
         >

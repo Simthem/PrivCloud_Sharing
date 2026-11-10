@@ -1,6 +1,7 @@
+import { openSigningKey } from "../../utils/signingKeyEnvelope.util";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import "@mantine/core/styles/Timeline.css";
 import {
   ActionIcon,
@@ -40,6 +41,7 @@ import {
 import { useIntl } from "react-intl";
 import { useModals } from "@mantine/modals";
 import Meta from "../../components/Meta";
+import SigningActionButton from "../../components/signing/SigningActionButton";
 import signingService, {
   SignatureRecipient,
 } from "../../services/signing.service";
@@ -86,6 +88,13 @@ import {
   shouldAddInitialsToPage,
   visualPdfPointToRaw,
 } from "../../utils/pdfPlacement.util";
+import {
+  signedPdfName,
+  approvalMention,
+  approvalWatermark,
+  signingLanguage,
+} from "../../utils/signingLanguage.util";
+import useUserKeyGeneration from "../../hooks/useUserKeyGeneration.hook";
 
 const statusColors: Record<string, string> = {
   PENDING: "yellow",
@@ -116,6 +125,7 @@ const SigningDetailPage = () => {
   const queryClient = useQueryClient();
   const modals = useModals();
   const { user } = useUser();
+  const viewerId = user?.id;
   const docId = router.query.id as string;
   const isMobile = useMediaQuery("(max-width: 680px)");
   const t = useTranslate();
@@ -159,7 +169,17 @@ const SigningDetailPage = () => {
   }, [user]);
 
   // E2E key resolution state
-  const [e2eKeyB64, setE2eKeyB64] = useState<string | null>(null);
+  const [e2eKeyContext, setE2eKeyContext] = useState<{
+    documentId: string;
+    userId?: string;
+    key: string;
+  } | null>(null);
+  const e2eKeyB64 =
+    e2eKeyContext &&
+    e2eKeyContext.documentId === docId &&
+    e2eKeyContext.userId === user?.id
+      ? e2eKeyContext.key
+      : null;
   // Set once every resolution path has been tried, so a missing key is only
   // reported after the lookup, not while it is still running.
   const [e2eKeyLookupDone, setE2eKeyLookupDone] = useState(false);
@@ -170,25 +190,27 @@ const SigningDetailPage = () => {
   >(null);
 
   const { data: doc, isLoading } = useQuery({
-    queryKey: ["signing.document", docId],
+    queryKey: ["signing.document", docId, user?.id],
     queryFn: () => signingService.getDocument(docId),
     enabled: !!docId,
   });
 
-  const typedDoc = doc as any;
-
+  const keyGeneration = useUserKeyGeneration();
   // Resolve E2E key when document is E2E encrypted
   // Path 1: team folder -> unwrap team key
   // Path 2: non-team share -> resolve via share's e2e-key endpoint (K_master or unwrap reverse share key)
   useEffect(() => {
-    if (!typedDoc?.isE2EEncrypted) return;
+    if (!doc?.isE2EEncrypted) return;
     if (e2eKeyB64) return; // already resolved
-    const ownWrappedKey: string | undefined = typedDoc?.recipients?.find(
+    const ownWrappedKey: string | undefined = doc?.recipients?.find(
       (recipient: SignatureRecipient) =>
         recipient.isCurrentUser && recipient.wrappedE2EKey,
     )?.wrappedE2EKey;
+    const ownEnvelope = doc.recipients.find(
+      (recipient) => recipient.isCurrentUser,
+    )?.encryptedKeyEnvelope;
     // Need at least one resolution path
-    if (!ownWrappedKey && !typedDoc?.teamId && !typedDoc?.shareId) {
+    if (!ownWrappedKey && !ownEnvelope && !doc?.teamId && !doc?.shareId) {
       setE2eKeyLookupDone(true);
       return;
     }
@@ -199,34 +221,58 @@ const SigningDetailPage = () => {
         if (!userKeyB64) return;
         const masterKey = await importKeyFromBase64(userKeyB64);
 
+        const retainedResult = doc.status === "COMPLETED" && doc.fileDeleted;
+        if (ownEnvelope && viewerId && (doc.fileId || retainedResult)) {
+          try {
+            const key = await openSigningKey(
+              ownEnvelope,
+              {
+                documentId: docId,
+                fileId: doc.fileId ?? null,
+                recipientUserId: viewerId,
+              },
+              masterKey,
+            );
+            setE2eKeyContext({ documentId: docId, userId: viewerId, key });
+            return;
+          } catch (error) {
+            if (!ownWrappedKey && !doc.shareId) throw error;
+          }
+        }
         if (ownWrappedKey) {
           // Path 0: signer, key kept for this account when the link was opened
           const documentKey = await unwrapReverseShareKey(
             ownWrappedKey,
             masterKey,
           );
-          setE2eKeyB64(await exportKeyToBase64(documentKey));
-        } else if (typedDoc.teamId) {
+          setE2eKeyContext({
+            documentId: docId,
+            userId: viewerId,
+            key: await exportKeyToBase64(documentKey),
+          });
+        } else if (doc.teamId) {
           // Path 1: Team folder -> derive from team key
-          const { wrappedTeamKey } = await teamService.getTeamKey(
-            typedDoc.teamId,
-          );
+          const { wrappedTeamKey } = await teamService.getTeamKey(doc.teamId);
           if (!wrappedTeamKey) return;
           const teamKey = await unwrapReverseShareKey(
             wrappedTeamKey,
             masterKey,
           );
           const keyB64 = await exportKeyToBase64(teamKey);
-          setE2eKeyB64(keyB64);
-        } else if (typedDoc.shareId) {
+          setE2eKeyContext({
+            documentId: docId,
+            userId: viewerId,
+            key: keyB64,
+          });
+        } else if (doc.shareId) {
           // Path 2: Non-team share -> unwrap the reverse-share key or the
           // SHARE_DEK_V1 share key, else the file uses the master key
-          const material = await shareService.getShareKeyMaterial(
-            typedDoc.shareId,
-          );
-          setE2eKeyB64(
-            await resolveOwnerShareKey(typedDoc.shareId, userKeyB64, material),
-          );
+          const material = await shareService.getShareKeyMaterial(doc.shareId);
+          setE2eKeyContext({
+            documentId: docId,
+            userId: viewerId,
+            key: await resolveOwnerShareKey(doc.shareId, userKeyB64, material),
+          });
         }
       } catch {
         // Key resolution failed - user may not have access
@@ -235,19 +281,69 @@ const SigningDetailPage = () => {
       }
     })();
   }, [
-    typedDoc?.isE2EEncrypted,
-    typedDoc?.teamId,
-    typedDoc?.shareId,
-    typedDoc?.recipients,
+    docId,
+    viewerId,
+    doc?.fileId,
+    doc?.status,
+    doc?.fileDeleted,
+    doc?.isE2EEncrypted,
+    doc?.teamId,
+    doc?.shareId,
+    doc?.recipients,
     e2eKeyB64,
+    keyGeneration,
   ]);
+
+  const envelopeRepairAttempt = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !doc?.isRequester ||
+      !doc.isE2EEncrypted ||
+      !doc.fileId ||
+      !e2eKeyB64 ||
+      !user ||
+      !["PENDING", "PARTIAL"].includes(doc.status)
+    )
+      return;
+    const missing = doc.recipients.filter(
+      (recipient) =>
+        recipient.role === "SIGNER" &&
+        ["PENDING", "VIEWED"].includes(recipient.status) &&
+        !recipient.hasKeyEnvelope,
+    );
+    if (!missing.length) return;
+    const attempt = JSON.stringify([
+      doc.id,
+      user.id,
+      e2eKeyB64,
+      missing.map((recipient) => recipient.id),
+    ]);
+    if (envelopeRepairAttempt.current === attempt) return;
+    envelopeRepairAttempt.current = attempt;
+    let active = true;
+    void signingService
+      .ensureRecipientKeyEnvelopes(doc, e2eKeyB64)
+      .then(({ stored }) => {
+        if (active && stored)
+          void queryClient.invalidateQueries({
+            queryKey: ["signing.document", doc.id, user.id],
+          });
+      })
+      .catch(() => {
+        if (active) toast.error(t("signing.key.delivery-error"));
+      });
+    return () => {
+      active = false;
+    };
+  }, [doc, e2eKeyB64, user, queryClient, t]);
 
   // Auto-finalize E2E documents when key is resolved and status is AWAITING_FINALIZATION
   useEffect(() => {
     if (
-      typedDoc?.status === "AWAITING_FINALIZATION" &&
-      typedDoc?.isE2EEncrypted &&
-      !(typedDoc as any)?.fileDeleted &&
+      doc?.isRequester &&
+      doc?.status === "AWAITING_FINALIZATION" &&
+      doc?.isE2EEncrypted &&
+      !doc?.fileDeleted &&
       e2eKeyB64 &&
       !finalizing &&
       !autoFinalizeTriggered
@@ -256,7 +352,13 @@ const SigningDetailPage = () => {
       handleFinalizeE2E();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typedDoc?.status, e2eKeyB64, finalizing, autoFinalizeTriggered]);
+  }, [
+    doc?.isRequester,
+    doc?.status,
+    e2eKeyB64,
+    finalizing,
+    autoFinalizeTriggered,
+  ]);
 
   // E2E finalization:
   //   1. Decrypt original PDF
@@ -277,11 +379,12 @@ const SigningDetailPage = () => {
         encryptedBuf,
         cryptoKey,
         5_000_000,
-        typedDoc?.fileId ? { fileId: typedDoc.fileId } : undefined,
+        doc?.fileId ? { fileId: doc.fileId } : undefined,
       );
 
       // 3. Get signatures data from backend
       const sigData = await signingService.getSignaturesForFinalization(docId);
+      const markLanguage = signingLanguage(sigData.language);
 
       // 3b. Rebuild every signer's contribution locally and refuse to seal
       // anything a signer did not approve with WebAuthn.
@@ -292,7 +395,7 @@ const SigningDetailPage = () => {
           sourceSha256,
           signers: sigData.signers,
           fieldValues: (sigData.fields || []).flatMap(
-            (field: any) => field.fieldValues || [],
+            (field) => field.fieldValues || [],
           ),
           sha256Hex,
         });
@@ -332,12 +435,12 @@ const SigningDetailPage = () => {
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
       const textFields = (sigData.fields || []).filter(
-        (field: any) =>
+        (field) =>
           !["SIGNATURE", "INITIALS"].includes(field.type) &&
           field.fieldValues?.length,
       );
       const signatureFields = (sigData.fields || []).filter(
-        (field: any) => field.type === "SIGNATURE",
+        (field) => field.type === "SIGNATURE",
       );
 
       // Resolve target pages (1-based from backend, default page 1)
@@ -346,7 +449,7 @@ const SigningDetailPage = () => {
         ? (sigData.watermarkPage ?? sigData.signaturePage ?? 1) - 1
         : sigPageIdx;
       const maxFieldPageIdx = [...textFields, ...signatureFields].reduce(
-        (max: number, field: any) => Math.max(max, (field.page ?? 1) - 1),
+        (max: number, field) => Math.max(max, (field.page ?? 1) - 1),
         -1,
       );
 
@@ -385,7 +488,7 @@ const SigningDetailPage = () => {
           },
           wmLayout,
         );
-        wmPage.drawText("Bon pour Accord", {
+        wmPage.drawText(approvalWatermark(markLanguage), {
           x: watermarkOrigin.x,
           y: watermarkOrigin.y,
           size: 60,
@@ -403,7 +506,7 @@ const SigningDetailPage = () => {
       if (sigData.addInitials && sigData.signers?.length) {
         const initialsText = pdfSafeText(
           sigData.signers
-            .map((s: any) =>
+            .map((s) =>
               s.name
                 .split(" ")
                 .map((w: string) => [...w][0]?.toUpperCase() || "")
@@ -649,7 +752,7 @@ const SigningDetailPage = () => {
 
       // Every signer gets its own block, never the same position as another.
       const signatureSlots = resolveSignatureSlots(
-        (sigData.signers || []).map((sig: any) => sig.id),
+        (sigData.signers || []).map((sig) => sig.id),
         sigData.fields || [],
       );
       for (const sig of sigData.signers || []) {
@@ -734,13 +837,10 @@ const SigningDetailPage = () => {
               ),
               height: 18,
             };
-        const dateStr = new Date(sig.signedAt).toLocaleDateString("fr-FR", {
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-          timeZone: "Europe/Paris",
-        });
-        const approvalText = `Lu et approuvé le ${dateStr}`;
+        const approvalText = approvalMention(
+          new Date(sig.signedAt),
+          markLanguage,
+        );
         const approvalWidth = addMention
           ? Math.min(font.widthOfTextAtSize(approvalText, 9), maxSignatureWidth)
           : 0;
@@ -940,7 +1040,7 @@ const SigningDetailPage = () => {
       let finalBlob = blob;
 
       // If E2E encrypted and we have the key, decrypt before saving
-      if (typedDoc?.isE2EEncrypted && e2eKeyB64) {
+      if (doc?.isE2EEncrypted && e2eKeyB64) {
         const encryptedBuf = await blob.arrayBuffer();
         const cryptoKey = await importKeyFromBase64(e2eKeyB64);
         const decryptedBuf = await decryptFileAuto(
@@ -954,7 +1054,7 @@ const SigningDetailPage = () => {
 
       await saveProof(
         finalBlob,
-        `${(doc as any)?.fileName || "document"}_signe.pdf`,
+        signedPdfName(doc?.fileName, signingLanguage(doc?.language)),
       );
     } catch {
       toast.error(t("signing.toast.download-error"));
@@ -969,7 +1069,7 @@ const SigningDetailPage = () => {
       const blob = await signingService.downloadOwnForensicRecord(docId);
       await saveProof(
         blob,
-        `${(doc as any)?.fileName?.replace(/\.pdf$/i, "") || "document"}.my-forensic-record.json`,
+        `${doc?.fileName?.replace(/\.pdf$/i, "") || "document"}.my-forensic-record.json`,
       );
     } catch {
       toast.error(t("signing.toast.forensic-error"));
@@ -984,7 +1084,7 @@ const SigningDetailPage = () => {
       const blob = await signingService.downloadEvidence(docId);
       await saveProof(
         blob,
-        `${(doc as any)?.fileName?.replace(/\.pdf$/i, "") || "document"}.attestation.json`,
+        `${doc?.fileName?.replace(/\.pdf$/i, "") || "document"}.attestation.json`,
       );
     } catch {
       toast.error(t("signing.toast.evidence-error"));
@@ -1011,18 +1111,19 @@ const SigningDetailPage = () => {
     );
   }
 
-  const isPending =
-    typedDoc.status === "PENDING" || typedDoc.status === "PARTIAL";
-  const isAwaitingFinalization = typedDoc.status === "AWAITING_FINALIZATION";
+  const isPending = doc.status === "PENDING" || doc.status === "PARTIAL";
+  const isAwaitingFinalization =
+    !!doc.isRequester && doc.status === "AWAITING_FINALIZATION";
   // A failed sealing (TSA or certificate unavailable) can be retried.
   const canRetryServerFinalization =
-    isAwaitingFinalization || typedDoc.status === "SIGNING_FAILED";
-  const fileDeleted = !!(typedDoc as any).fileDeleted;
+    !!doc.isRequester &&
+    (isAwaitingFinalization || doc.status === "SIGNING_FAILED");
+  const fileDeleted = !!doc.fileDeleted;
 
   return (
     <>
       <Meta
-        title={`${t("signing.title")} - ${typedDoc.fileName || typedDoc.title || t("signing.document")}`}
+        title={`${t("signing.title")} - ${doc.fileName || doc.title || t("signing.document")}`}
       />
       <Container size="md" px={0}>
         <Button
@@ -1056,29 +1157,29 @@ const SigningDetailPage = () => {
                     lineHeight: 1.2,
                   }}
                 >
-                  {typedDoc.fileName || typedDoc.title || t("signing.document")}
+                  {doc.fileName || doc.title || t("signing.document")}
                 </Text>
               </Group>
             </Title>
             <Text size="sm" c="dimmed" mt={4}>
               {t("signing.detail.created-at", {
-                date: formatDateTime(typedDoc.createdAt),
+                date: formatDateTime(doc.createdAt),
               })}
             </Text>
           </Box>
           <Badge
-            color={statusColors[typedDoc.status] || "gray"}
+            color={statusColors[doc.status] || "gray"}
             size="lg"
             variant="light"
             style={{ flexShrink: 0 }}
           >
-            {getStatusLabel(typedDoc.status)}
+            {getStatusLabel(doc.status)}
           </Badge>
         </Group>
 
-        {typedDoc.message && (
+        {doc.message && (
           <Alert color="blue" mb="md" icon={<TbMail size={16} />}>
-            <Text size="sm">{typedDoc.message}</Text>
+            <Text size="sm">{doc.message}</Text>
           </Alert>
         )}
 
@@ -1090,15 +1191,16 @@ const SigningDetailPage = () => {
 
         {/* Actions */}
         <Group mb="lg" gap="sm">
+          <SigningActionButton action={doc.signingAction} e2eKey={e2eKeyB64} />
           {/* The signed PDF and its evidence outlive the source file. */}
-          {typedDoc.status === "COMPLETED" && (
+          {doc.status === "COMPLETED" && (
             <Button
               leftSection={<TbDownload size={16} />}
               onClick={handleDownload}
               loading={downloadingProof === "signed"}
-              disabled={typedDoc.isE2EEncrypted && !e2eKeyB64}
+              disabled={doc.isE2EEncrypted && !e2eKeyB64}
               title={
-                typedDoc.isE2EEncrypted && !e2eKeyB64
+                doc.isE2EEncrypted && !e2eKeyB64
                   ? t("signing.detail.finalize.e2e-unavailable")
                   : undefined
               }
@@ -1106,10 +1208,10 @@ const SigningDetailPage = () => {
               {t("signing.actions.download")}
             </Button>
           )}
-          {typedDoc.status === "COMPLETED" &&
-            typedDoc.isE2EEncrypted &&
+          {doc.status === "COMPLETED" &&
+            doc.isE2EEncrypted &&
             !e2eKeyB64 &&
-            typedDoc.recipients?.some(
+            doc.recipients?.some(
               (recipient: SignatureRecipient) => recipient.isCurrentUser,
             ) && (
               <Text size="xs" c="dimmed" w="100%">
@@ -1117,18 +1219,18 @@ const SigningDetailPage = () => {
               </Text>
             )}
           {/* The disabled button's title never shows on a touch screen. */}
-          {typedDoc.status === "COMPLETED" &&
-            typedDoc.isE2EEncrypted &&
+          {doc.status === "COMPLETED" &&
+            doc.isE2EEncrypted &&
             !e2eKeyB64 &&
             e2eKeyLookupDone &&
-            !typedDoc.recipients?.some(
+            !doc.recipients?.some(
               (recipient: SignatureRecipient) => recipient.isCurrentUser,
             ) && (
               <Text size="xs" c="dimmed" w="100%">
                 {t("signing.detail.finalize.e2e-unavailable")}
               </Text>
             )}
-          {typedDoc.status === "COMPLETED" && (
+          {doc.status === "COMPLETED" && (
             <Button
               variant="light"
               leftSection={<TbShieldCheck size={16} />}
@@ -1138,9 +1240,8 @@ const SigningDetailPage = () => {
               {t("signing.detail.evidence.download")}
             </Button>
           )}
-          {typedDoc.recipients?.some(
-            (r: any) =>
-              r.isCurrentUser && ["SIGNED", "REJECTED"].includes(r.status),
+          {doc.recipients?.some(
+            (r) => r.isCurrentUser && ["SIGNED", "REJECTED"].includes(r.status),
           ) && (
             <Button
               variant="subtle"
@@ -1160,7 +1261,7 @@ const SigningDetailPage = () => {
             !fileDeleted &&
             !finalizing &&
             !e2eKeyB64 &&
-            typedDoc.isE2EEncrypted && (
+            doc.isE2EEncrypted && (
               <Alert color="yellow" icon={<TbLock size={16} />}>
                 {t("signing.detail.finalize.key-resolving")}
               </Alert>
@@ -1168,7 +1269,7 @@ const SigningDetailPage = () => {
           {isAwaitingFinalization &&
             !fileDeleted &&
             !finalizing &&
-            typedDoc.isE2EEncrypted &&
+            doc.isE2EEncrypted &&
             e2eKeyB64 &&
             autoFinalizeTriggered && (
               <Button
@@ -1184,7 +1285,7 @@ const SigningDetailPage = () => {
           {canRetryServerFinalization &&
             !fileDeleted &&
             !finalizing &&
-            !typedDoc.isE2EEncrypted && (
+            !doc.isE2EEncrypted && (
               <Button
                 color="orange"
                 leftSection={<TbShieldCheck size={16} />}
@@ -1198,7 +1299,7 @@ const SigningDetailPage = () => {
                       toast.error(t("signing.toast.finalize-error"));
                     }
                     queryClient.invalidateQueries({
-                      queryKey: ["signing.document", docId],
+                      queryKey: ["signing.document", docId, user?.id],
                     });
                   } catch {
                     toast.error(t("signing.toast.finalize-error"));
@@ -1210,7 +1311,7 @@ const SigningDetailPage = () => {
                 {t("signing.detail.finalize.retry")}
               </Button>
             )}
-          {isPending && !fileDeleted && (
+          {doc.isRequester && isPending && !fileDeleted && (
             <>
               <Button
                 variant="light"
@@ -1234,10 +1335,9 @@ const SigningDetailPage = () => {
         </Group>
 
         {/* Signing links - always shown to the document creator so they can re-send them */}
-        {!fileDeleted &&
-          typedDoc.recipients?.some(
-            (r: any) => r.signingToken && r.role !== "CC",
-          ) && (
+        {doc.isRequester &&
+          !fileDeleted &&
+          doc.recipients?.some((r) => r.signingToken && r.role !== "CC") && (
             <Paper withBorder p="md" mb="lg">
               <Text fw={600} mb="sm">
                 <Group gap="xs">
@@ -1245,16 +1345,16 @@ const SigningDetailPage = () => {
                 </Group>
               </Text>
               <Text size="xs" c="dimmed" mb="md">
-                {typedDoc.status === "COMPLETED"
+                {doc.status === "COMPLETED"
                   ? t("signing.detail.signing-links.completed-desc")
                   : t("signing.detail.signing-links.desc")}
               </Text>
               <Stack gap="xs">
-                {typedDoc.recipients
-                  .filter((r: any) => r.signingToken && r.role !== "CC")
-                  .map((r: any) => {
+                {doc.recipients
+                  .filter((r) => r.signingToken && r.role !== "CC")
+                  .map((r) => {
                     const keyFragment =
-                      typedDoc.isE2EEncrypted && e2eKeyB64
+                      doc.isE2EEncrypted && e2eKeyB64
                         ? `#key=${e2eKeyB64}`
                         : "";
                     const signingUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/sign/${r.signingToken}${keyFragment}`;
@@ -1350,7 +1450,7 @@ const SigningDetailPage = () => {
           </Text>
           {isMobile ? (
             <Stack gap="sm" p="md">
-              {typedDoc.recipients?.map((r: any) => (
+              {doc.recipients?.map((r) => (
                 <Card key={r.id} withBorder padding="sm">
                   <Group
                     justify="space-between"
@@ -1429,7 +1529,7 @@ const SigningDetailPage = () => {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {typedDoc.recipients?.map((r: any) => (
+                {doc.recipients?.map((r) => (
                   <Table.Tr key={r.id}>
                     <Table.Td style={{ overflow: "hidden" }}>
                       <Text fw={500} size="sm" truncate>
@@ -1482,15 +1582,15 @@ const SigningDetailPage = () => {
         </Paper>
 
         {/* Audit trail */}
-        {typedDoc.auditTrail?.length > 0 && (
+        {!!doc.auditTrail?.length && (
           <Paper withBorder p="md">
             <Text fw={600} mb="md">
               <Group gap="xs">
                 <TbShieldCheck size={16} /> {t("signing.detail.audit-trail")}
               </Group>
             </Text>
-            <Timeline active={typedDoc.auditTrail.length - 1} bulletSize={20}>
-              {typedDoc.auditTrail.map((event: any) => {
+            <Timeline active={doc.auditTrail.length - 1} bulletSize={20}>
+              {doc.auditTrail.map((event) => {
                 const actionKeyMap: Record<string, string> = {
                   CREATED: "signing.detail.audit.created",
                   VIEWED: "signing.detail.audit.viewed",

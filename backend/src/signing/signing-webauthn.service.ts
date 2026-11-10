@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { findByToken, openAccountSecret } from "../config/account-secrets";
 import {
   AuthenticationResponseJSON,
   RegistrationResponseJSON,
@@ -32,6 +33,7 @@ import { resolveSigningIdentityProof } from "./signing-identity.util";
 import { appendSignatureAuditEvent } from "./signing-audit.util";
 import { PdfSigningService } from "./pdf-signing.service";
 import { collectRecipientFieldValues } from "./signing-field-values.util";
+import { signingLanguage } from "./signing-language";
 import {
   buildSigningTransactionManifest,
   buildTransactionChallenge,
@@ -241,6 +243,7 @@ export class SigningWebAuthnService {
             provider: true,
             providerUserId: true,
             providerUsername: true,
+            userId: true,
           },
         },
       },
@@ -263,7 +266,11 @@ export class SigningWebAuthnService {
       oidcAccounts: account.oAuthUsers.map((oauth) => ({
         provider: oauth.provider,
         subject: oauth.providerUserId,
-        username: oauth.providerUsername,
+        username: openAccountSecret(
+          account.id,
+          "providerUsername",
+          oauth.providerUsername,
+        ),
       })),
       verificationMethod: recipient.identityVerificationMethod,
       verifiedAt: recipient.identityVerifiedAt?.toISOString() || null,
@@ -280,7 +287,7 @@ export class SigningWebAuthnService {
       backupEligible: info.credentialDeviceType === "multiDevice",
       backedUp: info.credentialBackedUp,
       rpId: rpID,
-      origin: expectedOrigin,
+      origin: info.origin,
       enrolledAt: enrolledAt.toISOString(),
       identity: JSON.parse(identitySnapshot),
     });
@@ -310,7 +317,7 @@ export class SigningWebAuthnService {
         aaguid: info.aaguid || null,
         publicKeyAlgorithm,
         rpId: rpID,
-        origin: expectedOrigin,
+        origin: info.origin,
         registrationResponse: canonicalJson(response),
         identitySnapshot,
         enrollmentRecord,
@@ -373,6 +380,7 @@ export class SigningWebAuthnService {
             recipient.id,
             recipient.document.fields,
             dto.fieldValues || [],
+            signingLanguage(recipient.document.language),
           ).map(({ fieldId, value }) => ({ fieldId, value }))
         : undefined;
     const manifest = buildSigningTransactionManifest({
@@ -601,6 +609,7 @@ export class SigningWebAuthnService {
     ) as { challenge?: string; origin?: string; type?: string };
     if (
       clientData.challenge !== challenge.challenge ||
+      !clientData.origin ||
       clientData.origin !== expectedOrigin ||
       clientData.type !== "webauthn.get"
     ) {
@@ -642,7 +651,7 @@ export class SigningWebAuthnService {
       webauthnChallenge: challenge.challenge,
       webauthnChallengeNonce: challenge.challengeNonce!,
       webauthnTransactionManifest: challenge.transactionManifest!,
-      webauthnOrigin: expectedOrigin,
+      webauthnOrigin: clientData.origin,
       webauthnRpId: rpID,
       webauthnSignCount: BigInt(rawEvidence.signCount),
       webauthnClientDataJSON: rawEvidence.clientDataJSON,
@@ -700,10 +709,12 @@ export class SigningWebAuthnService {
   }
 
   private async getReinforcedRecipient(signingToken: string) {
-    const recipient = await this.prisma.signatureRecipient.findUnique({
-      where: { signingToken },
-      include: { document: { include: { fields: true } } },
-    });
+    const recipient = await findByToken("signing", signingToken, (stored) =>
+      this.prisma.signatureRecipient.findUnique({
+        where: { signingToken: stored },
+        include: { document: { include: { fields: true } } },
+      }),
+    );
     if (!recipient) throw new NotFoundException("Invalid signing link");
     if (
       recipient.document.fileDeletedAt ||
@@ -863,7 +874,10 @@ export class SigningWebAuthnService {
         "general.appUrl must be a valid absolute URL for WebAuthn",
       );
     }
-    return { rpID: url.hostname, expectedOrigin: url.origin };
+    return {
+      rpID: url.hostname,
+      expectedOrigin: url.origin,
+    };
   }
 
   private async createAuditEvent(

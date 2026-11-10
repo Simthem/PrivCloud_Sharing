@@ -1,9 +1,11 @@
+import { RecipientKeyEnvelopesDTO } from "./dto/recipient-key-envelopes.dto";
 import {
   BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   Ip,
   Param,
@@ -20,8 +22,15 @@ import { RegistrationResponseJSON } from "@simplewebauthn/server";
 import { hours, minutes, Throttle } from "@nestjs/throttler";
 import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { JwtGuard } from "src/auth/guard/jwt.guard";
+import { OptionalJwtGuard } from "src/auth/guard/optionalJwt.guard";
 import { AdministratorGuard } from "src/auth/guard/isAdmin.guard";
-import { StepUpService } from "src/auth/stepUp.service";
+import {
+  STEP_UP_COOKIE,
+  STEP_UP_COOKIE_PATH,
+  STEP_UP_TTL_MS,
+  StepUpService,
+} from "src/auth/stepUp.service";
+import { SafeIdPipe } from "src/share/pipe/safeId.pipe";
 import { SigningService } from "./signing.service";
 import { SigningDownloadService } from "./signing-download.service";
 import { SigningE2EService } from "./signing-e2e.service";
@@ -95,6 +104,43 @@ export class SigningController {
     return this.signingService.checkReinforcedEligibility(dto.emails);
   }
 
+  @Post("recipients/encryption-targets")
+  @UseGuards(JwtGuard)
+  @Header("Cache-Control", "private, no-store")
+  @Throttle({ default: { limit: 30, ttl: minutes(1) } })
+  async getRecipientEncryptionTargets(
+    @Body() dto: CheckReinforcedEligibilityDTO,
+    @GetUser() user: User,
+  ) {
+    if (!user?.id) throw new BadRequestException("Authentication required");
+    return this.signingService.getRecipientEncryptionTargets(dto.emails);
+  }
+
+  @Post("documents/:id/encryption-targets")
+  @UseGuards(JwtGuard)
+  @Header("Cache-Control", "private, no-store")
+  @Throttle({ default: { limit: 30, ttl: minutes(1) } })
+  async getDocumentEncryptionTargets(
+    @Param("id") id: string,
+    @GetUser() user: User,
+  ) {
+    if (!user?.id) throw new BadRequestException("Authentication required");
+    return this.signingService.getDocumentEncryptionTargets(id, user.id);
+  }
+
+  @Post("documents/:id/key-envelopes")
+  @UseGuards(JwtGuard)
+  @Header("Cache-Control", "private, no-store")
+  @Throttle({ default: { limit: 30, ttl: minutes(1) } })
+  async storeRecipientKeyEnvelopes(
+    @Param("id") id: string,
+    @Body() dto: RecipientKeyEnvelopesDTO,
+    @GetUser() user: User,
+  ) {
+    if (!user?.id) throw new BadRequestException("Authentication required");
+    return this.signingService.storeRecipientKeyEnvelopes(id, user.id, dto);
+  }
+
   @Get("documents")
   @UseGuards(JwtGuard)
   async getMyDocuments(@GetUser() user: User) {
@@ -106,6 +152,7 @@ export class SigningController {
    * Get documents where the current user is a recipient (signed or to sign).
    */
   @Get("received")
+  @Header("Cache-Control", "private, no-store")
   @UseGuards(JwtGuard)
   async getReceivedDocuments(@GetUser() user: User) {
     if (!user?.id) throw new BadRequestException("Authentication required");
@@ -135,6 +182,7 @@ export class SigningController {
    * Get a specific signature document with details.
    */
   @Get("documents/:id")
+  @Header("Cache-Control", "private, no-store")
   @UseGuards(JwtGuard)
   async getDocument(@Param("id") id: string, @GetUser() user: User) {
     if (!user?.id) throw new BadRequestException("Authentication required");
@@ -404,15 +452,18 @@ export class SigningController {
    * Authentication is via the signing token (URL parameter).
    */
   @Get("sign/:token")
+  @UseGuards(OptionalJwtGuard)
   async getSigningPage(
     @Param("token") token: string,
     @Req() request: Request,
     @Res({ passthrough: true }) res: Response,
+    @GetUser() user?: User,
   ) {
     this.setPublicSigningHeaders(res);
     return this.signingService.getSigningPage(
       token,
       presentedSigningEmailSession(request),
+      user?.id,
     );
   }
 
@@ -459,18 +510,16 @@ export class SigningController {
     @Param("token") token: string,
     @Body() dto: VerifySigningEmailOtpDTO,
     @Ip() ip: string,
-    @Headers("x-forwarded-for") forwardedFor: string,
     @Headers("user-agent") userAgent: string,
     @Req() request: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     this.setPublicSigningHeaders(res);
-    const clientIp = forwardedFor ? forwardedFor.split(",")[0].trim() : ip;
     const { verified, session } =
       await this.signingService.verifySigningEmailOtp(
         token,
         dto.code,
-        clientIp,
+        ip,
         userAgent || "",
         presentedSigningEmailSession(request),
       );
@@ -609,6 +658,58 @@ export class SigningController {
     return this.signingWebAuthnService.beginRegistration(token, user);
   }
 
+  /**
+   * A code mailed to the request's address, for accounts that cannot confirm
+   * the enrolment with a password or a fresh provider sign-in.
+   */
+  @Post("passkey-enrollment/:recipientId/code")
+  @UseGuards(JwtGuard)
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: minutes(10) } })
+  async sendPasskeyEnrollmentCode(
+    @Param("recipientId", SafeIdPipe) recipientId: string,
+    @GetUser() user: User,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.setPublicSigningHeaders(res);
+    return this.signingService.sendPasskeyEnrollmentCode(recipientId, user);
+  }
+
+  /** Spends that code for the confirmation the enrolment asks for. */
+  @Post("passkey-enrollment/:recipientId/confirm")
+  @UseGuards(JwtGuard)
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: minutes(10) } })
+  async confirmPasskeyEnrollment(
+    @Param("recipientId", SafeIdPipe) recipientId: string,
+    @GetUser() user: User,
+    @Body() dto: VerifySigningEmailOtpDTO,
+    @Req() request: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.setPublicSigningHeaders(res);
+    const scope = `signing.passkey.enroll:${recipientId}`;
+    try {
+      await this.signingService.verifyPasskeyEnrollmentCode(
+        recipientId,
+        user,
+        dto.code,
+      );
+    } catch (error) {
+      this.stepUp.recordRefusal(user, scope);
+      throw error;
+    }
+    const { value, expiresAt } = await this.stepUp.issue(user, scope, "email");
+    res.cookie(STEP_UP_COOKIE, value, {
+      path: STEP_UP_COOKIE_PATH,
+      sameSite: "strict",
+      secure: this.configService.get("general.secureCookies"),
+      httpOnly: true,
+      maxAge: STEP_UP_TTL_MS,
+    });
+    return { expiresAt };
+  }
+
   /** Verify and persist a new signing passkey. */
   @Post("sign/:token/passkey/register/verify")
   @UseGuards(JwtGuard)
@@ -649,18 +750,15 @@ export class SigningController {
     @Param("token") token: string,
     @Body() dto: SignDocumentDTO,
     @Ip() ip: string,
-    @Headers("x-forwarded-for") forwardedFor: string,
     @Headers("user-agent") userAgent: string,
     @Req() request: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     this.setPublicSigningHeaders(res);
-    // Use the first IP from X-Forwarded-For if available (real client IP behind proxy)
-    const clientIp = forwardedFor ? forwardedFor.split(",")[0].trim() : ip;
     return this.signingService.signDocument(
       token,
       dto,
-      clientIp,
+      ip,
       userAgent || "",
       presentedSigningEmailSession(request),
     );
@@ -675,17 +773,15 @@ export class SigningController {
     @Param("token") token: string,
     @Body() dto: RejectDocumentDTO,
     @Ip() ip: string,
-    @Headers("x-forwarded-for") forwardedFor: string,
     @Headers("user-agent") userAgent: string,
     @Req() request: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     this.setPublicSigningHeaders(res);
-    const clientIp = forwardedFor ? forwardedFor.split(",")[0].trim() : ip;
     return this.signingService.rejectDocument(
       token,
       dto,
-      clientIp,
+      ip,
       userAgent || "",
       presentedSigningEmailSession(request),
     );

@@ -1,3 +1,4 @@
+import { EmailModule } from "src/email/email.module";
 import { forwardRef, Module } from "@nestjs/common";
 import { OAuthController } from "./oauth.controller";
 import { OAuthService } from "./oauth.service";
@@ -52,7 +53,7 @@ import { MicrosoftProvider } from "./provider/microsoft.provider";
       inject: ["OAUTH_PROVIDERS"],
     },
   ],
-  imports: [forwardRef(() => AuthModule), StepUpModule],
+  imports: [EmailModule, forwardRef(() => AuthModule), StepUpModule],
   exports: [OAuthService],
 })
 export class OAuthModule {}

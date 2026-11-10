@@ -1,6 +1,8 @@
 export default {
-  "share.modal.file-preview.pdf-render-failed": "Impossible d’afficher cette page du PDF.",
-  "team.external.seats.usageUnlimited": "{used, plural, one {# accès actif ou en attente} other {# accès actifs ou en attente}}",
+  "share.modal.file-preview.pdf-render-failed":
+    "Impossible d’afficher cette page du PDF.",
+  "team.external.seats.usageUnlimited":
+    "{used, plural, one {# accès actif ou en attente} other {# accès actifs ou en attente}}",
   "team.audit.check.fragment":
     "Recherche complémentaire sur 181 échelles, avec un seuil de décision renforcé...",
   "external.viewer.retry": "Réessayer",
@@ -26,45 +28,68 @@ export default {
     "Analyse complémentaire assistée par le document original. Seuls les pixels de la capture sont analysés. Ce recalage n'est pas une preuve d'identité.",
   "navbar.avatar.external": "Documents en consultation",
   "signin.button.passkey": "Se connecter avec une passkey",
-  "signIn.notify.passkey-error": "Cette passkey n'a pas permis de vous connecter. Utilisez votre mot de passe, puis ajoutez une passkey depuis les paramètres de votre compte.",
+  "signIn.notify.passkey-error":
+    "Cette passkey n'a pas permis de vous connecter. Utilisez votre mot de passe, puis ajoutez une passkey depuis les paramètres de votre compte.",
   "account.card.passkeys.title": "Passkeys",
-  "account.card.passkeys.description": "Connectez-vous sans mot de passe ni code de double authentification, signez des documents et validez les copies remises aux prestataires. Une passkey enregistrée lors d'une signature sert aussi à vous connecter.",
-  "account.card.passkeys.empty": "Aucune passkey n'est encore enregistrée sur ce compte.",
+  "account.card.passkeys.description":
+    "Connectez-vous sans mot de passe ni code de double authentification, signez des documents et validez les copies remises aux prestataires. Une passkey enregistrée lors d'une signature sert aussi à vous connecter.",
+  "account.card.passkeys.empty":
+    "Aucune passkey n'est encore enregistrée sur ce compte.",
   "account.card.passkeys.add": "Ajouter une passkey",
-  "account.card.passkeys.added": "Passkey ajoutée. Vous pouvez désormais vous connecter avec elle.",
+  "account.card.passkeys.added":
+    "Passkey ajoutée. Vous pouvez désormais vous connecter avec elle.",
   "account.card.passkeys.add-error": "La passkey n'a pas pu être enregistrée.",
-  "account.card.passkeys.confirm-hint": "Une passkey permet de se connecter sans mot de passe ni code de double authentification. Confirmez d'abord votre identité, comme pour désactiver la double authentification.",
+  "account.card.passkeys.confirm-hint":
+    "Une passkey permet de se connecter sans mot de passe ni code de double authentification. Confirmez d'abord votre identité, comme pour désactiver la double authentification.",
   "account.card.passkeys.create": "Créer la passkey",
-  "account.card.passkeys.wrong-proof": "Mot de passe incorrect ou confirmation expirée.",
-  "account.card.passkeys.wrong-code": "Code de double authentification invalide.",
-  "account.card.passkeys.confirm": "Vous ne pourrez plus vous connecter ni valider de copie avec cette passkey. Pensez aussi à la supprimer de votre appareil ou de votre gestionnaire de mots de passe.",
+  "account.card.passkeys.wrong-proof":
+    "Mot de passe incorrect ou confirmation expirée.",
+  "account.card.passkeys.wrong-code":
+    "Code de double authentification invalide.",
+  "account.card.passkeys.confirm":
+    "Vous ne pourrez plus vous connecter ni valider de copie avec cette passkey. Pensez aussi à la supprimer de votre appareil ou de votre gestionnaire de mots de passe.",
   "account.card.passkeys.origin.account": "Connexion",
   "account.card.passkeys.origin.signing": "Signature et connexion",
-  "account.card.security.totp.oauth.description": "Votre compte n'a pas de mot de passe. Confirmez votre identité en vous reconnectant avec le compte que vous y avez lié.",
-  "account.card.security.totp.oauth.alternative": "Vous pouvez aussi confirmer votre identité en vous reconnectant avec le compte que vous y avez lié, sans saisir votre mot de passe.",
+  "account.card.security.totp.oauth.description":
+    "Votre compte n'a pas de mot de passe. Confirmez votre identité en vous reconnectant avec le compte que vous y avez lié.",
+  "account.card.security.totp.oauth.alternative":
+    "Vous pouvez aussi confirmer votre identité en vous reconnectant avec le compte que vous y avez lié, sans saisir votre mot de passe.",
   "account.card.security.totp.oauth.confirm": "Confirmer avec {provider}",
-  "account.card.security.totp.oauth.none": "Votre compte n'a ni mot de passe ni compte externe lié. Liez un compte ou définissez un mot de passe pour gérer la double authentification.",
-  "account.card.security.totp.oauth.disableDescription": "Identité confirmée. Saisissez un code de votre application ou un code de secours pour désactiver la double authentification.",
-  "webdav.error.unsafeTree": "Le serveur WebDAV a renvoyé un chemin incohérent ou non autorisé. Aucun fichier n’a été ajouté.",
-  "webdav.error.treeLimit": "Ce dossier dépasse les limites de l’import : 1 000 fichiers, 4 096 dossiers ou 63 niveaux.",
-  "webdav.error.quota": "La taille du dossier dépasse l’espace disponible pour ce partage. Aucun fichier n’a été ajouté.",
-  "webdav.error.emptyFolder": "Ce dossier ne contient aucun fichier à importer.",
+  "account.card.security.totp.oauth.none":
+    "Votre compte n'a ni mot de passe ni compte externe lié. Liez un compte ou définissez un mot de passe pour gérer la double authentification.",
+  "account.card.security.totp.oauth.disableDescription":
+    "Identité confirmée. Saisissez un code de votre application ou un code de secours pour désactiver la double authentification.",
+  "webdav.error.unsafeTree":
+    "Le serveur WebDAV a renvoyé un chemin incohérent ou non autorisé. Aucun fichier n’a été ajouté.",
+  "webdav.error.treeLimit":
+    "Ce dossier dépasse les limites de l’import : 1 000 fichiers, 4 096 dossiers ou 63 niveaux.",
+  "webdav.error.quota":
+    "La taille du dossier dépasse l’espace disponible pour ce partage. Aucun fichier n’a été ajouté.",
+  "webdav.error.emptyFolder":
+    "Ce dossier ne contient aucun fichier à importer.",
   "webdav.error.cancelled": "Import annulé. Aucun fichier n’a été ajouté.",
-  "webdav.error.companionFolderUpdateRequired": "Mettez à jour le Companion pour importer des dossiers en conservant leurs chemins.",
-  "webdav.folderHint": "Cochez un dossier pour importer ses fichiers et sous-dossiers en conservant leurs chemins. Les dossiers vides ne sont pas ajoutés.",
-  "webdav.enumerating": "Parcours des dossiers : {count} fichier(s) trouvé(s)...",
+  "webdav.error.companionFolderUpdateRequired":
+    "Mettez à jour le Companion pour importer des dossiers en conservant leurs chemins.",
+  "webdav.folderHint":
+    "Cochez un dossier pour importer ses fichiers et sous-dossiers en conservant leurs chemins. Les dossiers vides ne sont pas ajoutés.",
+  "webdav.enumerating":
+    "Parcours des dossiers : {count} fichier(s) trouvé(s)...",
   "share.modal.file-preview.partial":
     "Aperçu partiel. Téléchargez le fichier pour consulter tout le contenu.",
   "share.modal.file-preview.view-original": "Ouvrir le fichier original",
   "share.modal.file-preview.word-wrap": "Retour à la ligne",
   "share.modal.file-preview.copy-source": "Copier l'aperçu",
   "share.modal.file-preview.copied": "Copié",
-  "share.modal.file-preview.highlight-limited": "La coloration se limite au début de cet aperçu. La suite du texte reste affichée.",
-  "share.modal.file-preview.error.read-failed.title": "Impossible de lire l'aperçu",
+  "share.modal.file-preview.highlight-limited":
+    "La coloration se limite au début de cet aperçu. La suite du texte reste affichée.",
+  "share.modal.file-preview.error.read-failed.title":
+    "Impossible de lire l'aperçu",
   "share.modal.file-preview.error.read-failed.description":
     "Ce format est pris en charge, mais la lecture de ce fichier a échoué. Téléchargez-le pour vérifier qu'il s'ouvre dans Excel, LibreOffice ou votre application habituelle.",
-  "share.modal.file-preview.error.video-codec.title": "Format vidéo non pris en charge",
-  "share.modal.file-preview.error.video-codec.description": "Ce navigateur ne sait pas lire les vidéos {codec}. Téléchargez la vidéo pour la regarder.",
+  "share.modal.file-preview.error.video-codec.title":
+    "Format vidéo non pris en charge",
+  "share.modal.file-preview.error.video-codec.description":
+    "Ce navigateur ne sait pas lire les vidéos {codec}. Téléchargez la vidéo pour la regarder.",
   "share.modal.file-preview.video.play": "Lire",
   "share.modal.file-preview.video.pause": "Pause",
   "share.modal.file-preview.video.mute": "Couper le son",
@@ -74,7 +99,8 @@ export default {
   "share.modal.file-preview.zoom.out": "Dézoomer",
   "share.modal.file-preview.zoom.in": "Zoomer",
   "share.modal.file-preview.zoom.reset": "Ajuster",
-  "share.modal.file-preview.zoom.viewport": "Document : pincer pour zoomer, glisser pour déplacer",
+  "share.modal.file-preview.zoom.viewport":
+    "Document : pincer pour zoomer, glisser pour déplacer",
   "share.modal.file-preview.video.volume": "Volume",
   "share.modal.file-preview.video.seek": "Position de lecture",
   "share.modal.file-preview.video.speed": "Vitesse de lecture",
@@ -83,19 +109,29 @@ export default {
   "share.modal.file-preview.pdf.page": "Page du PDF",
   "share.modal.file-preview.pdf.next-page": "Page suivante",
   "admin.config.smtp.general-email": "Courriel des e-mails courants",
-  "admin.config.smtp.general-email.description": "Second compte SMTP pour tous les e-mails autres que la signature électronique : confirmation d'inscription, invitations, partages, liens de dépôt... Laissez vide pour tout envoyer depuis le courriel ci-dessus.",
+  "admin.config.smtp.general-email.description":
+    "Second compte SMTP pour tous les e-mails autres que la signature électronique : confirmation d'inscription, invitations, partages, liens de dépôt... Laissez vide pour tout envoyer depuis le courriel ci-dessus.",
   "admin.config.smtp.general-host": "Hôte des e-mails courants",
-  "admin.config.smtp.general-host.description": "Laissez vide pour utiliser l'hôte ci-dessus.",
+  "admin.config.smtp.general-host.description":
+    "Laissez vide pour utiliser l'hôte ci-dessus.",
   "admin.config.smtp.general-port": "Port des e-mails courants",
-  "admin.config.smtp.general-port.description": "Laissez 0 pour utiliser le port ci-dessus.",
-  "admin.config.smtp.general-username": "Nom d'utilisateur des e-mails courants",
-  "admin.config.smtp.general-username.description": "Laissez vide pour utiliser le compte ci-dessus.",
+  "admin.config.smtp.general-port.description":
+    "Laissez 0 pour utiliser le port ci-dessus.",
+  "admin.config.smtp.general-username":
+    "Nom d'utilisateur des e-mails courants",
+  "admin.config.smtp.general-username.description":
+    "Laissez vide pour utiliser le compte ci-dessus.",
   "admin.config.smtp.general-password": "Mot de passe des e-mails courants",
-  "admin.config.smtp.general-password.description": "Mot de passe du second compte SMTP, s'il a son propre nom d'utilisateur.",
-  "error.msg.reauth_mismatch": "Le compte {0} utilisé n'est pas celui qui est lié à votre compte PrivCloud. Reconnectez-vous avec le compte lié.",
-  "error.msg.reauth_unsupported": "Votre compte {0} ne permet pas de confirmer une connexion récente. Pour définir un mot de passe, déconnectez-vous et utilisez « Mot de passe oublié ? » sur la page de connexion.",
-  "error.msg.reauth_expired": "La confirmation d'identité a expiré. Recommencez depuis votre compte.",
-  "error.msg.step_up_required": "Confirmez votre identité depuis votre compte, puis associez à nouveau le compte.",
+  "admin.config.smtp.general-password.description":
+    "Mot de passe du second compte SMTP, s'il a son propre nom d'utilisateur.",
+  "error.msg.reauth_mismatch":
+    "Le compte {0} utilisé n'est pas celui qui est lié à votre compte PrivCloud. Reconnectez-vous avec le compte lié.",
+  "error.msg.reauth_unsupported":
+    "Votre compte {0} ne permet pas de confirmer une connexion récente. Pour définir un mot de passe, déconnectez-vous et utilisez « Mot de passe oublié ? » sur la page de connexion.",
+  "error.msg.reauth_expired":
+    "La confirmation d'identité a expiré. Recommencez depuis votre compte.",
+  "error.msg.step_up_required":
+    "Confirmez votre identité depuis votre compte, puis associez à nouveau le compte.",
   "admin.button.vault": "Coffre-fort des preuves",
   "admin.vault.title": "Coffre-fort des preuves",
   "admin.vault.hint":
@@ -107,8 +143,7 @@ export default {
   "admin.vault.unlock.error": "Le coffre-fort n'a pas pu être ouvert.",
   "admin.vault.unsupported":
     "Ce navigateur ne prend pas en charge les passkeys : ouvrez le coffre-fort depuis un navigateur qui les prend en charge.",
-  "admin.vault.passkeyRequired":
-    "Ajoutez d'abord une passkey à votre compte.",
+  "admin.vault.passkeyRequired": "Ajoutez d'abord une passkey à votre compte.",
   "admin.vault.openUntil": "Ouvert jusqu'à {time}",
   "admin.vault.lock": "Verrouiller",
   "admin.vault.search": "Équipe, adresse e-mail ou identifiant",
@@ -134,83 +169,129 @@ export default {
   "team.dashboard.activity.externalInvite": "Invitation prestataire",
   "team.dashboard.activity.externalJoin": "Prestataire arrivé",
   "team.dashboard.activity.externalRevoke": "Accès prestataire révoqué",
-  "team.dashboard.activity.externalPreviewShare": "Aperçu partagé avec un prestataire",
-  "team.dashboard.activity.externalPreviewView": "Aperçu consulté par un prestataire",
+  "team.dashboard.activity.externalPreviewShare":
+    "Aperçu partagé avec un prestataire",
+  "team.dashboard.activity.externalPreviewView":
+    "Aperçu consulté par un prestataire",
   "team.dashboard.activity.externalPreviewDelete": "Aperçu prestataire retiré",
-  "team.dashboard.modals.invite.externalHint": "Un prestataire ou un intervenant de passage ne doit que consulter des documents ?",
-  "team.dashboard.modals.invite.externalLink": "Invitez-le en consultation seule.",
+  "team.dashboard.modals.invite.externalHint":
+    "Un prestataire ou un intervenant de passage ne doit que consulter des documents ?",
+  "team.dashboard.modals.invite.externalLink":
+    "Invitez-le en consultation seule.",
   "team.settings.danger.evidenceKept":
     "Le registre des copies remises aux prestataires et leur journal de consultation sont conservés trois ans dans le coffre-fort des preuves de la plateforme, à des fins de preuve. Ils restent accessibles sur demande écrite au support.",
-  "team.settings.rotation.remaining": "Rotation à prévoir dans {count, plural, one {# jour} other {# jours}}",
+  "team.settings.rotation.remaining":
+    "Rotation à prévoir dans {count, plural, one {# jour} other {# jours}}",
   "team.settings.rotation.due": "Rotation de la clé E2E à effectuer",
-  "team.settings.rotation.nextDue": "Échéance de la politique enregistrée : {date}",
-  "team.settings.rotation.assisted": "La rotation est assistée : un administrateur disposant de la clé actuelle doit la lancer afin de rechiffrer les fichiers. Elle ne se déclenche pas automatiquement.",
+  "team.settings.rotation.nextDue":
+    "Échéance de la politique enregistrée : {date}",
+  "team.settings.rotation.assisted":
+    "La rotation est assistée : un administrateur disposant de la clé actuelle doit la lancer afin de rechiffrer les fichiers. Elle ne se déclenche pas automatiquement.",
   "team.settings.rotation.manage": "Gérer la rotation",
-  "team.settings.rotation.active": "Rotation en cours : {done} / {total} fichiers",
-  "team.settings.rotation.paused": "Rotation en pause : {done} / {total} fichiers",
-  "team.settings.rotation.loadError": "Le délai de rotation est momentanément indisponible.",
-  "team.settings.rotation.unsaved": "Enregistrez la nouvelle fréquence pour actualiser cette échéance.",
+  "team.settings.rotation.active":
+    "Rotation en cours : {done} / {total} fichiers",
+  "team.settings.rotation.paused":
+    "Rotation en pause : {done} / {total} fichiers",
+  "team.settings.rotation.loadError":
+    "Le délai de rotation est momentanément indisponible.",
+  "team.settings.rotation.unsaved":
+    "Enregistrez la nouvelle fréquence pour actualiser cette échéance.",
   "team.folder.action.externalShare": "Aperçu pour un prestataire",
   "team.external.share.title": "Partager un aperçu avec un prestataire",
-  "team.external.share.description": "Le prestataire reçoit des images de pages filigranées à son nom, marquées de façon invisible et chiffrées pour lui seul, sans le fichier original ni la clé d'équipe. Vous approuvez la copie avec votre passkey. Une capture reste possible. Le marquage permet de rechercher un motif compatible, avec des limites mesurées. Il ne prouve pas qui a diffusé le document.",
+  "team.external.share.description":
+    "Le prestataire reçoit des images de pages filigranées à son nom, marquées de façon invisible et chiffrées pour lui seul, sans le fichier original ni la clé d'équipe. Vous approuvez la copie avec votre passkey. Une capture reste possible. Le marquage permet de rechercher un motif compatible, avec des limites mesurées. Il ne prouve pas qui a diffusé le document.",
   "team.external.share.seat": "Prestataire",
-  "team.external.share.noSeat": "Aucun prestataire n'a encore accepté d'invitation. Invitez-en un depuis les réglages de l'équipe.",
+  "team.external.share.noSeat":
+    "Aucun prestataire n'a encore accepté d'invitation. Invitez-en un depuis les réglages de l'équipe.",
   "team.external.share.existing": "Déjà partagé en aperçu",
   "team.external.share.existingCopy": "{name}, le {date}",
   "team.external.share.submit": "Générer et partager l'aperçu",
-  "team.external.share.rendering": "Génération des pages en cours ({count, plural, one {# page prête} other {# pages prêtes}})",
-  "team.external.share.uploading": "Envoi chiffré de la page {done} sur {total}",
-  "team.external.share.done": "Aperçu partagé : {count, plural, one {# page} other {# pages}}.",
-  "team.external.share.error.unsupported": "Ce format ne peut pas être partagé en aperçu. Les vidéos et les fichiers audio ne sont pas pris en charge.",
-  "team.external.share.error.tooManyPages": "Ce document dépasse la limite de 300 pages d'aperçu.",
-  "team.external.share.error.tooLarge": "Ce fichier est trop volumineux pour être partagé en aperçu.",
-  "team.external.share.error.browser": "Ce navigateur ne permet pas de générer cet aperçu. Utilisez Chrome, Edge ou Firefox.",
-  "team.external.share.error.keys": "Le prestataire n'a pas encore finalisé ses clés de chiffrement.",
-  "team.external.share.error.generic": "La génération de l'aperçu a échoué. Veuillez réessayer.",
+  "team.external.share.rendering":
+    "Génération des pages en cours ({count, plural, one {# page prête} other {# pages prêtes}})",
+  "team.external.share.uploading":
+    "Envoi chiffré de la page {done} sur {total}",
+  "team.external.share.done":
+    "Aperçu partagé : {count, plural, one {# page} other {# pages}}.",
+  "team.external.share.error.unsupported":
+    "Ce format ne peut pas être partagé en aperçu. Les vidéos et les fichiers audio ne sont pas pris en charge.",
+  "team.external.share.error.tooManyPages":
+    "Ce document dépasse la limite de 300 pages d'aperçu.",
+  "team.external.share.error.tooLarge":
+    "Ce fichier est trop volumineux pour être partagé en aperçu.",
+  "team.external.share.error.browser":
+    "Ce navigateur ne permet pas de générer cet aperçu. Utilisez Chrome, Edge ou Firefox.",
+  "team.external.share.error.keys":
+    "Le prestataire n'a pas encore finalisé ses clés de chiffrement.",
+  "team.external.share.error.generic":
+    "La génération de l'aperçu a échoué. Veuillez réessayer.",
   "team.external.share.sealing": "Calcul des empreintes de la copie",
-  "team.external.share.approving": "Confirmez avec votre passkey pour valider cette copie. Elle sera inscrite au registre de l'équipe.",
-  "team.external.share.error.passkey": "Une passkey de validation est nécessaire pour partager un aperçu.",
-  "team.external.share.error.approvalCancelled": "La validation par passkey a été annulée. Aucune copie n'a été partagée.",
-  "team.external.share.error.teamKey": "La clé de l'équipe n'est pas disponible dans ce navigateur. Déverrouillez votre clé de chiffrement puis réessayez.",
+  "team.external.share.approving":
+    "Confirmez avec votre passkey pour valider cette copie. Elle sera inscrite au registre de l'équipe.",
+  "team.external.share.error.passkey":
+    "Une passkey de validation est nécessaire pour partager un aperçu.",
+  "team.external.share.error.approvalCancelled":
+    "La validation par passkey a été annulée. Aucune copie n'a été partagée.",
+  "team.external.share.error.teamKey":
+    "La clé de l'équipe n'est pas disponible dans ce navigateur. Déverrouillez votre clé de chiffrement puis réessayez.",
   "team.external.seats.reminder.label": "Mon rappel de fin d'accès",
-  "team.external.seats.reminder.hint": "Préférence personnelle. Révocation ou expiration : un rappel pour conserver les preuves. Les notifications web nécessitent l’autorisation de cet appareil. L’e-mail est indépendant.",
+  "team.external.seats.reminder.hint":
+    "Préférence personnelle. Révocation ou expiration : un rappel pour conserver les preuves. Les notifications web nécessitent l’autorisation de cet appareil. L’e-mail est indépendant.",
   "team.external.seats.reminder.NONE": "Aucun rappel",
   "team.external.seats.reminder.EMAIL": "Email",
   "team.external.seats.reminder.PUSH": "Notification web",
   "team.external.seats.reminder.BOTH": "Notification et email",
-  "team.notification.generic.EXTERNAL_ACCESS_ENDED": "Un accès prestataire est terminé. Conservez les preuves depuis le registre.",
-  "team.audit.download.passkeyHint": "Une passkey personnelle est requise pour télécharger un certificat ou dossier de preuve. Chaque administrateur actif utilise sa propre passkey.",
+  "team.notification.generic.EXTERNAL_ACCESS_ENDED":
+    "Un accès prestataire est terminé. Conservez les preuves depuis le registre.",
+  "team.audit.download.passkeyHint":
+    "Une passkey personnelle est requise pour télécharger un certificat ou dossier de preuve. Chaque administrateur actif utilise sa propre passkey.",
   "team.audit.title": "Registre des copies remises",
-  "team.audit.hint": "Les copies approuvées par passkey sont enregistrées ici avec leur statut d'horodatage. Le journal chaîne les ouvertures et demandes de pages autorisées, pas une lecture humaine. Les titres sont déchiffrés dans votre navigateur.",
+  "team.audit.hint":
+    "Les copies approuvées par passkey sont enregistrées ici avec leur statut d'horodatage. Le journal chaîne les ouvertures et demandes de pages autorisées, pas une lecture humaine. Les titres sont déchiffrés dans votre navigateur.",
   "team.audit.empty": "Aucune copie n'a encore été remise à un prestataire.",
   "team.audit.untitled": "Document chiffré",
-  "team.audit.row": "Remis à {contractor} le {date} par {issuer} - {pages, plural, one {# page} other {# pages}}",
+  "team.audit.row":
+    "Remis à {contractor} le {date} par {issuer} - {pages, plural, one {# page} other {# pages}}",
   "team.audit.timestamped": "Horodaté",
   "team.audit.notTimestamped": "Horodatage en attente",
   "team.audit.copyOnline": "Copie en ligne",
   "team.audit.copyWithdrawn": "Copie retirée",
   "team.audit.certificate.download": "Télécharger le certificat",
   "team.audit.pattern.download": "Exporter le motif privé de cette copie",
-  "team.audit.pattern.warning": "Ce diagnostic non chiffré contient uniquement le motif dérivé de cette copie, sans clé d'audit, session ni document. Il permet de reconnaître mais aussi de reproduire ce marquage. Conservez-le dans un dossier privé et transmettez-le uniquement pour une analyse explicitement autorisée.",
+  "team.audit.pattern.warning":
+    "Ce diagnostic non chiffré contient uniquement le motif dérivé de cette copie, sans clé d'audit, session ni document. Il permet de reconnaître mais aussi de reproduire ce marquage. Conservez-le dans un dossier privé et transmettez-le uniquement pour une analyse explicitement autorisée.",
   "team.audit.pattern.confirm": "Exporter ce diagnostic sensible",
-  "team.audit.pattern.error": "Impossible d'exporter le motif privé. Vérifiez que la clé d'équipe est disponible sur cet appareil.",
+  "team.audit.pattern.error":
+    "Impossible d'exporter le motif privé. Vérifiez que la clé d'équipe est disponible sur cet appareil.",
   "team.audit.certificate.error": "Le certificat n'a pas pu être généré.",
   "team.audit.journal.open": "Journal de consultation",
   "team.audit.journal.title": "Journal de consultation",
-  "team.audit.journal.valid": "Chaînage contrôlé : {count, plural, one {# événement vérifié} other {# événements vérifiés}}, dernier ancrage le {anchor}. Les événements suivants peuvent ne pas être ancrés. Conservez un checkpoint indépendamment.",
-  "team.audit.journal.validNoAnchor": "Chaînage contrôlé : {count, plural, one {# événement vérifié} other {# événements vérifiés}}, sans ancrage horodaté établi. Un scellement horaire est prévu si la TSA est configurée et disponible. Ce n'est pas une preuve indépendante de l'heure.",
-  "team.audit.journal.broken": "Le contrôle d'intégrité du journal de l'équipe échoue à l'événement {seq}. Conservez les preuves et demandez un diagnostic à l'administrateur de la plateforme.",
-  "team.audit.journal.scope": "Le contrôle porte sur toute la chaîne de l'équipe, y compris les événements d'autres copies. Une anomalie ancienne peut donc apparaître dans plusieurs journaux de consultation.",
-  "team.audit.journal.reason.format_downgrade": "Un événement réutilise l'ancien format après le passage au format actuel. Ce changement inattendu est refusé.",
+  "team.audit.journal.valid":
+    "Chaînage contrôlé : {count, plural, one {# événement vérifié} other {# événements vérifiés}}, dernier ancrage le {anchor}. Les événements suivants peuvent ne pas être ancrés. Conservez un checkpoint indépendamment.",
+  "team.audit.journal.validNoAnchor":
+    "Chaînage contrôlé : {count, plural, one {# événement vérifié} other {# événements vérifiés}}, sans ancrage horodaté établi. Un scellement horaire est prévu si la TSA est configurée et disponible. Ce n'est pas une preuve indépendante de l'heure.",
+  "team.audit.journal.broken":
+    "Le contrôle d'intégrité du journal de l'équipe échoue à l'événement {seq}. Conservez les preuves et demandez un diagnostic à l'administrateur de la plateforme.",
+  "team.audit.journal.scope":
+    "Le contrôle porte sur toute la chaîne de l'équipe, y compris les événements d'autres copies. Une anomalie ancienne peut donc apparaître dans plusieurs journaux de consultation.",
+  "team.audit.journal.reason.format_downgrade":
+    "Un événement réutilise l'ancien format après le passage au format actuel. Ce changement inattendu est refusé.",
   "team.audit.journal.diagnostic.download": "Télécharger le diagnostic privé",
-  "team.audit.journal.diagnostic.private": "Ce fichier contient les champs du premier événement en échec. Conservez-le dans un emplacement privé. Aucune empreinte n'est réécrite.",
-  "team.audit.journal.diagnostic.error": "Le diagnostic n'a pas pu être téléchargé.",
-  "team.audit.journal.reason.content_hash_mismatch": "L'empreinte enregistrée ne correspond pas au contenu relu. Une modification des données ou une incompatibilité de format doit être examinée. La chaîne reste non validée.",
-  "team.audit.journal.reason.genesis_mismatch": "Le premier événement ne contient pas l'empreinte initiale attendue.",
-  "team.audit.journal.reason.sequence_gap": "La suite des numéros d'événement présente une interruption.",
-  "team.audit.journal.reason.previous_hash_mismatch": "Un événement ne référence pas l'empreinte de son prédécesseur.",
-  "team.audit.journal.reason.anchor_mismatch": "L'empreinte d'un événement diffère de celle conservée dans son ancrage.",
-  "team.audit.journal.reason.anchor_ahead_of_head": "Un ancrage référence un événement absent de la chaîne conservée.",
+  "team.audit.journal.diagnostic.private":
+    "Ce fichier contient les champs du premier événement en échec. Conservez-le dans un emplacement privé. Aucune empreinte n'est réécrite.",
+  "team.audit.journal.diagnostic.error":
+    "Le diagnostic n'a pas pu être téléchargé.",
+  "team.audit.journal.reason.content_hash_mismatch":
+    "L'empreinte enregistrée ne correspond pas au contenu relu. Une modification des données ou une incompatibilité de format doit être examinée. La chaîne reste non validée.",
+  "team.audit.journal.reason.genesis_mismatch":
+    "Le premier événement ne contient pas l'empreinte initiale attendue.",
+  "team.audit.journal.reason.sequence_gap":
+    "La suite des numéros d'événement présente une interruption.",
+  "team.audit.journal.reason.previous_hash_mismatch":
+    "Un événement ne référence pas l'empreinte de son prédécesseur.",
+  "team.audit.journal.reason.anchor_mismatch":
+    "L'empreinte d'un événement diffère de celle conservée dans son ancrage.",
+  "team.audit.journal.reason.anchor_ahead_of_head":
+    "Un ancrage référence un événement absent de la chaîne conservée.",
   "team.audit.journal.empty": "Aucun événement pour cette copie.",
   "team.audit.journal.issued": "Copie remise",
   "team.audit.journal.opened": "Copie ouverte",
@@ -220,14 +301,20 @@ export default {
   "team.audit.journal.vault":
     "Preuves consultées depuis le coffre-fort de la plateforme",
   "team.audit.check.title": "Vérifier une image ou un PDF suspect",
-  "team.audit.check.hint": "Déposez une image ou un PDF suspect : l'analyse reste locale. Deux photos de laboratoire sont reconnues après recalage hors ligne avec l'original. Une photo de préproduction reste inconclusive, même recalée. L'OCR et la recréation depuis la source peuvent effacer le motif. Aucun résultat ne prouve qui a diffusé le fichier.",
+  "team.audit.check.hint":
+    "Déposez une image ou un PDF suspect : l'analyse reste locale. Deux photos de laboratoire sont reconnues après recalage hors ligne avec l'original. Une photo de préproduction reste inconclusive, même recalée. L'OCR et la recréation depuis la source peuvent effacer le motif. Aucun résultat ne prouve qui a diffusé le fichier.",
   "team.audit.check.button": "Analyser une image ou un PDF",
-  "team.audit.check.visibleMarker": "Le repère visible authentifié correspond à la copie de {contractor}.",
-  "team.audit.check.visibleMarker.limit": "Le motif invisible n'est pas confirmé. Un code visible peut être recopié sur une autre image. Cette correspondance ne prouve ni l'intégrité de l'image ni qui l'a diffusée.",
-  "team.audit.verificationGuide": "Procédure de vérification, résultats et limites",
-  "team.audit.check.match": "Le marquage détecté correspond à la copie remise à {contractor} le {date}. Cela ne prouve pas qui a diffusé le fichier.",
+  "team.audit.check.visibleMarker":
+    "Le repère visible authentifié correspond à la copie de {contractor}.",
+  "team.audit.check.visibleMarker.limit":
+    "Le motif invisible n'est pas confirmé. Un code visible peut être recopié sur une autre image. Cette correspondance ne prouve ni l'intégrité de l'image ni qui l'a diffusée.",
+  "team.audit.verificationGuide":
+    "Procédure de vérification, résultats et limites",
+  "team.audit.check.match":
+    "Le marquage détecté correspond à la copie remise à {contractor} le {date}. Cela ne prouve pas qui a diffusé le fichier.",
   "team.audit.check.document": "Document : {title}",
-  "team.audit.check.reliability": "Force du signal : {level}. Ce résultat ne constitue pas une probabilité validée d'attribution.",
+  "team.audit.check.reliability":
+    "Force du signal : {level}. Ce résultat ne constitue pas une probabilité validée d'attribution.",
   "team.audit.check.level.certain": "forte corrélation",
   "team.audit.check.level.high": "corrélation au-dessus du seuil",
   "team.audit.check.odds.12": "mille milliards",
@@ -236,36 +323,50 @@ export default {
   "team.audit.check.odds.3": "mille",
   "team.audit.check.technical":
     "Détails techniques : score {score}, seuil de décision {threshold}, signal indicatif d'une copie intacte autour de {ceiling}. Échelle interne du canal d'analyse : {scale} %. Une corrélation ne prouve ni une source exclusive ni l'identité de la personne ayant diffusé le fichier.",
-  "team.audit.check.ambiguous": "Résultat ambigu : {count} motifs de copies sont compatibles avec les pages analysées. Un mélange ou des signaux concurrents sont possibles. Aucune copie unique ni aucun prestataire ne peut être désigné sur ce résultat.",
-  "team.audit.check.none": "Résultat inconclusif : aucune correspondance suffisamment nette. Cela n'exclut pas une origine dans les copies de l'équipe.",
+  "team.audit.check.ambiguous":
+    "Résultat ambigu : {count} motifs de copies sont compatibles avec les pages analysées. Un mélange ou des signaux concurrents sont possibles. Aucune copie unique ni aucun prestataire ne peut être désigné sur ce résultat.",
+  "team.audit.check.none":
+    "Résultat inconclusif : aucune correspondance suffisamment nette. Cela n'exclut pas une origine dans les copies de l'équipe.",
   "team.audit.check.error": "Cette image n'a pas pu être analysée.",
-  "team.audit.check.tooLarge": "Cette image est trop grande pour être analysée. Réduisez-la puis réessayez.",
+  "team.audit.check.tooLarge":
+    "Cette image est trop grande pour être analysée. Réduisez-la puis réessayez.",
   "team.audit.check.progress": "Analyse de la page {page}",
   "team.audit.check.page": "Retrouvée en page {page} du PDF.",
   "team.audit.check.emptyPdf": "Ce PDF ne contient aucune page lisible.",
-  "team.audit.evidence.download": "Télécharger le dossier de preuve (ZIP, avec son script de vérification)",
-  "team.audit.passkeys.hint": "Chaque copie est validée avec une passkey de votre compte, y compris une passkey enregistrée lors d'une signature électronique.",
+  "team.audit.evidence.download":
+    "Télécharger le dossier de preuve (ZIP, avec son script de vérification)",
+  "team.audit.passkeys.hint":
+    "Chaque copie est validée avec une passkey de votre compte, y compris une passkey enregistrée lors d'une signature électronique.",
   "team.audit.passkeys.manage": "Gérer mes passkeys",
-  "team.audit.passkeys.required": "Chaque copie remise à un prestataire est validée par une passkey. Créez la vôtre, cela ne prend que quelques secondes.",
+  "team.audit.passkeys.required":
+    "Chaque copie remise à un prestataire est validée par une passkey. Créez la vôtre, cela ne prend que quelques secondes.",
   "team.audit.passkeys.create": "Ajouter une passkey dans mon compte",
   "team.profile.title": "Informations de l'entreprise",
-  "team.profile.hint": "Elles apparaissent dans le filigrane des aperçus partagés avec vos prestataires externes, avant le nom du prestataire. Elles sont chiffrées dans votre navigateur avec la clé de l'équipe : PrivCloud ne peut pas les lire, et seuls les administrateurs de l'équipe les consultent et les modifient.",
+  "team.profile.hint":
+    "Elles apparaissent dans le filigrane des aperçus partagés avec vos prestataires externes, avant le nom du prestataire. Elles sont chiffrées dans votre navigateur avec la clé de l'équipe : PrivCloud ne peut pas les lire, et seuls les administrateurs de l'équipe les consultent et les modifient.",
   "team.profile.companyName": "Nom de l'entreprise",
   "team.profile.mention": "Mention",
   "team.profile.details": "Détails",
-  "team.profile.detailsHint": "Par exemple un numéro SIRET ou une adresse, repris dans le bandeau en bas de chaque page.",
+  "team.profile.detailsHint":
+    "Par exemple un numéro SIRET ou une adresse, repris dans le bandeau en bas de chaque page.",
   "team.profile.remove": "Supprimer",
   "team.profile.saved": "Informations de l'entreprise enregistrées.",
   "team.profile.removed": "Informations de l'entreprise supprimées.",
-  "team.profile.error": "Les informations n'ont pas pu être enregistrées. Rechargez la page et réessayez.",
-  "team.profile.keyUnavailable": "La clé de chiffrement de l'équipe n'est pas disponible dans ce navigateur. Déverrouillez votre clé E2E pour gérer ces informations.",
+  "team.profile.error":
+    "Les informations n'ont pas pu être enregistrées. Rechargez la page et réessayez.",
+  "team.profile.keyUnavailable":
+    "La clé de chiffrement de l'équipe n'est pas disponible dans ce navigateur. Déverrouillez votre clé E2E pour gérer ces informations.",
   "team.external.watermark.legend": "Filigrane",
   "team.external.watermark.defaultMention": "Confidentiel",
-  "team.external.watermark.hint": "Le nom de l'entreprise et la mention précèdent l'adresse du prestataire et la date. Sans nom d'entreprise, seuls le prestataire et la date apparaissent.",
-  "team.external.watermark.remember": "Enregistrer ces informations pour l'équipe",
+  "team.external.watermark.hint":
+    "Le nom de l'entreprise et la mention précèdent l'adresse du prestataire et la date. Sans nom d'entreprise, seuls le prestataire et la date apparaissent.",
+  "team.external.watermark.remember":
+    "Enregistrer ces informations pour l'équipe",
   "team.external.seats.title": "Prestataires externes",
-  "team.external.seats.hint": "Invitez des prestataires pour une durée limitée. Ils consultent uniquement les aperçus que vous leur partagez, filigranés à leur nom, sans accéder aux fichiers originaux, aux dossiers ni aux membres de l’équipe.",
-  "team.external.seats.usage": "{used, plural, one {# place utilisée} other {# places utilisées}} sur {limit}",
+  "team.external.seats.hint":
+    "Invitez des prestataires pour une durée limitée. Ils consultent uniquement les aperçus que vous leur partagez, filigranés à leur nom, sans accéder aux fichiers originaux, aux dossiers ni aux membres de l’équipe.",
+  "team.external.seats.usage":
+    "{used, plural, one {# place utilisée} other {# places utilisées}} sur {limit}",
   "team.external.seats.accessEnds": "Accès jusqu'au {date}",
   "team.external.seats.status.pending": "Invitation envoyée",
   "team.external.seats.status.active": "Actif",
@@ -273,91 +374,128 @@ export default {
   "team.external.seats.status.expired": "Expiré",
   "team.external.seats.extend": "Modifier la date de fin",
   "team.external.seats.revoke": "Révoquer l'accès",
-  "team.external.seats.revokeConfirm": "L'accès de {email} prendra fin immédiatement et tous les aperçus partagés avec ce prestataire seront supprimés.",
+  "team.external.seats.revokeConfirm":
+    "L'accès de {email} prendra fin immédiatement et tous les aperçus partagés avec ce prestataire seront supprimés.",
   "team.external.seats.endDate": "Fin de l'accès",
   "team.external.seats.extended": "La date de fin a été mise à jour.",
-  "team.external.seats.copies": "{count, plural, one {# aperçu partagé} other {# aperçus partagés}}",
-  "team.external.seats.copy": "Partagé le {date}, {pages, plural, one {# page} other {# pages}}",
+  "team.external.seats.copies":
+    "{count, plural, one {# aperçu partagé} other {# aperçus partagés}}",
+  "team.external.seats.copy":
+    "Partagé le {date}, {pages, plural, one {# page} other {# pages}}",
   "team.external.seats.removeCopy": "Retirer cet aperçu",
-  "team.external.seats.invited": "Invitation envoyée par e-mail. Vous pouvez aussi transmettre ce lien au prestataire : il ne fonctionne qu'avec son adresse e-mail.",
+  "team.external.seats.invited":
+    "Invitation envoyée par e-mail. Vous pouvez aussi transmettre ce lien au prestataire : il ne fonctionne qu'avec son adresse e-mail.",
   "team.external.seats.inviteLink": "Lien d'invitation",
   "team.external.seats.copyLink": "Copier le lien",
   "team.external.seats.linkCopied": "Lien copié",
-  "team.external.seats.full": "La limite de prestataires configurée est atteinte. Révoquez un accès pour libérer une place.",
+  "team.external.seats.full":
+    "La limite de prestataires configurée est atteinte. Révoquez un accès pour libérer une place.",
   "team.external.seats.email": "Adresse e-mail du prestataire",
   "team.external.seats.name": "Nom (facultatif)",
   "team.external.seats.invite": "Inviter",
-  "invitation.auth.signUpHint": "Cette invitation a été envoyée à {email}. Créez votre compte avec cette adresse pour l'accepter.",
-  "invitation.auth.signInHint": "Cette invitation a été envoyée à {email}. Connectez-vous avec ce compte pour l'accepter.",
+  "invitation.auth.signUpHint":
+    "Cette invitation a été envoyée à {email}. Créez votre compte avec cette adresse pour l'accepter.",
+  "invitation.auth.signInHint":
+    "Cette invitation a été envoyée à {email}. Connectez-vous avec ce compte pour l'accepter.",
   "invitation.auth.signUp": "Créer mon compte",
   "invitation.auth.signIn": "Se connecter",
   "invitation.auth.haveAccount": "J'ai déjà un compte",
-  "invitation.auth.invalid": "Cette invitation n'est plus valable. Demandez-en une nouvelle à la personne qui vous l'a envoyée.",
+  "invitation.auth.invalid":
+    "Cette invitation n'est plus valable. Demandez-en une nouvelle à la personne qui vous l'a envoyée.",
   "external.invite.title": "Invitation en consultation",
-  "external.invite.loginRequired": "Connectez-vous ou créez un compte avec l'adresse e-mail qui a reçu l'invitation.",
+  "external.invite.loginRequired":
+    "Connectez-vous ou créez un compte avec l'adresse e-mail qui a reçu l'invitation.",
   "external.invite.login": "Se connecter",
-  "external.invite.invalid": "Cette invitation n'est plus valable. Demandez-en une nouvelle à l'équipe qui vous l'a envoyée.",
-  "external.invite.description": "L'équipe {team} vous donne accès à des documents en consultation seule, jusqu'au {date}.",
-  "external.invite.viewOnly": "Vous verrez des aperçus filigranés à votre nom, sans accès aux originaux. Les pages portent aussi un marquage invisible. Les ouvertures et demandes de pages autorisées sont journalisées, sans attester une lecture humaine. Le scellement horaire peut laisser les événements récents non ancrés.",
+  "external.invite.invalid":
+    "Cette invitation n'est plus valable. Demandez-en une nouvelle à l'équipe qui vous l'a envoyée.",
+  "external.invite.description":
+    "L'équipe {team} vous donne accès à des documents en consultation seule, jusqu'au {date}.",
+  "external.invite.viewOnly":
+    "Vous verrez des aperçus filigranés à votre nom, sans accès aux originaux. Les pages portent aussi un marquage invisible. Les ouvertures et demandes de pages autorisées sont journalisées, sans attester une lecture humaine. Le scellement horaire peut laisser les événements récents non ancrés.",
   "external.invite.requirement.email": "Connecté avec l'adresse {email}",
   "external.invite.requirement.totp": "Double authentification activée",
   "external.invite.requirement.keys": "Chiffrement de bout en bout activé",
   "external.invite.enable": "Activer",
-  "external.invite.error": "L'invitation n'a pas pu être acceptée. Vérifiez les conditions ci-dessus.",
+  "external.invite.error":
+    "L'invitation n'a pas pu être acceptée. Vérifiez les conditions ci-dessus.",
   "external.invite.accept": "Accepter l'invitation",
   "external.list.title": "Documents en consultation",
-  "external.list.description": "Les équipes qui vous ont invité partagent ici des aperçus en consultation seule, filigranés à votre nom.",
+  "external.list.description":
+    "Les équipes qui vous ont invité partagent ici des aperçus en consultation seule, filigranés à votre nom.",
   "external.list.access": "{team} : accès jusqu'au {date}",
-  "external.list.totpRequired": "Activez la double authentification pour consulter ces documents.",
-  "external.list.keyLocked": "Déverrouillez votre clé de chiffrement pour ouvrir ces documents.",
+  "external.list.totpRequired":
+    "Activez la double authentification pour consulter ces documents.",
+  "external.list.keyLocked":
+    "Déverrouillez votre clé de chiffrement pour ouvrir ces documents.",
   "external.list.unlock": "Déverrouiller",
-  "external.list.noAccess": "Aucun accès en consultation n'est actif sur ce compte.",
+  "external.list.noAccess":
+    "Aucun accès en consultation n'est actif sur ce compte.",
   "external.list.empty": "Aucun document n'a encore été partagé avec vous.",
   "external.list.encryptedTitle": "Document chiffré",
   "external.list.unreadable": "Titre illisible",
-  "external.list.meta": "{team} - partagé le {date} - {pages, plural, one {# page} other {# pages}}",
+  "external.list.meta":
+    "{team} - partagé le {date} - {pages, plural, one {# page} other {# pages}}",
   "external.list.viewOnly": "Consultation seule",
   "external.list.open": "Ouvrir",
   "external.viewer.page": "Page {page}",
   "external.viewer.pageError": "Cette page n'a pas pu être affichée.",
-  "external.viewer.notice": "Consultation seule. Filigrane : {watermark}. Les pages portent aussi un marquage invisible. Les demandes de pages autorisées sont journalisées, pas une lecture humaine. Les événements récents peuvent ne pas être ancrés.",
+  "external.viewer.notice":
+    "Consultation seule. Filigrane : {watermark}. Les pages portent aussi un marquage invisible. Les demandes de pages autorisées sont journalisées, pas une lecture humaine. Les événements récents peuvent ne pas être ancrés.",
   "external.viewer.empty": "Ce document ne contient aucune page.",
   "external.viewer.back": "Retour aux documents",
-  "external.viewer.unavailable": "Ce document n'est plus disponible. L'accès a peut-être pris fin ou l'aperçu a été retiré.",
-  "external.viewer.decryptError": "Ce document n'a pas pu être déchiffré avec vos clés.",
+  "external.viewer.unavailable":
+    "Ce document n'est plus disponible. L'accès a peut-être pris fin ou l'aperçu a été retiré.",
+  "external.viewer.decryptError":
+    "Ce document n'a pas pu être déchiffré avec vos clés.",
   "external.viewer.meta": "{team} - accès jusqu'au {date}",
-  "upload.pending.fileChanged": "Ce fichier ne correspond pas à celui de l'envoi interrompu. Son transfert recommencera depuis le début.",
+  "upload.pending.fileChanged":
+    "Ce fichier ne correspond pas à celui de l'envoi interrompu. Son transfert recommencera depuis le début.",
 
   "admin.shares.status.inactive": "Envoi inactif",
   "admin.shares.status.unfinished": "Non finalisé",
 
   "upload.pending.resume": "Reprendre ou finaliser",
-  "upload.pending.resumeHelp": "Sélectionnez à nouveau les fichiers manquants pour reprendre cet envoi. Les fichiers déjà enregistrés sont conservés. Cliquez sur Enregistrer pour terminer avec les fichiers affichés. La reprise des morceaux nécessite la mémoire locale de cet envoi et les mêmes fichiers d'origine.",
+  "upload.pending.resumeHelp":
+    "Sélectionnez à nouveau les fichiers manquants pour reprendre cet envoi. Les fichiers déjà enregistrés sont conservés. Cliquez sur Enregistrer pour terminer avec les fichiers affichés. La reprise des morceaux nécessite la mémoire locale de cet envoi et les mêmes fichiers d'origine.",
 
   "upload.pending.title": "Envois non finalisés",
-  "upload.pending.body": "Certains envois ne sont pas finalisés. Vous pouvez consulter et télécharger les fichiers déjà enregistrés.",
-  "upload.pending.summary": "{date} : {count, plural, one {# fichier enregistré} other {# fichiers enregistrés}} ({size})",
+  "upload.pending.body":
+    "Certains envois ne sont pas finalisés. Vous pouvez consulter et télécharger les fichiers déjà enregistrés.",
+  "upload.pending.summary":
+    "{date} : {count, plural, one {# fichier enregistré} other {# fichiers enregistrés}} ({size})",
   "upload.pending.open": "Ouvrir les fichiers enregistrés",
-  "upload.pending.detail": "Cet envoi n'est pas finalisé. Les fichiers affichés sont déjà sauvegardés et restent accessibles depuis votre compte. Les autres fichiers de cet envoi peuvent être manquants.",
+  "upload.pending.detail":
+    "Cet envoi n'est pas finalisé. Les fichiers affichés sont déjà sauvegardés et restent accessibles depuis votre compte. Les autres fichiers de cet envoi peuvent être manquants.",
 
   "upload.cancel.confirm":
     "L'envoi en cours sera interrompu et le partage incomplet supprimé. Continuer ?",
   "upload.finalization.pending.retry": "Réessayer la finalisation",
-  "upload.finalization.pending.body": "La finalisation n'a pas été confirmée. Les fichiers déjà sauvegardés sont conservés. Réessayez pour obtenir le lien du partage.",
+  "upload.finalization.pending.body":
+    "La finalisation n'a pas été confirmée. Les fichiers déjà sauvegardés sont conservés. Réessayez pour obtenir le lien du partage.",
   "upload.finalization.pending.title": "Finalisation à reprendre",
-  "upload.modal.completed.partial-body": "Le partage contient les fichiers sauvegardés par le serveur. L'envoi de {count} fichier(s) n'a pas pu être confirmé. Vérifiez le contenu du partage avant de renvoyer les fichiers manquants.",
+  "upload.modal.completed.partial-body":
+    "Le partage contient les fichiers sauvegardés par le serveur. L'envoi de {count} fichier(s) n'a pas pu être confirmé. Vérifiez le contenu du partage avant de renvoyer les fichiers manquants.",
   "upload.modal.completed.share-incomplete": "Partage incomplet",
   "upload.modal.completed.partial-title": "Fichiers transférés conservés",
-  "bridge.error.localNetworkPermissionRequired": "Connectez le Companion Android et autorisez l'accès aux applications locales lorsque le navigateur le demande.",
-  "bridge.error.localNetworkPermissionDenied": "Le navigateur bloque le Companion Android. Autorisez le réseau local dans les paramètres du site, puis reconnectez-le.",
-  "bridge.error.extensionRequired": "Installez ou activez l'extension PrivCloud Companion pour connecter le Companion.",
-  "bridge.error.originDenied": "Cette page n'est pas autorisée à utiliser le Companion.",
-  "bridge.error.sessionExpired": "Reconnectez le Companion pour renouveler l'autorisation.",
-  "bridge.error.downloadExpired": "Le téléchargement a expiré. Relancez l'import.",
+  "bridge.error.localNetworkPermissionRequired":
+    "Connectez le Companion Android et autorisez l'accès aux applications locales lorsque le navigateur le demande.",
+  "bridge.error.localNetworkPermissionDenied":
+    "Le navigateur bloque le Companion Android. Autorisez le réseau local dans les paramètres du site, puis reconnectez-le.",
+  "bridge.error.extensionRequired":
+    "Installez ou activez l'extension PrivCloud Companion pour connecter le Companion.",
+  "bridge.error.originDenied":
+    "Cette page n'est pas autorisée à utiliser le Companion.",
+  "bridge.error.sessionExpired":
+    "Reconnectez le Companion pour renouveler l'autorisation.",
+  "bridge.error.downloadExpired":
+    "Le téléchargement a expiré. Relancez l'import.",
   "bridge.error.busy": "Le Companion est occupé. Réessayez dans un instant.",
-  "bridge.error.timeout": "Le Companion n'a pas répondu à temps. Vérifiez son état avant de relancer l'opération.",
-  "bridge.error.messageTooLarge": "Cette réponse dépasse la taille prise en charge par le Companion.",
-  "bridge.error.secureContextRequired": "Ouvrez PrivCloud en HTTPS pour connecter le Companion.",
+  "bridge.error.timeout":
+    "Le Companion n'a pas répondu à temps. Vérifiez son état avant de relancer l'opération.",
+  "bridge.error.messageTooLarge":
+    "Cette réponse dépasse la taille prise en charge par le Companion.",
+  "bridge.error.secureContextRequired":
+    "Ouvrez PrivCloud en HTTPS pour connecter le Companion.",
 
   "team.dashboard.metrics.availableSeats":
     "{count, plural, one {# libre} other {# libres}}",
@@ -391,7 +529,7 @@ export default {
     "La demande reste dans votre espace d'équipe. Les alertes chiffrées sont envoyées aux membres qui ont choisi « Tous les fichiers ». Les membres qui ont choisi « Partages directs uniquement » retrouvent la demande dans leur espace d'équipe.",
   "team.fileRequest.empty": "Aucune demande envoyée ou reçue.",
   "team.fileRequest.noFolders":
-    "Aucun dossier accessible en écriture. Un administrateur d'équipe peut créer un dossier ou adapter les droits.",
+    "Aucun dossier disponible. Un administrateur d'équipe peut créer un dossier ou adapter les droits.",
   "team.fileRequest.noRecipients":
     "Aucun autre membre actif ne dispose d'un accès en écriture à ce dossier.",
   "team.fileRequest.allRights":
@@ -468,44 +606,57 @@ export default {
   "home.title": "Une plateforme de partage de fichiers <h>auto-hébergée</h>.",
   "home.meta.title": "Alternative WeTransfer sécurisée (chiffrement E2E)",
 
-  "home.meta.description": "Transfert de fichiers sécurisé, chiffrement AES-256 de bout en bout. Sans publicité ni traçage, hébergé en France. Alternative privée à WeTransfer.",
+  "home.meta.description":
+    "Transfert de fichiers sécurisé, chiffrement AES-256 de bout en bout. Sans publicité ni traçage, hébergé en France. Alternative privée à WeTransfer.",
 
   //"home.description": "Voulez-vous vraiment remettre vos fichiers personnels dans les mains de tiers comme WeTransfer ?",
-  "home.description": "Voulez-vous vraiment remettre vos fichiers personnels dans les mains de tiers comme WeTransfer ?",
+  "home.description":
+    "Voulez-vous vraiment remettre vos fichiers personnels dans les mains de tiers comme WeTransfer ?",
   "home.bullet.a.name": "Auto-hébergé",
-  "home.bullet.a.description": "Hébergez PrivCloud_Sharing sur votre propre machine.",
+  "home.bullet.a.description":
+    "Hébergez PrivCloud_Sharing sur votre propre machine.",
   "home.bullet.b.name": "Confidentialité",
-  "home.bullet.b.description": "Vos fichiers sont les vôtres et ne seront jamais consultés par des tiers.",
+  "home.bullet.b.description":
+    "Vos fichiers sont les vôtres et ne seront jamais consultés par des tiers.",
   "home.bullet.c.name": "Aucune rébarbative limite de taille",
-  "home.bullet.c.description": "Téléchargez des fichiers aussi volumineux que vous le souhaitez. Votre disque dur est votre limite.",
+  "home.bullet.c.description":
+    "Téléchargez des fichiers aussi volumineux que vous le souhaitez. Votre disque dur est votre limite.",
   "home.button.start": "Envoyez vos fichiers en toute sécurité",
   "home.button.signin": "Se connecter",
   "home.button.source": "Code source",
 
   // Paragraphe SEO hero
-  "home.hero.seo": "PrivCloud est une alternative sécurisée à WeTransfer, SwissTransfer et TransferNow -- avec chiffrement de bout en bout AES-256 côté navigateur. Vos fichiers sont chiffrés avant de quitter votre appareil : le serveur ne stocke jamais de données en clair. Que vous partagiez des contrats, des dossiers médicaux ou de volumineuses données : vos fichiers restent protégés de l'envoi au téléchargement.",
+  "home.hero.seo":
+    "PrivCloud est une alternative sécurisée à WeTransfer, SwissTransfer et TransferNow -- avec chiffrement de bout en bout AES-256 côté navigateur. Vos fichiers sont chiffrés avant de quitter votre appareil : le serveur ne stocke jamais de données en clair. Que vous partagiez des contrats, des dossiers médicaux ou de volumineuses données : vos fichiers restent protégés de l'envoi au téléchargement.",
 
   // Trust / references externes
-  "home.trust.text": "Construit sur le standard de chiffrement <aes>AES-256</aes>, conforme au <gdpr>RGPD</gdpr>, avec une récupération de clé facultative par <shamir>partage de secret de Shamir</shamir>.",
+  "home.trust.text":
+    "Construit sur le standard de chiffrement <aes>AES-256</aes>, conforme au <gdpr>RGPD</gdpr>, avec une récupération de clé facultative par <shamir>partage de secret de Shamir</shamir>.",
 
   // Section différenciation
   "home.diff.title": "Ce qui rend PrivCloud différent",
   "home.diff.encryption": "Chiffrement de bout en bout AES-256",
-  "home.diff.zeroKnowledge": "Architecture zéro-knowledge -- par défaut, nous ne voyons pas votre clé",
+  "home.diff.zeroKnowledge":
+    "Architecture zéro-knowledge -- par défaut, nous ne voyons pas votre clé",
   "home.diff.noAccount": "Aucun compte requis pour les transferts",
   "home.diff.openSource": "Open source et entièrement auditable",
   "home.diff.gdpr": "Hébergé en France, 100% conforme RGPD",
-  "home.diff.autoExpiry": "Liens à expiration automatique avec protection par mot de passe",
-  "home.diff.downloadNotify": "Notifications de téléchargement -- sachez quand vos fichiers sont consultés",
+  "home.diff.autoExpiry":
+    "Liens à expiration automatique avec protection par mot de passe",
+  "home.diff.downloadNotify":
+    "Notifications de téléchargement -- sachez quand vos fichiers sont consultés",
 
   // Section comparaison (texte court pour la card 3 colonnes)
   "home.comparison.title": "PrivCloud vs WeTransfer",
-  "home.comparison.text": "Contrairement à WeTransfer, SwissTransfer, Smash ou TransferNow, PrivCloud chiffre vos fichiers directement dans votre navigateur avant qu'ils ne quittent votre appareil. Par défaut, votre clé de chiffrement n'est pas transmise à nos serveurs -- même en cas de compromission, vos fichiers restent illisibles. Activez les notifications de téléchargement pour savoir exactement quand quelqu'un accède à votre partage. Aucune publicité, aucun tracking, aucun accès tiers -- un partage de fichiers véritablement privé, hébergé en France, conforme RGPD.",
+  "home.comparison.text":
+    "Contrairement à WeTransfer, SwissTransfer, Smash ou TransferNow, PrivCloud chiffre vos fichiers directement dans votre navigateur avant qu'ils ne quittent votre appareil. Par défaut, votre clé de chiffrement n'est pas transmise à nos serveurs -- même en cas de compromission, vos fichiers restent illisibles. Activez les notifications de téléchargement pour savoir exactement quand quelqu'un accède à votre partage. Aucune publicité, aucun tracking, aucun accès tiers -- un partage de fichiers véritablement privé, hébergé en France, conforme RGPD.",
 
   // Tableau comparatif détaillé
   "home.comparison.table.title": "PrivCloud face à la concurrence",
-  "home.comparison.table.subtitle": "Un aperçu honnête de ce qui différencie PrivCloud des solutions de partage grand public.",
-  "home.comparison.table.note": "(-) Partiel ou payant. Données vérifiées mi-2025. Pour l'emploi de l'instance auto-hébergée de PrivCloud (GitHub) : les fonctionnalités peuvent varier selon la configuration de votre instance.",
+  "home.comparison.table.subtitle":
+    "Un aperçu honnête de ce qui différencie PrivCloud des solutions de partage grand public.",
+  "home.comparison.table.note":
+    "(-) Partiel ou payant. Données vérifiées mi-2025. Pour l'emploi de l'instance auto-hébergée de PrivCloud (GitHub) : les fonctionnalités peuvent varier selon la configuration de votre instance.",
   "home.comparison.table.header.criteria": "Critère",
   "home.comparison.table.header.privcloud": "PrivCloud",
   "home.comparison.table.header.wetransfer": "WeTransfer",
@@ -524,111 +675,159 @@ export default {
 
   // Section cas d'usage
   "home.usecases.title": "À qui s'adresse PrivCloud ?",
-  "home.usecases.developers": "Développeurs et équipes IT partageant du code et des builds",
-  "home.usecases.businesses": "Entreprises envoyant des contrats et documents confidentiels",
-  "home.usecases.health": "Professionnels de santé et du droit manipulant des données sensibles",
-  "home.usecases.freelancers": "Freelances échangeant des livrables avec leurs clients",
-  "home.usecases.privacy": "Toute personne soucieuse de sa vie privée numérique",
-  "home.usecases.notifications": "Équipes ayant besoin de suivre l'accès à leurs fichiers en temps réel",
-
-
+  "home.usecases.developers":
+    "Développeurs et équipes IT partageant du code et des builds",
+  "home.usecases.businesses":
+    "Entreprises envoyant des contrats et documents confidentiels",
+  "home.usecases.health":
+    "Professionnels de santé et du droit manipulant des données sensibles",
+  "home.usecases.freelancers":
+    "Freelances échangeant des livrables avec leurs clients",
+  "home.usecases.privacy":
+    "Toute personne soucieuse de sa vie privée numérique",
+  "home.usecases.notifications":
+    "Équipes ayant besoin de suivre l'accès à leurs fichiers en temps réel",
 
   // Section fonctionnalites
   "home.features.title": "Pourquoi choisir PrivCloud_Sharing ?",
-  "home.features.security.title": "Chiffrement de bout en bout AES-256 pour tous vos fichiers",
-  "home.features.security.description": "Seuls vous et le destinataire pouvez lire les fichiers. Par défaut, la clé de chiffrement n'est pas transmise au serveur - pour nous, vos fichiers sont illisibles.",
+  "home.features.security.title":
+    "Chiffrement de bout en bout AES-256 pour tous vos fichiers",
+  "home.features.security.description":
+    "Seuls vous et le destinataire pouvez lire les fichiers. Par défaut, la clé de chiffrement n'est pas transmise au serveur - pour nous, vos fichiers sont illisibles.",
   "home.features.privacy.title": "Vos données, vos règles - hébergé en France",
-  "home.features.privacy.description": "Hébergé en France, 100% conforme RGPD. Aucun tracking, aucune analytique, aucun accès tiers.",
-  "home.features.speed.title": "Fichiers illimités, vitesse de transfert maximale",
-  "home.features.speed.description": "Infrastructure optimisée pour une vitesse de transfert maximale. Aucune limite de nombre de fichiers, aucun throttling.",
+  "home.features.privacy.description":
+    "Hébergé en France, 100% conforme RGPD. Aucun tracking, aucune analytique, aucun accès tiers.",
+  "home.features.speed.title":
+    "Fichiers illimités, vitesse de transfert maximale",
+  "home.features.speed.description":
+    "Infrastructure optimisée pour une vitesse de transfert maximale. Aucune limite de nombre de fichiers, aucun throttling.",
   "home.features.open.title": "Open source",
-  "home.features.open.description": "Code entièrement auditable. La transparence n'est pas optionnelle.",
-  "home.features.subtitle": "PrivCloud combine chiffrement de bout en bout AES-256, hébergement en France et transparence open source pour offrir un transfert de fichiers sécurisé et conforme aux obligations RGPD applicables au service. Pour les partages E2E, le serveur ne reçoit pas la clé de contenu par défaut et ne peut pas lire les fichiers.",
+  "home.features.open.description":
+    "Code entièrement auditable. La transparence n'est pas optionnelle.",
+  "home.features.subtitle":
+    "PrivCloud combine chiffrement de bout en bout AES-256, hébergement en France et transparence open source pour offrir un transfert de fichiers sécurisé et conforme aux obligations RGPD applicables au service. Pour les partages E2E, le serveur ne reçoit pas la clé de contenu par défaut et ne peut pas lire les fichiers.",
 
   // Section Comment ça marche
   "home.howto.title": "Comment envoyer des fichiers chiffrés en 3 étapes",
-  "home.howto.subtitle": "Envoyer des fichiers chiffrés de bout en bout n'a jamais été aussi simple. Trois étapes suffisent pour protéger vos documents, contrats, fichiers médicaux ou tout autre fichier sensible avec un chiffrement AES-256-GCM -- sans aucune installation, directement dans votre navigateur.",
+  "home.howto.subtitle":
+    "Envoyer des fichiers chiffrés de bout en bout n'a jamais été aussi simple. Trois étapes suffisent pour protéger vos documents, contrats, fichiers médicaux ou tout autre fichier sensible avec un chiffrement AES-256-GCM -- sans aucune installation, directement dans votre navigateur.",
   "home.howto.step1.num": "01",
   "home.howto.step1.title": "Sélectionnez vos fichiers",
-  "home.howto.step1.desc": "Glissez-déposez vos fichiers (documents, images, archives, vidéos...) ou cliquez pour les sélectionner. Plusieurs fichiers, aucune installation requise -- tout se passe dans votre navigateur.",
+  "home.howto.step1.desc":
+    "Glissez-déposez vos fichiers (documents, images, archives, vidéos...) ou cliquez pour les sélectionner. Plusieurs fichiers, aucune installation requise -- tout se passe dans votre navigateur.",
   "home.howto.step2.num": "02",
-  "home.howto.step2.title": "Chiffrement AES-256 de bout en bout - votre clé reste privée",
-  "home.howto.step2.desc": "Vos fichiers sont chiffrés directement dans votre navigateur avec AES-256-GCM avant de quitter votre appareil. Par défaut, la clé ne transite pas par nos serveurs : elle reste dans le lien de partage.",
+  "home.howto.step2.title":
+    "Chiffrement AES-256 de bout en bout - votre clé reste privée",
+  "home.howto.step2.desc":
+    "Vos fichiers sont chiffrés directement dans votre navigateur avec AES-256-GCM avant de quitter votre appareil. Par défaut, la clé ne transite pas par nos serveurs : elle reste dans le lien de partage.",
   "home.howto.step3.num": "03",
   "home.howto.step3.title": "Partagez le lien sécurisé",
-  "home.howto.step3.desc": "Copiez le lien de partage et transmettez-le à vos destinataires. Configurez une date d'expiration et un mot de passe optionnel. Recevez une notification à chaque téléchargement.",
+  "home.howto.step3.desc":
+    "Copiez le lien de partage et transmettez-le à vos destinataires. Configurez une date d'expiration et un mot de passe optionnel. Recevez une notification à chaque téléchargement.",
 
   // Section Pourquoi PrivCloud
-  "home.whyprivcloud.title": "Ce qui distingue PrivCloud des autres services de transfert",
-  "home.whyprivcloud.subtitle": "WeTransfer, SwissTransfer, TransferNow, Smash : la plupart des services de transfert de fichiers chiffrent vos données au repos sur leurs serveurs, mais conservent la clé. Ils peuvent techniquement lire vos fichiers. PrivCloud adopte une approche fondamentalement différente : le chiffrement de bout en bout AES-256 est effectué dans votre navigateur, et par défaut la clé ne parvient jamais à nos serveurs. Architecture zero-knowledge conçue pour répondre aux exigences du RGPD.",
+  "home.whyprivcloud.title":
+    "Ce qui distingue PrivCloud des autres services de transfert",
+  "home.whyprivcloud.subtitle":
+    "WeTransfer, SwissTransfer, TransferNow, Smash : la plupart des services de transfert de fichiers chiffrent vos données au repos sur leurs serveurs, mais conservent la clé. Ils peuvent techniquement lire vos fichiers. PrivCloud adopte une approche fondamentalement différente : le chiffrement de bout en bout AES-256 est effectué dans votre navigateur, et par défaut la clé ne parvient jamais à nos serveurs. Architecture zero-knowledge conçue pour répondre aux exigences du RGPD.",
 
   // Section Sécurité, confidentialité et conformité
   "home.security.title": "Sécurité, confidentialité et conformité RGPD",
-  "home.security.encryption.title": "Chiffrement AES-256-GCM : votre clé est générée dans votre navigateur",
-  "home.security.encryption.text": "Chaque fichier est chiffré localement dans votre navigateur avant d'être envoyé. La clé de chiffrement symétrique AES-256 est générée aléatoirement et intégrée dans le fragment de l'URL (#key=...), une partie qui n'est jamais transmise au serveur par conception du protocole HTTP. Résultat : même en cas de compromission du serveur, vos fichiers restent illisibles. Leur contenu ne transite jamais en clair sur le réseau et ne réside jamais en clair sur nos serveurs.",
+  "home.security.encryption.title":
+    "Chiffrement AES-256-GCM : votre clé est générée dans votre navigateur",
+  "home.security.encryption.text":
+    "Chaque fichier est chiffré localement dans votre navigateur avant d'être envoyé. La clé de chiffrement symétrique AES-256 est générée aléatoirement et intégrée dans le fragment de l'URL (#key=...), une partie qui n'est jamais transmise au serveur par conception du protocole HTTP. Résultat : même en cas de compromission du serveur, vos fichiers restent illisibles. Leur contenu ne transite jamais en clair sur le réseau et ne réside jamais en clair sur nos serveurs.",
   "home.security.zeroknowledge.title": "Architecture zero-knowledge vérifiable",
-  "home.security.zeroknowledge.text": "Le chiffrement de bout en bout est activé par défaut pour le contenu des fichiers. Dans le format E2E actuel, les noms, chemins, titres et descriptions des partages sont aussi protégés côté client avec la même clé. Le serveur conserve des données chiffrées, des libellés neutres, la taille et les dates des fichiers. Le code source est ouvert et auditable sur GitHub.",
+  "home.security.zeroknowledge.text":
+    "Le chiffrement de bout en bout est activé par défaut pour le contenu des fichiers. Dans le format E2E actuel, les noms, chemins, titres et descriptions des partages sont aussi protégés côté client avec la même clé. Le serveur conserve des données chiffrées, des libellés neutres, la taille et les dates des fichiers. Le code source est ouvert et auditable sur GitHub.",
   "home.security.gdpr.title": "Hébergement en France et conformité RGPD",
-  "home.security.gdpr.text": "Vos fichiers chiffrés sont stockés sur une infrastructure sécurisée en France, en conformité totale avec le Règlement Général sur la Protection des Données (RGPD) et les recommandations de la CNIL. Aucun transfert vers des pays tiers, aucun tracking, aucune publicité, aucune analytique tierce. Vos données restent sous juridiction européenne, protégées par les standards de sécurité les plus stricts.",
+  "home.security.gdpr.text":
+    "Vos fichiers chiffrés sont stockés sur une infrastructure sécurisée en France, en conformité totale avec le Règlement Général sur la Protection des Données (RGPD) et les recommandations de la CNIL. Aucun transfert vers des pays tiers, aucun tracking, aucune publicité, aucune analytique tierce. Vos données restent sous juridiction européenne, protégées par les standards de sécurité les plus stricts.",
 
   // Section FAQ
-  "home.faq.title": "Questions fréquentes sur le transfert de fichiers chiffrés de bout en bout",
+  "home.faq.title":
+    "Questions fréquentes sur le transfert de fichiers chiffrés de bout en bout",
 
   "home.faq.q1": "Puis-je envoyer des fichiers sans créer de compte ?",
-  "home.faq.a1": "Oui. Vous pouvez envoyer des fichiers immédiatement, sans inscription. Créer un compte vous permet de gérer vos partages et d'activer le chiffrement de bout en bout pour une sécurité maximale.",
+  "home.faq.a1":
+    "Oui. Vous pouvez envoyer des fichiers immédiatement, sans inscription. Créer un compte vous permet de gérer vos partages et d'activer le chiffrement de bout en bout pour une sécurité maximale.",
 
   "home.faq.q2": "Mes fichiers sont-ils réellement sécurisés ?",
-  "home.faq.a2": "Oui. Tous les transferts sont chiffrés. Avec le chiffrement de bout en bout activé, vos fichiers sont chiffrés directement dans votre navigateur (AES-256) avant l'envoi. Personne, pas même nous, ne peut lire leur contenu.",
+  "home.faq.a2":
+    "Oui. Tous les transferts sont chiffrés. Avec le chiffrement de bout en bout activé, vos fichiers sont chiffrés directement dans votre navigateur (AES-256) avant l'envoi. Personne, pas même nous, ne peut lire leur contenu.",
 
   "home.faq.q3": "Comment fonctionne le chiffrement de bout en bout ?",
-  "home.faq.a3": "Le chiffrement est effectué localement dans votre navigateur avant l'envoi. Par défaut, la clé de déchiffrement n'est pas transmise au serveur : elle est incluse uniquement dans le lien de partage. Elle ne passe par nos serveurs que si vous choisissez de l'envoyer par e-mail, et pour les fichiers reçus par un lien de dépôt. Sans ce lien complet, les fichiers sont inutilisables.",
+  "home.faq.a3":
+    "Le chiffrement est effectué localement dans votre navigateur avant l'envoi. Par défaut, la clé de déchiffrement n'est pas transmise au serveur : elle est incluse uniquement dans le lien de partage. Elle ne passe par nos serveurs que si vous choisissez de l'envoyer par e-mail, et pour les fichiers reçus par un lien de dépôt. Sans ce lien complet, les fichiers sont inutilisables.",
 
   "home.faq.q4": "Mes fichiers sont-ils stockés définitivement ?",
-  "home.faq.a4": "Non. Chaque transfert possède une durée d'expiration configurable. Une fois expirés, les fichiers sont automatiquement supprimés de nos serveurs, sans intervention nécessaire.",
+  "home.faq.a4":
+    "Non. Chaque transfert possède une durée d'expiration configurable. Une fois expirés, les fichiers sont automatiquement supprimés de nos serveurs, sans intervention nécessaire.",
 
   "home.faq.q5": "Puis-je protéger un partage avec un mot de passe ?",
-  "home.faq.a5": "Oui. Vous pouvez ajouter un mot de passe à n'importe quel partage. Le destinataire devra le saisir pour accéder aux fichiers, ajoutant une couche de sécurité supplémentaire.",
+  "home.faq.a5":
+    "Oui. Vous pouvez ajouter un mot de passe à n'importe quel partage. Le destinataire devra le saisir pour accéder aux fichiers, ajoutant une couche de sécurité supplémentaire.",
 
   "home.faq.q6": "Quelle est la différence entre transfert et stockage ?",
-  "home.faq.a6": "Le transfert correspond à la taille maximale d'un envoi unique. Le stockage correspond à l'espace total occupé par vos fichiers actifs. Une fois expirés, les fichiers sont supprimés et libèrent automatiquement de l'espace.",
+  "home.faq.a6":
+    "Le transfert correspond à la taille maximale d'un envoi unique. Le stockage correspond à l'espace total occupé par vos fichiers actifs. Une fois expirés, les fichiers sont supprimés et libèrent automatiquement de l'espace.",
 
   "home.faq.q7": "Où sont hébergés mes fichiers ?",
-  "home.faq.a7": "Les fichiers sont stockés sur une infrastructure sécurisée en Europe (France), avec conformité RGPD. Les données sont chiffrées au repos côté serveur. Avec le chiffrement de bout en bout activé, elles sont déjà chiffrées avant même d'être stockées.",
+  "home.faq.a7":
+    "Les fichiers sont stockés sur une infrastructure sécurisée en Europe (France), avec conformité RGPD. Les données sont chiffrées au repos côté serveur. Avec le chiffrement de bout en bout activé, elles sont déjà chiffrées avant même d'être stockées.",
 
-  "home.faq.q8": "Quelle est la différence avec Google Drive, Dropbox ou OneDrive ?",
-  "home.faq.a8": "Les services cloud classiques chiffrent les données mais conservent les clés, ce qui leur permet techniquement d'y accéder. PrivCloud_Sharing adopte un modèle zéro-knowledge : vous seul détenez la clé. Même nous ne pouvons pas accéder à vos fichiers.",
+  "home.faq.q8":
+    "Quelle est la différence avec Google Drive, Dropbox ou OneDrive ?",
+  "home.faq.a8":
+    "Les services cloud classiques chiffrent les données mais conservent les clés, ce qui leur permet techniquement d'y accéder. PrivCloud_Sharing adopte un modèle zéro-knowledge : vous seul détenez la clé. Même nous ne pouvons pas accéder à vos fichiers.",
 
   "home.faq.q9": "Le fournisseur de stockage peut-il accéder à mes fichiers ?",
-  "home.faq.a9": "Sans chiffrement de bout en bout, les données sont protégées mais techniquement accessibles comme dans tout service cloud. Avec le chiffrement activé, les fichiers sont illisibles pour toute autre entité, y compris le fournisseur de stockage.",
+  "home.faq.a9":
+    "Sans chiffrement de bout en bout, les données sont protégées mais techniquement accessibles comme dans tout service cloud. Avec le chiffrement activé, les fichiers sont illisibles pour toute autre entité, y compris le fournisseur de stockage.",
 
-  "home.faq.q10": "Pourquoi utiliser PrivCloud_Sharing plutôt qu'un autre service ?",
-  "home.faq.a10": "PrivCloud_Sharing combine simplicité, performance et sécurité avancée. Contrairement aux solutions classiques, vos fichiers peuvent être chiffrés de bout en bout, garantissant une confidentialité totale sans compromis sur la rapidité d'utilisation.",
+  "home.faq.q10":
+    "Pourquoi utiliser PrivCloud_Sharing plutôt qu'un autre service ?",
+  "home.faq.a10":
+    "PrivCloud_Sharing combine simplicité, performance et sécurité avancée. Contrairement aux solutions classiques, vos fichiers peuvent être chiffrés de bout en bout, garantissant une confidentialité totale sans compromis sur la rapidité d'utilisation.",
 
   // Section threat model
   "home.threat.title": "Modèle de menace transparent",
-  "home.threat.intro": "Une plateforme honnête vous dit exactement contre quoi elle vous protège -- et ce qui reste de votre responsabilité.",
+  "home.threat.intro":
+    "Une plateforme honnête vous dit exactement contre quoi elle vous protège -- et ce qui reste de votre responsabilité.",
   "home.threat.protects.title": "Ce contre quoi nous vous protégeons",
-  "home.threat.protects.serverBreach": "Compromission du serveur / de la BDD -- les fichiers chiffrés sont illisibles sans votre clé.",
-  "home.threat.protects.s3Provider": "Espionnage par le fournisseur S3 -- avec le E2E activé, il ne voit que du contenu chiffré, sous des identifiants aléatoires.",
-  "home.threat.protects.networkSniffing": "Interception réseau -- TLS 1.3 en transit, AES-256 au repos et côté client.",
-  "home.threat.protects.operator": "L'opérateur de la plateforme (nous) -- architecture zéro-knowledge : par défaut, nous ne voyons pas votre clé.",
-  "home.threat.protects.sskrRecovery": "Perte partielle de fragments SSKR -- grâce au schéma de Shamir, un seuil minimal de fragments suffit à reconstruire votre clé.",
+  "home.threat.protects.serverBreach":
+    "Compromission du serveur / de la BDD -- les fichiers chiffrés sont illisibles sans votre clé.",
+  "home.threat.protects.s3Provider":
+    "Espionnage par le fournisseur S3 -- avec le E2E activé, il ne voit que du contenu chiffré, sous des identifiants aléatoires.",
+  "home.threat.protects.networkSniffing":
+    "Interception réseau -- TLS 1.3 en transit, AES-256 au repos et côté client.",
+  "home.threat.protects.operator":
+    "L'opérateur de la plateforme (nous) -- architecture zéro-knowledge : par défaut, nous ne voyons pas votre clé.",
+  "home.threat.protects.sskrRecovery":
+    "Perte partielle de fragments SSKR -- grâce au schéma de Shamir, un seuil minimal de fragments suffit à reconstruire votre clé.",
   "home.threat.notProtects.title": "Ce qui reste de votre responsabilité",
-  "home.threat.notProtects.keyLoss": "Perdre votre clé E2E sans avoir généré de fragments SSKR -- sans clé ni fragments, vos partages chiffrés sont définitivement inaccessibles.",
-  "home.threat.notProtects.deviceCompromise": "Poste de travail compromis (malware, keylogger) -- nous ne pouvons pas protéger ce que votre OS ne protège pas.",
-  "home.threat.notProtects.weakPassword": "Mot de passe de compte faible -- activez la 2FA (TOTP) et utilisez un mot de passe fort et unique.",
-  "home.threat.notProtects.linkSharing": "Partager un lien sur un canal non sécurisé -- quiconque possède le lien + la clé peut déchiffrer.",
-  "home.threat.notProtects.shardMismanagement": "Stocker tous vos fragments SSKR au même endroit -- si un attaquant les obtient tous, il peut reconstruire votre clé.",
+  "home.threat.notProtects.keyLoss":
+    "Perdre votre clé E2E sans avoir généré de fragments SSKR -- sans clé ni fragments, vos partages chiffrés sont définitivement inaccessibles.",
+  "home.threat.notProtects.deviceCompromise":
+    "Poste de travail compromis (malware, keylogger) -- nous ne pouvons pas protéger ce que votre OS ne protège pas.",
+  "home.threat.notProtects.weakPassword":
+    "Mot de passe de compte faible -- activez la 2FA (TOTP) et utilisez un mot de passe fort et unique.",
+  "home.threat.notProtects.linkSharing":
+    "Partager un lien sur un canal non sécurisé -- quiconque possède le lien + la clé peut déchiffrer.",
+  "home.threat.notProtects.shardMismanagement":
+    "Stocker tous vos fragments SSKR au même endroit -- si un attaquant les obtient tous, il peut reconstruire votre clé.",
   // END threat model
 
   // END /
   // /auth/signin
   "signin.title": "Content de vous revoir",
-  "signin.meta.description": "Connectez-vous à votre compte PrivCloud pour accéder à vos partages de fichiers chiffrés de bout en bout. Hébergé en France, conforme RGPD.",
+  "signin.meta.description":
+    "Connectez-vous à votre compte PrivCloud pour accéder à vos partages de fichiers chiffrés de bout en bout. Hébergé en France, conforme RGPD.",
   "signin.description": "Vous n'avez pas encore de compte ?",
   "signin.button.signup": "S'inscrire",
   "signin.input.email-or-username": "Courriel ou nom d'utilisateur",
-  "signin.input.email-or-username.placeholder": "Votre courriel ou nom d'utilisateur",
+  "signin.input.email-or-username.placeholder":
+    "Votre courriel ou nom d'utilisateur",
   "signin.input.password": "Mot de passe",
   "signin.input.password.placeholder": "Votre mot de passe",
   "signin.button.submit": "Se connecter",
@@ -639,8 +838,10 @@ export default {
   "signIn.notify.session-expired.title": "Session expirée",
   "signIn.notify.session-expired.description":
     "Votre session a expiré. Reconnectez-vous pour continuer.",
-  "signIn.notify.totp-required.title": "Une authentification à deux facteurs est requise",
-  "signIn.notify.totp-required.description": "Veuillez entrer votre code d'authentification à deux facteurs",
+  "signIn.notify.totp-required.title":
+    "Une authentification à deux facteurs est requise",
+  "signIn.notify.totp-required.description":
+    "Veuillez entrer votre code d'authentification à deux facteurs",
   "signIn.oauth.or": "OU",
   "signIn.oauth.signInWith": "Se connecter avec",
   "signIn.oauth.github": "GitHub",
@@ -651,7 +852,8 @@ export default {
   // END /auth/signin
   // /auth/signup
   "signup.title": "Créer un compte",
-  "signup.meta.description": "Créez votre compte PrivCloud gratuit -- partagez des fichiers volumineux avec chiffrement AES-256, liens à expiration, protection par mot de passe. Hébergé en France.",
+  "signup.meta.description":
+    "Créez votre compte PrivCloud gratuit -- partagez des fichiers volumineux avec chiffrement AES-256, liens à expiration, protection par mot de passe. Hébergé en France.",
   "signup.description": "Vous avez déjà un compte ?",
   "signup.button.signin": "Se connecter",
   "signup.input.username": "Nom d'utilisateur",
@@ -675,13 +877,16 @@ export default {
   // END /auth/totp
   // /auth/reset-password
   "resetPassword.title": "Mot de passe oublié ?",
-  "resetPassword.description": "Saisissez votre courriel pour réinitialiser votre mot de passe.",
-  "resetPassword.notify.success": "Un message avec un lien pour réinitialiser votre mot de passe a été envoyé si le courriel fourni existe.",
+  "resetPassword.description":
+    "Saisissez votre courriel pour réinitialiser votre mot de passe.",
+  "resetPassword.notify.success":
+    "Un message avec un lien pour réinitialiser votre mot de passe a été envoyé si le courriel fourni existe.",
   "resetPassword.button.back": "Retour à la page de connexion",
   "resetPassword.text.resetPassword": "Réinitialiser le mot de passe",
   "resetPassword.text.enterNewPassword": "Saisissez votre nouveau mot de passe",
   "resetPassword.input.password": "Nouveau mot de passe",
-  "resetPassword.notify.passwordReset": "Votre mot de passe a été réinitialisé avec succès.",
+  "resetPassword.notify.passwordReset":
+    "Votre mot de passe a été réinitialisé avec succès.",
   // /account
   "account.title": "Mon compte",
   "account.usage.title": "Utilisation",
@@ -696,11 +901,16 @@ export default {
   "account.card.password.title": "Mot de passe",
   "account.card.password.old": "Ancien mot de passe",
   "account.card.password.new": "Nouveau mot de passe",
-  "account.card.password.noPasswordSet": "Vous n'avez pas de mot de passe défini. Si vous voulez vous connecter avec un courriel et un mot de passe, vous devez définir un mot de passe.",
-  "account.card.password.oauth.description": "Confirmez votre identité en vous reconnectant avec le compte que vous y avez lié avant de choisir un mot de passe.",
-  "account.card.password.oauth.confirmed": "Identité confirmée. Choisissez votre mot de passe dans les prochaines minutes.",
-  "account.card.password.oauth.none": "Aucun de vos comptes liés ne permet de confirmer votre identité ici. Déconnectez-vous et utilisez « Mot de passe oublié ? » sur la page de connexion pour recevoir un lien par courriel, ou contactez votre administrateur.",
-  "account.notify.password.success": "Le mot de passe a été modifié avec succès",
+  "account.card.password.noPasswordSet":
+    "Vous n'avez pas de mot de passe défini. Si vous voulez vous connecter avec un courriel et un mot de passe, vous devez définir un mot de passe.",
+  "account.card.password.oauth.description":
+    "Confirmez votre identité en vous reconnectant avec le compte que vous y avez lié avant de choisir un mot de passe.",
+  "account.card.password.oauth.confirmed":
+    "Identité confirmée. Choisissez votre mot de passe dans les prochaines minutes.",
+  "account.card.password.oauth.none":
+    "Aucun de vos comptes liés ne permet de confirmer votre identité ici. Déconnectez-vous et utilisez « Mot de passe oublié ? » sur la page de connexion pour recevoir un lien par courriel, ou contactez votre administrateur.",
+  "account.notify.password.success":
+    "Le mot de passe a été modifié avec succès",
   "account.card.oauth.title": "Identifiant social",
   "account.card.oauth.github": "GitHub",
   "account.card.oauth.google": "Google",
@@ -711,7 +921,8 @@ export default {
   "account.card.oauth.unlink": "Dissocier",
   "account.card.oauth.unlinked": "Dissocié",
   "account.modal.unlink.title": "Dissocier le compte",
-  "account.modal.unlink.description": "Délier vos réseaux sociaux peut vous faire perdre votre compte si vous ne vous souvenez pas de vos identifiants de connexion",
+  "account.modal.unlink.description":
+    "Délier vos réseaux sociaux peut vous faire perdre votre compte si vous ne vous souvenez pas de vos identifiants de connexion",
   "account.notify.oauth.unlinked.success": "Dissocié avec succès",
   "account.card.signing-passkeys.title": "Passkeys de signature",
   "account.card.signing-passkeys.description":
@@ -727,8 +938,10 @@ export default {
     "Elle ne pourra plus servir à signer. Les documents déjà signés conservent intégralement leur preuve.",
   "account.card.signing-passkeys.deleted": "Passkey supprimée",
   "account.card.security.title": "Sécurité",
-  "account.card.security.totp.enable.description": "Entrez votre mot de passe actuel pour activer TOTP",
-  "account.card.security.totp.disable.description": "Entrez votre mot de passe actuel pour désactiver TOTP",
+  "account.card.security.totp.enable.description":
+    "Entrez votre mot de passe actuel pour activer TOTP",
+  "account.card.security.totp.disable.description":
+    "Entrez votre mot de passe actuel pour désactiver TOTP",
   "account.card.security.totp.button.start": "Démarrer",
   "account.modal.totp.title": "Activer la double authentification",
   "account.modal.totp.step1": "Étape 1 : Ajouter votre authentification",
@@ -737,7 +950,8 @@ export default {
   "account.modal.totp.code": "Code",
   "common.button.clickToCopy": "Cliquez pour copier",
   "account.modal.totp.verify": "Vérifier",
-  "account.notify.totp.disable": "Double authentification (TOTP) désactivé avec succès",
+  "account.notify.totp.disable":
+    "Double authentification (TOTP) désactivé avec succès",
   "account.notify.totp.enable": "TOTP activé avec succès",
   "account.modal.totp.codeOrBackup": "Code TOTP ou code de secours",
   "account.modal.totp.backup.title": "Sauvegardez vos codes de secours",
@@ -749,21 +963,33 @@ export default {
     "Codes de secours TOTP - Conservez-les en lieu sûr !",
   "account.modal.totp.backup.fileFooter":
     "Chaque code ne peut être utilisé qu'une seule fois.",
+  "account.card.push.not-configured":
+    "Les notifications push ne sont pas activées sur cette instance.",
+  "account.card.push.unsupported":
+    "Ce navigateur ne prend pas en charge les notifications push.",
   "account.card.push.title": "Notifications push",
   "account.card.push.description":
-    "Recevez des notifications dans votre navigateur lorsqu'un partage est terminé ou qu'un fichier est déposé via votre lien de reverse share.",
+    "Activez les notifications sur cet appareil, puis choisissez les événements à recevoir.",
   "account.card.push.enable": "Activer les notifications",
   "account.card.push.disable": "Désactiver les notifications",
   "account.card.push.permission-denied":
     "La permission de notification a été refusée. Veuillez autoriser les notifications dans les paramètres de votre navigateur.",
   "account.notify.push.enabled": "Notifications push activées",
   "account.notify.push.disabled": "Notifications push désactivées",
-  "account.notify.push.error": "Erreur lors de la configuration des notifications push",
+  "account.notify.push.error":
+    "Erreur lors de la configuration des notifications push",
   "account.notify.push.browser-blocked":
     "Votre navigateur bloque le service push (Brave). Activez la messagerie push Google : ouvrez brave://settings/privacy, faites d\u00e9filer jusqu'\u00e0 \u00ab Utiliser les services Google pour la messagerie push \u00bb, et activez-le. Ou d\u00e9sactivez temporairement Brave Shields pour ce site.",
   "account.card.push.browser-blocked":
     "Votre navigateur bloque les notifications push (Brave ou similaire). Pour corriger cela : ouvrez brave://settings/privacy, trouvez \u00ab Utiliser les services Google pour la messagerie push \u00bb, et activez-le. Ou d\u00e9sactivez temporairement Shields pour ce site.",
 
+  "account.notify.signature.unavailable":
+    "L’éligibilité aux notifications de signature n’a pas pu être confirmée. Réessayez dans quelques instants.",
+  "account.notify.signature.title": "Signatures",
+  "account.notify.signature.description":
+    "Recevez une notification quand votre compte est invité à signer un document et quand le document finalisé est disponible.",
+  "account.notify.signature.label":
+    "M’avertir des demandes de signature et des documents finalisés",
   "account.notify.title": "Notifications de téléchargement",
   "account.notify.description":
     "Choisissez comment vous souhaitez être notifié lorsque vos partages sont téléchargés.",
@@ -778,7 +1004,8 @@ export default {
     "Recevez un résumé hebdomadaire de tous les téléchargements chaque lundi à 8 h.",
 
   "account.card.language.title": "Langue",
-  "account.card.language.description": "Le projet est traduit par la communauté. Certaines traductions peuvent être incomplètes.",
+  "account.card.language.description":
+    "Le projet est traduit par la communauté. Certaines traductions peuvent être incomplètes.",
   "account.card.color.title": "Thème de couleurs",
   // ThemeSwitcher.tsx
   "account.theme.dark": "Sombre",
@@ -786,7 +1013,8 @@ export default {
   "account.theme.system": "Système",
   "account.button.delete": "Supprimer le compte",
   "account.modal.delete.title": "Supprimer le compte",
-  "account.modal.delete.description": "Voulez-vous vraiment supprimer votre compte, y compris tous vos partages actifs ?",
+  "account.modal.delete.description":
+    "Voulez-vous vraiment supprimer votre compte, y compris tous vos partages actifs ?",
   // END /account
   // /account/shares
   "account.shares.title": "Mes partages",
@@ -807,26 +1035,32 @@ export default {
   "account.shares.modal.share-informations": "Détails du partage",
   "account.shares.modal.share-link": "Lien de partage",
   "account.shares.modal.delete.title": "Supprimer le partage : {share}",
-  "account.shares.modal.delete.description": "Voulez-vous vraiment supprimer ce partage ?",
+  "account.shares.modal.delete.description":
+    "Voulez-vous vraiment supprimer ce partage ?",
   "account.shares.notify.deleted-success": "Partage supprimé avec succès",
   "account.shares.notify.delete-fail": "Impossible de supprimer le partage",
   "account.shares.select-all": "Tout sélectionner",
   "account.shares.bulk-delete.title": "Supprimer {count} partage(s)",
-  "account.shares.bulk-delete.description": "Voulez-vous vraiment supprimer les {count} partage(s) sélectionné(s) ? Cette action est irréversible.",
+  "account.shares.bulk-delete.description":
+    "Voulez-vous vraiment supprimer les {count} partage(s) sélectionné(s) ? Cette action est irréversible.",
   "account.shares.bulk-delete.button": "Supprimer ({count})",
   // END /account/shares
   // /account/reverseShares
   "account.reverseShares.title": "Partages inversés",
-  "account.reverseShares.description": "Un partage inversé vous permet de générer une URL unique qui permet à des utilisateurs externes de créer un partage.",
+  "account.reverseShares.description":
+    "Un partage inversé vous permet de générer une URL unique qui permet à des utilisateurs externes de créer un partage.",
   "account.reverseShares.title.empty": "C'est plutôt vide 👀",
-  "account.reverseShares.description.empty": "Vous n'avez aucun partage inversé.",
+  "account.reverseShares.description.empty":
+    "Vous n'avez aucun partage inversé.",
   // showCreateReverseShareModal.tsx
   "account.reverseShares.modal.title": "Créer un partage inversé",
   "account.reverseShares.modal.link-type.label": "Type de lien",
   "account.reverseShares.modal.link-type.description":
     "Les liens personnels n'expirent jamais mais peuvent être révoqués. Les liens limités ont une expiration configurable.",
-  "account.reverseShares.modal.link-type.personal": "Personnel (sans expiration)",
-  "account.reverseShares.modal.link-type.limited": "Limité (expiration configurable)",
+  "account.reverseShares.modal.link-type.personal":
+    "Personnel (sans expiration)",
+  "account.reverseShares.modal.link-type.limited":
+    "Limité (expiration configurable)",
   "account.reverseShares.modal.expiration.label": "Expiration",
   "account.reverseShares.modal.expiration.minute-singular": "Minute",
   "account.reverseShares.modal.expiration.minute-plural": "Minutes",
@@ -842,22 +1076,29 @@ export default {
   "account.reverseShares.modal.expiration.year-plural": "Ans",
   "account.reverseShares.modal.max-size.label": "Taille maximale du partage",
 
-  "account.reverseShares.modal.additional-options.title": "Options supplémentaires",
+  "account.reverseShares.modal.additional-options.title":
+    "Options supplémentaires",
   "account.reverseShares.modal.name.label": "Nom",
   "account.reverseShares.modal.name.placeholder": "Nom",
   "account.reverseShares.modal.name.description":
     "Nom optionnel pour le partage inversé. Il sera visible pour vous et la personne qui télécharge les fichiers.",
 
-  "account.reverseShares.modal.send-email": "Envoyer des notifications par courriel",
-  "account.reverseShares.modal.send-email.description": "Vous envoi une notification par courriel lorsqu'un partage est créé avec ce lien de partage inversé.",
+  "account.reverseShares.modal.send-email":
+    "Envoyer des notifications par courriel",
+  "account.reverseShares.modal.send-email.description":
+    "Vous envoi une notification par courriel lorsqu'un partage est créé avec ce lien de partage inversé.",
   "account.reverseShares.modal.simplified": "Mode simple",
-  "account.reverseShares.modal.simplified.description": "Simplifiez la tâche à la personne qui vous partage un fichier. Ils ne pourront que personnaliser le nom et la description du partage.",
+  "account.reverseShares.modal.simplified.description":
+    "Simplifiez la tâche à la personne qui vous partage un fichier. Ils ne pourront que personnaliser le nom et la description du partage.",
   "account.reverseShares.modal.public-access": "Accès public",
-  "account.reverseShares.modal.public-access.description": "Rendre les partages créés avec ce partage inversé public. Si désactivé, seul vous et le créateur du partage pourrez le voir.",
+  "account.reverseShares.modal.public-access.description":
+    "Rendre les partages créés avec ce partage inversé public. Si désactivé, seul vous et le créateur du partage pourrez le voir.",
   "account.reverseShares.modal.max-use.label": "Nombre d'utilisations max",
-  "account.reverseShares.modal.max-use.description": "Le nombre maximal de fois que cette URL peut être utilisée pour créer un partage.",
+  "account.reverseShares.modal.max-use.description":
+    "Le nombre maximal de fois que cette URL peut être utilisée pour créer un partage.",
   "account.reverseShare.never-expires": "Ce partage inversé n'expirera jamais.",
-  "account.reverseShare.expires-on": "Ce partage inversé expirera le {expiration}.",
+  "account.reverseShare.expires-on":
+    "Ce partage inversé expirera le {expiration}.",
   "account.reverseShares.table.no-shares": "Aucun partage créé pour le moment",
   "account.reverseShares.table.count.singular": "partage",
   "account.reverseShares.table.public-access": "Accès public",
@@ -870,23 +1111,29 @@ export default {
   "account.reverseShares.table.view-files": "Voir les fichiers",
   "account.reverseShares.modal.reverse-share-link": "Lien du partage inversé",
   "account.reverseShares.modal.delete.title": "Supprimer le partage inversé",
-  "account.reverseShares.modal.delete.description": "Voulez-vous vraiment supprimer ce partage inversé ? Si vous le faites, les partages qu'il contient seront également supprimés.",
+  "account.reverseShares.modal.delete.description":
+    "Voulez-vous vraiment supprimer ce partage inversé ? Si vous le faites, les partages qu'il contient seront également supprimés.",
   "account.reverseShares.rsKey.title": "Clé de chiffrement du partage inversé",
-  "account.reverseShares.rsKey.description": "Clé de chiffrement AES-256 de ce partage inversé. Conservez-la en lieu sûr -- sans elle, les fichiers envoyés ne pourront pas être déchiffrés.",
+  "account.reverseShares.rsKey.description":
+    "Clé de chiffrement AES-256 de ce partage inversé. Conservez-la en lieu sûr -- sans elle, les fichiers envoyés ne pourront pas être déchiffrés.",
   "account.reverseShares.rsKey.reveal": "Révéler",
   "account.reverseShares.rsKey.hide": "Masquer",
   "account.reverseShares.rsKey.copy": "Copier",
   "account.reverseShares.rsKey.copied": "Copié !",
   "account.reverseShares.table.show-key": "Afficher la clé de chiffrement",
-  "account.reverseShares.notify.decrypt-key-failed": "Impossible de déchiffrer la clé du partage inversé",
+  "account.reverseShares.notify.decrypt-key-failed":
+    "Impossible de déchiffrer la clé du partage inversé",
   "account.reverseShares.notify.expiration-updated": "Expiration mise à jour",
-  "account.reverseShares.notify.expiration-update-failed": "\u00c9chec de la mise \u00e0 jour de l'expiration",
+  "account.reverseShares.notify.expiration-update-failed":
+    "\u00c9chec de la mise \u00e0 jour de l'expiration",
   "account.reverseShares.modal.delete-share.title": "Supprimer le partage",
   "account.reverseShares.modal.delete-share.description":
     "Voulez-vous vraiment supprimer ce partage ? Les fichiers envoyés seront définitivement supprimés.",
   "account.reverseShares.select-all": "Tout sélectionner",
-  "account.reverseShares.bulk-delete.title": "Supprimer {count} partage(s) inversé(s)",
-  "account.reverseShares.bulk-delete.description": "Voulez-vous vraiment supprimer les {count} partage(s) inversé(s) sélectionné(s) ? Les fichiers envoyés seront définitivement supprimés.",
+  "account.reverseShares.bulk-delete.title":
+    "Supprimer {count} partage(s) inversé(s)",
+  "account.reverseShares.bulk-delete.description":
+    "Voulez-vous vraiment supprimer les {count} partage(s) inversé(s) sélectionné(s) ? Les fichiers envoyés seront définitivement supprimés.",
   "account.reverseShares.bulk-delete.button": "Supprimer ({count})",
   // END /account/reverseShares
   // /admin
@@ -912,21 +1159,28 @@ export default {
   // END /admin
   // /admin/users
   "step-up.title": "Confirmez votre identité",
-  "step-up.description.admin": "Cette opération modifie des droits d'administrateur, les identifiants d'un autre compte ou les réglages de connexion. Confirmez votre propre identité d'administrateur. L'utilisateur concerné n'a rien à fournir, et la confirmation ne vaut que pour cette opération.",
+  "step-up.description.admin":
+    "Cette opération modifie des droits d'administrateur, les identifiants d'un autre compte ou les réglages de connexion. Confirmez votre propre identité d'administrateur. L'utilisateur concerné n'a rien à fournir, et la confirmation ne vaut que pour cette opération.",
   "step-up.password": "Votre mot de passe",
-  "step-up.description.signing-passkey": "Cette passkey signera des documents en votre nom et permettra de vous connecter. Confirmez d'abord votre identité, comme pour ajouter une passkey depuis les paramètres de votre compte.",
+  "step-up.description.signing-passkey":
+    "Cette passkey signera des documents en votre nom et permettra de vous connecter. Confirmez d'abord votre identité, comme pour ajouter une passkey depuis les paramètres de votre compte.",
   "step-up.confirm": "Confirmer",
   "step-up.passkey": "Confirmer avec une passkey",
-  "step-up.wrong-proof": "Mot de passe incorrect, ou la confirmation avec votre compte lié a expiré.",
+  "step-up.wrong-proof":
+    "Mot de passe incorrect, ou la confirmation avec votre compte lié a expiré.",
   "step-up.wrong-code": "Code de double authentification invalide.",
   "step-up.passkey-error": "La passkey n'a pas pu confirmer cette opération.",
   "step-up.error": "La confirmation a échoué. Réessayez.",
-  "step-up.none": "Votre compte n'a ni mot de passe, ni passkey, ni compte lié capable de confirmer cette opération. Ajoutez une passkey ou définissez un mot de passe depuis les paramètres de votre compte.",
-  "step-up.oauth-returned": "Identité confirmée avec votre compte lié. Refaites l'opération dans les cinq minutes.",
+  "step-up.none":
+    "Votre compte n'a ni mot de passe, ni passkey, ni compte lié capable de confirmer cette opération. Ajoutez une passkey ou définissez un mot de passe depuis les paramètres de votre compte.",
+  "step-up.oauth-returned":
+    "Identité confirmée avec votre compte lié. Refaites l'opération dans les cinq minutes.",
   "admin.users.title": "Gestion des utilisateurs",
-  "admin.users.total": "{count, plural, one {# utilisateur au total} other {# utilisateurs au total}}",
-  "admin.users.search.placeholder": "Rechercher par surnom ou courriel",
-  "admin.users.search.results": "{count, plural, one {# résultat} other {# résultats}}",
+  "admin.users.total":
+    "{count, plural, one {# utilisateur au total} other {# utilisateurs au total}}",
+  "admin.users.search.placeholder": "Rechercher par surnom, courriel ou équipe",
+  "admin.users.search.results":
+    "{count, plural, one {# résultat} other {# résultats}}",
   "admin.users.table.username": "Surnom",
   "admin.users.table.email": "Courriel",
   "admin.users.table.admin": "Admin",
@@ -936,9 +1190,12 @@ export default {
   "admin.users.edit.update.admin-privileges": "Privilèges d'admin",
   "admin.users.edit.update.change-password.title": "Changer le mot de passe",
   "admin.users.edit.update.change-password.field": "Nouveau mot de passe",
-  "admin.users.edit.update.change-password.button": "Enregistrer le nouveau mot de passe",
-  "admin.users.edit.update.notify.password.success": "Le mot de passe a été modifié",
-  "admin.users.edit.update.totp.disable": "Désactiver la 2FA pour cet utilisateur",
+  "admin.users.edit.update.change-password.button":
+    "Enregistrer le nouveau mot de passe",
+  "admin.users.edit.update.notify.password.success":
+    "Le mot de passe a été modifié",
+  "admin.users.edit.update.totp.disable":
+    "Désactiver la 2FA pour cet utilisateur",
   "admin.users.edit.update.totp.disabled": "2FA désactivée avec succès",
   "admin.users.edit.update.self":
     "Modifiez votre propre adresse e-mail, votre mot de passe et votre 2FA depuis les paramètres de votre compte.",
@@ -951,14 +1208,12 @@ export default {
     "Adresse e-mail non prouvée. Ce compte ne peut pas signer au niveau renforcé sans LDAP ni OIDC.",
   "admin.users.edit.security.email.button":
     "Marquer l'adresse e-mail comme vérifiée",
-  "admin.users.edit.security.email.confirm.title":
-    "Confirmer l'adresse e-mail",
+  "admin.users.edit.security.email.confirm.title": "Confirmer l'adresse e-mail",
   "admin.users.edit.security.email.confirm.text":
     "Confirmez avoir vérifié par un autre canal que {email} appartient bien à cette personne. Ce marquage est enregistré à votre nom et sert de preuve d'identité pour la signature renforcée.",
   "admin.users.edit.security.email.done":
     "Adresse e-mail marquée comme vérifiée",
-  "admin.users.edit.security.passkeys.count":
-    "Passkeys de signature : {count}",
+  "admin.users.edit.security.passkeys.count": "Passkeys de signature : {count}",
   "admin.users.edit.security.passkeys.button":
     "Réinitialiser les passkeys de signature",
   "admin.users.edit.security.passkeys.confirm.title":
@@ -973,16 +1228,20 @@ export default {
     "La 2FA de {email} sera supprimée, ainsi que ses codes de secours. Vérifiez l'identité de la personne par un autre canal avant de continuer. Elle pourra la réactiver depuis son compte.",
   "admin.users.table.email-verified": "E-mail vérifié",
   "admin.users.edit.delete.title": "Supprimer l'utilisateur : {username} ?",
-  "admin.users.edit.delete.description": "Souhaitez-vous vraiment supprimer cet utilisateur et tous ses partages ?",
+  "admin.users.edit.delete.description":
+    "Souhaitez-vous vraiment supprimer cet utilisateur et tous ses partages ?",
   // showCreateUserModal.tsx
   "admin.users.modal.create.title": "Créer un utilisateur",
   "admin.users.modal.create.username": "Surnom",
   "admin.users.modal.create.email": "Courriel",
   "admin.users.modal.create.password": "Mot de passe",
-  "admin.users.modal.create.manual-password": "Définir le mot de passe manuellement",
-  "admin.users.modal.create.manual-password.description": "S'il n'est pas coché, l'utilisateur recevra un email avec un lien pour définir son mot de passe.",
+  "admin.users.modal.create.manual-password":
+    "Définir le mot de passe manuellement",
+  "admin.users.modal.create.manual-password.description":
+    "S'il n'est pas coché, l'utilisateur recevra un email avec un lien pour définir son mot de passe.",
   "admin.users.modal.create.admin": "Privilèges d'admin",
-  "admin.users.modal.create.admin.description": "Si coché, l'utilisateur pourra accéder au panneau d'administration.",
+  "admin.users.modal.create.admin.description":
+    "Si coché, l'utilisateur pourra accéder au panneau d'administration.",
   // END /admin/users
   // /admin/shares
   "admin.shares.title": "Gestion des partages",
@@ -995,50 +1254,67 @@ export default {
   "admin.shares.table.status": "État",
   "admin.shares.table.files": "Fichiers",
   "admin.shares.creator.anonymous": "Anonyme",
-  "admin.shares.file-count": "{count, plural, one {# fichier} other {# fichiers}}",
+  "admin.shares.file-count":
+    "{count, plural, one {# fichier} other {# fichiers}}",
   "admin.shares.view-count": "{count, plural, one {# vue} other {# vues}}",
   "admin.shares.protection.e2e": "Chiffré de bout en bout",
   "admin.shares.protection.admin-blocked": "Accès administrateur bloqué",
   "admin.shares.status.ready": "Prêt",
   "admin.shares.status.uploading": "Téléversement",
   "admin.shares.privacy.title": "Inventaire protégé",
-  "admin.shares.privacy.description": "Les liens publics, titres, descriptions, destinataires et noms de fichiers sont masqués. Les privilèges d'administration ne donnent jamais accès au contenu utilisateur, la suppression utilise uniquement une référence d'audit opaque.",
+  "admin.shares.privacy.description":
+    "Les liens publics, titres, descriptions, destinataires et noms de fichiers sont masqués. Les privilèges d'administration ne donnent jamais accès au contenu utilisateur, la suppression utilise uniquement une référence d'audit opaque.",
   "admin.shares.edit.delete.title": "Supprimer le partage : {id}",
-  "admin.shares.edit.delete.description": "Voulez-vous vraiment supprimer ce partage ?",
+  "admin.shares.edit.delete.description":
+    "Voulez-vous vraiment supprimer ce partage ?",
   "admin.shares.select-all": "Tout sélectionner",
   "admin.shares.bulk-delete.title": "Supprimer {count} partage(s)",
-  "admin.shares.bulk-delete.description": "Voulez-vous vraiment supprimer les {count} partage(s) sélectionné(s) ? Cette action est irréversible.",
+  "admin.shares.bulk-delete.description":
+    "Voulez-vous vraiment supprimer les {count} partage(s) sélectionné(s) ? Cette action est irréversible.",
   "admin.shares.bulk-delete.button": "Supprimer ({count})",
   // END /admin/shares
   // /upload
   "upload.title": "Envoyer",
   "upload.browser-setup.title": "Préparer votre navigateur",
-  "upload.browser-setup.popup-body": "Pour les transferts dépassant environ 13 minutes, une petite fenêtre peut s'ouvrir afin de maintenir votre session sécurisée active. Autorisez les pop-ups pour ce site afin d'éviter toute interruption.",
+  "upload.browser-setup.popup-body":
+    "Pour les transferts dépassant environ 13 minutes, une petite fenêtre peut s'ouvrir afin de maintenir votre session sécurisée active. Autorisez les pop-ups pour ce site afin d'éviter toute interruption.",
   "upload.browser-setup.popup-button": "Tester les pop-ups",
-  "upload.browser-setup.popup-still-blocked": "Les pop-ups sont toujours bloqués. Veuillez ajouter ce site aux exceptions de votre navigateur (Paramètres › Pop-ups › Autoriser).",
-  "upload.browser-setup.notif-body": "Autorisez les notifications pour être alerté si une action est requise durant l'envoi, même quand cet onglet est en arrière-plan.",
+  "upload.browser-setup.popup-still-blocked":
+    "Les pop-ups sont toujours bloqués. Veuillez ajouter ce site aux exceptions de votre navigateur (Paramètres › Pop-ups › Autoriser).",
+  "upload.browser-setup.notif-body":
+    "Autorisez les notifications pour être alerté si une action est requise durant l'envoi, même quand cet onglet est en arrière-plan.",
   "upload.browser-setup.notif-button": "Autoriser les notifications",
   "upload.browser-setup.dismiss": "Ne plus afficher",
-  "upload.notify.confirm-leave": "Êtes-vous sûr de vouloir quitter cette page ? Votre envoi sera annulé.",
-  "upload.notify.generic-error": "Une erreur est survenue durant le traitement de votre partage.",
-  "upload.notify.count-failed": "{count} fichier(s) n'a(ont) pas pu être envoyé(s). Veuillez réessayer.",
+  "upload.notify.confirm-leave":
+    "Êtes-vous sûr de vouloir quitter cette page ? Votre envoi sera annulé.",
+  "upload.notify.generic-error":
+    "Une erreur est survenue durant le traitement de votre partage.",
+  "upload.notify.count-failed":
+    "{count} fichier(s) n'a(ont) pas pu être envoyé(s). Veuillez réessayer.",
   "upload.notify.retrying.title": "Nouvel essai en cours",
-  "upload.notify.retrying.message": "Le chunk {chunk} a échoué (tentative {attempt}/{max}). Nouvel essai dans {delay}s...",
+  "upload.notify.retrying.message":
+    "Le chunk {chunk} a échoué (tentative {attempt}/{max}). Nouvel essai dans {delay}s...",
   "upload.notify.recovery.title": "Mode récupération",
-  "upload.notify.recovery.message": "Trop d'erreurs consécutives. Pause de {pause}s avant de réessayer (cycle {attempt}/{max}).",
+  "upload.notify.recovery.message":
+    "Trop d'erreurs consécutives. Pause de {pause}s avant de réessayer (cycle {attempt}/{max}).",
   "upload.notify.fileRetry.title": "Nouvelle tentative pour le fichier",
   "upload.notify.fileRetry.message":
     "{name} - tentative {attempt}/{max} dans {delay} s",
   "upload.notify.tab-discarded":
     "Le navigateur a déchargé cet onglet pour économiser de la mémoire, interrompant l'envoi. Relancez l'envoi et gardez cet onglet au premier plan pour les transferts volumineux, ou désactivez l'économiseur de mémoire pour ce site.",
   "upload.bridge.error": "{fileName} : échec Bridge - {error}",
-  "upload.reverse-share.error.invalid.title": "Lien de partage inversé invalide",
-  "upload.reverse-share.error.invalid.description": "Ce partage inversé a expiré ou n'est pas valide.",
+  "upload.reverse-share.error.invalid.title":
+    "Lien de partage inversé invalide",
+  "upload.reverse-share.error.invalid.description":
+    "Ce partage inversé a expiré ou n'est pas valide.",
   // Dropzone.tsx
   "upload.dropzone.title": "Téléverser des fichiers",
-  "upload.dropzone.description": "Glisser-déposer les fichiers ici pour commencer votre partage. Nous n'acceptons que les fichiers jusqu'à {maxSize} au total.",
-  "upload.dropzone.description.unlimited": "Glisser-déposer les fichiers ici pour commencer votre partage. Aucune limite de taille.",
-  "upload.dropzone.notify.file-too-big": "Vos fichiers dépassent la taille maximale de {maxSize}.",
+  "upload.dropzone.description":
+    "Glisser-déposer les fichiers ici pour commencer votre partage. Nous n'acceptons que les fichiers jusqu'à {maxSize} au total.",
+  "upload.dropzone.description.unlimited":
+    "Glisser-déposer les fichiers ici pour commencer votre partage. Aucune limite de taille.",
+  "upload.dropzone.notify.file-too-big":
+    "Vos fichiers dépassent la taille maximale de {maxSize}.",
   // FileList.tsx
   "upload.filelist.name": "Nom",
   "upload.filelist.size": "Taille",
@@ -1065,20 +1341,24 @@ export default {
     "Créez votre clé E2E personnelle pour protéger les nouveaux partages avec le chiffrement de bout en bout.",
   "upload.cancel.button": "Annuler",
   "upload.cancel.title": "Annuler l'envoi",
-  "upload.cancel.discard-confirm": "Tous les fichiers de cet envoi, y compris ceux déjà transférés, seront supprimés. Continuer ?",
+  "upload.cancel.discard-confirm":
+    "Tous les fichiers de cet envoi, y compris ceux déjà transférés, seront supprimés. Continuer ?",
   // showCreateUploadModal.tsx
   "upload.modal.title": "Créer un partage",
-  "upload.modal.link.error.invalid": "Ne peut contenir que des lettres, des chiffres, des tirets bas et des traits d'union",
+  "upload.modal.link.error.invalid":
+    "Ne peut contenir que des lettres, des chiffres, des tirets bas et des traits d'union",
   "upload.modal.link.error.taken": "Ce lien est déjà utilisé",
   "upload.modal.not-signed-in": "Vous n'êtes pas connecté",
-  "upload.modal.not-signed-in-description": "Vous ne pourrez pas supprimer votre partage manuellement ni afficher le nombre de visiteurs. Les partages anonymes sont automatiquement supprimés après un délai limité (fichiers et lien d'accès inclus).",
+  "upload.modal.not-signed-in-description":
+    "Vous ne pourrez pas supprimer votre partage manuellement ni afficher le nombre de visiteurs. Les partages anonymes sont automatiquement supprimés après un délai limité (fichiers et lien d'accès inclus).",
   "upload.modal.expires.never": "jamais",
   "upload.modal.sender.name.label": "Votre nom",
   "upload.modal.sender.name.placeholder": "John Doe",
   "upload.modal.sender.email.label": "Votre email",
   "upload.modal.sender.email.placeholder": "john@example.com",
   "upload.modal.expires.never-long": "Partage permanent",
-  "upload.modal.expires.error.too-long": "La date d'expiration dépasse le maximum de {max}.",
+  "upload.modal.expires.error.too-long":
+    "La date d'expiration dépasse le maximum de {max}.",
   "upload.modal.link.label": "Lien",
   "upload.modal.expires.label": "Expiration",
   "upload.modal.expires.minute-singular": "Minute",
@@ -1096,12 +1376,15 @@ export default {
   "upload.modal.accordion.link.title": "Lien de partage",
   "upload.modal.accordion.name-and-description.title": "Nom et description",
   "upload.modal.accordion.name-and-description.name.placeholder": "Nom",
-  "upload.modal.accordion.name-and-description.description.placeholder": "Description pour les destinataires",
+  "upload.modal.accordion.name-and-description.description.placeholder":
+    "Description pour les destinataires",
   "upload.modal.accordion.email.title": "Adresse courriel des destinataires",
-  "upload.modal.accordion.email.placeholder": "Saisir les destinataires de ce partage",
+  "upload.modal.accordion.email.placeholder":
+    "Saisir les destinataires de ce partage",
   "upload.modal.accordion.email.invalid-email": "Email invalide",
   "upload.modal.accordion.security.title": "Options de sécurité",
-  "upload.modal.accordion.security.password.label": "Protection par mot de passe",
+  "upload.modal.accordion.security.password.label":
+    "Protection par mot de passe",
   "upload.modal.accordion.security.password.placeholder": "Aucun mot de passe",
   "upload.modal.accordion.security.max-views.label": "Nombre de vues maximum",
   "upload.modal.accordion.security.max-views.placeholder": "Aucune limite",
@@ -1126,9 +1409,10 @@ export default {
   "upload.modal.completed.never-expires": "Ce partage n'expirera jamais.",
   "upload.modal.completed.expires-on": "Ce partage expirera le {expiration}.",
   "upload.modal.completed.share-ready": "Partage prêt",
-  "upload.modal.completed.notified-reverse-share-creator": "Nous avons notifié le créateur du partage inverse. Vous pouvez également partager manuellement ce lien avec eux par d'autres moyens.",
+  "upload.modal.completed.notified-reverse-share-creator":
+    "Nous avons notifié le créateur du partage inverse. Vous pouvez également partager manuellement ce lien avec eux par d'autres moyens.",
   "upload.modal.completed.e2e-backup-action": "Sauvegarder ma clé E2E",
-  
+
   // Toast
   "upload.cancel.done": "Envoi annulé",
   "upload.cancel.error": "Erreur lors de l'annulation de l'envoi",
@@ -1211,21 +1495,26 @@ export default {
   // /share/[id]
   "share.title": "Partage {shareId}",
   "share.description": "Regardez ce que j'ai partagé !",
-  "share.fileCount": "{count, plural, =1 {# fichier} other {# fichiers}} · {size} (le fichier compressé peut être plus petit)",
+  "share.fileCount":
+    "{count, plural, =1 {# fichier} other {# fichiers}} · {size} (le fichier compressé peut être plus petit)",
   "share.detail.deposited-on": "Déposé le {date}",
   "share.detail.expires-on": "Expire le {date}",
   "share.error.visitor-limit-exceeded.title": "Limite de visiteurs dépassée",
-  "share.error.visitor-limit-exceeded.description": "La limite de visiteurs de ce partage a été dépassée.",
+  "share.error.visitor-limit-exceeded.description":
+    "La limite de visiteurs de ce partage a été dépassée.",
   "share.error.removed.title": "Partage supprimé",
   "share.error.not-found.title": "Partage introuvable",
-  "share.error.not-found.description": "Le partage que vous cherchez n'existe pas.",
+  "share.error.not-found.description":
+    "Le partage que vous cherchez n'existe pas.",
   "share.error.access-denied.title": "Partage privé",
-  "share.error.access-denied.description": "Le compte actuel n'a pas la permission d'accéder à ce partage",
+  "share.error.access-denied.description":
+    "Le compte actuel n'a pas la permission d'accéder à ce partage",
   "share.error.private-reverse-share.title": "Accès refusé",
   "share.error.private-reverse-share.description":
     "Seul le créateur de ce partage inversé peut accéder à ce partage",
   "share.modal.password.title": "Mot de passe requis",
-  "share.modal.password.description": "Veuillez entrer le mot de passe pour accéder à ce partage.",
+  "share.modal.password.description":
+    "Veuillez entrer le mot de passe pour accéder à ce partage.",
   "share.modal.password": "Mot de passe",
   "share.modal.error.invalid-password": "Mot de passe incorrect",
 
@@ -1234,132 +1523,195 @@ export default {
     "Veuillez compléter la vérification ci-dessous pour accéder à ce partage.",
   "share.modal.captcha.submit": "Accéder au partage",
   "share.button.download-all": "Télécharger tout",
-  "share.button.download-selected": "Télécharger {count, plural, one {# fichier} other {# fichiers}}",
+  "share.button.download-selected":
+    "Télécharger {count, plural, one {# fichier} other {# fichiers}}",
   "fileTree.items": "{count, plural, one {# élément} other {# éléments}}",
   "share.button.clear-selection": "Désélectionner",
   "share.download.cancel": "Annuler le téléchargement",
-  "share.notify.download-all-preparing": "Le partage est en préparation. Réessayez dans quelques minutes.",
+  "share.notify.download-all-preparing":
+    "Le partage est en préparation. Réessayez dans quelques minutes.",
   "share.modal.file-link": "Lien du fichier",
   "share.table.name": "Nom",
   "share.table.size": "Taille",
   "share.creator-preview": "Apercu des fichiers",
   "share.modal.file-preview.error.not-supported.title": "Aperçu non supporté",
-  "share.modal.file-preview.error.not-supported.description": "Les aperçus ne sont pas pris en charge pour ce type de fichiers. Veuillez télécharger le fichier pour le voir.",
-  "share.modal.file-preview.pdf-mobile": "L'aperçu PDF n'est pas disponible sur mobile.",
+  "share.modal.file-preview.error.not-supported.description":
+    "Les aperçus ne sont pas pris en charge pour ce type de fichiers. Veuillez télécharger le fichier pour le voir.",
+  "share.modal.file-preview.pdf-mobile":
+    "L'aperçu PDF n'est pas disponible sur mobile.",
   "share.modal.file-preview.pdf-open": "Ouvrir le PDF",
   // END /share/[id]
   // /share/[id]/edit
   "share.edit.title": "Modifier {shareId}",
   "share.edit.append-upload": "Ajouter un fichier",
-  "share.edit.notify.generic-error": "Une erreur est survenue durant le traitement de votre partage.",
+  "share.edit.notify.generic-error":
+    "Une erreur est survenue durant le traitement de votre partage.",
   "share.edit.notify.save-success": "Partage mis à jour avec succès",
-  "share.edit.notify.e2e-key-missing": "Clé E2E absente du navigateur. Importez votre clé depuis votre compte avant de modifier un partage chiffré.",
+  "share.edit.notify.e2e-key-missing":
+    "Clé E2E absente du navigateur. Importez votre clé depuis votre compte avant de modifier un partage chiffré.",
   // END /share/[id]/edit
   // /imprint
   "imprint.title": "Mentions légales",
-  "imprint.meta.description": "Mentions légales de PrivCloud : opérateur du service, hébergeur, conformité RGPD, NIS2 et droit applicable.",
+  "imprint.meta.description":
+    "Mentions légales de PrivCloud : opérateur du service, hébergeur, conformité RGPD, NIS2 et droit applicable.",
   // END /imprint
   // /privacy
   "privacy.title": "Politique de confidentialité",
-  "privacy.meta.description": "Politique de confidentialité de PrivCloud : données collectées, base légale RGPD, chiffrement de bout en bout, droits des utilisateurs et contact DPO.",
+  "privacy.meta.description":
+    "Politique de confidentialité de PrivCloud : données collectées, base légale RGPD, chiffrement de bout en bout, droits des utilisateurs et contact DPO.",
   // END /privacy
 
   // /security
   "security.meta.title": "Sécurité",
-  "security.meta.description": "Découvrez comment PrivCloud Sharing protège vos fichiers avec un chiffrement de bout en bout, une architecture zéro-knowledge et un hébergement 100% français.",
+  "security.meta.description":
+    "Découvrez comment PrivCloud Sharing protège vos fichiers avec un chiffrement de bout en bout, une architecture zéro-knowledge et un hébergement 100% français.",
   "security.hero.title": "Sécurité de PrivCloud Sharing",
-  "security.hero.subtitle": "Chez PrivCloud, la sécurité n'est pas une fonctionnalité -- c'est l'architecture.",
+  "security.hero.subtitle":
+    "Chez PrivCloud, la sécurité n'est pas une fonctionnalité -- c'est l'architecture.",
   "security.overview.title": "Vue d'ensemble",
-  "security.overview.text": "PrivCloud Sharing est conçu selon le principe du zéro-knowledge : ni nos serveurs, ni notre équipe, ni notre fournisseur de stockage ne peuvent lire le contenu de vos fichiers chiffrés de bout en bout, le mode par défaut de tout compte. Le chiffrement est effectué dans votre navigateur, avant même que vos données ne quittent votre appareil. Cette page décrit de manière transparente les mécanismes cryptographiques, les choix d'infrastructure et les limites honnêtes du système.",
+  "security.overview.text":
+    "PrivCloud Sharing est conçu selon le principe du zéro-knowledge : ni nos serveurs, ni notre équipe, ni notre fournisseur de stockage ne peuvent lire le contenu de vos fichiers chiffrés de bout en bout, le mode par défaut de tout compte. Le chiffrement est effectué dans votre navigateur, avant même que vos données ne quittent votre appareil. Cette page décrit de manière transparente les mécanismes cryptographiques, les choix d'infrastructure et les limites honnêtes du système.",
   "security.e2ee.title": "Chiffrement de bout en bout (E2EE)",
   "security.e2ee.howItWorks.title": "Comment ça fonctionne",
-  "security.e2ee.howItWorks.step1": "Une clé AES-256 est générée localement dans votre navigateur via l'API Web Crypto.",
-  "security.e2ee.howItWorks.step2": "Vos fichiers sont chiffrés côté client avant l'upload -- nous ne recevons que du texte chiffré opaque.",
-  "security.e2ee.howItWorks.step3": "La clé de déchiffrement est intégrée dans le lien de partage sous la forme d'un fragment d'URL (#key=...). Par définition du protocole HTTP, ce fragment n'est jamais transmis au serveur -- il reste dans votre navigateur et n'apparaît dans aucun log de notre infrastructure.",
-  "security.e2ee.howItWorks.step4": "Le destinataire déchiffre directement dans son navigateur. Par défaut, la clé ne transite pas par notre infrastructure : elle n'y passe que si vous choisissez de l'envoyer par e-mail, ou pour les fichiers que vous recevez par un lien de dépôt.",
+  "security.e2ee.howItWorks.step1":
+    "Une clé AES-256 est générée localement dans votre navigateur via l'API Web Crypto.",
+  "security.e2ee.howItWorks.step2":
+    "Vos fichiers sont chiffrés côté client avant l'upload -- nous ne recevons que du texte chiffré opaque.",
+  "security.e2ee.howItWorks.step3":
+    "La clé de déchiffrement est intégrée dans le lien de partage sous la forme d'un fragment d'URL (#key=...). Par définition du protocole HTTP, ce fragment n'est jamais transmis au serveur -- il reste dans votre navigateur et n'apparaît dans aucun log de notre infrastructure.",
+  "security.e2ee.howItWorks.step4":
+    "Le destinataire déchiffre directement dans son navigateur. Par défaut, la clé ne transite pas par notre infrastructure : elle n'y passe que si vous choisissez de l'envoyer par e-mail, ou pour les fichiers que vous recevez par un lien de dépôt.",
   "security.e2ee.algorithms.title": "Algorithmes utilisés",
   "security.e2ee.algorithms.col.component": "Composant",
   "security.e2ee.algorithms.col.standard": "Standard",
   "security.e2ee.algorithms.row.fileEncryption": "Chiffrement des fichiers",
   "security.e2ee.algorithms.row.transport": "Transport réseau",
   "security.e2ee.algorithms.row.storageAtRest": "Stockage au repos",
-  "security.e2ee.algorithms.row.keySharing": "Récupération de clé (facultative)",
+  "security.e2ee.algorithms.row.keySharing":
+    "Récupération de clé (facultative)",
   "security.e2ee.whyGCM.title": "Pourquoi AES-256-GCM ?",
-  "security.e2ee.whyGCM.text": "Le mode GCM (Galois/Counter Mode) apporte non seulement la confidentialité (personne ne peut lire), mais aussi l'authenticité (personne ne peut altérer les données chiffrées sans que cela soit détecté). C'est le standard utilisé par les gouvernements et les institutions financières pour la protection des données classifiées.",
+  "security.e2ee.whyGCM.text":
+    "Le mode GCM (Galois/Counter Mode) apporte non seulement la confidentialité (personne ne peut lire), mais aussi l'authenticité (personne ne peut altérer les données chiffrées sans que cela soit détecté). C'est le standard utilisé par les gouvernements et les institutions financières pour la protection des données classifiées.",
   "security.zeroKnowledge.title": "Architecture zéro-knowledge",
-  "security.zeroKnowledge.text": "L'architecture zéro-knowledge signifie que notre système est conçu pour qu'il nous soit techniquement impossible d'accéder au contenu de vos fichiers chiffrés de bout en bout, même si nous le voulions -- ou si nous y étions contraints.",
-  "security.zeroKnowledge.point1": "Les fichiers de votre compte sont chiffrés avant l'upload",
-  "security.zeroKnowledge.point2": "Par défaut, votre clé ne transite pas par nos serveurs",
-  "security.zeroKnowledge.point3": "Nos logs ne contiennent aucune clé de déchiffrement",
-  "security.zeroKnowledge.point4": "Même un accès complet à notre base de données ne permettrait pas de lire vos fichiers",
+  "security.zeroKnowledge.text":
+    "L'architecture zéro-knowledge signifie que notre système est conçu pour qu'il nous soit techniquement impossible d'accéder au contenu de vos fichiers chiffrés de bout en bout, même si nous le voulions -- ou si nous y étions contraints.",
+  "security.zeroKnowledge.point1":
+    "Les fichiers de votre compte sont chiffrés avant l'upload",
+  "security.zeroKnowledge.point2":
+    "Par défaut, votre clé ne transite pas par nos serveurs",
+  "security.zeroKnowledge.point3":
+    "Nos logs ne contiennent aucune clé de déchiffrement",
+  "security.zeroKnowledge.point4":
+    "Même un accès complet à notre base de données ne permettrait pas de lire vos fichiers",
   "security.sskr.title": "Partage de secret de Shamir (SSKR)",
-  "security.sskr.intro": "Le partage de secret de Shamir sert uniquement à récupérer votre clé E2E si vous la perdez. Il est facultatif : sans fragments ni coffre passkey, une clé perdue rend vos fichiers chiffrés définitivement illisibles, et personne, pas même PrivCloud, ne peut la retrouver. PrivCloud utilise sa propre implémentation, exécutée entièrement dans votre navigateur : les fragments sont affichés sur votre écran et ne sont jamais envoyés au serveur.",
+  "security.sskr.intro":
+    "Le partage de secret de Shamir sert uniquement à récupérer votre clé E2E si vous la perdez. Il est facultatif : sans fragments ni coffre passkey, une clé perdue rend vos fichiers chiffrés définitivement illisibles, et personne, pas même PrivCloud, ne peut la retrouver. PrivCloud utilise sa propre implémentation, exécutée entièrement dans votre navigateur : les fragments sont affichés sur votre écran et ne sont jamais envoyés au serveur.",
   "security.sskr.principle.title": "Principe",
-  "security.sskr.principle.text": "À la création, vous choisissez le nombre de fragments et le seuil nécessaire pour reconstituer la clé (par exemple 3 fragments dont 2 suffisent). Avec moins de fragments que ce seuil, il est mathématiquement impossible de retrouver la clé : ils ne révèlent rien d'elle.",
+  "security.sskr.principle.text":
+    "À la création, vous choisissez le nombre de fragments et le seuil nécessaire pour reconstituer la clé (par exemple 3 fragments dont 2 suffisent). Avec moins de fragments que ce seuil, il est mathématiquement impossible de retrouver la clé : ils ne révèlent rien d'elle.",
   "security.sskr.whyImportant.title": "Pourquoi c'est important",
   "security.sskr.table.col.scenario": "Scénario",
   "security.sskr.table.col.withoutSSKR": "Sans SSKR",
   "security.sskr.table.col.withSSKR": "Avec SSKR",
   "security.sskr.table.row.keyLoss": "Perte de la clé principale",
-  "security.sskr.table.row.keyLoss.without": "Fichiers inaccessibles définitivement",
+  "security.sskr.table.row.keyLoss.without":
+    "Fichiers inaccessibles définitivement",
   "security.sskr.table.row.keyLoss.with": "Reconstruction via les fragments",
   "security.sskr.table.row.shardTheft": "Vol d'un fragment",
   "security.sskr.table.row.shardTheft.with": "Inutilisable seul",
   "security.sskr.table.row.serverCompromise": "Serveur compromis",
-  "security.sskr.table.row.serverCompromise.without": "Rien à y trouver : la clé n'y est jamais envoyée",
-  "security.sskr.table.row.serverCompromise.with": "Rien à y trouver : les fragments n'y sont jamais envoyés",
+  "security.sskr.table.row.serverCompromise.without":
+    "Rien à y trouver : la clé n'y est jamais envoyée",
+  "security.sskr.table.row.serverCompromise.with":
+    "Rien à y trouver : les fragments n'y sont jamais envoyés",
   "security.sskr.bestPractice.label": "Bonne pratique :",
-  "security.sskr.bestPractice.text": "Stockez vos fragments dans des emplacements distincts et sécurisés (gestionnaire de mots de passe, support chiffré hors ligne, coffre physique).",
+  "security.sskr.bestPractice.text":
+    "Stockez vos fragments dans des emplacements distincts et sécurisés (gestionnaire de mots de passe, support chiffré hors ligne, coffre physique).",
   "security.infra.title": "Infrastructure & conformité",
   "security.infra.gdpr.title": "Hébergement France -- RGPD natif",
   "security.infra.gdpr.point1": "Aucun transfert de données hors UE",
-  "security.infra.gdpr.point2": "Conformité native au Règlement Général sur la Protection des Données (RGPD)",
-  "security.infra.gdpr.point3": "Aucune obligation de divulgation sous le Cloud Act américain",
-  "security.infra.gdpr.point4": "Droit à l'effacement et à la portabilité applicables",
+  "security.infra.gdpr.point2":
+    "Conformité native au Règlement Général sur la Protection des Données (RGPD)",
+  "security.infra.gdpr.point3":
+    "Aucune obligation de divulgation sous le Cloud Act américain",
+  "security.infra.gdpr.point4":
+    "Droit à l'effacement et à la portabilité applicables",
   "security.infra.zeroTracking.title": "Zéro tracking, zéro analytics",
-  "security.infra.zeroTracking.text": "PrivCloud ne collecte aucune donnée comportementale. Aucun cookie de tracking, aucun pixel publicitaire, aucun outil d'analytics tiers n'est chargé sur nos pages. Ce que vous partagez ne nous regarde pas -- littéralement.",
+  "security.infra.zeroTracking.text":
+    "PrivCloud ne collecte aucune donnée comportementale. Aucun cookie de tracking, aucun pixel publicitaire, aucun outil d'analytics tiers n'est chargé sur nos pages. Ce que vous partagez ne nous regarde pas -- littéralement.",
   "security.infra.s3.title": "Fournisseur de stockage objet (S3-compatible)",
-  "security.infra.s3.text": "Notre fournisseur de stockage ne peut pas lire vos fichiers chiffrés de bout en bout. Il stocke leur contenu chiffré sous des identifiants aléatoires et voit la taille des objets et les transferts. Les liens de téléchargement direct utilisent un identifiant neutre et un type générique pour chaque fichier E2E.",
+  "security.infra.s3.text":
+    "Notre fournisseur de stockage ne peut pas lire vos fichiers chiffrés de bout en bout. Il stocke leur contenu chiffré sous des identifiants aléatoires et voit la taille des objets et les transferts. Les liens de téléchargement direct utilisent un identifiant neutre et un type générique pour chaque fichier E2E.",
   "security.links.title": "Sécurité des liens de partage",
   "security.links.expiration.label": "Expiration automatique :",
-  "security.links.expiration.text": "chaque lien a une durée de vie configurable. Passé ce délai, le lien est révoqué et les fichiers supprimés.",
+  "security.links.expiration.text":
+    "chaque lien a une durée de vie configurable. Passé ce délai, le lien est révoqué et les fichiers supprimés.",
   "security.links.password.label": "Protection par mot de passe :",
-  "security.links.password.text": "ajoutez une couche d'authentification supplémentaire sur chaque partage.",
+  "security.links.password.text":
+    "ajoutez une couche d'authentification supplémentaire sur chaque partage.",
   "security.links.downloadLimit.label": "Limite de téléchargements :",
-  "security.links.downloadLimit.text": "définissez un nombre maximum de téléchargements autorisés par lien. Passé ce seuil, le lien est automatiquement révoqué.",
+  "security.links.downloadLimit.text":
+    "définissez un nombre maximum de téléchargements autorisés par lien. Passé ce seuil, le lien est automatiquement révoqué.",
   "security.links.notifications.label": "Notifications de téléchargement :",
-  "security.links.notifications.text": "soyez alerté en temps réel lorsqu'un destinataire télécharge votre fichier, afin de détecter tout accès non anticipé. Note : si vous disposez de l'option de prévisualisation et que vous souhaiteriez également recevoir une notification lors de ce type de consultation, n'hésitez pas à nous en faire part directement via le dépôt GitHub.",
+  "security.links.notifications.text":
+    "soyez alerté en temps réel lorsqu'un destinataire télécharge votre fichier, afin de détecter tout accès non anticipé. Note : si vous disposez de l'option de prévisualisation et que vous souhaiteriez également recevoir une notification lors de ce type de consultation, n'hésitez pas à nous en faire part directement via le dépôt GitHub.",
   "security.openSource.title": "Open Source & auditabilité",
-  "security.openSource.point1": "N'importe quel chercheur en sécurité peut auditer notre code",
-  "security.openSource.point2": "Les implémentations cryptographiques sont vérifiables publiquement",
-  "security.openSource.point3": "Aucune backdoor ne peut être dissimulée sans être détectée par la communauté",
-  "security.openSource.point4": "La transparence est structurelle, pas marketing",
-  "security.openSource.audit": "Si vous êtes chercheur en sécurité ou auditeur et souhaitez réaliser une revue de code formelle, nous sommes ouverts à toute démarche d'audit indépendant. Contactez-nous via le dépôt GitHub.",
+  "security.openSource.point1":
+    "N'importe quel chercheur en sécurité peut auditer notre code",
+  "security.openSource.point2":
+    "Les implémentations cryptographiques sont vérifiables publiquement",
+  "security.openSource.point3":
+    "Aucune backdoor ne peut être dissimulée sans être détectée par la communauté",
+  "security.openSource.point4":
+    "La transparence est structurelle, pas marketing",
+  "security.openSource.audit":
+    "Si vous êtes chercheur en sécurité ou auditeur et souhaitez réaliser une revue de code formelle, nous sommes ouverts à toute démarche d'audit indépendant. Contactez-nous via le dépôt GitHub.",
   "security.openSource.viewSource": "Consulter le code source sur GitHub ->",
   "security.threatModel.title": "Modèle de menace honnête",
-  "security.threatModel.intro": "Nous vous disons exactement contre quoi nous vous protégeons -- et ce qui reste hors de notre périmètre.",
-  "security.threatModel.protects.title": "Ce contre quoi PrivCloud vous protège",
-  "security.threatModel.protects.serverBreach": "Compromission de nos serveurs ou base de données -- les fichiers chiffrés sont illisibles sans votre clé, qui n'est pas chez nous.",
-  "security.threatModel.protects.operator": "Curiosité ou accès de notre équipe -- l'architecture zéro-knowledge nous en empêche techniquement.",
-  "security.threatModel.protects.s3Provider": "Espionnage par le fournisseur de stockage -- il ne voit que du chiffrement opaque.",
-  "security.threatModel.protects.networkSniffing": "Interception réseau (attaque MITM) -- TLS 1.3 protège le transport, AES-256 protège le contenu.",
-  "security.threatModel.protects.legalInjunction": "Injonction légale sur nos serveurs -- nous ne pouvons pas livrer ce que nous n'avons pas : votre clé.",
-  "security.threatModel.protects.sskrRecovery": "Perte partielle de fragments SSKR -- le schéma de Shamir tolère la perte d'une partie des fragments.",
-  "security.threatModel.notProtects.title": "Ce qui reste de votre responsabilité",
-  "security.threatModel.notProtects.keyLoss": "Perte totale de votre clé E2E sans fragments SSKR -- sans clé ni fragments, vos fichiers chiffrés sont définitivement inaccessibles. Nous ne pouvons pas vous aider à les récupérer.",
-  "security.threatModel.notProtects.deviceCompromise": "Poste de travail compromis -- un keylogger ou malware peut capturer votre clé avant qu'elle ne soit utilisée. PrivCloud ne peut pas protéger ce que votre système d'exploitation ne protège pas.",
-  "security.threatModel.notProtects.weakPassword": "Mot de passe de compte faible -- activez la double authentification (2FA/TOTP) et utilisez un mot de passe fort et unique.",
-  "security.threatModel.notProtects.linkSharing": "Partage d'un lien sur un canal non sécurisé -- toute personne disposant du lien contenant le fragment #key= peut déchiffrer. Utilisez des canaux chiffrés (Signal, Proton Mail...) pour transmettre vos liens sensibles.",
-  "security.threatModel.notProtects.shardMismanagement": "Stockage de tous vos fragments SSKR au même endroit -- si un attaquant les obtient tous, il peut reconstruire votre clé.",
-  "security.threatModel.notProtects.maliciousRecipient": "Destinataire malveillant -- une fois qu'une personne légitime a déchiffré le fichier, nous n'avons aucun contrôle sur ce qu'elle en fait.",
+  "security.threatModel.intro":
+    "Nous vous disons exactement contre quoi nous vous protégeons -- et ce qui reste hors de notre périmètre.",
+  "security.threatModel.protects.title":
+    "Ce contre quoi PrivCloud vous protège",
+  "security.threatModel.protects.serverBreach":
+    "Compromission de nos serveurs ou base de données -- les fichiers chiffrés sont illisibles sans votre clé, qui n'est pas chez nous.",
+  "security.threatModel.protects.operator":
+    "Curiosité ou accès de notre équipe -- l'architecture zéro-knowledge nous en empêche techniquement.",
+  "security.threatModel.protects.s3Provider":
+    "Espionnage par le fournisseur de stockage -- il ne voit que du chiffrement opaque.",
+  "security.threatModel.protects.networkSniffing":
+    "Interception réseau (attaque MITM) -- TLS 1.3 protège le transport, AES-256 protège le contenu.",
+  "security.threatModel.protects.legalInjunction":
+    "Injonction légale sur nos serveurs -- nous ne pouvons pas livrer ce que nous n'avons pas : votre clé.",
+  "security.threatModel.protects.sskrRecovery":
+    "Perte partielle de fragments SSKR -- le schéma de Shamir tolère la perte d'une partie des fragments.",
+  "security.threatModel.notProtects.title":
+    "Ce qui reste de votre responsabilité",
+  "security.threatModel.notProtects.keyLoss":
+    "Perte totale de votre clé E2E sans fragments SSKR -- sans clé ni fragments, vos fichiers chiffrés sont définitivement inaccessibles. Nous ne pouvons pas vous aider à les récupérer.",
+  "security.threatModel.notProtects.deviceCompromise":
+    "Poste de travail compromis -- un keylogger ou malware peut capturer votre clé avant qu'elle ne soit utilisée. PrivCloud ne peut pas protéger ce que votre système d'exploitation ne protège pas.",
+  "security.threatModel.notProtects.weakPassword":
+    "Mot de passe de compte faible -- activez la double authentification (2FA/TOTP) et utilisez un mot de passe fort et unique.",
+  "security.threatModel.notProtects.linkSharing":
+    "Partage d'un lien sur un canal non sécurisé -- toute personne disposant du lien contenant le fragment #key= peut déchiffrer. Utilisez des canaux chiffrés (Signal, Proton Mail...) pour transmettre vos liens sensibles.",
+  "security.threatModel.notProtects.shardMismanagement":
+    "Stockage de tous vos fragments SSKR au même endroit -- si un attaquant les obtient tous, il peut reconstruire votre clé.",
+  "security.threatModel.notProtects.maliciousRecipient":
+    "Destinataire malveillant -- une fois qu'une personne légitime a déchiffré le fichier, nous n'avons aucun contrôle sur ce qu'elle en fait.",
   "security.vulnerability.title": "Signaler une vulnérabilité",
-  "security.vulnerability.text": "Vous avez découvert une faille de sécurité ? Nous vous encourageons à nous la divulguer de manière responsable.",
-  "security.vulnerability.contact": "Contact : {email} ou via une issue privée sur le dépôt GitHub.",
+  "security.vulnerability.text":
+    "Vous avez découvert une faille de sécurité ? Nous vous encourageons à nous la divulguer de manière responsable.",
+  "security.vulnerability.contact":
+    "Contact : {email} ou via une issue privée sur le dépôt GitHub.",
   "security.vulnerability.commitment1": "Accuser réception sous 48h",
-  "security.vulnerability.commitment2": "Vous tenir informé des corrections apportées",
-  "security.vulnerability.commitment3": "Mentionner votre contribution (si vous le souhaitez) dans notre hall of fame",
-  "security.vulnerability.goodFaith": "Nous ne portons pas plainte contre les chercheurs en sécurité qui agissent de bonne foi.",
-  "security.footer": "Page maintenue par l'équipe PrivCloud -- Infrastructure sécurisée par THEMIOT Informatique, Consultant Cybersécurité.",
+  "security.vulnerability.commitment2":
+    "Vous tenir informé des corrections apportées",
+  "security.vulnerability.commitment3":
+    "Mentionner votre contribution (si vous le souhaitez) dans notre hall of fame",
+  "security.vulnerability.goodFaith":
+    "Nous ne portons pas plainte contre les chercheurs en sécurité qui agissent de bonne foi.",
+  "security.footer":
+    "Page maintenue par l'équipe PrivCloud -- Infrastructure sécurisée par THEMIOT Informatique, Consultant Cybersécurité.",
   "home.threat.learnMore": "Pour en savoir plus sur la sécurité, cliquez ici",
   // END /security
   "cookie.banner.message":
@@ -1382,13 +1734,17 @@ export default {
   "admin.config.general.app-name": "Nom de l'appli",
   "admin.config.general.app-name.description": "Le nom de l'application",
   "admin.config.general.app-url": "URL de l'appli",
-  "admin.config.general.app-url.description": "Depuis quel URL le partage Pingvin est disponible",
+  "admin.config.general.app-url.description":
+    "Depuis quel URL le partage Pingvin est disponible",
   "admin.config.general.secure-cookies": "Cookies sécurisés",
-  "admin.config.general.secure-cookies.description": "Définir ou non le marquage sécurisé sur les cookies. Si activé, le site ne fonctionnera pas lorsqu'il est accédé via HTTP.",
+  "admin.config.general.secure-cookies.description":
+    "Définir ou non le marquage sécurisé sur les cookies. Si activé, le site ne fonctionnera pas lorsqu'il est accédé via HTTP.",
   "admin.config.general.show-home-page": "Afficher la page d'accueil",
-  "admin.config.general.show-home-page.description": "Afficher ou non la page d'accueil",
+  "admin.config.general.show-home-page.description":
+    "Afficher ou non la page d'accueil",
   "admin.config.general.session-duration": "Durée de la session",
-  "admin.config.general.session-duration.description": "Temps après lequel un utilisateur doit se reconnecter (par défaut : 3 mois).",
+  "admin.config.general.session-duration.description":
+    "Temps après lequel un utilisateur doit se reconnecter (par défaut : 3 mois).",
   "admin.config.general.meta-description-en": "Méta-description (Anglais)",
   "admin.config.general.meta-description-en.description":
     "Description SEO affichée dans les résultats des moteurs de recherche pour les visiteurs anglophones.",
@@ -1399,7 +1755,8 @@ export default {
   "admin.config.general.color-palette.description":
     "Thème de couleur utilisé dans toute l'application.",
   "admin.config.general.logo": "Logo",
-  "admin.config.general.logo.description": "Changez de logo en envoyant une nouvelle image. L'image doit être au format PNG et doit avoir un ratio 1:1.",
+  "admin.config.general.logo.description":
+    "Changez de logo en envoyant une nouvelle image. L'image doit être au format PNG et doit avoir un ratio 1:1.",
   "admin.config.general.logo.placeholder": "Sélectionner une image",
 
   "admin.config.general.maintenance-mode": "Mode maintenance",
@@ -1420,10 +1777,12 @@ export default {
   "admin.config.security.login-max-failures": "Échecs avant verrouillage",
   "admin.config.security.login-max-failures.description":
     "Nombre d'échecs par mot de passe ou LDAP autorisés avant le premier verrouillage temporaire.",
-  "admin.config.security.login-base-lock-minutes": "Verrouillage initial (minutes)",
+  "admin.config.security.login-base-lock-minutes":
+    "Verrouillage initial (minutes)",
   "admin.config.security.login-base-lock-minutes.description":
     "Durée du premier verrouillage. Chaque nouvel échec dans la fenêtre d'observation double cette durée.",
-  "admin.config.security.login-max-lock-minutes": "Verrouillage maximal (minutes)",
+  "admin.config.security.login-max-lock-minutes":
+    "Verrouillage maximal (minutes)",
   "admin.config.security.login-max-lock-minutes.description":
     "Plafond de la temporisation exponentielle des connexions.",
   "admin.config.security.login-failure-window-minutes":
@@ -1432,17 +1791,23 @@ export default {
     "Les échecs plus anciens n'augmentent plus le verrouillage suivant. Une connexion réussie remet immédiatement le compteur à zéro.",
 
   "admin.config.cache.ttl": "DDV",
-  "admin.config.cache.ttl.description": "Durée de vie des informations conservées en cache.",
+  "admin.config.cache.ttl.description":
+    "Durée de vie des informations conservées en cache.",
   "admin.config.cache.max-items": "Maximum d'éléments",
-  "admin.config.cache.max-items.description": "Nombre maximum d'éléments conservés en cache.",
+  "admin.config.cache.max-items.description":
+    "Nombre maximum d'éléments conservés en cache.",
   "admin.config.cache.redis-enabled": "Redis activé",
   "admin.config.cache.redis-enabled.description":
     "Usuellement, PrivCloud Sharing conserve les informations en mémoire vive. Si vous exécutez plusieurs instances de PrivCloud Sharing, vous devez activer la mise en cache Redis pour partager le cache entre ces instances.",
   "admin.config.cache.redis-url": "URL de Redis",
-  "admin.config.cache.redis-url.description": "URL de connexion à l'instance de Redis pour servir de cache.",
-  "admin.config.email.enable-share-email-recipients": "Activer le partage par courriel",
-  "admin.config.email.enable-share-email-recipients.description": "Autoriser ou non le partage de courriels avec les destinataires. N'activer cette option que si SMTP est activé.",
-  "admin.config.email.enable-share-email-past-recipients": "Activer la récupération des destinataires précédents",
+  "admin.config.cache.redis-url.description":
+    "URL de connexion à l'instance de Redis pour servir de cache.",
+  "admin.config.email.enable-share-email-recipients":
+    "Activer le partage par courriel",
+  "admin.config.email.enable-share-email-recipients.description":
+    "Autoriser ou non le partage de courriels avec les destinataires. N'activer cette option que si SMTP est activé.",
+  "admin.config.email.enable-share-email-past-recipients":
+    "Activer la récupération des destinataires précédents",
   "admin.config.email.enable-share-email-past-recipients.description":
     "Autoriser ou non la récupération des destinataires précédents dans les partages. N'activer cette option que si SMTP est activé.",
   "admin.config.email.enable-e2ekey-email-sharing":
@@ -1456,69 +1821,96 @@ export default {
   "admin.config.email.sender-name.description":
     "(Optionnel) Définir ceci remplacera le nom d'expéditeur par défaut. Le nom de l'application sera utilisé si ce n'est pas défini.",
   "admin.config.email.share-recipients-subject": "Sujet d'un partage",
-  "admin.config.email.share-recipients-subject.description": "Intitulé du courriel envoyé aux destinataires d'un partage.",
+  "admin.config.email.share-recipients-subject.description":
+    "Intitulé du courriel envoyé aux destinataires d'un partage.",
   "admin.config.email.share-recipients-message": "Message d'un partage",
-  "admin.config.email.share-recipients-message.description": "Contenu du courriel qui est envoyé aux destinataires du partage. Variables possibles :\n '{creator}' - Le nom d'utilisateur du créateur du partage\n '{creatorEmail}' - L'adresse mail du créateur du partage\n '{shareUrl}' - L'URL du partage\n '{desc}' - La description du partage\n '{expires}' - La date d'expiration du partage.\n Ces variables seront remplacées par leur valeur effective.",
+  "admin.config.email.share-recipients-message.description":
+    "Contenu du courriel qui est envoyé aux destinataires du partage. Variables possibles :\n '{creator}' - Le nom d'utilisateur du créateur du partage\n '{creatorEmail}' - L'adresse mail du créateur du partage\n '{shareUrl}' - L'URL du partage\n '{desc}' - La description du partage\n '{expires}' - La date d'expiration du partage.\n Ces variables seront remplacées par leur valeur effective.",
   "admin.config.email.reverse-share-subject": "Sujet d'un partage inversé",
-  "admin.config.email.reverse-share-subject.description": "Intitulé du courriel envoyé lorsque quelqu'un a partagé des fichiers depuis votre partage inversé.",
+  "admin.config.email.reverse-share-subject.description":
+    "Intitulé du courriel envoyé lorsque quelqu'un a partagé des fichiers depuis votre partage inversé.",
   "admin.config.email.reverse-share-message": "Message d'un partage inversé",
-  "admin.config.email.reverse-share-message.description": "Contenu du courriel envoyé lorsque quelqu'un partage des fichiers depuis votre partage inversé. '{shareUrl}' sera remplacé par le nom du créateur et l'URL de partage.",
-  "admin.config.email.reset-password-subject": "Sujet d'une réinitialisation du mot de passe",
-  "admin.config.email.reset-password-subject.description": "Intitulé du courriel envoyé lorsqu'un utilisateur demande une réinitialisation de son mot de passe.",
-  "admin.config.email.reset-password-message": "Message de réinitialisation du mot de passe",
-  "admin.config.email.reset-password-message.description": "Contenu du courriel envoyé lorsqu'un utilisateur demande à réinitialiser son mot de passe. '{url}' sera remplacé par l'URL de réinitialisation du mot de passe.",
+  "admin.config.email.reverse-share-message.description":
+    "Contenu du courriel envoyé lorsque quelqu'un partage des fichiers depuis votre partage inversé. '{shareUrl}' sera remplacé par le nom du créateur et l'URL de partage.",
+  "admin.config.email.reset-password-subject":
+    "Sujet d'une réinitialisation du mot de passe",
+  "admin.config.email.reset-password-subject.description":
+    "Intitulé du courriel envoyé lorsqu'un utilisateur demande une réinitialisation de son mot de passe.",
+  "admin.config.email.reset-password-message":
+    "Message de réinitialisation du mot de passe",
+  "admin.config.email.reset-password-message.description":
+    "Contenu du courriel envoyé lorsqu'un utilisateur demande à réinitialiser son mot de passe. '{url}' sera remplacé par l'URL de réinitialisation du mot de passe.",
   "admin.config.email.invite-subject": "Sujet d'une invitation",
-  "admin.config.email.invite-subject.description": "Intitulé du courriel envoyé lorsqu'un administrateur invite un utilisateur.",
+  "admin.config.email.invite-subject.description":
+    "Intitulé du courriel envoyé lorsqu'un administrateur invite un utilisateur.",
   "admin.config.email.invite-message": "Message d'une invitation",
-  "admin.config.email.invite-message.description": "Message qui est envoyé lorsqu'un administrateur invite un utilisateur. '{url}' sera remplacé avec l'URL d'invitation, '{email}' avec le courriel et '{password}' avec le mot de passe de l'utilisateur.",
-  "admin.config.email.download-notification-subject": "Sujet de notification de téléchargement",
+  "admin.config.email.invite-message.description":
+    "Message qui est envoyé lorsqu'un administrateur invite un utilisateur. '{url}' sera remplacé avec l'URL d'invitation, '{email}' avec le courriel et '{password}' avec le mot de passe de l'utilisateur.",
+  "admin.config.email.download-notification-subject":
+    "Sujet de notification de téléchargement",
   "admin.config.email.download-notification-subject.description":
     "Intitulé du courriel envoyé lorsque quelqu'un télécharge un partage.",
-  "admin.config.email.download-notification-message": "Message de notification de téléchargement",
+  "admin.config.email.download-notification-message":
+    "Message de notification de téléchargement",
   "admin.config.email.download-notification-message.description":
     "Contenu du courriel envoyé lorsque quelqu'un télécharge un partage. Variables possibles :\n {shareName} -- Le nom du partage\n {date} -- La date du téléchargement\n {shareUrl} -- L'URL du partage\n Ces variables seront remplacées par leur valeur effective.",
-  "admin.config.email.download-digest-subject": "Sujet du résumé des téléchargements",
+  "admin.config.email.download-digest-subject":
+    "Sujet du résumé des téléchargements",
   "admin.config.email.download-digest-subject.description":
     "Intitulé du courriel résumant les téléchargements récents.",
-  "admin.config.email.download-digest-message": "Message du résumé des téléchargements",
+  "admin.config.email.download-digest-message":
+    "Message du résumé des téléchargements",
   "admin.config.email.download-digest-message.description":
     "Contenu du courriel résumant les téléchargements récents. Variables possibles :\n {digest} -- La liste formatée des téléchargements\n Cette variable sera remplacée par sa valeur effective.",
   "admin.config.email.download-weekly-subject": "Sujet du résumé hebdomadaire",
   "admin.config.email.download-weekly-subject.description":
     "Intitulé du courriel hebdomadaire résumant les téléchargements.",
-  "admin.config.email.download-weekly-message": "Message du résumé hebdomadaire",
+  "admin.config.email.download-weekly-message":
+    "Message du résumé hebdomadaire",
   "admin.config.email.download-weekly-message.description":
     "Contenu du courriel hebdomadaire résumant les téléchargements. Variables possibles :\n {digest} -- La liste formatée des téléchargements\n Cette variable sera remplacée par sa valeur effective.",
   "admin.config.share.allow-registration": "Autoriser les inscriptions",
-  "admin.config.share.allow-registration.description": "Permet aux visiteurs de créer un compte",
-  "admin.config.share.allow-unauthenticated-shares": "Autoriser les partages anonymes",
-  "admin.config.share.allow-unauthenticated-shares.description": "Permet aux visiteurs de créer des partages",
+  "admin.config.share.allow-registration.description":
+    "Permet aux visiteurs de créer un compte",
+  "admin.config.share.allow-unauthenticated-shares":
+    "Autoriser les partages anonymes",
+  "admin.config.share.allow-unauthenticated-shares.description":
+    "Permet aux visiteurs de créer des partages",
   "admin.config.share.max-expiration": "Échéance",
-  "admin.config.share.max-expiration.description": "Expiration du partage en heures. Réglez sur 0 pour qu'il n'expire jamais.",
+  "admin.config.share.max-expiration.description":
+    "Expiration du partage en heures. Réglez sur 0 pour qu'il n'expire jamais.",
   "admin.config.share.anonymous-max-expiration":
     "Échéance max des partages anonymes",
   "admin.config.share.anonymous-max-expiration.description":
     "Expiration maximale des partages anonymes (non authentifiés). Les fichiers, objets S3 et liens d'accès sont automatiquement supprimés après ce délai. Réglez sur 0 pour utiliser l'échéance globale.",
   "admin.config.share.share-id-length": "Taille de l'identifiant généré",
-  "admin.config.share.share-id-length.description": "Taille par défaut de l'identifiant généré pour un partage. Cette valeur est aussi utilisée pour générer les liens des partages inversés. Une valeur inférieure à 8 n'est pas considérée sûre.",
+  "admin.config.share.share-id-length.description":
+    "Taille par défaut de l'identifiant généré pour un partage. Cette valeur est aussi utilisée pour générer les liens des partages inversés. Une valeur inférieure à 8 n'est pas considérée sûre.",
   "admin.config.share.max-size": "Taille max",
   "admin.config.share.max-size.description": "Taille maximale du partage",
   "admin.config.share.zip-compression-level": "Niveau de compression",
-  "admin.config.share.zip-compression-level.description": "Ajustez le niveau pour trouver l'équilibre entre la taille du fichier et la vitesse de compression. Les valeurs valides vont de 0 à 9, 0 étant sans compression et 9 étant la compression maximale. ",
+  "admin.config.share.zip-compression-level.description":
+    "Ajustez le niveau pour trouver l'équilibre entre la taille du fichier et la vitesse de compression. Les valeurs valides vont de 0 à 9, 0 étant sans compression et 9 étant la compression maximale. ",
   "admin.config.share.chunk-size": "Taille des tronçons",
-  "admin.config.share.chunk-size.description": "Ajustez la taille des tronçons pour que vos téléchargements équilibrent efficacité et fiabilité en fonction de votre connexion Internet. Les petits tronçons peuvent améliorer les taux de succès sur les connexions instables, tandis que les tronçons plus importants accélèrent les téléchargements sur les connexions stables.",
-  "admin.config.share.auto-open-share-modal": "Ouvrir automatiquement la modale de partage",
-  "admin.config.share.auto-open-share-modal.description": "La modale de création de partage apparaît automatiquement lorsqu'un utilisateur sélectionne des fichiers, ce qui élimine le besoin de cliquer manuellement sur le bouton.",
+  "admin.config.share.chunk-size.description":
+    "Ajustez la taille des tronçons pour que vos téléchargements équilibrent efficacité et fiabilité en fonction de votre connexion Internet. Les petits tronçons peuvent améliorer les taux de succès sur les connexions instables, tandis que les tronçons plus importants accélèrent les téléchargements sur les connexions stables.",
+  "admin.config.share.auto-open-share-modal":
+    "Ouvrir automatiquement la modale de partage",
+  "admin.config.share.auto-open-share-modal.description":
+    "La modale de création de partage apparaît automatiquement lorsqu'un utilisateur sélectionne des fichiers, ce qui élimine le besoin de cliquer manuellement sur le bouton.",
   "admin.config.share.content-v2writes": "Écriture du contenu E2EE v2",
-  "admin.config.share.content-v2writes.description": "Les nouveaux fichiers chiffrés de bout en bout sont écrits au format v2, qui authentifie la position de chaque enregistrement et la fin du fichier. Les envois au format précédent sont alors refusés. La désactivation ne rend jamais les fichiers v2 illisibles et les clés à plancher v2 continuent d'écrire en v2.",
+  "admin.config.share.content-v2writes.description":
+    "Les nouveaux fichiers chiffrés de bout en bout sont écrits au format v2, qui authentifie la position de chaque enregistrement et la fin du fichier. Les envois au format précédent sont alors refusés. La désactivation ne rend jamais les fichiers v2 illisibles et les clés à plancher v2 continuent d'écrire en v2.",
   "admin.config.share.content-v2floor": "Plancher E2EE v2 des nouvelles clés",
-  "admin.config.share.content-v2floor.description": "Les nouvelles clés de partage, d'équipe et de dépôt n'acceptent que du contenu v2, ce que chaque client vérifie. Les clés existantes et leurs fichiers ne changent pas. La désactivation ne concerne que les clés créées ensuite.",
+  "admin.config.share.content-v2floor.description":
+    "Les nouvelles clés de partage, d'équipe et de dépôt n'acceptent que du contenu v2, ce que chaque client vérifie. Les clés existantes et leurs fichiers ne changent pas. La désactivation ne concerne que les clés créées ensuite.",
   "admin.config.share.allow-admin-access-all-shares":
     "Autoriser les administrateurs à accéder à tous les partages",
   "admin.config.share.allow-admin-access-all-shares.description":
     "Lorsqu'elle est activée, les administrateurs peuvent accéder à tous les partages sans nécessiter de jetons de partage ou de mots de passe. Cela permet aux administrateurs de visualiser et télécharger des fichiers depuis n'importe quel partage à des fins de gestion.",
   "admin.config.smtp.enabled": "Activer",
-  "admin.config.smtp.enabled.description": "Active SMTP. Activez ceci uniquement si vous avez saisi l'hôte, le port, le courriel, l'utilisateur et son mot de passe, de votre serveur SMTP.",
+  "admin.config.smtp.enabled.description":
+    "Active SMTP. Activez ceci uniquement si vous avez saisi l'hôte, le port, le courriel, l'utilisateur et son mot de passe, de votre serveur SMTP.",
   "admin.config.smtp.host": "Hôte",
   "admin.config.smtp.host.description": "Nom du serveur SMTP",
   "admin.config.smtp.port": "Port",
@@ -1531,89 +1923,142 @@ export default {
   "admin.config.smtp.password": "Mot de passe",
   "admin.config.smtp.password.description": "Mot de passe du serveur SMTP",
   "admin.config.smtp.button.test": "Envoyer un courriel de test",
-  "admin.config.smtp.allow-unauthorized-certificates": "Faire confiance aux certificats de serveurs SMTP non autorisés",
-  "admin.config.smtp.allow-unauthorized-certificates.description": "Ne permettez ceci que si vous avez besoin de faire confiance aux certificats autosignés.",
+  "admin.config.smtp.allow-unauthorized-certificates":
+    "Faire confiance aux certificats de serveurs SMTP non autorisés",
+  "admin.config.smtp.allow-unauthorized-certificates.description":
+    "Ne permettez ceci que si vous avez besoin de faire confiance aux certificats autosignés.",
   "admin.config.oauth.allow-registration": "Autoriser l'inscription",
-  "admin.config.oauth.allow-registration.description": "Permettre aux utilisateurs de s'inscrire via leur identifiant social",
+  "admin.config.oauth.allow-registration.description":
+    "Permettre aux utilisateurs de s'inscrire via leur identifiant social",
   "admin.config.oauth.ignore-totp": "Ignorer double authentification TOTP",
-  "admin.config.oauth.ignore-totp.description": "Ignorer la double-authentification (TOTP) lorsque l'utilisateur utilise un identifiant social",
-  "admin.config.oauth.disable-password": "Désactiver la connexion par mot de passe",
-  "admin.config.oauth.disable-password.description": "Désactive la connexion par mot de passe\nAssurez-vous qu'un fournisseur OAuth soit correctement configuré avant d'activer cette configuration pour éviter d'être enfermé.",
+  "admin.config.oauth.ignore-totp.description":
+    "Ignorer la double-authentification (TOTP) lorsque l'utilisateur utilise un identifiant social",
+  "admin.config.oauth.disable-password":
+    "Désactiver la connexion par mot de passe",
+  "admin.config.oauth.disable-password.description":
+    "Désactive la connexion par mot de passe\nAssurez-vous qu'un fournisseur OAuth soit correctement configuré avant d'activer cette configuration pour éviter d'être enfermé.",
   "admin.config.oauth.github-enabled": "GitHub",
-  "admin.config.oauth.github-enabled.description": "Permettre la connexion via GitHub.",
+  "admin.config.oauth.github-enabled.description":
+    "Permettre la connexion via GitHub.",
   "admin.config.oauth.github-client-id": "ID client de GitHub",
-  "admin.config.oauth.github-client-id.description": "L'ID du client de l'application OAuth GitHub",
+  "admin.config.oauth.github-client-id.description":
+    "L'ID du client de l'application OAuth GitHub",
   "admin.config.oauth.github-client-secret": "Secret du client GitHub",
-  "admin.config.oauth.github-client-secret.description": "Le secret du client de l'application OAuth GitHub",
+  "admin.config.oauth.github-client-secret.description":
+    "Le secret du client de l'application OAuth GitHub",
   "admin.config.oauth.google-enabled": "Google",
-  "admin.config.oauth.google-enabled.description": "Permettre la connexion via Google.",
+  "admin.config.oauth.google-enabled.description":
+    "Permettre la connexion via Google.",
   "admin.config.oauth.google-client-id": "ID du client Google",
-  "admin.config.oauth.google-client-id.description": "L'ID du client de l'application OAuth Google",
+  "admin.config.oauth.google-client-id.description":
+    "L'ID du client de l'application OAuth Google",
   "admin.config.oauth.google-client-secret": "Secret client de Google",
-  "admin.config.oauth.google-client-secret.description": "Le secret du client de l'application OAuth Google",
+  "admin.config.oauth.google-client-secret.description":
+    "Le secret du client de l'application OAuth Google",
   "admin.config.oauth.microsoft-enabled": "Microsoft",
-  "admin.config.oauth.microsoft-enabled.description": "Permettre la connexion via Microsoft.",
+  "admin.config.oauth.microsoft-enabled.description":
+    "Permettre la connexion via Microsoft.",
   "admin.config.oauth.microsoft-tenant": "Locataire Microsoft",
-  "admin.config.oauth.microsoft-tenant.description": "ID locataire de l'application OAuth Microsoft\nCommun : les utilisateurs ayant au choix un compte personnel ou d'entreprise issue de Microsoft Entra.\nOrganisations : limité aux utilisateurs ayant un compte d'entreprise ou d'université issue de Microsoft Entra.\nPersonnel : limité aux utilisateurs ayant un compte personnel\nDomanial : limité aux utilisateurs d'un domaine Microsoft Entra spécifié ou d'un ID locataire (au format GUID), qu'ils soient membres d'un registre d'entreprise ou d'université ou bien enregistrés en tant qu'invités avec un compte personnel.",
+  "admin.config.oauth.microsoft-tenant.description":
+    "ID locataire de l'application OAuth Microsoft\nCommun : les utilisateurs ayant au choix un compte personnel ou d'entreprise issue de Microsoft Entra.\nOrganisations : limité aux utilisateurs ayant un compte d'entreprise ou d'université issue de Microsoft Entra.\nPersonnel : limité aux utilisateurs ayant un compte personnel\nDomanial : limité aux utilisateurs d'un domaine Microsoft Entra spécifié ou d'un ID locataire (au format GUID), qu'ils soient membres d'un registre d'entreprise ou d'université ou bien enregistrés en tant qu'invités avec un compte personnel.",
   "admin.config.oauth.microsoft-client-id": "ID du client Microsoft",
-  "admin.config.oauth.microsoft-client-id.description": "L'ID du client de l'application Microsoft OAuth",
+  "admin.config.oauth.microsoft-client-id.description":
+    "L'ID du client de l'application Microsoft OAuth",
   "admin.config.oauth.microsoft-client-secret": "Secret du client Microsoft",
-  "admin.config.oauth.microsoft-client-secret.description": "Le secret du client de l'application Microsoft OAuth",
+  "admin.config.oauth.microsoft-client-secret.description":
+    "Le secret du client de l'application Microsoft OAuth",
   "admin.config.oauth.discord-enabled": "Discord",
-  "admin.config.oauth.discord-enabled.description": "Permettre la connexion via Discord",
-  "admin.config.oauth.discord-limited-users": "Utilisateurs limités sur Discord",
-  "admin.config.oauth.discord-limited-users.description": "Limiter la connexion à des utilisateurs spécifiques par leur identifiant Discord. Laissez vide pour désactiver.",
+  "admin.config.oauth.discord-enabled.description":
+    "Permettre la connexion via Discord",
+  "admin.config.oauth.discord-limited-users":
+    "Utilisateurs limités sur Discord",
+  "admin.config.oauth.discord-limited-users.description":
+    "Limiter la connexion à des utilisateurs spécifiques par leur identifiant Discord. Laissez vide pour désactiver.",
   "admin.config.oauth.discord-limited-guild": "ID de serveur restreint Discord",
-  "admin.config.oauth.discord-limited-guild.description": "Limiter la connexion aux utilisateurs sur un serveur spécifique. Laissez vide pour désactiver.",
+  "admin.config.oauth.discord-limited-guild.description":
+    "Limiter la connexion aux utilisateurs sur un serveur spécifique. Laissez vide pour désactiver.",
   "admin.config.oauth.discord-client-id": "ID du client Discord",
-  "admin.config.oauth.discord-client-id.description": "L'ID du client de l'application OAuth Discord",
+  "admin.config.oauth.discord-client-id.description":
+    "L'ID du client de l'application OAuth Discord",
   "admin.config.oauth.discord-client-secret": "Secret du client Discord",
-  "admin.config.oauth.discord-client-secret.description": "Le secret du client de l'application OAuth Discord",
+  "admin.config.oauth.discord-client-secret.description":
+    "Le secret du client de l'application OAuth Discord",
   "admin.config.oauth.oidc-enabled": "Connexion OpenID",
-  "admin.config.oauth.oidc-enabled.description": "Permettre la connexion via OpenID",
+  "admin.config.oauth.oidc-enabled.description":
+    "Permettre la connexion via OpenID",
   "admin.config.oauth.oidc-discovery-uri": "URI de découverte OpenID",
-  "admin.config.oauth.oidc-discovery-uri.description": "L'URI de découverte de la connexion à l'application OpenID OAuth",
-  "admin.config.oauth.oidc-sign-out": "Déconnexion du fournisseur OpenID Connect",
-  "admin.config.oauth.oidc-sign-out.description": "Si activé, le bouton \"Déconnexion\" vous déconnectera également du fournisseur d'identité OpenID Connect",
+  "admin.config.oauth.oidc-discovery-uri.description":
+    "L'URI de découverte de la connexion à l'application OpenID OAuth",
+  "admin.config.oauth.oidc-sign-out":
+    "Déconnexion du fournisseur OpenID Connect",
+  "admin.config.oauth.oidc-sign-out.description":
+    'Si activé, le bouton "Déconnexion" vous déconnectera également du fournisseur d\'identité OpenID Connect',
   "admin.config.oauth.oidc-scope": "Paramètres de connexion OpenID",
-  "admin.config.oauth.oidc-scope.description": "Paramètres fournis par votre fournisseur OpenID.",
-  "admin.config.oauth.oidc-username-claim": "Revendication du nom d'utilisateur OpenID",
-  "admin.config.oauth.oidc-username-claim.description": "Le champ contenant la revendication du nom d'utilisateur dans le jeton OpenID Connect. Laissez vide si vous ne savez pas quoi indiquer.",
-  "admin.config.oauth.oidc-role-path": "Chemin vers les rôles dans le jeton OpenID Connect",
-  "admin.config.oauth.oidc-role-path.description": "Doit être un chemin JMES valide référençant un tableau de rôles. " + "La gestion des droits d'accès en utilisant les rôles OpenID Connect n'est recommandée que si aucun autre fournisseur d'identité n'est configuré et que la connexion par mot de passe est désactivée. " + "Laissez vide si vous ne savez pas ce qu'est cette configuration.",
-  "admin.config.oauth.oidc-role-general-access": "Rôle OpenID Connect pour un accès général",
-  "admin.config.oauth.oidc-role-general-access.description": "Rôle requis pour un accès général. Doit être présent dans les rôles d'un utilisateur pour qu'il se connecte. " + "Laissez vide si vous ne savez pas ce qu'est cette configuration.",
-  "admin.config.oauth.oidc-role-admin-access": "Rôle OpenID Connect pour l'accès admin",
-  "admin.config.oauth.oidc-role-admin-access.description": "Rôle requis pour l'accès administratif. Doit être présent dans les rôles d'un utilisateur pour accéder au panneau d'administration. " + "Laissez vide si vous ne savez pas ce qu'est cette configuration.",
+  "admin.config.oauth.oidc-scope.description":
+    "Paramètres fournis par votre fournisseur OpenID.",
+  "admin.config.oauth.oidc-username-claim":
+    "Revendication du nom d'utilisateur OpenID",
+  "admin.config.oauth.oidc-username-claim.description":
+    "Le champ contenant la revendication du nom d'utilisateur dans le jeton OpenID Connect. Laissez vide si vous ne savez pas quoi indiquer.",
+  "admin.config.oauth.oidc-role-path":
+    "Chemin vers les rôles dans le jeton OpenID Connect",
+  "admin.config.oauth.oidc-role-path.description":
+    "Doit être un chemin JMES valide référençant un tableau de rôles. " +
+    "La gestion des droits d'accès en utilisant les rôles OpenID Connect n'est recommandée que si aucun autre fournisseur d'identité n'est configuré et que la connexion par mot de passe est désactivée. " +
+    "Laissez vide si vous ne savez pas ce qu'est cette configuration.",
+  "admin.config.oauth.oidc-role-general-access":
+    "Rôle OpenID Connect pour un accès général",
+  "admin.config.oauth.oidc-role-general-access.description":
+    "Rôle requis pour un accès général. Doit être présent dans les rôles d'un utilisateur pour qu'il se connecte. " +
+    "Laissez vide si vous ne savez pas ce qu'est cette configuration.",
+  "admin.config.oauth.oidc-role-admin-access":
+    "Rôle OpenID Connect pour l'accès admin",
+  "admin.config.oauth.oidc-role-admin-access.description":
+    "Rôle requis pour l'accès administratif. Doit être présent dans les rôles d'un utilisateur pour accéder au panneau d'administration. " +
+    "Laissez vide si vous ne savez pas ce qu'est cette configuration.",
   "admin.config.oauth.oidc-client-id": "ID du client OpenID",
-  "admin.config.oauth.oidc-client-id.description": "L'ID du client de l'application OAuth OpenID Connect",
+  "admin.config.oauth.oidc-client-id.description":
+    "L'ID du client de l'application OAuth OpenID Connect",
   "admin.config.oauth.oidc-client-secret": "Secret du client OpenID",
-  "admin.config.oauth.oidc-client-secret.description": "Le secret du client de l'application OAuth OpenID Connect",
+  "admin.config.oauth.oidc-client-secret.description":
+    "Le secret du client de l'application OAuth OpenID Connect",
   "admin.config.category.ldap": "LDAP",
   "admin.config.ldap.enabled": "Activer LDAP",
-  "admin.config.ldap.enabled.description": "Utiliser l'authentification LDAP pour la connexion de l'utilisateur",
+  "admin.config.ldap.enabled.description":
+    "Utiliser l'authentification LDAP pour la connexion de l'utilisateur",
   "admin.config.ldap.url": "URL du serveur",
   "admin.config.ldap.url.description": "URL du serveur LDAP",
   "admin.config.ldap.bind-dn": "DN de liaison",
-  "admin.config.ldap.bind-dn.description": "Utilisateur par défaut utilisé pour effectuer la recherche de l'utilisateur",
+  "admin.config.ldap.bind-dn.description":
+    "Utilisateur par défaut utilisé pour effectuer la recherche de l'utilisateur",
   "admin.config.ldap.bind-password": "Mot de passe de liaison",
-  "admin.config.ldap.bind-password.description": "Mot de passe utilisé pour effectuer la recherche de l'utilisateur",
+  "admin.config.ldap.bind-password.description":
+    "Mot de passe utilisé pour effectuer la recherche de l'utilisateur",
   "admin.config.ldap.search-base": "Base d'utilisateurs",
-  "admin.config.ldap.search-base.description": "Emplacement de base, où la recherche de l'utilisateur sera effectuée",
+  "admin.config.ldap.search-base.description":
+    "Emplacement de base, où la recherche de l'utilisateur sera effectuée",
   "admin.config.ldap.search-query": "Requête utilisateur",
-  "admin.config.ldap.search-query.description": "La requête utilisateur sera utilisée pour rechercher dans la « base d'utilisateurs » de l'utilisateur LDAP. %username% peut être utilisé comme espace réservé pour les entrées données par l'utilisateur.",
+  "admin.config.ldap.search-query.description":
+    "La requête utilisateur sera utilisée pour rechercher dans la « base d'utilisateurs » de l'utilisateur LDAP. %username% peut être utilisé comme espace réservé pour les entrées données par l'utilisateur.",
   "admin.config.ldap.admin-groups": "Groupe administrateur",
-  "admin.config.ldap.admin-groups.description": "Un groupe est nécessaire pour un accès administratif.",
-  "admin.config.ldap.field-name-member-of": "Nom de l'attribut des groupes d'utilisateurs",
-  "admin.config.ldap.field-name-member-of.description": "Nom d'attribut LDAP pour les groupes dont un utilisateur est membre. Il est utilisé lors de la vérification du groupe d'administrateurs.",
-  "admin.config.ldap.field-name-email": "Nom d'attribut de l'e-mail de l'utilisateur",
-  "admin.config.ldap.field-name-email.description": "Nom d'attribut LDAP pour l'e-mail d'un utilisateur.",
+  "admin.config.ldap.admin-groups.description":
+    "Un groupe est nécessaire pour un accès administratif.",
+  "admin.config.ldap.field-name-member-of":
+    "Nom de l'attribut des groupes d'utilisateurs",
+  "admin.config.ldap.field-name-member-of.description":
+    "Nom d'attribut LDAP pour les groupes dont un utilisateur est membre. Il est utilisé lors de la vérification du groupe d'administrateurs.",
+  "admin.config.ldap.field-name-email":
+    "Nom d'attribut de l'e-mail de l'utilisateur",
+  "admin.config.ldap.field-name-email.description":
+    "Nom d'attribut LDAP pour l'e-mail d'un utilisateur.",
   "admin.config.notify.success": "Configuration mise à jour avec succès.",
-  "admin.config.notify.logo-success": "Logo mis à jour avec succès. La mise à jour sur le site peut prendre quelques minutes.",
+  "admin.config.notify.logo-success":
+    "Logo mis à jour avec succès. La mise à jour sur le site peut prendre quelques minutes.",
   "admin.config.notify.no-changes": "Aucune modification à enregistrer.",
   "admin.config.category.s3": "S3",
   "admin.config.s3.enabled": "Activé",
-  "admin.config.s3.enabled.description": "Si S3 doit être utilisé pour stocker les fichiers partagés au lieu du système de fichiers local.",
+  "admin.config.s3.enabled.description":
+    "Si S3 doit être utilisé pour stocker les fichiers partagés au lieu du système de fichiers local.",
   "admin.config.s3.endpoint": "Point de terminaison",
   "admin.config.s3.endpoint.description": "L'URL du bucket S3.",
   "admin.config.s3.region": "Région",
@@ -1621,24 +2066,35 @@ export default {
   "admin.config.s3.bucket-name": "Nom du bucket",
   "admin.config.s3.bucket-name.description": "Le nom du bucket S3.",
   "admin.config.s3.bucket-path": "Chemin",
-  "admin.config.s3.bucket-path.description": "Le chemin par défaut qui doit être utilisé pour stocker les fichiers dans le bucket S3.",
+  "admin.config.s3.bucket-path.description":
+    "Le chemin par défaut qui doit être utilisé pour stocker les fichiers dans le bucket S3.",
   "admin.config.s3.key": "Clé",
-  "admin.config.s3.key.description": "La clé qui vous permet d'accéder au bucket S3.",
+  "admin.config.s3.key.description":
+    "La clé qui vous permet d'accéder au bucket S3.",
   "admin.config.s3.secret": "Secret",
-  "admin.config.s3.secret.description": "Le secret qui vous permet d'accéder au bucket S3.",
+  "admin.config.s3.secret.description":
+    "Le secret qui vous permet d'accéder au bucket S3.",
   "admin.config.s3.use-checksum": "Utiliser la somme de contrôle",
-  "admin.config.s3.use-checksum.description": "Désactivez cette option pour les backends qui ne prennent pas en charge la somme de contrôle (ex. B2).",
+  "admin.config.s3.use-checksum.description":
+    "Désactivez cette option pour les backends qui ne prennent pas en charge la somme de contrôle (ex. B2).",
   "admin.config.category.legal": "Juridique",
   "admin.config.legal.enabled": "Activer les mentions légales",
-  "admin.config.legal.enabled.description": "Afficher/Masquer dans le pied de page un lien vers les mentions légales et la politique de confidentialité.",
+  "admin.config.legal.enabled.description":
+    "Afficher/Masquer dans le pied de page un lien vers les mentions légales et la politique de confidentialité.",
   "admin.config.legal.imprint-text": "Texte des mentions légales",
-  "admin.config.legal.imprint-text.description": "Le texte qui doit être affiché dans les mentions légales. Supporte le Markdown. Laissez vide pour mettre un lien vers une page de mentions légales externe.",
+  "admin.config.legal.imprint-text.description":
+    "Le texte qui doit être affiché dans les mentions légales. Supporte le Markdown. Laissez vide pour mettre un lien vers une page de mentions légales externe.",
   "admin.config.legal.imprint-url": "URL des mentions légales",
-  "admin.config.legal.imprint-url.description": "Si vous avez déjà une page de mentions légales, vous pouvez indiquer son URL ici au lieu d'utiliser le champ de texte.",
-  "admin.config.legal.privacy-policy-text": "Texte de la politique de confidentialité",
-  "admin.config.legal.privacy-policy-text.description": "Le texte qui doit être affiché dans la politique de confidentialité. Supporte le Markdown. Laissez vide pour mettre un lien vers une page de politique de confidentialité externe.",
-  "admin.config.legal.privacy-policy-url": "URL de la politique de confidentialité",
-  "admin.config.legal.privacy-policy-url.description": "Si vous avez déjà une page de politique de confidentialité, vous pouvez indiquer son URL ici au lieu d'utiliser le champ de texte.",
+  "admin.config.legal.imprint-url.description":
+    "Si vous avez déjà une page de mentions légales, vous pouvez indiquer son URL ici au lieu d'utiliser le champ de texte.",
+  "admin.config.legal.privacy-policy-text":
+    "Texte de la politique de confidentialité",
+  "admin.config.legal.privacy-policy-text.description":
+    "Le texte qui doit être affiché dans la politique de confidentialité. Supporte le Markdown. Laissez vide pour mettre un lien vers une page de politique de confidentialité externe.",
+  "admin.config.legal.privacy-policy-url":
+    "URL de la politique de confidentialité",
+  "admin.config.legal.privacy-policy-url.description":
+    "Si vous avez déjà une page de politique de confidentialité, vous pouvez indiquer son URL ici au lieu d'utiliser le champ de texte.",
 
   "admin.config.category.pushnotifications": "Notifications push",
   "admin.config.push-notifications.enabled": "Activer les notifications push",
@@ -1692,8 +2148,7 @@ export default {
   "admin.config.altcha.code-challenge-display.description":
     "Disposition utilisée si un challenge code est un jour renvoyé par le serveur.",
   "admin.config.altcha.display": "Affichage",
-  "admin.config.altcha.display.description":
-    "Mode d'affichage du widget.",
+  "admin.config.altcha.display.description": "Mode d'affichage du widget.",
   "admin.config.altcha.auto": "Vérification automatique",
   "admin.config.altcha.auto.description":
     "Moment où le widget lance automatiquement la vérification.",
@@ -1713,16 +2168,21 @@ export default {
   "error.description": "Oups !",
   "error.button.back": "Retour",
   "error.msg.default": "Quelque chose a mal tourné.",
-  "error.msg.access_denied": "Vous avez annulé le processus d'authentification, veuillez réessayer.",
-  "error.msg.expired_token": "Le processus d'authentification a pris trop de temps, veuillez réessayer.",
+  "error.msg.access_denied":
+    "Vous avez annulé le processus d'authentification, veuillez réessayer.",
+  "error.msg.expired_token":
+    "Le processus d'authentification a pris trop de temps, veuillez réessayer.",
   "error.msg.invalid_token": "Erreur Interne",
   "error.msg.no_user": "L'utilisateur associé au compte {0} n'existe pas.",
   "error.msg.no_email": "Impossible d'obtenir le courriel du compte {0}.",
-  "error.msg.already_linked": "Le compte {0} est déjà associé à un autre compte.",
+  "error.msg.already_linked":
+    "Le compte {0} est déjà associé à un autre compte.",
   "error.msg.not_linked": "Le compte {0} n'est pas encore associé à compte.",
-  "error.msg.unverified_account": "Le compte {0} n'est pas vérifié, veuillez réessayer après vérification.",
+  "error.msg.unverified_account":
+    "Le compte {0} n'est pas vérifié, veuillez réessayer après vérification.",
   "error.msg.user_not_allowed": "Vous n'êtes pas autorisé à vous authentifier.",
-  "error.msg.cannot_get_user_info": "Impossible d'obtenir vos informations utilisateur à partir du compte {0}.",
+  "error.msg.cannot_get_user_info":
+    "Impossible d'obtenir vos informations utilisateur à partir du compte {0}.",
   "error.param.provider_github": "GitHub",
   "error.param.provider_google": "Google",
   "error.param.provider_microsoft": "Microsoft",
@@ -1767,14 +2227,20 @@ export default {
   // --- ReencryptModal ---
   "reencrypt.modal.title": "Re-chiffrement des fichiers",
   "reencrypt.error.title": "Erreur de re-chiffrement",
-  "reencrypt.error.generic": "Une erreur est survenue durant le re-chiffrement.",
-  "reencrypt.error.partial": "{failed, plural, one {# fichier} other {# fichiers}} n'ont pas pu être re-chiffrés :",
+  "reencrypt.error.generic":
+    "Une erreur est survenue durant le re-chiffrement.",
+  "reencrypt.error.partial":
+    "{failed, plural, one {# fichier} other {# fichiers}} n'ont pas pu être re-chiffrés :",
   "reencrypt.done.title": "Re-chiffrement terminé",
-  "reencrypt.done.message": "{count, plural, one {# fichier re-chiffré} other {# fichiers re-chiffrés}} avec succès.",
+  "reencrypt.done.message":
+    "{count, plural, one {# fichier re-chiffré} other {# fichiers re-chiffrés}} avec succès.",
   "reencrypt.partial.title": "Re-chiffrement partiel",
-  "reencrypt.partial.message": "{ok} re-chiffré(s), {failed} échoué(s), {skipped} ignoré(s).",
-  "reencrypt.inprogress.message": "Re-chiffrement en cours, ne fermez pas cet onglet...",
-  "reencrypt.inprogress.warning": "La fermeture de l'onglet interrompra le processus.",
+  "reencrypt.partial.message":
+    "{ok} re-chiffré(s), {failed} échoué(s), {skipped} ignoré(s).",
+  "reencrypt.inprogress.message":
+    "Re-chiffrement en cours, ne fermez pas cet onglet...",
+  "reencrypt.inprogress.warning":
+    "La fermeture de l'onglet interrompra le processus.",
   "reencrypt.progress.label": "Progression du re-chiffrement",
   "reencrypt.progress.files": "{current}/{total} fichiers -- {name}",
   "reencrypt.progress.reverseShares": "{current}/{total} partages inversés",
@@ -1784,26 +2250,32 @@ export default {
 
   // --- E2EKeyPrompt ---
   "e2ePrompt.title": "Clé de chiffrement E2E",
-  "e2ePrompt.import.description": "Votre compte possède une clé de chiffrement de bout en bout. Elle n'est jamais stockée sur le serveur -- vous devez la saisir une fois par session (elle sera conservée tant que l'onglet reste ouvert).",
+  "e2ePrompt.import.description":
+    "Votre compte possède une clé de chiffrement de bout en bout. Elle n'est jamais stockée sur le serveur -- vous devez la saisir une fois par session (elle sera conservée tant que l'onglet reste ouvert).",
   "e2ePrompt.import.label": "Clé de chiffrement",
   "e2ePrompt.import.placeholder": "Collez votre clé secrète ici",
   "e2ePrompt.import.skip": "Ignorer",
   "e2ePrompt.import.submit": "Charger la clé",
   "e2ePrompt.import.sskrLink": "Récupérer via mes fragments SSKR",
   "e2ePrompt.import.passkeyLink": "Restaurer via ma clé d'accès (passkey)",
-  "e2ePrompt.passkey.prfUnsupported": "Votre authentificateur ne supporte pas l'extension PRF. Utilisez l'import manuel ou les fragments SSKR.",
-  "e2ePrompt.passkey.mismatch": "La clé restaurée via passkey ne correspond pas à celle de votre compte.",
+  "e2ePrompt.passkey.prfUnsupported":
+    "Votre authentificateur ne supporte pas l'extension PRF. Utilisez l'import manuel ou les fragments SSKR.",
+  "e2ePrompt.passkey.mismatch":
+    "La clé restaurée via passkey ne correspond pas à celle de votre compte.",
   "e2ePrompt.passkey.success": "Clé restaurée via passkey pour cette session.",
   "e2ePrompt.passkey.error": "Échec de la restauration via passkey.",
-  "e2ePrompt.import.skipWarning": "Si vous ignorez cette étape, vous ne pourrez pas déchiffrer ni créer de partages chiffrés pendant cette session.",
+  "e2ePrompt.import.skipWarning":
+    "Si vous ignorez cette étape, vous ne pourrez pas déchiffrer ni créer de partages chiffrés pendant cette session.",
   "e2ePrompt.divider.or": "OU",
-  "e2ePrompt.recover.description": "Collez vos fragments de récupération SSKR. Vous devez en fournir au moins le nombre qui était requis lors de la génération (le seuil T).",
+  "e2ePrompt.recover.description":
+    "Collez vos fragments de récupération SSKR. Vous devez en fournir au moins le nombre qui était requis lors de la génération (le seuil T).",
   "e2ePrompt.recover.shardCount": "Nombre de fragments à saisir",
   "e2ePrompt.recover.shard": "Fragment {n}",
   "e2ePrompt.recover.back": "Retour",
   "e2ePrompt.recover.submit": "Reconstituer la clé",
   "e2ePrompt.recovered.success": "Clé reconstituée avec succès !",
-  "e2ePrompt.recovered.instructions": "Voici votre clé de chiffrement. Conservez-la précieusement dans un gestionnaire de mots de passe -- elle ne sera plus affichée.",
+  "e2ePrompt.recovered.instructions":
+    "Voici votre clé de chiffrement. Conservez-la précieusement dans un gestionnaire de mots de passe -- elle ne sera plus affichée.",
   "e2ePrompt.recovered.key.aria": "Clé de chiffrement reconstituée",
   "e2ePrompt.recovered.copy.aria": "Copier la clé dans le presse-papiers",
   "e2ePrompt.recovered.copy": "Copier la clé",
@@ -1812,7 +2284,8 @@ export default {
 
   // --- Account E2E Section ---
   "account.e2e.title": "Chiffrement de bout en bout (E2E)",
-  "account.e2e.description": "Votre clé de chiffrement AES-256 n'est pas envoyée au serveur, sauf si vous choisissez de l'inclure dans l'e-mail envoyé aux destinataires d'un partage. Elle est conservée dans votre onglet pour la durée de votre session. À la fermeture de l'onglet, elle est automatiquement purgée. À chaque nouvelle session, vous devrez la ressaisir. Conservez-la précieusement dans un gestionnaire de mots de passe.",
+  "account.e2e.description":
+    "Votre clé de chiffrement AES-256 n'est pas envoyée au serveur, sauf si vous choisissez de l'inclure dans l'e-mail envoyé aux destinataires d'un partage. Elle est conservée dans votre onglet pour la durée de votre session. À la fermeture de l'onglet, elle est automatiquement purgée. À chaque nouvelle session, vous devrez la ressaisir. Conservez-la précieusement dans un gestionnaire de mots de passe.",
   "account.e2e.yourKey": "Votre clé :",
   "account.e2e.key.reveal": "Révéler",
   "account.e2e.key.hide": "Masquer",
@@ -1823,32 +2296,41 @@ export default {
   "account.e2e.button.sskr": "Créer des fragments de récupération",
   "account.e2e.button.generate": "Générer une clé E2E",
   "account.e2e.button.reactivate": "Réactiver l'E2E et générer une clé",
-  "account.e2e.button.revokeAndCreate": "Supprimer l'ancienne clé et en créer une nouvelle",
-  "account.e2e.noKey": "Aucune clé E2E configurée. Générez une clé pour activer le chiffrement de bout en bout sur vos futurs partages.",
+  "account.e2e.button.revokeAndCreate":
+    "Supprimer l'ancienne clé et en créer une nouvelle",
+  "account.e2e.noKey":
+    "Aucune clé E2E configurée. Générez une clé pour activer le chiffrement de bout en bout sur vos futurs partages.",
   "account.e2e.noKeyOptOut":
     "Vous avez supprimé votre clé E2E. Aucune nouvelle clé ne sera générée automatiquement et vos futurs partages ne seront pas chiffrés de bout en bout. Utilisez le bouton ci-dessous uniquement si vous souhaitez réactiver l'E2E.",
-  "account.e2e.import.warning": "Une clé E2E est enregistrée sur votre compte mais absente de ce navigateur. Importez-la pour accéder à vos partages chiffrés.",
+  "account.e2e.import.warning":
+    "Une clé E2E est enregistrée sur votre compte mais absente de ce navigateur. Importez-la pour accéder à vos partages chiffrés.",
   "account.e2e.import.label": "Importer votre clé",
   "account.e2e.import.placeholder": "Collez votre clé secrète ici...",
   "account.e2e.import.submit": "Vérifier & importer",
   "account.e2e.import.emptyError": "Veuillez entrer votre clé E2E",
-  "account.e2e.import.mismatchError": "Cette clé ne correspond pas à celle associée à votre compte",
+  "account.e2e.import.mismatchError":
+    "Cette clé ne correspond pas à celle associée à votre compte",
   "account.e2e.import.invalidError": "Clé invalide",
   "account.e2e.recover.backDirect": "Retour à la saisie directe",
   "account.e2e.recover.sskrLink": "Récupérer via fragments SSKR",
   "account.e2e.recover.minShards": "Entrez au moins 2 fragments.",
-  "account.e2e.recover.mismatch": "La clé reconstituée ne correspond pas à celle de votre compte.",
+  "account.e2e.recover.mismatch":
+    "La clé reconstituée ne correspond pas à celle de votre compte.",
   "account.e2e.recover.error": "Impossible de reconstituer la clé.",
   "account.e2e.confirm.regenerate.title": "Régénérer la clé de chiffrement",
-  "account.e2e.confirm.regenerate.body": "Une nouvelle clé sera générée et <strong>tous vos fichiers E2E seront re-chiffrés</strong> automatiquement. Cette opération peut prendre du temps selon le volume de données. Ne fermez pas l'onglet pendant le processus.",
+  "account.e2e.confirm.regenerate.body":
+    "Une nouvelle clé sera générée et <strong>tous vos fichiers E2E seront re-chiffrés</strong> automatiquement. Cette opération peut prendre du temps selon le volume de données. Ne fermez pas l'onglet pendant le processus.",
   "account.e2e.confirm.regenerate.confirm": "Régénérer",
   "account.e2e.confirm.revoke.title": "Supprimer la clé de chiffrement",
-  "account.e2e.confirm.revoke.body": "Tous les partages E2E existants deviendront <strong>définitivement inaccessibles</strong>. Cette action est irréversible.",
+  "account.e2e.confirm.revoke.body":
+    "Tous les partages E2E existants deviendront <strong>définitivement inaccessibles</strong>. Cette action est irréversible.",
   "account.e2e.confirm.revoke.confirm": "Supprimer",
   "account.e2e.toast.generated": "Clé E2E générée avec succès",
   "account.e2e.toast.generateError": "Erreur lors de la génération de la clé",
-  "account.e2e.toast.reencrypted": "Clé régénérée et fichiers re-chiffrés avec succès",
-  "account.e2e.toast.reencryptError": "Re-chiffrement échoué : {error}. La nouvelle clé est active mais certains fichiers n'ont pas pu être re-chiffrés.",
+  "account.e2e.toast.reencrypted":
+    "Clé régénérée et fichiers re-chiffrés avec succès",
+  "account.e2e.toast.reencryptError":
+    "Re-chiffrement échoué : {error}. La nouvelle clé est active mais certains fichiers n'ont pas pu être re-chiffrés.",
   "account.e2e.toast.imported": "Clé E2E importée avec succès",
   "account.e2e.toast.recovered": "Clé reconstituée et importée avec succès.",
   "account.e2e.toast.revoked": "Clé E2E supprimée",
@@ -1856,16 +2338,23 @@ export default {
 
   // WebAuthn PRF - coffre-fort système
   "account.e2e.passkey.offer": "Protéger la clé avec le trousseau système ?",
-  "account.e2e.passkey.offer.description": "Utilisez votre empreinte digitale, PIN ou clé de sécurité FIDO pour enregistrer votre clé chiffrée dans le trousseau système. Elle sera restaurée automatiquement à chaque nouvelle session.",
+  "account.e2e.passkey.offer.description":
+    "Utilisez votre empreinte digitale, PIN ou clé de sécurité FIDO pour enregistrer votre clé chiffrée dans le trousseau système. Elle sera restaurée automatiquement à chaque nouvelle session.",
   "account.e2e.passkey.save": "Enregistrer dans le trousseau",
   "account.e2e.passkey.saved": "Trousseau actif ✓",
   "account.e2e.passkey.skip": "Non merci",
-  "account.e2e.passkey.save.success": "Clé sauvegardée dans le trousseau système",
-  "account.e2e.passkey.save.error": "Échec de l'enregistrement dans le trousseau",
-  "account.e2e.passkey.unsupported": "Votre authentificateur ne supporte pas l'extension PRF -- essayez un autre appareil ou navigateur",
-  "account.e2e.passkey.load": "Déverrouiller depuis le trousseau (biométrie / PIN)",
-  "account.e2e.passkey.load.success": "Clé restaurée depuis le trousseau système",
-  "account.e2e.passkey.load.error": "Impossible de restaurer la clé depuis le trousseau",
+  "account.e2e.passkey.save.success":
+    "Clé sauvegardée dans le trousseau système",
+  "account.e2e.passkey.save.error":
+    "Échec de l'enregistrement dans le trousseau",
+  "account.e2e.passkey.unsupported":
+    "Votre authentificateur ne supporte pas l'extension PRF -- essayez un autre appareil ou navigateur",
+  "account.e2e.passkey.load":
+    "Déverrouiller depuis le trousseau (biométrie / PIN)",
+  "account.e2e.passkey.load.success":
+    "Clé restaurée depuis le trousseau système",
+  "account.e2e.passkey.load.error":
+    "Impossible de restaurer la clé depuis le trousseau",
   "account.e2e.backupReminder.title":
     "Sauvegardez maintenant la clé de votre premier partage",
   "account.e2e.backupReminder.body":
@@ -1873,12 +2362,15 @@ export default {
 
   // SafeLine WAF 468 challenge notifications
   "safeline.notify.title": "Vérification de sécurité requise",
-  "safeline.notify.message": "Le cookie WAF a expiré. Cliquez sur {link} pour résoudre le challenge. L'upload reprendra automatiquement.",
+  "safeline.notify.message":
+    "Le cookie WAF a expiré. Cliquez sur {link} pour résoudre le challenge. L'upload reprendra automatiquement.",
   "safeline.notify.link": "Résoudre maintenant",
   "safeline.os-notify.title": "PrivCloud -- Vérification requise",
-  "safeline.os-notify.body": "Le WAF nécessite une vérification. Revenez sur l'onglet PrivCloud et cliquez le lien.",
+  "safeline.os-notify.body":
+    "Le WAF nécessite une vérification. Revenez sur l'onglet PrivCloud et cliquez le lien.",
   "safeline.title-flash": "\u26a0\ufe0f Vérification WAF requise !",
-  "safeline.download.failed": "Challenge SafeLine non résolu après {retries} tentatives",
+  "safeline.download.failed":
+    "Challenge SafeLine non résolu après {retries} tentatives",
 
   // --- Visite guidée onboarding (première connexion) ---
   "onboarding.modal.header": "Étape {step} / {total}",
@@ -1888,30 +2380,47 @@ export default {
   "onboarding.next": "Suivant",
   "onboarding.finish": "C'est parti !",
   "onboarding.step0.title": "Bienvenue sur PrivCloud",
-  "onboarding.step0.body": "PrivCloud vous permet de partager des fichiers de façon sécurisée, privée et sans intermédiaire. Cette visite rapide vous explique les quelques concepts clés à connaître avant de commencer.",
+  "onboarding.step0.body":
+    "PrivCloud vous permet de partager des fichiers de façon sécurisée, privée et sans intermédiaire. Cette visite rapide vous explique les quelques concepts clés à connaître avant de commencer.",
   "onboarding.step1.title": "Chiffrement de bout en bout (E2E)",
-  "onboarding.step1.body": "Avec le chiffrement E2E activé, vos fichiers sont chiffrés dans votre navigateur avant d'atteindre nos serveurs. Personne d'autre que vous et vos destinataires ne peut les lire.",
-  "onboarding.step1.li1": "Par défaut, votre clé n'est pas envoyée à nos serveurs.",
+  "onboarding.step1.body":
+    "Avec le chiffrement E2E activé, vos fichiers sont chiffrés dans votre navigateur avant d'atteindre nos serveurs. Personne d'autre que vous et vos destinataires ne peut les lire.",
+  "onboarding.step1.li1":
+    "Par défaut, votre clé n'est pas envoyée à nos serveurs.",
   "onboarding.step1.li2": "Nous ne pouvons donc pas lire vos fichiers.",
-  "onboarding.step1.li3": "Activez le E2E dans votre profil, section \"Chiffrement E2E\".",
+  "onboarding.step1.li3":
+    'Activez le E2E dans votre profil, section "Chiffrement E2E".',
   "onboarding.step2.title": "Votre clé de chiffrement",
-  "onboarding.step2.body": "La clé E2E est conservée uniquement en mémoire vive (RAM) pendant la session. Elle disparaît quand vous fermez l'onglet.",
-  "onboarding.step2.li1": "Sauvegardez votre clé dans un gestionnaire de mots de passe.",
-  "onboarding.step2.li2": "Générez des fragments SSKR pour la récupérer si vous la perdez.",
-  "onboarding.step2.li3": "Chaque nouvelle session, vous devrez ressaisir votre clé.",
+  "onboarding.step2.body":
+    "La clé E2E est conservée uniquement en mémoire vive (RAM) pendant la session. Elle disparaît quand vous fermez l'onglet.",
+  "onboarding.step2.li1":
+    "Sauvegardez votre clé dans un gestionnaire de mots de passe.",
+  "onboarding.step2.li2":
+    "Générez des fragments SSKR pour la récupérer si vous la perdez.",
+  "onboarding.step2.li3":
+    "Chaque nouvelle session, vous devrez ressaisir votre clé.",
   "onboarding.step3.title": "Comment fonctionne le partage",
-  "onboarding.step3.body": "Quand vous partagez un fichier chiffré, la clé est incluse dans le fragment #key de l'URL (après le \"#key=\"). Ce fragment n'est jamais envoyé au serveur -- seul votre navigateur le lit.",
+  "onboarding.step3.body":
+    "Quand vous partagez un fichier chiffré, la clé est incluse dans le fragment #key de l'URL (après le \"#key=\"). Ce fragment n'est jamais envoyé au serveur -- seul votre navigateur le lit.",
   "onboarding.step3.li1": "Partagez le lien complet via un canal de confiance.",
-  "onboarding.step3.li2": "Quiconque possède le lien peut déchiffrer : protégez-le.",
+  "onboarding.step3.li2":
+    "Quiconque possède le lien peut déchiffrer : protégez-le.",
   "onboarding.step4.title": "Vous êtes prêt !",
-  "onboarding.step4.body": "Vos fichiers vous appartiennent. PrivCloud est open source, hébergé en France, sans publicité ni tracking. Bon partage !",
+  "onboarding.step4.body":
+    "Vos fichiers vous appartiennent. PrivCloud est open source, hébergé en France, sans publicité ni tracking. Bon partage !",
 
   // --- Signatures ---
+  "signing.key.unavailable":
+    "La clé de déchiffrement n’est pas encore disponible pour ce compte. Demandez au créateur d’ouvrir la demande pour actualiser l’accès.",
+  "signing.key.delivery-error":
+    "Impossible de préparer l’accès chiffré des signataires. Réessayez en rouvrant cette demande.",
   "signing.title": "Signatures Électroniques",
-  "signing.subtitle": "Signez des documents PDF avec des signatures électroniques conformes eIDAS",
+  "signing.subtitle":
+    "Signez des documents PDF avec des signatures électroniques conformes eIDAS",
   "signing.new": "Nouvelle demande de signature",
   "signing.empty": "Aucune demande de signature",
-  "signing.empty.description": "Créez votre première demande de signature électronique pour commencer.",
+  "signing.empty.description":
+    "Créez votre première demande de signature électronique pour commencer.",
   "signing.document": "Document",
   "signing.level": "Niveau",
   "signing.level.aes": "Standard",
@@ -1930,10 +2439,13 @@ export default {
   "signing.new.title": "Nouvelle Demande de Signature",
   "signing.new.document": "Informations du document",
   "signing.new.message": "Message pour les signataires",
-  "signing.new.message.placeholder": "Message optionnel à inclure dans l'invitation de signature...",
+  "signing.new.message.placeholder":
+    "Message optionnel à inclure dans l'invitation de signature...",
   "signing.new.level": "Niveau de signature",
-  "signing.new.level.aes.desc": "Adresse e-mail vérifiée par code, consentement et empreinte de la transaction",
-  "signing.new.level.qes.desc": "Compte PrivCloud attribué et vérifié, puis confirmation par passkey",
+  "signing.new.level.aes.desc":
+    "Adresse e-mail vérifiée par code, consentement et empreinte de la transaction",
+  "signing.new.level.qes.desc":
+    "Compte PrivCloud attribué et vérifié, puis confirmation par passkey",
   "signing.new.recipients": "Destinataires",
   "signing.new.recipients.add": "Ajouter un destinataire",
   "signing.new.recipients.name": "Nom complet",
@@ -1945,7 +2457,8 @@ export default {
   "signing.new.expires": "Date d'expiration",
   "signing.sign.title": "Signer le document",
   "signing.sign.otp.title": "Vérification d'identité",
-  "signing.sign.otp.description": "Un code à 6 chiffres a été envoyé à votre adresse email. Saisissez-le ci-dessous pour vérifier votre identité.",
+  "signing.sign.otp.description":
+    "Un code à 6 chiffres a été envoyé à votre adresse email. Saisissez-le ci-dessous pour vérifier votre identité.",
   "signing.sign.otp.send": "Envoyer le code de vérification",
   "signing.sign.otp.resend": "Renvoyer le code",
   "signing.sign.otp.placeholder": "Saisissez le code à 6 chiffres",
@@ -1959,15 +2472,20 @@ export default {
   "signing.sign.reject.reason": "Raison du refus (facultatif)",
   "signing.sign.done": "Document signé avec succès",
   "signing.sign.rejected": "Document refusé",
-  "signing.sign.legal": "En signant, je reconnais que cette signature électronique a la même valeur juridique qu'une signature manuscrite conformément au règlement eIDAS (UE) n° 910/2014.",
+  "signing.sign.legal":
+    "En signant, je reconnais que cette signature électronique a la même valeur juridique qu'une signature manuscrite conformément au règlement eIDAS (UE) n° 910/2014.",
   "signing.sign.eidas.badge": "Conçu selon eIDAS - Piste d'audit complète",
   "signing.sign.success.title": "Document signé avec succès",
-  "signing.sign.success.desc": "Votre signature a été enregistrée avec horodatage certifié. Vous recevrez une copie du document signé par email une fois que tous les signataires auront signé.",
-  "signing.sign.success.e2e-desc": "Votre signature a été enregistrée. Le document chiffré sera automatiquement finalisé une fois que tous les signataires auront signé.",
+  "signing.sign.success.desc":
+    "Votre signature a été enregistrée avec horodatage certifié. Vous recevrez une copie du document signé par email une fois que tous les signataires auront signé.",
+  "signing.sign.success.e2e-desc":
+    "Votre signature a été enregistrée. Le document chiffré sera automatiquement finalisé une fois que tous les signataires auront signé.",
   "signing.sign.rejected.title": "Document refusé",
-  "signing.sign.rejected.desc": "Le propriétaire du document sera informé de votre refus.",
+  "signing.sign.rejected.desc":
+    "Le propriétaire du document sera informé de votre refus.",
   "signing.sign.download-signed": "Télécharger le document signé",
-  "signing.sign.download-not-ready": "Le document signé n'est pas encore disponible. Veuillez réessayer dans un moment.",
+  "signing.sign.download-not-ready":
+    "Le document signé n'est pas encore disponible. Veuillez réessayer dans un moment.",
   "signing.pad.clear": "Effacer",
   "signing.pad.upload.label": "Importer une image de signature",
   "signing.pad.upload.hint": "PNG ou JPG, 2 Mo maximum",
@@ -1978,12 +2496,15 @@ export default {
   "signing.modal.file": "Document",
   "signing.modal.file-placeholder": "Sélectionnez le fichier à signer",
   "signing.modal.message": "Message aux signataires",
-  "signing.modal.message-placeholder": "Message optionnel qui apparaîtra dans l'email d'invitation...",
+  "signing.modal.message-placeholder":
+    "Message optionnel qui apparaîtra dans l'email d'invitation...",
   "signing.modal.level": "Niveau de preuve",
   "signing.modal.level.aes": "Standard - e-mail vérifié + consentement",
   "signing.modal.level.qes": "Signature électronique avancée (SEA)",
-  "signing.modal.level.aes-description": "Sans compte obligatoire : le signataire saisit un code à usage unique reçu à l'adresse attribuée, puis exprime son consentement sur l'empreinte du document. Cela prouve le contrôle actuel de la boîte e-mail, pas une identité civile.",
-  "signing.modal.level.qes-description": "Chaque signataire utilise le compte PrivCloud nominatif qui lui est attribué. Chaque décision fait l'objet d'une assertion WebAuthn dont le challenge est dérivé d'un manifeste liant le compte, le consentement et l'empreinte exacte du document. L'attestation remise aux parties et le dossier probatoire conservé par PrivCloud permettent une vérification indépendante. Ce parcours n'est pas une signature qualifiée (QES).",
+  "signing.modal.level.aes-description":
+    "Sans compte obligatoire : le signataire saisit un code à usage unique reçu à l'adresse attribuée, puis exprime son consentement sur l'empreinte du document. Cela prouve le contrôle actuel de la boîte e-mail, pas une identité civile.",
+  "signing.modal.level.qes-description":
+    "Chaque signataire utilise le compte PrivCloud nominatif qui lui est attribué. Chaque décision fait l'objet d'une assertion WebAuthn dont le challenge est dérivé d'un manifeste liant le compte, le consentement et l'empreinte exacte du document. L'attestation remise aux parties et le dossier probatoire conservé par PrivCloud permettent une vérification indépendante. Ce parcours n'est pas une signature qualifiée (QES).",
   "signing.modal.recipients": "Signataires",
   "signing.modal.add-recipient": "Ajouter",
   "signing.modal.recipient.name": "Nom complet",
@@ -1998,8 +2519,7 @@ export default {
   "signing.modal.error.no-recipients": "Ajoutez au moins un signataire",
   "signing.modal.notify.success": "Demande de signature envoyée avec succès",
   "signing.modal.notify.error": "Échec de l'envoi de la demande de signature",
-  "signing.option.e2e-key-email":
-    "Envoyer la clé E2E dans un second email",
+  "signing.option.e2e-key-email": "Envoyer la clé E2E dans un second email",
   "signing.option.e2e-key-email.desc":
     "Le lien principal reste sans clé. La clé est envoyée séparément aux signataires et approbateurs, pratique, mais moins cloisonné qu'un autre canal sécurisé.",
 
@@ -2037,13 +2557,15 @@ export default {
   "signing.status.signing-failed": "Échec du scellement",
   "signing.detail.evidence.download": "Attestation de preuve",
   "signing.detail.forensic.download": "Mes données probatoires",
-  "signing.toast.forensic-error": "Vos données probatoires ne sont pas disponibles",
+  "signing.toast.forensic-error":
+    "Vos données probatoires ne sont pas disponibles",
   "signing.toast.evidence-error": "Le dossier de preuve n'est pas disponible",
   "signing.toast.download-started":
     "Téléchargement lancé : le fichier se trouve dans les téléchargements de votre navigateur.",
   "signing.received": "Documents reçus",
   "signing.received.empty": "Aucun document reçu pour signature.",
-  "signing.empty.eidas": "Créez votre première demande pour faire signer vos documents PDF conformément au règlement eIDAS.",
+  "signing.empty.eidas":
+    "Créez votre première demande pour faire signer vos documents PDF conformément au règlement eIDAS.",
   "signing.empty.create": "Créer une demande de signature",
   "signing.no-title": "Sans titre",
   "signing.actions.view": "Voir les détails",
@@ -2065,10 +2587,12 @@ export default {
   "signing.detail.back": "← Retour aux signatures",
   "signing.detail.created-at": "Créé le {date}",
   "signing.detail.not-found": "Document introuvable.",
-  "signing.detail.file-deleted-warning": "Le fichier source a été supprimé. Les détails et la piste d'audit restent consultables mais le téléchargement n'est plus disponible.",
+  "signing.detail.file-deleted-warning":
+    "Le fichier source a été supprimé. Les détails et la piste d'audit restent consultables mais le téléchargement n'est plus disponible.",
   "signing.detail.cancel-request": "Annuler la demande",
   "signing.detail.signing-links": "Liens de signature",
-  "signing.detail.signing-links.desc": "Les invitations par email ont été envoyées. Vous pouvez aussi copier et partager ces liens directement :",
+  "signing.detail.signing-links.desc":
+    "Les invitations par email ont été envoyées. Vous pouvez aussi copier et partager ces liens directement :",
   "signing.detail.recipients": "Destinataires",
   "signing.detail.table.name": "Nom",
   "signing.detail.table.email": "Email",
@@ -2080,8 +2604,10 @@ export default {
   "signing.detail.audit.viewed": "Document consulté",
   "signing.detail.audit.signed": "Signé",
   "signing.detail.audit.rejected": "Refusé",
-  "signing.detail.audit.completed": "Tous les signataires ont signé - document finalisé",
-  "signing.detail.audit.awaiting-finalization": "En attente de finalisation E2E",
+  "signing.detail.audit.completed":
+    "Tous les signataires ont signé - document finalisé",
+  "signing.detail.audit.awaiting-finalization":
+    "En attente de finalisation E2E",
   "signing.detail.audit.cancelled": "Demande annulée",
   "signing.detail.audit.reminder-sent": "Rappel envoyé",
   "signing.detail.audit.finalized": "Finalisation E2E terminée",
@@ -2089,31 +2615,44 @@ export default {
   "signing.detail.audit.actor": "Par : {email}",
   "signing.detail.audit.ip": "IP : {ip}",
   "signing.detail.audit.reason": "Motif : {reason}",
-  "signing.detail.finalize.progress": "Finalisation en cours : déchiffrement, signatures visuelles, signature cryptographique PAdES, re-chiffrement et stockage...",
-  "signing.detail.finalize.key-resolving": "Résolution de la clé de chiffrement en cours... La finalisation se lancera automatiquement.",
+  "signing.detail.finalize.progress":
+    "Finalisation en cours : déchiffrement, signatures visuelles, signature cryptographique PAdES, re-chiffrement et stockage...",
+  "signing.detail.finalize.key-resolving":
+    "Résolution de la clé de chiffrement en cours... La finalisation se lancera automatiquement.",
   "signing.detail.finalize.retry": "Relancer la finalisation",
-  "signing.detail.download.e2e-open-link": "Ce PDF est chiffré de bout en bout. Ouvrez une fois le lien de signature reçu par e-mail en étant connecté à ce compte : le téléchargement sera ensuite disponible ici.",
-  "signing.detail.finalize.e2e-unavailable": "Clé E2E non disponible - impossible de résoudre la clé de chiffrement",
+  "signing.detail.download.e2e-open-link":
+    "Ce PDF est chiffré de bout en bout. Ouvrez une fois le lien de signature reçu par e-mail en étant connecté à ce compte : le téléchargement sera ensuite disponible ici.",
+  "signing.detail.finalize.e2e-unavailable":
+    "Clé E2E non disponible - impossible de résoudre la clé de chiffrement",
   "signing.toast.finalize-success": "Document finalisé avec succès !",
-  "signing.toast.finalize-error": "Erreur lors de la finalisation du document chiffré",
+  "signing.toast.finalize-error":
+    "Erreur lors de la finalisation du document chiffré",
   "signing.toast.request-cancelled": "Demande annulée",
 
   // Pages signature - nouvelle demande
   "signing.new.share-id": "ID du partage",
-  "signing.new.share-id.desc": "Identifiant du partage PrivCloud contenant le PDF",
+  "signing.new.share-id.desc":
+    "Identifiant du partage PrivCloud contenant le PDF",
   "signing.new.share-id.placeholder": "ex : clxyz...",
   "signing.new.file-id": "ID du fichier",
-  "signing.new.file-id.desc": "Identifiant du fichier PDF à signer dans le partage",
+  "signing.new.file-id.desc":
+    "Identifiant du fichier PDF à signer dans le partage",
   "signing.new.file-id.placeholder": "ex : clxyz...",
   "signing.new.eidas-level": "Niveau de preuve de la signature",
-  "signing.new.eidas-desc": "Les deux parcours enregistrent le consentement et l'intégrité du document. Le niveau renforcé associe en plus un compte attribué et une passkey. Il fournit des éléments de preuve utiles à une signature électronique avancée (SEA). Cette qualification suppose que l'identification et le contrôle exclusif démontrable du signataire satisfassent l'ensemble des critères de l'article 26 eIDAS. Aucun de ces parcours n'est une signature qualifiée (QES).",
+  "signing.new.eidas-desc":
+    "Les deux parcours enregistrent le consentement et l'intégrité du document. Le niveau renforcé associe en plus un compte attribué et une passkey. Il fournit des éléments de preuve utiles à une signature électronique avancée (SEA). Cette qualification suppose que l'identification et le contrôle exclusif démontrable du signataire satisfassent l'ensemble des critères de l'article 26 eIDAS. Aucun de ces parcours n'est une signature qualifiée (QES).",
   "signing.new.options": "Options du document signé",
   "signing.new.option.approval-field": "Mention diagonale « Bon pour Accord »",
-  "signing.new.option.approval-field.desc": "Affiche un filigrane semi-transparent en diagonale sur la première page",
-  "signing.new.option.approval-mention": "Mention « Lu et approuvé, le (date) »",
-  "signing.new.option.approval-mention.desc": "Ajoute la mention avec la date de chaque signature",
-  "signing.new.option.initials": "Initiales des signataires en bas de chaque page",
-  "signing.new.option.initials.desc": "Affiche les initiales de chaque signataire en pied de page",
+  "signing.new.option.approval-field.desc":
+    "Affiche un filigrane semi-transparent en diagonale sur la première page par défaut, ou sur la page choisie",
+  "signing.new.option.approval-mention":
+    "Mention « Lu et approuvé, le (date) »",
+  "signing.new.option.approval-mention.desc":
+    "Ajoute la mention avec la date de chaque signature",
+  "signing.new.option.initials":
+    "Initiales des signataires en bas de chaque page",
+  "signing.new.option.initials.desc":
+    "Affiche les initiales de chaque signataire en pied de page",
   "signing.new.recipients.role.approver": "Approbateur",
   "signing.new.recipients.role.observer": "Observateur (CC)",
   "signing.new.recipients.order": "Ordre",
@@ -2122,7 +2661,8 @@ export default {
   "signing.new.fields.add-signature": "Signature",
   "signing.new.fields.add-text": "Champ libre",
   "signing.new.fields.add-approval": "Mention obligatoire",
-  "signing.new.fields.desc": "Ajoutez des zones de signature, champs libres, dates ou mentions exactes. Une signature est automatiquement ajoutée pour chaque signataire si elle manque.",
+  "signing.new.fields.desc":
+    "Ajoutez des zones de signature, champs libres, dates ou mentions exactes. Une signature est automatiquement ajoutée pour chaque signataire si elle manque.",
   "signing.new.fields.signer": "Signataire",
   "signing.new.fields.type": "Type",
   "signing.new.fields.type.signature": "Signature",
@@ -2135,9 +2675,12 @@ export default {
   "signing.new.fields.height": "Hauteur",
   "signing.new.fields.required": "Obligatoire",
   "signing.new.fields.label": "Instruction ou texte obligatoire",
-  "signing.new.fields.label.placeholder": "Exemple : Signature du client, précédée de la mention attendue",
-  "signing.new.fields.label.approval-placeholder": "Texte que le signataire doit recopier exactement",
-  "signing.new.fields.approval.default": "Bon pour accord et réception sans réserve",
+  "signing.new.fields.label.placeholder":
+    "Exemple : Signature du client, précédée de la mention attendue",
+  "signing.new.fields.label.approval-placeholder":
+    "Texte que le signataire doit recopier exactement",
+  "signing.new.fields.approval.default":
+    "Bon pour accord et réception sans réserve",
   "signing.new.fields.placement": "Placement rapide",
   "signing.new.fields.placement.top-left": "Haut gauche",
   "signing.new.fields.placement.top-center": "Haut milieu",
@@ -2155,16 +2698,20 @@ export default {
   "signing.new.validate.name-required": "Nom requis",
   "signing.new.validate.email-invalid": "Email invalide",
   "signing.new.validate.min-signer": "Ajoutez au moins un signataire",
-  "signing.new.validate.field-label-required": "Ajoutez l'instruction ou le texte exact pour chaque champ texte obligatoire.",
-  "signing.toast.created": "Demande de signature créée et envoyée aux signataires",
+  "signing.new.validate.field-label-required":
+    "Ajoutez l'instruction ou le texte exact pour chaque champ texte obligatoire.",
+  "signing.toast.created":
+    "Demande de signature créée et envoyée aux signataires",
   "signing.toast.create-error": "Erreur lors de la création de la demande",
 
   // --- Équipes ---
   "team.title": "Équipes",
-  "team.subtitle": "Collaborez avec un stockage partagé, un contrôle d'accès et des métriques d'équipe",
+  "team.subtitle":
+    "Collaborez avec un stockage partagé, un contrôle d'accès et des métriques d'équipe",
   "team.new": "Créer une équipe",
   "team.empty": "Aucune équipe",
-  "team.empty.description": "Créez ou rejoignez une équipe pour collaborer en toute sécurité.",
+  "team.empty.description":
+    "Créez ou rejoignez une équipe pour collaborer en toute sécurité.",
   "team.members": "{count} membres",
   "team.folders": "{count} dossiers",
   "team.status.active": "Active",
@@ -2190,17 +2737,22 @@ export default {
   "team.dashboard.folder.create": "Créer",
   "team.invite.invalid-link": "Lien d'invitation invalide.",
   "team.invite.title": "Invitation à rejoindre une équipe",
-  "team.invite.login-required": "Connectez-vous ou créez un compte pour accepter cette invitation.",
+  "team.invite.login-required":
+    "Connectez-vous ou créez un compte pour accepter cette invitation.",
   "team.invite.login-button": "Se connecter",
   "team.invite.accepted-title": "Invitation acceptée !",
-  "team.invite.accepted-redirect": "Redirection vers le tableau de bord de l'équipe...",
+  "team.invite.accepted-redirect":
+    "Redirection vers le tableau de bord de l'équipe...",
   "team.invite.meta-title": "Accepter l'invitation",
   "team.invite.join-title": "Rejoindre une équipe",
   "team.invite.join-description":
     "Vous avez été invité(e) à rejoindre une équipe sur PrivCloud.",
-  "team.invite.error-generic": "Impossible d'accepter l'invitation. Le lien a peut-être expiré.",
-  "team.invite.e2e-required-title": "Cette équipe utilise le chiffrement de bout en bout (E2E).",
-  "team.invite.e2e-required-description": "Vous devez d'abord activer votre clé de chiffrement personnelle dans votre compte avant de pouvoir rejoindre cette équipe.",
+  "team.invite.error-generic":
+    "Impossible d'accepter l'invitation. Le lien a peut-être expiré.",
+  "team.invite.e2e-required-title":
+    "Cette équipe utilise le chiffrement de bout en bout (E2E).",
+  "team.invite.e2e-required-description":
+    "Vous devez d'abord activer votre clé de chiffrement personnelle dans votre compte avant de pouvoir rejoindre cette équipe.",
   "team.invite.e2e-setup-button": "Configurer ma clé E2E",
   "team.invite.accept-button": "Accepter l'invitation",
   "team.role.owner": "Propriétaire",
@@ -2252,16 +2804,19 @@ export default {
   "admin.teams.modal.role": "Rôle",
   "admin.teams.modal.confirm-add": "Ajouter le membre",
   "admin.teams.modal.max-members": "Configurer le nombre max de membres",
-  "admin.teams.modal.max-members-label": "Nombre maximum de membres (0 = illimite)",
+  "admin.teams.modal.max-members-label":
+    "Nombre maximum de membres (0 = illimite)",
   "admin.teams.modal.confirm-max": "Enregistrer",
   "admin.teams.action.create": "Créer une équipe",
   "admin.teams.created": "Équipe créée avec succès",
   "admin.teams.modal.create-team": "Créer une nouvelle équipe",
   "admin.teams.modal.team-name": "Nom de l'équipe",
   "admin.teams.modal.team-slug": "URL de l'équipe (slug)",
-  "admin.teams.modal.slug-hint": "Identifiant unique dans l'URL (lettres minuscules, chiffres et tirets)",
+  "admin.teams.modal.slug-hint":
+    "Identifiant unique dans l'URL (lettres minuscules, chiffres et tirets)",
   "admin.teams.modal.team-description": "Description",
-  "admin.teams.modal.description-placeholder": "Description optionnelle de l'équipe",
+  "admin.teams.modal.description-placeholder":
+    "Description optionnelle de l'équipe",
   "admin.teams.modal.team-owner": "Propriétaire de l'équipe",
   "admin.teams.modal.confirm-create": "Créer l'équipe",
   "admin.button.teams": "Équipes",
@@ -2269,37 +2824,46 @@ export default {
   // --- Admin : Signatures ---
   "admin.config.signing": "Signatures",
   "admin.config.signing.enabled": "Activer les signatures électroniques",
-  "admin.config.signing.certificatePath": "Chemin du fichier de clé de signature",
+  "admin.config.signing.certificatePath":
+    "Chemin du fichier de clé de signature",
   "admin.config.signing.certificatePassword": "Mot de passe du fichier de clé",
   "admin.config.signing.tsaUrl": "URL de l'autorité d'horodatage",
   "admin.config.signing.defaultLevel": "Niveau de signature par défaut",
 
   // --- Team creation ---
   "team.create.modal.title": "Créer votre équipe",
-  "team.create.modal.mandatory-info": "Vous avez été désigné(e) comme administrateur d'une équipe. Veuillez créer votre équipe pour continuer.",
+  "team.create.modal.mandatory-info":
+    "Vous avez été désigné(e) comme administrateur d'une équipe. Veuillez créer votre équipe pour continuer.",
   "team.create.modal.name-label": "Nom de l'équipe",
-  "team.create.modal.name-hint": "Les caractères spéciaux sont autorisés ($, -, _, @, #, etc.)",
+  "team.create.modal.name-hint":
+    "Les caractères spéciaux sont autorisés ($, -, _, @, #, etc.)",
   "team.create.modal.description-label": "Description (optionnel)",
-  "team.create.modal.description-placeholder": "Décrivez brièvement votre équipe...",
-  "team.create.modal.slug-auto": "L'identifiant URL sera généré automatiquement à partir du nom.",
+  "team.create.modal.description-placeholder":
+    "Décrivez brièvement votre équipe...",
+  "team.create.modal.slug-auto":
+    "L'identifiant URL sera généré automatiquement à partir du nom.",
   "team.create.modal.submit": "Créer l'équipe",
   "team.create.success": "Équipe « {name} » créée avec succès !",
-  "team.create.error.name-too-short": "Le nom doit contenir au moins 2 caractères",
+  "team.create.error.name-too-short":
+    "Le nom doit contenir au moins 2 caractères",
   "team.create.error.generic": "Erreur lors de la création de l'équipe",
 
   // --- Account team section ---
   "account.team.title": "Mon équipe",
-  "account.team.description": "Vous avez été désigné(e) administrateur d'une équipe. Créez-la pour inviter vos collaborateurs.",
+  "account.team.description":
+    "Vous avez été désigné(e) administrateur d'une équipe. Créez-la pour inviter vos collaborateurs.",
   "account.team.create-button": "Créer mon équipe",
   "account.team.storage": "Stockage partagé de l'équipe : {used} / {total}",
-  "account.team.no-personal-storage": "Votre stockage est mutualisé avec votre équipe. Aucun espace personnel individuel n'est attribué.",
+  "account.team.no-personal-storage":
+    "Votre stockage est mutualisé avec votre équipe. Aucun espace personnel individuel n'est attribué.",
 
   // --- Team folder page (team/[id]/folder/[folderId].tsx) ---
   // Breadcrumbs
   "team.folder.breadcrumb.team": "Équipe",
   "team.folder.breadcrumb.folders": "Dossiers",
   // Empty state
-  "team.folder.empty": "Aucun fichier dans ce dossier. Uploadez un fichier en sélectionnant ce dossier team lors du partage.",
+  "team.folder.empty":
+    "Aucun fichier dans ce dossier. Uploadez un fichier en sélectionnant ce dossier team lors du partage.",
   // File tooltip
   "team.folder.fileRights": "Droits spécifiques sur ce fichier",
   // Table headers
@@ -2315,20 +2879,23 @@ export default {
   "team.folder.bulkBar.manageRights": "Gérer les droits",
   // Shares section
   "team.folder.shares.title": "Partages liés ({count})",
-  "team.folder.shares.fileCount": "{count, plural, one {# fichier} other {# fichiers}}",
+  "team.folder.shares.fileCount":
+    "{count, plural, one {# fichier} other {# fichiers}}",
   "team.folder.shares.copyLink": "Copier le lien",
   "team.folder.shares.linkCopied": "Lien copié !",
   "team.folder.shares.deleteTooltip": "Supprimer le partage",
   // Access control section
   "team.folder.access.title": "Contrôle d'accès",
   "team.folder.access.addButton": "Ajouter un accès",
-  "team.folder.access.noRules": "Aucune règle d'accès définie - tous les membres de l'équipe ont accès par défaut.",
+  "team.folder.access.noRules":
+    "Aucune règle d'accès définie - tous les membres de l'équipe ont accès par défaut.",
   "team.folder.access.role.owner": "Propriétaire",
   "team.folder.access.role.admin": "Admin",
   "team.folder.access.role.member": "Membre",
   "team.folder.access.removeTooltip": "Supprimer l'accès",
   "team.folder.access.fullAccess": "Accès complet",
-  "team.folder.access.note": "Note : les propriétaires et admins de l'équipe ont toujours un accès complet, indépendamment des règles ci-dessus.",
+  "team.folder.access.note":
+    "Note : les propriétaires et admins de l'équipe ont toujours un accès complet, indépendamment des règles ci-dessus.",
   // Permission labels (Select)
   "team.folder.permission.none": "Accès interdit",
   "team.folder.permission.read": "Lecture seule",
@@ -2339,37 +2906,49 @@ export default {
   // Permission descriptions
   "team.folder.access.desc.none": "Aucun accès",
   "team.folder.access.desc.read": "Consultation et téléchargement",
-  "team.folder.access.desc.write": "Consultation, téléchargement, suppression (propres fichiers)",
+  "team.folder.access.desc.write":
+    "Consultation, téléchargement, suppression (propres fichiers)",
   "team.folder.access.desc.admin": "Accès complet",
   // Signature switch
   "team.folder.signatureSwitch.short": "Signature (PDF)",
-  "team.folder.signatureSwitch.label": "Autoriser la demande de signature (PDF)",
-  "team.folder.signatureSwitch.desc": "Le membre pourra initier des demandes de signature sur les fichiers PDF du dossier",
+  "team.folder.signatureSwitch.label":
+    "Autoriser la demande de signature (PDF)",
+  "team.folder.signatureSwitch.desc":
+    "Le membre pourra initier des demandes de signature sur les fichiers PDF du dossier",
   // Add access modal
   "team.folder.modal.access.title": "Ajouter un accès au dossier",
   "team.folder.modal.access.memberLabel": "Membre",
   "team.folder.modal.access.memberPlaceholder": "Sélectionner un membre",
   "team.folder.modal.access.permissionLabel": "Permission",
   "team.folder.modal.access.rightsIncluded": "Droits inclus :",
-  "team.folder.modal.access.rights.read": "Consultation et téléchargement. Aucun droit de suppression.",
-  "team.folder.modal.access.rights.write": "Consultation, téléchargement et suppression de ses propres fichiers uniquement.",
-  "team.folder.modal.access.rights.admin": "Accès complet : consultation, téléchargement, suppression de tous les fichiers, demande de signature.",
+  "team.folder.modal.access.rights.read":
+    "Consultation et téléchargement. Aucun droit de suppression.",
+  "team.folder.modal.access.rights.write":
+    "Consultation, téléchargement et suppression de ses propres fichiers uniquement.",
+  "team.folder.modal.access.rights.admin":
+    "Accès complet : consultation, téléchargement, suppression de tous les fichiers, demande de signature.",
   "team.folder.modal.cancel": "Annuler",
   "team.folder.modal.access.addButton": "Ajouter",
   // File permissions modal
   "team.folder.modal.filePerms.title": "Droits fichiers ({count} fichier(s))",
-  "team.folder.modal.filePerms.desc": "Définissez les droits pour chaque membre sur les fichiers sélectionnés. Laissez vide pour ne pas attribuer de droit.",
-  "team.folder.modal.filePerms.legend": "Lecture : consultation et téléchargement uniquement. Lecture + Écriture : idem + suppression de ses propres fichiers. Admin : accès complet.",
+  "team.folder.modal.filePerms.desc":
+    "Définissez les droits pour chaque membre sur les fichiers sélectionnés. Laissez vide pour ne pas attribuer de droit.",
+  "team.folder.modal.filePerms.legend":
+    "Lecture : consultation et téléchargement uniquement. Lecture + Écriture : idem + suppression de ses propres fichiers. Admin : accès complet.",
   "team.folder.modal.filePerms.noPerm": "Aucun droit",
-  "team.folder.modal.filePerms.defaultPerm": "--- Droits par défaut (dossier) ---",
+  "team.folder.modal.filePerms.defaultPerm":
+    "--- Droits par défaut (dossier) ---",
   "team.folder.modal.filePerms.applyButton": "Appliquer",
   // Confirm delete modals
   "team.folder.confirmDelete.fileTitle": "Supprimer le fichier",
-  "team.folder.confirmDelete.fileBody": "Êtes-vous sûr de vouloir supprimer « {name} » ? Cette action est irréversible.",
+  "team.folder.confirmDelete.fileBody":
+    "Êtes-vous sûr de vouloir supprimer « {name} » ? Cette action est irréversible.",
   "team.folder.confirmDelete.shareTitle": "Supprimer le partage",
-  "team.folder.confirmDelete.shareBody": "Êtes-vous sûr de vouloir supprimer le partage « {name} » et tous ses fichiers ? Cette action est irréversible.",
+  "team.folder.confirmDelete.shareBody":
+    "Êtes-vous sûr de vouloir supprimer le partage « {name} » et tous ses fichiers ? Cette action est irréversible.",
   "team.folder.confirmDelete.bulkTitle": "Supprimer les fichiers sélectionnés",
-  "team.folder.confirmDelete.bulkBody": "Supprimer {count} fichier(s) ? Cette action est irréversible.",
+  "team.folder.confirmDelete.bulkBody":
+    "Supprimer {count} fichier(s) ? Cette action est irréversible.",
   "team.folder.confirmDelete.confirm": "Supprimer",
   "team.folder.confirmDelete.cancel": "Annuler",
   // Toasts
@@ -2380,7 +2959,8 @@ export default {
   "team.folder.toast.deleteError": "Erreur lors de la suppression",
   "team.folder.toast.error": "Erreur",
   "team.folder.toast.bulkDeleted": "{count} fichier(s) supprimé(s)",
-  "team.folder.toast.filePermsApplied": "Droits appliqués sur {files} fichier(s) pour {members} membre(s)",
+  "team.folder.toast.filePermsApplied":
+    "Droits appliqués sur {files} fichier(s) pour {members} membre(s)",
   // File actions
   "team.folder.action.preview": "Prévisualiser",
   "team.folder.action.download": "Télécharger",
@@ -2432,8 +3012,10 @@ export default {
   "team.dashboard.members.permissionsError": "Erreur lors de la mise à jour",
 
   "team.dashboard.members.removeModal.title": "Retirer un membre",
-  "team.dashboard.members.removeModal.confirm": "Voulez-vous vraiment retirer {name} ({email}) de l'équipe ?",
-  "team.dashboard.members.removeModal.warning": "Le membre perdra l'accès à tous les dossiers et fichiers partagés de l'équipe. Ses règles d'accès seront supprimées.",
+  "team.dashboard.members.removeModal.confirm":
+    "Voulez-vous vraiment retirer {name} ({email}) de l'équipe ?",
+  "team.dashboard.members.removeModal.warning":
+    "Le membre perdra l'accès à tous les dossiers et fichiers partagés de l'équipe. Ses règles d'accès seront supprimées.",
   "team.dashboard.members.removeModal.confirmButton": "Retirer de l'équipe",
 
   "team.dashboard.folders.count": "{n} / {max} dossiers",
@@ -2451,13 +3033,16 @@ export default {
   "team.dashboard.folders.modal.namePlaceholder": "Projets clients",
   "team.dashboard.folders.modal.createButton": "Créer",
   "team.dashboard.folders.deleteModal.title": "Suppression irréversible",
-  "team.dashboard.folders.deleteModal.warning": "Cette action supprimera définitivement le dossier « {name} », incluant :",
+  "team.dashboard.folders.deleteModal.warning":
+    "Cette action supprimera définitivement le dossier « {name} », incluant :",
   "team.dashboard.folders.deleteModal.item1": "Tous les fichiers du dossier",
   "team.dashboard.folders.deleteModal.item2": "Tous les partages associés",
   "team.dashboard.folders.deleteModal.item3": "Les permissions d'accès",
-  "team.dashboard.folders.deleteModal.confirmPrompt": "Pour confirmer, tapez le nom exact du dossier :",
+  "team.dashboard.folders.deleteModal.confirmPrompt":
+    "Pour confirmer, tapez le nom exact du dossier :",
   "team.dashboard.folders.deleteModal.nameMismatch": "Le nom ne correspond pas",
-  "team.dashboard.folders.deleteModal.confirmButton": "Supprimer définitivement",
+  "team.dashboard.folders.deleteModal.confirmButton":
+    "Supprimer définitivement",
 
   "team.dashboard.activity.table.action": "Action",
   "team.dashboard.activity.table.user": "Utilisateur",
@@ -2485,7 +3070,8 @@ export default {
   "team.dashboard.signatures.table.status": "Statut",
   "team.dashboard.signatures.table.date": "Date",
   "team.dashboard.signatures.table.actions": "Actions",
-  "team.dashboard.signatures.empty": "Aucune demande de signature pour cette équipe.",
+  "team.dashboard.signatures.empty":
+    "Aucune demande de signature pour cette équipe.",
   "team.dashboard.signatures.status.pending": "En attente",
   "team.dashboard.signatures.status.partial": "En cours",
   "team.dashboard.signatures.status.completed": "Complété",
@@ -2494,9 +3080,11 @@ export default {
   "team.dashboard.signatures.status.awaitingFinalization": "Finalisation E2E",
   "team.dashboard.signatures.viewDetails": "Voir les détails",
   "team.dashboard.signatures.downloadSigned": "Télécharger le PDF signé",
-  "team.dashboard.signatures.fileDeletedTooltip": "Le fichier source a été supprimé",
+  "team.dashboard.signatures.fileDeletedTooltip":
+    "Le fichier source a été supprimé",
   "team.dashboard.signatures.fileDeleted": "Supprimé",
-  "team.dashboard.signatures.downloadError": "Impossible de télécharger le document signé",
+  "team.dashboard.signatures.downloadError":
+    "Impossible de télécharger le document signé",
   "team.dashboard.signatures.untitled": "Sans titre",
 
   "team.e2e.share.title":
@@ -2521,57 +3109,88 @@ export default {
   "team.e2e.share.error": "Impossible de partager les fichiers chiffrés.",
   "team.dashboard.e2e.initButton": "Initialiser le chiffrement E2E",
   "team.dashboard.e2e.rotateButton": "Régénérer la clé E2E",
-  "team.dashboard.e2e.keyReceivedSuccess": "Clé E2E de l'équipe reçue et stockée avec succès.",
-  "team.dashboard.e2e.personalKeyMissing": "Votre clé de chiffrement personnelle n'est pas disponible. Reconnectez-vous.",
-  "team.dashboard.e2e.activatedSoleMember": "Chiffrement E2E activé. Vous êtes le seul membre pour l'instant.",
-  "team.dashboard.e2e.initError": "Erreur lors de l'initialisation du chiffrement E2E.",
-  "team.dashboard.e2e.shareLinkError": "Impossible de générer le lien de partage de clé.",
-  "team.dashboard.e2e.keyUnavailable": "Clé personnelle ou clé d'équipe indisponible.",
+  "team.dashboard.e2e.keyReceivedSuccess":
+    "Clé E2E de l'équipe reçue et stockée avec succès.",
+  "team.dashboard.e2e.personalKeyMissing":
+    "Votre clé de chiffrement personnelle n'est pas disponible. Reconnectez-vous.",
+  "team.dashboard.e2e.activatedSoleMember":
+    "Chiffrement E2E activé. Vous êtes le seul membre pour l'instant.",
+  "team.dashboard.e2e.initError":
+    "Erreur lors de l'initialisation du chiffrement E2E.",
+  "team.dashboard.e2e.shareLinkError":
+    "Impossible de générer le lien de partage de clé.",
+  "team.dashboard.e2e.keyUnavailable":
+    "Clé personnelle ou clé d'équipe indisponible.",
   "team.dashboard.e2e.rotateCancelled": "Rotation annulée.",
   "team.dashboard.e2e.rotateError": "Erreur lors de la rotation de la clé E2E.",
-  "team.dashboard.e2e.rotateSuccess": "Rotation terminée : {n} fichier(s) re-chiffrés. Distribuez les nouveaux liens aux membres.",
-  "team.dashboard.e2e.rotatePartialFail": "{n} fichier(s) n'ont pas pu être re-chiffrés. Rotation annulée.",
+  "team.dashboard.e2e.rotateSuccess":
+    "Rotation terminée : {n} fichier(s) re-chiffrés. Distribuez les nouveaux liens aux membres.",
+  "team.dashboard.e2e.rotatePartialFail":
+    "{n} fichier(s) n'ont pas pu être re-chiffrés. Rotation annulée.",
   "team.dashboard.e2e.noOtherMembers": "Aucun autre membre à notifier.",
-  "team.dashboard.e2e.noKeyForInvite": "L'équipe n'a pas de clé E2E. Initialisez d'abord le chiffrement E2E.",
+  "team.dashboard.e2e.noKeyForInvite":
+    "L'équipe n'a pas de clé E2E. Initialisez d'abord le chiffrement E2E.",
   "team.dashboard.e2e.staleKey.title": "Clé E2E d'équipe illisible",
-  "team.dashboard.e2e.staleKey.desc": "Votre copie de la clé E2E de cette équipe a été scellée avec une clé personnelle qui n'existe plus.",
-  "team.dashboard.e2e.staleKey.adminHint": "Abandonnez cette copie obsolète, puis demandez à un membre qui détient encore la clé de vous la repartager. Si plus personne ne l'a, vous pouvez initialiser une nouvelle clé - les anciens fichiers resteront illisibles.",
-  "team.dashboard.e2e.staleKey.memberHint": "Abandonnez cette copie obsolète, puis demandez à un administrateur de vous repartager la clé d'équipe.",
+  "team.dashboard.e2e.staleKey.desc":
+    "Votre copie de la clé E2E de cette équipe a été scellée avec une clé personnelle qui n'existe plus.",
+  "team.dashboard.e2e.staleKey.adminHint":
+    "Abandonnez cette copie obsolète, puis demandez à un membre qui détient encore la clé de vous la repartager. Si plus personne ne l'a, vous pouvez initialiser une nouvelle clé - les anciens fichiers resteront illisibles.",
+  "team.dashboard.e2e.staleKey.memberHint":
+    "Abandonnez cette copie obsolète, puis demandez à un administrateur de vous repartager la clé d'équipe.",
   "team.dashboard.e2e.staleKey.clearButton": "Abandonner cette clé obsolète",
-  "team.dashboard.e2e.staleKey.cleared": "Clé obsolète abandonnée. Vous pouvez de nouveau recevoir la clé d'équipe.",
-  "team.dashboard.e2e.staleKey.clearError": "Impossible d'abandonner la clé obsolète.",
-  "team.dashboard.e2e.staleKey.toast": "Votre clé personnelle n'ouvre pas la clé E2E de cette équipe. Abandonnez la copie obsolète et faites-vous repartager la clé.",
+  "team.dashboard.e2e.staleKey.cleared":
+    "Clé obsolète abandonnée. Vous pouvez de nouveau recevoir la clé d'équipe.",
+  "team.dashboard.e2e.staleKey.clearError":
+    "Impossible d'abandonner la clé obsolète.",
+  "team.dashboard.e2e.staleKey.toast":
+    "Votre clé personnelle n'ouvre pas la clé E2E de cette équipe. Abandonnez la copie obsolète et faites-vous repartager la clé.",
   "team.dashboard.e2e.banner.notInitTitle": "Chiffrement E2E non initialisé",
-  "team.dashboard.e2e.banner.notInitDesc": "Aucune clé E2E n'est configurée pour cette équipe. Initialisez-la pour protéger les fichiers.",
-  "team.dashboard.e2e.banner.askResharDesc": "Vous ne détenez plus la clé E2E de cette équipe, mais d'autres membres l'ont encore. Demandez-leur de vous la repartager - générer une nouvelle clé rendrait les fichiers existants illisibles.",
+  "team.dashboard.e2e.banner.notInitDesc":
+    "Aucune clé E2E n'est configurée pour cette équipe. Initialisez-la pour protéger les fichiers.",
+  "team.dashboard.e2e.banner.askResharDesc":
+    "Vous ne détenez plus la clé E2E de cette équipe, mais d'autres membres l'ont encore. Demandez-leur de vous la repartager - générer une nouvelle clé rendrait les fichiers existants illisibles.",
   "team.dashboard.e2e.banner.missingTitle": "Clé E2E manquante",
-  "team.dashboard.e2e.banner.missingDesc": "Vous n'avez pas encore reçu la clé E2E de cette équipe. Demandez à votre administrateur de vous la partager.",
+  "team.dashboard.e2e.banner.missingDesc":
+    "Vous n'avez pas encore reçu la clé E2E de cette équipe. Demandez à votre administrateur de vous la partager.",
   "team.dashboard.e2e.banner.activeTitle": "Chiffrement E2E actif",
-  "team.dashboard.e2e.banner.activeDesc": "Votre clé E2E est configurée. Les fichiers de l'équipe sont chiffrés de bout en bout.",
-  "team.dashboard.e2e.generateLinkTooltip": "Générer un lien de partage de clé E2E",
+  "team.dashboard.e2e.banner.activeDesc":
+    "Votre clé E2E est configurée. Les fichiers de l'équipe sont chiffrés de bout en bout.",
+  "team.dashboard.e2e.generateLinkTooltip":
+    "Générer un lien de partage de clé E2E",
   "team.dashboard.e2e.keyOkTooltip": "Clé E2E OK",
-  "team.dashboard.e2e.memberNoKeyTooltip": "Ce membre n'a pas la clé E2E - cliquez pour générer un lien de partage",
+  "team.dashboard.e2e.memberNoKeyTooltip":
+    "Ce membre n'a pas la clé E2E - cliquez pour générer un lien de partage",
   "team.dashboard.e2e.memberHasKeyTooltip": "Ce membre a la clé E2E",
   "team.dashboard.e2e.linkReady": "Lien prêt",
   "team.dashboard.e2e.shareLinkTo": "Partagez ce lien avec {name} :",
-  "team.dashboard.e2e.linkSecurityWarning": "⚠️ Ce lien contient la clé E2E. Ne le partagez que par un canal sécurisé.",
+  "team.dashboard.e2e.linkSecurityWarning":
+    "⚠️ Ce lien contient la clé E2E. Ne le partagez que par un canal sécurisé.",
   "team.dashboard.e2e.rotateModal.title": "Régénérer la clé E2E de l'équipe",
-  "team.dashboard.e2e.rotateModal.warning1": "Re-chiffrer tous les fichiers de l'équipe avec une nouvelle clé",
-  "team.dashboard.e2e.rotateModal.warning2": "Invalider la clé actuelle pour tous les membres",
-  "team.dashboard.e2e.rotateModal.warning3": "Vous devrez re-distribuer les liens aux membres",
-  "team.dashboard.e2e.rotateModal.description": "Utilisez cette fonction si un membre a quitté l'équipe, si une clé a été compromise, ou si vous souhaitez renouveler la clé par précaution.",
-  "team.dashboard.e2e.rotateModal.progress": "Re-chiffrement en cours... {done}/{total} fichier(s)",
+  "team.dashboard.e2e.rotateModal.warning1":
+    "Re-chiffrer tous les fichiers de l'équipe avec une nouvelle clé",
+  "team.dashboard.e2e.rotateModal.warning2":
+    "Invalider la clé actuelle pour tous les membres",
+  "team.dashboard.e2e.rotateModal.warning3":
+    "Vous devrez re-distribuer les liens aux membres",
+  "team.dashboard.e2e.rotateModal.description":
+    "Utilisez cette fonction si un membre a quitté l'équipe, si une clé a été compromise, ou si vous souhaitez renouveler la clé par précaution.",
+  "team.dashboard.e2e.rotateModal.progress":
+    "Re-chiffrement en cours... {done}/{total} fichier(s)",
   "team.dashboard.e2e.rotateModal.failures": "{n} échec(s)",
   "team.dashboard.e2e.rotateModal.preparing": "Préparation...",
   "team.dashboard.e2e.rotateModal.startButton": "Lancer la rotation",
   "team.dashboard.e2e.rotateModal.cancelButton": "Annuler",
-  "team.dashboard.e2e.distModal.title": "Chiffrement E2E activé - distribuer les clés",
-  "team.dashboard.e2e.distModal.alert1": "La clé E2E de l'équipe a été générée. Partagez le lien ci-dessous avec chaque membre via un canal sécurisé (Signal, email chiffré, etc.).",
-  "team.dashboard.e2e.distModal.alert2": "⚠️ Ces liens expirent à la prochaine régénération de clé. Ne les envoyez pas par email non chiffré.",
+  "team.dashboard.e2e.distModal.title":
+    "Chiffrement E2E activé - distribuer les clés",
+  "team.dashboard.e2e.distModal.alert1":
+    "La clé E2E de l'équipe a été générée. Partagez le lien ci-dessous avec chaque membre via un canal sécurisé (Signal, email chiffré, etc.).",
+  "team.dashboard.e2e.distModal.alert2":
+    "⚠️ Ces liens expirent à la prochaine régénération de clé. Ne les envoyez pas par email non chiffré.",
   "team.dashboard.e2e.distModal.done": "Terminé",
 
   "team.dashboard.invite.modal.title": "Inviter un membre",
-  "team.dashboard.invite.modal.alert": "Une invitation sera envoyée par email. Le destinataire pourra créer un compte s'il n'en possède pas encore.",
+  "team.dashboard.invite.modal.alert":
+    "Une invitation sera envoyée par email. Le destinataire pourra créer un compte s'il n'en possède pas encore.",
   "team.dashboard.invite.modal.emailLabel": "Adresse email",
   "team.dashboard.invite.modal.emailPlaceholder": "collaborateur@example.com",
   "team.dashboard.invite.modal.roleLabel": "Rôle",
@@ -2581,7 +3200,8 @@ export default {
   "team.dashboard.invite.sentSuccess": "Invitation envoyée à {email}",
   "team.dashboard.invite.error": "Erreur d'invitation",
   "team.dashboard.invite.secureLinkModal.title": "Lien d'invitation sécurisé",
-  "team.dashboard.invite.secureLinkModal.alert": "L'email d'invitation a été envoyé. Pour que le membre puisse déchiffrer les fichiers E2E de l'équipe, partagez-lui ce lien sécurisé via un canal de confiance (Signal, email chiffré, etc.).",
+  "team.dashboard.invite.secureLinkModal.alert":
+    "L'email d'invitation a été envoyé. Pour que le membre puisse déchiffrer les fichiers E2E de l'équipe, partagez-lui ce lien sécurisé via un canal de confiance (Signal, email chiffré, etc.).",
   "team.dashboard.invite.secureLinkModal.copy": "Copier le lien sécurisé",
   "team.dashboard.invite.linkCopied": "Lien copié !",
 
@@ -2610,22 +3230,29 @@ export default {
 
   // --- Modals : Rotation ---
   "team.dashboard.modals.rotation.title": "Régénérer la clé E2E de l'équipe",
-  "team.dashboard.modals.rotation.warning": "Cette opération va : 1) Re-chiffrer tous les fichiers de l'équipe avec une nouvelle clé, 2) Invalider la clé de tous les autres membres, 3) Vous devrez re-distribuer les liens à chaque membre.",
-  "team.dashboard.modals.rotation.description": "Utilisez cette fonction si un membre a quitté l'équipe, si une clé a été compromise, ou si vous souhaitez simplement renouveler la clé par précaution.",
+  "team.dashboard.modals.rotation.warning":
+    "Cette opération va : 1) Re-chiffrer tous les fichiers de l'équipe avec une nouvelle clé, 2) Invalider la clé de tous les autres membres, 3) Vous devrez re-distribuer les liens à chaque membre.",
+  "team.dashboard.modals.rotation.description":
+    "Utilisez cette fonction si un membre a quitté l'équipe, si une clé a été compromise, ou si vous souhaitez simplement renouveler la clé par précaution.",
   "team.dashboard.modals.rotation.startBtn": "Lancer la rotation",
-  "team.dashboard.modals.rotation.progress": "Re-chiffrement en cours... {done}/{total} fichier(s)",
+  "team.dashboard.modals.rotation.progress":
+    "Re-chiffrement en cours... {done}/{total} fichier(s)",
   "team.dashboard.modals.rotation.failures": "{n} échec(s)",
   "team.dashboard.modals.rotation.preparing": "Préparation...",
 
   // --- Modals : Liens init ---
-  "team.dashboard.modals.initLinks.title": "Chiffrement E2E activé - distribuer les clés",
-  "team.dashboard.modals.initLinks.description": "La clé E2E de l'équipe a été générée. Partagez le lien ci-dessous avec chaque membre via un canal sécurisé (messagerie chiffrée, en personne, etc.). Le lien contient la clé dans le fragment URL - le serveur ne la voit jamais.",
-  "team.dashboard.modals.initLinks.warning": "⚠️ Ces liens expirent à la prochaine régénération de clé. Ne les envoyez pas par email non chiffré.",
+  "team.dashboard.modals.initLinks.title":
+    "Chiffrement E2E activé - distribuer les clés",
+  "team.dashboard.modals.initLinks.description":
+    "La clé E2E de l'équipe a été générée. Partagez le lien ci-dessous avec chaque membre via un canal sécurisé (messagerie chiffrée, en personne, etc.). Le lien contient la clé dans le fragment URL - le serveur ne la voit jamais.",
+  "team.dashboard.modals.initLinks.warning":
+    "⚠️ Ces liens expirent à la prochaine régénération de clé. Ne les envoyez pas par email non chiffré.",
   "team.dashboard.modals.initLinks.doneBtn": "Terminé",
 
   // --- Modals : Invitation ---
   "team.dashboard.modals.invite.title": "Inviter un membre",
-  "team.dashboard.modals.invite.description": "Une invitation sera envoyée par email. Le destinataire pourra créer un compte s'il n'en possède pas encore.",
+  "team.dashboard.modals.invite.description":
+    "Une invitation sera envoyée par email. Le destinataire pourra créer un compte s'il n'en possède pas encore.",
   "team.dashboard.modals.invite.emailLabel": "Adresse email",
   "team.dashboard.modals.invite.roleLabel": "Rôle",
   "team.dashboard.modals.invite.sendBtn": "Envoyer l'invitation",
@@ -2638,32 +3265,43 @@ export default {
 
   // --- Modals : Supprimer dossier ---
   "team.dashboard.modals.deleteFolder.title": "Suppression irréversible",
-  "team.dashboard.modals.deleteFolder.warning": "Cette action supprimera définitivement le dossier « {name} », incluant :",
-  "team.dashboard.modals.deleteFolder.listFiles": "Tous les fichiers du dossier",
+  "team.dashboard.modals.deleteFolder.warning":
+    "Cette action supprimera définitivement le dossier « {name} », incluant :",
+  "team.dashboard.modals.deleteFolder.listFiles":
+    "Tous les fichiers du dossier",
   "team.dashboard.modals.deleteFolder.listShares": "Tous les partages associés",
-  "team.dashboard.modals.deleteFolder.listPermissions": "Les permissions d'accès",
-  "team.dashboard.modals.deleteFolder.confirmPrompt": "Pour confirmer, tapez le nom exact du dossier :",
+  "team.dashboard.modals.deleteFolder.listPermissions":
+    "Les permissions d'accès",
+  "team.dashboard.modals.deleteFolder.confirmPrompt":
+    "Pour confirmer, tapez le nom exact du dossier :",
   "team.dashboard.modals.deleteFolder.nameMismatch": "Le nom ne correspond pas",
   "team.dashboard.modals.deleteFolder.deleteBtn": "Supprimer définitivement",
 
   // --- Modals : Retirer membre ---
   "team.dashboard.modals.removeMember.title": "Retirer un membre",
-  "team.dashboard.modals.removeMember.confirm": "Voulez-vous vraiment retirer {name} ({email}) de l'équipe ?",
-  "team.dashboard.modals.removeMember.warning": "Le membre perdra l'accès à tous les dossiers et fichiers partagés de l'équipe. Ses règles d'accès seront supprimées.",
+  "team.dashboard.modals.removeMember.confirm":
+    "Voulez-vous vraiment retirer {name} ({email}) de l'équipe ?",
+  "team.dashboard.modals.removeMember.warning":
+    "Le membre perdra l'accès à tous les dossiers et fichiers partagés de l'équipe. Ses règles d'accès seront supprimées.",
   "team.dashboard.modals.removeMember.removeBtn": "Retirer de l'équipe",
 
   // --- Modals : Lien sécurisé ---
   "team.dashboard.modals.secureLink.title": "Lien d'invitation sécurisé",
-  "team.dashboard.modals.secureLink.description": "L'email d'invitation a été envoyé. Pour que le membre puisse déchiffrer les fichiers E2E de l'équipe, partagez-lui ce lien sécurisé via un canal de confiance (Signal, en personne, etc.).",
+  "team.dashboard.modals.secureLink.description":
+    "L'email d'invitation a été envoyé. Pour que le membre puisse déchiffrer les fichiers E2E de l'équipe, partagez-lui ce lien sécurisé via un canal de confiance (Signal, en personne, etc.).",
   "team.dashboard.modals.secureLink.copied": "Lien copié !",
   "team.dashboard.modals.secureLink.copyBtn": "Copier le lien sécurisé",
 
   // --- Signing page mobile ---
-  "signing.mobile.pdf-e2e-unavailable": "L'aperçu PDF n'est pas disponible sur mobile pour les documents chiffrés.",
-  "signing.mobile.view-before-sign": "Consultez le document avant de le signer.",
-  "signing.mobile.pdf-fallback-hint": "Si le PDF ne s'affiche pas, utilisez le bouton ci-dessus.",
+  "signing.mobile.pdf-e2e-unavailable":
+    "L'aperçu PDF n'est pas disponible sur mobile pour les documents chiffrés.",
+  "signing.mobile.view-before-sign":
+    "Consultez le document avant de le signer.",
+  "signing.mobile.pdf-fallback-hint":
+    "Si le PDF ne s'affiche pas, utilisez le bouton ci-dessus.",
   "signing.mobile.decrypt-error-title": "Erreur de déchiffrement",
-  "signing.mobile.decrypt-error-description": "Impossible de déchiffrer le document. La clé fournie est peut-être incorrecte.",
+  "signing.mobile.decrypt-error-description":
+    "Impossible de déchiffrer le document. La clé fournie est peut-être incorrecte.",
 
   // --- Tri et filtre des fichiers dans un dossier d'équipe ---
   "team.folder.sort.label": "Trier par",
@@ -2676,22 +3314,26 @@ export default {
   "team.folder.filter.label": "Filtrer par extension",
   "team.folder.filter.placeholder": "Toutes les extensions",
   "team.folder.filter.showing": "{count} / {total} fichier(s) affiché(s)",
-  "team.folder.filter.noResults": "Aucun fichier ne correspond aux filtres sélectionnés",
+  "team.folder.filter.noResults":
+    "Aucun fichier ne correspond aux filtres sélectionnés",
   "team.folder.shares.qrCode": "Afficher le QR code du lien",
   "team.folder.uploadButton": "Déposer des fichiers",
 
   // --- Sélection du fichier dans la demande de signature ---
   "signing.new.select-file": "Fichier PDF à signer",
-  "signing.new.select-file.desc": "Choisissez un fichier PDF parmi vos dossiers d'équipe accessibles puis vos propres partages",
+  "signing.new.select-file.desc":
+    "Choisissez un fichier PDF parmi vos dossiers d'équipe accessibles puis vos propres partages",
   "signing.new.select-file.placeholder": "Rechercher un fichier...",
   "signing.new.loading-files": "Chargement des fichiers disponibles...",
-  "signing.new.no-signable-files": "Aucun fichier PDF disponible. Téléversez un PDF ou obtenez la permission de demande de signature sur un dossier d'équipe.",
+  "signing.new.no-signable-files":
+    "Aucun fichier PDF disponible. Téléversez un PDF ou obtenez la permission de demande de signature sur un dossier d'équipe.",
   "signing.new.personal-files": "Mes fichiers",
-
   // --- Page d'upload : indication du dossier cible ---
   "upload.team-folder.hint.title": "Dossier cible",
-  "upload.team-folder.hint": "Votre dépôt sera attaché au dossier « {folderName} » de l'équipe « {teamName} ».",
-  "upload.team-folder.hint.unknown": "Un dossier d'équipe a été présélectionné. Les détails s'afficheront dans la fenêtre de configuration.",
+  "upload.team-folder.hint":
+    "Votre dépôt sera attaché au dossier « {folderName} » de l'équipe « {teamName} ».",
+  "upload.team-folder.hint.unknown":
+    "Un dossier d'équipe a été présélectionné. Les détails s'afficheront dans la fenêtre de configuration.",
 
   "team.dashboard.tabs.shares": "Partages",
   "team.dashboard.tabs.search": "Recherche",
@@ -2748,21 +3390,25 @@ export default {
   "team.settings.rotation.interval": "Fréquence de rotation",
   "team.settings.rotation.days": "Tous les {count} jours",
   "signing.deleted-documents": "Documents supprimés",
-  "signing.deleted-documents.info": "Ces documents ont leur fichier source supprimé. Ils seront purgés automatiquement après 6 mois.",
+  "signing.deleted-documents.info":
+    "Ces documents ont leur fichier source supprimé. Ils seront purgés automatiquement après 6 mois.",
   "signing.deleted.signers": "Signataires",
-  "signing.detail.signing-links.completed-desc": "Le document a été signé. Vous pouvez retrouver les liens de signature (incluant la clé de chiffrement E2E le cas échéant) ci-dessous :",
+  "signing.detail.signing-links.completed-desc":
+    "Le document a été signé. Vous pouvez retrouver les liens de signature (incluant la clé de chiffrement E2E le cas échéant) ci-dessous :",
   "team.dashboard.metrics.folderStorage": "Dossier(s) : {size}",
   "team.dashboard.metrics.quotaStorage": "Quota : {used} / {limit}",
   "team.folder.access.fileLevel.title": "Contrôles d'accès par fichier",
   "team.folder.bulkBar.e2eShare": "Partager E2EE",
-  "team.folder.e2eShareSwitch.desc": "Le membre pourra partager des fichiers chiffrés de bout en bout avec d'autres membres",
+  "team.folder.e2eShareSwitch.desc":
+    "Le membre pourra partager des fichiers chiffrés de bout en bout avec d'autres membres",
   "team.folder.e2eShareSwitch.label": "Autoriser le partage chiffré E2E",
   "team.folder.e2eShareSwitch.short": "Partage E2E",
   "team.settings.back": "Retour",
   "team.settings.danger.cancel": "Annuler",
   "team.settings.danger.confirmDelete": "Supprimer définitivement",
   "team.settings.danger.confirmError": "Le nom ne correspond pas",
-  "team.settings.danger.confirmHint": "Pour confirmer, tapez le nom exact de l'équipe :",
+  "team.settings.danger.confirmHint":
+    "Pour confirmer, tapez le nom exact de l'équipe :",
   "team.settings.danger.deleteButton": "Supprimer l'équipe",
   "team.settings.danger.desc": "La suppression de l'équipe est",
   "team.settings.danger.item.files": "Tous les fichiers stockés",
@@ -2770,31 +3416,38 @@ export default {
   "team.settings.danger.item.history": "L'historique d'activité",
   "team.settings.danger.item.members": "Tous les membres et permissions",
   "team.settings.danger.item.shares": "Tous les partages associés",
-  "team.settings.danger.modalAlert": "Cette action supprimera définitivement l'équipe « {name} », incluant :",
+  "team.settings.danger.modalAlert":
+    "Cette action supprimera définitivement l'équipe « {name} », incluant :",
   "team.settings.danger.modalTitle": "Suppression irréversible",
   "team.settings.danger.permanent": "définitive et irréversible",
-  "team.settings.danger.rest": ". Tous les dossiers, fichiers partagés et données associées seront supprimés de façon permanente.",
+  "team.settings.danger.rest":
+    ". Tous les dossiers, fichiers partagés et données associées seront supprimés de façon permanente.",
   "team.settings.danger.title": "Zone dangereuse",
   "team.settings.info.description": "Description",
   "team.settings.info.name": "Nom de l'équipe",
   "team.settings.info.save": "Enregistrer",
   "team.settings.leave.button": "Quitter l'équipe",
-  "team.settings.leave.desc": "En quittant l'équipe, vous perdrez l'accès à tous les dossiers et fichiers partagés. Vos règles d'accès seront supprimées.",
+  "team.settings.leave.desc":
+    "En quittant l'équipe, vous perdrez l'accès à tous les dossiers et fichiers partagés. Vos règles d'accès seront supprimées.",
   "team.settings.leave.title": "Quitter l'équipe",
-  "team.settings.memberModal.accessHelp": "« Par défaut » : le membre a accès en lecture seule (consultation et téléchargement).\nDéfinir un accès explicite (Écriture ou Admin) pour autoriser le dépôt de fichiers et le partage E2E.\nDéfinir « Accès interdit » pour bloquer complètement l'accès à un dossier.",
+  "team.settings.memberModal.accessHelp":
+    "« Par défaut » : le membre a accès en lecture seule (consultation et téléchargement).\nDéfinir un accès explicite (Écriture ou Admin) pour autoriser le dépôt de fichiers et le partage E2E.\nDéfinir « Accès interdit » pour bloquer complètement l'accès à un dossier.",
   "team.settings.memberModal.cancel": "Annuler",
   "team.settings.memberModal.confirmRemove": "Confirmer le retrait",
   "team.settings.memberModal.email": "Email :",
   "team.settings.memberModal.folderAccess": "Accès aux dossiers",
   "team.settings.memberModal.noFolders": "Aucun dossier dans l'équipe.",
   "team.settings.memberModal.removeButton": "Retirer de l'équipe",
-  "team.settings.memberModal.removeConfirm": "Confirmer le retrait de {email} de l'équipe ?",
-  "team.settings.memberModal.removeRuleTooltip": "Supprimer la règle (accès par défaut)",
+  "team.settings.memberModal.removeConfirm":
+    "Confirmer le retrait de {email} de l'équipe ?",
+  "team.settings.memberModal.removeRuleTooltip":
+    "Supprimer la règle (accès par défaut)",
   "team.settings.memberModal.selectPlaceholder": "Définir...",
   "team.settings.memberModal.table.currentPerm": "Permission actuelle",
   "team.settings.memberModal.table.edit": "Modifier",
   "team.settings.memberModal.table.folder": "Dossier",
-  "team.settings.members.hint": "Cliquez sur un membre pour gérer ses accès aux dossiers ou le retirer de l'équipe.",
+  "team.settings.members.hint":
+    "Cliquez sur un membre pour gérer ses accès aux dossiers ou le retirer de l'équipe.",
   "team.settings.members.role.admin": "Admin",
   "team.settings.members.role.member": "Membre",
   "team.settings.members.role.owner": "Propriétaire",
@@ -2803,11 +3456,14 @@ export default {
   "team.settings.members.table.role": "Rôle",
   "team.settings.members.title": "Gestion des membres",
   "team.settings.metaTitle": "Paramètres - {name}",
-  "team.settings.noPermission": "Vous n'avez pas les permissions pour accéder aux paramètres de cette équipe.",
+  "team.settings.noPermission":
+    "Vous n'avez pas les permissions pour accéder aux paramètres de cette équipe.",
   "team.settings.notFound": "Équipe non trouvée",
   "team.settings.notif.everyFile": "Tous les fichiers",
-  "team.settings.notif.help": "« Tous les fichiers » : notification à chaque dépôt dans vos dossiers accessibles.\n« Partages directs » : uniquement quand un fichier vous est partagé explicitement.",
-  "team.settings.notif.hint": "Choisissez quand recevoir des notifications push sur cet appareil pour cette équipe.",
+  "team.settings.notif.help":
+    "« Tous les fichiers » : notification à chaque dépôt dans vos dossiers accessibles.\n« Partages directs » : uniquement quand un fichier vous est partagé explicitement.",
+  "team.settings.notif.hint":
+    "Choisissez quand recevoir des notifications push sur cet appareil pour cette équipe.",
   "team.settings.notif.sharesOnly": "Partages directs uniquement",
   "team.settings.notif.title": "Notifications push",
   "team.settings.perm.admin": "Admin",
@@ -2827,20 +3483,23 @@ export default {
   "team.settings.toast.leaveError": "Impossible de quitter l'équipe",
   "team.settings.toast.leftTeam": "Vous avez quitté l'équipe",
   "team.settings.toast.memberRemoved": "Membre retiré de l'équipe",
-  "team.settings.toast.notifPrefUpdated": "Préférence de notifications mise à jour",
+  "team.settings.toast.notifPrefUpdated":
+    "Préférence de notifications mise à jour",
   "team.settings.toast.pqNotificationUpdated":
     "Chiffrement post-quantique des notifications mis à jour",
   "team.settings.toast.permissionUpdated": "Permission mise à jour",
   "team.settings.toast.updateError": "Erreur lors de la mise à jour",
   "team.settings.toast.updated": "Équipe mise à jour",
-  "signing.new.created-alert": "La demande de signature a été créée. Les invitations par email ont été envoyées. Partagez les liens ci-dessous directement si nécessaire :",
+  "signing.new.created-alert":
+    "La demande de signature a été créée. Les invitations par email ont été envoyées. Partagez les liens ci-dessous directement si nécessaire :",
   "signing.new.view-detail": "Voir le suivi",
   "signing.new.create-another": "Nouvelle demande",
   "signing.sign.otp.code-label": "Code reçu par e-mail",
   "signing.sign.otp.sent": "Code envoyé. Il expirera dans 10 minutes.",
   "signing.sign.otp.verified": "Adresse e-mail vérifiée.",
   "signing.sign.otp.invalid": "Code invalide, expiré ou trop souvent essayé.",
-  "signing.sign.otp.send-error": "Impossible d'envoyer le code pour le moment. Réessayez dans une minute.",
+  "signing.sign.otp.send-error":
+    "Impossible d'envoyer le code pour le moment. Réessayez dans une minute.",
   "signing.sign.steps.invitation": "Invitation",
   "signing.sign.steps.invitation.description": "Lien personnel reçu",
   "signing.sign.steps.review": "Consulter",
@@ -2854,41 +3513,61 @@ export default {
   "signing.sign.steps.done": "Terminé",
   "signing.sign.steps.done.description": "Décision enregistrée",
   "signing.sign.review.confirm": "J'ai lu le document",
-  "signing.sign.review.confirm-description": "Consultez le PDF en entier, puis confirmez sa lecture avant de compléter les champs et d'apposer votre signature.",
+  "signing.sign.review.confirm-description":
+    "Consultez le PDF en entier, puis confirmez sa lecture avant de compléter les champs et d'apposer votre signature.",
   "signing.sign.review.reject": "Refuser après lecture",
   "signing.sign.unavailable.title": "Lien de signature indisponible",
-  "signing.sign.unavailable.description": "Le fichier source ou la demande de signature a été supprimé, annulé ou a expiré. Ce lien ne permet plus de consulter ni de signer le document.",
+  "signing.sign.unavailable.description":
+    "Le fichier source ou la demande de signature a été supprimé, annulé ou a expiré. Ce lien ne permet plus de consulter ni de signer le document.",
   "signing.preview.unavailable.title": "Document indisponible",
-  "signing.preview.unavailable.description": "Le fichier ne peut plus être chargé. Il a peut-être été supprimé, aucune signature n'est possible.",
-  "signing.sign.legal.standard-short": "Ce contrôle prouve l'accès actuel à l'adresse e-mail destinataire, pas l'identité civile de la personne qui saisit le code.",
-  "signing.sign.legal.reinforced-short": "Le profil renforcé de PrivCloud met en œuvre une signature électronique avancée conformément aux exigences de l'article 26 du règlement eIDAS : assertion WebAuthn transactionnelle, compte attribué, consentement explicite et scellement cryptographique CMS/PDF du dossier de preuve par PrivCloud. Ce parcours n'est pas une signature qualifiée (QES).",
-  "signing.sign.assurance.standard": "Niveau standard : l'accès actuel à l'adresse e-mail destinataire a été confirmé par un code à usage unique. Cette preuve de contrôle de messagerie ne vérifie pas l'identité civile.",
-  "signing.sign.assurance.reinforced": "Niveau renforcé : le compte PrivCloud attribué est reconnu et chaque décision est confirmée par une passkey liée à l'empreinte du document. Ce contrôle de compte n'est pas une vérification d'identité civile qualifiée.",
-  "signing.sign.legal.standard": "En cliquant sur « Signer le document », vous confirmez l'avoir consulté et acceptez de le signer. Le dossier conserve l'empreinte du document, la date, la preuve du code envoyé à l'adresse e-mail attribuée et les éléments techniques. Le code établit le contrôle actuel de cette boîte, pas votre identité civile. Ce parcours ne revendique ni signature électronique avancée ni signature qualifiée.",
-  "signing.sign.legal.reinforced": "En cliquant sur « Signer le document », vous confirmez l'avoir consulté et acceptez de le signer depuis le compte PrivCloud attribué. Le dossier conserve l'empreinte du document, la date, la méthode de vérification du compte et la preuve WebAuthn liée à cette décision. Le parcours renforcé apporte des garanties d'authentification, de consentement et d'intégrité. La qualification de signature électronique avancée (SEA) au sens d'eIDAS dépend aussi du niveau d'identification et du contrôle exclusif démontrable du signataire. Ce parcours n'est pas une signature qualifiée (QES).",
-  "signing.modal.custom-page": "Personnaliser l'emplacement de la signature et du filigrane",
-  "signing.modal.custom-page.desc": "Par défaut, la signature et le filigrane sont placés sur la première page.",
+  "signing.preview.unavailable.description":
+    "Le fichier ne peut plus être chargé. Il a peut-être été supprimé, aucune signature n'est possible.",
+  "signing.sign.legal.standard-short":
+    "Ce contrôle prouve l'accès actuel à l'adresse e-mail destinataire, pas l'identité civile de la personne qui saisit le code.",
+  "signing.sign.legal.reinforced-short":
+    "Le profil renforcé de PrivCloud met en œuvre une signature électronique avancée conformément aux exigences de l'article 26 du règlement eIDAS : assertion WebAuthn transactionnelle, compte attribué, consentement explicite et scellement cryptographique CMS/PDF du dossier de preuve par PrivCloud. Ce parcours n'est pas une signature qualifiée (QES).",
+  "signing.sign.assurance.standard":
+    "Niveau standard : l'accès actuel à l'adresse e-mail destinataire a été confirmé par un code à usage unique. Cette preuve de contrôle de messagerie ne vérifie pas l'identité civile.",
+  "signing.sign.assurance.reinforced":
+    "Niveau renforcé : le compte PrivCloud attribué est reconnu et chaque décision est confirmée par une passkey liée à l'empreinte du document. Ce contrôle de compte n'est pas une vérification d'identité civile qualifiée.",
+  "signing.sign.legal.standard":
+    "En cliquant sur « Signer le document », vous confirmez l'avoir consulté et acceptez de le signer. Le dossier conserve l'empreinte du document, la date, la preuve du code envoyé à l'adresse e-mail attribuée et les éléments techniques. Le code établit le contrôle actuel de cette boîte, pas votre identité civile. Ce parcours ne revendique ni signature électronique avancée ni signature qualifiée.",
+  "signing.sign.legal.reinforced":
+    "En cliquant sur « Signer le document », vous confirmez l'avoir consulté et acceptez de le signer depuis le compte PrivCloud attribué. Le dossier conserve l'empreinte du document, la date, la méthode de vérification du compte et la preuve WebAuthn liée à cette décision. Le parcours renforcé apporte des garanties d'authentification, de consentement et d'intégrité. La qualification de signature électronique avancée (SEA) au sens d'eIDAS dépend aussi du niveau d'identification et du contrôle exclusif démontrable du signataire. Ce parcours n'est pas une signature qualifiée (QES).",
+  "signing.modal.custom-page":
+    "Personnaliser l'emplacement de la signature et du filigrane",
+  "signing.modal.custom-page.desc":
+    "Par défaut, la signature suit la page détectée (première page si aucun emplacement n’est détecté) et le filigrane est sur la première page.",
   "signing.modal.custom-page.signature-label": "Page de la signature",
   "signing.modal.custom-page.watermark-label": "Page du filigrane",
-  "signing.modal.custom-page.watermark-same": "Placer le filigrane sur la même page que la signature",
-  "signing.modal.custom-page.hint": "Si la page n'existe pas, une page vierge sera ajoutée.",
+  "signing.modal.custom-page.watermark-same":
+    "Placer le filigrane sur la même page que la signature",
+  "signing.modal.custom-page.hint":
+    "Si la page n'existe pas, une page vierge sera ajoutée.",
   "signing.deleted.date": "Source supprimée",
   "signing.deleted.on": "Source supprimée le {date}",
   "signing.source": "Source",
   "signing.source.mine": "Envoyé",
   "signing.source.received": "Reçu",
-  "signing.detail.audit.source-file-deleted": "Fichier source supprimé, preuve finalisée conservée selon la politique configurée",
+  "signing.detail.audit.source-file-deleted":
+    "Fichier source supprimé, preuve finalisée conservée selon la politique configurée",
   "signing.new.option.initials.placement": "Position du paraphe",
   "signing.new.option.initials.bottom-left": "Bas gauche",
-  "signing.new.option.initials.bottom-center-right": "Légèrement à droite du centre (recommandé)",
+  "signing.new.option.initials.bottom-center-right":
+    "Légèrement à droite du centre (recommandé)",
   "signing.new.option.initials.bottom-right": "Bas droite",
-  "signing.new.option.initials.include-signature-page": "Ajouter aussi le paraphe sur la page de signature complète",
-  "signing.new.option.custom-page": "Personnaliser l'emplacement de la signature et du filigrane",
-  "signing.new.option.custom-page.desc": "Par défaut, la signature et le filigrane sont placés sur la première page. Cochez pour choisir des pages différentes.",
+  "signing.new.option.initials.include-signature-page":
+    "Ajouter aussi le paraphe sur la page de signature complète",
+  "signing.new.option.custom-page":
+    "Personnaliser l'emplacement de la signature et du filigrane",
+  "signing.new.option.custom-page.desc":
+    "Par défaut, la signature suit la page détectée (première page si aucun emplacement n’est détecté) et le filigrane est sur la première page. Cochez pour modifier ces pages.",
   "signing.new.option.custom-page.signature-label": "Page de la signature",
   "signing.new.option.custom-page.watermark-label": "Page du filigrane",
-  "signing.new.option.custom-page.watermark-same": "Placer le filigrane sur la même page que la signature",
-  "signing.new.option.custom-page.hint": "Si la page n'existe pas, une page vierge sera ajoutée automatiquement.",
+  "signing.new.option.custom-page.watermark-same":
+    "Placer le filigrane sur la même page que la signature",
+  "signing.new.option.custom-page.hint":
+    "Si la page n'existe pas, une page vierge sera ajoutée automatiquement.",
   "signing.new.fields.left-mm": "Gauche (mm)",
   "signing.new.fields.top-mm": "Haut (mm)",
   "signing.new.fields.width-mm": "Largeur (mm)",
@@ -2899,28 +3578,285 @@ export default {
   "signing.new.fields.preview.rotate-clockwise": "Tourner la page à droite",
   "signing.new.fields.preview.zoom-in": "Agrandir l'aperçu",
   "signing.new.fields.preview.zoom-out": "Réduire l'aperçu",
-  "signing.new.fields.detection.loading": "Recherche automatique de la zone de signature...",
-  "signing.new.fields.detection.found-text": "Une zone de signature a été détectée à partir du texte du document. Elle sera utilisée par défaut et reste modifiable.",
-  "signing.new.fields.detection.found-box": "Un encadré de signature probable a été détecté. Vérifiez le placement proposé avant l'envoi.",
-  "signing.new.fields.detection.field-title": "Champ de signature placé automatiquement",
-  "signing.new.fields.detection.field-description": "La zone détectée est déjà utilisée dans l'aperçu. Modifiez la page, les coordonnées ou les dimensions ci-dessous si nécessaire.",
-  "signing.new.fields.preview.loading": "Lecture des dimensions réelles du PDF...",
-  "signing.new.fields.preview.error": "Impossible de charger l'aperçu. Le placement utilisera un format A4 de secours.",
+  "signing.new.fields.detection.loading":
+    "Recherche automatique de la zone de signature...",
+  "signing.new.fields.detection.found-text":
+    "Une zone de signature a été détectée à partir du texte du document. Elle sera utilisée par défaut et reste modifiable.",
+  "signing.new.fields.detection.found-box":
+    "Un encadré de signature probable a été détecté. Vérifiez le placement proposé avant l'envoi.",
+  "signing.new.fields.detection.field-title":
+    "Champ de signature placé automatiquement",
+  "signing.new.fields.detection.field-description":
+    "La zone détectée est déjà utilisée dans l'aperçu. Modifiez la page, les coordonnées ou les dimensions ci-dessous si nécessaire.",
+  "signing.new.fields.preview.loading":
+    "Lecture des dimensions réelles du PDF...",
+  "signing.new.fields.preview.error":
+    "Impossible de charger l'aperçu. Le placement utilisera un format A4 de secours.",
   "signing.new.fields.preview.dimensions": "Page : {width} × {height} mm",
-  "signing.new.fields.preview.rotated": "Cette page est pivotée dans le PDF. Le placement suit la page non pivotée : vérifiez le rendu avant d'envoyer.",
-  "signing.new.validate.field-outside-page": "Un champ dépasse de la page. Corrigez ses marges ou ses dimensions.",
+  "signing.new.fields.preview.rotated":
+    "Cette page est pivotée dans le PDF. Le placement suit la page non pivotée : vérifiez le rendu avant d'envoyer.",
+  "signing.new.validate.field-outside-page":
+    "Un champ dépasse de la page. Corrigez ses marges ou ses dimensions.",
   "team.settings.pqNotifications.title": "Notifications post-quantiques",
-  "team.settings.pqNotifications.enabled": "Utiliser le chiffrement hybride ML-KEM-768 pour les notifications de l'équipe",
-  "team.settings.pqNotifications.help": "Une fois activées, les notifications des membres disposant d'une clé ML-KEM utilisent X25519 + ML-KEM-768. Les autres membres conservent le chiffrement X25519 existant.",
-  "team.fileRequest.metadata.encryptedHint": "Le sujet et la note sont chiffrés de bout en bout avec la clé de l'équipe. Seuls les membres qui la détiennent peuvent les lire.",
+  "team.settings.pqNotifications.enabled":
+    "Utiliser le chiffrement hybride ML-KEM-768 pour les notifications de l'équipe",
+  "team.settings.pqNotifications.help":
+    "Une fois activées, les notifications des membres disposant d'une clé ML-KEM utilisent X25519 + ML-KEM-768. Les autres membres conservent le chiffrement X25519 existant.",
+  "team.fileRequest.metadata.encryptedHint":
+    "Le sujet et la note sont chiffrés de bout en bout avec la clé de l'équipe. Seuls les membres qui la détiennent peuvent les lire.",
   "team.fileRequest.encryptedSubject": "Demande chiffrée",
   "team.notification.generic.FILE_SHARED": "Un fichier a été partagé avec vous",
-  "team.notification.generic.FILE_UPLOADED": "Nouveau contenu dans un dossier de votre équipe",
-  "team.notification.generic.FILE_DELETED": "Des fichiers ont été supprimés dans votre équipe",
+  "team.notification.generic.FILE_UPLOADED":
+    "Nouveau contenu dans un dossier de votre équipe",
+  "team.notification.generic.FILE_DELETED":
+    "Des fichiers ont été supprimés dans votre équipe",
   "team.notification.generic.GRANT_RECEIVED": "Un accès vous a été accordé",
   "team.notification.generic.GRANT_REVOKED": "Un de vos accès a été retiré",
-  "team.notification.generic.KEY_ROTATED": "La clé de votre équipe a été renouvelée",
+  "team.notification.generic.KEY_ROTATED":
+    "La clé de votre équipe a été renouvelée",
   "team.notification.generic.MEMBER_JOINED": "Un membre a rejoint votre équipe",
   "team.notification.generic.MEMBER_LEFT": "Un membre a quitté votre équipe",
-  "account.reverseShares.error.encryption": "Impossible de chiffrer le lien de dépôt. Veuillez réessayer.",
+  "account.reverseShares.error.encryption":
+    "Impossible de chiffrer le lien de dépôt. Veuillez réessayer.",
+  // External contractors (preview-only Team seats)
+  "signIn.oauth.continueWith": "Ou continuer avec",
+  "step-up.email.send": "Recevoir un code par e-mail",
+  "step-up.email.sent":
+    "Code envoyé à l'adresse de la demande de signature. Il expire dans 10 minutes.",
+  "step-up.email.code": "Code reçu par e-mail",
+  "step-up.email.wrong": "Code invalide ou expiré.",
+  "step-up.email.wait":
+    "Patientez une minute avant de demander un nouveau code.",
+  "step-up.email.send-error": "Le code n'a pas pu être envoyé. Réessayez.",
+  "admin.users.sort.label": "Trier par",
+  "admin.users.sort.ascending": "Ordre croissant",
+  "admin.users.sort.descending": "Ordre décroissant",
+  "admin.users.table.share-usage": "Partages (30 j)",
+  "admin.users.table.share-usage.hint": "Partages sur les 30 derniers jours",
+  "admin.users.table.renew.hint": "Date de renouvellement de l'abonnement",
+  "admin.users.table.renew": "Échéance",
+  "admin.config.email.share-recipients-subject-translation":
+    "Sujet d'un partage (traduction)",
+  "admin.config.email.share-recipients-subject-translation.description":
+    "Facultatif. Si ce champ est rempli, il est ajouté après le sujet ci-dessus.",
+  "admin.config.email.share-recipients-message-translation":
+    "Message d'un partage (traduction)",
+  "admin.config.email.share-recipients-message-translation.description":
+    "Facultatif. Si ce champ est rempli, le mail part dans les deux langues, avec ce texte après le message ci-dessus. Les mêmes variables sont disponibles.",
+  "admin.config.email.reverse-share-subject-translation":
+    "Sujet d'un partage inversé (traduction)",
+  "admin.config.email.reverse-share-subject-translation.description":
+    "Facultatif. Si ce champ est rempli, il est ajouté après le sujet ci-dessus.",
+  "admin.config.email.reverse-share-message-translation":
+    "Message d'un partage inversé (traduction)",
+  "admin.config.email.reverse-share-message-translation.description":
+    "Facultatif. Si ce champ est rempli, le mail part dans les deux langues, avec ce texte après le message ci-dessus. Les mêmes variables sont disponibles.",
+  "admin.config.email.reset-password-subject-translation":
+    "Sujet d'une réinitialisation du mot de passe (traduction)",
+  "admin.config.email.reset-password-subject-translation.description":
+    "Facultatif. Si ce champ est rempli, il est ajouté après le sujet ci-dessus.",
+  "admin.config.email.reset-password-message-translation":
+    "Message de réinitialisation du mot de passe (traduction)",
+  "admin.config.email.reset-password-message-translation.description":
+    "Facultatif. Si ce champ est rempli, le mail part dans les deux langues, avec ce texte après le message ci-dessus. Les mêmes variables sont disponibles.",
+  "admin.config.email.invite-subject-translation":
+    "Sujet d'une invitation (traduction)",
+  "admin.config.email.invite-subject-translation.description":
+    "Facultatif. Si ce champ est rempli, il est ajouté après le sujet ci-dessus.",
+  "admin.config.email.invite-message-translation":
+    "Message d'une invitation (traduction)",
+  "admin.config.email.invite-message-translation.description":
+    "Facultatif. Si ce champ est rempli, le mail part dans les deux langues, avec ce texte après le message ci-dessus. Les mêmes variables sont disponibles.",
+  "admin.config.email.download-notification-subject-translation":
+    "Sujet de notification de téléchargement (traduction)",
+  "admin.config.email.download-notification-subject-translation.description":
+    "Facultatif. Si ce champ est rempli, il est ajouté après le sujet ci-dessus.",
+  "admin.config.email.download-notification-message-translation":
+    "Message de notification de téléchargement (traduction)",
+  "admin.config.email.download-notification-message-translation.description":
+    "Facultatif. Si ce champ est rempli, le mail part dans les deux langues, avec ce texte après le message ci-dessus. Les mêmes variables sont disponibles.",
+  "admin.config.email.download-digest-subject-translation":
+    "Sujet du résumé des téléchargements (traduction)",
+  "admin.config.email.download-digest-subject-translation.description":
+    "Facultatif. Si ce champ est rempli, il est ajouté après le sujet ci-dessus.",
+  "admin.config.email.download-digest-message-translation":
+    "Message du résumé des téléchargements (traduction)",
+  "admin.config.email.download-digest-message-translation.description":
+    "Facultatif. Si ce champ est rempli, le mail part dans les deux langues, avec ce texte après le message ci-dessus. Les mêmes variables sont disponibles.",
+  "admin.config.email.download-weekly-subject-translation":
+    "Sujet du résumé hebdomadaire (traduction)",
+  "admin.config.email.download-weekly-subject-translation.description":
+    "Facultatif. Si ce champ est rempli, il est ajouté après le sujet ci-dessus.",
+  "admin.config.email.download-weekly-message-translation":
+    "Message du résumé hebdomadaire (traduction)",
+  "admin.config.email.download-weekly-message-translation.description":
+    "Facultatif. Si ce champ est rempli, le mail part dans les deux langues, avec ce texte après le message ci-dessus. Les mêmes variables sont disponibles.",
+  "admin.config.email.team-share-notification-subject-translation":
+    "Sujet de notification de partage d'équipe (traduction)",
+  "admin.config.email.team-share-notification-subject-translation.description":
+    "Facultatif. Si ce champ est rempli, il est ajouté après le sujet ci-dessus.",
+  "admin.config.email.team-share-notification-message-translation":
+    "Message de notification de partage d'équipe (traduction)",
+  "admin.config.email.team-share-notification-message-translation.description":
+    "Facultatif. Si ce champ est rempli, le mail part dans les deux langues, avec ce texte après le message ci-dessus. Les mêmes variables sont disponibles.",
+  "error.msg.account_exists":
+    "Un compte utilise déjà cette adresse e-mail. Connectez-vous à ce compte, puis associez votre compte {0} depuis la page de votre compte.",
+  "sskr.title": "Fragments de récupération (partage de secret de Shamir)",
+  "sskr.intro":
+    "Votre clé de chiffrement sera découpée en <strong>N fragments</strong>. Il vous en faudra au minimum <strong>T</strong> pour la reconstituer. Avec T-1 fragments ou moins, il est mathématiquement impossible de retrouver la clé.",
+  "sskr.storage":
+    "Stockez chaque fragment dans un endroit différent : gestionnaire de mots de passe, clé USB, coffre-fort papier, contact de confiance.",
+  "sskr.threshold.label": "Seuil minimum (T)",
+  "sskr.threshold.description":
+    "Nombre de fragments nécessaires pour reconstituer la clé",
+  "sskr.total.label": "Total de fragments (N)",
+  "sskr.total.description": "Nombre de fragments à générer",
+  "sskr.cancel": "Annuler",
+  "sskr.generate": "Générer {total} fragments",
+  "sskr.shard.title": "Fragment {n} sur {total}",
+  "sskr.shard.instructions":
+    "Copiez ce fragment et stockez-le en lieu sûr. Ne le partagez qu'avec des personnes en qui vous avez confiance.",
+  "sskr.copy": "Copier",
+  "sskr.copied": "Copié !",
+  "sskr.shard.acknowledge": "J'ai sauvegardé ce fragment en lieu sûr",
+  "sskr.previous": "Précédent",
+  "sskr.next": "Suivant",
+  "sskr.finish": "Terminer",
+  "sskr.done":
+    "Vos <strong>{total} fragments</strong> ont été créés. Il vous en faudra <strong>{threshold}</strong> pour reconstituer votre clé. Conservez-les séparément !",
+  "sskr.close": "Fermer",
+  "e2ePrompt.import.success": "Clé chargée pour cette session.",
+  "e2ePrompt.recover.success":
+    "Clé reconstituée et chargée pour cette session.",
+  "team.create.modal.name-placeholder": "Mon Équipe @Work",
+  "team.new.offer.title": "Offre Team - 17,99€/mois",
+  "team.new.offer.members": "3 membres + le propriétaire (4 au total)",
+  "team.new.offer.extraMembers":
+    "Membres supplémentaires à 4,99€/mois/personne",
+  "team.new.offer.shareSize": "250 Go par partage d'équipe",
+  "team.new.offer.storage": "500 Go de stockage total",
+  "team.new.offer.folders": "Dossiers partagés avec gestion des accès",
+  "team.new.offer.metrics": "Métriques et journal d'accès",
+  "team.new.offer.reports": "Rapports périodiques configurables",
+  "team.list.metaTitle": "Mes équipes",
+  "team.notifications.title": "Notifications équipe",
+  "team.notification.signing.SIGN": "Une signature est attendue de votre part",
+  "team.notification.signing.TRACK": "Une signature vient d'être réalisée",
+  "team.notification.signing.DOWNLOAD": "Le document signé est disponible",
+  "team.notification.shared": '{sender} a partagé "{fileName}"',
+  "team.notification.shared.someone": "Un membre",
+  "team.notification.shared.aFile": "un fichier",
+  "team.dashboard.shares.col.file": "Fichier",
+  "team.dashboard.shares.col.folder": "Dossier",
+  "team.dashboard.shares.col.sharedBy": "Partagé par",
+  "team.dashboard.shares.col.sharedWith": "Partagé avec",
+  "team.dashboard.shares.col.date": "Date",
+  "team.dashboard.shares.col.access": "Accès",
+  "team.dashboard.shares.openFile": "Ouvrir le fichier",
+  "team.dashboard.e2e.rotateResumeError":
+    "Cette rotation doit être reprise par son initiateur.",
+  "team.dashboard.e2e.keyLink.title": "Clé d'équipe pas encore reçue",
+  "team.dashboard.e2e.keyLink.loadKey":
+    "Ce lien contient votre clé d'équipe, mais votre clé personnelle n'est pas chargée dans cet onglet. Chargez-la quand elle vous est demandée, ou rechargez cette page pour obtenir à nouveau la demande. La clé d'équipe sera ensuite enregistrée automatiquement.",
+  "team.dashboard.e2e.keyLink.createKey":
+    "Ce lien contient votre clé d'équipe, mais votre compte n'a pas encore de clé personnelle. Créez-la depuis votre compte, puis rouvrez ce lien dans le même onglet.",
+  "team.dashboard.e2e.keyLink.error":
+    "Ce lien de clé n'a pas pu être appliqué. Demandez-en un nouveau à votre administrateur.",
+  "account.e2e.teamReturn.body":
+    "Votre clé est prête. Vous pouvez maintenant poursuivre l'accès à votre équipe.",
+  "account.e2e.teamReturn.button": "Continuer vers mon équipe",
+  "team.dashboard.invitations.title": "Invitations en attente",
+  "team.dashboard.invitations.expires": "Expire le {date}",
+  "team.dashboard.invitations.revoke": "Révoquer",
+  "team.dashboard.invitations.revoked": "Invitation révoquée.",
+  "team.dashboard.invitations.revokeError":
+    "L'invitation n'a pas pu être révoquée.",
+  "team.dashboard.invitations.confirmTitle": "Révoquer cette invitation ?",
+  "team.dashboard.invitations.confirmBody":
+    "Le lien envoyé à {email} ne fonctionnera plus. Vous pourrez réinviter cette personne plus tard. Si un lien sécurisé contenant la clé d'équipe a été partagé, régénérez aussi la clé d'équipe.",
+  "team.invite.error-email-mismatch":
+    "Cette invitation a été envoyée à une autre adresse. Connectez-vous avec un compte qui l'utilise. Si elle appartient à un fournisseur lié à ce compte, déconnectez-vous et connectez-vous une fois avec ce fournisseur, puis rouvrez l'invitation.",
+  "signing.new.received-files": "Fichiers reçus par partage inversé",
+  "signing.page.field.approval-invalid":
+    "La mention obligatoire doit être recopiée exactement.",
+  "signing.page.field.required":
+    "Veuillez compléter tous les champs obligatoires.",
+  "signing.page.signed.title": "Déjà signé",
+  "signing.page.signed.body": "Vous avez déjà signé ce document.",
+  "signing.page.rejected.title": "Refusé",
+  "signing.page.rejected.body": "Vous avez refusé ce document.",
+  "signing.page.level.reinforced": "Signature renforcée",
+  "signing.page.level.standard": "Signature standard",
+  "signing.page.reinforced.title": "Compte vérifié et passkey requis",
+  "signing.page.reinforced.body":
+    "Ce parcours renforcé est réservé au compte PrivCloud attribué à {email}. La passkey demandera ensuite la biométrie ou le code local de l'appareil pour chaque décision.",
+  "signing.page.reinforced.eidas": "Alignement eIDAS : niveau renforcé",
+  "signing.page.reinforced.sign-in": "Se connecter avec le compte attribué",
+  "signing.page.reinforced.switch": "Changer de compte PrivCloud",
+  "signing.page.webauthn.unsupported":
+    "Ce navigateur ne prend pas en charge WebAuthn. Utilisez un navigateur récent ou une clé de sécurité compatible.",
+  "signing.page.passkey.register": "Enregistrer une passkey de signature",
+  "signing.page.decrypting": "Déchiffrement du document...",
+  "signing.page.key-missing.title": "Document chiffré : clé manquante",
+  "signing.page.key-missing.body":
+    "Ce document est protégé par chiffrement de bout en bout. Le lien reçu est incomplet : sa clé de déchiffrement est absente.",
+  "signing.page.sign.title": "Apposer votre signature",
+  "signing.page.sign.hint":
+    "Dessinez, saisissez ou importez votre signature ci-dessous.",
+  "signing.page.fields.title": "Mentions et champs à compléter",
+  "signing.page.fields.hint": "Ces informations seront ajoutées au PDF signé.",
+  "signing.page.fields.approval": "Mention obligatoire",
+  "signing.page.fields.date": "Date",
+  "signing.page.fields.text": "Champ texte",
+  "signing.page.fields.approval-mismatch":
+    "La mention ne correspond pas au texte attendu.",
+  "signing.page.sign.submit": "Signer le document",
+  "signing.page.reject": "Refuser",
+  "signing.page.reject.title": "Refuser le document",
+  "signing.page.reject.hint":
+    "Vous pouvez indiquer un motif de refus (optionnel).",
+  "signing.page.reject.placeholder": "Motif du refus...",
+  "signing.page.reject.confirm": "Confirmer le refus",
+  "signing.page.cancel": "Annuler",
+  "signing.page.evidence-recorded":
+    "Dossier de preuve et empreinte cryptographique enregistrés",
+  "signing.modal.links.title": "Liens de signature",
+  "signing.modal.links.partial":
+    "La demande de signature a été créée, mais certains emails n'ont pas pu être envoyés. Partagez les liens ci-dessous directement :",
+  "signing.modal.links.sent":
+    "La demande de signature a été créée. Les invitations par email ont été envoyées. Vous pouvez aussi partager les liens ci-dessous directement :",
+  "signing.modal.links.done": "Terminé",
+  "signing.modal.options.title": "Options du document signé",
+  "signing.modal.options.watermark-description":
+    "Affiche un filigrane semi-transparent en diagonale sur la première page par défaut, ou sur la page choisie",
+  "signing.level.reinforced": "Renforcé",
+  "signing.level.standard": "Standard",
+  "signing.modal.options.watermark-label": "Mention diagonale « {text} »",
+  "signing.modal.options.mention-label": "Mention « {text} »",
+  "share.title.untitled": "Partage sans titre",
+  "share.title.withOthers":
+    "{name} (+{count, plural, one {# fichier} other {# fichiers}})",
+  "admin.shares.status.expired": "Expiré",
+  "admin.shares.table.reference": "Référence d'audit",
+  "team.notification.locked": "Chiffré",
+  "team.notification.keyRequired":
+    "Chargez votre clé E2E pour lire les notifications chiffrées.",
+  "team.notification.keyRequired.action": "Ouvrir mon compte",
+  "team.notification.generic.SIGNATURE_REQUESTED":
+    "Nouvelle demande de signature",
+  "team.notification.generic.SIGNATURE_SIGNED": "Un document a été signé",
+  "team.notification.generic.SIGNATURE_COMPLETED":
+    "Un document signé est disponible",
+  "error.msg.link_email_sent":
+    "Cette adresse appartient à un compte existant. Nous lui avons envoyé un e-mail de confirmation pour lier votre compte {0}.",
+  "auth.confirmLink.title": "Lier cette connexion à votre compte",
+  "auth.confirmLink.description":
+    "Confirmez pour que ce fournisseur puisse se connecter à votre compte PrivCloud existant.",
+  "auth.confirmLink.confirm": "Confirmer la liaison",
+  "auth.confirmLink.success":
+    "Vos comptes sont liés. Vous pouvez désormais vous connecter avec ce fournisseur.",
+  "auth.confirmLink.invalid":
+    "Ce lien est invalide ou a expiré. Reconnectez-vous avec votre fournisseur pour en recevoir un nouveau.",
+  "auth.confirmLink.signIn": "Aller à la connexion",
+  "team.notification.empty": "Aucune notification",
 };

@@ -84,7 +84,7 @@ export async function openLegacySpreadsheet(
   const pending = new Map<
     number,
     {
-      resolve: (_value: any) => void;
+      resolve: (_value: unknown) => void;
       reject: (_reason: unknown) => void;
       cleanup: () => void;
     }
@@ -131,7 +131,7 @@ export async function openLegacySpreadsheet(
     activeSignal = signal,
     transfer: Transferable[] = [],
   ) =>
-    new Promise<any>((resolve, reject) => {
+    new Promise<unknown>((resolve, reject) => {
       activeSignal.throwIfAborted();
       signal.throwIfAborted();
       if (closed) {
@@ -155,9 +155,9 @@ export async function openLegacySpreadsheet(
     });
   try {
     const buffer = bytes.slice().buffer;
-    const opened = await call({ type: "open", bytes: buffer }, signal, [
+    const opened = (await call({ type: "open", bytes: buffer }, signal, [
       buffer,
-    ]);
+    ])) as { units: string[] };
     return {
       kind: "workbook",
       units: opened.units.map((name: string, index: number) => ({
@@ -172,7 +172,10 @@ export async function openLegacySpreadsheet(
           index >= opened.units.length
         )
           throw new Error("Invalid worksheet index");
-        const reply = await call({ type: "load", index }, activeSignal);
+        const reply = (await call({ type: "load", index }, activeSignal)) as {
+          rows: string[][];
+          truncated: boolean;
+        };
         const cols = Math.max(
           1,
           ...reply.rows.map((row: string[]) => row.length),

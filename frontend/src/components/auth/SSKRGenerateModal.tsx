@@ -11,6 +11,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { useState } from "react";
+import { FormattedMessage, useIntl } from "react-intl";
 import { TbCopy, TbCheck, TbShieldCheck } from "react-icons/tb";
 import { splitKey } from "../../utils/sskr.util";
 
@@ -27,6 +28,7 @@ const SSKRGenerateModal = ({
   onComplete,
   encodedKey,
 }: SSKRGenerateModalProps) => {
+  const intl = useIntl();
   const [step, setStep] = useState(0);
   const [threshold, setThreshold] = useState(3);
   const [total, setTotal] = useState(5);
@@ -75,19 +77,20 @@ const SSKRGenerateModal = ({
       {step === 0 && (
         <Stack gap="md">
           <Text size="sm" c="dimmed">
-            Votre clé de chiffrement sera découpée en{" "}
-            <strong>N fragments</strong>. Il vous en faudra au minimum{" "}
-            <strong>T</strong> pour la reconstituer. Avec T-1 fragments ou
-            moins, il est mathématiquement impossible de retrouver la clé.
+            <FormattedMessage
+              id="sskr.intro"
+              values={{ strong: (chunks) => <strong>{chunks}</strong> }}
+            />
           </Text>
           <Text size="sm" c="dimmed">
-            Stockez chaque fragment dans un endroit différent : gestionnaire de
-            mots de passe, clé USB, coffre-fort papier, contact de confiance...
+            <FormattedMessage id="sskr.storage" />
           </Text>
 
           <NumberInput
-            label="Seuil minimum (T)"
-            description="Nombre de fragments nécessaires pour reconstituer la clé"
+            label={intl.formatMessage({ id: "sskr.threshold.label" })}
+            description={intl.formatMessage({
+              id: "sskr.threshold.description",
+            })}
             value={threshold}
             onChange={(v) => {
               const val = typeof v === "number" ? v : 3;
@@ -98,8 +101,8 @@ const SSKRGenerateModal = ({
             max={10}
           />
           <NumberInput
-            label="Total de fragments (N)"
-            description="Nombre de fragments à générer"
+            label={intl.formatMessage({ id: "sskr.total.label" })}
+            description={intl.formatMessage({ id: "sskr.total.description" })}
             value={total}
             onChange={(v) => setTotal(typeof v === "number" ? v : 5)}
             min={threshold}
@@ -108,9 +111,11 @@ const SSKRGenerateModal = ({
 
           <Group justify="right" mt="xs">
             <Button variant="subtle" onClick={handleClose}>
-              Annuler
+              <FormattedMessage id="sskr.cancel" />
             </Button>
-            <Button onClick={handleGenerate}>Générer {total} fragments</Button>
+            <Button onClick={handleGenerate}>
+              <FormattedMessage id="sskr.generate" values={{ total }} />
+            </Button>
           </Group>
         </Stack>
       )}
@@ -119,12 +124,13 @@ const SSKRGenerateModal = ({
       {isShowingShard && shards[shardIndex] && (
         <Stack gap="md">
           <Text size="sm" fw={500}>
-            Fragment {shardIndex + 1} sur {total}
+            <FormattedMessage
+              id="sskr.shard.title"
+              values={{ n: shardIndex + 1, total }}
+            />
           </Text>
           <Text size="xs" c="dimmed">
-            {" "}
-            et stockez-le en lieu sûr. Ne le partagez qu'avec des personnes en
-            qui vous avez confiance.
+            <FormattedMessage id="sskr.shard.instructions" />
           </Text>
 
           <Group gap="xs" wrap="nowrap">
@@ -141,7 +147,11 @@ const SSKRGenerateModal = ({
             </Code>
             <CopyButton value={shards[shardIndex]}>
               {({ copied, copy }) => (
-                <Tooltip label={copied ? "Copié !" : "Copier"}>
+                <Tooltip
+                  label={intl.formatMessage({
+                    id: copied ? "sskr.copied" : "sskr.copy",
+                  })}
+                >
                   <Button variant="subtle" size="xs" px={6} onClick={copy}>
                     {copied ? (
                       <TbCheck size={16} color="teal" />
@@ -155,7 +165,7 @@ const SSKRGenerateModal = ({
           </Group>
 
           <Checkbox
-            label="J'ai sauvegardé ce fragment en lieu sûr"
+            label={intl.formatMessage({ id: "sskr.shard.acknowledge" })}
             checked={acknowledged[shardIndex] ?? false}
             onChange={(e) => {
               const next = [...acknowledged];
@@ -167,7 +177,7 @@ const SSKRGenerateModal = ({
           <Group justify="right" mt="xs">
             {step > 1 && (
               <Button variant="subtle" onClick={() => setStep(step - 1)}>
-                Précédent
+                <FormattedMessage id="sskr.previous" />
               </Button>
             )}
             <Button
@@ -177,7 +187,9 @@ const SSKRGenerateModal = ({
                 setStep(step + 1);
               }}
             >
-              {step < total ? "Suivant" : "Terminer"}
+              <FormattedMessage
+                id={step < total ? "sskr.next" : "sskr.finish"}
+              />
             </Button>
           </Group>
         </Stack>
@@ -188,11 +200,18 @@ const SSKRGenerateModal = ({
         <Stack gap="md" align="center">
           <TbShieldCheck size={48} color="teal" />
           <Text size="sm" ta="center">
-            Vos <strong>{total} fragments</strong> ont été créés. Il vous en
-            faudra <strong>{threshold}</strong> pour reconstituer votre clé.
-            Conservez-les séparément !
+            <FormattedMessage
+              id="sskr.done"
+              values={{
+                total,
+                threshold,
+                strong: (chunks) => <strong>{chunks}</strong>,
+              }}
+            />
           </Text>
-          <Button onClick={handleClose}>Fermer</Button>
+          <Button onClick={handleClose}>
+            <FormattedMessage id="sskr.close" />
+          </Button>
         </Stack>
       )}
     </Modal>

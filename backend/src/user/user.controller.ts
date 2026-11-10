@@ -1,3 +1,4 @@
+import { byName } from "../utils/sort.util";
 import {
   Body,
   BadRequestException,
@@ -78,6 +79,7 @@ export class UserController {
 
     return {
       ...userDTO,
+      signaturePushEligible: true,
       hasTeamMembership: !!teamMembership,
       hasExternalAccess: !!externalSeat,
       // Whether new personal E2E shares of this account use SHARE_DEK_V1.
@@ -223,6 +225,9 @@ export class UserController {
     return users.map((user) => {
       const dto = new UserDTO().from(user);
       dto.createdAt = user.createdAt;
+      dto.teams = user.teamMemberships
+        .map(({ role, team }) => ({ name: team.name, role }))
+        .sort(byName);
       return dto;
     });
   }

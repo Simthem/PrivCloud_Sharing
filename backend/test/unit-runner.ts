@@ -11,7 +11,23 @@ function collectSpecs(directory: string): string[] {
 }
 
 const specs = [
+  "test/oauth-account-link.spec.ts",
+  "test/share-expiration.spec.ts",
+  "test/admin-user-list.spec.ts",
+  "test/signing-language.spec.ts",
+  "test/request-body-validation.spec.ts",
+  "test/team-folder-limit.spec.ts",
+  "test/client-address.spec.ts",
   "test/email-change.spec.ts",
+  "test/config-encryption.spec.ts",
+  "test/account-secrets.spec.ts",
+  "test/sealed-columns.spec.ts",
+  "test/sealed-column-usage.spec.ts",
+  "test/team-invitation-address.spec.ts",
+  "test/signing-account-binding.spec.ts",
+  "test/email-template-translation.spec.ts",
+  "test/microsoft-oidc.spec.ts",
+  "test/team-member-removal.spec.ts",
   "test/upload-auth-renewal.spec.ts",
   "test/multipart-lifecycle.spec.ts",
   "test/pending-upload-access.spec.ts",

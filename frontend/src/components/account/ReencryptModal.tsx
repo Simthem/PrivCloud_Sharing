@@ -22,6 +22,7 @@ import {
   ReencryptProgress,
   ReencryptResult,
 } from "../../utils/reencrypt.util";
+import type { ThrownError } from "../../types/thrownError.type";
 
 interface Props {
   opened: boolean;
@@ -77,7 +78,8 @@ const ReencryptModal = ({
           ),
         );
       }
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       const msg =
         e?.message ?? intl.formatMessage({ id: "reencrypt.error.generic" });
       setError(msg);

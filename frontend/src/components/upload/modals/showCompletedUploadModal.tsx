@@ -64,7 +64,7 @@ const Body = ({
       ? getUserKey()
       : null);
   const keyFragment = resolvedE2EKey ? buildKeyFragment(resolvedE2EKey) : "";
-  const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
+  const link = `${config.getString("general.appUrl")}/s/${share.id}${keyFragment}`;
 
   return (
     <Stack align="stretch">
@@ -109,7 +109,7 @@ const Body = ({
           } else if (requiresE2EBackup) {
             router.push("/account#e2e-encryption-settings");
           } else {
-            router.push("/upload");
+            router.push("/account/shares");
           }
         }}
       >

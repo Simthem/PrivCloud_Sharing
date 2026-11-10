@@ -7,7 +7,7 @@ type Config = {
 
 export type UpdateConfig = {
   key: string;
-  value: string;
+  value: string | number | boolean;
 };
 
 export type AdminConfig = Config & {

@@ -31,6 +31,23 @@ export function buildEmailVerificationMessage(
 // its address is set, from the main account otherwise.
 export type MailSender = "general" | "signing";
 
+const PROVIDER_LABELS: Record<string, string> = {
+  github: "GitHub",
+  google: "Google",
+  microsoft: "Microsoft",
+};
+
+type EmailTemplate =
+  | "oauthLink"
+  | "shareRecipients"
+  | "reverseShare"
+  | "resetPassword"
+  | "invite"
+  | "downloadNotification"
+  | "downloadDigest"
+  | "downloadWeekly"
+  | "teamShareNotification";
+
 @Injectable()
 export class EmailService {
   constructor(private config: ConfigService) {}
@@ -85,6 +102,22 @@ export class EmailService {
         ),
       },
     });
+  }
+
+  private emailSubject(template: EmailTemplate) {
+    const subject = this.config.get(`email.${template}Subject`);
+    const translation = this.config
+      .get(`email.${template}SubjectTranslation`)
+      ?.trim();
+    return translation ? `${subject} / ${translation}` : subject;
+  }
+
+  private emailMessage(template: EmailTemplate) {
+    const message = this.config.get(`email.${template}Message`);
+    const translation = this.config
+      .get(`email.${template}MessageTranslation`)
+      ?.trim();
+    return translation ? `${message}\n\n---\n\n${translation}` : message;
   }
 
   async sendMail(
@@ -157,9 +190,8 @@ export class EmailService {
 
     await this.sendMail(
       recipientEmail,
-      this.config.get("email.shareRecipientsSubject"),
-      this.config
-        .get("email.shareRecipientsMessage")
+      this.emailSubject("shareRecipients"),
+      this.emailMessage("shareRecipients")
         .replaceAll("\\n", "\n")
         .replaceAll("{creator}", creator?.username ?? "Someone")
         .replaceAll("{creatorEmail}", creator?.email ?? "")
@@ -182,11 +214,29 @@ export class EmailService {
 
     await this.sendMail(
       recipientEmail,
-      this.config.get("email.reverseShareSubject"),
-      this.config
-        .get("email.reverseShareMessage")
+      this.emailSubject("reverseShare"),
+      this.emailMessage("reverseShare")
         .replaceAll("\\n", "\n")
         .replaceAll("{shareUrl}", shareUrl),
+    );
+  }
+
+  async sendOAuthLinkEmail(
+    recipientEmail: string,
+    provider: string,
+    token: string,
+  ) {
+    const url = `${this.config.get(
+      "general.appUrl",
+    )}/auth/confirm-link#token=${token}`;
+
+    await this.sendMail(
+      recipientEmail,
+      this.emailSubject("oauthLink"),
+      this.emailMessage("oauthLink")
+        .replaceAll("\\n", "\n")
+        .replaceAll("{provider}", PROVIDER_LABELS[provider] ?? provider)
+        .replaceAll("{url}", url),
     );
   }
 
@@ -197,9 +247,8 @@ export class EmailService {
 
     await this.sendMail(
       recipientEmail,
-      this.config.get("email.resetPasswordSubject"),
-      this.config
-        .get("email.resetPasswordMessage")
+      this.emailSubject("resetPassword"),
+      this.emailMessage("resetPassword")
         .replaceAll("\\n", "\n")
         .replaceAll("{url}", resetPasswordUrl),
     );
@@ -237,9 +286,8 @@ export class EmailService {
 
     return {
       recipient: recipientEmail,
-      subject: this.config.get("email.inviteSubject"),
-      text: this.config
-        .get("email.inviteMessage")
+      subject: this.emailSubject("invite"),
+      text: this.emailMessage("invite")
         .replaceAll("{url}", loginUrl)
         .replaceAll("{password}", password)
         .replaceAll("{email}", recipientEmail),
@@ -278,9 +326,8 @@ export class EmailService {
   ) {
     await this.sendMail(
       recipientEmail,
-      this.config.get("email.downloadNotificationSubject"),
-      this.config
-        .get("email.downloadNotificationMessage")
+      this.emailSubject("downloadNotification"),
+      this.emailMessage("downloadNotification")
         .replaceAll("\\n", "\n")
         .replaceAll("{shareName}", shareName)
         .replaceAll("{date}", date)
@@ -290,12 +337,11 @@ export class EmailService {
 
   async sendTeamShareNotificationEmail(recipientEmail: string) {
     const appUrl = this.config.get("general.appUrl");
-    const subject = this.config.get("email.teamShareNotificationSubject");
+    const subject = this.emailSubject("teamShareNotification");
 
     // E2EE team shares are zero-knowledge: the email never exposes the sender
     // name or file name. Detailed metadata stays in the encrypted in-app feed.
-    const body = this.config
-      .get("email.teamShareNotificationMessage")
+    const body = this.emailMessage("teamShareNotification")
       .replaceAll("\\n", "\n")
       .replaceAll("{sender}", "A team member")
       .replaceAll("{fileName}", "an encrypted file")
@@ -310,20 +356,12 @@ export class EmailService {
     digest: string,
     mode: "digest" | "weekly",
   ) {
-    const subjectKey =
-      mode === "weekly"
-        ? "email.downloadWeeklySubject"
-        : "email.downloadDigestSubject";
-    const messageKey =
-      mode === "weekly"
-        ? "email.downloadWeeklyMessage"
-        : "email.downloadDigestMessage";
+    const template = mode === "weekly" ? "downloadWeekly" : "downloadDigest";
 
     await this.sendMail(
       recipientEmail,
-      this.config.get(subjectKey),
-      this.config
-        .get(messageKey)
+      this.emailSubject(template),
+      this.emailMessage(template)
         .replaceAll("\\n", "\n")
         .replaceAll("{digest}", digest),
     );

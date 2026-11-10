@@ -65,7 +65,10 @@ import ExternalPreviewShareModal, {
   type ExternalShareFile,
 } from "../../../../components/team/external/ExternalPreviewShareModal";
 import useOpenedShares from "../../../../hooks/useOpenedShares.hook";
-import { openFileName } from "../../../../utils/fileMetadata.util";
+import {
+  openFileName,
+  signatureFileOf,
+} from "../../../../utils/fileMetadata.util";
 import teamService from "../../../../services/team.service";
 import shareService from "../../../../services/share.service";
 import showFilePreviewModal from "../../../../components/share/modals/showFilePreviewModal";
@@ -94,6 +97,8 @@ import {
 } from "../../../../utils/crypto.util";
 import showQrCodeModal from "../../../../components/core/showQrCodeModal";
 import showShareLinkModal from "../../../../components/account/showShareLinkModal";
+import type { ThrownError } from "../../../../types/thrownError.type";
+import useUserKeyGeneration from "../../../../hooks/useUserKeyGeneration.hook";
 
 type TeamFolderFile = FileTreeItem & {
   shareId: string;
@@ -103,6 +108,7 @@ type TeamFolderFile = FileTreeItem & {
   creatorEmail?: string;
   creatorId?: string;
   isE2EEncrypted: boolean;
+  metadataScheme?: number | null;
 };
 
 const TeamFolderPage = () => {
@@ -133,7 +139,7 @@ const TeamFolderPage = () => {
 
   const [sigModalData, setSigModalData] = useState<{
     shareId: string;
-    files: { id: string; name: string }[];
+    files: { id: string; name: string; encryptedName?: boolean }[];
   } | null>(null);
 
   // E2EE share modal state
@@ -187,7 +193,8 @@ const TeamFolderPage = () => {
     });
   };
 
-  // Resolve team E2E key on mount
+  // Resolve team E2E key on mount, and again once the personal key is loaded.
+  const keyGeneration = useUserKeyGeneration();
   useEffect(() => {
     if (!teamIdStr) return;
     let cancelled = false;
@@ -211,7 +218,7 @@ const TeamFolderPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [teamIdStr]);
+  }, [teamIdStr, keyGeneration]);
 
   const { data: serverData, isLoading } = useQuery({
     queryKey: ["team.folder.shares", teamIdStr, folderIdStr],
@@ -251,7 +258,7 @@ const TeamFolderPage = () => {
   });
 
   // Get folder access rules (only for admin/owner)
-  const myMembership = team?.members?.find((m: any) => m.user?.id === user?.id);
+  const myMembership = team?.members?.find((m) => m.user?.id === user?.id);
   const isTeamAdmin =
     myMembership?.role === "OWNER" || myMembership?.role === "ADMIN";
 
@@ -310,7 +317,7 @@ const TeamFolderPage = () => {
 
   // Determine folder-level write permission for the current user
   const myFolderAccess = accessRules?.find(
-    (rule: any) => rule.memberId === myMembership?.id,
+    (rule) => rule.memberId === myMembership?.id,
   );
   // myAccess from the backend response (available for non-admins)
   const serverAccess = data?.myAccess;
@@ -391,7 +398,7 @@ const TeamFolderPage = () => {
       setAccessCanSign(false);
       setAccessCanShareE2E(false);
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(err?.response?.data?.message || t("team.folder.toast.error")),
   });
 
@@ -404,7 +411,7 @@ const TeamFolderPage = () => {
         queryKey: ["team.folder.access", teamIdStr, folderIdStr],
       });
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(err?.response?.data?.message || t("team.folder.toast.error")),
   });
 
@@ -415,7 +422,7 @@ const TeamFolderPage = () => {
       toast.success(t("team.folder.toast.fileDeleted"));
       invalidateFolderContentQueries();
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(
         err?.response?.data?.message || t("team.folder.toast.deleteError"),
       ),
@@ -427,7 +434,7 @@ const TeamFolderPage = () => {
       toast.success(t("team.folder.toast.shareDeleted"));
       invalidateFolderContentQueries();
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(
         err?.response?.data?.message || t("team.folder.toast.deleteError"),
       ),
@@ -443,7 +450,7 @@ const TeamFolderPage = () => {
       setSelectedFiles(new Set());
       invalidateFolderContentQueries();
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(err?.response?.data?.message || t("team.folder.toast.error")),
   });
 
@@ -470,7 +477,7 @@ const TeamFolderPage = () => {
       setFilePermE2E({});
       setSelectedFiles(new Set());
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(err?.response?.data?.message || t("team.folder.toast.error")),
   });
 
@@ -615,7 +622,7 @@ const TeamFolderPage = () => {
 
   if (isLoading || !data) {
     return (
-      <Container size="lg" mt="xl" px={0}>
+      <Container size="lg" px={0}>
         <Box ta="center" py="xl">
           <Loader size="lg" />
         </Box>
@@ -667,8 +674,8 @@ const TeamFolderPage = () => {
     const initialSign: Record<string, boolean> = {};
     const initialE2E: Record<string, boolean> = {};
     team?.members
-      ?.filter((m: any) => m.role === "MEMBER" && m.isActive)
-      ?.forEach((m: any) => {
+      ?.filter((m) => m.role === "MEMBER" && m.isActive)
+      ?.forEach((m) => {
         initial[m.id] = ""; // empty = not selected
         initialSign[m.id] = false;
         initialE2E[m.id] = false;
@@ -797,7 +804,7 @@ const TeamFolderPage = () => {
         onSettled={invalidateFolderContentQueries}
       />
       <Meta title={`${t("team.folder.breadcrumb.folders")} - ${folder.name}`} />
-      <Container size="lg" mt="xl" px={0}>
+      <Container size="lg" px={0}>
         <Breadcrumbs mb="md">
           <Link
             href={`/team/${teamIdStr}?tab=folders`}
@@ -1075,7 +1082,7 @@ const TeamFolderPage = () => {
                             onClick={() =>
                               setSigModalData({
                                 shareId: file.shareId,
-                                files: [{ id: file.id, name: file.name }],
+                                files: [signatureFileOf(file)],
                               })
                             }
                           >
@@ -1483,7 +1490,7 @@ const TeamFolderPage = () => {
                                   onClick={() =>
                                     setSigModalData({
                                       shareId: file.shareId,
-                                      files: [{ id: file.id, name: file.name }],
+                                      files: [signatureFileOf(file)],
                                     })
                                   }
                                 >
@@ -1755,7 +1762,7 @@ const TeamFolderPage = () => {
                                 share.isE2EEncrypted && teamKeyB64
                                   ? buildKeyFragment(teamKeyB64)
                                   : "";
-                              const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
+                              const link = `${config.getString("general.appUrl")}/s/${share.id}${keyFragment}`;
                               const ok = await copyToClipboard(link);
                               if (ok)
                                 toast.success(
@@ -1784,7 +1791,7 @@ const TeamFolderPage = () => {
                                 share.isE2EEncrypted && teamKeyB64
                                   ? buildKeyFragment(teamKeyB64)
                                   : "";
-                              const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
+                              const link = `${config.getString("general.appUrl")}/s/${share.id}${keyFragment}`;
                               showQrCodeModal(modals, link);
                             }}
                           >
@@ -1856,7 +1863,7 @@ const TeamFolderPage = () => {
               <Stack gap="xs">
                 {accessRules
                   .filter((rule) =>
-                    team?.members?.some((m: any) => m.id === rule.memberId),
+                    team?.members?.some((m) => m.id === rule.memberId),
                   )
                   .map((rule) => (
                     <Card key={rule.id} withBorder p="sm" radius="sm">
@@ -2056,7 +2063,10 @@ const TeamFolderPage = () => {
                     // Group file access rules by user
                     const byUser = new Map<
                       string,
-                      { user: any; rules: typeof fileAccessRules }
+                      {
+                        user: (typeof fileAccessRules)[number]["user"];
+                        rules: typeof fileAccessRules;
+                      }
                     >();
                     for (const rule of fileAccessRules) {
                       const key = rule.user?.email || rule.memberId;
@@ -2070,7 +2080,7 @@ const TeamFolderPage = () => {
                           <Text size="sm" fw={500} mb={4}>
                             {ruleUser?.username || ruleUser?.email || key}
                           </Text>
-                          {rules.map((r: any) => (
+                          {rules.map((r) => (
                             <Group key={r.id} gap="xs" wrap="wrap" mb={2}>
                               <Text
                                 size="xs"
@@ -2137,11 +2147,11 @@ const TeamFolderPage = () => {
               onChange={setSelectedMemberId}
               data={
                 team?.members
-                  ?.filter((m: any) => m.role === "MEMBER")
+                  ?.filter((m) => m.role === "MEMBER")
                   ?.filter(
-                    (m: any) => !accessRules?.find((r) => r.memberId === m.id),
+                    (m) => !accessRules?.find((r) => r.memberId === m.id),
                   )
-                  ?.map((m: any) => ({
+                  ?.map((m) => ({
                     value: m.id,
                     label: m.user?.username || m.user?.email || m.id,
                   })) || []
@@ -2301,8 +2311,8 @@ const TeamFolderPage = () => {
                     </Text>
                   </Card>
                   {team?.members
-                    ?.filter((m: any) => m.isActive && m.role === "MEMBER")
-                    ?.map((m: any) => {
+                    ?.filter((m) => m.isActive && m.role === "MEMBER")
+                    ?.map((m) => {
                       const hasPerm =
                         filePermMembers[m.id] && filePermMembers[m.id] !== "";
                       const isFileAdmin = filePermMembers[m.id] === "ADMIN";

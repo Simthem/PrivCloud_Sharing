@@ -233,6 +233,7 @@ testCase(
         },
       ],
       [{ fieldId: "city", value: "  Paris " }],
+      "fr",
     );
     assert.deepEqual(
       rows.map(({ fieldId }) => fieldId),

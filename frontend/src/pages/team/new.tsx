@@ -1,3 +1,4 @@
+import type { ThrownError } from "../../types/thrownError.type";
 import { useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
@@ -63,7 +64,7 @@ const NewTeamPage = () => {
       queryClient.invalidateQueries({ queryKey: ["teams.status"] });
       router.push(`/team/${team.id}`);
     },
-    onError: (err: any) => {
+    onError: (err: ThrownError) => {
       const msg =
         err?.response?.data?.message ||
         intl.formatMessage({ id: "team.create.error.generic" });

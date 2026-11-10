@@ -60,7 +60,15 @@ function vault(
         args._max
           ? [{ teamId: TEAM, _max: { issuedAt: new Date() } }]
           : [{ teamId: TEAM, _count: { _all: 3 } }],
-      findMany: async () => [{ teamId: TEAM, manifest }],
+      findMany: async () => [
+        {
+          teamId: TEAM,
+          manifest,
+          contractorEmail: "Contractor@example.test",
+          issuerEmail: "owner@example.test",
+          issuedAt: new Date(),
+        },
+      ],
     },
     team: {
       findUnique: async () => (options.teamExists ? { id: TEAM } : null),
@@ -192,6 +200,9 @@ testCase("teams keep their recorded name once deleted", async () => {
   const [team] = await service.teams("cabinet");
   assert.equal(team.teamName, "Cabinet renommé");
   assert.equal(team.teamExists, true);
+  assert.equal((await service.teams("contractor@example")).length, 1);
+  assert.equal((await service.teams(TEAM)).length, 1);
+  assert.deepEqual(await service.teams("nobody"), []);
   await assert.rejects(
     service.teams("x".repeat(101)),
     (error: HttpException) => error.getStatus() === 400,

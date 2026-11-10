@@ -58,6 +58,11 @@ import {
 } from "../../utils/crypto.util";
 import { sha256Hex } from "../../services/pades-client.service";
 import { saveBlobToDevice } from "../../utils/saveBlob.util";
+import {
+  signedPdfName,
+  signingDay,
+  signingLanguage,
+} from "../../utils/signingLanguage.util";
 
 const readableDangerAlertStyles = {
   root: {
@@ -134,7 +139,19 @@ const SignPage = () => {
     setWebAuthnSupported(browserSupportsWebAuthn());
     const hash = window.location.hash;
     const match = hash.match(/#key=([A-Za-z0-9_-]+)/);
-    if (match) setE2eKey(match[1]);
+    // A confirmation with the identity provider comes back without the
+    // fragment: this tab keeps the key of the link it was opened with.
+    const linkToken =
+      new URLSearchParams(window.location.search).get("token") ??
+      window.location.pathname.split("/").pop();
+    const kept = `signing.link-key:${linkToken}`;
+    try {
+      if (match) sessionStorage.setItem(kept, match[1]);
+      const key = match?.[1] ?? sessionStorage.getItem(kept);
+      if (key) setE2eKey(key);
+    } catch {
+      if (match) setE2eKey(match[1]);
+    }
   }, []);
 
   // Fetch signing page data
@@ -144,7 +161,9 @@ const SignPage = () => {
     error,
     refetch: refetchSigningData,
   } = useQuery({
-    queryKey: ["signing.page", tokenStr],
+    // The answer depends on who is signed in: an address a linked provider
+    // vouches for binds the request to that account.
+    queryKey: ["signing.page", tokenStr, user?.id ?? null],
     queryFn: () => signingService.getSigningPage(tokenStr),
     enabled: !!tokenStr,
     // A removed/expired signing token is a final state, not a transient
@@ -177,6 +196,12 @@ const SignPage = () => {
   const allRequiredFieldsComplete = fillableFields.every(fieldIsComplete);
 
   const isReinforced = signingData?.document.signatureLevel === "REINFORCED";
+  const isAssignedAccount = Boolean(
+    signingData?.recipient.assignedToViewer ||
+    (user?.email &&
+      signingData?.recipient.email &&
+      user.email.toLowerCase() === signingData.recipient.email.toLowerCase()),
+  );
 
   // Keep the document key for the signer's own account, wrapped with its
   // master key, so the signed PDF stays readable from the signatures page
@@ -188,7 +213,7 @@ const SignPage = () => {
       !user ||
       !signingData?.document.isE2EEncrypted ||
       signingData.recipient.hasWrappedE2EKey ||
-      user.email.toLowerCase() !== signingData.recipient.email.toLowerCase() ||
+      !isAssignedAccount ||
       e2eKeyStoredRef.current
     )
       return;
@@ -206,15 +231,10 @@ const SignPage = () => {
         // The signing link keeps working without the stored copy.
       }
     })();
-  }, [e2eKey, user, signingData, tokenStr]);
+  }, [e2eKey, user, signingData, tokenStr, isAssignedAccount]);
   const isEmailVerified = Boolean(signingData?.recipient.emailVerified);
   const hasPendingEmailOtp = Boolean(
     emailOtpSent || signingData?.emailVerificationCodePending,
-  );
-  const isAssignedAccount = Boolean(
-    user?.email &&
-    signingData?.recipient.email &&
-    user.email.toLowerCase() === signingData.recipient.email.toLowerCase(),
   );
   const previewUrl = tokenStr
     ? isReinforced
@@ -243,7 +263,10 @@ const SignPage = () => {
       }
       const saved = await saveBlobToDevice(
         blob,
-        `${signingData.document.fileName.replace(/\.pdf$/i, "")}_signed.pdf`,
+        signedPdfName(
+          signingData.document.fileName,
+          signingLanguage(signingData.document.language),
+        ),
       );
       if (saved) {
         toast.success(
@@ -288,23 +311,19 @@ const SignPage = () => {
     }
   }, [isAssignedAccount, isEmailVerified, isReinforced, signingData, step]);
 
+  const requestLanguage = signingLanguage(signingData?.document.language);
   useEffect(() => {
     if (!signingData?.fields?.length) return;
     setFieldValues((current) => {
       const next = { ...current };
       for (const field of signingData.fields) {
         if (field.type === "DATE" && !next[field.id]) {
-          next[field.id] = new Date().toLocaleDateString("fr-FR", {
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-            timeZone: "Europe/Paris",
-          });
+          next[field.id] = signingDay(new Date(), requestLanguage);
         }
       }
       return next;
     });
-  }, [signingData?.fields]);
+  }, [signingData?.fields, requestLanguage]);
 
   // E2E: fetch encrypted preview, decrypt client-side, create blob URL
   useEffect(() => {
@@ -495,8 +514,14 @@ const SignPage = () => {
     if (invalidField) {
       toast.error(
         invalidField.type === "APPROVAL"
-          ? "La mention obligatoire doit être recopiée exactement."
-          : "Veuillez compléter tous les champs obligatoires.",
+          ? intl.formatMessage({
+              id: "signing.page.field.approval-invalid",
+              defaultMessage: "The required mention must be copied exactly.",
+            })
+          : intl.formatMessage({
+              id: "signing.page.field.required",
+              defaultMessage: "Please complete every required field.",
+            }),
       );
       return;
     }
@@ -586,8 +611,18 @@ const SignPage = () => {
       (!isReinforced || isAssignedAccount);
     return (
       <Container size="sm" mt="xl">
-        <Alert color="green" icon={<TbCheck />} title="Déjà signé">
-          Vous avez déjà signé ce document.
+        <Alert
+          color="green"
+          icon={<TbCheck />}
+          title={intl.formatMessage({
+            id: "signing.page.signed.title",
+            defaultMessage: "Already signed",
+          })}
+        >
+          {intl.formatMessage({
+            id: "signing.page.signed.body",
+            defaultMessage: "You have already signed this document.",
+          })}
         </Alert>
         {canDownloadSigned && (
           <Group justify="center" mt="md">
@@ -609,8 +644,18 @@ const SignPage = () => {
   if (recipient.status === "REJECTED") {
     return (
       <Container size="sm" mt="xl">
-        <Alert color="orange" icon={<TbX />} title="Refusé">
-          Vous avez refusé ce document.
+        <Alert
+          color="orange"
+          icon={<TbX />}
+          title={intl.formatMessage({
+            id: "signing.page.rejected.title",
+            defaultMessage: "Rejected",
+          })}
+        >
+          {intl.formatMessage({
+            id: "signing.page.rejected.body",
+            defaultMessage: "You rejected this document.",
+          })}
         </Alert>
       </Container>
     );
@@ -632,7 +677,15 @@ const SignPage = () => {
               >
                 <Group gap={4}>
                   <TbShieldCheck size={14} />
-                  {isReinforced ? "Signature renforcée" : "Signature standard"}
+                  {isReinforced
+                    ? intl.formatMessage({
+                        id: "signing.page.level.reinforced",
+                        defaultMessage: "Reinforced signature",
+                      })
+                    : intl.formatMessage({
+                        id: "signing.page.level.standard",
+                        defaultMessage: "Standard signature",
+                      })}
                 </Group>
               </Badge>
             </Group>
@@ -769,13 +822,22 @@ const SignPage = () => {
                       color="var(--mantine-color-violet-6)"
                     />
                     <Title order={3} ta="center">
-                      Compte vérifié et passkey requis
+                      {intl.formatMessage({
+                        id: "signing.page.reinforced.title",
+                        defaultMessage: "Verified account and passkey required",
+                      })}
                     </Title>
                     <Text size="sm" c="dimmed" ta="center">
-                      Ce parcours renforcé est réservé au compte PrivCloud
-                      attribué à <strong>{recipient.email}</strong>. La passkey
-                      demandera ensuite la biométrie ou le code local de
-                      l'appareil pour chaque décision.
+                      {intl.formatMessage(
+                        {
+                          id: "signing.page.reinforced.body",
+                          defaultMessage:
+                            "This reinforced flow is reserved for the PrivCloud account assigned to {email}. The passkey will then ask for the device biometrics or local code for each decision.",
+                        },
+                        {
+                          email: <strong key="email">{recipient.email}</strong>,
+                        },
+                      )}
                     </Text>
                   </Stack>
                 </Center>
@@ -783,7 +845,12 @@ const SignPage = () => {
 
               <Alert variant="light" color="violet" icon={<TbShieldCheck />}>
                 <Text size="sm">
-                  <strong>Alignement eIDAS : niveau renforcé</strong>
+                  <strong>
+                    {intl.formatMessage({
+                      id: "signing.page.reinforced.eidas",
+                      defaultMessage: "eIDAS alignment: reinforced level",
+                    })}
+                  </strong>
                   <br />
                   {intl.formatMessage({
                     id: "signing.sign.legal.reinforced-short",
@@ -805,15 +872,24 @@ const SignPage = () => {
                     }}
                   >
                     {!user
-                      ? "Se connecter avec le compte attribué"
-                      : "Changer de compte PrivCloud"}
+                      ? intl.formatMessage({
+                          id: "signing.page.reinforced.sign-in",
+                          defaultMessage: "Sign in with the assigned account",
+                        })
+                      : intl.formatMessage({
+                          id: "signing.page.reinforced.switch",
+                          defaultMessage: "Switch PrivCloud account",
+                        })}
                   </Button>
                 ) : (
                   <Stack align="center" gap="sm">
                     {!webAuthnSupported && (
                       <Alert color="red">
-                        Ce navigateur ne prend pas en charge WebAuthn. Utilisez
-                        un navigateur récent ou une clé de sécurité compatible.
+                        {intl.formatMessage({
+                          id: "signing.page.webauthn.unsupported",
+                          defaultMessage:
+                            "This browser does not support WebAuthn. Use a recent browser or a compatible security key.",
+                        })}
                       </Alert>
                     )}
                     <Button
@@ -824,7 +900,10 @@ const SignPage = () => {
                       loading={registerPasskeyMutation.isPending}
                       disabled={!webAuthnSupported}
                     >
-                      Enregistrer une passkey de signature
+                      {intl.formatMessage({
+                        id: "signing.page.passkey.register",
+                        defaultMessage: "Register a signing passkey",
+                      })}
                     </Button>
                   </Stack>
                 )}
@@ -1007,7 +1086,10 @@ const SignPage = () => {
                       <Stack align="center" gap="xs">
                         <Loader />
                         <Text size="sm" c="dimmed">
-                          Déchiffrement du document...
+                          {intl.formatMessage({
+                            id: "signing.page.decrypting",
+                            defaultMessage: "Decrypting the document...",
+                          })}
                         </Text>
                       </Stack>
                     </Center>
@@ -1018,7 +1100,10 @@ const SignPage = () => {
                       variant="filled"
                       color="blue"
                       icon={<TbLock />}
-                      title="Document chiffré : clé manquante"
+                      title={intl.formatMessage({
+                        id: "signing.page.key-missing.title",
+                        defaultMessage: "Encrypted document: key missing",
+                      })}
                       styles={{
                         root: {
                           backgroundColor: "var(--mantine-color-blue-9)",
@@ -1030,9 +1115,11 @@ const SignPage = () => {
                         icon: { color: "var(--mantine-color-white)" },
                       }}
                     >
-                      Ce document est protégé par chiffrement de bout en bout.
-                      Le lien reçu est incomplet : sa clé de déchiffrement est
-                      absente.
+                      {intl.formatMessage({
+                        id: "signing.page.key-missing.body",
+                        defaultMessage:
+                          "This document is protected by end-to-end encryption. The link you received is incomplete: its decryption key is missing.",
+                      })}
                     </Alert>
                   </Center>
                 ) : tokenStr ? (
@@ -1103,6 +1190,7 @@ const SignPage = () => {
                     <Button
                       size={isMobile ? "md" : "lg"}
                       leftSection={<TbCheck size={20} />}
+                      disabled={sigDoc.isE2EEncrypted && !e2eKey}
                       onClick={() => setReviewConfirmed(true)}
                     >
                       {intl.formatMessage({
@@ -1124,19 +1212,35 @@ const SignPage = () => {
               ) : (
                 <>
                   <Text fw={500} size="lg">
-                    Apposer votre signature
+                    {intl.formatMessage({
+                      id: "signing.page.sign.title",
+                      defaultMessage: "Apply your signature",
+                    })}
                   </Text>
                   <Text size="sm" c="dimmed">
-                    Dessinez, saisissez ou importez votre signature ci-dessous.
+                    {intl.formatMessage({
+                      id: "signing.page.sign.hint",
+                      defaultMessage:
+                        "Draw, type or import your signature below.",
+                    })}
                   </Text>
 
                   {fillableFields.length > 0 && (
                     <Paper withBorder p="md">
                       <Stack gap="sm">
                         <div>
-                          <Text fw={600}>Mentions et champs à compléter</Text>
+                          <Text fw={600}>
+                            {intl.formatMessage({
+                              id: "signing.page.fields.title",
+                              defaultMessage: "Mentions and fields to complete",
+                            })}
+                          </Text>
                           <Text size="xs" c="dimmed">
-                            Ces informations seront ajoutées au PDF signé.
+                            {intl.formatMessage({
+                              id: "signing.page.fields.hint",
+                              defaultMessage:
+                                "This information will be added to the signed PDF.",
+                            })}
                           </Text>
                         </div>
                         {fillableFields.map((field) => {
@@ -1147,10 +1251,20 @@ const SignPage = () => {
                               key={field.id}
                               label={
                                 field.type === "APPROVAL"
-                                  ? "Mention obligatoire"
+                                  ? intl.formatMessage({
+                                      id: "signing.page.fields.approval",
+                                      defaultMessage: "Required mention",
+                                    })
                                   : field.type === "DATE"
-                                    ? "Date"
-                                    : field.label || "Champ texte"
+                                    ? intl.formatMessage({
+                                        id: "signing.page.fields.date",
+                                        defaultMessage: "Date",
+                                      })
+                                    : field.label ||
+                                      intl.formatMessage({
+                                        id: "signing.page.fields.text",
+                                        defaultMessage: "Text field",
+                                      })
                               }
                               description={
                                 exactMentionRequired
@@ -1173,7 +1287,11 @@ const SignPage = () => {
                                 field.label &&
                                 (fieldValues[field.id] || "").trim() &&
                                 !fieldIsComplete(field)
-                                  ? "La mention ne correspond pas au texte attendu."
+                                  ? intl.formatMessage({
+                                      id: "signing.page.fields.approval-mismatch",
+                                      defaultMessage:
+                                        "The mention does not match the expected text.",
+                                    })
                                   : undefined
                               }
                             />
@@ -1226,7 +1344,10 @@ const SignPage = () => {
                       loading={signMutation.isPending}
                       disabled={!signatureImage || !allRequiredFieldsComplete}
                     >
-                      Signer le document
+                      {intl.formatMessage({
+                        id: "signing.page.sign.submit",
+                        defaultMessage: "Sign the document",
+                      })}
                     </Button>
                     <Button
                       variant="light"
@@ -1234,7 +1355,10 @@ const SignPage = () => {
                       size={isMobile ? "md" : "lg"}
                       onClick={() => setRejecting(true)}
                     >
-                      Refuser
+                      {intl.formatMessage({
+                        id: "signing.page.reject",
+                        defaultMessage: "Reject",
+                      })}
                     </Button>
                   </Group>
                   {isReinforced && (
@@ -1261,12 +1385,24 @@ const SignPage = () => {
           {/* Reject form */}
           {step === 2 && rejecting && (
             <Stack gap="md">
-              <Title order={3}>Refuser le document</Title>
+              <Title order={3}>
+                {intl.formatMessage({
+                  id: "signing.page.reject.title",
+                  defaultMessage: "Reject the document",
+                })}
+              </Title>
               <Text size="sm" c="dimmed">
-                Vous pouvez indiquer un motif de refus (optionnel).
+                {intl.formatMessage({
+                  id: "signing.page.reject.hint",
+                  defaultMessage:
+                    "You may give a reason for rejecting (optional).",
+                })}
               </Text>
               <Textarea
-                placeholder="Motif du refus..."
+                placeholder={intl.formatMessage({
+                  id: "signing.page.reject.placeholder",
+                  defaultMessage: "Reason for rejecting...",
+                })}
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.currentTarget.value)}
                 minRows={3}
@@ -1277,10 +1413,16 @@ const SignPage = () => {
                   onClick={() => rejectMutation.mutate()}
                   loading={rejectMutation.isPending}
                 >
-                  Confirmer le refus
+                  {intl.formatMessage({
+                    id: "signing.page.reject.confirm",
+                    defaultMessage: "Confirm rejection",
+                  })}
                 </Button>
                 <Button variant="subtle" onClick={() => setRejecting(false)}>
-                  Annuler
+                  {intl.formatMessage({
+                    id: "signing.page.cancel",
+                    defaultMessage: "Cancel",
+                  })}
                 </Button>
               </Group>
             </Stack>
@@ -1322,7 +1464,11 @@ const SignPage = () => {
                 >
                   <TbShieldCheck size={14} style={{ flexShrink: 0 }} />
                   <Text size="xs" span style={{ lineHeight: 1.3 }}>
-                    Dossier de preuve et empreinte cryptographique enregistrés
+                    {intl.formatMessage({
+                      id: "signing.page.evidence-recorded",
+                      defaultMessage:
+                        "Evidence dossier and cryptographic fingerprint recorded",
+                    })}
                   </Text>
                 </Group>
               </Badge>

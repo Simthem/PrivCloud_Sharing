@@ -16,6 +16,13 @@ import {
   Timespan,
 } from "src/utils/date.util";
 import { parse as yamlParse } from "yaml";
+import {
+  isDecryptMode,
+  isEncryptedSetting,
+  loadConfigKey,
+  openRows,
+  sealValue,
+} from "./config-encryption";
 import type { configVariables } from "../../prisma/seed/config.seed";
 import { YamlConfig } from "../../prisma/seed/config.seed";
 import { CONFIG_FILE } from "src/constants";
@@ -73,6 +80,7 @@ export type ConfigValue<K extends ConfigKey = ConfigKey> =
 export class ConfigService extends EventEmitter {
   yamlConfig?: YamlConfig;
   logger = new Logger(ConfigService.name);
+  private encryptionKey = loadConfigKey();
 
   constructor(
     @Inject("CONFIG_VARIABLES") private configVariables: Config[],
@@ -195,11 +203,12 @@ export class ConfigService extends EventEmitter {
   }
 
   async list() {
-    const fresh = this.isEditAllowed()
+    const rows = this.isEditAllowed()
       ? await this.prisma.config.findMany({
           where: { category: "share", name: { in: CONTENT_V2_SETTING_NAMES } },
         })
       : [];
+    const fresh = openRows(rows, this.encryptionKey);
     const byKey = new Map(
       fresh.map((row) => [`${row.category}.${row.name}`, row]),
     );
@@ -263,6 +272,21 @@ export class ConfigService extends EventEmitter {
     return response;
   }
 
+  private async reloadVariables() {
+    this.configVariables = openRows(
+      await this.prisma.config.findMany(),
+      this.encryptionKey,
+    );
+  }
+
+  private storedValue(category: string, name: string, value: string) {
+    return this.encryptionKey &&
+      !isDecryptMode() &&
+      isEncryptedSetting(category, name)
+      ? sealValue(this.encryptionKey, category, name, value)
+      : value;
+  }
+
   async update(key: string, value: string | number | boolean) {
     if (!this.isEditAllowed())
       throw new BadRequestException(
@@ -301,17 +325,31 @@ export class ConfigService extends EventEmitter {
 
     this.validateConfigVariable(key, value);
 
-    const updatedVariable = await this.prisma.config.update({
-      where: {
-        name_category: {
-          category: key.split(".")[0],
-          name: key.split(".")[1],
-        },
-      },
-      data: { value: value === null ? null : value.toString() },
-    });
+    const [updatedVariable] = openRows(
+      [
+        await this.prisma.config.update({
+          where: {
+            name_category: {
+              category: key.split(".")[0],
+              name: key.split(".")[1],
+            },
+          },
+          data: {
+            value:
+              value === null
+                ? null
+                : this.storedValue(
+                    key.split(".")[0],
+                    key.split(".")[1],
+                    value.toString(),
+                  ),
+          },
+        }),
+      ],
+      this.encryptionKey,
+    );
 
-    this.configVariables = await this.prisma.config.findMany();
+    await this.reloadVariables();
 
     this.emit("update", key, value);
 

@@ -28,9 +28,22 @@ Redirect URL: `https://<your-domain>/api/oauth/callback/google`
 
 Please follow the [official guide](https://docs.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app) to register an application.
 
-> [!IMPORTANT] > **Microsoft Tenant** you set in the admin panel must match the **supported account types** you set in the Microsoft Entra admin center, otherwise the OAuth login will not work. Refer to the [official documentation](https://learn.microsoft.com/en-us/entra/identity-platform/v2-protocols-oidc#find-your-apps-openid-configuration-document-uri) for more details.
+> [!IMPORTANT] > **Microsoft Tenant** set in the admin panel must match the **supported account types** set in the Microsoft Entra admin center, otherwise the OAuth login will not work. Refer to the [official documentation](https://learn.microsoft.com/en-us/entra/identity-platform/v2-protocols-oidc#find-your-apps-openid-configuration-document-uri) for more details.
 
 Redirect URL: `https://<your-domain>/api/oauth/callback/microsoft`
+
+To let another organization sign in with its own Entra ID, set **Microsoft Tenant** to `organizations` and choose a multitenant account type in the app registration. Administrators of that organization may have to grant consent to the application.
+
+In **Token configuration**, add the optional ID token claims `email`, `xms_edov` and `auth_time`. PrivCloud only trusts the email when `xms_edov` confirms the domain owner, otherwise the first sign-in fails with a missing email error. Without `auth_time`, sensitive actions cannot be confirmed with Microsoft.
+
+Microsoft recommends a certificate rather than a client secret in production. Create one, upload its public part under **Certificates & secrets**, and mount a PEM file holding both the private key and the certificate in the container:
+
+```bash
+./scripts/certificates.sh entra-prepare   # then upload the public file it prints
+./scripts/certificates.sh entra-activate  # once Microsoft knows it
+```
+
+Set `MICROSOFT_OAUTH_CERTIFICATE_FILE=/opt/app/backend/data/secrets/entra.pem`. It takes precedence over the client secret, which can then be deleted from the app registration. The private key stays out of the database and of version control. The file is read at each sign-in, so a renewed certificate needs no restart. A warning is logged during the last 30 days of validity.
 
 ### Discord
 

@@ -38,6 +38,9 @@ import {
 import { encryptReverseShareName } from "../../../utils/fileMetadata.util";
 import { contentPolicy } from "../../../utils/contentPolicy.util";
 
+// Absolute ceiling accepted by the API, unlimited accounts included.
+const MAX_REVERSE_SHARE_SIZE = 250_000_000_000;
+
 const showCreateReverseShareModal = (
   modals: ReturnType<typeof useModals>,
   showSendEmailNotificationOption: boolean,
@@ -82,7 +85,10 @@ const Body = ({
     initialValues: {
       linkType: "limited" as "personal" | "limited",
       name: undefined,
-      maxShareSize: planMaxShareSize || 104857600,
+      maxShareSize: Math.min(
+        planMaxShareSize || 104857600,
+        MAX_REVERSE_SHARE_SIZE,
+      ),
       maxUseCount: 1,
       sendEmailNotification: false,
       expiration_num: 1,
@@ -135,10 +141,9 @@ const Body = ({
         if (encryptName && values.name) {
           encryptedName = await encryptReverseShareName(rsKey, values.name);
         }
-      } catch (e) {
+      } catch {
         console.error(
           "Erreur lors de la génération de la clé E2E reverse share",
-          e,
         );
         toast.error(t("account.reverseShares.error.encryption"));
         return;

@@ -54,19 +54,19 @@ type MockResponse = EventEmitter & {
 };
 
 const createMockResponse = (): MockResponse => {
-  const response: MockResponse = Object.assign(new EventEmitter(), {
+  const response = Object.assign(new EventEmitter(), {
     headers: {},
     statusCode: 200,
     ended: false,
-    status(code) {
+    status(this: MockResponse, code: number) {
       this.statusCode = code;
       return this;
     },
-    set(headers) {
+    set(this: MockResponse, headers: Record<string, unknown>) {
       Object.assign(this.headers, headers);
       return this;
     },
-    end() {
+    end(this: MockResponse) {
       this.ended = true;
       return this;
     },

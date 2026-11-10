@@ -6,6 +6,19 @@ _Read this in another language: [Spanish](/docs/CONTRIBUTING.es.md), [English](/
 
 We would love for you to contribute to PrivCloud_Sharing and help make it better! All contributions are welcome, including issues, suggestions, pull requests and more.
 
+## Licensing of contributions
+
+New original contributions intended for the open-source edition should be
+submitted under **AGPL-3.0-only**, or another applicable compatible license
+expressly identified and accepted for the contribution. Do not submit code,
+assets or generated material that you are not permitted to contribute.
+
+Contributors retain their copyrights. A pull request **does not assign rights**
+to the maintainer and **does not automatically authorize** an alternative
+proprietary/commercial license. Any additional rights require an explicit,
+separate agreement with the rights holder. See
+[`LICENSING.md`](./LICENSING.md).
+
 ## Getting started
 
 You've found a bug, have a suggestion or something else, just create an issue on GitHub and we can get in touch.

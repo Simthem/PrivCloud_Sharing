@@ -83,11 +83,9 @@ let _x25519Supported: boolean | null = null;
 export async function isX25519Supported(): Promise<boolean> {
   if (_x25519Supported !== null) return _x25519Supported;
   try {
-    const kp = await crypto.subtle.generateKey(
-      { name: "X25519" } as any,
-      true,
-      ["deriveBits"],
-    );
+    const kp = (await crypto.subtle.generateKey({ name: "X25519" }, true, [
+      "deriveBits",
+    ])) as CryptoKeyPair;
     // Cleanup - we just want to know if it works
     void kp;
     _x25519Supported = true;
@@ -105,11 +103,11 @@ export async function generateX25519KeyPair(): Promise<{
   publicKey: Uint8Array;
   privateKey: Uint8Array;
 }> {
-  const keyPair = await crypto.subtle.generateKey(
-    { name: "X25519" } as any,
+  const keyPair = (await crypto.subtle.generateKey(
+    { name: "X25519" },
     true, // extractable
     ["deriveBits"],
-  );
+  )) as CryptoKeyPair;
 
   const publicKeyRaw = await crypto.subtle.exportKey("raw", keyPair.publicKey);
   const privateKeyRaw = await crypto.subtle.exportKey(
@@ -135,11 +133,10 @@ export async function generateEd25519KeyPair(): Promise<{
   publicKey: Uint8Array;
   privateKey: Uint8Array;
 }> {
-  const keyPair = await crypto.subtle.generateKey(
-    { name: "Ed25519" } as any,
-    true,
-    ["sign", "verify"],
-  );
+  const keyPair = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, [
+    "sign",
+    "verify",
+  ])) as CryptoKeyPair;
 
   const publicKeyRaw = await crypto.subtle.exportKey("raw", keyPair.publicKey);
   const privateKeyRaw = await crypto.subtle.exportKey(
@@ -168,7 +165,7 @@ export async function encryptPrivateKey(
   const ciphertext = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv },
     masterKey,
-    privateKey as any,
+    privateKey as Uint8Array<ArrayBuffer>,
   );
 
   // Concatenate IV + ciphertext
@@ -230,21 +227,21 @@ export async function wrapDEKForRecipient(
   const recipientPK = await crypto.subtle.importKey(
     "raw",
     recipientPKRaw,
-    { name: "X25519" } as any,
+    { name: "X25519" },
     false,
     [],
   );
 
   // Generate ephemeral key pair for this wrap operation
-  const ephemeralKeyPair = await crypto.subtle.generateKey(
-    { name: "X25519" } as any,
+  const ephemeralKeyPair = (await crypto.subtle.generateKey(
+    { name: "X25519" },
     true,
     ["deriveBits"],
-  );
+  )) as CryptoKeyPair;
 
   // ECDH: derive shared secret
   const sharedSecret = await crypto.subtle.deriveBits(
-    { name: "X25519", public: recipientPK } as any,
+    { name: "X25519", public: recipientPK },
     ephemeralKeyPair.privateKey,
     256, // 32 bytes
   );
@@ -276,7 +273,7 @@ export async function wrapDEKForRecipient(
   const encryptedDEK = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: nonce },
     wrappingKey,
-    dek as any,
+    dek as Uint8Array<ArrayBuffer>,
   );
 
   // Export ephemeral public key
@@ -321,7 +318,7 @@ export async function unwrapDEKFromGrant(
   const myPrivateKey = await crypto.subtle.importKey(
     "pkcs8",
     pkcs8,
-    { name: "X25519" } as any,
+    { name: "X25519" },
     false,
     ["deriveBits"],
   );
@@ -331,14 +328,14 @@ export async function unwrapDEKFromGrant(
   const ephemeralPK = await crypto.subtle.importKey(
     "raw",
     ephemeralPKRaw,
-    { name: "X25519" } as any,
+    { name: "X25519" },
     false,
     [],
   );
 
   // ECDH: derive same shared secret
   const sharedSecret = await crypto.subtle.deriveBits(
-    { name: "X25519", public: ephemeralPK } as any,
+    { name: "X25519", public: ephemeralPK },
     myPrivateKey,
     256,
   );
@@ -576,7 +573,7 @@ export const createEnrollmentToken = async (data: {
 export const consumeEnrollmentToken = async (data: {
   token: string;
   publicKey?: string;
-}): Promise<{ purpose: string; teamId: string | null; metadata: any }> => {
+}): Promise<{ purpose: string; teamId: string | null; metadata: unknown }> => {
   return (await api.post("crypto/enrollment/consume", data)).data;
 };
 
@@ -915,20 +912,20 @@ export async function hybridWrapDEK(
   const recipientPK = await crypto.subtle.importKey(
     "raw",
     recipientPKRaw,
-    { name: "X25519" } as any,
+    { name: "X25519" },
     false,
     [],
   );
 
-  const ephemeralKeyPair = await crypto.subtle.generateKey(
-    { name: "X25519" } as any,
+  const ephemeralKeyPair = (await crypto.subtle.generateKey(
+    { name: "X25519" },
     true,
     ["deriveBits"],
-  );
+  )) as CryptoKeyPair;
 
   const ssClassical = new Uint8Array(
     await crypto.subtle.deriveBits(
-      { name: "X25519", public: recipientPK } as any,
+      { name: "X25519", public: recipientPK },
       ephemeralKeyPair.privateKey,
       256,
     ),
@@ -952,7 +949,7 @@ export async function hybridWrapDEK(
   const encryptedDEK = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: nonce },
     wrappingKey,
-    dek as any,
+    dek as Uint8Array<ArrayBuffer>,
   );
 
   const ephemeralPKRaw = await crypto.subtle.exportKey(
@@ -1002,7 +999,7 @@ export async function hybridUnwrapDEK(
   const myPrivateKey = await crypto.subtle.importKey(
     "pkcs8",
     pkcs8,
-    { name: "X25519" } as any,
+    { name: "X25519" },
     false,
     ["deriveBits"],
   );
@@ -1011,14 +1008,14 @@ export async function hybridUnwrapDEK(
   const ephemeralPK = await crypto.subtle.importKey(
     "raw",
     ephemeralPKRaw,
-    { name: "X25519" } as any,
+    { name: "X25519" },
     false,
     [],
   );
 
   const ssClassical = new Uint8Array(
     await crypto.subtle.deriveBits(
-      { name: "X25519", public: ephemeralPK } as any,
+      { name: "X25519", public: ephemeralPK },
       myPrivateKey,
       256,
     ),
@@ -1066,6 +1063,88 @@ export async function initializePQKeys(masterKey: CryptoKey): Promise<{
     publicKey: arrayBufferToBase64Url(pair.publicKey.buffer as ArrayBuffer),
     encryptedPrivateKey: encPrivate,
   });
+}
+
+/** Private keys wrapped by a replaced E2E key can never be opened again. */
+export async function replaceUnreadableIdentityKeys(
+  masterKey: CryptoKey,
+): Promise<void> {
+  const canOpen = (encryptedPrivateKey: string) =>
+    decryptPrivateKey(encryptedPrivateKey, masterKey).then(
+      () => true,
+      () => false,
+    );
+  const encodePublicKey = (publicKey: Uint8Array) =>
+    arrayBufferToBase64Url(publicKey.buffer as ArrayBuffer);
+
+  const [identityKeys, pqKey] = await Promise.all([
+    getMyIdentityKeys(),
+    getMyPQKey(),
+  ]);
+
+  for (const key of identityKeys) {
+    if (await canOpen(key.encryptedPrivateKey)) continue;
+    const pair =
+      key.keyType === "X25519"
+        ? await generateX25519KeyPair()
+        : await generateEd25519KeyPair();
+    await rotateIdentityKey({
+      keyType: key.keyType,
+      publicKey: encodePublicKey(pair.publicKey),
+      encryptedPrivateKey: await encryptPrivateKey(pair.privateKey, masterKey),
+      algorithm: key.algorithm,
+    });
+  }
+
+  if (pqKey && !(await canOpen(pqKey.encryptedPrivateKey))) {
+    const pair = await generateMLKEMKeyPair();
+    await api.put("crypto/identity/pq-keys/rotate", {
+      variant: pqKey.variant,
+      publicKey: encodePublicKey(pair.publicKey),
+      encryptedPrivateKey: await encryptPrivateKey(pair.privateKey, masterKey),
+    });
+  }
+}
+
+/** Wraps the account's own private keys with its new E2E key. */
+export async function rewrapIdentityKeys(
+  oldKey: CryptoKey,
+  newKey: CryptoKey,
+): Promise<void> {
+  const rewrap = async (encryptedPrivateKey: string) =>
+    encryptPrivateKey(
+      await decryptPrivateKey(encryptedPrivateKey, oldKey),
+      newKey,
+    );
+  const [identityKeys, pqKey] = await Promise.all([
+    getMyIdentityKeys(),
+    getMyPQKey(),
+  ]);
+  const keys: { id: string; encryptedPrivateKey: string }[] = [];
+  for (const key of identityKeys) {
+    try {
+      keys.push({
+        id: key.id,
+        encryptedPrivateKey: await rewrap(key.encryptedPrivateKey),
+      });
+    } catch {
+      // Not wrapped by the old key: left for the key repair.
+    }
+  }
+  let pq: { id: string; encryptedPrivateKey: string } | undefined;
+  if (pqKey) {
+    try {
+      pq = {
+        id: pqKey.id,
+        encryptedPrivateKey: await rewrap(pqKey.encryptedPrivateKey),
+      };
+    } catch {
+      // Same as above.
+    }
+  }
+  if (keys.length > 0 || pq) {
+    await api.put("crypto/identity/keys/rewrap", { keys, pqKey: pq });
+  }
 }
 
 // ============================================================
@@ -1146,52 +1225,61 @@ export async function decryptNotificationMetadata(
 
     // Fetch user's identity keys (X25519 private key)
     const identityKeys = await getMyIdentityKeys();
-    const x25519Key = identityKeys.find((k) => k.keyType === "X25519");
-    if (!x25519Key) return null;
+    // Newest first: envelopes written before a rotation use an older key.
+    const x25519Keys = identityKeys
+      .filter((k) => k.keyType === "X25519")
+      .sort((a, b) => (b.version ?? 0) - (a.version ?? 0));
 
-    const x25519SK = await decryptPrivateKey(
-      x25519Key.encryptedPrivateKey,
-      masterKey,
-    );
+    for (const x25519Key of x25519Keys) {
+      try {
+        const x25519SK = await decryptPrivateKey(
+          x25519Key.encryptedPrivateKey,
+          masterKey,
+        );
 
-    let plaintext: Uint8Array;
+        let plaintext: Uint8Array;
 
-    if (
-      envelope.algorithm === "x25519-mlkem768-aes256gcm" &&
-      envelope.kemCiphertext
-    ) {
-      // Hybrid PQ decryption
-      const myPQKey = await getMyPQKey();
-      if (!myPQKey) return null;
+        if (
+          envelope.algorithm === "x25519-mlkem768-aes256gcm" &&
+          envelope.kemCiphertext
+        ) {
+          // Hybrid PQ decryption
+          const myPQKey = await getMyPQKey();
+          if (!myPQKey) return null;
 
-      const mlkemSK = await decryptPrivateKey(
-        myPQKey.encryptedPrivateKey,
-        masterKey,
-      );
+          const mlkemSK = await decryptPrivateKey(
+            myPQKey.encryptedPrivateKey,
+            masterKey,
+          );
 
-      plaintext = await hybridUnwrapDEK(
-        {
-          encryptedFileKey: envelope.ciphertext,
-          ephemeralPublicKey: envelope.ephemeralPublicKey,
-          nonce: envelope.nonce,
-          kemCiphertext: envelope.kemCiphertext,
-        },
-        x25519SK,
-        mlkemSK,
-      );
-    } else {
-      // Classical X25519-only decryption
-      plaintext = await unwrapDEKFromGrant(
-        {
-          encryptedFileKey: envelope.ciphertext,
-          ephemeralPublicKey: envelope.ephemeralPublicKey,
-          nonce: envelope.nonce,
-        },
-        x25519SK,
-      );
+          plaintext = await hybridUnwrapDEK(
+            {
+              encryptedFileKey: envelope.ciphertext,
+              ephemeralPublicKey: envelope.ephemeralPublicKey,
+              nonce: envelope.nonce,
+              kemCiphertext: envelope.kemCiphertext,
+            },
+            x25519SK,
+            mlkemSK,
+          );
+        } else {
+          // Classical X25519-only decryption
+          plaintext = await unwrapDEKFromGrant(
+            {
+              encryptedFileKey: envelope.ciphertext,
+              ephemeralPublicKey: envelope.ephemeralPublicKey,
+              nonce: envelope.nonce,
+            },
+            x25519SK,
+          );
+        }
+
+        return JSON.parse(new TextDecoder().decode(plaintext));
+      } catch {
+        // Try the previous key.
+      }
     }
-
-    return JSON.parse(new TextDecoder().decode(plaintext));
+    return null;
   } catch {
     return null;
   }

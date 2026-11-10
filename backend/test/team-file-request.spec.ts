@@ -13,6 +13,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import {
+  canReadRequestFolder,
   canWriteRequestFolder,
   assertFileRequestUpload,
 } from "src/teamFileRequest/team-file-request-access";
@@ -79,6 +80,26 @@ testCase(
     assert.equal(canWriteRequestFolder(member, []), false);
   },
 );
+
+testCase("a request needs read access, an open folder grants it", () => {
+  assert.equal(canReadRequestFolder(member, []), true);
+  assert.equal(canReadRequestFolder(owner, rules), true);
+  assert.equal(
+    canReadRequestFolder(member, [{ memberId: member.id, permission: "READ" }]),
+    true,
+  );
+  assert.equal(
+    canReadRequestFolder(member, [{ memberId: "other", permission: "READ" }]),
+    false,
+  );
+  for (const permission of ["NONE", "DENY"])
+    assert.equal(
+      canReadRequestFolder(member, [{ memberId: member.id, permission }]),
+      false,
+    );
+  assert.equal(canReadRequestFolder({ ...member, isActive: false }, []), false);
+  assert.equal(canReadRequestFolder(undefined, []), false);
+});
 
 testCase(
   "validates, trims and bounds the subject, note, IDs, recipients and deadline",
@@ -180,6 +201,26 @@ testCase(
         ForbiddenException,
       );
     }
+  },
+);
+
+testCase(
+  "a read-only creator keeps the request open to its recipients",
+  async () => {
+    const row = request();
+    row.folder.team.members = row.folder.team.members.map((m) =>
+      m.userId === "creator" ? { ...m, role: "MEMBER" } : m,
+    );
+    row.folder.accessRules = [
+      ...row.folder.accessRules,
+      { memberId: owner.id, permission: "READ" },
+    ];
+    await assertFileRequestUpload(
+      txFor(row) as never,
+      "request",
+      "recipient",
+      "folder",
+    );
   },
 );
 

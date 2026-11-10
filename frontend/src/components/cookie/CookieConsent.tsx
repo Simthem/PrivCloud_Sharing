@@ -1,4 +1,11 @@
-import { Anchor, Button, Group, Paper, Text } from "@mantine/core";
+import {
+  Anchor,
+  Button,
+  getDefaultZIndex,
+  Group,
+  Paper,
+  Text,
+} from "@mantine/core";
 import { getCookie, setCookie } from "cookies-next";
 import { useEffect, useState } from "react";
 import useConfig from "../../hooks/config.hook";
@@ -12,14 +19,14 @@ const CookieConsent = () => {
   const config = useConfig();
   const t = useTranslate();
 
-  const legalEnabled = config.get("legal.enabled");
+  const legalEnabled = config.getBoolean("legal.enabled");
   const hasPrivacy = !!(
-    config.get("legal.privacyPolicyUrl") ||
-    config.get("legal.privacyPolicyText")
+    config.getString("legal.privacyPolicyUrl") ||
+    config.getString("legal.privacyPolicyText")
   );
   const privacyUrl =
-    (!config.get("legal.privacyPolicyText") &&
-      config.get("legal.privacyPolicyUrl")) ||
+    (!config.getString("legal.privacyPolicyText") &&
+      config.getString("legal.privacyPolicyUrl")) ||
     "/privacy";
 
   useEffect(() => {
@@ -50,7 +57,8 @@ const CookieConsent = () => {
         bottom: 16,
         left: 16,
         right: 16,
-        zIndex: 9999,
+        // Under the modals, so it never hides their actions.
+        zIndex: getDefaultZIndex("modal") - 1,
         maxWidth: 520,
         marginLeft: "auto",
         marginRight: "auto",

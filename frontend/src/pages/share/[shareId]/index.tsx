@@ -1,15 +1,16 @@
-import { Alert, Box, Group, Text, Title } from "@mantine/core";
+import { Alert, Box, Button, Group, Text, Title } from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import { GetServerSidePropsContext } from "next";
 import dayjs from "../../../utils/dayjs";
 import { useEffect, useState } from "react";
 import { FormattedMessage } from "react-intl";
 import { useQuery } from "@tanstack/react-query";
-import { TbLock } from "react-icons/tb";
+import { TbLock, TbSignature } from "react-icons/tb";
 import Meta from "../../../components/Meta";
 import DownloadAllButton from "../../../components/share/DownloadAllButton";
 import FileCardGrid from "../../../components/share/FileCardGrid";
 import FileList from "../../../components/share/FileList";
+import RequestSignatureModal from "../../../components/signing/RequestSignatureModal";
 import showEnterPasswordModal from "../../../components/share/showEnterPasswordModal";
 import useUser from "../../../hooks/user.hook";
 import useDecryptedFileNames from "../../../hooks/useDecryptedFileNames.hook";
@@ -21,6 +22,8 @@ import useConfig from "../../../hooks/config.hook";
 import shareService from "../../../services/share.service";
 import { Share as ShareType } from "../../../types/share.type";
 import { FileMetaData } from "../../../types/File.type";
+import { signatureFileOf } from "../../../utils/fileMetadata.util";
+import { defaultShareTitle } from "../../../utils/shareTitle.util";
 import toast from "../../../utils/toast.util";
 import { byteToHumanSizeString } from "../../../utils/fileSize.util";
 import {
@@ -59,7 +62,7 @@ const Share = ({ shareId }: { shareId: string }) => {
 
   const t = useTranslate();
 
-  const captchaEnabled = config.get("altcha.enabled");
+  const captchaEnabled = config.getBoolean("altcha.enabled");
 
   // -- E2E : résolution de la clé de déchiffrement --
   // Priorité : #key= dans l'URL > K_rs unwrappée (reverse share)
@@ -153,6 +156,18 @@ const Share = ({ shareId }: { shareId: string }) => {
   const filesLoading = isLoading || (fileNamesPending && !!e2eKey);
   // The title and description may be encrypted with the same key.
   const shareInfo = useShareInfo(share, e2eKey);
+  // An unnamed share reads as its first file, never as its id.
+  const defaultTitle = defaultShareTitle(shareFiles, !fileNamesPending);
+  const displayName =
+    shareInfo.name?.trim() ||
+    (defaultTitle
+      ? defaultTitle.others
+        ? t("share.title.withOthers", {
+            name: defaultTitle.name,
+            count: defaultTitle.others,
+          })
+        : defaultTitle.name
+      : t("share.title.untitled"));
 
   const getShareToken = async (password?: string, captchaToken?: string) => {
     await shareService
@@ -170,7 +185,10 @@ const Share = ({ shareId }: { shareId: string }) => {
             t("share.error.visitor-limit-exceeded.description"),
             "go-home",
           );
-        } else if (error == "share_password_required") {
+        } else if (
+          error == "share_password_required" ||
+          error == "wrong_password"
+        ) {
           if (!password) {
             showEnterPasswordModal(modals, getShareToken, captchaEnabled);
           }
@@ -246,6 +264,21 @@ const Share = ({ shareId }: { shareId: string }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [error]);
 
+  // The owner of a personal share, or of the reverse share it came through,
+  // requests signatures here as from the shares lists. Team folder files go
+  // through their folder, where the member permissions apply.
+  const [signatureOpen, setSignatureOpen] = useState(false);
+  const ownsShare = !!user && !share?.teamFolderId && !!share?.ownedByViewer;
+  const signableFiles =
+    ownsShare && !isE2EMissingKey && !filesLoading
+      ? (shareFiles ?? [])
+          .filter(
+            (file) =>
+              !file.metadataUnreadable && /\.pdf$/i.test(file.name || ""),
+          )
+          .map(signatureFileOf)
+      : [];
+
   const shouldShowDownloadAll =
     (shareFiles?.length ?? 0) > 1 ||
     !!shareFiles?.some(
@@ -255,7 +288,7 @@ const Share = ({ shareId }: { shareId: string }) => {
   return (
     <>
       <Meta
-        title={t("share.title", { shareId: shareInfo.name || shareId })}
+        title={t("share.title", { shareId: displayName })}
         description={t("share.description")}
         noIndex
       />
@@ -263,10 +296,10 @@ const Share = ({ shareId }: { shareId: string }) => {
       <Group justify="space-between" mb="lg">
         <Box style={{ maxWidth: "70%" }}>
           <Title order={1} fz="h3">
-            {shareInfo.name || share?.id}
+            {displayName}
           </Title>
           <Text size="sm">{shareInfo.description}</Text>
-          {share?.files?.length > 0 && (
+          {!!share?.files?.length && (
             <Text size="sm" c="dimmed" mt={5}>
               <FormattedMessage
                 id="share.fileCount"
@@ -299,14 +332,26 @@ const Share = ({ shareId }: { shareId: string }) => {
           )}
         </Box>
 
-        {shouldShowDownloadAll && !isE2EMissingKey && !filesLoading && (
-          <DownloadAllButton
-            shareId={shareId}
-            isE2EEncrypted={share?.isE2EEncrypted}
-            e2eKey={e2eKey}
-            files={shareFiles}
-          />
-        )}
+        <Group gap="xs">
+          {signableFiles.length > 0 && (
+            <Button
+              variant="light"
+              color="violet"
+              leftSection={<TbSignature size={16} />}
+              onClick={() => setSignatureOpen(true)}
+            >
+              {t("signing.modal.title")}
+            </Button>
+          )}
+          {shouldShowDownloadAll && !isE2EMissingKey && !filesLoading && (
+            <DownloadAllButton
+              shareId={shareId}
+              isE2EEncrypted={share?.isE2EEncrypted}
+              e2eKey={e2eKey}
+              files={shareFiles}
+            />
+          )}
+        </Group>
       </Group>
 
       {share?.uploadPending && (
@@ -326,6 +371,16 @@ const Share = ({ shareId }: { shareId: string }) => {
           manquante dans l'URL. Veuillez utiliser le lien complet fourni par
           l'expéditeur (avec le fragment #key=...).
         </Alert>
+      )}
+
+      {signatureOpen && share && (
+        <RequestSignatureModal
+          opened={signatureOpen}
+          onClose={() => setSignatureOpen(false)}
+          shareId={share.id}
+          files={signableFiles}
+          encryptionKey={share.isE2EEncrypted ? e2eKey : null}
+        />
       )}
 
       <FileList

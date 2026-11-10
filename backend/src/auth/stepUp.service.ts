@@ -16,7 +16,7 @@ export const STEP_UP_TTL_MS = 2 * 60 * 1000;
 const SCOPE = /^[a-z][a-z.]{2,48}(?::[A-Za-z0-9_-]{1,64})?$/;
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
-export type StepUpMethod = "password" | "oauth" | "passkey";
+export type StepUpMethod = "password" | "oauth" | "passkey" | "email";
 
 const hash = (token: string) =>
   createHash("sha256").update(token, "utf8").digest("hex");
@@ -32,7 +32,7 @@ export class StepUpService {
 
   /** Records a confirmed identity for one operation, and its cookie value. */
   async issue(user: User, scope: string, method: StepUpMethod) {
-    const grant = await this.record(user, scope, method, STEP_UP_TTL_MS);
+    const grant = await this.record(user.id, scope, method, STEP_UP_TTL_MS);
     this.logger.log(
       `User ${user.id} confirmed their identity (${method}) for ${scope}`,
     );
@@ -43,12 +43,12 @@ export class StepUpService {
    * Carries a spent confirmation across a redirect the step-up cookie does
    * not follow, such as a provider sending the browser back to the callback.
    */
-  async handOver(user: User, scope: string, ttlMs: number) {
-    return (await this.record(user, scope, "handover", ttlMs)).value;
+  async handOver(userId: string, scope: string, ttlMs: number) {
+    return (await this.record(userId, scope, "handover", ttlMs)).value;
   }
 
   private async record(
-    user: User,
+    userId: string,
     scope: string,
     method: StepUpMethod | "handover",
     ttlMs: number,
@@ -66,7 +66,7 @@ export class StepUpService {
     await this.prisma.stepUpGrant.create({
       data: {
         tokenHash: hash(value),
-        userId: user.id,
+        userId,
         scope,
         method,
         expiresAt,
@@ -107,6 +107,17 @@ export class StepUpService {
       error: "step_up_required",
       scope,
     });
+  }
+
+  /** Spends a handed-over grant and names the user it was issued to. */
+  async redeem(scope: string, value: unknown) {
+    if (typeof value !== "string" || !TOKEN.test(value)) return null;
+    const grant = await this.prisma.stepUpGrant.findUnique({
+      where: { tokenHash: hash(value) },
+      select: { userId: true },
+    });
+    if (!grant || !(await this.spend(grant.userId, scope, value))) return null;
+    return grant.userId;
   }
 
   /** Spends one confirmation of this user for exactly this operation. */

@@ -1,6 +1,7 @@
 import {
   Alert,
   Anchor,
+  Box,
   Button,
   Center,
   Loader,
@@ -9,6 +10,9 @@ import {
 } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/router";
+import { useEffect } from "react";
+import useConfig from "../../hooks/config.hook";
+import useOAuthProviders from "../../hooks/oauthProviders.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import {
   buildSignInRedirectPath,
@@ -16,6 +20,7 @@ import {
   rememberPostAuthRedirectTarget,
 } from "../../utils/authRedirect.util";
 import { rememberInvitedSignUpEmail } from "../../utils/emailVerification.util";
+import OAuthProviders from "./OAuthProviders";
 
 /**
  * Shown on an invitation page to a signed-out visitor: create the account the
@@ -31,15 +36,33 @@ export default function InvitationAuthChoice({
 }) {
   const t = useTranslate();
   const router = useRouter();
+  const config = useConfig();
   const account = useQuery({
     queryKey: ["invitation-account", queryKey],
     queryFn: loadAccount,
     retry: false,
   });
 
-  const go = (signUp: boolean) => {
-    const here = `${window.location.pathname}${window.location.search}`;
+  const oauthProviders = useOAuthProviders(
+    !!account.data &&
+      (account.data.accountExists ||
+        config.getBoolean("oauth.allowRegistration")),
+  );
+
+  const rememberInvitation = () => {
+    const here = router.asPath.split("#", 1)[0];
     rememberPostAuthRedirectTarget(`${here}${window.location.hash}`);
+    return here;
+  };
+
+  // A provider button leaves the app without going through go().
+  useEffect(() => {
+    if (account.data) rememberInvitation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account.data]);
+
+  const go = (signUp: boolean) => {
+    const here = rememberInvitation();
     if (signUp && account.data) rememberInvitedSignUpEmail(account.data.email);
     void router.push(
       signUp ? buildSignUpRedirectPath(here) : buildSignInRedirectPath(here),
@@ -82,6 +105,9 @@ export default function InvitationAuthChoice({
           {t("invitation.auth.haveAccount")}
         </Anchor>
       )}
+      <Box w="100%">
+        <OAuthProviders providers={oauthProviders} />
+      </Box>
     </Stack>
   );
 }

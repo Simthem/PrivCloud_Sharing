@@ -1,4 +1,11 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import {
+  openAccountSecret,
+  openToken,
+  sealAccountSecret,
+  sealToken,
+  tokenCandidates,
+} from "../config/account-secrets";
 import * as webpush from "web-push";
 import { ConfigService } from "src/config/config.service";
 import { PrismaService } from "src/prisma/prisma.service";
@@ -51,16 +58,36 @@ export class PushService implements OnModuleInit {
     p256dh: string,
     auth: string,
   ) {
-    return this.prisma.pushSubscription.upsert({
-      where: { endpoint },
-      update: { p256dh, auth, userId },
-      create: { endpoint, p256dh, auth, userId },
+    const keys = {
+      p256dh: sealAccountSecret(userId, "p256dh", p256dh),
+      auth: sealAccountSecret(userId, "auth", auth),
+    };
+    const existing = await this.prisma.pushSubscription.findFirst({
+      where: { endpoint: { in: tokenCandidates("pushEndpoint", endpoint) } },
+      select: { id: true },
+    });
+    if (existing) {
+      await this.prisma.pushSubscription.update({
+        where: { id: existing.id },
+        data: { ...keys, userId },
+      });
+      return;
+    }
+    await this.prisma.pushSubscription.create({
+      data: {
+        endpoint: sealToken("pushEndpoint", endpoint),
+        ...keys,
+        userId,
+      },
     });
   }
 
   async unsubscribe(userId: string, endpoint: string) {
     return this.prisma.pushSubscription.deleteMany({
-      where: { endpoint, userId },
+      where: {
+        endpoint: { in: tokenCandidates("pushEndpoint", endpoint) },
+        userId,
+      },
     });
   }
 
@@ -85,8 +112,11 @@ export class PushService implements OnModuleInit {
         try {
           await webpush.sendNotification(
             {
-              endpoint: sub.endpoint,
-              keys: { p256dh: sub.p256dh, auth: sub.auth },
+              endpoint: openToken("pushEndpoint", sub.endpoint),
+              keys: {
+                p256dh: openAccountSecret(userId, "p256dh", sub.p256dh),
+                auth: openAccountSecret(userId, "auth", sub.auth),
+              },
             },
             data,
             {

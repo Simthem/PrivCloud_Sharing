@@ -1,3 +1,5 @@
+import AccountNotificationSettings from "../../components/account/AccountNotificationSettings";
+import { rewrapIdentityKeys } from "../../services/crypto.service";
 import "@mantine/core/styles/Tabs.css";
 import {
   Alert,
@@ -11,7 +13,6 @@ import {
   NumberInput,
   Paper,
   PasswordInput,
-  Radio,
   Stack,
   Tabs,
   Text,
@@ -23,6 +24,12 @@ import { useForm } from "@mantine/form";
 import { yupResolver } from "mantine-form-yup-resolver";
 import { useModals } from "@mantine/modals";
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/router";
+import {
+  finalizePostAuthRedirectPath,
+  getRememberedPostAuthRedirectPath,
+  isTeamRoutePath,
+} from "../../utils/authRedirect.util";
 import {
   TbAuth2Fa,
   TbCopy,
@@ -39,7 +46,6 @@ import * as yup from "yup";
 import Meta from "../../components/Meta";
 import LanguagePicker from "../../components/account/LanguagePicker";
 import EmailChangeSection from "../../components/account/EmailChangeSection";
-import PushNotificationSection from "../../components/account/PushNotificationSection";
 import PasskeysSection, {
   rememberPasskeyReauthIntent,
   takePasskeyReauthIntent,
@@ -78,6 +84,7 @@ import ReencryptModal from "../../components/account/ReencryptModal";
 import CreateTeamModal from "../../components/team/CreateTeamModal";
 import teamService from "../../services/team.service";
 import { combineShards } from "../../utils/sskr.util";
+import type { ThrownError } from "../../types/thrownError.type";
 
 // ---- E2E Encryption Section ----------------------------------------------------------------
 const E2EEncryptionSection = ({
@@ -89,7 +96,9 @@ const E2EEncryptionSection = ({
   const intl = useIntl();
   const { user } = useUser();
 
+  const router = useRouter();
   const [localKey, setLocalKey] = useState<string | null>(null);
+  const [teamReturnPath, setTeamReturnPath] = useState<string | null>(null);
   const [revealKey, setRevealKey] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
   const [importValue, setImportValue] = useState("");
@@ -172,6 +181,11 @@ const E2EEncryptionSection = ({
   const hasLocalKey = !!localKey;
   const autoGenerationDisabled = !!user?.e2eAutoGenerationDisabled;
 
+  useEffect(() => {
+    const path = hasLocalKey ? getRememberedPostAuthRedirectPath() : null;
+    setTeamReturnPath(path && isTeamRoutePath(path) ? path : null);
+  }, [hasLocalKey]);
+
   // --- Generate a new key ---------------------------------------------------------------
   const handleGenerate = async () => {
     setGenerating(true);
@@ -182,6 +196,11 @@ const E2EEncryptionSection = ({
       const hash = await computeKeyHash(key, user!.id);
 
       if (previousKey) {
+        // Identity keys follow first: the new key alone would replace them.
+        await rewrapIdentityKeys(
+          await importKeyFromBase64(previousKey),
+          key,
+        ).catch(() => undefined);
         // Key rotation: save both keys and start re-encryption
         setOldKeyForReencrypt(previousKey);
         setNewKeyForReencrypt(encoded);
@@ -211,7 +230,8 @@ const E2EEncryptionSection = ({
           setShowPasskeyOffer(true);
         }
       }
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       toast.error(
         e?.message ??
           intl.formatMessage({ id: "account.e2e.toast.generateError" }),
@@ -285,10 +305,8 @@ const E2EEncryptionSection = ({
       markKeyBackedUp();
       setShowRecover(false);
       toast.success(intl.formatMessage({ id: "account.e2e.toast.recovered" }));
-    } catch (e: any) {
-      setRecoverError(
-        e?.message ?? intl.formatMessage({ id: "account.e2e.recover.error" }),
-      );
+    } catch {
+      setRecoverError(intl.formatMessage({ id: "account.e2e.recover.error" }));
     } finally {
       setRecoveringShards(false);
     }
@@ -354,7 +372,8 @@ const E2EEncryptionSection = ({
       markKeyBackedUp();
       setImportValue("");
       toast.success(intl.formatMessage({ id: "account.e2e.toast.imported" }));
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       setImportError(
         e?.message ??
           intl.formatMessage({ id: "account.e2e.import.invalidError" }),
@@ -397,7 +416,8 @@ const E2EEncryptionSection = ({
           toast.success(
             intl.formatMessage({ id: "account.e2e.toast.revoked" }),
           );
-        } catch (e: any) {
+        } catch (caughtValue) {
+          const e = caughtValue as ThrownError;
           toast.error(
             e?.message ??
               intl.formatMessage({ id: "account.e2e.toast.revokeError" }),
@@ -509,6 +529,22 @@ const E2EEncryptionSection = ({
       <Text size="sm" c="dimmed" mb="md">
         <FormattedMessage id="account.e2e.description" />
       </Text>
+
+      {teamReturnPath && (
+        <Alert color="teal" icon={<TbKey size={18} />} mb="md">
+          <Text size="sm" mb="xs">
+            <FormattedMessage id="account.e2e.teamReturn.body" />
+          </Text>
+          <Button
+            size="xs"
+            onClick={() =>
+              void router.push(finalizePostAuthRedirectPath(teamReturnPath))
+            }
+          >
+            <FormattedMessage id="account.e2e.teamReturn.button" />
+          </Button>
+        </Alert>
+      )}
 
       {backupReminderVisible && hasLocalKey && (
         <Alert color="yellow" icon={<TbKey size={18} />} mb="md">
@@ -844,6 +880,7 @@ const E2EEncryptionSection = ({
 
 // ---- Main Account page ------------------------------------------------------------------------
 const Account = () => {
+  const intl = useIntl();
   const [oauth, setOAuth] = useState<string[]>([]);
   const [oauthStatus, setOAuthStatus] = useState<Record<
     string,
@@ -969,6 +1006,21 @@ const Account = () => {
         window.location.origin,
       ).toString(),
     );
+  };
+
+  const startOAuthLink = async (provider: string, href: string) => {
+    try {
+      // Refreshes an expired access token before the full-page navigation.
+      await authService.getOAuthStatus();
+    } catch {
+      // Without a fresh session the link route sends the user back here.
+    }
+    // A linked provider signs in to an administrator's account for good: the
+    // server asks to confirm it.
+    if (user?.isAdmin && !(await requestStepUp(`oauth.link:${provider}`))) {
+      return;
+    }
+    window.location.assign(href);
   };
 
   useEffect(() => {
@@ -1104,10 +1156,10 @@ const Account = () => {
                     }
                   >
                     {t.role === "OWNER"
-                      ? "Propriétaire"
+                      ? intl.formatMessage({ id: "team.role.owner" })
                       : t.role === "ADMIN"
-                        ? "Admin"
-                        : "Membre"}
+                        ? intl.formatMessage({ id: "team.role.admin" })
+                        : intl.formatMessage({ id: "team.role.member" })}
                   </Badge>
                 </Group>
               </Paper>
@@ -1300,15 +1352,10 @@ const Account = () => {
                         component="a"
                         href={`${getOAuthUrl(window.location.origin, provider)}?link=1`}
                         onClick={(event) => {
-                          // A linked provider signs in to an administrator's
-                          // account for good: the server asks to confirm it.
-                          if (!user?.isAdmin) return;
                           event.preventDefault();
-                          const href = event.currentTarget.href;
-                          void requestStepUp(`oauth.link:${provider}`).then(
-                            (confirmed) => {
-                              if (confirmed) window.location.assign(href);
-                            },
+                          void startOAuthLink(
+                            provider,
+                            event.currentTarget.href,
                           );
                         }}
                         color="orange"
@@ -1462,47 +1509,7 @@ const Account = () => {
             void startOAuthReauth(provider);
           }}
         />
-        <PushNotificationSection />
-        <Paper withBorder p="xl" mt="lg">
-          <Title order={5} mb="xs">
-            <FormattedMessage id="account.notify.title" />
-          </Title>
-          <Text size="sm" c="dimmed" mb="sm">
-            <FormattedMessage id="account.notify.description" />
-          </Text>
-          <Radio.Group
-            value={user?.notificationMode ?? "DIGEST"}
-            onChange={async (value) => {
-              try {
-                await userService.updateCurrentUser({
-                  notificationMode: value,
-                });
-                await refreshUser();
-                toast.success(t("common.success"));
-              } catch {
-                toast.error(t("common.error"));
-              }
-            }}
-          >
-            <Stack gap="xs">
-              <Radio
-                value="INSTANT"
-                label={t("account.notify.instant.label")}
-                description={t("account.notify.instant.description")}
-              />
-              <Radio
-                value="DIGEST"
-                label={t("account.notify.digest.label")}
-                description={t("account.notify.digest.description")}
-              />
-              <Radio
-                value="WEEKLY"
-                label={t("account.notify.weekly.label")}
-                description={t("account.notify.weekly.description")}
-              />
-            </Stack>
-          </Radio.Group>
-        </Paper>
+        <AccountNotificationSettings />
         <Paper withBorder p="xl" mt="lg">
           <Title order={5} mb="xs">
             <FormattedMessage id="account.card.language.title" />

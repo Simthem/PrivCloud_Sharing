@@ -55,6 +55,7 @@ import {
   getUploadChunkSizeLimit,
   getUploadSchedulingProfile,
 } from "../../utils/uploadPerformance.util";
+import type { ThrownError } from "../../types/thrownError.type";
 
 let errorToastShown = false;
 
@@ -118,7 +119,7 @@ const EditableUpload = ({
     [],
   );
 
-  const chunkSize = useRef(parseInt(config.get("share.chunkSize")));
+  const chunkSize = useRef(config.getNumber("share.chunkSize"));
 
   const [existingFiles, setExistingFiles] =
     useState<Array<FileMetaData & { deleted?: boolean }>>(savedFiles);
@@ -156,7 +157,7 @@ const EditableUpload = ({
   };
 
   const effectiveMaxShareSize =
-    maxShareSize ?? parseInt(config.get("share.maxSize"));
+    maxShareSize ?? config.getNumber("share.maxSize");
 
   const uploadFiles = async (files: FileUpload[]) => {
     const uploadChunkProfile = {
@@ -170,7 +171,7 @@ const EditableUpload = ({
       .catch(
         () =>
           config.get(runtimeUploadProfileKey) ??
-          config.get("runtime.uploadMaxChunkBytes"),
+          config.getNumber("runtime.uploadMaxChunkBytes"),
       );
 
     // E2E: enforce encryption consistency -- if the share is encrypted,
@@ -309,7 +310,8 @@ const EditableUpload = ({
           );
           setFileProgress(100);
           return true;
-        } catch (e: any) {
+        } catch (caughtValue) {
+          const e = caughtValue as ThrownError;
           if (e?.cancelled) {
             setFileProgress(-1);
             return false;
@@ -451,7 +453,8 @@ const EditableUpload = ({
         toast.success(t("share.edit.notify.save-success"));
         router.back();
       }
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       if (e?.message !== "E2E_KEY_MISSING") {
         toast.error(t("share.edit.notify.generic-error"));
       }

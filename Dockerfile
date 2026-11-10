@@ -34,12 +34,25 @@ ENV GOTOOLCHAIN=local
 RUN apk upgrade --no-cache && apk add --no-cache curl git
 WORKDIR /caddy
 # Pin the exact commit behind the reviewed v2.11.4 tag and verify the archive
-# before any source from it is executed by the Go toolchain.
+# before any source from it is executed by the Go toolchain. When GitHub is
+# unavailable, the same tag comes from the Go module proxy, checked against
+# sum.golang.org and the pinned h1 hash.
 RUN CADDY_SOURCE_URL=https://github.com/caddyserver/caddy/archive/e2eee6a7fce366321294c9c2a79f3146891dcbdf.tar.gz && \
-    curl -fsSL "$CADDY_SOURCE_URL" -o /tmp/caddy.tar.gz && \
-    echo '4fc5abefc3f1699e928c6a5bb763da461cbb150d74be7353058c3433363efc9f9932383469664a435bc6c053021b30f1198c643d168e0a4bcf492ee1d1e99dcb  /tmp/caddy.tar.gz' | sha512sum -c - && \
-    tar xzf /tmp/caddy.tar.gz -C . --strip-components=1 && \
-    rm /tmp/caddy.tar.gz
+    CADDY_MODULE=github.com/caddyserver/caddy/v2@v2.11.4 && \
+    CADDY_MODULE_SUM='h1:XKxkMTgNSizEvKG6QHue6cAsFOteU2qA61w2tKkCWi0=' && \
+    if curl -fsSL --retry 2 --retry-all-errors --retry-delay 5 --connect-timeout 20 --max-time 60 "$CADDY_SOURCE_URL" -o /tmp/caddy.tar.gz && \
+       echo '4fc5abefc3f1699e928c6a5bb763da461cbb150d74be7353058c3433363efc9f9932383469664a435bc6c053021b30f1198c643d168e0a4bcf492ee1d1e99dcb  /tmp/caddy.tar.gz' | sha512sum -c -; then \
+      tar xzf /tmp/caddy.tar.gz -C . --strip-components=1; \
+    else \
+      echo "GitHub archive unavailable, using the Go module proxy" && \
+      CADDY_INFO="$(cd /tmp && go mod download -json "$CADDY_MODULE")" && \
+      test "$(printf '%s' "$CADDY_INFO" | sed -n 's/^[[:space:]]*"Sum": "\(.*\)",$/\1/p')" = "$CADDY_MODULE_SUM" && \
+      CADDY_DIR="$(printf '%s' "$CADDY_INFO" | sed -n 's/^[[:space:]]*"Dir": "\(.*\)",$/\1/p')" && \
+      cp -R "$CADDY_DIR"/. . && chmod -R u+w . && \
+      go clean -modcache; \
+    fi && \
+    rm -f /tmp/caddy.tar.gz && \
+    test -f cmd/caddy/main.go && test -f modules/caddyhttp/celmatcher.go
 # Backport the two source changes from upstream Caddy commit b2693fb so the
 # v2.11.4 tag compiles against cel-go 0.29.x. Assertions make this fail closed
 # if the pinned Caddy source no longer matches the reviewed patch.
@@ -69,6 +82,7 @@ RUN test "$(grep -Fc '[]interpreter.Interpretable{reqAttr}' modules/caddyhttp/ce
 #                                     go.opentelemetry.io/otel/propagation@v1.44.0
 # CVE-2026-40898 (CVSS 6.9, MEDIUM) : github.com/quic-go/quic-go/http3@v0.59.1
 # CVE-2026-114437, CVE-2026-118681 : github.com/go-chi/chi/v5 middleware trust/origin validation issues < 5.5.0.
+# CVE-2026-122132 : no fixed chi release yet. RedirectSlashes is not linked and the build fails if it ever is.
 # SNYK-GOLANG-GOOPENTELEMETRYIO* (HIGH x4) : go.opentelemetry.io/otel < 1.43.0
 # SNYK-GOLANG-GITHUBCOMYUINGOLDMARKRENDERERHTML-15838406 (MEDIUM) : goldmark XSS < 1.7.17
 # SNYK-GOLANG-GOLANGORGXCRYPTOSSH* (HIGH x5 + MEDIUM x7) : golang.org/x/crypto/ssh{,/agent} < 0.52.0
@@ -204,6 +218,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/ca
         '=>[[:space:]]+[.]/third_party/go-jose-v3[[:space:]]+[(]devel[)]' \
     && go version -m /usr/bin/caddy | grep -Eq \
         'dep[[:space:]]+github[.]com/klauspost/compress[[:space:]]+v1[.]20[.]3' \
+    && ! grep -q 'go-chi/chi/v5/middleware[.]RedirectSlashes' /usr/bin/caddy \
     && go clean -cache -modcache
 
 # ---------------------------
@@ -341,6 +356,7 @@ FROM base AS frontend-deps
 WORKDIR /opt/app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 COPY frontend/vendor ./vendor
+COPY scripts/patch-fflate.cjs /opt/app/scripts/patch-fflate.cjs
 
 RUN npm ci
 
@@ -352,6 +368,8 @@ WORKDIR /opt/app/frontend
 COPY --from=frontend-deps /opt/app/frontend/node_modules ./node_modules
 COPY global-agent-bootstrap.js ./global-agent-bootstrap.js
 COPY frontend/ ./
+COPY scripts/patch-fflate.cjs /opt/app/scripts/patch-fflate.cjs
+RUN node /opt/app/scripts/patch-fflate.cjs
 
 # Public verification prebuild inputs only. Do not copy private evidence or keys.
 COPY scripts/build-public-verification.mjs /opt/app/scripts/build-public-verification.mjs
@@ -426,6 +444,8 @@ RUN echo 'module.exports=require("picomatch");' > node_modules/next/dist/compile
 ENV NODE_OPTIONS="--require ./global-agent-bootstrap.js"
 ENV NEXT_TELEMETRY_DISABLED=1
 
+COPY scripts/build-third-party-notices.mjs /opt/app/scripts/build-third-party-notices.mjs
+RUN node /opt/app/scripts/build-third-party-notices.mjs
 RUN npm run build
 
 # Post-build: éradiquer picomatch 4.0.3 du standalone output.
@@ -659,6 +679,8 @@ WORKDIR /opt/app
 COPY --chown=1000:1000 --from=caddyfile-patcher /opt/app/reverse-proxy /opt/app/reverse-proxy
 COPY --chown=1000:1000 ./scripts/docker/entrypoint.mjs ./scripts/docker/entrypoint.mjs
 COPY --chown=1000:1000 ./scripts/docker/backend-node-options.cjs ./scripts/docker/backend-node-options.cjs
+COPY --chown=1000:1000 LICENSE LICENSING.md COMMERCIAL_LICENSING.md ./
+COPY --chown=1000:1000 LICENSES/ ./LICENSES/
 
 EXPOSE 3000
 

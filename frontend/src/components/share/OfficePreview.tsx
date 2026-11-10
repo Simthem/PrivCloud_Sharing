@@ -338,6 +338,7 @@ export default function OfficePreview({
     fr = intl.locale.startsWith("fr");
   const [document, setDocument] = useState<OfficeDocument | null>(null);
   const [page, setPage] = useState<OfficePage | null>(null);
+  const [pageIndex, setPageIndex] = useState(0);
   const [index, setIndex] = useState(0);
   const [zoom, setZoom] = useState("fit");
   useEffect(() => {
@@ -371,11 +372,12 @@ export default function OfficePreview({
   useEffect(() => {
     if (!document) return;
     const controller = new AbortController();
-    setPage(null);
     document
       .load(index, controller.signal)
       .then((next) => {
-        if (!controller.signal.aborted) setPage(next);
+        if (controller.signal.aborted) return;
+        setPage(next);
+        setPageIndex(index);
       })
       .catch(() => {
         if (!controller.signal.aborted) onError();
@@ -462,13 +464,28 @@ export default function OfficePreview({
         </Alert>
       )}
       {page ? (
-        <PageViewport
-          key={index}
-          page={page}
-          document={document}
-          zoom={zoom}
-          fr={fr}
-        />
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            flexDirection: "column",
+            flex: "1 1 auto",
+            minHeight: 0,
+          }}
+        >
+          <PageViewport
+            key={pageIndex}
+            page={page}
+            document={document}
+            zoom={zoom}
+            fr={fr}
+          />
+          {pageIndex !== index && (
+            <Center style={{ position: "absolute", inset: 0 }}>
+              <Loader />
+            </Center>
+          )}
+        </div>
       ) : (
         <Center mih={200}>
           <Loader />

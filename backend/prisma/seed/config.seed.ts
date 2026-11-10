@@ -199,6 +199,24 @@ export const configVariables = {
       defaultValue:
         "Hey!\n\nYou requested a password reset. Click this link to reset your password: {url}\nThe link expires in an hour.\n\nPrivCloud_Sharing 🔒",
     },
+    oauthLinkSubject: {
+      type: "string",
+      defaultValue: "Confirm your PrivCloud account link",
+    },
+    oauthLinkSubjectTranslation: {
+      type: "string",
+      defaultValue: "Confirmez la liaison de votre compte PrivCloud",
+    },
+    oauthLinkMessage: {
+      type: "text",
+      defaultValue:
+        "Hello,\n\nA {provider} sign-in is asking to join your PrivCloud account.\n\nTo confirm, open this link (valid for 30 minutes):\n{url}\n\nIf you did not request this, ignore this message.",
+    },
+    oauthLinkMessageTranslation: {
+      type: "text",
+      defaultValue:
+        "Bonjour,\n\nUne connexion {provider} demande à rejoindre votre compte PrivCloud.\n\nPour confirmer, ouvrez ce lien (valable 30 minutes) :\n{url}\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez ce message.",
+    },
     inviteSubject: {
       type: "string",
       defaultValue: "PrivCloud_Sharing invite",
@@ -243,6 +261,70 @@ export const configVariables = {
       type: "text",
       defaultValue:
         "Hello,\n\nYou received a new encrypted share in {teamName}.\n\nSign in to access it: {appUrl}\n\nPrivCloud_Sharing",
+    },
+    shareRecipientsSubjectTranslation: {
+      type: "string",
+      defaultValue: "",
+    },
+    shareRecipientsMessageTranslation: {
+      type: "text",
+      defaultValue: "",
+    },
+    reverseShareSubjectTranslation: {
+      type: "string",
+      defaultValue: "",
+    },
+    reverseShareMessageTranslation: {
+      type: "text",
+      defaultValue: "",
+    },
+    resetPasswordSubjectTranslation: {
+      type: "string",
+      defaultValue: "",
+    },
+    resetPasswordMessageTranslation: {
+      type: "text",
+      defaultValue: "",
+    },
+    inviteSubjectTranslation: {
+      type: "string",
+      defaultValue: "",
+    },
+    inviteMessageTranslation: {
+      type: "text",
+      defaultValue: "",
+    },
+    downloadNotificationSubjectTranslation: {
+      type: "string",
+      defaultValue: "",
+    },
+    downloadNotificationMessageTranslation: {
+      type: "text",
+      defaultValue: "",
+    },
+    downloadDigestSubjectTranslation: {
+      type: "string",
+      defaultValue: "",
+    },
+    downloadDigestMessageTranslation: {
+      type: "text",
+      defaultValue: "",
+    },
+    downloadWeeklySubjectTranslation: {
+      type: "string",
+      defaultValue: "",
+    },
+    downloadWeeklyMessageTranslation: {
+      type: "text",
+      defaultValue: "",
+    },
+    teamShareNotificationSubjectTranslation: {
+      type: "string",
+      defaultValue: "",
+    },
+    teamShareNotificationMessageTranslation: {
+      type: "text",
+      defaultValue: "",
     },
   },
   smtp: {
@@ -353,6 +435,7 @@ export const configVariables = {
     allowRegistration: {
       type: "boolean",
       defaultValue: "true",
+      secret: false,
     },
     ignoreTotp: {
       type: "boolean",
@@ -525,7 +608,7 @@ export const configVariables = {
         "This instance is hosted on a dedicated infrastructure located in the European Union, " +
         "managed in compliance with EU data protection regulations.\n\n" +
         "## Intellectual Property\n\n" +
-        "PrivCloud\\_Sharing is an open-source project released under the BSD 2-Clause license. " +
+        "PrivCloud\\_Sharing is an open-source project distributed under AGPL-3.0-only for the combined application, with retained BSD and other third-party license notices. " +
         "The source code is available at [github.com/Simthem/PrivCloud\\_Sharing](https://github.com/Simthem/PrivCloud_Sharing). " +
         "Review branding and logo rights before publishing a public instance.\n\n" +
         "## Hosting Provider\n\n" +
@@ -874,9 +957,14 @@ async function migrateConfigVariables() {
   const existingConfigVariables = await prisma.config.findMany();
   const orderMap: { [category: string]: number } = {};
 
+  const seedCategories: Record<
+    string,
+    Record<string, object>
+  > = configVariables;
+
   for (const existingConfigVariable of existingConfigVariables) {
     const configVariable =
-      configVariables[existingConfigVariable.category]?.[
+      seedCategories[existingConfigVariable.category]?.[
         existingConfigVariable.name
       ];
 
@@ -894,7 +982,7 @@ async function migrateConfigVariables() {
       // Update the config variable if it exists in the seed
     } else {
       const variableOrder = Object.keys(
-        configVariables[existingConfigVariable.category],
+        seedCategories[existingConfigVariable.category],
       ).indexOf(existingConfigVariable.name);
       await prisma.config.update({
         where: {

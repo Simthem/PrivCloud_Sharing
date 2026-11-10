@@ -395,6 +395,7 @@ testCase(
   "the stored security state is salted and follows credentials",
   async () => {
     const account = {
+      id: "user-1",
       password: fixtureCredentials.passwordHash,
       ldapDN: null,
       totpEnabled: true,

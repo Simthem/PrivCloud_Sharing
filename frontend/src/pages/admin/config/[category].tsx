@@ -82,7 +82,7 @@ export default function AppShellDemo() {
 
   const updateConfigVariable = (configVariable: UpdateConfig) => {
     if (configVariable.key === "general.appUrl") {
-      configVariable.value = sanitizeUrl(configVariable.value);
+      configVariable.value = sanitizeUrl(String(configVariable.value));
     }
 
     setConfigVariables((currentConfigVariables) =>

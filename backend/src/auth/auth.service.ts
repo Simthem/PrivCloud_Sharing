@@ -1,3 +1,4 @@
+import { accountEmailExists } from "src/user/account-email.util";
 import {
   BadRequestException,
   ForbiddenException,
@@ -21,6 +22,11 @@ import { EmailVerificationService } from "src/emailVerification/emailVerificatio
 import { assertEmailVerificationAccess } from "src/emailVerification/emailVerification.util";
 import { PrismaService } from "src/prisma/prisma.service";
 import { createUserUniqueConflictResponse } from "src/prisma/prisma-error.util";
+import {
+  openAccountSecret,
+  sealAccountSecret,
+  verifiedEmailFold,
+} from "../config/account-secrets";
 import { OAuthService } from "../oauth/oauth.service";
 import { GenericOidcProvider } from "../oauth/provider/genericOidc.provider";
 import { UserSevice } from "../user/user.service";
@@ -67,19 +73,40 @@ export class AuthService {
   ) {}
   private readonly logger = new Logger(AuthService.name);
 
+  /** One person, one account: an address linked elsewhere is taken too. */
+  private async assertAddressAvailable(email: string) {
+    const [account, link] = await Promise.all([
+      accountEmailExists(this.prisma, email),
+      this.prisma.oAuthUser.findFirst({
+        where: { verifiedEmailFold: verifiedEmailFold(email) },
+        select: { id: true },
+      }),
+    ]);
+    if (account || link) {
+      throw new BadRequestException({
+        code: "user_unique_conflict",
+        field: "email",
+        message: "A user with this email already exists",
+      });
+    }
+  }
+
   async signUp(
     dto: AuthRegisterDTO,
     _ip: string,
     isAdmin?: boolean,
     emailAlreadyVerified = false,
+    withoutVerificationDeadline = false,
   ) {
     // An instance with no SMTP can never deliver the link. Refusing every
     // registration there would be worse than not verifying: the account is
     // created already verified, exactly like those predating this feature.
     const verificationRequired =
       !emailAlreadyVerified &&
+      !withoutVerificationDeadline &&
       this.emailVerificationService.isDeliveryAvailable();
     const verificationRequiredAt = new Date();
+    await this.assertAddressAvailable(dto.email);
     const hash = dto.password ? await argon.hash(dto.password) : null;
     try {
       let releaseQueue!: () => void;
@@ -91,9 +118,7 @@ export class AuthService {
 
       let user: User;
       try {
-        // The public distribution uses SQLite and a single backend process.
-        // Serialize bootstrap registrations in-process so only one request can
-        // observe an empty user table and receive administrator privileges.
+        // Serialize first-user creation within the SQLite writer.
         user = await this.prisma.$transaction(async (transaction) => {
           const isFirstUser = (await transaction.user.count()) === 0;
           const createdUser = await transaction.user.create({
@@ -102,10 +127,13 @@ export class AuthService {
               username: dto.username,
               password: hash,
               isAdmin: isAdmin ?? isFirstUser,
-              emailVerificationRequiredAt: verificationRequiredAt,
-              emailVerifiedAt: verificationRequired
+              emailVerificationRequiredAt: withoutVerificationDeadline
                 ? null
                 : verificationRequiredAt,
+              emailVerifiedAt:
+                verificationRequired || withoutVerificationDeadline
+                  ? null
+                  : verificationRequiredAt,
             },
           });
           if (verificationRequired) {
@@ -130,8 +158,13 @@ export class AuthService {
       const accessToken = await this.createAccessToken(user, refreshTokenId);
 
       this.logger.log(`User ${user.id} signed up`);
-      // SECURITY: Strip sensitive fields before returning
-      const { password: _pw, ...safeUser } = user;
+      const {
+        password: _pw,
+        totpSecret: _totp,
+        emailFold: _fold,
+        encryptionKeyHash: _keyHash,
+        ...safeUser
+      } = user;
       return { accessToken, refreshToken, user: safeUser };
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
@@ -633,19 +666,21 @@ export class AuthService {
       return;
     }
 
-    const oauthIDToken = await this.prisma.refreshToken
+    const signedOut = await this.prisma.refreshToken
       .findFirst({
         select: { oauthIDToken: true, userId: true },
         where: { id: refreshTokenId },
       })
       .then((refreshToken) => {
         this.logger.debug(`Sign out for user ${refreshToken?.userId} `);
-        return refreshToken?.oauthIDToken;
+        return refreshToken;
       })
-      .catch((e) => {
+      .catch((e): null => {
         // Ignore error if refresh token doesn't exist
         if (e.code != "P2025") throw e;
+        return null;
       });
+    const oauthIDToken = signedOut?.oauthIDToken;
     await this.prisma.refreshToken
       .delete({ where: { id: refreshTokenId } })
       .catch((e) => {
@@ -654,7 +689,11 @@ export class AuthService {
       });
 
     if (typeof oauthIDToken === "string") {
-      const [providerName, idTokenHint] = oauthIDToken.split(":");
+      const [providerName, idTokenHint] = openAccountSecret(
+        signedOut.userId,
+        "oauthIDToken",
+        oauthIDToken,
+      ).split(":");
       const provider = this.oAuthService.availableProviders()[providerName];
       let signOutFromProviderSupportedAndActivated = false;
       try {
@@ -763,7 +802,12 @@ export class AuthService {
           await this.createRefreshTokenWithClient(
             tx,
             current.user.id,
-            current.oauthIDToken,
+            current.oauthIDToken &&
+              openAccountSecret(
+                current.user.id,
+                "oauthIDToken",
+                current.oauthIDToken,
+              ),
           );
         const accessToken = await this.createAccessToken(
           current.user,
@@ -862,7 +906,8 @@ export class AuthService {
         expiresAt: moment()
           .add(sessionDuration.value, sessionDuration.unit)
           .toDate(),
-        oauthIDToken: idToken,
+        oauthIDToken:
+          idToken && sealAccountSecret(userId, "oauthIDToken", idToken),
       },
     });
 

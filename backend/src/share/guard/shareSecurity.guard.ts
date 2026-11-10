@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Request } from "express";
-import moment from "moment";
+import { isShareExpired } from "../share-expiration.util";
 import { PrismaService } from "src/prisma/prisma.service";
 import { ShareService } from "src/share/share.service";
 import { ConfigService } from "src/config/config.service";
@@ -50,10 +50,7 @@ export class ShareSecurityGuard extends JwtGuard {
       throw new NotFoundException("Share not found");
     }
 
-    if (
-      moment().isAfter(share.expiration) &&
-      !moment(share.expiration).isSame(0)
-    ) {
+    if (isShareExpired(share.expiration)) {
       throw new NotFoundException("Share not found");
     }
 

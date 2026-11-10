@@ -10,6 +10,8 @@ type User = {
   /** True after the user explicitly deletes their E2E key. */
   e2eAutoGenerationDisabled?: boolean;
   notificationMode: string;
+  signaturePushEnabled?: boolean;
+  signaturePushEligible?: boolean;
   createdAt?: string;
   emailVerificationRequired: boolean;
   emailVerified: boolean;
@@ -18,6 +20,8 @@ type User = {
   /** When the address was proven, and how: EMAIL_LINK or ADMINISTRATOR. */
   emailVerifiedAt?: string | null;
   emailVerificationSource?: string | null;
+  /** Teams this account has joined, on the administrators' list only. */
+  teams?: { name: string; role: string }[];
   hasTeamMembership?: boolean;
   hasExternalAccess?: boolean;
   teamId?: string | null;
@@ -49,6 +53,7 @@ export type UpdateCurrentUser = {
   username?: string;
   email?: string;
   notificationMode?: string;
+  signaturePushEnabled?: boolean;
 };
 
 export type CurrentUser = User & {};

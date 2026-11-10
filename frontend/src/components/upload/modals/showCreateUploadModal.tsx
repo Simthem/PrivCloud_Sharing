@@ -569,7 +569,7 @@ const CreateUploadModalBody = ({
                       color: "var(--mantine-color-gray-6)",
                     }}
                   >
-                    {`${config.get("general.appUrl")}/s/${form.values.link}`}
+                    {`${config.getString("general.appUrl")}/s/${form.values.link}`}
                   </Text>
                 </Stack>
               </Accordion.Panel>

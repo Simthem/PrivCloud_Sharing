@@ -4,6 +4,14 @@ import {
   readRotationMetadataUpdates,
   RotationMetadataUpdate,
 } from "./team-rotation-metadata.util";
+import { randomUUID } from "crypto";
+import { byName, topCounts } from "../utils/sort.util";
+import {
+  findByToken,
+  openAccountSecret,
+  openToken,
+  sealToken,
+} from "../config/account-secrets";
 import {
   isValidEncryptedMetadata,
   isValidEncryptedShareInfo,
@@ -353,7 +361,8 @@ export class TeamService {
         keyStatus,
       };
     });
-    return serialized;
+    // The folder ceiling of this deployment, which the dashboard displays.
+    return { ...serialized, maxFolders: TEAM_MAX_FOLDERS };
   }
 
   async getMyTeams(userId: string) {
@@ -616,14 +625,6 @@ export class TeamService {
       );
     }
 
-    // Check if already invited
-    const existingInvite = await this.prisma.teamInvitation.findUnique({
-      where: { email_teamId: { email, teamId } },
-    });
-    if (existingInvite && existingInvite.status === "PENDING") {
-      throw new BadRequestException("This person has already been invited");
-    }
-
     // Check if already a member
     const existingUser = await this.prisma.user.findUnique({
       where: { email },
@@ -645,6 +646,7 @@ export class TeamService {
       const createdInvitation = await transaction.teamInvitation.upsert({
         where: { email_teamId: { email, teamId } },
         create: {
+          token: sealToken("invitation", randomUUID()),
           email,
           role: dto.role || "MEMBER",
           teamId,
@@ -659,7 +661,12 @@ export class TeamService {
         },
       });
       if (canSendEmail) {
-        const inviteUrl = `${baseUrl}/team/invite/${createdInvitation.token}`;
+        const invitationToken = openToken(
+          "invitation",
+          createdInvitation.token,
+        );
+        const inviteUrl = `${baseUrl}/team/invite/${invitationToken}`;
+        const englishInviteUrl = `${baseUrl}/en/team/invite/${invitationToken}`;
         await this.emailOutbox.enqueue(
           transaction,
           {
@@ -670,6 +677,12 @@ export class TeamService {
               "You have been invited to join a team on PrivCloud Sharing.\n\n" +
               `Role: ${dto.role || "MEMBER"}\n\n` +
               `Open this link to accept the invitation:\n${inviteUrl}\n\n` +
+              `This invitation expires in 7 days.\n\n` +
+              `---\n\n` +
+              `Hello,\n\n` +
+              "You have been invited to join a team on PrivCloud Sharing.\n\n" +
+              `Role: ${dto.role || "Member"}\n\n` +
+              `To accept the invitation, click here:\n${englishInviteUrl}\n\n` +
               `This invitation expires in 7 days.\n\n` +
               `-- \nPrivCloud Sharing`,
           },
@@ -698,7 +711,39 @@ export class TeamService {
       fileName: email,
     });
 
-    return { invited: true, email, invitationToken: invitation.token };
+    return {
+      invited: true,
+      email,
+      invitationToken: openToken("invitation", invitation.token),
+    };
+  }
+
+  async getPendingInvitations(teamId: string, userId: string) {
+    await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
+    return this.prisma.teamInvitation.findMany({
+      where: { teamId, status: "PENDING", expiresAt: { gt: new Date() } },
+      select: { id: true, email: true, role: true, expiresAt: true },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  async revokeInvitation(teamId: string, invitationId: string, userId: string) {
+    await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
+
+    const invitation = await this.prisma.teamInvitation.findFirst({
+      where: { id: invitationId, teamId, status: "PENDING" },
+    });
+    if (!invitation) throw new NotFoundException("Invitation not found");
+
+    await this.prisma.teamInvitation.delete({ where: { id: invitation.id } });
+
+    const actor = await this.prisma.user.findUnique({ where: { id: userId } });
+    void this.logAccess(teamId, "MEMBER_REMOVE", actor?.email || "unknown", {
+      actorName: actor?.username,
+      fileName: `${invitation.email} (invitation revoked)`,
+    });
+
+    return { revoked: true };
   }
 
   /**
@@ -706,10 +751,12 @@ export class TeamService {
    * create an account. Only the bearer of the unguessable token learns it.
    */
   async getInvitationAccount(token: string) {
-    const invitation = await this.prisma.teamInvitation.findUnique({
-      where: { token },
-      select: { email: true, status: true, expiresAt: true },
-    });
+    const invitation = await findByToken("invitation", token, (stored) =>
+      this.prisma.teamInvitation.findUnique({
+        where: { token: stored },
+        select: { email: true, status: true, expiresAt: true },
+      }),
+    );
     if (
       !invitation ||
       invitation.status !== "PENDING" ||
@@ -729,6 +776,20 @@ export class TeamService {
    * also become a member: the admin revokes the seat first, so one account
    * never has both the preview-only access and the team key.
    */
+  /** The account's address, or one a linked provider vouches for. */
+  private async ownsAddress(user: User, email: string) {
+    const address = email.toLowerCase();
+    if (user.email.toLowerCase() === address) return true;
+    const links = await this.prisma.oAuthUser.findMany({
+      where: { userId: user.id, verifiedEmail: { not: null } },
+      select: { userId: true, verifiedEmail: true },
+    });
+    return links.some(
+      ({ verifiedEmail }) =>
+        openAccountSecret(user.id, "verifiedEmail", verifiedEmail) === address,
+    );
+  }
+
   private async assertNotExternalContractor(
     teamId: string,
     email: string,
@@ -761,10 +822,12 @@ export class TeamService {
       this.validateWrappedTeamKey(wrappedTeamKey, "wrappedTeamKey");
     }
 
-    const invitation = await this.prisma.teamInvitation.findUnique({
-      where: { token },
-      include: { team: true },
-    });
+    const invitation = await findByToken("invitation", token, (stored) =>
+      this.prisma.teamInvitation.findUnique({
+        where: { token: stored },
+        include: { team: true },
+      }),
+    );
 
     if (!invitation) throw new NotFoundException("Invalid invitation");
     if (invitation.status !== "PENDING") {
@@ -802,9 +865,10 @@ export class TeamService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException("User not found");
 
-    if (user.email.toLowerCase() !== invitation.email.toLowerCase()) {
+    if (!(await this.ownsAddress(user, invitation.email))) {
       throw new ForbiddenException(
         "This invitation was sent to a different email address",
+        "invitation_email_mismatch",
       );
     }
     // The contractor seat may have been granted after this invitation.
@@ -813,6 +877,7 @@ export class TeamService {
       user.email.toLowerCase(),
       user.id,
     );
+    await this.assertNotExternalContractor(invitation.teamId, invitation.email);
 
     // Create or reactivate membership
     await this.prisma.teamMember.upsert({
@@ -1038,6 +1103,9 @@ export class TeamService {
       encryptedMetadata?: string;
       cryptoScheme?: number | null;
       wrappedShareKey?: string | null;
+      // Received through the user's reverse share: K_rs, wrapped by K_master.
+      received?: boolean;
+      encryptedReverseShareKey?: string | null;
     }[] = [];
 
     for (const membership of memberships) {
@@ -1210,15 +1278,22 @@ export class TeamService {
       }
     }
 
-    // Then the user's own shares, outside any team folder.
+    // Then the user's own shares, outside any team folder, and the shares
+    // received through the user's reverse shares.
     const personalShares = await this.prisma.share.findMany({
       where: {
-        creatorId: userId,
-        teamFolderId: null,
-        uploadLocked: true,
         OR: [
-          { expiration: { gt: new Date() } },
-          { expiration: { lt: NEVER_EXPIRES_CUTOFF_DATE } },
+          { creatorId: userId, teamFolderId: null },
+          { reverseShare: { creatorId: userId } },
+        ],
+        uploadLocked: true,
+        AND: [
+          {
+            OR: [
+              { expiration: { gt: new Date() } },
+              { expiration: { lt: NEVER_EXPIRES_CUTOFF_DATE } },
+            ],
+          },
         ],
       },
       orderBy: { createdAt: "desc" },
@@ -1227,6 +1302,9 @@ export class TeamService {
         isE2EEncrypted: true,
         cryptoScheme: true,
         wrappedShareKey: true,
+        reverseShare: {
+          select: { creatorId: true, encryptedReverseShareKey: true },
+        },
         files: {
           select: {
             id: true,
@@ -1238,9 +1316,18 @@ export class TeamService {
       },
     });
     for (const share of personalShares) {
+      const received =
+        share.reverseShare?.creatorId === userId
+          ? {
+              received: true,
+              encryptedReverseShareKey:
+                share.reverseShare.encryptedReverseShareKey,
+            }
+          : {};
       for (const file of share.files) {
         if (file.metadataScheme === FILE_META_V1 && file.encryptedMetadata) {
           results.push({
+            ...received,
             teamId: null,
             teamName: null,
             folderId: null,
@@ -1258,6 +1345,7 @@ export class TeamService {
         }
         if (!file.name.toLowerCase().endsWith(".pdf")) continue;
         results.push({
+          ...received,
           teamId: null,
           teamName: null,
           folderId: null,
@@ -1504,10 +1592,14 @@ export class TeamService {
     teamId: string,
     client: Pick<PrismaService, "teamAccessLog"> = this.prisma,
   ) {
-    return client.teamAccessLog.findMany({
-      where: { teamId, metadata: { contains: '"encryptedFiles"' } },
-      select: { id: true, metadata: true },
-    });
+    return client.teamAccessLog
+      .findMany({
+        where: { teamId, metadata: { not: null } },
+        select: { id: true, metadata: true },
+      })
+      .then((logs) =>
+        logs.filter((log) => log.metadata?.includes('"encryptedFiles"')),
+      );
   }
 
   /** The audit key of contractor copies as rotation metadata: id = team id. */
@@ -2034,10 +2126,16 @@ export class TeamService {
         try {
           await this.emailService.sendMail(
             member.user.email,
-            `Rotation de clé E2E de votre équipe ${now >= dueAt ? "requise" : "à prévoir"}`,
+            `Rotation de clé E2E de votre équipe ${now >= dueAt ? "requise" : "à prévoir"} / Team E2E key rotation ${now >= dueAt ? "required" : "coming up"}`,
             `La clé E2E de votre équipe doit être renouvelée au plus tard le ${dueAt.toLocaleDateString("fr-FR")}.
 
-Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pour lancer la rotation assistée. Le serveur n'accède jamais à la clé en clair.`,
+Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pour lancer la rotation assistée. Le serveur n'accède jamais à la clé en clair.
+
+---
+
+Your team's E2E key must be renewed by ${dueAt.toLocaleDateString("en-GB")}.
+
+Sign in with an owner or admin account holding the current Team key to start the guided rotation. The server never has access to the plaintext key.`,
           );
           delivered = true;
           sent++;
@@ -2098,6 +2196,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       where: { id: memberId },
       data: { isActive: false },
     });
+    await this.prisma.teamFolderAccess.deleteMany({ where: { memberId } });
 
     // SECURITY: Revoke all active E2EE access grants for team files in this team
     // so the removed member can no longer decrypt files after removal.
@@ -2241,8 +2340,8 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     const folders = await this.prisma.teamFolder.findMany({
       where: { teamId },
       select: { id: true, name: true, color: true },
-      orderBy: { name: "asc" },
     });
+    folders.sort(byName);
 
     const accessRules = await this.prisma.teamFolderAccess.findMany({
       where: { memberId },
@@ -2509,8 +2608,8 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
             },
           },
         },
-        orderBy: { name: "asc" },
       });
+      folders.sort(byName);
       return folders.map((folder) => ({
         id: folder.id,
         name: folder.name,
@@ -2543,8 +2642,8 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
         },
         accessRules: { where: { memberId: member!.id } },
       },
-      orderBy: { name: "asc" },
     });
+    allFolders.sort(byName);
 
     // Filter out folders where the member has an explicit NONE permission
     // and expose effective permission for each folder
@@ -3225,8 +3324,8 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
         },
         _count: { select: { accessRules: true } },
       },
-      orderBy: { name: "asc" },
     });
+    foldersWithRules.sort(byName);
     const visibleFolders = foldersWithRules.filter((folder) => {
       if (isAdmin) return true;
       const rule = folder.accessRules[0];
@@ -3510,10 +3609,13 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
         uploads,
         signatures,
         dailyBreakdown: dailyActivity,
-        topDownloaders: topDownloaders.map((d) => ({
-          email: d.actorEmail,
-          count: d._count.id,
-        })),
+        topDownloaders: topCounts(
+          topDownloaders.map((d) => ({
+            key: d.actorEmail,
+            count: d._count.id,
+          })),
+          10,
+        ).map(({ key, count }) => ({ email: key, count })),
       },
       limits: {
         maxShareSize: Number(team.maxShareSize),
@@ -3696,6 +3798,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
 
     const link = await this.prisma.teamGuestLink.create({
       data: {
+        token: sealToken("guestLink", randomUUID()),
         label: dto.label || null,
         permission: dto.permission || "READ",
         passwordHash: dto.password
@@ -3733,10 +3836,11 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       },
     );
 
+    const guestToken = openToken("guestLink", link.token);
     return {
       id: link.id,
-      token: link.token,
-      url: `/team/guest/${link.token}`,
+      token: guestToken,
+      url: `/team/guest/${guestToken}`,
       permission: link.permission,
       expiresAt: link.expiresAt,
       maxDownloads: link.maxDownloads,
@@ -3752,7 +3856,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
     });
     if (!folder) throw new NotFoundException("Folder not found");
 
-    return this.prisma.teamGuestLink.findMany({
+    const links = await this.prisma.teamGuestLink.findMany({
       where: { teamId, folderId, isActive: true },
       select: {
         id: true,
@@ -3769,6 +3873,10 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       },
       orderBy: { createdAt: "desc" },
     });
+    return links.map((link) => ({
+      ...link,
+      token: openToken("guestLink", link.token),
+    }));
   }
 
   async revokeGuestLink(teamId: string, linkId: string, userId: string) {
@@ -4154,6 +4262,7 @@ Connectez-vous avec un compte owner/admin disposant de la clé Team actuelle pou
       where: { id: memberId },
       data: { isActive: false },
     });
+    await this.prisma.teamFolderAccess.deleteMany({ where: { memberId } });
 
     // SECURITY: Revoke all active E2EE access grants for this member's team files
     const teamFiles = await this.prisma.teamFile.findMany({

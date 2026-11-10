@@ -21,6 +21,7 @@ import {
   ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
+import { SIGNING_LANGUAGES, SigningLanguage } from "../signing-language";
 
 export enum SignatureLevel {
   STANDARD = "STANDARD",
@@ -59,6 +60,15 @@ export class SignatureRecipientDTO {
   @IsString()
   @MaxLength(50000)
   teamInviteNotification?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50000)
+  encryptedKeyEnvelope?: string;
+
+  @IsOptional()
+  @IsUUID()
+  keyEnvelopeUserId?: string;
 
   @IsOptional()
   @IsString()
@@ -212,6 +222,10 @@ export class CreateSignatureRequestDTO {
   @ValidateNested({ each: true })
   @Type(() => PdfPageRotationDTO)
   pageRotations?: PdfPageRotationDTO[];
+
+  @IsOptional()
+  @IsIn(SIGNING_LANGUAGES)
+  language?: SigningLanguage;
 
   @IsBoolean()
   @IsOptional()

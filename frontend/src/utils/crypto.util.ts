@@ -1186,13 +1186,13 @@ export async function isPasskeyPrfAvailable(): Promise<boolean> {
   if (!window.PublicKeyCredential) return false;
   // Try getClientCapabilities() first (WebAuthn Level 3+) for a more precise check
   if (
-    typeof (window.PublicKeyCredential as any).getClientCapabilities ===
-    "function"
+    typeof (window.PublicKeyCredential as PublicKeyCredentialCapabilities)
+      .getClientCapabilities === "function"
   ) {
     try {
       const caps = await (
-        window.PublicKeyCredential as any
-      ).getClientCapabilities();
+        window.PublicKeyCredential as PublicKeyCredentialCapabilities
+      ).getClientCapabilities!();
       if (caps && typeof caps["extension:prf"] === "boolean") {
         return caps["extension:prf"];
       }

@@ -35,6 +35,8 @@ function grantStore() {
         rows.set(data.tokenHash, { ...data, usedAt: null });
       },
       deleteMany: async () => ({ count: 0 }),
+      findUnique: async ({ where }: { where: { tokenHash: string } }) =>
+        rows.get(where.tokenHash) ?? null,
       updateMany: async ({
         where,
         data,
@@ -604,6 +606,7 @@ testCase(
   async () => {
     const grants = grantStore();
     const links: string[] = [];
+    const signIns: string[] = [];
     const cookies: Record<string, string> = {};
     const response = {
       cookie: (name: string, value: string) => {
@@ -629,6 +632,10 @@ testCase(
           providerUserId: string,
         ) => {
           links.push(`${userId}:${provider}:${providerUserId}`);
+        },
+        signIn: async (user: { providerId: string }) => {
+          signIns.push(user.providerId);
+          return { loginToken: "second-factor" };
         },
       } as never,
       {
@@ -656,14 +663,16 @@ testCase(
         cookies: { access_token: "admin-1", ...extra },
         headers: {},
       }) as never;
+    const fromProvider = (cookies: Record<string, string> = {}) =>
+      ({ cookies, headers: {} }) as never;
     const refused = (error: { key?: string }) =>
       error.key === "step_up_required";
+    const expired = (error: { key?: string }) => error.key === "reauth_expired";
 
     // A stolen session presented at the callback links nothing.
-    await assert.rejects(
-      oauth.callback("google", {} as never, signedIn(), response as never),
-      refused,
-    );
+    await oauth.callback("google", {} as never, signedIn(), response as never);
+    assert.deepEqual(links, []);
+    assert.deepEqual(signIns, ["idp-7"]);
     // Nor does starting the flow without confirming.
     await assert.rejects(
       oauth.auth("google", signedIn(), response as never, "1"),
@@ -696,7 +705,7 @@ testCase(
     await oauth.callback(
       "google",
       {} as never,
-      signedIn({ oauth_google_link: handedOver }),
+      fromProvider({ oauth_google_link: handedOver }),
       response as never,
     );
     assert.deepEqual(links, ["admin-1:google:idp-7"]);
@@ -706,20 +715,48 @@ testCase(
       oauth.callback(
         "google",
         {} as never,
-        signedIn({ oauth_google_link: handedOver }),
+        fromProvider({ oauth_google_link: handedOver }),
         response as never,
       ),
-      refused,
+      expired,
     );
+    assert.equal(links.length, 1);
 
-    // Other accounts link as before.
+    // Any account links without a session reaching the callback.
+    await oauth.auth(
+      "google",
+      { cookies: { access_token: "user-2" }, headers: {} } as never,
+      response as never,
+      "1",
+    );
     await oauth.callback(
       "google",
       {} as never,
-      { cookies: { access_token: "user-2" }, headers: {} } as never,
+      fromProvider({ oauth_google_link: cookies.oauth_google_link }),
       response as never,
     );
     assert.deepEqual(links, ["admin-1:google:idp-7", "user-2:google:idp-7"]);
+    assert.deepEqual(signIns, ["idp-7"]);
+
+    // A link request without a session never turns into a sign-in.
+    await assert.rejects(
+      oauth.auth("google", fromProvider(), response as never, "1"),
+      expired,
+    );
+
+    // An abandoned link request does not catch a later sign-in.
+    await oauth.auth(
+      "google",
+      { cookies: { access_token: "user-2" }, headers: {} } as never,
+      response as never,
+      "1",
+    );
+    await oauth.auth(
+      "google",
+      fromProvider({ oauth_google_link: cookies.oauth_google_link }),
+      response as never,
+    );
+    assert.equal(cookies.oauth_google_link, undefined);
   },
 );
 

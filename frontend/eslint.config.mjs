@@ -48,7 +48,7 @@ const reactSecurityPlugin = {
 
 export default [
   {
-    ignores: ["**/*.d.ts", ".next/**", "node_modules/**"],
+    ignores: ["**/*.d.ts", ".next/**", "node_modules/**", "test/fixtures/**"],
   },
   {
     files: ["**/*.{ts,tsx,js,jsx}"],
@@ -119,7 +119,10 @@ export default [
       ...nextPlugin.configs.recommended.rules,
       ...nextPlugin.configs["core-web-vitals"].rules,
       quotes: ["warn", "double", { allowTemplateLiterals: true }],
-      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      "no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
       "@next/next/no-img-element": "off",
       // react-hooks/exhaustive-deps: demoted to warn so violations surface in CI
       // without breaking the build. Files with intentional empty deps arrays use
@@ -129,6 +132,13 @@ export default [
       // (structured data for SEO) or trusted static server content.
       // Each site must be audited and suppressed inline where verified safe.
       "react/no-danger": "warn",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "TSAnyKeyword",
+          message: "Use a precise type or unknown.",
+        },
+      ],
     },
   },
   eslintConfigPrettier,

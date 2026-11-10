@@ -71,7 +71,10 @@ const AdminConfigInput = ({
     },
   });
 
-  const onValueChange = (configVariable: AdminConfig, value: any) => {
+  const onValueChange = (
+    configVariable: AdminConfig,
+    value: string | number | boolean,
+  ) => {
     form.setFieldValue(`${configVariable.type}Value`, value);
     updateConfigVariable({ key: configVariable.key, value: value });
   };

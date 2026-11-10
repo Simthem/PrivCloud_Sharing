@@ -1,6 +1,7 @@
 import { NotificationData, showNotification } from "@mantine/notifications";
 import { TbCheck, TbInfoCircle, TbX } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
+import type { ThrownError } from "../types/thrownError.type";
 
 const error = (message: string, config?: Omit<NotificationData, "message">) =>
   showNotification({
@@ -15,8 +16,11 @@ const error = (message: string, config?: Omit<NotificationData, "message">) =>
     ...config,
   });
 
-const axiosError = (axiosError: any) =>
-  error(axiosError?.response?.data?.message ?? "An unknown error occurred");
+const axiosError = (axiosError: unknown) =>
+  error(
+    (axiosError as ThrownError | undefined)?.response?.data?.message ??
+      "An unknown error occurred",
+  );
 
 const success = (message: string, config?: Omit<NotificationData, "message">) =>
   showNotification({

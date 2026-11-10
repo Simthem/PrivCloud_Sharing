@@ -9,6 +9,8 @@ export interface Team {
   slug: string;
   description?: string;
   maxMembers: number;
+  /** Folder ceiling of the deployment, absent from older backends. */
+  maxFolders?: number;
   maxShareSize: number;
   totalStorageLimit: number;
   storageUsed: number;
@@ -21,6 +23,7 @@ export interface Team {
   keyRotationIntervalDays: number;
   pqNotificationEncryptionEnabled?: boolean;
   createdAt: string;
+  _count?: { sharedFolders?: number };
 }
 
 export interface TeamMember {
@@ -224,6 +227,20 @@ const inviteMember = async (
   return (
     await api.post(`teams/${apiPathSegment(teamId)}/members/invite`, data)
   ).data;
+};
+
+const getPendingInvitations = async (
+  teamId: string,
+): Promise<{ id: string; email: string; role: string; expiresAt: string }[]> =>
+  (await api.get(`teams/${apiPathSegment(teamId)}/invitations`)).data;
+
+const revokeInvitation = async (
+  teamId: string,
+  invitationId: string,
+): Promise<void> => {
+  await api.delete(
+    `teams/${apiPathSegment(teamId)}/invitations/${apiPathSegment(invitationId)}`,
+  );
 };
 
 /** Signed-out visitor of an invitation link: sign in or sign up. */
@@ -812,6 +829,9 @@ export interface SignableFile {
   wrappedShareKey?: string | null;
   /** Set once the encrypted name has been opened. */
   encryptedName?: boolean;
+  /** Received through the user's reverse share, whose K_rs is given wrapped. */
+  received?: boolean;
+  encryptedReverseShareKey?: string | null;
 }
 
 const getSignableFiles = async (): Promise<SignableFile[]> => {
@@ -828,6 +848,8 @@ const teamService = {
   inviteMember,
   acceptInvitation,
   getInvitationAccount,
+  getPendingInvitations,
+  revokeInvitation,
   getTeamKey,
   setTeamKey,
   clearTeamKey,

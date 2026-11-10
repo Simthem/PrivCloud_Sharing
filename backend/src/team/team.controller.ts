@@ -274,6 +274,25 @@ export class TeamController {
     return this.teamService.inviteMember(teamId, dto, user.id);
   }
 
+  @Get(":teamId/invitations")
+  @UseGuards(JwtGuard)
+  getPendingInvitations(
+    @Param("teamId") teamId: string,
+    @GetUser() user: User,
+  ) {
+    return this.teamService.getPendingInvitations(teamId, user.id);
+  }
+
+  @Delete(":teamId/invitations/:invitationId")
+  @UseGuards(JwtGuard)
+  revokeInvitation(
+    @Param("teamId") teamId: string,
+    @Param("invitationId") invitationId: string,
+    @GetUser() user: User,
+  ) {
+    return this.teamService.revokeInvitation(teamId, invitationId, user.id);
+  }
+
   @Get("invite/:token/account")
   @Header("Cache-Control", "private, no-store")
   @Throttle({ default: { limit: 20, ttl: minutes(1) } })

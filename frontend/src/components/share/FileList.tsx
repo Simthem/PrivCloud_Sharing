@@ -44,6 +44,7 @@ import {
   type FileTreeFolderNode,
   type FileTreeNode,
 } from "../../utils/fileTree.util";
+import type { ThrownError } from "../../types/thrownError.type";
 
 const FileList = ({
   files,
@@ -173,7 +174,8 @@ const FileList = ({
           controller.signal,
         );
       }
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       if (e?.name !== "AbortError") {
         toast.error(t("common.error"));
       }
@@ -231,7 +233,8 @@ const FileList = ({
           controller.signal,
         );
       }
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       if (e.name !== "AbortError") {
         toast.error(t("common.error"));
       }
@@ -291,7 +294,7 @@ const FileList = ({
   );
 
   const copyFileLink = async (file: FileMetaData) => {
-    const link = `${config.get("general.appUrl")}/api/shares/${
+    const link = `${config.getString("general.appUrl")}/api/shares/${
       share!.id
     }/files/${file.id}`;
 

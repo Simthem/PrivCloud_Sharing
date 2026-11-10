@@ -1,6 +1,8 @@
 export default {
-  "share.modal.file-preview.pdf-render-failed": "Unable to render this PDF page.",
-  "team.external.seats.usageUnlimited": "{used, plural, one {# active or pending access} other {# active or pending accesses}}",
+  "share.modal.file-preview.pdf-render-failed":
+    "Unable to render this PDF page.",
+  "team.external.seats.usageUnlimited":
+    "{used, plural, one {# active or pending access} other {# active or pending accesses}}",
   "team.audit.check.fragment":
     "Additional search across 181 scales, with a stricter decision threshold...",
   "external.viewer.retry": "Retry",
@@ -27,32 +29,47 @@ export default {
     "Additional analysis assisted by the original document. Only capture pixels are analysed. Registration is not proof of identity.",
   "navbar.avatar.external": "View-only documents",
   "signin.button.passkey": "Sign in with a passkey",
-  "signIn.notify.passkey-error": "This passkey could not sign you in. Use your password, then add a passkey from your account settings.",
+  "signIn.notify.passkey-error":
+    "This passkey could not sign you in. Use your password, then add a passkey from your account settings.",
   "account.card.passkeys.title": "Passkeys",
-  "account.card.passkeys.description": "Sign in without a password or two-factor code, sign documents and approve the copies issued to contractors. A passkey enrolled during a signature signs you in as well.",
-  "account.card.passkeys.empty": "No passkey is registered on this account yet.",
+  "account.card.passkeys.description":
+    "Sign in without a password or two-factor code, sign documents and approve the copies issued to contractors. A passkey enrolled during a signature signs you in as well.",
+  "account.card.passkeys.empty":
+    "No passkey is registered on this account yet.",
   "account.card.passkeys.add": "Add a passkey",
   "account.card.passkeys.added": "Passkey added. You can now sign in with it.",
   "account.card.passkeys.add-error": "The passkey could not be registered.",
-  "account.card.passkeys.confirm-hint": "A passkey signs in without a password or two-factor code. Confirm your identity first, as when turning two-factor authentication off.",
+  "account.card.passkeys.confirm-hint":
+    "A passkey signs in without a password or two-factor code. Confirm your identity first, as when turning two-factor authentication off.",
   "account.card.passkeys.create": "Create the passkey",
-  "account.card.passkeys.wrong-proof": "Wrong password or expired confirmation.",
+  "account.card.passkeys.wrong-proof":
+    "Wrong password or expired confirmation.",
   "account.card.passkeys.wrong-code": "Invalid two-factor code.",
-  "account.card.passkeys.confirm": "You will no longer be able to sign in or approve a copy with this passkey. Remember to remove it from your device or password manager as well.",
+  "account.card.passkeys.confirm":
+    "You will no longer be able to sign in or approve a copy with this passkey. Remember to remove it from your device or password manager as well.",
   "account.card.passkeys.origin.account": "Sign-in",
   "account.card.passkeys.origin.signing": "Signature and sign-in",
-  "account.card.security.totp.oauth.description": "Your account has no password. Confirm your identity by signing in again with the account linked to it.",
-  "account.card.security.totp.oauth.alternative": "You can also confirm your identity by signing in again with the account linked to it, without typing your password.",
+  "account.card.security.totp.oauth.description":
+    "Your account has no password. Confirm your identity by signing in again with the account linked to it.",
+  "account.card.security.totp.oauth.alternative":
+    "You can also confirm your identity by signing in again with the account linked to it, without typing your password.",
   "account.card.security.totp.oauth.confirm": "Confirm with {provider}",
-  "account.card.security.totp.oauth.none": "Your account has neither a password nor a linked external account. Link an account or set a password to manage two-factor authentication.",
-  "account.card.security.totp.oauth.disableDescription": "Identity confirmed. Enter a code from your app or a backup code to turn two-factor authentication off.",
-  "webdav.error.unsafeTree": "The WebDAV server returned an inconsistent or unauthorized path. No files were added.",
-  "webdav.error.treeLimit": "This folder exceeds the import limits: 1,000 files, 4,096 folders or 63 levels.",
-  "webdav.error.quota": "The folder exceeds the space available for this share. No files were added.",
+  "account.card.security.totp.oauth.none":
+    "Your account has neither a password nor a linked external account. Link an account or set a password to manage two-factor authentication.",
+  "account.card.security.totp.oauth.disableDescription":
+    "Identity confirmed. Enter a code from your app or a backup code to turn two-factor authentication off.",
+  "webdav.error.unsafeTree":
+    "The WebDAV server returned an inconsistent or unauthorized path. No files were added.",
+  "webdav.error.treeLimit":
+    "This folder exceeds the import limits: 1,000 files, 4,096 folders or 63 levels.",
+  "webdav.error.quota":
+    "The folder exceeds the space available for this share. No files were added.",
   "webdav.error.emptyFolder": "This folder contains no files to import.",
   "webdav.error.cancelled": "Import cancelled. No files were added.",
-  "webdav.error.companionFolderUpdateRequired": "Update the Companion to import folders with their paths.",
-  "webdav.folderHint": "Select a folder to import its files and subfolders with their paths. Empty folders are not added.",
+  "webdav.error.companionFolderUpdateRequired":
+    "Update the Companion to import folders with their paths.",
+  "webdav.folderHint":
+    "Select a folder to import its files and subfolders with their paths. Empty folders are not added.",
   "webdav.enumerating": "Scanning folders: {count} file(s) found...",
   "share.modal.file-preview.partial":
     "Partial preview. Download the file to view all content.",
@@ -60,12 +77,16 @@ export default {
   "share.modal.file-preview.word-wrap": "Wrap lines",
   "share.modal.file-preview.copy-source": "Copy preview",
   "share.modal.file-preview.copied": "Copied",
-  "share.modal.file-preview.highlight-limited": "Syntax highlighting is limited to the start of this preview. The remaining text is still displayed.",
-  "share.modal.file-preview.error.read-failed.title": "Unable to read the preview",
+  "share.modal.file-preview.highlight-limited":
+    "Syntax highlighting is limited to the start of this preview. The remaining text is still displayed.",
+  "share.modal.file-preview.error.read-failed.title":
+    "Unable to read the preview",
   "share.modal.file-preview.error.read-failed.description":
     "This format is supported, but this file could not be read. Download it to check that it opens in Excel, LibreOffice or your usual application.",
-  "share.modal.file-preview.error.video-codec.title": "Unsupported video format",
-  "share.modal.file-preview.error.video-codec.description": "This browser cannot play {codec} videos. Download the video to watch it.",
+  "share.modal.file-preview.error.video-codec.title":
+    "Unsupported video format",
+  "share.modal.file-preview.error.video-codec.description":
+    "This browser cannot play {codec} videos. Download the video to watch it.",
   "share.modal.file-preview.video.play": "Play",
   "share.modal.file-preview.video.pause": "Pause",
   "share.modal.file-preview.video.mute": "Mute",
@@ -75,7 +96,8 @@ export default {
   "share.modal.file-preview.zoom.out": "Zoom out",
   "share.modal.file-preview.zoom.in": "Zoom in",
   "share.modal.file-preview.zoom.reset": "Fit",
-  "share.modal.file-preview.zoom.viewport": "Document: pinch to zoom, drag to move",
+  "share.modal.file-preview.zoom.viewport":
+    "Document: pinch to zoom, drag to move",
   "share.modal.file-preview.video.volume": "Volume",
   "share.modal.file-preview.video.seek": "Playback position",
   "share.modal.file-preview.video.speed": "Playback speed",
@@ -84,19 +106,28 @@ export default {
   "share.modal.file-preview.pdf.page": "PDF page",
   "share.modal.file-preview.pdf.next-page": "Next page",
   "admin.config.smtp.general-email": "General email",
-  "admin.config.smtp.general-email.description": "Second SMTP account for every email other than electronic signatures: email verification, invitations, shares, upload links... Leave empty to send everything from the email above.",
+  "admin.config.smtp.general-email.description":
+    "Second SMTP account for every email other than electronic signatures: email verification, invitations, shares, upload links... Leave empty to send everything from the email above.",
   "admin.config.smtp.general-host": "General host",
-  "admin.config.smtp.general-host.description": "Leave empty to use the host above.",
+  "admin.config.smtp.general-host.description":
+    "Leave empty to use the host above.",
   "admin.config.smtp.general-port": "General port",
-  "admin.config.smtp.general-port.description": "Leave 0 to use the port above.",
+  "admin.config.smtp.general-port.description":
+    "Leave 0 to use the port above.",
   "admin.config.smtp.general-username": "General username",
-  "admin.config.smtp.general-username.description": "Leave empty to use the account above.",
+  "admin.config.smtp.general-username.description":
+    "Leave empty to use the account above.",
   "admin.config.smtp.general-password": "General password",
-  "admin.config.smtp.general-password.description": "Password of the second SMTP account, when it has its own username.",
-  "error.msg.reauth_mismatch": "The {0} account you used is not the one linked to your PrivCloud account. Sign in with the linked account.",
-  "error.msg.reauth_unsupported": "Your {0} account cannot confirm a recent sign-in. To set a password, sign out and use \"Forgot your password?\" on the sign-in page.",
-  "error.msg.reauth_expired": "The identity confirmation expired. Start again from your account.",
-  "error.msg.step_up_required": "Confirm your identity from your account, then link the account again.",
+  "admin.config.smtp.general-password.description":
+    "Password of the second SMTP account, when it has its own username.",
+  "error.msg.reauth_mismatch":
+    "The {0} account you used is not the one linked to your PrivCloud account. Sign in with the linked account.",
+  "error.msg.reauth_unsupported":
+    'Your {0} account cannot confirm a recent sign-in. To set a password, sign out and use "Forgot your password?" on the sign-in page.',
+  "error.msg.reauth_expired":
+    "The identity confirmation expired. Start again from your account.",
+  "error.msg.step_up_required":
+    "Confirm your identity from your account, then link the account again.",
   "admin.button.vault": "Evidence vault",
   "admin.vault.title": "Evidence vault",
   "admin.vault.hint":
@@ -134,83 +165,125 @@ export default {
   "team.dashboard.activity.externalInvite": "Contractor invited",
   "team.dashboard.activity.externalJoin": "Contractor joined",
   "team.dashboard.activity.externalRevoke": "Contractor access revoked",
-  "team.dashboard.activity.externalPreviewShare": "Preview shared with a contractor",
-  "team.dashboard.activity.externalPreviewView": "Preview viewed by a contractor",
+  "team.dashboard.activity.externalPreviewShare":
+    "Preview shared with a contractor",
+  "team.dashboard.activity.externalPreviewView":
+    "Preview viewed by a contractor",
   "team.dashboard.activity.externalPreviewDelete": "Contractor preview removed",
-  "team.dashboard.modals.invite.externalHint": "A contractor or short-term guest only needs to view documents?",
+  "team.dashboard.modals.invite.externalHint":
+    "A contractor or short-term guest only needs to view documents?",
   "team.dashboard.modals.invite.externalLink": "Invite them as view-only.",
   "team.settings.danger.evidenceKept":
     "The register of the copies issued to contractors and their viewing journal are kept three years in the platform evidence vault, as evidence. They remain available on written request to support.",
-  "team.settings.rotation.remaining": "Rotation due in {count, plural, one {# day} other {# days}}",
+  "team.settings.rotation.remaining":
+    "Rotation due in {count, plural, one {# day} other {# days}}",
   "team.settings.rotation.due": "E2E key rotation is due",
   "team.settings.rotation.nextDue": "Saved policy deadline: {date}",
-  "team.settings.rotation.assisted": "Rotation is assisted: an administrator with the current key must start it and re-encrypt the files. It does not run automatically.",
+  "team.settings.rotation.assisted":
+    "Rotation is assisted: an administrator with the current key must start it and re-encrypt the files. It does not run automatically.",
   "team.settings.rotation.manage": "Manage rotation",
-  "team.settings.rotation.active": "Rotation in progress: {done} / {total} files",
+  "team.settings.rotation.active":
+    "Rotation in progress: {done} / {total} files",
   "team.settings.rotation.paused": "Rotation paused: {done} / {total} files",
-  "team.settings.rotation.loadError": "The rotation schedule is temporarily unavailable.",
-  "team.settings.rotation.unsaved": "Save the new frequency to update this deadline.",
+  "team.settings.rotation.loadError":
+    "The rotation schedule is temporarily unavailable.",
+  "team.settings.rotation.unsaved":
+    "Save the new frequency to update this deadline.",
   "team.folder.action.externalShare": "Preview for a contractor",
   "team.external.share.title": "Share a preview with a contractor",
-  "team.external.share.description": "The contractor receives page images watermarked with their name, invisibly marked and encrypted for them alone, without the original file or team key. You approve the copy with your passkey. A screenshot remains possible. The mark allows searches for a compatible pattern, subject to measured limitations. It does not prove who disclosed the document.",
+  "team.external.share.description":
+    "The contractor receives page images watermarked with their name, invisibly marked and encrypted for them alone, without the original file or team key. You approve the copy with your passkey. A screenshot remains possible. The mark allows searches for a compatible pattern, subject to measured limitations. It does not prove who disclosed the document.",
   "team.external.share.seat": "Contractor",
-  "team.external.share.noSeat": "No contractor has accepted an invitation yet. Invite one from the team settings.",
+  "team.external.share.noSeat":
+    "No contractor has accepted an invitation yet. Invite one from the team settings.",
   "team.external.share.existing": "Already shared as a preview",
   "team.external.share.existingCopy": "{name}, on {date}",
   "team.external.share.submit": "Generate and share the preview",
-  "team.external.share.rendering": "Generating pages ({count, plural, one {# page ready} other {# pages ready}})",
+  "team.external.share.rendering":
+    "Generating pages ({count, plural, one {# page ready} other {# pages ready}})",
   "team.external.share.uploading": "Encrypted upload of page {done} of {total}",
-  "team.external.share.done": "Preview shared: {count, plural, one {# page} other {# pages}}.",
-  "team.external.share.error.unsupported": "This format cannot be shared as a preview. Video and audio files are not supported.",
-  "team.external.share.error.tooManyPages": "This document exceeds the 300-page preview limit.",
-  "team.external.share.error.tooLarge": "This file is too large to be shared as a preview.",
-  "team.external.share.error.browser": "This browser cannot generate this preview. Use Chrome, Edge or Firefox.",
-  "team.external.share.error.keys": "The contractor has not finished setting up their encryption keys yet.",
-  "team.external.share.error.generic": "Generating the preview failed. Please try again.",
+  "team.external.share.done":
+    "Preview shared: {count, plural, one {# page} other {# pages}}.",
+  "team.external.share.error.unsupported":
+    "This format cannot be shared as a preview. Video and audio files are not supported.",
+  "team.external.share.error.tooManyPages":
+    "This document exceeds the 300-page preview limit.",
+  "team.external.share.error.tooLarge":
+    "This file is too large to be shared as a preview.",
+  "team.external.share.error.browser":
+    "This browser cannot generate this preview. Use Chrome, Edge or Firefox.",
+  "team.external.share.error.keys":
+    "The contractor has not finished setting up their encryption keys yet.",
+  "team.external.share.error.generic":
+    "Generating the preview failed. Please try again.",
   "team.external.share.sealing": "Computing the fingerprints of the copy",
-  "team.external.share.approving": "Confirm with your passkey to approve this copy. It will be recorded in the team register.",
-  "team.external.share.error.passkey": "An approval passkey is required to share a preview.",
-  "team.external.share.error.approvalCancelled": "The passkey approval was cancelled. No copy was shared.",
-  "team.external.share.error.teamKey": "The team key is not available in this browser. Unlock your encryption key and try again.",
+  "team.external.share.approving":
+    "Confirm with your passkey to approve this copy. It will be recorded in the team register.",
+  "team.external.share.error.passkey":
+    "An approval passkey is required to share a preview.",
+  "team.external.share.error.approvalCancelled":
+    "The passkey approval was cancelled. No copy was shared.",
+  "team.external.share.error.teamKey":
+    "The team key is not available in this browser. Unlock your encryption key and try again.",
   "team.external.seats.reminder.label": "My access-end reminder",
-  "team.external.seats.reminder.hint": "Personal preference. Revocation or expiry: a reminder to retain evidence. Web notifications require this device’s permission. Email is independent.",
+  "team.external.seats.reminder.hint":
+    "Personal preference. Revocation or expiry: a reminder to retain evidence. Web notifications require this device’s permission. Email is independent.",
   "team.external.seats.reminder.NONE": "No reminder",
   "team.external.seats.reminder.EMAIL": "Email",
   "team.external.seats.reminder.PUSH": "Web notification",
   "team.external.seats.reminder.BOTH": "Notification and email",
-  "team.notification.generic.EXTERNAL_ACCESS_ENDED": "A contractor's access ended. Retain the evidence from the register.",
-  "team.audit.download.passkeyHint": "A personal passkey is required to download a certificate or evidence archive. Every active administrator uses their own passkey.",
+  "team.notification.generic.EXTERNAL_ACCESS_ENDED":
+    "A contractor's access ended. Retain the evidence from the register.",
+  "team.audit.download.passkeyHint":
+    "A personal passkey is required to download a certificate or evidence archive. Every active administrator uses their own passkey.",
   "team.audit.title": "Register of issued copies",
-  "team.audit.hint": "Passkey-approved copies are recorded here with their timestamp status. The journal chains openings and authorized page requests, not human reading. Titles are decrypted in your browser.",
+  "team.audit.hint":
+    "Passkey-approved copies are recorded here with their timestamp status. The journal chains openings and authorized page requests, not human reading. Titles are decrypted in your browser.",
   "team.audit.empty": "No copy has been issued to a contractor yet.",
   "team.audit.untitled": "Encrypted document",
-  "team.audit.row": "Issued to {contractor} on {date} by {issuer} - {pages, plural, one {# page} other {# pages}}",
+  "team.audit.row":
+    "Issued to {contractor} on {date} by {issuer} - {pages, plural, one {# page} other {# pages}}",
   "team.audit.timestamped": "Timestamped",
   "team.audit.notTimestamped": "Timestamp pending",
   "team.audit.copyOnline": "Copy online",
   "team.audit.copyWithdrawn": "Copy withdrawn",
   "team.audit.certificate.download": "Download the certificate",
   "team.audit.pattern.download": "Export this copy's private pattern",
-  "team.audit.pattern.warning": "This unencrypted diagnostic contains only this copy's derived pattern, without the audit key, sessions or document. It can recognize but also reproduce this marking. Keep it in a private directory and share it only for explicitly authorized analysis.",
+  "team.audit.pattern.warning":
+    "This unencrypted diagnostic contains only this copy's derived pattern, without the audit key, sessions or document. It can recognize but also reproduce this marking. Keep it in a private directory and share it only for explicitly authorized analysis.",
   "team.audit.pattern.confirm": "Export sensitive diagnostic",
-  "team.audit.pattern.error": "Unable to export the private pattern. Check that this device has the team key.",
+  "team.audit.pattern.error":
+    "Unable to export the private pattern. Check that this device has the team key.",
   "team.audit.certificate.error": "The certificate could not be generated.",
   "team.audit.journal.open": "Viewing journal",
   "team.audit.journal.title": "Viewing journal",
-  "team.audit.journal.valid": "Chain checked: {count, plural, one {# event verified} other {# events verified}}, last anchor on {anchor}. Later events may be unanchored. Retain a checkpoint independently.",
-  "team.audit.journal.validNoAnchor": "Chain checked: {count, plural, one {# event verified} other {# events verified}}, without an established timestamped anchor. Hourly sealing is scheduled when the TSA is configured and available. This is not independent time evidence.",
-  "team.audit.journal.broken": "The team's journal integrity check fails at event {seq}. Preserve the evidence and request a diagnosis from the platform administrator.",
-  "team.audit.journal.scope": "Verification covers the team's entire chain, including events for other copies. An older anomaly can therefore appear in several viewing journals.",
-  "team.audit.journal.reason.format_downgrade": "An event reuses the historical format after the current format was introduced. This unexpected change is rejected.",
+  "team.audit.journal.valid":
+    "Chain checked: {count, plural, one {# event verified} other {# events verified}}, last anchor on {anchor}. Later events may be unanchored. Retain a checkpoint independently.",
+  "team.audit.journal.validNoAnchor":
+    "Chain checked: {count, plural, one {# event verified} other {# events verified}}, without an established timestamped anchor. Hourly sealing is scheduled when the TSA is configured and available. This is not independent time evidence.",
+  "team.audit.journal.broken":
+    "The team's journal integrity check fails at event {seq}. Preserve the evidence and request a diagnosis from the platform administrator.",
+  "team.audit.journal.scope":
+    "Verification covers the team's entire chain, including events for other copies. An older anomaly can therefore appear in several viewing journals.",
+  "team.audit.journal.reason.format_downgrade":
+    "An event reuses the historical format after the current format was introduced. This unexpected change is rejected.",
   "team.audit.journal.diagnostic.download": "Download private diagnostic",
-  "team.audit.journal.diagnostic.private": "This file contains the first failing event's fields. Keep it private. No stored hash is rewritten.",
-  "team.audit.journal.diagnostic.error": "The diagnostic could not be downloaded.",
-  "team.audit.journal.reason.content_hash_mismatch": "The stored hash differs from the content read back. A data modification or format incompatibility needs investigation. The chain remains unverified.",
-  "team.audit.journal.reason.genesis_mismatch": "The first event does not contain the expected initial hash.",
-  "team.audit.journal.reason.sequence_gap": "There is a gap in the event sequence numbers.",
-  "team.audit.journal.reason.previous_hash_mismatch": "An event does not reference its predecessor's hash.",
-  "team.audit.journal.reason.anchor_mismatch": "An event's hash differs from its retained anchor.",
-  "team.audit.journal.reason.anchor_ahead_of_head": "An anchor references an event missing from the retained chain.",
+  "team.audit.journal.diagnostic.private":
+    "This file contains the first failing event's fields. Keep it private. No stored hash is rewritten.",
+  "team.audit.journal.diagnostic.error":
+    "The diagnostic could not be downloaded.",
+  "team.audit.journal.reason.content_hash_mismatch":
+    "The stored hash differs from the content read back. A data modification or format incompatibility needs investigation. The chain remains unverified.",
+  "team.audit.journal.reason.genesis_mismatch":
+    "The first event does not contain the expected initial hash.",
+  "team.audit.journal.reason.sequence_gap":
+    "There is a gap in the event sequence numbers.",
+  "team.audit.journal.reason.previous_hash_mismatch":
+    "An event does not reference its predecessor's hash.",
+  "team.audit.journal.reason.anchor_mismatch":
+    "An event's hash differs from its retained anchor.",
+  "team.audit.journal.reason.anchor_ahead_of_head":
+    "An anchor references an event missing from the retained chain.",
   "team.audit.journal.empty": "No event for this copy.",
   "team.audit.journal.issued": "Copy issued",
   "team.audit.journal.opened": "Copy opened",
@@ -219,14 +292,20 @@ export default {
   "team.audit.journal.revoked": "Access revoked",
   "team.audit.journal.vault": "Evidence opened from the platform vault",
   "team.audit.check.title": "Check a suspect image or PDF",
-  "team.audit.check.hint": "Drop a suspect image or PDF: analysis stays local. Two laboratory photos are recognized after offline registration with the original. A preproduction photo remains inconclusive even after registration. OCR and source recreation can erase the pattern. No result proves who disclosed the file.",
+  "team.audit.check.hint":
+    "Drop a suspect image or PDF: analysis stays local. Two laboratory photos are recognized after offline registration with the original. A preproduction photo remains inconclusive even after registration. OCR and source recreation can erase the pattern. No result proves who disclosed the file.",
   "team.audit.check.button": "Analyse an image or a PDF",
-  "team.audit.check.visibleMarker": "The authenticated visible marker matches the copy issued to {contractor}.",
-  "team.audit.check.visibleMarker.limit": "The invisible pattern is not confirmed. A visible code can be copied onto another image. This match proves neither image integrity nor who disclosed it.",
-  "team.audit.verificationGuide": "Verification procedure, results and limitations",
-  "team.audit.check.match": "The detected mark matches the copy issued to {contractor} on {date}. This does not prove who disclosed the file.",
+  "team.audit.check.visibleMarker":
+    "The authenticated visible marker matches the copy issued to {contractor}.",
+  "team.audit.check.visibleMarker.limit":
+    "The invisible pattern is not confirmed. A visible code can be copied onto another image. This match proves neither image integrity nor who disclosed it.",
+  "team.audit.verificationGuide":
+    "Verification procedure, results and limitations",
+  "team.audit.check.match":
+    "The detected mark matches the copy issued to {contractor} on {date}. This does not prove who disclosed the file.",
   "team.audit.check.document": "Document: {title}",
-  "team.audit.check.reliability": "Signal strength: {level}. This result is not a validated probability of attribution.",
+  "team.audit.check.reliability":
+    "Signal strength: {level}. This result is not a validated probability of attribution.",
   "team.audit.check.level.certain": "strong correlation",
   "team.audit.check.level.high": "correlation above the threshold",
   "team.audit.check.odds.12": "a trillion",
@@ -235,36 +314,49 @@ export default {
   "team.audit.check.odds.3": "a thousand",
   "team.audit.check.technical":
     "Technical details: score {score}, decision threshold {threshold}, indicative intact-copy signal around {ceiling}. Internal analysis channel scale: {scale}%. Correlation proves neither an exclusive source nor the identity of the person who disclosed the file.",
-  "team.audit.check.ambiguous": "Ambiguous result: {count} copy patterns are compatible with the analysed pages. A mixture or competing signals may be present. This result cannot identify a single copy or contractor.",
-  "team.audit.check.none": "Inconclusive: no sufficiently clear match. This does not exclude an origin in the team's copies.",
+  "team.audit.check.ambiguous":
+    "Ambiguous result: {count} copy patterns are compatible with the analysed pages. A mixture or competing signals may be present. This result cannot identify a single copy or contractor.",
+  "team.audit.check.none":
+    "Inconclusive: no sufficiently clear match. This does not exclude an origin in the team's copies.",
   "team.audit.check.error": "This image could not be analysed.",
-  "team.audit.check.tooLarge": "This image is too large to analyse. Reduce it and try again.",
+  "team.audit.check.tooLarge":
+    "This image is too large to analyse. Reduce it and try again.",
   "team.audit.check.progress": "Analysing page {page}",
   "team.audit.check.page": "Found on page {page} of the PDF.",
   "team.audit.check.emptyPdf": "This PDF has no readable page.",
-  "team.audit.evidence.download": "Download the evidence bundle (ZIP, with its verification script)",
-  "team.audit.passkeys.hint": "Every copy is approved with a passkey of your account, including one enrolled during an electronic signature.",
+  "team.audit.evidence.download":
+    "Download the evidence bundle (ZIP, with its verification script)",
+  "team.audit.passkeys.hint":
+    "Every copy is approved with a passkey of your account, including one enrolled during an electronic signature.",
   "team.audit.passkeys.manage": "Manage my passkeys",
-  "team.audit.passkeys.required": "Every copy issued to a contractor is approved with a passkey. Create yours, it only takes a few seconds.",
+  "team.audit.passkeys.required":
+    "Every copy issued to a contractor is approved with a passkey. Create yours, it only takes a few seconds.",
   "team.audit.passkeys.create": "Add a passkey in my account",
   "team.profile.title": "Company details",
-  "team.profile.hint": "They appear in the watermark of the previews shared with your external contractors, before the contractor's name. They are encrypted in your browser with the team key: PrivCloud cannot read them, and only the team administrators view and edit them.",
+  "team.profile.hint":
+    "They appear in the watermark of the previews shared with your external contractors, before the contractor's name. They are encrypted in your browser with the team key: PrivCloud cannot read them, and only the team administrators view and edit them.",
   "team.profile.companyName": "Company name",
   "team.profile.mention": "Mention",
   "team.profile.details": "Details",
-  "team.profile.detailsHint": "For example a registration number or an address, shown in the band at the bottom of each page.",
+  "team.profile.detailsHint":
+    "For example a registration number or an address, shown in the band at the bottom of each page.",
   "team.profile.remove": "Remove",
   "team.profile.saved": "Company details saved.",
   "team.profile.removed": "Company details removed.",
-  "team.profile.error": "The details could not be saved. Reload the page and try again.",
-  "team.profile.keyUnavailable": "The team encryption key is not available in this browser. Unlock your E2E key to manage these details.",
+  "team.profile.error":
+    "The details could not be saved. Reload the page and try again.",
+  "team.profile.keyUnavailable":
+    "The team encryption key is not available in this browser. Unlock your E2E key to manage these details.",
   "team.external.watermark.legend": "Watermark",
   "team.external.watermark.defaultMention": "Confidential",
-  "team.external.watermark.hint": "The company name and mention come before the contractor's address and the date. Without a company name, only the contractor and the date appear.",
+  "team.external.watermark.hint":
+    "The company name and mention come before the contractor's address and the date. Without a company name, only the contractor and the date appear.",
   "team.external.watermark.remember": "Save these details for the team",
   "team.external.seats.title": "External contractors",
-  "team.external.seats.hint": "Invite contractors for a limited time. They only view the previews you share with them, watermarked with their name, and never reach the original files, folders or team members.",
-  "team.external.seats.usage": "{used, plural, one {# seat used} other {# seats used}} of {limit}",
+  "team.external.seats.hint":
+    "Invite contractors for a limited time. They only view the previews you share with them, watermarked with their name, and never reach the original files, folders or team members.",
+  "team.external.seats.usage":
+    "{used, plural, one {# seat used} other {# seats used}} of {limit}",
   "team.external.seats.accessEnds": "Access until {date}",
   "team.external.seats.status.pending": "Invitation sent",
   "team.external.seats.status.active": "Active",
@@ -272,91 +364,126 @@ export default {
   "team.external.seats.status.expired": "Expired",
   "team.external.seats.extend": "Change the end date",
   "team.external.seats.revoke": "Revoke access",
-  "team.external.seats.revokeConfirm": "The access of {email} will end immediately and every preview shared with this contractor will be deleted.",
+  "team.external.seats.revokeConfirm":
+    "The access of {email} will end immediately and every preview shared with this contractor will be deleted.",
   "team.external.seats.endDate": "End of access",
   "team.external.seats.extended": "The end date was updated.",
-  "team.external.seats.copies": "{count, plural, one {# shared preview} other {# shared previews}}",
-  "team.external.seats.copy": "Shared on {date}, {pages, plural, one {# page} other {# pages}}",
+  "team.external.seats.copies":
+    "{count, plural, one {# shared preview} other {# shared previews}}",
+  "team.external.seats.copy":
+    "Shared on {date}, {pages, plural, one {# page} other {# pages}}",
   "team.external.seats.removeCopy": "Remove this preview",
-  "team.external.seats.invited": "Invitation sent by e-mail. You can also give this link to the contractor: it only works with their e-mail address.",
+  "team.external.seats.invited":
+    "Invitation sent by e-mail. You can also give this link to the contractor: it only works with their e-mail address.",
   "team.external.seats.inviteLink": "Invitation link",
   "team.external.seats.copyLink": "Copy link",
   "team.external.seats.linkCopied": "Link copied",
-  "team.external.seats.full": "The configured contractor limit is reached. Revoke an access to free a place.",
+  "team.external.seats.full":
+    "The configured contractor limit is reached. Revoke an access to free a place.",
   "team.external.seats.email": "Contractor e-mail address",
   "team.external.seats.name": "Name (optional)",
   "team.external.seats.invite": "Invite",
-  "invitation.auth.signUpHint": "This invitation was sent to {email}. Create your account with this address to accept it.",
-  "invitation.auth.signInHint": "This invitation was sent to {email}. Sign in with this account to accept it.",
+  "invitation.auth.signUpHint":
+    "This invitation was sent to {email}. Create your account with this address to accept it.",
+  "invitation.auth.signInHint":
+    "This invitation was sent to {email}. Sign in with this account to accept it.",
   "invitation.auth.signUp": "Create my account",
   "invitation.auth.signIn": "Sign in",
   "invitation.auth.haveAccount": "I already have an account",
-  "invitation.auth.invalid": "This invitation is no longer valid. Ask the person who sent it for a new one.",
+  "invitation.auth.invalid":
+    "This invitation is no longer valid. Ask the person who sent it for a new one.",
   "external.invite.title": "View-only invitation",
-  "external.invite.loginRequired": "Sign in or create an account with the e-mail address that received the invitation.",
+  "external.invite.loginRequired":
+    "Sign in or create an account with the e-mail address that received the invitation.",
   "external.invite.login": "Sign in",
-  "external.invite.invalid": "This invitation is no longer valid. Ask the team that sent it for a new one.",
-  "external.invite.description": "The team {team} gives you view-only access to documents until {date}.",
-  "external.invite.viewOnly": "You will see previews watermarked with your name, without access to originals. Pages also carry an invisible mark. Openings and authorized page requests are journaled, not human reading. Hourly sealing can leave recent events unanchored.",
+  "external.invite.invalid":
+    "This invitation is no longer valid. Ask the team that sent it for a new one.",
+  "external.invite.description":
+    "The team {team} gives you view-only access to documents until {date}.",
+  "external.invite.viewOnly":
+    "You will see previews watermarked with your name, without access to originals. Pages also carry an invisible mark. Openings and authorized page requests are journaled, not human reading. Hourly sealing can leave recent events unanchored.",
   "external.invite.requirement.email": "Signed in as {email}",
   "external.invite.requirement.totp": "Two-factor authentication enabled",
   "external.invite.requirement.keys": "End-to-end encryption enabled",
   "external.invite.enable": "Enable",
-  "external.invite.error": "The invitation could not be accepted. Check the requirements above.",
+  "external.invite.error":
+    "The invitation could not be accepted. Check the requirements above.",
   "external.invite.accept": "Accept the invitation",
   "external.list.title": "View-only documents",
-  "external.list.description": "The teams that invited you share view-only previews here, watermarked with your name.",
+  "external.list.description":
+    "The teams that invited you share view-only previews here, watermarked with your name.",
   "external.list.access": "{team}: access until {date}",
-  "external.list.totpRequired": "Turn on two-factor authentication to view these documents.",
-  "external.list.keyLocked": "Unlock your encryption key to open these documents.",
+  "external.list.totpRequired":
+    "Turn on two-factor authentication to view these documents.",
+  "external.list.keyLocked":
+    "Unlock your encryption key to open these documents.",
   "external.list.unlock": "Unlock",
   "external.list.noAccess": "No view-only access is active on this account.",
   "external.list.empty": "No document has been shared with you yet.",
   "external.list.encryptedTitle": "Encrypted document",
   "external.list.unreadable": "Unreadable title",
-  "external.list.meta": "{team} - shared on {date} - {pages, plural, one {# page} other {# pages}}",
+  "external.list.meta":
+    "{team} - shared on {date} - {pages, plural, one {# page} other {# pages}}",
   "external.list.viewOnly": "View only",
   "external.list.open": "Open",
   "external.viewer.page": "Page {page}",
   "external.viewer.pageError": "This page could not be displayed.",
-  "external.viewer.notice": "View only. Watermark: {watermark}. Pages also carry an invisible mark. Authorized page requests are journaled, not human reading. Recent events may be unanchored.",
+  "external.viewer.notice":
+    "View only. Watermark: {watermark}. Pages also carry an invisible mark. Authorized page requests are journaled, not human reading. Recent events may be unanchored.",
   "external.viewer.empty": "This document has no pages.",
   "external.viewer.back": "Back to documents",
-  "external.viewer.unavailable": "This document is no longer available. The access may have ended or the preview was removed.",
-  "external.viewer.decryptError": "This document could not be decrypted with your keys.",
+  "external.viewer.unavailable":
+    "This document is no longer available. The access may have ended or the preview was removed.",
+  "external.viewer.decryptError":
+    "This document could not be decrypted with your keys.",
   "external.viewer.meta": "{team} - access until {date}",
-  "upload.pending.fileChanged": "This file does not match the interrupted upload. It will be uploaded again from the beginning.",
+  "upload.pending.fileChanged":
+    "This file does not match the interrupted upload. It will be uploaded again from the beginning.",
 
   "admin.shares.status.inactive": "Inactive upload",
   "admin.shares.status.unfinished": "Not finalized",
 
   "upload.pending.resume": "Resume or finalize",
-  "upload.pending.resumeHelp": "Select the missing files again to resume this upload. Saved files are kept. Click Save to finish with the files shown. Resuming parts requires the local upload record and the same original files.",
+  "upload.pending.resumeHelp":
+    "Select the missing files again to resume this upload. Saved files are kept. Click Save to finish with the files shown. Resuming parts requires the local upload record and the same original files.",
 
   "upload.pending.title": "Unfinished uploads",
-  "upload.pending.body": "Some uploads have not been finalized. You can view and download the files already saved.",
-  "upload.pending.summary": "{date}: {count, plural, one {# saved file} other {# saved files}} ({size})",
+  "upload.pending.body":
+    "Some uploads have not been finalized. You can view and download the files already saved.",
+  "upload.pending.summary":
+    "{date}: {count, plural, one {# saved file} other {# saved files}} ({size})",
   "upload.pending.open": "Open saved files",
-  "upload.pending.detail": "This upload has not been finalized. The files shown are already saved and remain accessible from your account. Other files from this upload may be missing.",
+  "upload.pending.detail":
+    "This upload has not been finalized. The files shown are already saved and remain accessible from your account. Other files from this upload may be missing.",
 
   "upload.cancel.confirm":
     "The current upload will be interrupted and the incomplete share deleted. Continue?",
   "upload.finalization.pending.retry": "Retry finalization",
-  "upload.finalization.pending.body": "Finalization has not been confirmed. Files already saved are preserved. Retry to obtain the share link.",
+  "upload.finalization.pending.body":
+    "Finalization has not been confirmed. Files already saved are preserved. Retry to obtain the share link.",
   "upload.finalization.pending.title": "Finalization pending",
-  "upload.modal.completed.partial-body": "The share contains files saved by the server. The upload of {count} file(s) could not be confirmed. Check the share before uploading missing files again.",
+  "upload.modal.completed.partial-body":
+    "The share contains files saved by the server. The upload of {count} file(s) could not be confirmed. Check the share before uploading missing files again.",
   "upload.modal.completed.share-incomplete": "Incomplete share",
   "upload.modal.completed.partial-title": "Transferred files preserved",
-  "bridge.error.localNetworkPermissionRequired": "Connect the Android Companion and allow local application access when the browser asks.",
-  "bridge.error.localNetworkPermissionDenied": "The browser blocks the Android Companion. Allow local network access in site settings, then reconnect it.",
-  "bridge.error.extensionRequired": "Install or enable the PrivCloud Companion extension to connect the Companion.",
-  "bridge.error.originDenied": "This page is not authorized to use the Companion.",
-  "bridge.error.sessionExpired": "Reconnect the Companion to renew authorization.",
+  "bridge.error.localNetworkPermissionRequired":
+    "Connect the Android Companion and allow local application access when the browser asks.",
+  "bridge.error.localNetworkPermissionDenied":
+    "The browser blocks the Android Companion. Allow local network access in site settings, then reconnect it.",
+  "bridge.error.extensionRequired":
+    "Install or enable the PrivCloud Companion extension to connect the Companion.",
+  "bridge.error.originDenied":
+    "This page is not authorized to use the Companion.",
+  "bridge.error.sessionExpired":
+    "Reconnect the Companion to renew authorization.",
   "bridge.error.downloadExpired": "The download expired. Restart the import.",
   "bridge.error.busy": "The Companion is busy. Please try again shortly.",
-  "bridge.error.timeout": "The Companion did not respond in time. Check its status before restarting the operation.",
-  "bridge.error.messageTooLarge": "This response exceeds the size supported by the Companion.",
-  "bridge.error.secureContextRequired": "Open PrivCloud over HTTPS to connect the Companion.",
+  "bridge.error.timeout":
+    "The Companion did not respond in time. Check its status before restarting the operation.",
+  "bridge.error.messageTooLarge":
+    "This response exceeds the size supported by the Companion.",
+  "bridge.error.secureContextRequired":
+    "Open PrivCloud over HTTPS to connect the Companion.",
 
   "team.dashboard.metrics.availableSeats": "{count} free",
   "team.dashboard.metrics.downloadsShort": "Downloads (30d)",
@@ -389,7 +516,7 @@ export default {
     "The request remains in your team space. Encrypted alerts are sent to members who selected 'All files'. Members who selected 'Direct shares only' can find the request in their team space.",
   "team.fileRequest.empty": "No sent or received requests.",
   "team.fileRequest.noFolders":
-    "No folders are available with write access. A team administrator can create a folder or update its permissions.",
+    "No folder available. A team administrator can create a folder or adjust access.",
   "team.fileRequest.noRecipients":
     "No other active member has write access to this folder.",
   "team.fileRequest.allRights":
@@ -465,13 +592,15 @@ export default {
   "home.title": "A <h>secure, self-hosted</h> file sharing platform.",
   "home.meta.title": "WeTransfer Alternative (End-to-End Encrypted)",
 
-  "home.meta.description": "Secure file transfer with end-to-end AES-256 encryption. Share sensitive data privately, no ads or tracking. Hosted in France, alternative to WeTransfer.",
+  "home.meta.description":
+    "Secure file transfer with end-to-end AES-256 encryption. Share sensitive data privately, no ads or tracking. Hosted in France, alternative to WeTransfer.",
 
   "home.description":
     "Take back control of your data. PrivCloud_Sharing is built by THEMIOT Informatique - cybersecurity experts who believe your files belong to you.",
-  
+
   "home.bullet.a.name": "Self-Hosted",
-  "home.bullet.a.description": "Deploy PrivCloud_Sharing on your own infrastructure in minutes.",
+  "home.bullet.a.description":
+    "Deploy PrivCloud_Sharing on your own infrastructure in minutes.",
   "home.bullet.b.name": "Privacy & Encryption",
   "home.bullet.b.description":
     "End-to-end AES-256 encryption ensures nobody - not even us - can access your files.",
@@ -484,26 +613,32 @@ export default {
   "home.button.source": "Source code",
 
   // Hero SEO paragraph
-  "home.hero.seo": "PrivCloud is a secure alternative to WeTransfer, SwissTransfer, and TransferNow -- with AES-256 end-to-end encryption performed in your browser. Your files are encrypted before leaving your device: the server never stores unencrypted data. Whether you are sharing contracts, medical records, or large datasets: your files stay protected from upload to download.",
+  "home.hero.seo":
+    "PrivCloud is a secure alternative to WeTransfer, SwissTransfer, and TransferNow -- with AES-256 end-to-end encryption performed in your browser. Your files are encrypted before leaving your device: the server never stores unencrypted data. Whether you are sharing contracts, medical records, or large datasets: your files stay protected from upload to download.",
 
   // Trust / external references
-  "home.trust.text": "Built on the <aes>AES-256</aes> encryption standard, <gdpr>GDPR</gdpr> compliant, with optional key recovery through <shamir>Shamir's Secret Sharing</shamir>.",
+  "home.trust.text":
+    "Built on the <aes>AES-256</aes> encryption standard, <gdpr>GDPR</gdpr> compliant, with optional key recovery through <shamir>Shamir's Secret Sharing</shamir>.",
 
   // Differentiation section
   "home.diff.title": "Why PrivCloud is Different",
   "home.diff.encryption": "End-to-end AES-256 encryption",
-  "home.diff.zeroKnowledge": "Zero-knowledge architecture -- by default, we never see your key",
+  "home.diff.zeroKnowledge":
+    "Zero-knowledge architecture -- by default, we never see your key",
   "home.diff.noAccount": "No account required for transfers",
   "home.diff.openSource": "Open source and fully auditable",
   "home.diff.gdpr": "Hosted in France, 100% GDPR compliant",
   "home.diff.autoExpiry": "Auto-expiring links with password protection",
-  "home.diff.downloadNotify": "Download notifications -- know when your files are accessed",
+  "home.diff.downloadNotify":
+    "Download notifications -- know when your files are accessed",
 
   // Comparison section
   // Comparison table
   "home.comparison.table.title": "PrivCloud vs the competition",
-  "home.comparison.table.subtitle": "An honest look at what sets PrivCloud apart from mainstream file-sharing services.",
-  "home.comparison.table.note": "(-) Partial or paid-only feature. Data verified mid-2025. For the use of the self-hosted instance of PrivCloud (GitHub): Features may vary depending on the configuration of your instance.",
+  "home.comparison.table.subtitle":
+    "An honest look at what sets PrivCloud apart from mainstream file-sharing services.",
+  "home.comparison.table.note":
+    "(-) Partial or paid-only feature. Data verified mid-2025. For the use of the self-hosted instance of PrivCloud (GitHub): Features may vary depending on the configuration of your instance.",
   "home.comparison.table.header.criteria": "Feature",
   "home.comparison.table.header.privcloud": "PrivCloud",
   "home.comparison.table.header.wetransfer": "WeTransfer",
@@ -521,110 +656,156 @@ export default {
   "home.comparison.table.ads": "No advertising / tracking",
 
   "home.comparison.title": "PrivCloud vs WeTransfer",
-  "home.comparison.text": "Unlike WeTransfer, SwissTransfer, Smash, or TransferNow, PrivCloud encrypts your files directly in your browser before they leave your device. By default, your encryption key is not transmitted to our servers -- even if compromised, your files remain unreadable. Enable download notifications to know exactly when someone accesses your share. No ads, no tracking, no third-party access -- genuinely private, GDPR-compliant file sharing hosted in France.",
+  "home.comparison.text":
+    "Unlike WeTransfer, SwissTransfer, Smash, or TransferNow, PrivCloud encrypts your files directly in your browser before they leave your device. By default, your encryption key is not transmitted to our servers -- even if compromised, your files remain unreadable. Enable download notifications to know exactly when someone accesses your share. No ads, no tracking, no third-party access -- genuinely private, GDPR-compliant file sharing hosted in France.",
 
   // Use cases section
   "home.usecases.title": "Who is PrivCloud for?",
   "home.usecases.developers": "Developers and IT teams sharing code and builds",
-  "home.usecases.businesses": "Businesses sending contracts and confidential documents",
-  "home.usecases.health": "Healthcare and legal professionals handling sensitive data",
-  "home.usecases.freelancers": "Freelancers exchanging deliverables with clients",
+  "home.usecases.businesses":
+    "Businesses sending contracts and confidential documents",
+  "home.usecases.health":
+    "Healthcare and legal professionals handling sensitive data",
+  "home.usecases.freelancers":
+    "Freelancers exchanging deliverables with clients",
   "home.usecases.privacy": "Anyone who values true digital privacy",
-  "home.usecases.notifications": "Teams needing real-time awareness of file access",
+  "home.usecases.notifications":
+    "Teams needing real-time awareness of file access",
 
   // Features section
   "home.features.title": "Why choose PrivCloud_Sharing?",
-  "home.features.security.title": "End-to-end AES-256 encryption for all your files",
-  "home.features.security.description": "Only you and the recipient can read the files. By default, the encryption key is not transmitted to the server - for us, your files are unreadable.",
+  "home.features.security.title":
+    "End-to-end AES-256 encryption for all your files",
+  "home.features.security.description":
+    "Only you and the recipient can read the files. By default, the encryption key is not transmitted to the server - for us, your files are unreadable.",
   "home.features.privacy.title": "Your data, your rules - hosted in France",
-  "home.features.privacy.description": "Hosted in France, 100% GDPR compliant. No tracking, no analytics, no third-party access.",
+  "home.features.privacy.description":
+    "Hosted in France, 100% GDPR compliant. No tracking, no analytics, no third-party access.",
   "home.features.speed.title": "Unlimited files, max transfer speed",
-  "home.features.speed.description": "Optimized infrastructure for maximum transfer speed. No file count limit, no throttling.",
+  "home.features.speed.description":
+    "Optimized infrastructure for maximum transfer speed. No file count limit, no throttling.",
   "home.features.open.title": "Open source",
-  "home.features.open.description": "Fully auditable code. Transparency is not optional.",
-  "home.features.subtitle": "PrivCloud combines end-to-end AES-256 encryption, hosting in France, and open-source transparency to deliver secure file transfers in accordance with the GDPR obligations that apply to the service. For E2E shares, the server does not receive the content key by default and cannot read the files.",
+  "home.features.open.description":
+    "Fully auditable code. Transparency is not optional.",
+  "home.features.subtitle":
+    "PrivCloud combines end-to-end AES-256 encryption, hosting in France, and open-source transparency to deliver secure file transfers in accordance with the GDPR obligations that apply to the service. For E2E shares, the server does not receive the content key by default and cannot read the files.",
 
   // How it works section
   "home.howto.title": "How to send encrypted files in 3 steps",
-  "home.howto.subtitle": "Sending end-to-end encrypted files has never been easier. Three steps are all it takes to protect your documents, contracts, medical records, or any sensitive files with AES-256-GCM encryption -- no installation, directly in your browser.",
+  "home.howto.subtitle":
+    "Sending end-to-end encrypted files has never been easier. Three steps are all it takes to protect your documents, contracts, medical records, or any sensitive files with AES-256-GCM encryption -- no installation, directly in your browser.",
   "home.howto.step1.num": "01",
   "home.howto.step1.title": "Select your files",
-  "home.howto.step1.desc": "Drag and drop your files (documents, images, archives, videos...) or click to select them. Multiple files at once, no installation required -- everything happens directly in your browser.",
+  "home.howto.step1.desc":
+    "Drag and drop your files (documents, images, archives, videos...) or click to select them. Multiple files at once, no installation required -- everything happens directly in your browser.",
   "home.howto.step2.num": "02",
-  "home.howto.step2.title": "End-to-end AES-256 encryption - your key stays private",
-  "home.howto.step2.desc": "Your files are encrypted locally in your browser with AES-256-GCM before leaving your device. By default, the encryption key does not pass through our servers: it stays in the share link.",
+  "home.howto.step2.title":
+    "End-to-end AES-256 encryption - your key stays private",
+  "home.howto.step2.desc":
+    "Your files are encrypted locally in your browser with AES-256-GCM before leaving your device. By default, the encryption key does not pass through our servers: it stays in the share link.",
   "home.howto.step3.num": "03",
   "home.howto.step3.title": "Share the secure link",
-  "home.howto.step3.desc": "Copy the share link and send it to your recipients. Set an expiration date and optional password for additional protection. Receive a notification whenever someone downloads your files.",
+  "home.howto.step3.desc":
+    "Copy the share link and send it to your recipients. Set an expiration date and optional password for additional protection. Receive a notification whenever someone downloads your files.",
 
   // Why PrivCloud section
-  "home.whyprivcloud.title": "What sets PrivCloud apart from other file transfer services",
-  "home.whyprivcloud.subtitle": "WeTransfer, SwissTransfer, TransferNow, Smash: most file transfer services encrypt your data at rest on their servers but retain the key. They can technically read your files. PrivCloud takes a fundamentally different approach: AES-256 end-to-end encryption is performed in your browser, and by default the key never reaches our servers. Zero-knowledge architecture designed to meet GDPR requirements.",
+  "home.whyprivcloud.title":
+    "What sets PrivCloud apart from other file transfer services",
+  "home.whyprivcloud.subtitle":
+    "WeTransfer, SwissTransfer, TransferNow, Smash: most file transfer services encrypt your data at rest on their servers but retain the key. They can technically read your files. PrivCloud takes a fundamentally different approach: AES-256 end-to-end encryption is performed in your browser, and by default the key never reaches our servers. Zero-knowledge architecture designed to meet GDPR requirements.",
 
   // Security, privacy and compliance section
   "home.security.title": "Security, privacy and GDPR compliance",
-  "home.security.encryption.title": "AES-256-GCM encryption: your key is generated in your browser",
-  "home.security.encryption.text": "Every file is encrypted locally in your browser before being uploaded. The AES-256 symmetric encryption key is randomly generated and embedded in the URL fragment (#key=...), a part that is never transmitted to the server by HTTP protocol design. Result: even if the server is compromised, your files remain unreadable. Their content never transits the network or resides on our servers in plaintext.",
+  "home.security.encryption.title":
+    "AES-256-GCM encryption: your key is generated in your browser",
+  "home.security.encryption.text":
+    "Every file is encrypted locally in your browser before being uploaded. The AES-256 symmetric encryption key is randomly generated and embedded in the URL fragment (#key=...), a part that is never transmitted to the server by HTTP protocol design. Result: even if the server is compromised, your files remain unreadable. Their content never transits the network or resides on our servers in plaintext.",
   "home.security.zeroknowledge.title": "Verifiable zero-knowledge architecture",
-  "home.security.zeroknowledge.text": "End-to-end encryption is enabled by default for file content. In the current E2E format, file names, paths, share titles and descriptions are also protected on the client with the same key. The server keeps encrypted data, neutral labels, file sizes and dates. The source code is open and auditable on GitHub.",
+  "home.security.zeroknowledge.text":
+    "End-to-end encryption is enabled by default for file content. In the current E2E format, file names, paths, share titles and descriptions are also protected on the client with the same key. The server keeps encrypted data, neutral labels, file sizes and dates. The source code is open and auditable on GitHub.",
   "home.security.gdpr.title": "Hosted in France, GDPR compliant",
-  "home.security.gdpr.text": "Your encrypted files are stored on secure infrastructure in France, in full compliance with the General Data Protection Regulation (GDPR) and CNIL recommendations. No transfers to third countries, no tracking, no advertising, no third-party analytics. Your data stays under European jurisdiction, protected by the strictest security standards.",
+  "home.security.gdpr.text":
+    "Your encrypted files are stored on secure infrastructure in France, in full compliance with the General Data Protection Regulation (GDPR) and CNIL recommendations. No transfers to third countries, no tracking, no advertising, no third-party analytics. Your data stays under European jurisdiction, protected by the strictest security standards.",
 
   // FAQ section
-  "home.faq.title": "Frequently asked questions about end-to-end encrypted file sharing",
+  "home.faq.title":
+    "Frequently asked questions about end-to-end encrypted file sharing",
 
   "home.faq.q1": "Can I send files without creating an account?",
-  "home.faq.a1": "Yes. You can send files immediately, without signing up. Creating an account allows you to manage your shares and enable end-to-end encryption for maximum security.",
+  "home.faq.a1":
+    "Yes. You can send files immediately, without signing up. Creating an account allows you to manage your shares and enable end-to-end encryption for maximum security.",
 
   "home.faq.q2": "Are my files really secure?",
-  "home.faq.a2": "Yes. All transfers are encrypted. With end-to-end encryption enabled, your files are encrypted directly in your browser (AES-256) before upload. No one, not even us, can read their content.",
+  "home.faq.a2":
+    "Yes. All transfers are encrypted. With end-to-end encryption enabled, your files are encrypted directly in your browser (AES-256) before upload. No one, not even us, can read their content.",
 
   "home.faq.q3": "How does end-to-end encryption work?",
-  "home.faq.a3": "Encryption is performed locally in your browser before upload. By default, the decryption key is not transmitted to the server: it is included only in the share link. It only passes through our servers if you choose to send it by e-mail, and for files received through an upload link. Without the full link, files are unusable.",
+  "home.faq.a3":
+    "Encryption is performed locally in your browser before upload. By default, the decryption key is not transmitted to the server: it is included only in the share link. It only passes through our servers if you choose to send it by e-mail, and for files received through an upload link. Without the full link, files are unusable.",
 
   "home.faq.q4": "Are my files stored permanently?",
-  "home.faq.a4": "No. Every transfer has a configurable expiration. Once expired, files are automatically deleted from our servers, with no action required.",
+  "home.faq.a4":
+    "No. Every transfer has a configurable expiration. Once expired, files are automatically deleted from our servers, with no action required.",
 
   "home.faq.q5": "Can I protect a share with a password?",
-  "home.faq.a5": "Yes. You can add a password to any share. The recipient will need to enter it to access the files, adding an extra layer of security.",
+  "home.faq.a5":
+    "Yes. You can add a password to any share. The recipient will need to enter it to access the files, adding an extra layer of security.",
 
   "home.faq.q6": "What is the difference between transfer and storage?",
-  "home.faq.a6": "Transfer refers to the maximum size of a single upload. Storage refers to the total space used by your active files. Once expired, files are deleted and automatically free up space.",
+  "home.faq.a6":
+    "Transfer refers to the maximum size of a single upload. Storage refers to the total space used by your active files. Once expired, files are deleted and automatically free up space.",
 
   "home.faq.q7": "Where are my files hosted?",
-  "home.faq.a7": "Files are stored on a secure infrastructure in Europe (France), with GDPR compliance. Data is encrypted at rest server-side. With end-to-end encryption enabled, it is already encrypted before being stored.",
+  "home.faq.a7":
+    "Files are stored on a secure infrastructure in Europe (France), with GDPR compliance. Data is encrypted at rest server-side. With end-to-end encryption enabled, it is already encrypted before being stored.",
 
-  "home.faq.q8": "What is the difference compared to Google Drive, Dropbox or OneDrive?",
-  "home.faq.a8": "Classic cloud services encrypt data but keep the keys, which technically allows them to access it. PrivCloud_Sharing uses a zero-knowledge model: only you hold the key. Even we cannot access your files.",
+  "home.faq.q8":
+    "What is the difference compared to Google Drive, Dropbox or OneDrive?",
+  "home.faq.a8":
+    "Classic cloud services encrypt data but keep the keys, which technically allows them to access it. PrivCloud_Sharing uses a zero-knowledge model: only you hold the key. Even we cannot access your files.",
 
   "home.faq.q9": "Can the storage provider access my files?",
-  "home.faq.a9": "Without end-to-end encryption, data is protected but technically accessible as with any cloud service. With encryption enabled, files are unreadable to any other party, including the storage provider.",
+  "home.faq.a9":
+    "Without end-to-end encryption, data is protected but technically accessible as with any cloud service. With encryption enabled, files are unreadable to any other party, including the storage provider.",
 
   "home.faq.q10": "Why use PrivCloud_Sharing instead of another service?",
-  "home.faq.a10": "PrivCloud_Sharing combines simplicity, performance, and advanced security. Unlike traditional solutions, your files can be end-to-end encrypted, guaranteeing total privacy without compromising speed.",
+  "home.faq.a10":
+    "PrivCloud_Sharing combines simplicity, performance, and advanced security. Unlike traditional solutions, your files can be end-to-end encrypted, guaranteeing total privacy without compromising speed.",
 
   // Threat model section
   "home.threat.title": "Transparent threat model",
-  "home.threat.intro": "We believe honest platforms tell you exactly what they protect against -- and what remains your responsibility.",
+  "home.threat.intro":
+    "We believe honest platforms tell you exactly what they protect against -- and what remains your responsibility.",
   "home.threat.protects.title": "What we protect against",
-  "home.threat.protects.serverBreach": "Server / database compromise -- encrypted files are unreadable without your key.",
-  "home.threat.protects.s3Provider": "S3 storage provider snooping -- with E2E enabled, they only see encrypted content, under random identifiers.",
-  "home.threat.protects.networkSniffing": "Network interception -- TLS 1.3 in transit, AES-256 at rest and client-side.",
-  "home.threat.protects.operator": "Platform operator (us) -- zero-knowledge design: by default, we never see your key.",
-  "home.threat.protects.sskrRecovery": "Partial loss of SSKR fragments -- thanks to Shamir's scheme, a minimum threshold of fragments is enough to reconstruct your key.",
+  "home.threat.protects.serverBreach":
+    "Server / database compromise -- encrypted files are unreadable without your key.",
+  "home.threat.protects.s3Provider":
+    "S3 storage provider snooping -- with E2E enabled, they only see encrypted content, under random identifiers.",
+  "home.threat.protects.networkSniffing":
+    "Network interception -- TLS 1.3 in transit, AES-256 at rest and client-side.",
+  "home.threat.protects.operator":
+    "Platform operator (us) -- zero-knowledge design: by default, we never see your key.",
+  "home.threat.protects.sskrRecovery":
+    "Partial loss of SSKR fragments -- thanks to Shamir's scheme, a minimum threshold of fragments is enough to reconstruct your key.",
   "home.threat.notProtects.title": "What stays your responsibility",
-  "home.threat.notProtects.keyLoss": "Losing your E2E key without having generated SSKR fragments -- without the key or fragments, your encrypted shares are permanently inaccessible.",
-  "home.threat.notProtects.deviceCompromise": "Compromised endpoint (malware, keylogger) -- we cannot protect what your OS cannot.",
-  "home.threat.notProtects.weakPassword": "Weak account password -- enable 2FA (TOTP) and use a strong, unique password.",
-  "home.threat.notProtects.linkSharing": "Sharing a link on an insecure channel -- anyone with the link + key can decrypt.",
-  "home.threat.notProtects.shardMismanagement": "Storing all your SSKR fragments in the same place -- if an attacker obtains them all, they can reconstruct your key.",
+  "home.threat.notProtects.keyLoss":
+    "Losing your E2E key without having generated SSKR fragments -- without the key or fragments, your encrypted shares are permanently inaccessible.",
+  "home.threat.notProtects.deviceCompromise":
+    "Compromised endpoint (malware, keylogger) -- we cannot protect what your OS cannot.",
+  "home.threat.notProtects.weakPassword":
+    "Weak account password -- enable 2FA (TOTP) and use a strong, unique password.",
+  "home.threat.notProtects.linkSharing":
+    "Sharing a link on an insecure channel -- anyone with the link + key can decrypt.",
+  "home.threat.notProtects.shardMismanagement":
+    "Storing all your SSKR fragments in the same place -- if an attacker obtains them all, they can reconstruct your key.",
   // END threat model
 
   // END /
 
   // /auth/signin
   "signin.title": "Welcome back",
-  "signin.meta.description": "Sign in to your PrivCloud account to access your end-to-end encrypted file shares. Hosted in France, GDPR compliant.",
+  "signin.meta.description":
+    "Sign in to your PrivCloud account to access your end-to-end encrypted file shares. Hosted in France, GDPR compliant.",
   "signin.description": "You don't have an account yet?",
   "signin.button.signup": "Sign up",
   "signin.input.email-or-username": "Email or username",
@@ -642,7 +823,7 @@ export default {
   "signIn.notify.totp-required.title": "Two-factor authentication required",
   "signIn.notify.totp-required.description":
     "Please enter your two-factor authentication code",
-  "signIn.oauth.or": "OR",
+  "signIn.oauth.continueWith": "Or continue with",
   "signIn.oauth.signInWith": "Sign in with",
   "signIn.oauth.github": "GitHub",
   "signIn.oauth.google": "Google",
@@ -654,7 +835,8 @@ export default {
 
   // /auth/signup
   "signup.title": "Create an account",
-  "signup.meta.description": "Create your free PrivCloud account -- share large files with AES-256 encryption, expiring links, and password protection. Hosted in France.",
+  "signup.meta.description":
+    "Create your free PrivCloud account -- share large files with AES-256 encryption, expiring links, and password protection. Hosted in France.",
   "signup.description": "Already have an account?",
   "signup.button.signin": "Sign in",
   "signup.input.username": "Username",
@@ -710,9 +892,12 @@ export default {
   "account.card.password.new": "New password",
   "account.card.password.noPasswordSet":
     "You do not have a password set. To sign in using your email and password, you need to create a password.",
-  "account.card.password.oauth.description": "Confirm your identity by signing in again with the account linked to yours before choosing a password.",
-  "account.card.password.oauth.confirmed": "Identity confirmed. Choose your password within the next few minutes.",
-  "account.card.password.oauth.none": "None of your linked accounts can confirm your identity here. Sign out and use \"Forgot your password?\" on the sign-in page to receive a link by email, or ask your administrator.",
+  "account.card.password.oauth.description":
+    "Confirm your identity by signing in again with the account linked to yours before choosing a password.",
+  "account.card.password.oauth.confirmed":
+    "Identity confirmed. Choose your password within the next few minutes.",
+  "account.card.password.oauth.none":
+    'None of your linked accounts can confirm your identity here. Sign out and use "Forgot your password?" on the sign-in page to receive a link by email, or ask your administrator.',
   "account.notify.password.success": "Password changed successfully",
 
   "account.card.oauth.title": "Social login",
@@ -765,12 +950,15 @@ export default {
   "account.modal.totp.backup.done": "I have saved my codes",
   "account.modal.totp.backup.fileHeader":
     "TOTP Backup Codes - Keep these in a safe place!",
-  "account.modal.totp.backup.fileFooter":
-    "Each code can only be used once.",
+  "account.modal.totp.backup.fileFooter": "Each code can only be used once.",
 
+  "account.card.push.not-configured":
+    "Push notifications are not enabled on this instance.",
+  "account.card.push.unsupported":
+    "This browser does not support push notifications.",
   "account.card.push.title": "Push Notifications",
   "account.card.push.description":
-    "Receive browser notifications when a share is completed or someone uploads files via your reverse share link.",
+    "Enable notifications on this device, then choose which events you want to receive.",
   "account.card.push.enable": "Enable notifications",
   "account.card.push.disable": "Disable notifications",
   "account.card.push.permission-denied":
@@ -779,10 +967,17 @@ export default {
   "account.notify.push.disabled": "Push notifications disabled",
   "account.notify.push.error": "Failed to configure push notifications",
   "account.notify.push.browser-blocked":
-    "Your browser blocks the push service (common with Brave). Enable Google push messaging: open brave://settings/privacy, scroll to \"Use Google services for push messaging\", and toggle it ON. Alternatively, disable Brave Shields for this site.",
+    'Your browser blocks the push service (common with Brave). Enable Google push messaging: open brave://settings/privacy, scroll to "Use Google services for push messaging", and toggle it ON. Alternatively, disable Brave Shields for this site.',
   "account.card.push.browser-blocked":
-    "Your browser blocks push notifications (Brave or similar). To fix this: open brave://settings/privacy, find \"Use Google services for push messaging\", and enable it. Or temporarily disable Shields for this site.",
+    'Your browser blocks push notifications (Brave or similar). To fix this: open brave://settings/privacy, find "Use Google services for push messaging", and enable it. Or temporarily disable Shields for this site.',
 
+  "account.notify.signature.unavailable":
+    "Eligibility for signature notifications could not be confirmed. Try again shortly.",
+  "account.notify.signature.title": "Signatures",
+  "account.notify.signature.description":
+    "Receive a notification when your account is asked to sign a document and when the finalized document is available.",
+  "account.notify.signature.label":
+    "Notify me of signature requests and finalized documents",
   "account.notify.title": "Download notifications",
   "account.notify.description":
     "Choose how you want to be notified when your shares are downloaded.",
@@ -840,7 +1035,8 @@ export default {
   "account.shares.notify.delete-fail": "Could not delete share",
   "account.shares.select-all": "Select all",
   "account.shares.bulk-delete.title": "Delete {count} share(s)",
-  "account.shares.bulk-delete.description": "Do you really want to delete the {count} selected share(s)? This action is irreversible.",
+  "account.shares.bulk-delete.description":
+    "Do you really want to delete the {count} selected share(s)? This action is irreversible.",
   "account.shares.bulk-delete.button": "Delete ({count})",
 
   // END /account/shares
@@ -860,7 +1056,8 @@ export default {
   "account.reverseShares.modal.link-type.description":
     "Personal links never expire but can be revoked. Limited links have configurable expiration.",
   "account.reverseShares.modal.link-type.personal": "Personal (no expiration)",
-  "account.reverseShares.modal.link-type.limited": "Limited (custom expiration)",
+  "account.reverseShares.modal.link-type.limited":
+    "Limited (custom expiration)",
   "account.reverseShares.modal.expiration.label": "Expiration",
   "account.reverseShares.modal.expiration.minute-singular": "Minute",
   "account.reverseShares.modal.expiration.minute-plural": "Minutes",
@@ -913,7 +1110,6 @@ export default {
   "account.reverseShares.table.password-protected": "Password protected",
   "account.reverseShares.table.view-files": "View files",
 
-
   "account.reverseShares.modal.reverse-share-link": "Reverse share link",
 
   "account.reverseShares.modal.delete.title": "Delete reverse share",
@@ -921,21 +1117,25 @@ export default {
     "Do you really want to delete this reverse share? If you do, the associated shares will be deleted as well.",
 
   "account.reverseShares.rsKey.title": "Reverse share encryption key",
-  "account.reverseShares.rsKey.description": "AES-256 encryption key for this reverse share. Store it safely -- without it, uploaded files cannot be decrypted.",
+  "account.reverseShares.rsKey.description":
+    "AES-256 encryption key for this reverse share. Store it safely -- without it, uploaded files cannot be decrypted.",
   "account.reverseShares.rsKey.reveal": "Reveal",
   "account.reverseShares.rsKey.hide": "Hide",
   "account.reverseShares.rsKey.copy": "Copy",
   "account.reverseShares.rsKey.copied": "Copied!",
   "account.reverseShares.table.show-key": "Show encryption key",
-  "account.reverseShares.notify.decrypt-key-failed": "Unable to decrypt the reverse share key",
+  "account.reverseShares.notify.decrypt-key-failed":
+    "Unable to decrypt the reverse share key",
   "account.reverseShares.notify.expiration-updated": "Expiration updated",
-  "account.reverseShares.notify.expiration-update-failed": "Failed to update expiration",
+  "account.reverseShares.notify.expiration-update-failed":
+    "Failed to update expiration",
   "account.reverseShares.modal.delete-share.title": "Delete share",
   "account.reverseShares.modal.delete-share.description":
     "Do you really want to delete this share? The uploaded files will be permanently removed.",
   "account.reverseShares.select-all": "Select all",
   "account.reverseShares.bulk-delete.title": "Delete {count} reverse share(s)",
-  "account.reverseShares.bulk-delete.description": "Do you really want to delete the {count} selected reverse share(s)? The uploaded files will be permanently removed.",
+  "account.reverseShares.bulk-delete.description":
+    "Do you really want to delete the {count} selected reverse share(s)? The uploaded files will be permanently removed.",
   "account.reverseShares.bulk-delete.button": "Delete ({count})",
 
   // END /account/reverseShares
@@ -964,21 +1164,28 @@ export default {
 
   // /admin/users
   "step-up.title": "Confirm your identity",
-  "step-up.description.admin": "This operation changes administrator rights, someone else's credentials or the sign-in settings. Confirm your own administrator identity. The affected user has nothing to provide, and the confirmation is valid for this operation only.",
+  "step-up.description.admin":
+    "This operation changes administrator rights, someone else's credentials or the sign-in settings. Confirm your own administrator identity. The affected user has nothing to provide, and the confirmation is valid for this operation only.",
   "step-up.password": "Your password",
-  "step-up.description.signing-passkey": "This passkey will sign documents in your name and sign you in. Confirm your identity first, as when adding a passkey from your account settings.",
+  "step-up.description.signing-passkey":
+    "This passkey will sign documents in your name and sign you in. Confirm your identity first, as when adding a passkey from your account settings.",
   "step-up.confirm": "Confirm",
   "step-up.passkey": "Confirm with a passkey",
-  "step-up.wrong-proof": "Wrong password, or the confirmation with your linked account has expired.",
+  "step-up.wrong-proof":
+    "Wrong password, or the confirmation with your linked account has expired.",
   "step-up.wrong-code": "Invalid two-factor code.",
   "step-up.passkey-error": "The passkey could not confirm this operation.",
   "step-up.error": "The confirmation failed. Try again.",
-  "step-up.none": "Your account has no password, passkey or linked account able to confirm this operation. Add a passkey or set a password from your account settings.",
-  "step-up.oauth-returned": "Identity confirmed with your linked account. Repeat the operation within five minutes.",
+  "step-up.none":
+    "Your account has no password, passkey or linked account able to confirm this operation. Add a passkey or set a password from your account settings.",
+  "step-up.oauth-returned":
+    "Identity confirmed with your linked account. Repeat the operation within five minutes.",
   "admin.users.title": "User management",
-  "admin.users.total": "{count, plural, one {# user total} other {# users total}}",
-  "admin.users.search.placeholder": "Search by username or email",
-  "admin.users.search.results": "{count, plural, one {# result} other {# results}}",
+  "admin.users.total":
+    "{count, plural, one {# user total} other {# users total}}",
+  "admin.users.search.placeholder": "Search by username, email or team",
+  "admin.users.search.results":
+    "{count, plural, one {# result} other {# results}}",
   "admin.users.table.username": "Username",
   "admin.users.table.email": "Email",
   "admin.users.table.admin": "Admin",
@@ -1004,15 +1211,13 @@ export default {
   "admin.users.edit.security.email.unproven":
     "E-mail address not proven. Without LDAP or OIDC, this account cannot sign at the reinforced level.",
   "admin.users.edit.security.email.button": "Mark e-mail address as verified",
-  "admin.users.edit.security.email.confirm.title":
-    "Confirm the e-mail address",
+  "admin.users.edit.security.email.confirm.title": "Confirm the e-mail address",
   "admin.users.edit.security.email.confirm.text":
     "Confirm that you checked through another channel that {email} belongs to this person. This is recorded under your name and serves as identity proof for reinforced signatures.",
   "admin.users.edit.security.email.done": "E-mail address marked as verified",
   "admin.users.edit.security.passkeys.count": "Signing passkeys: {count}",
   "admin.users.edit.security.passkeys.button": "Reset signing passkeys",
-  "admin.users.edit.security.passkeys.confirm.title":
-    "Reset signing passkeys?",
+  "admin.users.edit.security.passkeys.confirm.title": "Reset signing passkeys?",
   "admin.users.edit.security.passkeys.confirm.text":
     "Every signing passkey of {email} will be removed. The account will enroll a new one at its next reinforced signature, under the same requirements as the first enrollment. Documents already signed keep their evidence. Check the identity of the requester through another channel first.",
   "admin.users.edit.security.passkeys.done": "Signing passkeys reset",
@@ -1066,7 +1271,8 @@ export default {
     "Do you really want to delete this share?",
   "admin.shares.select-all": "Select all",
   "admin.shares.bulk-delete.title": "Delete {count} share(s)",
-  "admin.shares.bulk-delete.description": "Do you really want to delete the {count} selected share(s)? This action is irreversible.",
+  "admin.shares.bulk-delete.description":
+    "Do you really want to delete the {count} selected share(s)? This action is irreversible.",
   "admin.shares.bulk-delete.button": "Delete ({count})",
 
   // END /admin/shares
@@ -1074,10 +1280,13 @@ export default {
   // /upload
   "upload.title": "Upload",
   "upload.browser-setup.title": "Prepare your browser",
-  "upload.browser-setup.popup-body": "For transfers exceeding approximately 13 minutes, a small window may open to keep your secure session active. Allow pop-ups for this site to avoid any interruption.",
+  "upload.browser-setup.popup-body":
+    "For transfers exceeding approximately 13 minutes, a small window may open to keep your secure session active. Allow pop-ups for this site to avoid any interruption.",
   "upload.browser-setup.popup-button": "Test pop-ups",
-  "upload.browser-setup.popup-still-blocked": "Pop-ups are still blocked. Please add this site to your browser's exceptions (Settings › Pop-ups › Allow).",
-  "upload.browser-setup.notif-body": "Allow notifications to be alerted if an action is needed during the upload, even when this tab is in the background.",
+  "upload.browser-setup.popup-still-blocked":
+    "Pop-ups are still blocked. Please add this site to your browser's exceptions (Settings › Pop-ups › Allow).",
+  "upload.browser-setup.notif-body":
+    "Allow notifications to be alerted if an action is needed during the upload, even when this tab is in the background.",
   "upload.browser-setup.notif-button": "Allow notifications",
   "upload.browser-setup.dismiss": "Don't show again",
 
@@ -1087,9 +1296,11 @@ export default {
     "An error occurred while finishing your share.",
   "upload.notify.count-failed": "{count} files failed to upload. Trying again.",
   "upload.notify.retrying.title": "Retrying chunk",
-  "upload.notify.retrying.message": "Chunk {chunk} failed (attempt {attempt}/{max}). Retrying in {delay}s...",
+  "upload.notify.retrying.message":
+    "Chunk {chunk} failed (attempt {attempt}/{max}). Retrying in {delay}s...",
   "upload.notify.recovery.title": "Recovery mode",
-  "upload.notify.recovery.message": "Too many consecutive errors. Pausing {pause}s before retrying (cycle {attempt}/{max}).",
+  "upload.notify.recovery.message":
+    "Too many consecutive errors. Pausing {pause}s before retrying (cycle {attempt}/{max}).",
   "upload.notify.fileRetry.title": "Retrying file",
   "upload.notify.fileRetry.message":
     "{name}: attempt {attempt}/{max} in {delay}s",
@@ -1135,7 +1346,8 @@ export default {
     "Create your personal E2E key to protect new shares with end-to-end encryption.",
   "upload.cancel.button": "Cancel",
   "upload.cancel.title": "Cancel upload",
-  "upload.cancel.discard-confirm": "All files in this upload, including those already transferred, will be deleted. Continue?",
+  "upload.cancel.discard-confirm":
+    "All files in this upload, including those already transferred, will be deleted. Continue?",
 
   // showCreateUploadModal.tsx
   "upload.modal.title": "Create Share",
@@ -1325,7 +1537,8 @@ export default {
   "share.modal.captcha.submit": "Access share",
 
   "share.button.download-all": "Download all",
-  "share.button.download-selected": "Download {count, plural, one {# file} other {# files}}",
+  "share.button.download-selected":
+    "Download {count, plural, one {# file} other {# files}}",
   "fileTree.items": "{count, plural, one {# item} other {# items}}",
   "share.button.clear-selection": "Clear selection",
   "share.download.cancel": "Cancel download",
@@ -1340,7 +1553,8 @@ export default {
   "share.modal.file-preview.error.not-supported.title": "Preview not supported",
   "share.modal.file-preview.error.not-supported.description":
     "Previews are not supported for this type of files. Please download the file to view it.",
-  "share.modal.file-preview.pdf-mobile": "PDF preview is not available on mobile.",
+  "share.modal.file-preview.pdf-mobile":
+    "PDF preview is not available on mobile.",
   "share.modal.file-preview.pdf-open": "Open PDF",
 
   // END /share/[id]
@@ -1357,27 +1571,36 @@ export default {
 
   // /imprint
   "imprint.title": "Imprint",
-  "imprint.meta.description": "Legal notice for PrivCloud: service operator, hosting provider, GDPR and NIS2 compliance, applicable law.",
+  "imprint.meta.description":
+    "Legal notice for PrivCloud: service operator, hosting provider, GDPR and NIS2 compliance, applicable law.",
   // END /imprint
 
   // /privacy
   "privacy.title": "Privacy Policy",
-  "privacy.meta.description": "PrivCloud Privacy Policy: data collected, GDPR legal basis, end-to-end encryption, user rights and DPO contact.",
+  "privacy.meta.description":
+    "PrivCloud Privacy Policy: data collected, GDPR legal basis, end-to-end encryption, user rights and DPO contact.",
   // END /privacy
 
   // /security
   "security.meta.title": "Security",
-  "security.meta.description": "Learn how PrivCloud Sharing protects your files with end-to-end encryption, zero-knowledge architecture and 100% French hosting.",
+  "security.meta.description":
+    "Learn how PrivCloud Sharing protects your files with end-to-end encryption, zero-knowledge architecture and 100% French hosting.",
   "security.hero.title": "PrivCloud Sharing Security",
-  "security.hero.subtitle": "At PrivCloud, security isn't a feature -- it's the architecture.",
+  "security.hero.subtitle":
+    "At PrivCloud, security isn't a feature -- it's the architecture.",
   "security.overview.title": "Overview",
-  "security.overview.text": "PrivCloud Sharing is built on the zero-knowledge principle: neither our servers, nor our team, nor our storage provider can read the content of your end-to-end encrypted files, the default mode of every account. Encryption happens in your browser, before your data even leaves your device. This page transparently describes the cryptographic mechanisms, infrastructure choices and honest limitations of the system.",
+  "security.overview.text":
+    "PrivCloud Sharing is built on the zero-knowledge principle: neither our servers, nor our team, nor our storage provider can read the content of your end-to-end encrypted files, the default mode of every account. Encryption happens in your browser, before your data even leaves your device. This page transparently describes the cryptographic mechanisms, infrastructure choices and honest limitations of the system.",
   "security.e2ee.title": "End-to-End Encryption (E2EE)",
   "security.e2ee.howItWorks.title": "How it works",
-  "security.e2ee.howItWorks.step1": "An AES-256 key is generated locally in your browser via the Web Crypto API.",
-  "security.e2ee.howItWorks.step2": "Your files are encrypted client-side before upload -- we only receive opaque ciphertext.",
-  "security.e2ee.howItWorks.step3": "The decryption key is embedded in the share link as a URL fragment (#key=...). By HTTP protocol definition, this fragment is never sent to the server -- it stays in your browser and never appears in any of our infrastructure logs.",
-  "security.e2ee.howItWorks.step4": "The recipient decrypts directly in their browser. By default, the key does not pass through our infrastructure: it only does when you choose to send it by e-mail, or for files you receive through an upload link.",
+  "security.e2ee.howItWorks.step1":
+    "An AES-256 key is generated locally in your browser via the Web Crypto API.",
+  "security.e2ee.howItWorks.step2":
+    "Your files are encrypted client-side before upload -- we only receive opaque ciphertext.",
+  "security.e2ee.howItWorks.step3":
+    "The decryption key is embedded in the share link as a URL fragment (#key=...). By HTTP protocol definition, this fragment is never sent to the server -- it stays in your browser and never appears in any of our infrastructure logs.",
+  "security.e2ee.howItWorks.step4":
+    "The recipient decrypts directly in their browser. By default, the key does not pass through our infrastructure: it only does when you choose to send it by e-mail, or for files you receive through an upload link.",
   "security.e2ee.algorithms.title": "Algorithms used",
   "security.e2ee.algorithms.col.component": "Component",
   "security.e2ee.algorithms.col.standard": "Standard",
@@ -1386,17 +1609,24 @@ export default {
   "security.e2ee.algorithms.row.storageAtRest": "Storage at rest",
   "security.e2ee.algorithms.row.keySharing": "Key recovery (optional)",
   "security.e2ee.whyGCM.title": "Why AES-256-GCM?",
-  "security.e2ee.whyGCM.text": "GCM (Galois/Counter Mode) provides not only confidentiality (nobody can read) but also authenticity (nobody can tamper with encrypted data without detection). It's the standard used by governments and financial institutions to protect classified data.",
+  "security.e2ee.whyGCM.text":
+    "GCM (Galois/Counter Mode) provides not only confidentiality (nobody can read) but also authenticity (nobody can tamper with encrypted data without detection). It's the standard used by governments and financial institutions to protect classified data.",
   "security.zeroKnowledge.title": "Zero-knowledge architecture",
-  "security.zeroKnowledge.text": "Zero-knowledge architecture means our system is designed so that it is technically impossible for us to access the contents of your end-to-end encrypted files, even if we wanted to -- or were compelled to.",
-  "security.zeroKnowledge.point1": "Your account's files are encrypted before upload",
-  "security.zeroKnowledge.point2": "By default, your key does not pass through our servers",
+  "security.zeroKnowledge.text":
+    "Zero-knowledge architecture means our system is designed so that it is technically impossible for us to access the contents of your end-to-end encrypted files, even if we wanted to -- or were compelled to.",
+  "security.zeroKnowledge.point1":
+    "Your account's files are encrypted before upload",
+  "security.zeroKnowledge.point2":
+    "By default, your key does not pass through our servers",
   "security.zeroKnowledge.point3": "Our logs contain no decryption keys",
-  "security.zeroKnowledge.point4": "Even full access to our database would not allow reading your files",
+  "security.zeroKnowledge.point4":
+    "Even full access to our database would not allow reading your files",
   "security.sskr.title": "Shamir's Secret Sharing (SSKR)",
-  "security.sskr.intro": "Shamir's Secret Sharing is only used to recover your E2E key if you lose it. It is optional: without fragments or a passkey vault, a lost key leaves your encrypted files permanently unreadable, and nobody, PrivCloud included, can recover it. PrivCloud uses its own implementation, running entirely in your browser: the fragments are shown on your screen and are never sent to the server.",
+  "security.sskr.intro":
+    "Shamir's Secret Sharing is only used to recover your E2E key if you lose it. It is optional: without fragments or a passkey vault, a lost key leaves your encrypted files permanently unreadable, and nobody, PrivCloud included, can recover it. PrivCloud uses its own implementation, running entirely in your browser: the fragments are shown on your screen and are never sent to the server.",
   "security.sskr.principle.title": "Principle",
-  "security.sskr.principle.text": "When you create them, you choose the number of fragments and the threshold needed to rebuild the key (for example 3 fragments of which 2 are enough). With fewer fragments than this threshold, recovering the key is mathematically impossible: they reveal nothing about it.",
+  "security.sskr.principle.text":
+    "When you create them, you choose the number of fragments and the threshold needed to rebuild the key (for example 3 fragments of which 2 are enough). With fewer fragments than this threshold, recovering the key is mathematically impossible: they reveal nothing about it.",
   "security.sskr.whyImportant.title": "Why it matters",
   "security.sskr.table.col.scenario": "Scenario",
   "security.sskr.table.col.withoutSSKR": "Without SSKR",
@@ -1407,60 +1637,93 @@ export default {
   "security.sskr.table.row.shardTheft": "Theft of one fragment",
   "security.sskr.table.row.shardTheft.with": "Useless on its own",
   "security.sskr.table.row.serverCompromise": "Server compromised",
-  "security.sskr.table.row.serverCompromise.without": "Nothing to find: the key is never sent there",
-  "security.sskr.table.row.serverCompromise.with": "Nothing to find: the fragments are never sent there",
+  "security.sskr.table.row.serverCompromise.without":
+    "Nothing to find: the key is never sent there",
+  "security.sskr.table.row.serverCompromise.with":
+    "Nothing to find: the fragments are never sent there",
   "security.sskr.bestPractice.label": "Best practice:",
-  "security.sskr.bestPractice.text": "Store your fragments in separate, secure locations (password manager, offline encrypted media, physical safe).",
+  "security.sskr.bestPractice.text":
+    "Store your fragments in separate, secure locations (password manager, offline encrypted media, physical safe).",
   "security.infra.title": "Infrastructure & compliance",
   "security.infra.gdpr.title": "French hosting -- native GDPR",
   "security.infra.gdpr.point1": "No data transfers outside the EU",
-  "security.infra.gdpr.point2": "Native compliance with the General Data Protection Regulation (GDPR)",
-  "security.infra.gdpr.point3": "No disclosure obligation under the US Cloud Act",
-  "security.infra.gdpr.point4": "Right to erasure and data portability applicable",
+  "security.infra.gdpr.point2":
+    "Native compliance with the General Data Protection Regulation (GDPR)",
+  "security.infra.gdpr.point3":
+    "No disclosure obligation under the US Cloud Act",
+  "security.infra.gdpr.point4":
+    "Right to erasure and data portability applicable",
   "security.infra.zeroTracking.title": "Zero tracking, zero analytics",
-  "security.infra.zeroTracking.text": "PrivCloud does not collect any behavioral data. No tracking cookies, no advertising pixels, no third-party analytics tools are loaded on our pages. What you share is none of our business -- literally.",
+  "security.infra.zeroTracking.text":
+    "PrivCloud does not collect any behavioral data. No tracking cookies, no advertising pixels, no third-party analytics tools are loaded on our pages. What you share is none of our business -- literally.",
   "security.infra.s3.title": "Object storage provider (S3-compatible)",
-  "security.infra.s3.text": "Our object storage provider cannot read your end-to-end encrypted files. It stores encrypted content under random identifiers and sees object sizes and transfers. Direct download links use a neutral identifier and a generic content type for every E2E file.",
+  "security.infra.s3.text":
+    "Our object storage provider cannot read your end-to-end encrypted files. It stores encrypted content under random identifiers and sees object sizes and transfers. Direct download links use a neutral identifier and a generic content type for every E2E file.",
   "security.links.title": "Share link security",
   "security.links.expiration.label": "Automatic expiration:",
-  "security.links.expiration.text": "each link has a configurable lifetime. After expiry, the link is revoked and files deleted.",
+  "security.links.expiration.text":
+    "each link has a configurable lifetime. After expiry, the link is revoked and files deleted.",
   "security.links.password.label": "Password protection:",
-  "security.links.password.text": "add an extra authentication layer to each share.",
+  "security.links.password.text":
+    "add an extra authentication layer to each share.",
   "security.links.downloadLimit.label": "Download limit:",
-  "security.links.downloadLimit.text": "set a maximum number of allowed downloads per link. Once reached, the link is automatically revoked.",
+  "security.links.downloadLimit.text":
+    "set a maximum number of allowed downloads per link. Once reached, the link is automatically revoked.",
   "security.links.notifications.label": "Download notifications:",
-  "security.links.notifications.text": "get real-time alerts when a recipient downloads your file, to detect any unexpected access. Note: if you have the preview option and would also like to receive a notification for that type of access, feel free to let us know directly via the GitHub repository.",
+  "security.links.notifications.text":
+    "get real-time alerts when a recipient downloads your file, to detect any unexpected access. Note: if you have the preview option and would also like to receive a notification for that type of access, feel free to let us know directly via the GitHub repository.",
   "security.openSource.title": "Open Source & auditability",
   "security.openSource.point1": "Any security researcher can audit our code",
-  "security.openSource.point2": "Cryptographic implementations are publicly verifiable",
-  "security.openSource.point3": "No backdoor can be hidden without being detected by the community",
+  "security.openSource.point2":
+    "Cryptographic implementations are publicly verifiable",
+  "security.openSource.point3":
+    "No backdoor can be hidden without being detected by the community",
   "security.openSource.point4": "Transparency is structural, not marketing",
-  "security.openSource.audit": "If you are a security researcher or auditor and wish to perform a formal code review, we are open to any independent audit process. Contact us via the GitHub repository.",
+  "security.openSource.audit":
+    "If you are a security researcher or auditor and wish to perform a formal code review, we are open to any independent audit process. Contact us via the GitHub repository.",
   "security.openSource.viewSource": "View source code on GitHub ->",
   "security.threatModel.title": "Honest threat model",
-  "security.threatModel.intro": "We tell you exactly what we protect you against -- and what remains outside our scope.",
+  "security.threatModel.intro":
+    "We tell you exactly what we protect you against -- and what remains outside our scope.",
   "security.threatModel.protects.title": "What PrivCloud protects you against",
-  "security.threatModel.protects.serverBreach": "Compromise of our servers or database -- encrypted files are unreadable without your key, which we don't have.",
-  "security.threatModel.protects.operator": "Curiosity or access by our team -- zero-knowledge architecture technically prevents this.",
-  "security.threatModel.protects.s3Provider": "Spying by the storage provider -- it only sees opaque ciphertext.",
-  "security.threatModel.protects.networkSniffing": "Network interception (MITM attack) -- TLS 1.3 protects transport, AES-256 protects content.",
-  "security.threatModel.protects.legalInjunction": "Legal injunction on our servers -- we cannot hand over what we don't have: your key.",
-  "security.threatModel.protects.sskrRecovery": "Partial loss of SSKR fragments -- Shamir's scheme tolerates partial fragment loss.",
+  "security.threatModel.protects.serverBreach":
+    "Compromise of our servers or database -- encrypted files are unreadable without your key, which we don't have.",
+  "security.threatModel.protects.operator":
+    "Curiosity or access by our team -- zero-knowledge architecture technically prevents this.",
+  "security.threatModel.protects.s3Provider":
+    "Spying by the storage provider -- it only sees opaque ciphertext.",
+  "security.threatModel.protects.networkSniffing":
+    "Network interception (MITM attack) -- TLS 1.3 protects transport, AES-256 protects content.",
+  "security.threatModel.protects.legalInjunction":
+    "Legal injunction on our servers -- we cannot hand over what we don't have: your key.",
+  "security.threatModel.protects.sskrRecovery":
+    "Partial loss of SSKR fragments -- Shamir's scheme tolerates partial fragment loss.",
   "security.threatModel.notProtects.title": "What remains your responsibility",
-  "security.threatModel.notProtects.keyLoss": "Total loss of your E2E key without SSKR fragments -- without key or fragments, your encrypted files are permanently inaccessible. We cannot help you recover them.",
-  "security.threatModel.notProtects.deviceCompromise": "Compromised workstation -- a keylogger or malware can capture your key before it's used. PrivCloud cannot protect what your operating system doesn't protect.",
-  "security.threatModel.notProtects.weakPassword": "Weak account password -- enable two-factor authentication (2FA/TOTP) and use a strong, unique password.",
-  "security.threatModel.notProtects.linkSharing": "Sharing a link on an unsecured channel -- anyone with the link containing the #key= fragment can decrypt. Use encrypted channels (Signal, Proton Mail...) to transmit sensitive links.",
-  "security.threatModel.notProtects.shardMismanagement": "Storing all your SSKR fragments in the same place -- if an attacker obtains them all, they can reconstruct your key.",
-  "security.threatModel.notProtects.maliciousRecipient": "Malicious recipient -- once a legitimate person has decrypted the file, we have no control over what they do with it.",
+  "security.threatModel.notProtects.keyLoss":
+    "Total loss of your E2E key without SSKR fragments -- without key or fragments, your encrypted files are permanently inaccessible. We cannot help you recover them.",
+  "security.threatModel.notProtects.deviceCompromise":
+    "Compromised workstation -- a keylogger or malware can capture your key before it's used. PrivCloud cannot protect what your operating system doesn't protect.",
+  "security.threatModel.notProtects.weakPassword":
+    "Weak account password -- enable two-factor authentication (2FA/TOTP) and use a strong, unique password.",
+  "security.threatModel.notProtects.linkSharing":
+    "Sharing a link on an unsecured channel -- anyone with the link containing the #key= fragment can decrypt. Use encrypted channels (Signal, Proton Mail...) to transmit sensitive links.",
+  "security.threatModel.notProtects.shardMismanagement":
+    "Storing all your SSKR fragments in the same place -- if an attacker obtains them all, they can reconstruct your key.",
+  "security.threatModel.notProtects.maliciousRecipient":
+    "Malicious recipient -- once a legitimate person has decrypted the file, we have no control over what they do with it.",
   "security.vulnerability.title": "Report a vulnerability",
-  "security.vulnerability.text": "Discovered a security flaw? We encourage you to disclose it responsibly.",
-  "security.vulnerability.contact": "Contact: {email} or via a private issue on the GitHub repository.",
+  "security.vulnerability.text":
+    "Discovered a security flaw? We encourage you to disclose it responsibly.",
+  "security.vulnerability.contact":
+    "Contact: {email} or via a private issue on the GitHub repository.",
   "security.vulnerability.commitment1": "Acknowledge receipt within 48 hours",
   "security.vulnerability.commitment2": "Keep you informed of applied fixes",
-  "security.vulnerability.commitment3": "Mention your contribution (if you wish) in our hall of fame",
-  "security.vulnerability.goodFaith": "We do not file complaints against security researchers who act in good faith.",
-  "security.footer": "Page maintained by the PrivCloud team -- Infrastructure secured by THEMIOT Informatique, Cybersecurity Consultant.",
+  "security.vulnerability.commitment3":
+    "Mention your contribution (if you wish) in our hall of fame",
+  "security.vulnerability.goodFaith":
+    "We do not file complaints against security researchers who act in good faith.",
+  "security.footer":
+    "Page maintained by the PrivCloud team -- Infrastructure secured by THEMIOT Informatique, Cybersecurity Consultant.",
   "home.threat.learnMore": "Learn more about our security",
   // END /security
 
@@ -1570,7 +1833,8 @@ export default {
   "admin.config.email.reply-to-email.description":
     "(Optional) The email address which should be used as the reply-to address for emails sent. If not set, the default email address will be used.",
   "admin.config.email.sender-name": "Sender name",
-  "admin.config.email.sender-name.description": "(Optional) Setting this will override the default sender name. The application name will be used if this is not set.",
+  "admin.config.email.sender-name.description":
+    "(Optional) Setting this will override the default sender name. The application name will be used if this is not set.",
   "admin.config.email.share-recipients-subject": "Share recipients subject",
   "admin.config.email.share-recipients-subject.description":
     "Subject of the email which gets sent to the share recipients.",
@@ -1595,10 +1859,12 @@ export default {
   "admin.config.email.invite-message": "Invite message",
   "admin.config.email.invite-message.description":
     "Message which gets sent when an admin invites a user. '{url'} will be replaced with the invite URL, '{email'} with the email and '{password'} with the users password.",
-  "admin.config.email.download-notification-subject": "Download notification subject",
+  "admin.config.email.download-notification-subject":
+    "Download notification subject",
   "admin.config.email.download-notification-subject.description":
     "Subject of the email sent when someone downloads a share.",
-  "admin.config.email.download-notification-message": "Download notification message",
+  "admin.config.email.download-notification-message":
+    "Download notification message",
   "admin.config.email.download-notification-message.description":
     "Message sent when someone downloads a share. Available variables:\n {shareName} - The name of the share\n {date} - The date of the download\n {shareUrl} - The URL of the share\n These variables will be replaced with the actual value.",
   "admin.config.email.download-digest-subject": "Download digest subject",
@@ -1607,13 +1873,79 @@ export default {
   "admin.config.email.download-digest-message": "Download digest message",
   "admin.config.email.download-digest-message.description":
     "Message for the digest email summarizing recent downloads. Available variables:\n {digest} - The formatted list of downloads\n This variable will be replaced with the actual value.",
-  "admin.config.email.download-weekly-subject": "Weekly download summary subject",
+  "admin.config.email.download-weekly-subject":
+    "Weekly download summary subject",
   "admin.config.email.download-weekly-subject.description":
     "Subject of the weekly email summarizing downloads.",
-  "admin.config.email.download-weekly-message": "Weekly download summary message",
+  "admin.config.email.download-weekly-message":
+    "Weekly download summary message",
   "admin.config.email.download-weekly-message.description":
     "Message for the weekly email summarizing downloads. Available variables:\n {digest} - The formatted list of downloads\n This variable will be replaced with the actual value.",
 
+  "admin.config.email.share-recipients-subject-translation":
+    "Share recipients subject (translation)",
+  "admin.config.email.share-recipients-subject-translation.description":
+    "Optional. When filled in, it is added after the subject above.",
+  "admin.config.email.share-recipients-message-translation":
+    "Share recipients message (translation)",
+  "admin.config.email.share-recipients-message-translation.description":
+    "Optional. When filled in, the email is sent in both languages, with this text after the message above. The same variables are available.",
+  "admin.config.email.reverse-share-subject-translation":
+    "Reverse share subject (translation)",
+  "admin.config.email.reverse-share-subject-translation.description":
+    "Optional. When filled in, it is added after the subject above.",
+  "admin.config.email.reverse-share-message-translation":
+    "Reverse share message (translation)",
+  "admin.config.email.reverse-share-message-translation.description":
+    "Optional. When filled in, the email is sent in both languages, with this text after the message above. The same variables are available.",
+  "admin.config.email.reset-password-subject-translation":
+    "Reset password subject (translation)",
+  "admin.config.email.reset-password-subject-translation.description":
+    "Optional. When filled in, it is added after the subject above.",
+  "admin.config.email.reset-password-message-translation":
+    "Reset password message (translation)",
+  "admin.config.email.reset-password-message-translation.description":
+    "Optional. When filled in, the email is sent in both languages, with this text after the message above. The same variables are available.",
+  "admin.config.email.invite-subject-translation":
+    "Invite subject (translation)",
+  "admin.config.email.invite-subject-translation.description":
+    "Optional. When filled in, it is added after the subject above.",
+  "admin.config.email.invite-message-translation":
+    "Invite message (translation)",
+  "admin.config.email.invite-message-translation.description":
+    "Optional. When filled in, the email is sent in both languages, with this text after the message above. The same variables are available.",
+  "admin.config.email.download-notification-subject-translation":
+    "Download notification subject (translation)",
+  "admin.config.email.download-notification-subject-translation.description":
+    "Optional. When filled in, it is added after the subject above.",
+  "admin.config.email.download-notification-message-translation":
+    "Download notification message (translation)",
+  "admin.config.email.download-notification-message-translation.description":
+    "Optional. When filled in, the email is sent in both languages, with this text after the message above. The same variables are available.",
+  "admin.config.email.download-digest-subject-translation":
+    "Download digest subject (translation)",
+  "admin.config.email.download-digest-subject-translation.description":
+    "Optional. When filled in, it is added after the subject above.",
+  "admin.config.email.download-digest-message-translation":
+    "Download digest message (translation)",
+  "admin.config.email.download-digest-message-translation.description":
+    "Optional. When filled in, the email is sent in both languages, with this text after the message above. The same variables are available.",
+  "admin.config.email.download-weekly-subject-translation":
+    "Weekly download summary subject (translation)",
+  "admin.config.email.download-weekly-subject-translation.description":
+    "Optional. When filled in, it is added after the subject above.",
+  "admin.config.email.download-weekly-message-translation":
+    "Weekly download summary message (translation)",
+  "admin.config.email.download-weekly-message-translation.description":
+    "Optional. When filled in, the email is sent in both languages, with this text after the message above. The same variables are available.",
+  "admin.config.email.team-share-notification-subject-translation":
+    "Team share notification subject (translation)",
+  "admin.config.email.team-share-notification-subject-translation.description":
+    "Optional. When filled in, it is added after the subject above.",
+  "admin.config.email.team-share-notification-message-translation":
+    "Team share notification message (translation)",
+  "admin.config.email.team-share-notification-message-translation.description":
+    "Optional. When filled in, the email is sent in both languages, with this text after the message above. The same variables are available.",
   "admin.config.share.allow-registration": "Allow registration",
   "admin.config.share.allow-registration.description":
     "Whether registration is allowed",
@@ -1888,8 +2220,7 @@ export default {
   "admin.config.altcha.code-challenge-display.description":
     "Layout used if a code challenge is ever returned by the server.",
   "admin.config.altcha.display": "Display",
-  "admin.config.altcha.display.description":
-    "Widget layout mode.",
+  "admin.config.altcha.display.description": "Widget layout mode.",
   "admin.config.altcha.auto": "Auto verification",
   "admin.config.altcha.auto.description":
     "When the widget starts verification automatically.",
@@ -1917,6 +2248,8 @@ export default {
   "error.msg.invalid_token": "Internal Error",
   "error.msg.no_user": "User linked to this {0} account doesn't exist.",
   "error.msg.no_email": "Can't get email address from this {0} account.",
+  "error.msg.account_exists":
+    "An account already uses this email address. Sign in to it, then link your {0} account from your account page.",
   "error.msg.already_linked":
     "This {0} account is already linked to another account.",
   "error.msg.not_linked":
@@ -1973,12 +2306,16 @@ export default {
   "reencrypt.modal.title": "Re-encrypting files",
   "reencrypt.error.title": "Re-encryption error",
   "reencrypt.error.generic": "An error occurred during re-encryption.",
-  "reencrypt.error.partial": "{failed, plural, one {# file} other {# files}} could not be re-encrypted:",
+  "reencrypt.error.partial":
+    "{failed, plural, one {# file} other {# files}} could not be re-encrypted:",
   "reencrypt.done.title": "Re-encryption complete",
-  "reencrypt.done.message": "{count, plural, one {# file re-encrypted} other {# files re-encrypted}} successfully.",
+  "reencrypt.done.message":
+    "{count, plural, one {# file re-encrypted} other {# files re-encrypted}} successfully.",
   "reencrypt.partial.title": "Partial re-encryption",
-  "reencrypt.partial.message": "{ok} re-encrypted, {failed} failed, {skipped} skipped.",
-  "reencrypt.inprogress.message": "Re-encryption in progress, do not close this tab...",
+  "reencrypt.partial.message":
+    "{ok} re-encrypted, {failed} failed, {skipped} skipped.",
+  "reencrypt.inprogress.message":
+    "Re-encryption in progress, do not close this tab...",
   "reencrypt.inprogress.warning": "Closing the tab will interrupt the process.",
   "reencrypt.progress.label": "Re-encryption progress",
   "reencrypt.progress.files": "{current}/{total} files -- {name}",
@@ -1989,26 +2326,32 @@ export default {
 
   // --- E2EKeyPrompt ---
   "e2ePrompt.title": "E2E Encryption Key",
-  "e2ePrompt.import.description": "Your account has an end-to-end encryption key. It is never stored on the server -- you must enter it once per session (it will be kept as long as the tab remains open).",
+  "e2ePrompt.import.description":
+    "Your account has an end-to-end encryption key. It is never stored on the server -- you must enter it once per session (it will be kept as long as the tab remains open).",
   "e2ePrompt.import.label": "Encryption key",
   "e2ePrompt.import.placeholder": "Paste your secret key here",
   "e2ePrompt.import.skip": "Skip",
   "e2ePrompt.import.submit": "Load key",
   "e2ePrompt.import.sskrLink": "Recover via my SSKR shards",
   "e2ePrompt.import.passkeyLink": "Restore via my passkey",
-  "e2ePrompt.passkey.prfUnsupported": "Your authenticator does not support the PRF extension. Use manual import or SSKR shards.",
-  "e2ePrompt.passkey.mismatch": "The key restored via passkey does not match the one on your account.",
+  "e2ePrompt.passkey.prfUnsupported":
+    "Your authenticator does not support the PRF extension. Use manual import or SSKR shards.",
+  "e2ePrompt.passkey.mismatch":
+    "The key restored via passkey does not match the one on your account.",
   "e2ePrompt.passkey.success": "Key restored via passkey for this session.",
   "e2ePrompt.passkey.error": "Failed to restore via passkey.",
-  "e2ePrompt.import.skipWarning": "If you skip this step, you will not be able to decrypt or create encrypted shares during this session.",
+  "e2ePrompt.import.skipWarning":
+    "If you skip this step, you will not be able to decrypt or create encrypted shares during this session.",
   "e2ePrompt.divider.or": "OR",
-  "e2ePrompt.recover.description": "Paste your SSKR recovery shards. You must provide at least the number that was required during generation (the threshold T).",
+  "e2ePrompt.recover.description":
+    "Paste your SSKR recovery shards. You must provide at least the number that was required during generation (the threshold T).",
   "e2ePrompt.recover.shardCount": "Number of shards to enter",
   "e2ePrompt.recover.shard": "Shard {n}",
   "e2ePrompt.recover.back": "Back",
   "e2ePrompt.recover.submit": "Reconstruct key",
   "e2ePrompt.recovered.success": "Key reconstructed successfully!",
-  "e2ePrompt.recovered.instructions": "Here is your encryption key. Store it carefully in a password manager -- it will not be shown again.",
+  "e2ePrompt.recovered.instructions":
+    "Here is your encryption key. Store it carefully in a password manager -- it will not be shown again.",
   "e2ePrompt.recovered.key.aria": "Reconstructed encryption key",
   "e2ePrompt.recovered.copy.aria": "Copy key to clipboard",
   "e2ePrompt.recovered.copy": "Copy key",
@@ -2017,7 +2360,8 @@ export default {
 
   // --- Account E2E Section ---
   "account.e2e.title": "End-to-End Encryption (E2E)",
-  "account.e2e.description": "Your AES-256 encryption key is not sent to the server, unless you choose to include it in the e-mail sent to the recipients of a share. It is kept in your tab for the duration of your session. When the tab is closed, it is automatically purged. Each new session requires you to re-enter it. Store it carefully in a password manager.",
+  "account.e2e.description":
+    "Your AES-256 encryption key is not sent to the server, unless you choose to include it in the e-mail sent to the recipients of a share. It is kept in your tab for the duration of your session. When the tab is closed, it is automatically purged. Each new session requires you to re-enter it. Store it carefully in a password manager.",
   "account.e2e.yourKey": "Your key:",
   "account.e2e.key.reveal": "Reveal",
   "account.e2e.key.hide": "Hide",
@@ -2029,31 +2373,39 @@ export default {
   "account.e2e.button.generate": "Generate an E2E key",
   "account.e2e.button.reactivate": "Re-enable E2E and generate a key",
   "account.e2e.button.revokeAndCreate": "Delete old key and create a new one",
-  "account.e2e.noKey": "No E2E key configured. Generate a key to enable end-to-end encryption on your future shares.",
+  "account.e2e.noKey":
+    "No E2E key configured. Generate a key to enable end-to-end encryption on your future shares.",
   "account.e2e.noKeyOptOut":
     "You deleted your E2E key. No new key will be generated automatically and future shares will not be end-to-end encrypted. Use the button below only if you want to re-enable E2E.",
-  "account.e2e.import.warning": "An E2E key is registered on your account but missing from this browser. Import it to access your encrypted shares.",
+  "account.e2e.import.warning":
+    "An E2E key is registered on your account but missing from this browser. Import it to access your encrypted shares.",
   "account.e2e.import.label": "Import your key",
   "account.e2e.import.placeholder": "Paste your secret key here...",
   "account.e2e.import.submit": "Verify & import",
   "account.e2e.import.emptyError": "Please enter your E2E key",
-  "account.e2e.import.mismatchError": "This key does not match the one associated with your account",
+  "account.e2e.import.mismatchError":
+    "This key does not match the one associated with your account",
   "account.e2e.import.invalidError": "Invalid key",
   "account.e2e.recover.backDirect": "Back to direct entry",
   "account.e2e.recover.sskrLink": "Recover via SSKR shards",
   "account.e2e.recover.minShards": "Enter at least 2 shards.",
-  "account.e2e.recover.mismatch": "The reconstructed key does not match the one on your account.",
+  "account.e2e.recover.mismatch":
+    "The reconstructed key does not match the one on your account.",
   "account.e2e.recover.error": "Unable to reconstruct the key.",
   "account.e2e.confirm.regenerate.title": "Regenerate encryption key",
-  "account.e2e.confirm.regenerate.body": "A new key will be generated and <strong>all your E2E files will be re-encrypted</strong> automatically. This operation may take time depending on data volume. Do not close the tab during the process.",
+  "account.e2e.confirm.regenerate.body":
+    "A new key will be generated and <strong>all your E2E files will be re-encrypted</strong> automatically. This operation may take time depending on data volume. Do not close the tab during the process.",
   "account.e2e.confirm.regenerate.confirm": "Regenerate",
   "account.e2e.confirm.revoke.title": "Delete encryption key",
-  "account.e2e.confirm.revoke.body": "All existing E2E shares will become <strong>permanently inaccessible</strong>. This action is irreversible.",
+  "account.e2e.confirm.revoke.body":
+    "All existing E2E shares will become <strong>permanently inaccessible</strong>. This action is irreversible.",
   "account.e2e.confirm.revoke.confirm": "Delete",
   "account.e2e.toast.generated": "E2E key generated successfully",
   "account.e2e.toast.generateError": "Error generating the key",
-  "account.e2e.toast.reencrypted": "Key regenerated and files re-encrypted successfully",
-  "account.e2e.toast.reencryptError": "Re-encryption failed: {error}. The new key is active but some files could not be re-encrypted.",
+  "account.e2e.toast.reencrypted":
+    "Key regenerated and files re-encrypted successfully",
+  "account.e2e.toast.reencryptError":
+    "Re-encryption failed: {error}. The new key is active but some files could not be re-encrypted.",
   "account.e2e.toast.imported": "E2E key imported successfully",
   "account.e2e.toast.recovered": "Key reconstructed and imported successfully.",
   "account.e2e.toast.revoked": "E2E key deleted",
@@ -2061,13 +2413,15 @@ export default {
 
   // WebAuthn PRF - system keychain
   "account.e2e.passkey.offer": "Protect key with system keychain?",
-  "account.e2e.passkey.offer.description": "Use your fingerprint, PIN or FIDO security key to save your encrypted key in the system keychain. It will be automatically restored at the start of each new session.",
+  "account.e2e.passkey.offer.description":
+    "Use your fingerprint, PIN or FIDO security key to save your encrypted key in the system keychain. It will be automatically restored at the start of each new session.",
   "account.e2e.passkey.save": "Save to keychain",
   "account.e2e.passkey.saved": "Keychain active ✓",
   "account.e2e.passkey.skip": "Skip",
   "account.e2e.passkey.save.success": "Key saved to system keychain",
   "account.e2e.passkey.save.error": "Failed to save to keychain",
-  "account.e2e.passkey.unsupported": "Your authenticator does not support the PRF extension - try a different device or browser",
+  "account.e2e.passkey.unsupported":
+    "Your authenticator does not support the PRF extension - try a different device or browser",
   "account.e2e.passkey.load": "Unlock from keychain (biometrics / PIN)",
   "account.e2e.passkey.load.success": "Key restored from system keychain",
   "account.e2e.passkey.load.error": "Failed to restore key from keychain",
@@ -2078,12 +2432,15 @@ export default {
 
   // SafeLine WAF 468 challenge notifications
   "safeline.notify.title": "Security verification required",
-  "safeline.notify.message": "The WAF cookie has expired. Click {link} to solve the challenge. The upload will resume automatically.",
+  "safeline.notify.message":
+    "The WAF cookie has expired. Click {link} to solve the challenge. The upload will resume automatically.",
   "safeline.notify.link": "Resolve now",
   "safeline.os-notify.title": "PrivCloud -- Verification required",
-  "safeline.os-notify.body": "The WAF requires a verification. Return to the PrivCloud tab and click the link.",
+  "safeline.os-notify.body":
+    "The WAF requires a verification. Return to the PrivCloud tab and click the link.",
   "safeline.title-flash": "\u26a0\ufe0f WAF verification required!",
-  "safeline.download.failed": "SafeLine challenge not resolved after {retries} retries",
+  "safeline.download.failed":
+    "SafeLine challenge not resolved after {retries} retries",
 
   // --- Onboarding tour (first sign-in) ---
   "onboarding.modal.header": "Step {step} / {total}",
@@ -2093,30 +2450,43 @@ export default {
   "onboarding.next": "Next",
   "onboarding.finish": "Let's go!",
   "onboarding.step0.title": "Welcome to PrivCloud",
-  "onboarding.step0.body": "PrivCloud lets you share files securely, privately and without middlemen. This quick tour explains the key concepts you need to know before you start.",
+  "onboarding.step0.body":
+    "PrivCloud lets you share files securely, privately and without middlemen. This quick tour explains the key concepts you need to know before you start.",
   "onboarding.step1.title": "End-to-end encryption (E2E)",
-  "onboarding.step1.body": "With E2E encryption enabled, your files are encrypted inside your browser before they ever reach our servers. Nobody but you and your recipients can read them.",
+  "onboarding.step1.body":
+    "With E2E encryption enabled, your files are encrypted inside your browser before they ever reach our servers. Nobody but you and your recipients can read them.",
   "onboarding.step1.li1": "By default, your key is not sent to our servers.",
   "onboarding.step1.li2": "So we cannot read your files.",
-  "onboarding.step1.li3": "Enable E2E in your profile \u2192 \"E2E Encryption\" section.",
+  "onboarding.step1.li3":
+    'Enable E2E in your profile \u2192 "E2E Encryption" section.',
   "onboarding.step2.title": "Your encryption key",
-  "onboarding.step2.body": "Your E2E key is stored only in RAM during the session. It is wiped when you close the tab.",
+  "onboarding.step2.body":
+    "Your E2E key is stored only in RAM during the session. It is wiped when you close the tab.",
   "onboarding.step2.li1": "Save your key in a password manager.",
   "onboarding.step2.li2": "Generate SSKR shards to recover it if you lose it.",
-  "onboarding.step2.li3": "You will need to re-enter your key at the start of each new session.",
+  "onboarding.step2.li3":
+    "You will need to re-enter your key at the start of each new session.",
   "onboarding.step3.title": "How sharing works",
-  "onboarding.step3.body": "When you share an encrypted file, the key is embedded in the URL fragment (the part after \"#key=\"). This fragment is never sent to the server -- only your browser reads it.",
+  "onboarding.step3.body":
+    'When you share an encrypted file, the key is embedded in the URL fragment (the part after "#key="). This fragment is never sent to the server -- only your browser reads it.',
   "onboarding.step3.li1": "Share the full link through a trusted channel.",
   "onboarding.step3.li2": "Anyone with the link can decrypt: keep it safe.",
   "onboarding.step4.title": "You are all set!",
-  "onboarding.step4.body": "Your files are yours. PrivCloud is open source, hosted in France, with no ads and no tracking. Happy sharing!",
+  "onboarding.step4.body":
+    "Your files are yours. PrivCloud is open source, hosted in France, with no ads and no tracking. Happy sharing!",
 
   // --- Signing ---
+  "signing.key.unavailable":
+    "The decryption key is not available for this account yet. Ask the requester to open the request to refresh access.",
+  "signing.key.delivery-error":
+    "Unable to prepare encrypted access for the signers. Try reopening this request.",
   "signing.title": "Electronic Signatures",
-  "signing.subtitle": "Sign PDF documents with eIDAS-compliant electronic signatures",
+  "signing.subtitle":
+    "Sign PDF documents with eIDAS-compliant electronic signatures",
   "signing.new": "New signature request",
   "signing.empty": "No signature requests yet",
-  "signing.empty.description": "Create your first electronic signature request to get started.",
+  "signing.empty.description":
+    "Create your first electronic signature request to get started.",
   "signing.document": "Document",
   "signing.level": "Level",
   "signing.level.aes": "Standard",
@@ -2135,10 +2505,13 @@ export default {
   "signing.new.title": "New Signature Request",
   "signing.new.document": "Document Information",
   "signing.new.message": "Message for recipients",
-  "signing.new.message.placeholder": "Optional message to include in the signing invitation...",
+  "signing.new.message.placeholder":
+    "Optional message to include in the signing invitation...",
   "signing.new.level": "Signature Level",
-  "signing.new.level.aes.desc": "Email verified by code, consent and transaction hash",
-  "signing.new.level.qes.desc": "Assigned verified PrivCloud account and passkey confirmation",
+  "signing.new.level.aes.desc":
+    "Email verified by code, consent and transaction hash",
+  "signing.new.level.qes.desc":
+    "Assigned verified PrivCloud account and passkey confirmation",
   "signing.new.recipients": "Recipients",
   "signing.new.recipients.add": "Add recipient",
   "signing.new.recipients.name": "Full name",
@@ -2150,7 +2523,8 @@ export default {
   "signing.new.expires": "Expiration date",
   "signing.sign.title": "Sign Document",
   "signing.sign.otp.title": "Identity Verification",
-  "signing.sign.otp.description": "A 6-digit code has been sent to your email. Enter it below to verify your identity.",
+  "signing.sign.otp.description":
+    "A 6-digit code has been sent to your email. Enter it below to verify your identity.",
   "signing.sign.otp.send": "Send verification code",
   "signing.sign.otp.resend": "Resend code",
   "signing.sign.otp.placeholder": "Enter 6-digit code",
@@ -2164,15 +2538,20 @@ export default {
   "signing.sign.reject.reason": "Reason for rejection (optional)",
   "signing.sign.done": "Document signed successfully",
   "signing.sign.rejected": "Document rejected",
-  "signing.sign.legal": "By signing, I acknowledge that this electronic signature has the same legal value as a handwritten signature in accordance with eIDAS regulation (EU) No 910/2014.",
+  "signing.sign.legal":
+    "By signing, I acknowledge that this electronic signature has the same legal value as a handwritten signature in accordance with eIDAS regulation (EU) No 910/2014.",
   "signing.sign.eidas.badge": "Designed per eIDAS - Complete audit trail",
   "signing.sign.success.title": "Document signed successfully",
-  "signing.sign.success.desc": "Your signature has been recorded with a certified timestamp. You will receive a copy of the signed document by email once all signers have signed.",
-  "signing.sign.success.e2e-desc": "Your signature has been recorded. The encrypted document will be automatically finalized once all signers have signed.",
+  "signing.sign.success.desc":
+    "Your signature has been recorded with a certified timestamp. You will receive a copy of the signed document by email once all signers have signed.",
+  "signing.sign.success.e2e-desc":
+    "Your signature has been recorded. The encrypted document will be automatically finalized once all signers have signed.",
   "signing.sign.rejected.title": "Document rejected",
-  "signing.sign.rejected.desc": "The document owner will be notified of your rejection.",
+  "signing.sign.rejected.desc":
+    "The document owner will be notified of your rejection.",
   "signing.sign.download-signed": "Download signed document",
-  "signing.sign.download-not-ready": "The signed document is not yet available. Please try again in a moment.",
+  "signing.sign.download-not-ready":
+    "The signed document is not yet available. Please try again in a moment.",
   "signing.pad.clear": "Clear",
   "signing.pad.upload.label": "Upload signature image",
   "signing.pad.upload.hint": "PNG or JPG, max 2 MB",
@@ -2183,12 +2562,15 @@ export default {
   "signing.modal.file": "Document",
   "signing.modal.file-placeholder": "Select the file to sign",
   "signing.modal.message": "Message to signers",
-  "signing.modal.message-placeholder": "Optional message that will appear in the email invitation...",
+  "signing.modal.message-placeholder":
+    "Optional message that will appear in the email invitation...",
   "signing.modal.level": "Evidence level",
   "signing.modal.level.aes": "Standard - verified email + consent",
   "signing.modal.level.qes": "Advanced electronic signature (AdES)",
-  "signing.modal.level.aes-description": "No account required: the signer enters a one-time code received at the assigned address, then consents to the document hash. This proves current mailbox control, not civil identity.",
-  "signing.modal.level.qes-description": "Each signer uses the assigned named PrivCloud account. Every decision is a WebAuthn assertion whose challenge is derived from a manifest binding the account, consent and the exact document hash. The attestation given to the parties and the forensic dossier kept by PrivCloud enable independent verification. This is not a qualified electronic signature (QES).",
+  "signing.modal.level.aes-description":
+    "No account required: the signer enters a one-time code received at the assigned address, then consents to the document hash. This proves current mailbox control, not civil identity.",
+  "signing.modal.level.qes-description":
+    "Each signer uses the assigned named PrivCloud account. Every decision is a WebAuthn assertion whose challenge is derived from a manifest binding the account, consent and the exact document hash. The attestation given to the parties and the forensic dossier kept by PrivCloud enable independent verification. This is not a qualified electronic signature (QES).",
   "signing.modal.recipients": "Signers",
   "signing.modal.add-recipient": "Add",
   "signing.modal.recipient.name": "Full name",
@@ -2246,7 +2628,8 @@ export default {
     "Download started: the file is in your browser's downloads.",
   "signing.received": "Received documents",
   "signing.received.empty": "No documents received for signature.",
-  "signing.empty.eidas": "Create your first request to have your PDF documents signed in compliance with eIDAS regulation.",
+  "signing.empty.eidas":
+    "Create your first request to have your PDF documents signed in compliance with eIDAS regulation.",
   "signing.empty.create": "Create a signature request",
   "signing.no-title": "Untitled",
   "signing.actions.view": "View details",
@@ -2268,10 +2651,12 @@ export default {
   "signing.detail.back": "← Back to signatures",
   "signing.detail.created-at": "Created on {date}",
   "signing.detail.not-found": "Document not found.",
-  "signing.detail.file-deleted-warning": "The source file has been deleted. Details and audit trail remain accessible but download is no longer available.",
+  "signing.detail.file-deleted-warning":
+    "The source file has been deleted. Details and audit trail remain accessible but download is no longer available.",
   "signing.detail.cancel-request": "Cancel request",
   "signing.detail.signing-links": "Signing links",
-  "signing.detail.signing-links.desc": "Email invitations have been sent. You can also copy and share these links directly:",
+  "signing.detail.signing-links.desc":
+    "Email invitations have been sent. You can also copy and share these links directly:",
   "signing.detail.recipients": "Recipients",
   "signing.detail.table.name": "Name",
   "signing.detail.table.email": "Email",
@@ -2283,7 +2668,8 @@ export default {
   "signing.detail.audit.viewed": "Document viewed",
   "signing.detail.audit.signed": "Signed",
   "signing.detail.audit.rejected": "Rejected",
-  "signing.detail.audit.completed": "All signers have signed - document completed",
+  "signing.detail.audit.completed":
+    "All signers have signed - document completed",
   "signing.detail.audit.awaiting-finalization": "Awaiting E2E finalization",
   "signing.detail.audit.cancelled": "Request cancelled",
   "signing.detail.audit.reminder-sent": "Reminder sent",
@@ -2292,11 +2678,15 @@ export default {
   "signing.detail.audit.actor": "By: {email}",
   "signing.detail.audit.ip": "IP: {ip}",
   "signing.detail.audit.reason": "Reason: {reason}",
-  "signing.detail.finalize.progress": "Finalization in progress: decryption, visual signatures, PAdES cryptographic signature, re-encryption and storage...",
-  "signing.detail.finalize.key-resolving": "Resolving encryption key... Finalization will start automatically.",
+  "signing.detail.finalize.progress":
+    "Finalization in progress: decryption, visual signatures, PAdES cryptographic signature, re-encryption and storage...",
+  "signing.detail.finalize.key-resolving":
+    "Resolving encryption key... Finalization will start automatically.",
   "signing.detail.finalize.retry": "Retry finalization",
-  "signing.detail.download.e2e-open-link": "This PDF is end-to-end encrypted. Open the signing link received by e-mail once while signed in to this account, and the download will then be available here.",
-  "signing.detail.finalize.e2e-unavailable": "E2E key unavailable - unable to resolve encryption key",
+  "signing.detail.download.e2e-open-link":
+    "This PDF is end-to-end encrypted. Open the signing link received by e-mail once while signed in to this account, and the download will then be available here.",
+  "signing.detail.finalize.e2e-unavailable":
+    "E2E key unavailable - unable to resolve encryption key",
   "signing.toast.finalize-success": "Document finalized successfully!",
   "signing.toast.finalize-error": "Error finalizing encrypted document",
   "signing.toast.request-cancelled": "Request cancelled",
@@ -2309,14 +2699,19 @@ export default {
   "signing.new.file-id.desc": "PDF file identifier to sign within the share",
   "signing.new.file-id.placeholder": "e.g. clxyz...",
   "signing.new.eidas-level": "Signature evidence level",
-  "signing.new.eidas-desc": "Both flows record consent and document integrity. The reinforced level also associates an assigned account and a passkey. It provides evidence useful for an advanced electronic signature (AdES). That status requires the signatory-identification process and demonstrable sole control to meet all eIDAS Article 26 criteria. Neither flow is a qualified electronic signature (QES).",
+  "signing.new.eidas-desc":
+    "Both flows record consent and document integrity. The reinforced level also associates an assigned account and a passkey. It provides evidence useful for an advanced electronic signature (AdES). That status requires the signatory-identification process and demonstrable sole control to meet all eIDAS Article 26 criteria. Neither flow is a qualified electronic signature (QES).",
   "signing.new.options": "Signed document options",
   "signing.new.option.approval-field": "Diagonal 'Approved' watermark",
-  "signing.new.option.approval-field.desc": "Shows a semi-transparent diagonal watermark on the first page",
-  "signing.new.option.approval-mention": "'Read and approved on (date)' mention",
-  "signing.new.option.approval-mention.desc": "Adds the mention with the date of each signature",
+  "signing.new.option.approval-field.desc":
+    "Shows a semi-transparent diagonal watermark on the first page by default, or on the selected page",
+  "signing.new.option.approval-mention":
+    "'Read and approved on (date)' mention",
+  "signing.new.option.approval-mention.desc":
+    "Adds the mention with the date of each signature",
   "signing.new.option.initials": "Signers' initials at the bottom of each page",
-  "signing.new.option.initials.desc": "Shows each signer's initials in the page footer",
+  "signing.new.option.initials.desc":
+    "Shows each signer's initials in the page footer",
   "signing.new.recipients.role.approver": "Approver",
   "signing.new.recipients.role.observer": "Observer (CC)",
   "signing.new.recipients.order": "Order",
@@ -2325,7 +2720,8 @@ export default {
   "signing.new.fields.add-signature": "Signature",
   "signing.new.fields.add-text": "Text field",
   "signing.new.fields.add-approval": "Required mention",
-  "signing.new.fields.desc": "Add signature areas, free text fields, dates or exact mentions. A signature field is automatically added for each signer if missing.",
+  "signing.new.fields.desc":
+    "Add signature areas, free text fields, dates or exact mentions. A signature field is automatically added for each signer if missing.",
   "signing.new.fields.signer": "Signer",
   "signing.new.fields.type": "Type",
   "signing.new.fields.type.signature": "Signature",
@@ -2338,8 +2734,10 @@ export default {
   "signing.new.fields.height": "Height",
   "signing.new.fields.required": "Required",
   "signing.new.fields.label": "Instruction or required text",
-  "signing.new.fields.label.placeholder": "Example: Customer signature, preceded by the required statement",
-  "signing.new.fields.label.approval-placeholder": "Text the signer must type exactly",
+  "signing.new.fields.label.placeholder":
+    "Example: Customer signature, preceded by the required statement",
+  "signing.new.fields.label.approval-placeholder":
+    "Text the signer must type exactly",
   "signing.new.fields.approval.default": "Read and approved",
   "signing.new.fields.placement": "Quick placement",
   "signing.new.fields.placement.top-left": "Top left",
@@ -2358,13 +2756,15 @@ export default {
   "signing.new.validate.name-required": "Name required",
   "signing.new.validate.email-invalid": "Invalid email",
   "signing.new.validate.min-signer": "Add at least one signer",
-  "signing.new.validate.field-label-required": "Add the instruction or exact text for each required text field.",
+  "signing.new.validate.field-label-required":
+    "Add the instruction or exact text for each required text field.",
   "signing.toast.created": "Signature request created and sent to signers",
   "signing.toast.create-error": "Error creating the request",
 
   // --- Teams ---
   "team.title": "Teams",
-  "team.subtitle": "Collaborate with shared storage, access control, and team metrics",
+  "team.subtitle":
+    "Collaborate with shared storage, access control, and team metrics",
   "team.new": "Create a team",
   "team.empty": "No teams yet",
   "team.empty.description": "Create or join a team to collaborate securely.",
@@ -2393,7 +2793,8 @@ export default {
   "team.dashboard.folder.create": "Create",
   "team.invite.invalid-link": "Invalid invitation link.",
   "team.invite.title": "Team Invitation",
-  "team.invite.login-required": "Sign in or create an account to accept this invitation.",
+  "team.invite.login-required":
+    "Sign in or create an account to accept this invitation.",
   "team.invite.login-button": "Sign in",
   "team.invite.accepted-title": "Invitation accepted!",
   "team.invite.accepted-redirect": "Redirecting to the team dashboard...",
@@ -2401,9 +2802,12 @@ export default {
   "team.invite.join-title": "Join a team",
   "team.invite.join-description":
     "You have been invited to join a team on PrivCloud.",
-  "team.invite.error-generic": "Unable to accept the invitation. The link may have expired.",
-  "team.invite.e2e-required-title": "This team uses end-to-end encryption (E2E).",
-  "team.invite.e2e-required-description": "You must first enable your personal encryption key in your account before joining this team.",
+  "team.invite.error-generic":
+    "Unable to accept the invitation. The link may have expired.",
+  "team.invite.e2e-required-title":
+    "This team uses end-to-end encryption (E2E).",
+  "team.invite.e2e-required-description":
+    "You must first enable your personal encryption key in your account before joining this team.",
   "team.invite.e2e-setup-button": "Set up my E2E key",
   "team.invite.accept-button": "Accept invitation",
   "team.role.owner": "Owner",
@@ -2462,7 +2866,8 @@ export default {
   "admin.teams.modal.create-team": "Create a new team",
   "admin.teams.modal.team-name": "Team name",
   "admin.teams.modal.team-slug": "Team URL (slug)",
-  "admin.teams.modal.slug-hint": "Unique identifier in the URL (lowercase letters, numbers and hyphens)",
+  "admin.teams.modal.slug-hint":
+    "Unique identifier in the URL (lowercase letters, numbers and hyphens)",
   "admin.teams.modal.team-description": "Description",
   "admin.teams.modal.description-placeholder": "Optional team description",
   "admin.teams.modal.team-owner": "Team owner",
@@ -2479,30 +2884,36 @@ export default {
 
   // --- Team creation ---
   "team.create.modal.title": "Create your team",
-  "team.create.modal.mandatory-info": "You have been designated as a team administrator. Please create your team to continue.",
+  "team.create.modal.mandatory-info":
+    "You have been designated as a team administrator. Please create your team to continue.",
   "team.create.modal.name-label": "Team name",
-  "team.create.modal.name-hint": "Special characters are allowed ($, -, _, @, #, etc.)",
+  "team.create.modal.name-hint":
+    "Special characters are allowed ($, -, _, @, #, etc.)",
   "team.create.modal.description-label": "Description (optional)",
   "team.create.modal.description-placeholder": "Briefly describe your team...",
-  "team.create.modal.slug-auto": "The URL identifier will be automatically generated from the name.",
+  "team.create.modal.slug-auto":
+    "The URL identifier will be automatically generated from the name.",
   "team.create.modal.submit": "Create team",
-  "team.create.success": "Team \"{name}\" created successfully!",
+  "team.create.success": 'Team "{name}" created successfully!',
   "team.create.error.name-too-short": "Name must be at least 2 characters",
   "team.create.error.generic": "Error creating team",
 
   // --- Account team section ---
   "account.team.title": "My team",
-  "account.team.description": "You have been designated as a team administrator. Create your team to invite your collaborators.",
+  "account.team.description":
+    "You have been designated as a team administrator. Create your team to invite your collaborators.",
   "account.team.create-button": "Create my team",
   "account.team.storage": "Shared team storage: {used} / {total}",
-  "account.team.no-personal-storage": "Your storage is shared with your team. No individual personal storage is allocated.",
+  "account.team.no-personal-storage":
+    "Your storage is shared with your team. No individual personal storage is allocated.",
 
   // --- Team folder page (team/[id]/folder/[folderId].tsx) ---
   // Breadcrumbs
   "team.folder.breadcrumb.team": "Team",
   "team.folder.breadcrumb.folders": "Folders",
   // Empty state
-  "team.folder.empty": "No files in this folder. Upload a file by selecting this team folder when sharing.",
+  "team.folder.empty":
+    "No files in this folder. Upload a file by selecting this team folder when sharing.",
   // File tooltip
   "team.folder.fileRights": "Specific rights on this file",
   // Table headers
@@ -2518,20 +2929,23 @@ export default {
   "team.folder.bulkBar.manageRights": "Manage rights",
   // Shares section
   "team.folder.shares.title": "Linked shares ({count})",
-  "team.folder.shares.fileCount": "{count, plural, one {# file} other {# files}}",
+  "team.folder.shares.fileCount":
+    "{count, plural, one {# file} other {# files}}",
   "team.folder.shares.copyLink": "Copy link",
   "team.folder.shares.linkCopied": "Link copied!",
   "team.folder.shares.deleteTooltip": "Delete share",
   // Access control section
   "team.folder.access.title": "Access control",
   "team.folder.access.addButton": "Add access",
-  "team.folder.access.noRules": "No access rules defined - all team members have access by default.",
+  "team.folder.access.noRules":
+    "No access rules defined - all team members have access by default.",
   "team.folder.access.role.owner": "Owner",
   "team.folder.access.role.admin": "Admin",
   "team.folder.access.role.member": "Member",
   "team.folder.access.removeTooltip": "Remove access",
   "team.folder.access.fullAccess": "Full access",
-  "team.folder.access.note": "Note: team owners and admins always have full access, regardless of the rules above.",
+  "team.folder.access.note":
+    "Note: team owners and admins always have full access, regardless of the rules above.",
   // Permission labels (Select)
   "team.folder.permission.none": "No access",
   "team.folder.permission.read": "Read only",
@@ -2547,32 +2961,41 @@ export default {
   // Signature switch
   "team.folder.signatureSwitch.short": "Signature (PDF)",
   "team.folder.signatureSwitch.label": "Allow signature request (PDF)",
-  "team.folder.signatureSwitch.desc": "The member will be able to initiate signature requests on PDF files in the folder",
+  "team.folder.signatureSwitch.desc":
+    "The member will be able to initiate signature requests on PDF files in the folder",
   // Add access modal
   "team.folder.modal.access.title": "Add folder access",
   "team.folder.modal.access.memberLabel": "Member",
   "team.folder.modal.access.memberPlaceholder": "Select a member",
   "team.folder.modal.access.permissionLabel": "Permission",
   "team.folder.modal.access.rightsIncluded": "Included rights:",
-  "team.folder.modal.access.rights.read": "View and download. No delete rights.",
-  "team.folder.modal.access.rights.write": "View, download, and delete own files only.",
-  "team.folder.modal.access.rights.admin": "Full access: view, download, delete all files, signature request.",
+  "team.folder.modal.access.rights.read":
+    "View and download. No delete rights.",
+  "team.folder.modal.access.rights.write":
+    "View, download, and delete own files only.",
+  "team.folder.modal.access.rights.admin":
+    "Full access: view, download, delete all files, signature request.",
   "team.folder.modal.cancel": "Cancel",
   "team.folder.modal.access.addButton": "Add",
   // File permissions modal
   "team.folder.modal.filePerms.title": "File rights ({count} file(s))",
-  "team.folder.modal.filePerms.desc": "Set rights for each member on the selected files. Leave blank to skip.",
-  "team.folder.modal.filePerms.legend": "Read: view and download only. Read + Write: same + delete own files. Admin: full access.",
+  "team.folder.modal.filePerms.desc":
+    "Set rights for each member on the selected files. Leave blank to skip.",
+  "team.folder.modal.filePerms.legend":
+    "Read: view and download only. Read + Write: same + delete own files. Admin: full access.",
   "team.folder.modal.filePerms.noPerm": "No rights",
   "team.folder.modal.filePerms.defaultPerm": "--- Default rights (folder) ---",
   "team.folder.modal.filePerms.applyButton": "Apply",
   // Confirm delete modals
   "team.folder.confirmDelete.fileTitle": "Delete file",
-  "team.folder.confirmDelete.fileBody": "Are you sure you want to delete \"{name}\"? This action is irreversible.",
+  "team.folder.confirmDelete.fileBody":
+    'Are you sure you want to delete "{name}"? This action is irreversible.',
   "team.folder.confirmDelete.shareTitle": "Delete share",
-  "team.folder.confirmDelete.shareBody": "Are you sure you want to delete the share \"{name}\" and all its files? This action is irreversible.",
+  "team.folder.confirmDelete.shareBody":
+    'Are you sure you want to delete the share "{name}" and all its files? This action is irreversible.',
   "team.folder.confirmDelete.bulkTitle": "Delete selected files",
-  "team.folder.confirmDelete.bulkBody": "Delete {count} file(s)? This action is irreversible.",
+  "team.folder.confirmDelete.bulkBody":
+    "Delete {count} file(s)? This action is irreversible.",
   "team.folder.confirmDelete.confirm": "Delete",
   "team.folder.confirmDelete.cancel": "Cancel",
   // Toasts
@@ -2583,7 +3006,8 @@ export default {
   "team.folder.toast.deleteError": "Error while deleting",
   "team.folder.toast.error": "Error",
   "team.folder.toast.bulkDeleted": "{count} file(s) deleted",
-  "team.folder.toast.filePermsApplied": "Rights applied to {files} file(s) for {members} member(s)",
+  "team.folder.toast.filePermsApplied":
+    "Rights applied to {files} file(s) for {members} member(s)",
   // File actions
   "team.folder.action.preview": "Preview",
   "team.folder.action.download": "Download",
@@ -2635,8 +3059,10 @@ export default {
   "team.dashboard.members.permissionsError": "Error updating permissions",
 
   "team.dashboard.members.removeModal.title": "Remove a member",
-  "team.dashboard.members.removeModal.confirm": "Do you really want to remove {name} ({email}) from the team?",
-  "team.dashboard.members.removeModal.warning": "The member will lose access to all shared folders and files. Their access rules will be removed.",
+  "team.dashboard.members.removeModal.confirm":
+    "Do you really want to remove {name} ({email}) from the team?",
+  "team.dashboard.members.removeModal.warning":
+    "The member will lose access to all shared folders and files. Their access rules will be removed.",
   "team.dashboard.members.removeModal.confirmButton": "Remove from team",
 
   "team.dashboard.folders.count": "{n} / {max} folders",
@@ -2654,11 +3080,13 @@ export default {
   "team.dashboard.folders.modal.namePlaceholder": "Client projects",
   "team.dashboard.folders.modal.createButton": "Create",
   "team.dashboard.folders.deleteModal.title": "Irreversible deletion",
-  "team.dashboard.folders.deleteModal.warning": "This will permanently delete the folder \"{name}\", including:",
+  "team.dashboard.folders.deleteModal.warning":
+    'This will permanently delete the folder "{name}", including:',
   "team.dashboard.folders.deleteModal.item1": "All files in the folder",
   "team.dashboard.folders.deleteModal.item2": "All associated shares",
   "team.dashboard.folders.deleteModal.item3": "Access permissions",
-  "team.dashboard.folders.deleteModal.confirmPrompt": "To confirm, type the exact folder name:",
+  "team.dashboard.folders.deleteModal.confirmPrompt":
+    "To confirm, type the exact folder name:",
   "team.dashboard.folders.deleteModal.nameMismatch": "Name does not match",
   "team.dashboard.folders.deleteModal.confirmButton": "Delete permanently",
 
@@ -2697,9 +3125,11 @@ export default {
   "team.dashboard.signatures.status.awaitingFinalization": "E2E finalization",
   "team.dashboard.signatures.viewDetails": "View details",
   "team.dashboard.signatures.downloadSigned": "Download signed PDF",
-  "team.dashboard.signatures.fileDeletedTooltip": "Source file has been deleted",
+  "team.dashboard.signatures.fileDeletedTooltip":
+    "Source file has been deleted",
   "team.dashboard.signatures.fileDeleted": "Deleted",
-  "team.dashboard.signatures.downloadError": "Unable to download signed document",
+  "team.dashboard.signatures.downloadError":
+    "Unable to download signed document",
   "team.dashboard.signatures.untitled": "Untitled",
 
   "team.e2e.share.title":
@@ -2724,57 +3154,83 @@ export default {
   "team.e2e.share.error": "Unable to share the encrypted files.",
   "team.dashboard.e2e.initButton": "Initialize E2E encryption",
   "team.dashboard.e2e.rotateButton": "Regenerate E2E key",
-  "team.dashboard.e2e.keyReceivedSuccess": "Team E2E key received and stored successfully.",
-  "team.dashboard.e2e.personalKeyMissing": "Your personal encryption key is unavailable. Please log in again.",
-  "team.dashboard.e2e.activatedSoleMember": "E2E encryption activated. You are the only member for now.",
+  "team.dashboard.e2e.keyReceivedSuccess":
+    "Team E2E key received and stored successfully.",
+  "team.dashboard.e2e.personalKeyMissing":
+    "Your personal encryption key is unavailable. Please log in again.",
+  "team.dashboard.e2e.activatedSoleMember":
+    "E2E encryption activated. You are the only member for now.",
   "team.dashboard.e2e.initError": "Error initializing E2E encryption.",
   "team.dashboard.e2e.shareLinkError": "Unable to generate key sharing link.",
   "team.dashboard.e2e.keyUnavailable": "Personal key or team key unavailable.",
   "team.dashboard.e2e.rotateCancelled": "Rotation cancelled.",
   "team.dashboard.e2e.rotateError": "Error during E2E key rotation.",
-  "team.dashboard.e2e.rotateSuccess": "Rotation complete: {n} file(s) re-encrypted. Distribute new links to members.",
-  "team.dashboard.e2e.rotatePartialFail": "{n} file(s) could not be re-encrypted. Rotation cancelled.",
+  "team.dashboard.e2e.rotateSuccess":
+    "Rotation complete: {n} file(s) re-encrypted. Distribute new links to members.",
+  "team.dashboard.e2e.rotatePartialFail":
+    "{n} file(s) could not be re-encrypted. Rotation cancelled.",
   "team.dashboard.e2e.noOtherMembers": "No other members to notify.",
-  "team.dashboard.e2e.noKeyForInvite": "Team has no E2E key. Initialize E2E encryption first.",
+  "team.dashboard.e2e.noKeyForInvite":
+    "Team has no E2E key. Initialize E2E encryption first.",
   "team.dashboard.e2e.staleKey.title": "Team E2E key unreadable",
-  "team.dashboard.e2e.staleKey.desc": "Your copy of this team's E2E key was sealed with a personal key that no longer exists.",
-  "team.dashboard.e2e.staleKey.adminHint": "Drop this obsolete copy, then ask another member who still holds the key to share it with you. If nobody has it anymore, you can initialize a new team key - files encrypted with the old key will stay unreadable.",
-  "team.dashboard.e2e.staleKey.memberHint": "Drop this obsolete copy, then ask an administrator to share the team key with you again.",
+  "team.dashboard.e2e.staleKey.desc":
+    "Your copy of this team's E2E key was sealed with a personal key that no longer exists.",
+  "team.dashboard.e2e.staleKey.adminHint":
+    "Drop this obsolete copy, then ask another member who still holds the key to share it with you. If nobody has it anymore, you can initialize a new team key - files encrypted with the old key will stay unreadable.",
+  "team.dashboard.e2e.staleKey.memberHint":
+    "Drop this obsolete copy, then ask an administrator to share the team key with you again.",
   "team.dashboard.e2e.staleKey.clearButton": "Drop this obsolete key",
-  "team.dashboard.e2e.staleKey.cleared": "Obsolete key dropped. You can now receive the team key again.",
+  "team.dashboard.e2e.staleKey.cleared":
+    "Obsolete key dropped. You can now receive the team key again.",
   "team.dashboard.e2e.staleKey.clearError": "Could not drop the obsolete key.",
-  "team.dashboard.e2e.staleKey.toast": "Your personal key cannot open this team's E2E key. Drop the obsolete copy and have the key shared with you again.",
+  "team.dashboard.e2e.staleKey.toast":
+    "Your personal key cannot open this team's E2E key. Drop the obsolete copy and have the key shared with you again.",
   "team.dashboard.e2e.banner.notInitTitle": "E2E encryption not initialized",
-  "team.dashboard.e2e.banner.notInitDesc": "No E2E key is configured for this team. Initialize it to protect files.",
-  "team.dashboard.e2e.banner.askResharDesc": "You no longer hold this team's E2E key, but other members still do. Ask one of them to share it with you again - generating a new key would make existing files unreadable.",
+  "team.dashboard.e2e.banner.notInitDesc":
+    "No E2E key is configured for this team. Initialize it to protect files.",
+  "team.dashboard.e2e.banner.askResharDesc":
+    "You no longer hold this team's E2E key, but other members still do. Ask one of them to share it with you again - generating a new key would make existing files unreadable.",
   "team.dashboard.e2e.banner.missingTitle": "E2E key missing",
-  "team.dashboard.e2e.banner.missingDesc": "You haven't received this team's E2E key yet. Ask your administrator to share it.",
+  "team.dashboard.e2e.banner.missingDesc":
+    "You haven't received this team's E2E key yet. Ask your administrator to share it.",
   "team.dashboard.e2e.banner.activeTitle": "E2E encryption active",
-  "team.dashboard.e2e.banner.activeDesc": "Your E2E key is configured. Team files are end-to-end encrypted.",
+  "team.dashboard.e2e.banner.activeDesc":
+    "Your E2E key is configured. Team files are end-to-end encrypted.",
   "team.dashboard.e2e.generateLinkTooltip": "Generate E2E key sharing link",
   "team.dashboard.e2e.keyOkTooltip": "E2E key OK",
-  "team.dashboard.e2e.memberNoKeyTooltip": "This member doesn't have the E2E key - click to generate a sharing link",
+  "team.dashboard.e2e.memberNoKeyTooltip":
+    "This member doesn't have the E2E key - click to generate a sharing link",
   "team.dashboard.e2e.memberHasKeyTooltip": "This member has the E2E key",
   "team.dashboard.e2e.linkReady": "Link ready",
   "team.dashboard.e2e.shareLinkTo": "Share this link with {name}:",
-  "team.dashboard.e2e.linkSecurityWarning": "⚠️ This link contains the E2E key. Share only via a secure channel.",
+  "team.dashboard.e2e.linkSecurityWarning":
+    "⚠️ This link contains the E2E key. Share only via a secure channel.",
   "team.dashboard.e2e.rotateModal.title": "Regenerate team E2E key",
-  "team.dashboard.e2e.rotateModal.warning1": "Re-encrypt all team files with a new key",
-  "team.dashboard.e2e.rotateModal.warning2": "Invalidate the current key for all members",
-  "team.dashboard.e2e.rotateModal.warning3": "You will need to re-distribute links to members",
-  "team.dashboard.e2e.rotateModal.description": "Use this if a member left the team, a key was compromised, or you want to renew the key as a precaution.",
-  "team.dashboard.e2e.rotateModal.progress": "Re-encryption in progress... {done}/{total} file(s)",
+  "team.dashboard.e2e.rotateModal.warning1":
+    "Re-encrypt all team files with a new key",
+  "team.dashboard.e2e.rotateModal.warning2":
+    "Invalidate the current key for all members",
+  "team.dashboard.e2e.rotateModal.warning3":
+    "You will need to re-distribute links to members",
+  "team.dashboard.e2e.rotateModal.description":
+    "Use this if a member left the team, a key was compromised, or you want to renew the key as a precaution.",
+  "team.dashboard.e2e.rotateModal.progress":
+    "Re-encryption in progress... {done}/{total} file(s)",
   "team.dashboard.e2e.rotateModal.failures": "{n} failure(s)",
   "team.dashboard.e2e.rotateModal.preparing": "Preparing...",
   "team.dashboard.e2e.rotateModal.startButton": "Start rotation",
   "team.dashboard.e2e.rotateModal.cancelButton": "Cancel",
-  "team.dashboard.e2e.distModal.title": "E2E encryption activated - distribute keys",
-  "team.dashboard.e2e.distModal.alert1": "The team E2E key has been generated. Share the link below with each member via a secure channel (Signal, encrypted email, etc.).",
-  "team.dashboard.e2e.distModal.alert2": "⚠️ These links expire at the next key regeneration. Do not send them via unencrypted email.",
+  "team.dashboard.e2e.distModal.title":
+    "E2E encryption activated - distribute keys",
+  "team.dashboard.e2e.distModal.alert1":
+    "The team E2E key has been generated. Share the link below with each member via a secure channel (Signal, encrypted email, etc.).",
+  "team.dashboard.e2e.distModal.alert2":
+    "⚠️ These links expire at the next key regeneration. Do not send them via unencrypted email.",
   "team.dashboard.e2e.distModal.done": "Done",
 
   "team.dashboard.invite.modal.title": "Invite a member",
-  "team.dashboard.invite.modal.alert": "An invitation will be sent by email. The recipient can create an account if they don't have one yet.",
+  "team.dashboard.invite.modal.alert":
+    "An invitation will be sent by email. The recipient can create an account if they don't have one yet.",
   "team.dashboard.invite.modal.emailLabel": "Email address",
   "team.dashboard.invite.modal.emailPlaceholder": "colleague@example.com",
   "team.dashboard.invite.modal.roleLabel": "Role",
@@ -2784,7 +3240,8 @@ export default {
   "team.dashboard.invite.sentSuccess": "Invitation sent to {email}",
   "team.dashboard.invite.error": "Invitation error",
   "team.dashboard.invite.secureLinkModal.title": "Secure invitation link",
-  "team.dashboard.invite.secureLinkModal.alert": "The invitation email has been sent. For the member to decrypt E2E team files, share this secure link via a trusted channel (Signal, encrypted email, etc.).",
+  "team.dashboard.invite.secureLinkModal.alert":
+    "The invitation email has been sent. For the member to decrypt E2E team files, share this secure link via a trusted channel (Signal, encrypted email, etc.).",
   "team.dashboard.invite.secureLinkModal.copy": "Copy secure link",
   "team.dashboard.invite.linkCopied": "Link copied!",
 
@@ -2813,22 +3270,29 @@ export default {
 
   // --- Modals: Rotation ---
   "team.dashboard.modals.rotation.title": "Regenerate team E2E key",
-  "team.dashboard.modals.rotation.warning": "This operation will: 1) Re-encrypt all team files with a new key, 2) Invalidate the key of all other members, 3) You will need to re-distribute links to each member.",
-  "team.dashboard.modals.rotation.description": "Use this function if a member has left the team, if a key was compromised, or if you simply want to renew the key as a precaution.",
+  "team.dashboard.modals.rotation.warning":
+    "This operation will: 1) Re-encrypt all team files with a new key, 2) Invalidate the key of all other members, 3) You will need to re-distribute links to each member.",
+  "team.dashboard.modals.rotation.description":
+    "Use this function if a member has left the team, if a key was compromised, or if you simply want to renew the key as a precaution.",
   "team.dashboard.modals.rotation.startBtn": "Start rotation",
-  "team.dashboard.modals.rotation.progress": "Re-encrypting... {done}/{total} file(s)",
+  "team.dashboard.modals.rotation.progress":
+    "Re-encrypting... {done}/{total} file(s)",
   "team.dashboard.modals.rotation.failures": "{n} failure(s)",
   "team.dashboard.modals.rotation.preparing": "Preparing...",
 
   // --- Modals: Init links ---
-  "team.dashboard.modals.initLinks.title": "E2E encryption enabled - distribute keys",
-  "team.dashboard.modals.initLinks.description": "The team E2E key has been generated. Share the link below with each member via a secure channel (encrypted messaging, in person, etc.). The link contains the key in the URL fragment - the server never sees it.",
-  "team.dashboard.modals.initLinks.warning": "⚠️ These links expire at the next key regeneration. Do not send them via unencrypted email.",
+  "team.dashboard.modals.initLinks.title":
+    "E2E encryption enabled - distribute keys",
+  "team.dashboard.modals.initLinks.description":
+    "The team E2E key has been generated. Share the link below with each member via a secure channel (encrypted messaging, in person, etc.). The link contains the key in the URL fragment - the server never sees it.",
+  "team.dashboard.modals.initLinks.warning":
+    "⚠️ These links expire at the next key regeneration. Do not send them via unencrypted email.",
   "team.dashboard.modals.initLinks.doneBtn": "Done",
 
   // --- Modals: Invite ---
   "team.dashboard.modals.invite.title": "Invite a member",
-  "team.dashboard.modals.invite.description": "An invitation will be sent by email. The recipient can create an account if they don't have one yet.",
+  "team.dashboard.modals.invite.description":
+    "An invitation will be sent by email. The recipient can create an account if they don't have one yet.",
   "team.dashboard.modals.invite.emailLabel": "Email address",
   "team.dashboard.modals.invite.roleLabel": "Role",
   "team.dashboard.modals.invite.sendBtn": "Send invitation",
@@ -2841,32 +3305,40 @@ export default {
 
   // --- Modals: Delete folder ---
   "team.dashboard.modals.deleteFolder.title": "Irreversible deletion",
-  "team.dashboard.modals.deleteFolder.warning": "This action will permanently delete the folder \"{name}\", including:",
+  "team.dashboard.modals.deleteFolder.warning":
+    'This action will permanently delete the folder "{name}", including:',
   "team.dashboard.modals.deleteFolder.listFiles": "All files in the folder",
   "team.dashboard.modals.deleteFolder.listShares": "All associated shares",
   "team.dashboard.modals.deleteFolder.listPermissions": "Access permissions",
-  "team.dashboard.modals.deleteFolder.confirmPrompt": "To confirm, type the exact folder name:",
+  "team.dashboard.modals.deleteFolder.confirmPrompt":
+    "To confirm, type the exact folder name:",
   "team.dashboard.modals.deleteFolder.nameMismatch": "Name does not match",
   "team.dashboard.modals.deleteFolder.deleteBtn": "Delete permanently",
 
   // --- Modals: Remove member ---
   "team.dashboard.modals.removeMember.title": "Remove a member",
-  "team.dashboard.modals.removeMember.confirm": "Do you really want to remove {name} ({email}) from the team?",
-  "team.dashboard.modals.removeMember.warning": "The member will lose access to all shared folders and files of the team. Their access rules will be deleted.",
+  "team.dashboard.modals.removeMember.confirm":
+    "Do you really want to remove {name} ({email}) from the team?",
+  "team.dashboard.modals.removeMember.warning":
+    "The member will lose access to all shared folders and files of the team. Their access rules will be deleted.",
   "team.dashboard.modals.removeMember.removeBtn": "Remove from team",
 
   // --- Modals: Secure invite link ---
   "team.dashboard.modals.secureLink.title": "Secure invitation link",
-  "team.dashboard.modals.secureLink.description": "The invitation email has been sent. For the member to decrypt E2E files of the team, share this secure link via a trusted channel (Signal, in person, etc.).",
+  "team.dashboard.modals.secureLink.description":
+    "The invitation email has been sent. For the member to decrypt E2E files of the team, share this secure link via a trusted channel (Signal, in person, etc.).",
   "team.dashboard.modals.secureLink.copied": "Link copied!",
   "team.dashboard.modals.secureLink.copyBtn": "Copy secure link",
 
   // --- Signing page mobile ---
-  "signing.mobile.pdf-e2e-unavailable": "PDF preview is not available on mobile for encrypted documents.",
+  "signing.mobile.pdf-e2e-unavailable":
+    "PDF preview is not available on mobile for encrypted documents.",
   "signing.mobile.view-before-sign": "Review the document before signing.",
-  "signing.mobile.pdf-fallback-hint": "If the PDF does not display, use the button above.",
+  "signing.mobile.pdf-fallback-hint":
+    "If the PDF does not display, use the button above.",
   "signing.mobile.decrypt-error-title": "Decryption error",
-  "signing.mobile.decrypt-error-description": "Unable to decrypt the document. The provided key may be incorrect.",
+  "signing.mobile.decrypt-error-description":
+    "Unable to decrypt the document. The provided key may be incorrect.",
 
   // --- Sort and filter files in a team folder ---
   "team.folder.sort.label": "Sort by",
@@ -2885,16 +3357,19 @@ export default {
 
   // --- File selection in signature request ---
   "signing.new.select-file": "PDF file to sign",
-  "signing.new.select-file.desc": "Choose a PDF file from your accessible team folders, then from your own shares",
+  "signing.new.select-file.desc":
+    "Choose a PDF file from your accessible team folders, then from your own shares",
   "signing.new.select-file.placeholder": "Search for a file...",
   "signing.new.loading-files": "Loading available files...",
-  "signing.new.no-signable-files": "No PDF files available. Upload a PDF or obtain the signature request permission on a team folder.",
+  "signing.new.no-signable-files":
+    "No PDF files available. Upload a PDF or obtain the signature request permission on a team folder.",
   "signing.new.personal-files": "My files",
-
   // --- Upload page: target folder indication ---
   "upload.team-folder.hint.title": "Target folder",
-  "upload.team-folder.hint": "Your upload will be attached to folder « {folderName} » of team « {teamName} ».",
-  "upload.team-folder.hint.unknown": "A team folder has been pre-selected. Details will be shown in the configuration modal.",
+  "upload.team-folder.hint":
+    "Your upload will be attached to folder « {folderName} » of team « {teamName} ».",
+  "upload.team-folder.hint.unknown":
+    "A team folder has been pre-selected. Details will be shown in the configuration modal.",
 
   "team.dashboard.tabs.shares": "Shares",
   "team.dashboard.tabs.search": "Search",
@@ -2951,14 +3426,17 @@ export default {
   "team.settings.rotation.interval": "Rotation frequency",
   "team.settings.rotation.days": "Every {count} days",
   "signing.deleted-documents": "Deleted documents",
-  "signing.deleted-documents.info": "These documents have their source file deleted. They will be automatically purged after 6 months.",
+  "signing.deleted-documents.info":
+    "These documents have their source file deleted. They will be automatically purged after 6 months.",
   "signing.deleted.signers": "Signers",
-  "signing.detail.signing-links.completed-desc": "The document has been signed. You can retrieve the signing links (including E2E encryption key if applicable) below:",
+  "signing.detail.signing-links.completed-desc":
+    "The document has been signed. You can retrieve the signing links (including E2E encryption key if applicable) below:",
   "team.dashboard.metrics.folderStorage": "Folder(s): {size}",
   "team.dashboard.metrics.quotaStorage": "Quota: {used} / {limit}",
   "team.folder.access.fileLevel.title": "File-level access controls",
   "team.folder.bulkBar.e2eShare": "Share E2EE",
-  "team.folder.e2eShareSwitch.desc": "The member will be able to share end-to-end encrypted files with other members",
+  "team.folder.e2eShareSwitch.desc":
+    "The member will be able to share end-to-end encrypted files with other members",
   "team.folder.e2eShareSwitch.label": "Allow E2E encrypted sharing",
   "team.folder.e2eShareSwitch.short": "E2E Share",
   "team.settings.back": "Back",
@@ -2973,31 +3451,37 @@ export default {
   "team.settings.danger.item.history": "Activity history",
   "team.settings.danger.item.members": "All members and permissions",
   "team.settings.danger.item.shares": "All associated shares",
-  "team.settings.danger.modalAlert": "This action will permanently delete the team \"{name}\", including:",
+  "team.settings.danger.modalAlert":
+    'This action will permanently delete the team "{name}", including:',
   "team.settings.danger.modalTitle": "Irreversible deletion",
   "team.settings.danger.permanent": "permanent and irreversible",
-  "team.settings.danger.rest": ". All shared folders, stored files, and associated data will be permanently deleted.",
+  "team.settings.danger.rest":
+    ". All shared folders, stored files, and associated data will be permanently deleted.",
   "team.settings.danger.title": "Danger zone",
   "team.settings.info.description": "Description",
   "team.settings.info.name": "Team name",
   "team.settings.info.save": "Save",
   "team.settings.leave.button": "Leave team",
-  "team.settings.leave.desc": "By leaving the team, you will lose access to all shared folders and files. Your access rules will be deleted.",
+  "team.settings.leave.desc":
+    "By leaving the team, you will lose access to all shared folders and files. Your access rules will be deleted.",
   "team.settings.leave.title": "Leave team",
-  "team.settings.memberModal.accessHelp": "\"Default\": the member has read-only access (view and download). Set explicit access (Write or Admin) to allow file uploads and E2E sharing. Set \"Access denied\" to completely block access to a folder.",
+  "team.settings.memberModal.accessHelp":
+    '"Default": the member has read-only access (view and download). Set explicit access (Write or Admin) to allow file uploads and E2E sharing. Set "Access denied" to completely block access to a folder.',
   "team.settings.memberModal.cancel": "Cancel",
   "team.settings.memberModal.confirmRemove": "Confirm removal",
   "team.settings.memberModal.email": "Email:",
   "team.settings.memberModal.folderAccess": "Folder access",
   "team.settings.memberModal.noFolders": "No folders in the team.",
   "team.settings.memberModal.removeButton": "Remove from team",
-  "team.settings.memberModal.removeConfirm": "Confirm removal of {email} from the team?",
+  "team.settings.memberModal.removeConfirm":
+    "Confirm removal of {email} from the team?",
   "team.settings.memberModal.removeRuleTooltip": "Remove rule (default access)",
   "team.settings.memberModal.selectPlaceholder": "Set...",
   "team.settings.memberModal.table.currentPerm": "Current permission",
   "team.settings.memberModal.table.edit": "Edit",
   "team.settings.memberModal.table.folder": "Folder",
-  "team.settings.members.hint": "Click on a member to manage their folder access or remove them from the team.",
+  "team.settings.members.hint":
+    "Click on a member to manage their folder access or remove them from the team.",
   "team.settings.members.role.admin": "Admin",
   "team.settings.members.role.member": "Member",
   "team.settings.members.role.owner": "Owner",
@@ -3006,11 +3490,14 @@ export default {
   "team.settings.members.table.role": "Role",
   "team.settings.members.title": "Member management",
   "team.settings.metaTitle": "Settings - {name}",
-  "team.settings.noPermission": "You don't have permission to access this team's settings.",
+  "team.settings.noPermission":
+    "You don't have permission to access this team's settings.",
   "team.settings.notFound": "Team not found",
   "team.settings.notif.everyFile": "All files",
-  "team.settings.notif.help": "\"All files\": notification for every upload in your accessible folders.\n\"Direct shares\": only when a file is explicitly shared with you.",
-  "team.settings.notif.hint": "Choose when to receive push notifications on this device for this team.",
+  "team.settings.notif.help":
+    '"All files": notification for every upload in your accessible folders.\n"Direct shares": only when a file is explicitly shared with you.',
+  "team.settings.notif.hint":
+    "Choose when to receive push notifications on this device for this team.",
   "team.settings.notif.sharesOnly": "Direct shares only",
   "team.settings.notif.title": "Push notifications",
   "team.settings.perm.admin": "Admin",
@@ -3036,14 +3523,17 @@ export default {
   "team.settings.toast.permissionUpdated": "Permission updated",
   "team.settings.toast.updateError": "Error updating team",
   "team.settings.toast.updated": "Team updated",
-  "signing.new.created-alert": "The signature request has been created. Email invitations have been sent. You can also share the links below directly:",
+  "signing.new.created-alert":
+    "The signature request has been created. Email invitations have been sent. You can also share the links below directly:",
   "signing.new.view-detail": "View details",
   "signing.new.create-another": "New request",
   "signing.sign.otp.code-label": "Code received by email",
   "signing.sign.otp.sent": "Code sent. It will expire in 10 minutes.",
   "signing.sign.otp.verified": "Email address verified.",
-  "signing.sign.otp.invalid": "The code is invalid, expired, or has been tried too often.",
-  "signing.sign.otp.send-error": "The code cannot be sent right now. Please try again in one minute.",
+  "signing.sign.otp.invalid":
+    "The code is invalid, expired, or has been tried too often.",
+  "signing.sign.otp.send-error":
+    "The code cannot be sent right now. Please try again in one minute.",
   "signing.sign.steps.invitation": "Invitation",
   "signing.sign.steps.invitation.description": "Personal link received",
   "signing.sign.steps.review": "Review",
@@ -3057,41 +3547,60 @@ export default {
   "signing.sign.steps.done": "Done",
   "signing.sign.steps.done.description": "Decision recorded",
   "signing.sign.review.confirm": "I have read the document",
-  "signing.sign.review.confirm-description": "Review the complete PDF, then confirm before filling the fields and applying your signature.",
+  "signing.sign.review.confirm-description":
+    "Review the complete PDF, then confirm before filling the fields and applying your signature.",
   "signing.sign.review.reject": "Reject after review",
   "signing.sign.unavailable.title": "Signing link unavailable",
-  "signing.sign.unavailable.description": "The source file or signing request was deleted, cancelled, or expired. This link can no longer display or sign the document.",
+  "signing.sign.unavailable.description":
+    "The source file or signing request was deleted, cancelled, or expired. This link can no longer display or sign the document.",
   "signing.preview.unavailable.title": "Document unavailable",
-  "signing.preview.unavailable.description": "The file can no longer be loaded. It may have been deleted, signing is not possible.",
-  "signing.sign.legal.standard-short": "This check proves current access to the recipient email address, not the civil identity of the person entering the code.",
-  "signing.sign.legal.reinforced-short": "PrivCloud's reinforced profile implements an advanced electronic signature in accordance with the requirements of Article 26 of the eIDAS Regulation: transactional WebAuthn assertion, assigned account, explicit consent and a CMS/PDF cryptographic seal of the evidence by PrivCloud. This is not a qualified electronic signature (QES).",
-  "signing.sign.assurance.standard": "Standard level: current access to the recipient email address was confirmed with a one-time code. Mailbox control does not verify civil identity.",
-  "signing.sign.assurance.reinforced": "Reinforced level: the assigned PrivCloud account is recognised and each decision is confirmed by a passkey bound to the document hash. Account control is not qualified civil-identity verification.",
-  "signing.sign.legal.standard": "By clicking 'Sign document', you confirm that you reviewed and agree to sign it. The evidence file retains the document hash, date, proof of the code sent to the assigned email and technical elements. The code establishes current mailbox control, not civil identity. This flow does not claim advanced or qualified electronic-signature status.",
-  "signing.sign.legal.reinforced": "By clicking 'Sign document', you confirm that you reviewed and agree to sign it from the assigned PrivCloud account. The evidence file retains the document hash, date, account-verification method and WebAuthn proof bound to this decision. The reinforced flow provides authentication, consent and integrity safeguards. Advanced electronic signature (AdES) status under eIDAS also depends on the signatory-identification process and demonstrable sole control. This flow is not a qualified electronic signature (QES).",
+  "signing.preview.unavailable.description":
+    "The file can no longer be loaded. It may have been deleted, signing is not possible.",
+  "signing.sign.legal.standard-short":
+    "This check proves current access to the recipient email address, not the civil identity of the person entering the code.",
+  "signing.sign.legal.reinforced-short":
+    "PrivCloud's reinforced profile implements an advanced electronic signature in accordance with the requirements of Article 26 of the eIDAS Regulation: transactional WebAuthn assertion, assigned account, explicit consent and a CMS/PDF cryptographic seal of the evidence by PrivCloud. This is not a qualified electronic signature (QES).",
+  "signing.sign.assurance.standard":
+    "Standard level: current access to the recipient email address was confirmed with a one-time code. Mailbox control does not verify civil identity.",
+  "signing.sign.assurance.reinforced":
+    "Reinforced level: the assigned PrivCloud account is recognised and each decision is confirmed by a passkey bound to the document hash. Account control is not qualified civil-identity verification.",
+  "signing.sign.legal.standard":
+    "By clicking 'Sign document', you confirm that you reviewed and agree to sign it. The evidence file retains the document hash, date, proof of the code sent to the assigned email and technical elements. The code establishes current mailbox control, not civil identity. This flow does not claim advanced or qualified electronic-signature status.",
+  "signing.sign.legal.reinforced":
+    "By clicking 'Sign document', you confirm that you reviewed and agree to sign it from the assigned PrivCloud account. The evidence file retains the document hash, date, account-verification method and WebAuthn proof bound to this decision. The reinforced flow provides authentication, consent and integrity safeguards. Advanced electronic signature (AdES) status under eIDAS also depends on the signatory-identification process and demonstrable sole control. This flow is not a qualified electronic signature (QES).",
   "signing.modal.custom-page": "Customise signature and watermark placement",
-  "signing.modal.custom-page.desc": "By default, the signature and watermark are placed on the first page.",
+  "signing.modal.custom-page.desc":
+    "By default, the signature uses the detected page (first page if no placement is detected) and the watermark uses the first page.",
   "signing.modal.custom-page.signature-label": "Signature page",
   "signing.modal.custom-page.watermark-label": "Watermark page",
-  "signing.modal.custom-page.watermark-same": "Place watermark on the same page as the signature",
-  "signing.modal.custom-page.hint": "If the page doesn't exist, a blank page will be added.",
+  "signing.modal.custom-page.watermark-same":
+    "Place watermark on the same page as the signature",
+  "signing.modal.custom-page.hint":
+    "If the page doesn't exist, a blank page will be added.",
   "signing.deleted.date": "Source deleted",
   "signing.deleted.on": "Source deleted on {date}",
   "signing.source": "Source",
   "signing.source.mine": "Sent",
   "signing.source.received": "Received",
-  "signing.detail.audit.source-file-deleted": "Source file deleted, finalized evidence retained under the configured policy",
+  "signing.detail.audit.source-file-deleted":
+    "Source file deleted, finalized evidence retained under the configured policy",
   "signing.new.option.initials.placement": "Initials position",
   "signing.new.option.initials.bottom-left": "Bottom left",
-  "signing.new.option.initials.bottom-center-right": "Slightly right of centre (recommended)",
+  "signing.new.option.initials.bottom-center-right":
+    "Slightly right of centre (recommended)",
   "signing.new.option.initials.bottom-right": "Bottom right",
-  "signing.new.option.initials.include-signature-page": "Also add initials to the full-signature page",
-  "signing.new.option.custom-page": "Customise signature and watermark placement",
-  "signing.new.option.custom-page.desc": "By default, the signature and watermark are placed on the first page. Check to choose different pages.",
+  "signing.new.option.initials.include-signature-page":
+    "Also add initials to the full-signature page",
+  "signing.new.option.custom-page":
+    "Customise signature and watermark placement",
+  "signing.new.option.custom-page.desc":
+    "By default, the signature uses the detected page (first page if no placement is detected) and the watermark uses the first page. Check to change these pages.",
   "signing.new.option.custom-page.signature-label": "Signature page",
   "signing.new.option.custom-page.watermark-label": "Watermark page",
-  "signing.new.option.custom-page.watermark-same": "Place watermark on the same page as the signature",
-  "signing.new.option.custom-page.hint": "If the page doesn't exist, a blank page will be added automatically.",
+  "signing.new.option.custom-page.watermark-same":
+    "Place watermark on the same page as the signature",
+  "signing.new.option.custom-page.hint":
+    "If the page doesn't exist, a blank page will be added automatically.",
   "signing.new.fields.left-mm": "Left (mm)",
   "signing.new.fields.top-mm": "Top (mm)",
   "signing.new.fields.width-mm": "Width (mm)",
@@ -3103,27 +3612,208 @@ export default {
   "signing.new.fields.preview.zoom-in": "Zoom in",
   "signing.new.fields.preview.zoom-out": "Zoom out",
   "signing.new.fields.detection.loading": "Looking for a signature area...",
-  "signing.new.fields.detection.found-text": "A signature area was detected from the document text. It will be used by default and remains editable.",
-  "signing.new.fields.detection.found-box": "A likely signature box was detected. Check the suggested placement before sending.",
-  "signing.new.fields.detection.field-title": "Signature field placed automatically",
-  "signing.new.fields.detection.field-description": "The detected area is already used in the preview. Adjust the page, coordinates or dimensions below if needed.",
-  "signing.new.fields.preview.loading": "Reading the PDF's actual dimensions...",
-  "signing.new.fields.preview.error": "The preview could not be loaded. Placement will use an A4 fallback.",
+  "signing.new.fields.detection.found-text":
+    "A signature area was detected from the document text. It will be used by default and remains editable.",
+  "signing.new.fields.detection.found-box":
+    "A likely signature box was detected. Check the suggested placement before sending.",
+  "signing.new.fields.detection.field-title":
+    "Signature field placed automatically",
+  "signing.new.fields.detection.field-description":
+    "The detected area is already used in the preview. Adjust the page, coordinates or dimensions below if needed.",
+  "signing.new.fields.preview.loading":
+    "Reading the PDF's actual dimensions...",
+  "signing.new.fields.preview.error":
+    "The preview could not be loaded. Placement will use an A4 fallback.",
   "signing.new.fields.preview.dimensions": "Page: {width} × {height} mm",
-  "signing.new.fields.preview.rotated": "This page is rotated in the PDF. Placement follows the unrotated page: check the result before sending.",
-  "signing.new.validate.field-outside-page": "A field extends outside its page. Adjust its margins or dimensions.",
+  "signing.new.fields.preview.rotated":
+    "This page is rotated in the PDF. Placement follows the unrotated page: check the result before sending.",
+  "signing.new.validate.field-outside-page":
+    "A field extends outside its page. Adjust its margins or dimensions.",
   "team.settings.pqNotifications.title": "Post-quantum notifications",
-  "team.settings.pqNotifications.enabled": "Use hybrid ML-KEM-768 encryption for Team notifications",
-  "team.settings.pqNotifications.help": "When enabled, notifications for members with an ML-KEM key use X25519 + ML-KEM-768. Members without a PQ key keep the existing X25519 encryption.",
-  "team.fileRequest.metadata.encryptedHint": "The subject and note are end-to-end encrypted with the team key. Only the members who hold it can read them.",
+  "team.settings.pqNotifications.enabled":
+    "Use hybrid ML-KEM-768 encryption for Team notifications",
+  "team.settings.pqNotifications.help":
+    "When enabled, notifications for members with an ML-KEM key use X25519 + ML-KEM-768. Members without a PQ key keep the existing X25519 encryption.",
+  "team.fileRequest.metadata.encryptedHint":
+    "The subject and note are end-to-end encrypted with the team key. Only the members who hold it can read them.",
   "team.fileRequest.encryptedSubject": "Encrypted request",
   "team.notification.generic.FILE_SHARED": "A file was shared with you",
-  "team.notification.generic.FILE_UPLOADED": "New content in one of your team folders",
+  "team.notification.generic.FILE_UPLOADED":
+    "New content in one of your team folders",
   "team.notification.generic.FILE_DELETED": "Files were deleted in your team",
   "team.notification.generic.GRANT_RECEIVED": "You were granted access",
   "team.notification.generic.GRANT_REVOKED": "One of your accesses was removed",
   "team.notification.generic.KEY_ROTATED": "Your team key was renewed",
   "team.notification.generic.MEMBER_JOINED": "A member joined your team",
   "team.notification.generic.MEMBER_LEFT": "A member left your team",
-  "account.reverseShares.error.encryption": "Unable to encrypt the upload link. Please try again.",
+  "account.reverseShares.error.encryption":
+    "Unable to encrypt the upload link. Please try again.",
+  // External contractors (preview-only Team seats)
+  "step-up.email.send": "Get a code by e-mail",
+  "step-up.email.sent":
+    "Code sent to the address of the signature request. It expires in 10 minutes.",
+  "step-up.email.code": "Code received by e-mail",
+  "step-up.email.wrong": "Invalid or expired code.",
+  "step-up.email.wait": "Wait a minute before asking for a new code.",
+  "step-up.email.send-error": "The code could not be sent. Try again.",
+  "admin.users.sort.label": "Sort by",
+  "admin.users.sort.ascending": "Ascending order",
+  "admin.users.sort.descending": "Descending order",
+  "admin.users.table.share-usage.hint": "Shares over the last 30 rolling days",
+  "admin.users.table.renew.hint": "Subscription renewal date",
+  "sskr.title": "Recovery shards (Shamir secret sharing)",
+  "sskr.intro":
+    "Your encryption key will be split into <strong>N shards</strong>. You will need at least <strong>T</strong> of them to rebuild it. With T-1 shards or fewer, the key is mathematically impossible to recover.",
+  "sskr.storage":
+    "Store each shard in a different place: password manager, USB drive, paper safe, trusted contact.",
+  "sskr.threshold.label": "Minimum threshold (T)",
+  "sskr.threshold.description": "Number of shards needed to rebuild the key",
+  "sskr.total.label": "Total shards (N)",
+  "sskr.total.description": "Number of shards to generate",
+  "sskr.cancel": "Cancel",
+  "sskr.generate": "Generate {total} shards",
+  "sskr.shard.title": "Shard {n} of {total}",
+  "sskr.shard.instructions":
+    "Copy this shard and store it somewhere safe. Share it only with people you trust.",
+  "sskr.copy": "Copy",
+  "sskr.copied": "Copied!",
+  "sskr.shard.acknowledge": "I have saved this shard somewhere safe",
+  "sskr.previous": "Previous",
+  "sskr.next": "Next",
+  "sskr.finish": "Finish",
+  "sskr.done":
+    "Your <strong>{total} shards</strong> have been created. You will need <strong>{threshold}</strong> of them to rebuild your key. Keep them separate.",
+  "sskr.close": "Close",
+  "e2ePrompt.import.success": "Key loaded for this session.",
+  "e2ePrompt.recover.success": "Key rebuilt and loaded for this session.",
+  "team.create.modal.name-placeholder": "My Team @Work",
+  "team.new.offer.title": "Team plan - €17.99/month",
+  "team.new.offer.members": "3 members + the owner (4 in total)",
+  "team.new.offer.extraMembers": "Additional members at €4.99/month/person",
+  "team.new.offer.shareSize": "250 GB per team share",
+  "team.new.offer.storage": "500 GB of total storage",
+  "team.new.offer.folders": "Shared folders with access management",
+  "team.new.offer.metrics": "Metrics and access log",
+  "team.new.offer.reports": "Configurable periodic reports",
+  "team.list.metaTitle": "My teams",
+  "team.notifications.title": "Team notifications",
+  "team.notification.signing.SIGN": "A signature is expected from you",
+  "team.notification.signing.TRACK": "A signature was just completed",
+  "team.notification.signing.DOWNLOAD": "The signed document is available",
+  "team.notification.shared": '{sender} shared "{fileName}"',
+  "team.notification.shared.someone": "A member",
+  "team.notification.shared.aFile": "a file",
+  "team.dashboard.shares.col.file": "File",
+  "team.dashboard.shares.col.folder": "Folder",
+  "team.dashboard.shares.col.sharedBy": "Shared by",
+  "team.dashboard.shares.col.sharedWith": "Shared with",
+  "team.dashboard.shares.col.date": "Date",
+  "team.dashboard.shares.col.access": "Access",
+  "team.dashboard.shares.openFile": "Open file",
+  "team.dashboard.e2e.rotateResumeError":
+    "This rotation must be resumed by the person who started it.",
+  "team.dashboard.e2e.keyLink.title": "Team key not received yet",
+  "team.dashboard.e2e.keyLink.loadKey":
+    "This link contains your team key, but your personal encryption key is not loaded in this tab. Load it when prompted, or reload this page to be asked again. The team key will then be saved automatically.",
+  "team.dashboard.e2e.keyLink.createKey":
+    "This link contains your team key, but your account has no personal encryption key yet. Create it from your account, then open this link again in the same tab.",
+  "team.dashboard.e2e.keyLink.error":
+    "This key link could not be applied. Ask your administrator for a new one.",
+  "account.e2e.teamReturn.body":
+    "Your key is ready. You can now continue joining your team.",
+  "account.e2e.teamReturn.button": "Continue to my team",
+  "team.dashboard.invitations.title": "Pending invitations",
+  "team.dashboard.invitations.expires": "Expires on {date}",
+  "team.dashboard.invitations.revoke": "Revoke",
+  "team.dashboard.invitations.revoked": "Invitation revoked.",
+  "team.dashboard.invitations.revokeError":
+    "The invitation could not be revoked.",
+  "team.dashboard.invitations.confirmTitle": "Revoke this invitation?",
+  "team.dashboard.invitations.confirmBody":
+    "The link sent to {email} will stop working. You can invite this person again later. If a secure link with the team key was shared, regenerate the team key as well.",
+  "team.invite.error-email-mismatch":
+    "This invitation was sent to another address. Sign in with an account that uses it. If it belongs to a provider linked to this account, sign out and sign in once with that provider, then open the invitation again.",
+  "signing.new.received-files": "Files received through reverse shares",
+  "signing.page.field.approval-invalid":
+    "The required mention must be copied exactly.",
+  "signing.page.field.required": "Please complete every required field.",
+  "signing.page.signed.title": "Already signed",
+  "signing.page.signed.body": "You have already signed this document.",
+  "signing.page.rejected.title": "Rejected",
+  "signing.page.rejected.body": "You rejected this document.",
+  "signing.page.level.reinforced": "Reinforced signature",
+  "signing.page.level.standard": "Standard signature",
+  "signing.page.reinforced.title": "Verified account and passkey required",
+  "signing.page.reinforced.body":
+    "This reinforced flow is reserved for the PrivCloud account assigned to {email}. The passkey will then ask for the device biometrics or local code for each decision.",
+  "signing.page.reinforced.eidas": "eIDAS alignment: reinforced level",
+  "signing.page.reinforced.sign-in": "Sign in with the assigned account",
+  "signing.page.reinforced.switch": "Switch PrivCloud account",
+  "signing.page.webauthn.unsupported":
+    "This browser does not support WebAuthn. Use a recent browser or a compatible security key.",
+  "signing.page.passkey.register": "Register a signing passkey",
+  "signing.page.decrypting": "Decrypting the document...",
+  "signing.page.key-missing.title": "Encrypted document: key missing",
+  "signing.page.key-missing.body":
+    "This document is protected by end-to-end encryption. The link you received is incomplete: its decryption key is missing.",
+  "signing.page.sign.title": "Apply your signature",
+  "signing.page.sign.hint": "Draw, type or import your signature below.",
+  "signing.page.fields.title": "Mentions and fields to complete",
+  "signing.page.fields.hint":
+    "This information will be added to the signed PDF.",
+  "signing.page.fields.approval": "Required mention",
+  "signing.page.fields.date": "Date",
+  "signing.page.fields.text": "Text field",
+  "signing.page.fields.approval-mismatch":
+    "The mention does not match the expected text.",
+  "signing.page.sign.submit": "Sign the document",
+  "signing.page.reject": "Reject",
+  "signing.page.reject.title": "Reject the document",
+  "signing.page.reject.hint": "You may give a reason for rejecting (optional).",
+  "signing.page.reject.placeholder": "Reason for rejecting...",
+  "signing.page.reject.confirm": "Confirm rejection",
+  "signing.page.cancel": "Cancel",
+  "signing.page.evidence-recorded":
+    "Evidence dossier and cryptographic fingerprint recorded",
+  "signing.modal.links.title": "Signing links",
+  "signing.modal.links.partial":
+    "The signature request was created, but some emails could not be sent. Share the links below directly:",
+  "signing.modal.links.sent":
+    "The signature request was created. The email invitations were sent. You can also share the links below directly:",
+  "signing.modal.links.done": "Done",
+  "signing.modal.options.title": "Signed document options",
+  "signing.modal.options.watermark-description":
+    "Shows a semi-transparent diagonal watermark on the first page by default, or on the selected page",
+  "signing.level.reinforced": "Reinforced",
+  "signing.level.standard": "Standard",
+  "signing.modal.options.watermark-label": 'Diagonal watermark "{text}"',
+  "signing.modal.options.mention-label": 'Mention "{text}"',
+  "share.title.untitled": "Untitled share",
+  "share.title.withOthers":
+    "{name} (+{count, plural, one {# file} other {# files}})",
+  "signIn.oauth.or": "OR",
+  "admin.users.table.share-usage": "Shares (30 days)",
+  "admin.users.table.renew": "Renewal",
+  "admin.shares.status.expired": "Expired",
+  "admin.shares.table.reference": "Audit reference",
+  "team.notification.locked": "Locked",
+  "team.notification.keyRequired":
+    "Load your E2E key to read encrypted notifications.",
+  "team.notification.keyRequired.action": "Open my account",
+  "team.notification.generic.SIGNATURE_REQUESTED": "New signature request",
+  "team.notification.generic.SIGNATURE_SIGNED": "A document was signed",
+  "team.notification.generic.SIGNATURE_COMPLETED":
+    "A signed document is available",
+  "error.msg.link_email_sent":
+    "This address belongs to an existing account. We sent it a confirmation email to link your {0} account.",
+  "auth.confirmLink.title": "Link this sign-in to your account",
+  "auth.confirmLink.description":
+    "Confirm to let this provider sign in to your existing PrivCloud account.",
+  "auth.confirmLink.confirm": "Confirm the link",
+  "auth.confirmLink.success":
+    "Your accounts are linked. You can now sign in with this provider.",
+  "auth.confirmLink.invalid":
+    "This link is invalid or has expired. Sign in with your provider again to receive a new one.",
+  "auth.confirmLink.signIn": "Go to sign in",
+  "team.notification.empty": "No notifications",
 };

@@ -173,7 +173,7 @@ export function refreshTokenOnce(): Promise<AuthRefreshResult> {
     refreshApi
       .post("/api/auth/token")
       .then(() => ({ ok: true, status: 200 }))
-      .catch((e: any) => ({ ok: false, status: e?.response?.status ?? 0 }));
+      .catch((e) => ({ ok: false, status: e?.response?.status ?? 0 }));
 
   refreshInFlight = refreshAfterPossibleCookieRotation(attempt).finally(() => {
     // Hold the slot ~300 ms after completion so a burst of near-simultaneous
@@ -259,6 +259,7 @@ api.interceptors.response.use(
     const shareSecurityErrors = [
       "share_token_required",
       "share_password_required",
+      "wrong_password",
       "private_share",
       "share_max_views_exceeded",
     ];

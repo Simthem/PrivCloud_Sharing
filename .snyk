@@ -8,6 +8,15 @@
 version: v1.25.0
 
 ignore:
+  # chi has no fixed release. Caddy links only the chi router through
+  # smallstep/certificates and the Docker build fails if RedirectSlashes is
+  # ever linked into the binary.
+  SNYK-GOLANG-GITHUBCOMGOCHICHIV5MIDDLEWARE-22382482:
+    - "*":
+        reason: >
+          The vulnerable RedirectSlashes middleware is not present in the Caddy
+          binary. The Docker build verifies it and fails otherwise.
+        expires: "2027-05-09T00:00:00.000Z"
   # LOW x11: the current Distroless Debian 13 base still ships Trixie's latest
   # glibc 2.41-12+deb13u3. Snyk exposes no fixed Debian 13 version; Debian marks
   # these as minor/no-DSA. The final image has a fixed Node/Caddy entrypoint and

@@ -51,6 +51,7 @@ import {
   ShareMetaData,
 } from "../types/share.type";
 import api from "./api.service";
+import type { ThrownError } from "../types/thrownError.type";
 
 const list = async (): Promise<AdminShare[]> => {
   return (await api.get(`shares/all`)).data;
@@ -686,11 +687,12 @@ const downloadFileE2E = async (
   let fileHandle: FileSystemFileHandle | null = null;
   if (typeof window !== "undefined" && "showSaveFilePicker" in window) {
     try {
-      fileHandle = await (window as any).showSaveFilePicker({
+      fileHandle = await window.showSaveFilePicker!({
         suggestedName: fileName,
       });
       writable = await fileHandle!.createWritable();
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       if (e.name === "AbortError") {
         try {
           (await fetchPromise).body?.cancel();
@@ -763,9 +765,9 @@ const downloadFileE2E = async (
         /* ignored */
       }
       // Supprime le fichier 0-octet stub créé par le picker
-      if (fileHandle && (fileHandle as any).remove) {
+      if (fileHandle && fileHandle.remove) {
         try {
-          await (fileHandle as any).remove();
+          await fileHandle.remove();
         } catch {
           /* ignored */
         }
@@ -941,11 +943,12 @@ const downloadFileWithProgress = async (
   let writable: FileSystemWritableFileStream | null = null;
   let fileHandle: FileSystemFileHandle | null = null;
   try {
-    fileHandle = await (window as any).showSaveFilePicker({
+    fileHandle = await window.showSaveFilePicker!({
       suggestedName: fileName,
     });
     writable = await fileHandle!.createWritable();
-  } catch (e: any) {
+  } catch (caughtValue) {
+    const e = caughtValue as ThrownError;
     try {
       (await fetchPromise).body?.cancel();
     } catch {
@@ -955,9 +958,9 @@ const downloadFileWithProgress = async (
 
     // A picker implementation can exist but still be unavailable (policy,
     // iframe, browser bug). Fall back to the browser's native download path.
-    if (fileHandle && (fileHandle as any).remove) {
+    if (fileHandle && fileHandle.remove) {
       try {
-        await (fileHandle as any).remove();
+        await fileHandle.remove();
       } catch {
         /* ignored */
       }
@@ -988,16 +991,17 @@ const downloadFileWithProgress = async (
     await writeDownloadChunksToDisk(responseChunks(), writable, signal);
     await writable.close();
     progress.complete(downloaded);
-  } catch (e) {
+  } catch (caughtValue) {
+    const e = caughtValue as ThrownError;
     try {
       await writable.abort();
     } catch {
       /* ignored */
     }
     // Supprime le fichier 0-octet stub créé par le picker
-    if (fileHandle && (fileHandle as any).remove) {
+    if (fileHandle && fileHandle.remove) {
       try {
-        await (fileHandle as any).remove();
+        await fileHandle.remove();
       } catch {
         /* ignored */
       }
@@ -1045,11 +1049,12 @@ const downloadAllAsZipE2E = async (
   let fileHandle: FileSystemFileHandle | null = null;
   if (typeof window !== "undefined" && "showSaveFilePicker" in window) {
     try {
-      fileHandle = await (window as any).showSaveFilePicker({
+      fileHandle = await window.showSaveFilePicker!({
         suggestedName: `${shareId}.zip`,
       });
       writable = await fileHandle!.createWritable();
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       if (e.name === "AbortError") {
         // Annulation utilisateur : libérer la requête en vol
         try {
@@ -1151,9 +1156,9 @@ const downloadAllAsZipE2E = async (
         /* ignored */
       }
     }
-    if (fileHandle && (fileHandle as any).remove) {
+    if (fileHandle && fileHandle.remove) {
       try {
-        await (fileHandle as any).remove();
+        await fileHandle.remove();
       } catch {
         /* ignored */
       }
@@ -1218,7 +1223,7 @@ const uploadFile = async (
 
     if (!response.ok) {
       const httpStatus = response.status;
-      let data: any = null;
+      let data: ThrownError["data"];
       try {
         data = await response.json();
       } catch {
@@ -1229,7 +1234,9 @@ const uploadFile = async (
       // Detach signal from fetch internals
       controller.abort();
       response = undefined;
-      const err: any = new Error(`Upload chunk ${chunkIndex} failed`);
+      const err: Error & ThrownError = new Error(
+        `Upload chunk ${chunkIndex} failed`,
+      );
       err.status = httpStatus;
       err.data = data;
       throw err;
@@ -1244,7 +1251,8 @@ const uploadFile = async (
     response = undefined;
 
     return result;
-  } catch (e: any) {
+  } catch (caughtValue) {
+    const e = caughtValue as ThrownError;
     clearTimeout(timeout);
     try {
       controller.abort();
@@ -1311,14 +1319,16 @@ const uploadReencryptChunk = async (
 
     if (!response.ok) {
       const httpStatus = response.status;
-      let data: any = null;
+      let data: ThrownError["data"];
       try {
         data = await response.json();
       } catch {
         await response.body?.cancel();
       }
       response = undefined;
-      const err: any = new Error(`Reencrypt chunk ${chunkIndex} failed`);
+      const err: Error & ThrownError = new Error(
+        `Reencrypt chunk ${chunkIndex} failed`,
+      );
       err.status = httpStatus;
       err.data = data;
       throw err;
@@ -1329,9 +1339,10 @@ const uploadReencryptChunk = async (
     // and can reset a request whose final bytes are still being flushed.
     await response.arrayBuffer();
     response = undefined;
-  } catch (e: any) {
+  } catch (caughtValue) {
+    const e = caughtValue as ThrownError;
     if (timedOut && e?.name === "AbortError") {
-      const timeoutError: any = new Error(
+      const timeoutError: Error & ThrownError = new Error(
         `Reencrypt chunk ${chunkIndex} timed out`,
       );
       timeoutError.status = 0;
@@ -1457,11 +1468,12 @@ const downloadAllAsZip = async (
   let writable: FileSystemWritableFileStream | null = null;
   let fileHandle: FileSystemFileHandle | null = null;
   try {
-    fileHandle = await (window as any).showSaveFilePicker({
+    fileHandle = await window.showSaveFilePicker!({
       suggestedName: `${shareId}.zip`,
     });
     writable = await fileHandle!.createWritable();
-  } catch (e: any) {
+  } catch (caughtValue) {
+    const e = caughtValue as ThrownError;
     try {
       (await fetchPromise).body?.cancel();
     } catch {
@@ -1469,9 +1481,9 @@ const downloadAllAsZip = async (
     }
     if (e.name === "AbortError") return;
 
-    if (fileHandle && (fileHandle as any).remove) {
+    if (fileHandle && fileHandle.remove) {
       try {
-        await (fileHandle as any).remove();
+        await fileHandle.remove();
       } catch {
         /* ignored */
       }
@@ -1509,15 +1521,16 @@ const downloadAllAsZip = async (
     await writeDownloadChunksToDisk(responseChunks(), writable, signal);
     await writable.close();
     progress.complete(downloaded);
-  } catch (e) {
+  } catch (caughtValue) {
+    const e = caughtValue as ThrownError;
     try {
       await writable.abort();
     } catch {
       /* ignored */
     }
-    if (fileHandle && (fileHandle as any).remove) {
+    if (fileHandle && fileHandle.remove) {
       try {
-        await (fileHandle as any).remove();
+        await fileHandle.remove();
       } catch {
         /* ignored */
       }
@@ -1555,11 +1568,12 @@ const downloadSelectedAsZip = async (
   let fileHandle: FileSystemFileHandle | null = null;
   if (typeof window !== "undefined" && "showSaveFilePicker" in window) {
     try {
-      fileHandle = await (window as any).showSaveFilePicker({
+      fileHandle = await window.showSaveFilePicker!({
         suggestedName: `${shareId}-selection.zip`,
       });
       writable = await fileHandle!.createWritable();
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       if (e.name === "AbortError") {
         try {
           (await firstFetchPromise)?.body?.cancel();
@@ -1631,7 +1645,8 @@ const downloadSelectedAsZip = async (
       downloadDecryptedBlob(blob, `${shareId}-selection.zip`);
     }
     progress.complete(downloadedBytes);
-  } catch (e) {
+  } catch (caughtValue) {
+    const e = caughtValue as ThrownError;
     if (writable) {
       try {
         await writable.abort();
@@ -1639,9 +1654,9 @@ const downloadSelectedAsZip = async (
         /* ignored */
       }
     }
-    if (fileHandle && (fileHandle as any).remove) {
+    if (fileHandle && fileHandle.remove) {
       try {
-        await (fileHandle as any).remove();
+        await fileHandle.remove();
       } catch {
         /* ignored */
       }
@@ -1674,11 +1689,12 @@ const downloadSelectedAsZipE2E = async (
   let fileHandle: FileSystemFileHandle | null = null;
   if (typeof window !== "undefined" && "showSaveFilePicker" in window) {
     try {
-      fileHandle = await (window as any).showSaveFilePicker({
+      fileHandle = await window.showSaveFilePicker!({
         suggestedName: `${shareId}-selection.zip`,
       });
       writable = await fileHandle!.createWritable();
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       if (e.name === "AbortError") {
         try {
           (await firstFetchPromise)?.body?.cancel();
@@ -1774,9 +1790,9 @@ const downloadSelectedAsZipE2E = async (
         /* ignored */
       }
     }
-    if (fileHandle && (fileHandle as any).remove) {
+    if (fileHandle && fileHandle.remove) {
       try {
-        await (fileHandle as any).remove();
+        await fileHandle.remove();
       } catch {
         /* ignored */
       }

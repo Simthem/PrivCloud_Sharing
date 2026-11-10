@@ -728,6 +728,9 @@ window.previewOffice=async()=>{const zip=await openPreviewZip(await window.sourc
       "PDF UI first page",
     );
     await evaluate(
+      "window.pdfFrames=[];(function sample(){const c=document.querySelector('#root canvas');if(c&&c.width&&c.height){window.pdfFrames.push([Math.round(c.getBoundingClientRect().top),c.getContext('2d').getImageData(1,1,1,1).data[3]]);}if(!window.pdfFramesDone)requestAnimationFrame(sample);})()",
+    );
+    await evaluate(
       "document.querySelector('[aria-label=\"Next page\"]').click()",
     );
     await wait(
@@ -736,6 +739,19 @@ window.previewOffice=async()=>{const zip=await openPreviewZip(await window.sourc
           "document.querySelector('[aria-label=\"PDF page\"]')?.value==='2' && !document.querySelector('[aria-label=\"Previous page\"]')?.disabled",
         ),
       "PDF UI page navigation",
+    );
+    const pdfFrames = await evaluate(
+      "window.pdfFramesDone=true;window.pdfFrames",
+    );
+    assert.ok(pdfFrames.length > 1, "PDF page change was sampled");
+    assert.equal(
+      new Set(pdfFrames.map(([top]) => top)).size,
+      1,
+      "PDF page stays in place while the next one loads",
+    );
+    assert.ok(
+      pdfFrames.every(([, alpha]) => alpha === 255),
+      "PDF canvas is never blank between pages",
     );
     const initialPdf = await evaluate(
       "document.querySelector('#root canvas').width",

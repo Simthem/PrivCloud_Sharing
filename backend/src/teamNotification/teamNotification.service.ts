@@ -1,3 +1,7 @@
+import {
+  SIGNATURE_PUSH_FILTER,
+  SIGNATURE_PUSH_MEMBERSHIP,
+} from "./signature-notification-policy";
 import { Prisma } from "@prisma/client";
 import { fileRequestServiceMessage } from "src/teamFileRequest/team-file-request-i18n";
 import { Injectable, Logger } from "@nestjs/common";
@@ -44,7 +48,7 @@ export function normalizeNotificationPagination(
 interface CreateNotificationParams {
   type: TeamNotificationType;
   title: string;
-  teamId: string;
+  teamId?: string | null;
   userId: string; // Recipient
   actorId?: string;
   teamFileId?: string;
@@ -56,6 +60,7 @@ interface CreateNotificationParams {
   // Only navigation identifiers are kept, see navigationMetadata().
   metadata?: Record<string, unknown>;
   encryptedMetadata?: string;
+  push?: boolean;
 }
 
 @Injectable()
@@ -98,6 +103,66 @@ export class TeamNotificationService {
     });
   }
 
+  async notifySignatureInvitation(params: {
+    userId: string;
+    documentTeamId?: string | null;
+    encryptedMetadata?: string | null;
+    actorId: string;
+  }) {
+    return this.notifySignatureEvent(params, "SIGNATURE_REQUESTED");
+  }
+
+  async notifySignatureCompletion(params: {
+    userId: string;
+    documentTeamId?: string | null;
+    encryptedMetadata?: string | null;
+    actorId: string;
+  }) {
+    return this.notifySignatureEvent(params, "SIGNATURE_COMPLETED");
+  }
+
+  private async notifySignatureEvent(
+    params: {
+      userId: string;
+      documentTeamId?: string | null;
+      encryptedMetadata?: string | null;
+      actorId: string;
+    },
+    type: "SIGNATURE_REQUESTED" | "SIGNATURE_COMPLETED",
+  ) {
+    const account = await this.prisma.user.findUnique({
+      where: { id: params.userId },
+      select: {
+        signaturePushEnabled: true,
+        teamMemberships: {
+          where: SIGNATURE_PUSH_MEMBERSHIP,
+          select: { teamId: true },
+          orderBy: { teamId: "asc" },
+        },
+      },
+    });
+    if (!account) return;
+    const sourceMembership = account.teamMemberships.find(
+      (member) => member.teamId === params.documentTeamId,
+    );
+    const envelope = sourceMembership ? params.encryptedMetadata : null;
+    if (!envelope && !account.signaturePushEnabled) return;
+
+    return this.notify({
+      type,
+      title:
+        type === "SIGNATURE_COMPLETED"
+          ? "Document signé disponible / Signed document ready"
+          : "Nouvelle demande de signature / New signature request",
+      teamId: sourceMembership?.teamId ?? null,
+      userId: params.userId,
+      actorId: params.actorId,
+      encryptedMetadata: envelope || undefined,
+      url: "/signing",
+      push: account.signaturePushEnabled,
+    });
+  }
+
   /**
    * Create a notification for a specific team member.
    * Also sends a push notification if the user has push enabled.
@@ -122,6 +187,8 @@ export class TeamNotificationService {
         encryptedMetadata: params.encryptedMetadata || null,
       },
     });
+
+    if (params.push === false) return notification;
 
     // Build navigation URL: folder with file highlight if available
     // A push worker cannot decrypt E2E metadata. It therefore opens this
@@ -261,6 +328,7 @@ export class TeamNotificationService {
     opts?: {
       teamId?: string;
       unreadOnly?: boolean;
+      pushOnly?: boolean;
       limit?: number;
       offset?: number;
     },
@@ -268,6 +336,7 @@ export class TeamNotificationService {
     const where: Prisma.TeamNotificationWhereInput = { userId };
     if (opts?.teamId) where.teamId = opts.teamId;
     if (opts?.unreadOnly) where.isRead = false;
+    if (opts?.pushOnly) Object.assign(where, SIGNATURE_PUSH_FILTER);
     const pagination = normalizeNotificationPagination(
       opts?.limit,
       opts?.offset,
@@ -294,11 +363,7 @@ export class TeamNotificationService {
       unreadCount: opts?.unreadOnly
         ? total
         : await this.prisma.teamNotification.count({
-            where: {
-              userId,
-              isRead: false,
-              ...(opts?.teamId ? { teamId: opts.teamId } : {}),
-            },
+            where: { ...where, isRead: false },
           }),
     };
   }

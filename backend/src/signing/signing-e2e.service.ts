@@ -13,6 +13,7 @@ import { FileService } from "src/file/file.service";
 import { ConfigService } from "src/config/config.service";
 import { PdfSigningService } from "./pdf-signing.service";
 import { deliverSigningCompletionEmails } from "./signing-mail.util";
+import { signingLanguage } from "./signing-language";
 import { TeamNotificationService } from "src/teamNotification/teamNotification.service";
 import * as crypto from "crypto";
 import { SigningEvidenceService } from "./signing-evidence.service";
@@ -75,6 +76,7 @@ export class SigningE2EService {
     const certPage = await this.pdfSigningService.generateCertificatePage({
       documentId: doc.id,
       fileName: doc.fileName,
+      language: signingLanguage(doc.language),
       signedAt: new Date(),
       signers: doc.recipients.map((r) => ({
         name: r.name,
@@ -223,51 +225,36 @@ export class SigningE2EService {
 
     await this.createAuditEvent(documentId, "COMPLETED", "client-e2e");
 
-    // The encrypted completion envelope was prepared per recipient when the
-    // request was created. Persist each in-app notification only after the
-    // requester has uploaded the finalized encrypted PDF.
-    if (doc.teamId) {
-      try {
-        const recipients = await this.prisma.signatureRecipient.findMany({
-          where: { documentId },
-          select: {
-            id: true,
-            userId: true,
-            teamCompletionNotification: true,
-          },
-        });
-        const targets = recipients.filter(
-          (recipient) =>
-            recipient.userId && recipient.teamCompletionNotification,
-        );
-        const activeMembers = await this.prisma.teamMember.findMany({
-          where: {
-            teamId: doc.teamId,
-            isActive: true,
-            userId: { in: targets.map((recipient) => recipient.userId!) },
-          },
-          select: { userId: true },
-        });
-        const activeIds = new Set(activeMembers.map((member) => member.userId));
-        await Promise.all(
-          targets
-            .filter((recipient) => activeIds.has(recipient.userId!))
-            .map((recipient) =>
-              this.teamNotificationService.notify({
-                type: "SIGNATURE_COMPLETED",
-                title: "Document signé disponible",
-                teamId: doc.teamId!,
-                userId: recipient.userId!,
-                actorId: doc.creatorId,
-                encryptedMetadata: recipient.teamCompletionNotification!,
-              }),
-            ),
-        );
-      } catch {
-        // Finalization is already durable; a delivery outage must not make the
-        // client retry the encrypted PDF upload against a COMPLETED document.
+    // Finalization is durable before any device delivery is attempted.
+    try {
+      const recipients = await this.prisma.signatureRecipient.findMany({
+        where: { documentId },
+        select: { userId: true, teamCompletionNotification: true },
+      });
+      const targets = Array.from(
+        new Map(
+          recipients
+            .filter(
+              (recipient) =>
+                recipient.userId && recipient.userId !== doc.creatorId,
+            )
+            .map((recipient) => [recipient.userId!, recipient]),
+        ).values(),
+      );
+      const results = await Promise.allSettled(
+        targets.map((recipient) =>
+          this.teamNotificationService.notifySignatureCompletion({
+            userId: recipient.userId!,
+            documentTeamId: doc.teamId,
+            actorId: doc.creatorId,
+            encryptedMetadata: recipient.teamCompletionNotification,
+          }),
+        ),
+      );
+      if (results.some((result) => result.status === "rejected"))
         this.logger.error("E2E completion notification failed");
-      }
+    } catch {
+      this.logger.error("E2E completion notification failed");
     }
 
     // Log team activity
@@ -298,6 +285,7 @@ export class SigningE2EService {
       ]);
       await deliverSigningCompletionEmails({
         fileName: doc.fileName,
+        language: signingLanguage(doc.language),
         documentUrl: `${baseUrl}/signing/${documentId}`,
         teamId: doc.teamId,
         creator,
@@ -370,6 +358,7 @@ export class SigningE2EService {
       watermarkPage: doc.watermarkPage,
       pageRotations: doc.pageRotations,
       signatureLevel: doc.signatureLevel,
+      language: signingLanguage(doc.language),
       signers: doc.recipients,
       fields: doc.fields,
     };

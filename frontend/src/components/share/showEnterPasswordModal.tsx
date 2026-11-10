@@ -75,9 +75,11 @@ const Body = ({
 
             await submitCallback(password, token);
           } catch (error) {
+            const code = (error as { response?: { data?: { error?: string } } })
+              ?.response?.data?.error;
             if (
-              (error as { response?: { data?: { error?: string } } })?.response
-                ?.data?.error === "share_password_required"
+              code === "share_password_required" ||
+              code === "wrong_password"
             ) {
               setPasswordWrong(true);
             }

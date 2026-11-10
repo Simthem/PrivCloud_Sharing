@@ -125,6 +125,7 @@ export class ShareController {
   }
 
   @Get(":id")
+  @Header("Cache-Control", "private, no-store")
   @UseGuards(ShareSecurityGuard)
   async get(@Param("id", SafeIdPipe) id: string, @GetUser() user?: User) {
     return new ShareDTO().from(await this.shareService.get(id, user?.id));

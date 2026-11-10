@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const path = require("node:path");
+const { readFileSync } = require("node:fs");
+const { createHash } = require("node:crypto");
 const { version } = require("./package.json");
 
 // Service worker (public/sw.js) provides:
@@ -8,12 +10,29 @@ const { version } = require("./package.json");
 // - manifest.json provides full PWA install support
 
 module.exports = {
+  webpack(config) {
+    if (config.cache && typeof config.cache === "object") {
+      const digest = createHash("sha256")
+        .update(
+          readFileSync(path.join(__dirname, "../scripts/patch-fflate.cjs")),
+        )
+        .digest("hex");
+      config.cache.version =
+        (config.cache.version || "") + ":fflate-bounds:" + digest;
+    }
+    return config;
+  },
   output: "standalone",
   turbopack: {
     root: path.resolve(__dirname),
   },
   env: {
     VERSION: version,
+  },
+  i18n: {
+    locales: ["fr", "en"],
+    defaultLocale: "fr",
+    localeDetection: false,
   },
   poweredByHeader: false,
   compress: false,

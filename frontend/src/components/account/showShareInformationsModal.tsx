@@ -47,7 +47,7 @@ const ShareInformationsContent = ({
       ? linkKey
       : getUserKey();
   const keyFragment = storedKey ? buildKeyFragment(storedKey) : "";
-  const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
+  const link = `${config.getString("general.appUrl")}/s/${share.id}${keyFragment}`;
 
   const formattedShareSize = byteToHumanSizeString(share.size);
   const formattedMaxShareSize = byteToHumanSizeString(maxShareSize);

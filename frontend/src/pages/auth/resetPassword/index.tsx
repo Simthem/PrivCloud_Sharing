@@ -25,6 +25,7 @@ import { useAltchaSettings } from "../../../hooks/altcha.hook";
 import useTranslate from "../../../hooks/useTranslate.hook";
 import authService from "../../../services/auth.service";
 import toast from "../../../utils/toast.util";
+import Meta from "../../../components/Meta";
 
 const useStyles = createStyles((theme) => ({
   title: {
@@ -92,75 +93,78 @@ const ResetPassword = () => {
   });
 
   return (
-    <Container size={460} my={30}>
-      <Title order={2} fw={900} ta="center">
-        <FormattedMessage id="resetPassword.title" />
-      </Title>
-      <Text c="dimmed" size="sm" ta="center">
-        <FormattedMessage id="resetPassword.description" />
-      </Text>
+    <>
+      <Meta title={t("resetPassword.title")} noIndex />
+      <Container size={460} my={30}>
+        <Title order={2} fw={900} ta="center">
+          <FormattedMessage id="resetPassword.title" />
+        </Title>
+        <Text c="dimmed" size="sm" ta="center">
+          <FormattedMessage id="resetPassword.description" />
+        </Text>
 
-      <Paper withBorder shadow="md" p={30} radius="md" mt="xl">
-        <form
-          onSubmit={form.onSubmit(async (values) => {
-            const token = await resolveCaptchaToken();
-            if (captchaEnabled && !token) return;
+        <Paper withBorder shadow="md" p={30} radius="md" mt="xl">
+          <form
+            onSubmit={form.onSubmit(async (values) => {
+              const token = await resolveCaptchaToken();
+              if (captchaEnabled && !token) return;
 
-            await authService
-              .requestResetPassword(values.email, token)
-              .then(() => {
-                toast.success(t("resetPassword.notify.success"));
-                router.push("/auth/signIn");
-              })
-              .catch((error) => {
-                resetCaptcha();
-                toast.axiosError(error);
-              });
-          })}
-        >
-          <TextInput
-            label={t("signup.input.email")}
-            placeholder={t("signup.input.email.placeholder")}
-            {...form.getInputProps("email")}
-          />
-          <Group justify="space-between" mt="lg" className={classes.controls}>
-            <Anchor
-              component={Link}
-              c="dimmed"
-              size="sm"
-              className={classes.control}
-              href={"/auth/signIn"}
-            >
-              <Center inline>
-                <TbArrowLeft size={12} />
-                <Box ml={5}>
-                  <FormattedMessage id="resetPassword.button.back" />
-                </Box>
-              </Center>
-            </Anchor>
-            <Button
-              type="submit"
-              className={classes.control}
-              disabled={
-                captchaEnabled && altcha.shouldWaitForToken && !captchaToken
-              }
-            >
-              <FormattedMessage id="resetPassword.text.resetPassword" />
-            </Button>
-          </Group>
-          {captchaEnabled && (
-            <Group justify="center" mt="md">
-              <AltchaCaptcha
-                onVerify={setCaptchaToken}
-                onExpire={handleCaptchaExpire}
-                onError={handleCaptchaError}
-                widgetRef={captchaRef}
-              />
+              await authService
+                .requestResetPassword(values.email, token)
+                .then(() => {
+                  toast.success(t("resetPassword.notify.success"));
+                  router.push("/auth/signIn");
+                })
+                .catch((error) => {
+                  resetCaptcha();
+                  toast.axiosError(error);
+                });
+            })}
+          >
+            <TextInput
+              label={t("signup.input.email")}
+              placeholder={t("signup.input.email.placeholder")}
+              {...form.getInputProps("email")}
+            />
+            <Group justify="space-between" mt="lg" className={classes.controls}>
+              <Anchor
+                component={Link}
+                c="dimmed"
+                size="sm"
+                className={classes.control}
+                href={"/auth/signIn"}
+              >
+                <Center inline>
+                  <TbArrowLeft size={12} />
+                  <Box ml={5}>
+                    <FormattedMessage id="resetPassword.button.back" />
+                  </Box>
+                </Center>
+              </Anchor>
+              <Button
+                type="submit"
+                className={classes.control}
+                disabled={
+                  captchaEnabled && altcha.shouldWaitForToken && !captchaToken
+                }
+              >
+                <FormattedMessage id="resetPassword.text.resetPassword" />
+              </Button>
             </Group>
-          )}
-        </form>
-      </Paper>
-    </Container>
+            {captchaEnabled && (
+              <Group justify="center" mt="md">
+                <AltchaCaptcha
+                  onVerify={setCaptchaToken}
+                  onExpire={handleCaptchaExpire}
+                  onError={handleCaptchaError}
+                  widgetRef={captchaRef}
+                />
+              </Group>
+            )}
+          </form>
+        </Paper>
+      </Container>
+    </>
   );
 };
 

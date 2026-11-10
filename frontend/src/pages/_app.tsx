@@ -88,6 +88,9 @@ const PwaInstallPrompt = dynamic(
 const E2EKeyPrompt = dynamic(() => import("../components/auth/E2EKeyPrompt"), {
   ssr: false,
 });
+const OAuthReturn = dynamic(() => import("../components/auth/OAuthReturn"), {
+  ssr: false,
+});
 const TeamStatusChecker = dynamic(
   () => import("../components/team/TeamStatusChecker"),
   { ssr: false },
@@ -317,6 +320,13 @@ function App({
                       .catch((error) => {
                         if (error?.response?.status !== 409) throw error;
                       });
+                  } else if (
+                    !cancelled &&
+                    cryptoUtil.getUserKey() === encodedKey
+                  ) {
+                    await cryptoService.replaceUnreadableIdentityKeys(
+                      masterKey,
+                    );
                   }
                 }
 
@@ -460,8 +470,38 @@ function App({
     };
   }, [user]);
 
-  // Close a recovery dialog immediately if the account key is deleted or the
-  // refreshed user profile no longer contains a server-side key hash.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const repair = () => {
+      Promise.all([
+        import("../utils/crypto.util"),
+        import("../services/crypto.service"),
+      ])
+        .then(async ([cryptoUtil, crypto]) => {
+          const encoded = cryptoUtil.getUserKey();
+          if (!encoded || cancelled) return;
+          const hash = await cryptoUtil.computeKeyHashFromEncoded(
+            encoded,
+            user.id,
+          );
+          if (!(await userService.verifyEncryptionKey(hash))) return;
+          if (cancelled || cryptoUtil.getUserKey() !== encoded) return;
+          if (!(await crypto.isX25519Supported())) return;
+          if (cancelled || cryptoUtil.getUserKey() !== encoded) return;
+          await crypto.replaceUnreadableIdentityKeys(
+            await cryptoUtil.importKeyFromBase64(encoded),
+          );
+        })
+        .catch(() => {});
+    };
+    window.addEventListener("e2e-key-stored", repair);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("e2e-key-stored", repair);
+    };
+  }, [user]);
+
   useEffect(() => {
     if (!user?.hasEncryptionKey || user.e2eAutoGenerationDisabled) {
       e2ePromptShownRef.current = false;
@@ -573,7 +613,7 @@ function App({
   // Client: read from window.__I18N__ (injected by _document.tsx).
   const i18nMessagesRef = useRef<Record<string, string>>(
     typeof window !== "undefined"
-      ? ((window as any).__I18N__ ?? englishMessages)
+      ? (window.__I18N__ ?? englishMessages)
       : (__ssrI18nMessages ?? englishMessages),
   );
   const i18nMessages = useMemo(
@@ -690,6 +730,7 @@ function App({
                               />
                             )}
                             {user && <TeamStatusChecker />}
+                            {user && <OAuthReturn />}
                           </>
                         )}
                       </UserContext.Provider>

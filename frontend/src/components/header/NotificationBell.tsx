@@ -1,3 +1,4 @@
+import type { ThrownError } from "../../types/thrownError.type";
 import { Indicator, Tooltip, UnstyledButton } from "@mantine/core";
 import { TbBell, TbBellRinging } from "react-icons/tb";
 import { useCallback, useEffect, useState } from "react";
@@ -25,8 +26,8 @@ const NotificationBell = () => {
   const [subscribed, setSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const pushEnabled = config.get("pushNotifications.enabled");
-  const vapidPublicKey = config.get("pushNotifications.vapidPublicKey");
+  const pushEnabled = config.getBoolean("pushNotifications.enabled");
+  const vapidPublicKey = config.getString("pushNotifications.vapidPublicKey");
 
   // Delay rendering until after hydration to avoid SSR/client mismatch (#418)
   useEffect(() => {
@@ -94,7 +95,8 @@ const NotificationBell = () => {
             userVisibleOnly: true,
             applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
           });
-        } catch (pushErr: any) {
+        } catch (caughtValue) {
+          const pushErr = caughtValue as ThrownError;
           // Brave / hardened browsers: permission granted but push service blocked
           const msg = pushErr?.message?.toLowerCase?.() ?? "";
           if (

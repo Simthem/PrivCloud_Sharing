@@ -1,4 +1,9 @@
-import { createTheme, MantineColorScheme } from "@mantine/core";
+import {
+  createTheme,
+  MantineColorScheme,
+  MantineColorsTuple,
+  MantineTheme,
+} from "@mantine/core";
 import {
   COLLAPSE_DURATION,
   DRAWER_TRANSITION_PROPS,
@@ -7,10 +12,13 @@ import {
   POPOVER_TRANSITION_PROPS,
 } from "./motion.style";
 
+/** Props the component styles below read. */
+type VariantProps = { color?: string; variant?: string };
+
 // Predefined color palettes selectable by the administrator
 export const COLOR_PALETTES: Record<
   string,
-  { colors: Record<string, string[]>; primaryColor: string }
+  { colors: Record<string, MantineColorsTuple>; primaryColor: string }
 > = {
   victoria: {
     colors: {
@@ -138,7 +146,10 @@ export function buildTheme(
   const luminance = wcagLuminance;
 
   // For variant="light": pick a high-contrast text shade on a faint tinted bg.
-  const lightVariantColor = (theme: any, color: string | undefined) => {
+  const lightVariantColor = (
+    theme: MantineTheme,
+    color: string | undefined,
+  ) => {
     const c = color ?? theme.primaryColor;
     const colors = theme.colors[c];
     if (!colors) return {};
@@ -147,7 +158,7 @@ export function buildTheme(
 
   // For variant="filled": if the background shade is too bright for white text,
   // switch to dark text automatically (e.g. amber, yellow palettes).
-  const filledTextColor = (theme: any, color: string | undefined) => {
+  const filledTextColor = (theme: MantineTheme, color: string | undefined) => {
     const c = color ?? theme.primaryColor;
     const shade = isDark ? 6 : 8;
     const bgHex = theme.colors[c]?.[shade];
@@ -157,7 +168,7 @@ export function buildTheme(
   };
 
   // Explicit text color for elements sitting on a primary-color background.
-  const onPrimaryBg = (theme: any): { color: string } => {
+  const onPrimaryBg = (theme: MantineTheme): { color: string } => {
     const c = theme.primaryColor;
     const shade = isDark ? 6 : 8;
     const bgHex = theme.colors[c]?.[shade];
@@ -170,7 +181,7 @@ export function buildTheme(
 
   return createTheme({
     colors: {
-      ...(palette.colors as any),
+      ...palette.colors,
       dark: [
         "#F1F3F5",
         "#CED0D6",
@@ -206,7 +217,7 @@ export function buildTheme(
       },
       Modal: {
         defaultProps: { transitionProps: MODAL_TRANSITION_PROPS },
-        styles: (theme: any) => ({
+        styles: (theme: MantineTheme) => ({
           title: {
             fontSize: theme.fontSizes.lg,
             fontWeight: 700,
@@ -215,7 +226,7 @@ export function buildTheme(
         }),
       },
       Button: {
-        styles: (theme: any, props: any) => {
+        styles: (theme: MantineTheme, props: VariantProps) => {
           const isFilled = !props.variant || props.variant === "filled";
           const filled = isFilled ? filledTextColor(theme, props.color) : {};
           return {
@@ -248,7 +259,7 @@ export function buildTheme(
         },
       },
       ActionIcon: {
-        styles: (theme: any, props: any) => ({
+        styles: (theme: MantineTheme, props: VariantProps) => ({
           root: {
             ...(!props.variant || props.variant === "filled"
               ? filledTextColor(theme, props.color)
@@ -260,7 +271,7 @@ export function buildTheme(
         }),
       },
       ThemeIcon: {
-        styles: (theme: any, props: any) => ({
+        styles: (theme: MantineTheme, props: VariantProps) => ({
           root: {
             ...(!props.variant || props.variant === "filled"
               ? filledTextColor(theme, props.color)
@@ -272,7 +283,7 @@ export function buildTheme(
         }),
       },
       Anchor: {
-        styles: (theme: any) => ({
+        styles: (theme: MantineTheme) => ({
           root: {
             color: theme.colors[theme.primaryColor][isDark ? 3 : 8],
             fontWeight: 500,
@@ -280,7 +291,7 @@ export function buildTheme(
         }),
       },
       Badge: {
-        styles: (theme: any, props: any) => ({
+        styles: (theme: MantineTheme, props: VariantProps) => ({
           root: {
             ...(!props.variant || props.variant === "filled"
               ? filledTextColor(theme, props.color)
@@ -292,13 +303,13 @@ export function buildTheme(
         }),
       },
       Progress: {
-        styles: (theme: any) => {
+        styles: (theme: MantineTheme) => {
           const fix = filledTextColor(theme, undefined);
           return { label: fix.color ? fix : {} };
         },
       },
       Select: {
-        styles: (theme: any) => ({
+        styles: (theme: MantineTheme) => ({
           input: isDark ? { color: theme.white } : {},
           option: {
             "&[data-selected], &[data-selected][data-hovered]":
@@ -307,12 +318,12 @@ export function buildTheme(
         }),
       },
       NativeSelect: {
-        styles: (theme: any) => ({
+        styles: (theme: MantineTheme) => ({
           input: isDark ? { color: theme.white } : {},
         }),
       },
       MultiSelect: {
-        styles: (theme: any) => ({
+        styles: (theme: MantineTheme) => ({
           input: isDark ? { color: theme.white } : {},
           option: {
             "&[data-selected], &[data-selected][data-hovered]":
@@ -321,7 +332,7 @@ export function buildTheme(
         }),
       },
       Alert: {
-        styles: (theme: any, props: any) => {
+        styles: (theme: MantineTheme, props: VariantProps) => {
           const c = props.color ?? theme.primaryColor;
           const colors = theme.colors[c];
           if (!colors) return {};
@@ -340,7 +351,7 @@ export function buildTheme(
           withBorder: true,
           radius: "md",
         },
-        styles: (theme: any) => ({
+        styles: (theme: MantineTheme) => ({
           root: {
             background: isDark
               ? "linear-gradient(135deg, rgba(20, 21, 23, 0.99), rgba(28, 30, 35, 0.99))"
@@ -374,7 +385,7 @@ export function buildTheme(
         }),
       },
       Switch: {
-        styles: (theme: any) => {
+        styles: (theme: MantineTheme) => {
           const c = theme.primaryColor;
           const shade = isDark ? 6 : 8;
           const trackBg = theme.colors[c]?.[shade];

@@ -1,3 +1,4 @@
+import type { ComponentPropsWithoutRef } from "react";
 import { Anchor, Title, useMantineColorScheme } from "@mantine/core";
 import DOMPurify from "isomorphic-dompurify";
 import Meta from "../../components/Meta";
@@ -12,10 +13,11 @@ const Imprint = () => {
   const { colorScheme } = useMantineColorScheme();
   const config = useConfig();
   const metaDesc =
-    config.get("legal.metaDescriptionImprint") || t("imprint.meta.description");
+    config.getString("legal.metaDescriptionImprint") ||
+    t("imprint.meta.description");
 
   // Sanitize Markdown content to prevent stored XSS via admin-controlled text
-  const rawMarkdown = config.get("legal.imprintText") || "";
+  const rawMarkdown = config.getString("legal.imprintText") || "";
   const sanitizedMarkdown = DOMPurify.sanitize(rawMarkdown, {
     ALLOWED_TAGS: [], // Strip ALL HTML tags - only pure Markdown syntax is kept
     KEEP_CONTENT: true, // Keep text content, just strip the tags
@@ -31,7 +33,10 @@ const Imprint = () => {
           forceBlock: true,
           overrides: {
             h1: {
-              component: ({ children, ...props }: any) => (
+              component: ({
+                children,
+                ...props
+              }: ComponentPropsWithoutRef<"h1">) => (
                 <Title order={2} mt="lg" mb="sm" {...props}>
                   {children}
                 </Title>

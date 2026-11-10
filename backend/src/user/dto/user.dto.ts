@@ -57,6 +57,9 @@ export class UserDTO {
   @IsIn(["INSTANT", "DIGEST", "WEEKLY"])
   notificationMode: string;
 
+  @Expose()
+  signaturePushEnabled: boolean;
+
   encryptionKeyHash?: string;
 
   e2eAutoGenerationDisabledAt?: Date;
@@ -83,6 +86,8 @@ export class UserDTO {
 
   @Expose()
   emailVerificationSource: string | null;
+
+  teams?: { name: string; role: string }[];
 
   from(partial: Partial<UserDTO>) {
     const result = plainToClass(UserDTO, partial, {

@@ -92,6 +92,7 @@ import {
 import { requestNotificationPermission } from "../../utils/safeline-notify.util";
 import { contentPolicy } from "../../utils/contentPolicy.util";
 import { contentWriteScheme } from "../../utils/contentV2.util";
+import type { ThrownError } from "../../types/thrownError.type";
 
 // pLimit is created per-upload to avoid stale slot accumulation across
 // uploads in the same SPA session (module-level pLimit never resets).
@@ -419,7 +420,7 @@ const Upload = ({
   // returns, the page reloads from scratch and any in-progress upload
   // is lost.  Show a warning so the user understands what happened.
   useEffect(() => {
-    if ((document as any).wasDiscarded) {
+    if ("wasDiscarded" in document && document.wasDiscarded) {
       toast.error(
         t("upload.notify.tab-discarded", {
           defaultMessage:
@@ -454,8 +455,8 @@ const Upload = ({
 
   const enableRecipientRetrieval =
     !isReverseShare &&
-    config.get("email.enableShareEmailRecipients") &&
-    config.get("email.enableShareEmailPastRecipients") &&
+    config.getBoolean("email.enableShareEmailRecipients") &&
+    config.getBoolean("email.enableShareEmailPastRecipients") &&
     !!user;
 
   const { data: pastRecipients } = useQuery({
@@ -468,15 +469,17 @@ const Upload = ({
     refetchOnMount: false,
   });
 
-  const chunkSize = useRef(parseInt(config.get("share.chunkSize")));
+  const chunkSize = useRef(config.getNumber("share.chunkSize"));
   const keepaliveRef = useRef<(() => void) | null>(null);
 
   // Reverse-share pages pass their configured limit; normal uploads use the
   // self-hosted instance limit.
   const effectiveMaxShareSize =
-    maxShareSize ?? parseInt(config.get("share.maxSize"));
+    maxShareSize ?? config.getNumber("share.maxSize");
 
-  const autoOpenCreateUploadModal = config.get("share.autoOpenShareModal");
+  const autoOpenCreateUploadModal = config.getBoolean(
+    "share.autoOpenShareModal",
+  );
   const canUseWebDav = !!user && !isReverseShare;
 
   // Web Lock: signals the browser that this tab is doing critical work,
@@ -508,7 +511,7 @@ const Upload = ({
       .catch(
         () =>
           config.get(runtimeUploadProfileKey) ??
-          config.get("runtime.uploadMaxChunkBytes"),
+          config.getNumber("runtime.uploadMaxChunkBytes"),
       );
 
     // Notification permission must be requested synchronously from the modal's
@@ -733,7 +736,8 @@ const Upload = ({
       try {
         try {
           createdShare = await shareService.create(share, isReverseShare);
-        } catch (createError: any) {
+        } catch (caughtValue) {
+          const createError = caughtValue as ThrownError;
           if (
             share.fileMetadataScheme !== FILE_META_V1 ||
             contentPolicy().v2Writes ||
@@ -748,7 +752,8 @@ const Upload = ({
           restoreReadableShareInfo();
           createdShare = await shareService.create(share, isReverseShare);
         }
-      } catch (createError: any) {
+      } catch (caughtValue) {
+        const createError = caughtValue as ThrownError;
         if (
           share.cryptoScheme !== SHARE_DEK_V1 ||
           contentPolicy().v2Floor ||
@@ -860,7 +865,7 @@ const Upload = ({
     const MAX_FILE_RETRIES = 3;
     const FILE_RETRY_DELAYS = [30_000, 60_000, 120_000]; // 30s, 60s, 2min
 
-    const isRetryableError = (err: any): boolean => {
+    const isRetryableError = (err: ThrownError | undefined): boolean => {
       if (err?.cancelled) return false;
       if (err?.sizeLimit) return false;
       if (err?.status === 413) return false;
@@ -1027,7 +1032,8 @@ const Upload = ({
         }
         setFileProgress(100);
         return "ok";
-      } catch (e: any) {
+      } catch (caughtValue) {
+        const e = caughtValue as ThrownError;
         if (e?.cancelled) return "failed";
         if (isBridgeWebDavUploadFile(file)) {
           const batch = bridgeBatches.get(bridgeBatchKey(file)) ?? [
@@ -1199,22 +1205,28 @@ const Upload = ({
       {
         isUserSignedIn: user ? true : false,
         isReverseShare,
-        allowUnauthenticatedShares: config.get(
+        allowUnauthenticatedShares: config.getBoolean(
           "share.allowUnauthenticatedShares",
         ),
-        enableEmailRecepients: config.get("email.enableShareEmailRecipients"),
-        enableE2EKeyEmailSharing: config.get("email.enableE2EKeyEmailSharing"),
+        enableEmailRecepients: config.getBoolean(
+          "email.enableShareEmailRecipients",
+        ),
+        enableE2EKeyEmailSharing: config.getBoolean(
+          "email.enableE2EKeyEmailSharing",
+        ),
         // Show the "share E2E key via email" checkbox only when the user
         // already has an E2E key set up (server hash recorded or key in RAM).
         userHasE2E:
           !user?.e2eAutoGenerationDisabled &&
           (!!user?.hasEncryptionKey || !!getUserKey()),
-        maxExpiration: config.get("share.maxExpiration"),
-        anonymousMaxExpiration: config.get("share.anonymousMaxExpiration"),
-        shareIdLength: config.get("share.shareIdLength"),
+        maxExpiration: config.getTimespan("share.maxExpiration"),
+        anonymousMaxExpiration: config.getTimespan(
+          "share.anonymousMaxExpiration",
+        ),
+        shareIdLength: config.getNumber("share.shareIdLength"),
         simplified: simplified && !qRequestId,
         teamFileRequestId: qRequestId,
-        captchaEnabled: !user && config.get("altcha.enabled"),
+        captchaEnabled: !user && config.getBoolean("altcha.enabled"),
         preselectedTeamFolderId: qTeamFolderId,
       },
       files,

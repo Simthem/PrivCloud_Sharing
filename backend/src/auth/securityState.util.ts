@@ -1,11 +1,12 @@
 import { User } from "@prisma/client";
 import { randomBytes, scrypt, timingSafeEqual } from "crypto";
+import { openAccountSecret } from "../config/account-secrets";
 
 // Credentials that a pending account change must outlive unchanged: a new
 // password, directory link or second factor voids it.
 type SecurityFields = Pick<
   User,
-  "password" | "ldapDN" | "totpEnabled" | "totpVerified" | "totpSecret"
+  "id" | "password" | "ldapDN" | "totpEnabled" | "totpVerified" | "totpSecret"
 >;
 
 const KEY_BYTES = 32;
@@ -17,7 +18,8 @@ function material(user: SecurityFields): string {
     user.ldapDN,
     user.totpEnabled,
     user.totpVerified,
-    user.totpSecret,
+    user.totpSecret &&
+      openAccountSecret(user.id, "totpSecret", user.totpSecret),
   ]);
 }
 

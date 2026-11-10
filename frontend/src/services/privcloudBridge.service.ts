@@ -8,6 +8,7 @@ import {
   requestCompanionCommand,
 } from "./privcloudCompanion.service";
 import type { WebDavCredentials, WebDavEntry } from "./webdav.service";
+import type { ThrownError } from "../types/thrownError.type";
 
 const TOKEN_STORAGE_KEY = "privcloud_native_session_v1";
 
@@ -300,7 +301,10 @@ export async function startBridgeWebDavUploadJob(
   const hasPaths = payload.files.some((file) => !!file.relativePath);
   const contentV2 = payload.isE2EEncrypted && payload.contentScheme === 2;
   if (payload.fileMetadataScheme === 1 || hasPaths || contentV2) {
-    const health = await getBridgeHealth();
+    // Without a stored token the plain probe says nothing about the Companion.
+    const health =
+      (await getBridgeHealth()) ??
+      (await getBridgeHealth({ requestLocalAccess: true }));
     if (hasPaths && !health?.capabilities.relativePathsV1)
       throw new Error("webdav.error.companionFolderUpdateRequired");
     if (
@@ -357,8 +361,8 @@ export async function waitForBridgeUploadJob(
   for (;;) {
     if (options.signal?.aborted) {
       await cancelBridgeUploadJob(jobId).catch(() => undefined);
-      const error = new Error("Bridge upload cancelled");
-      (error as any).cancelled = true;
+      const error: Error & ThrownError = new Error("Bridge upload cancelled");
+      error.cancelled = true;
       throw error;
     }
 
@@ -367,8 +371,10 @@ export async function waitForBridgeUploadJob(
 
     if (job.state === "completed") return job;
     if (job.state === "failed" || job.state === "cancelled") {
-      const error = new Error(job.error || `Bridge job ${job.state}`);
-      (error as any).cancelled = job.state === "cancelled";
+      const error: Error & ThrownError = new Error(
+        job.error || `Bridge job ${job.state}`,
+      );
+      error.cancelled = job.state === "cancelled";
       throw error;
     }
 

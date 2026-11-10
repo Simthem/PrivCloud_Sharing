@@ -7,7 +7,10 @@ import {
   resolveSignatureSlots,
   splitSignatureArea,
 } from "../src/utils/signatureSlots.util.ts";
-import { buildAutoSignatureFields } from "../src/utils/signatureAutoFields.util.ts";
+import {
+  buildAutoSignatureFields,
+  resolveAutoSignaturePlacement,
+} from "../src/utils/signatureAutoFields.util.ts";
 
 const overlaps = (a, b) =>
   a.x < b.x + b.width &&
@@ -154,4 +157,45 @@ test("suggests one block per signer inside the page", () => {
     assert.ok(field.topMm + field.heightMm <= 297.05);
     assert.ok(field.leftMm + field.widthMm <= 210.05);
   }
+});
+
+test("a manual signature page replaces the detected page for automatic fields", () => {
+  const detected = {
+    page: 3,
+    leftMm: 20,
+    topMm: 200,
+    widthMm: 80,
+    heightMm: 25,
+  };
+  const layout = { widthPoints: 420, heightPoints: 595, rotation: 90 };
+  assert.deepEqual(
+    resolveAutoSignaturePlacement(detected, undefined, layout),
+    detected,
+  );
+  assert.deepEqual(
+    resolveAutoSignaturePlacement(detected, 3, layout),
+    detected,
+  );
+  const chosen = resolveAutoSignaturePlacement(detected, 2, layout);
+  assert.equal(chosen.page, 2);
+  const fields = buildAutoSignatureFields(
+    chosen,
+    ["alice@example.test", "bob@example.test"],
+    {
+      widthMm: (595 * 25.4) / 72,
+      heightMm: (420 * 25.4) / 72,
+    },
+  );
+  assert.equal(fields.length, 2);
+  for (const field of fields) {
+    assert.ok(field.leftMm >= 0 && field.topMm >= 0);
+    assert.ok(field.leftMm + field.widthMm <= (595 * 25.4) / 72 + 0.1);
+    assert.ok(field.topMm + field.heightMm <= (420 * 25.4) / 72 + 0.1);
+  }
+  assert.equal(resolveAutoSignaturePlacement(null, undefined, layout), null);
+  assert.equal(resolveAutoSignaturePlacement(null, 2, layout).page, 2);
+  assert.deepEqual(
+    resolveAutoSignaturePlacement(detected, undefined, layout),
+    detected,
+  );
 });

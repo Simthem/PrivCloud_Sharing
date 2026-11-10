@@ -6,6 +6,7 @@ import shareService from "../../services/share.service";
 import toast from "../../utils/toast.util";
 import { FileMetaData } from "../../types/File.type";
 import DownloadProgressIndicator from "./DownloadProgressIndicator";
+import type { ThrownError } from "../../types/thrownError.type";
 
 const DownloadAllButton = ({
   shareId,
@@ -40,7 +41,8 @@ const DownloadAllButton = ({
         },
         controller.signal,
       );
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       if (e.name !== "AbortError") {
         toast.error(t("common.error"));
       }
@@ -64,7 +66,8 @@ const DownloadAllButton = ({
         },
         controller.signal,
       );
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       if (e.name !== "AbortError") {
         toast.error(t("common.error"));
       }

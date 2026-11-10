@@ -22,10 +22,10 @@ const Meta = ({
   const { asPath, locale: urlLocale } = useRouter();
   const { locale } = useIntl();
 
-  const metaTitle = `${title} - ${config.get("general.appName")}`;
+  const metaTitle = `${title} - ${config.getString("general.appName")}`;
   const configDescription = locale?.startsWith("fr")
-    ? config.get("general.metaDescriptionFr")
-    : config.get("general.metaDescriptionEn");
+    ? config.getString("general.metaDescriptionFr")
+    : config.getString("general.metaDescriptionEn");
   const metaDescription = description ?? configDescription;
 
   // Canonical: strip query string and trailing slash, keep origin clean
@@ -38,7 +38,7 @@ const Meta = ({
     ? `${ORIGIN}${ogImage}`
     : `${ORIGIN}/img/logo.png`;
   const ogLocale = urlLocale === "en" ? "en_US" : "fr_FR";
-  const siteName = config.get("general.appName");
+  const siteName = config.getString("general.appName");
 
   return (
     <Head>

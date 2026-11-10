@@ -23,7 +23,7 @@ const ShareLinkContent = ({
   keyFragment?: string;
 }) => {
   const config = useConfig();
-  const link = `${config.get("general.appUrl")}/s/${shareId}${keyFragment || ""}`;
+  const link = `${config.getString("general.appUrl")}/s/${shareId}${keyFragment || ""}`;
   return (
     <Stack align="stretch">
       <TextInput variant="filled" value={link} readOnly />

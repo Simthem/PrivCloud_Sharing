@@ -25,6 +25,7 @@ import {
 } from "../../../utils/shareKey.util";
 import { useQuery } from "@tanstack/react-query";
 import { AxiosError } from "axios";
+import useUserKeyGeneration from "../../../hooks/useUserKeyGeneration.hook";
 
 export function getServerSideProps(context: GetServerSidePropsContext) {
   return {
@@ -49,6 +50,7 @@ const Share = ({ shareId }: { shareId: string }) => {
   // FILE_META_V1: the file list shows the real names, opened with K_share.
   const [ownerKey, setOwnerKey] = useState<string | null>(null);
   const [ownerKeyResolved, setOwnerKeyResolved] = useState(false);
+  const keyGeneration = useUserKeyGeneration();
   useEffect(() => {
     if (!share) return;
     setOwnerKey(null);
@@ -84,7 +86,7 @@ const Share = ({ shareId }: { shareId: string }) => {
     return () => {
       cancelled = true;
     };
-  }, [share, shareId]);
+  }, [share, shareId, keyGeneration]);
   const { files, pending: fileNamesPending } =
     useDecryptedFileNames<FileMetaData>(share?.id, share?.files, ownerKey);
 

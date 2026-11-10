@@ -59,11 +59,19 @@ import {
   pageSizeMillimeters,
   normalizedPdfRotation,
 } from "../../utils/pdfPlacement.util";
-import { buildAutoSignatureFields } from "../../utils/signatureAutoFields.util";
+import {
+  buildAutoSignatureFields,
+  resolveAutoSignaturePlacement,
+} from "../../utils/signatureAutoFields.util";
 import {
   detectSignaturePlacement,
   type DetectedSignaturePlacement,
 } from "../../utils/signaturePlacementDetection.util";
+import {
+  approvalMentionPattern,
+  approvalWatermark,
+  signingLanguageOf,
+} from "../../utils/signingLanguage.util";
 
 interface FileOption {
   id: string;
@@ -127,7 +135,8 @@ export default function RequestSignatureModal({
 }: Props) {
   const { user } = useUser();
   const intl = useIntl();
-  const t = (id: string) => intl.formatMessage({ id });
+  const t = (id: string, defaultMessage?: string) =>
+    intl.formatMessage({ id, defaultMessage });
 
   const form = useForm({
     initialValues: {
@@ -145,7 +154,7 @@ export default function RequestSignatureModal({
       customPageEnabled: false,
       signaturePage: 1,
       watermarkPage: 1,
-      watermarkSamePage: true,
+      watermarkSamePage: false,
       sendE2EKeyByEmail: false,
       recipients: [
         { name: "", email: "", role: "SIGNER" as const },
@@ -303,6 +312,27 @@ export default function RequestSignatureModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageLayouts]);
 
+  useEffect(() => {
+    if (form.isTouched("signaturePage")) return;
+    const touched = form.getTouched();
+    form.setFieldValue("signaturePage", detectedSignaturePlacement?.page ?? 1);
+    form.setTouched(touched);
+    // A late detection must not replace the requester's manual page choice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detectedSignaturePlacement?.page]);
+
+  // The preview opens the page the signature goes on, each time that page
+  // changes. The requester can still browse the other pages in between.
+  const signatureTargetPage = form.values.customPageEnabled
+    ? Number(form.values.signaturePage) || 1
+    : (detectedSignaturePlacement?.page ?? 1);
+  useEffect(() => {
+    if (pageLayouts.length === 0) return;
+    setPreviewPage(
+      Math.max(1, Math.min(pageLayouts.length, signatureTargetPage)),
+    );
+  }, [signatureTargetPage, pageLayouts.length]);
+
   const autoSignerEmailsKey = form.values.recipients
     .filter((recipient) => recipient.role === "SIGNER")
     .map((recipient) => recipient.email.trim())
@@ -318,7 +348,15 @@ export default function RequestSignatureModal({
     const fields = form.values.fields;
     const kept = fields.filter((field) => field.autoDetected !== true);
 
-    if (!detectedSignaturePlacement) {
+    const targetPage = form.values.customPageEnabled
+      ? form.values.signaturePage
+      : (detectedSignaturePlacement?.page ?? 1);
+    const automaticPlacement = resolveAutoSignaturePlacement(
+      detectedSignaturePlacement,
+      form.values.customPageEnabled ? targetPage : undefined,
+      getPageLayout(targetPage),
+    );
+    if (!automaticPlacement) {
       if (kept.length !== fields.length) form.setFieldValue("fields", kept);
       return;
     }
@@ -347,33 +385,34 @@ export default function RequestSignatureModal({
     }
 
     const detectedFields: FieldEntry[] = buildAutoSignatureFields(
-      detectedSignaturePlacement,
+      automaticPlacement,
       signerEmails,
-      pageSizeMillimeters(getPageLayout(detectedSignaturePlacement.page)),
+      pageSizeMillimeters(getPageLayout(automaticPlacement.page)),
     ).map((placement) => ({
       ...placement,
       type: "SIGNATURE",
-      page: detectedSignaturePlacement.page,
+      page: automaticPlacement.page,
       required: true,
       label: "",
       autoDetected: true,
     }));
     form.setFieldValue("fields", [...kept, ...detectedFields]);
-    // The detected placement, the signers and their manual fields are the only
-    // triggers. Form updates are performed deliberately here so the
-    // suggestions become real editable fields, one per signer.
+    // Rebuild automatic suggestions when detection, recipients or the selected
+    // page changes. Individually edited fields stay in the kept list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     detectedSignaturePlacement,
     autoSignerEmailsKey,
     manualSignatureFieldsKey,
     pageLayouts,
+    form.values.customPageEnabled,
+    form.values.signaturePage,
   ]);
 
   const createMutation = useMutation({
     mutationFn: (data: CreateSignatureRequestPayload) =>
       signingService.createRequest(data),
-    onSuccess: (result: any) => {
+    onSuccess: (result) => {
       toast.success(t("signing.modal.notify.success"));
       setLoading(false);
       setEmailDeliveryFailures(result?.emailDeliveryFailures || 0);
@@ -524,17 +563,19 @@ export default function RequestSignatureModal({
       initialsPlacement: values.initialsPlacement,
       initialsIncludeSignaturePage: values.initialsIncludeSignaturePage,
       signaturePage: targetPage,
-      watermarkPage:
-        values.addApprovalField &&
-        values.customPageEnabled &&
-        !values.watermarkSamePage
-          ? values.watermarkPage
-          : undefined,
+      watermarkPage: values.addApprovalField
+        ? values.customPageEnabled
+          ? values.watermarkSamePage
+            ? targetPage
+            : values.watermarkPage
+          : 1
+        : undefined,
       pageRotations: Object.entries(pageRotations).map(([page, rotation]) => ({
         page: Number(page),
         rotation,
       })),
       isE2EEncrypted: !!encryptionKey,
+      language: signingLanguageOf(intl.locale),
       sendE2EKeyByEmail: shouldEmailE2EKey,
       e2eKey: shouldEmailE2EKey ? encryptionKey || undefined : undefined,
       teamId: teamId || undefined,
@@ -707,7 +748,9 @@ export default function RequestSignatureModal({
       opened={opened}
       onClose={handleClose}
       title={
-        createdRecipients ? "Liens de signature" : t("signing.modal.title")
+        createdRecipients
+          ? t("signing.modal.links.title", "Signing links")
+          : t("signing.modal.title")
       }
       size="xl"
     >
@@ -718,8 +761,14 @@ export default function RequestSignatureModal({
             icon={<TbMail size={16} />}
           >
             {emailDeliveryFailures > 0
-              ? "La demande de signature a été créée, mais certains emails n'ont pas pu être envoyés. Partagez les liens ci-dessous directement :"
-              : "La demande de signature a été créée. Les invitations par email ont été envoyées. Vous pouvez aussi partager les liens ci-dessous directement :"}
+              ? t(
+                  "signing.modal.links.partial",
+                  "The signature request was created, but some emails could not be sent. Share the links below directly:",
+                )
+              : t(
+                  "signing.modal.links.sent",
+                  "The signature request was created. The email invitations were sent. You can also share the links below directly:",
+                )}
           </Alert>
           {createdRecipients
             .filter((r) => r.signingToken && r.role !== "CC")
@@ -742,7 +791,9 @@ export default function RequestSignatureModal({
                       variant="light"
                       size="md"
                     >
-                      {r.role === "SIGNER" ? "Signataire" : "Approbateur"}
+                      {r.role === "SIGNER"
+                        ? t("signing.modal.role.signer", "Signer")
+                        : t("signing.modal.role.approver", "Approver")}
                     </Badge>
                   </Group>
                   <Group gap="xs" wrap="nowrap">
@@ -774,7 +825,7 @@ export default function RequestSignatureModal({
               );
             })}
           <Button onClick={handleClose} fullWidth variant="light">
-            Terminé
+            {t("signing.modal.links.done", "Done")}
           </Button>
         </Stack>
       ) : (
@@ -825,26 +876,54 @@ export default function RequestSignatureModal({
             {/* Signing options */}
             <div>
               <Text size="sm" fw={500} mb={8}>
-                Options du document signé
+                {t("signing.modal.options.title", "Signed document options")}
               </Text>
               <Stack gap="xs">
                 <Checkbox
-                  label='Mention diagonale "Bon pour Accord"'
-                  description="Affiche un filigrane semi-transparent en diagonale sur la dernière page"
+                  label={intl.formatMessage(
+                    {
+                      id: "signing.modal.options.watermark-label",
+                      defaultMessage: 'Diagonal watermark "{text}"',
+                    },
+                    { text: approvalWatermark(signingLanguageOf(intl.locale)) },
+                  )}
+                  description={t(
+                    "signing.modal.options.watermark-description",
+                    "Shows a semi-transparent diagonal watermark on the first page by default, or on the selected page",
+                  )}
                   {...form.getInputProps("addApprovalField", {
                     type: "checkbox",
                   })}
                 />
                 <Checkbox
-                  label='Mention "Lu et approuvé, le (date)"'
-                  description="Ajoute la mention avec la date de chaque signature"
+                  label={intl.formatMessage(
+                    {
+                      id: "signing.modal.options.mention-label",
+                      defaultMessage: 'Mention "{text}"',
+                    },
+                    {
+                      text: approvalMentionPattern(
+                        signingLanguageOf(intl.locale),
+                      ),
+                    },
+                  )}
+                  description={t(
+                    "signing.new.option.approval-mention.desc",
+                    "Adds the mention with the date of each signature",
+                  )}
                   {...form.getInputProps("addApprovalMention", {
                     type: "checkbox",
                   })}
                 />
                 <Checkbox
-                  label="Initiales des signataires en bas de chaque page"
-                  description="Affiche les initiales de chaque signataire en pied de page"
+                  label={t(
+                    "signing.new.option.initials",
+                    "Signers’ initials at the bottom of each page",
+                  )}
+                  description={t(
+                    "signing.new.option.initials.desc",
+                    "Shows darker initials in a white capsule 14 mm above the edge, clear of page numbers",
+                  )}
                   {...form.getInputProps("addInitials", { type: "checkbox" })}
                 />
                 {form.values.addInitials && (
@@ -982,11 +1061,11 @@ export default function RequestSignatureModal({
                       data={[
                         {
                           value: "SIGNER",
-                          label: t("signing.modal.role.signer"),
+                          label: t("signing.modal.role.signer", "Signer"),
                         },
                         {
                           value: "APPROVER",
-                          label: t("signing.modal.role.approver"),
+                          label: t("signing.modal.role.approver", "Approver"),
                         },
                         { value: "CC", label: t("signing.modal.role.cc") },
                       ]}

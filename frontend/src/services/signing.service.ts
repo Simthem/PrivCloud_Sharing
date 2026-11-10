@@ -1,3 +1,5 @@
+import { sealSigningKey } from "../utils/signingKeyEnvelope.util";
+import type { SigningKeyContext } from "../utils/signingKeyEnvelope.util";
 import {
   contentV2FileId,
   isContentV2FileId,
@@ -11,12 +13,24 @@ import teamService from "./team.service";
 import {
   batchGetPublicKeys,
   encryptNotificationMetadata,
+  isX25519Supported,
 } from "./crypto.service";
 
 export interface SignatureRequest {
+  isRequester?: boolean;
+  signingAction?: {
+    recipientId: string;
+    path: string;
+    wrappedE2EKey?: string;
+    isE2EEncrypted?: boolean;
+    keyEnvelope?: SigningKeyContext & { ciphertext: string };
+  } | null;
   id: string;
+  emailDeliveryFailures?: number;
   title?: string;
   fileName: string;
+  /** Language of the request: fr | en. */
+  language?: string;
   message?: string;
   status: string;
   signatureLevel: string;
@@ -26,6 +40,9 @@ export interface SignatureRequest {
   recipients: SignatureRecipient[];
   createdAt: string;
   completedAt?: string;
+  fileId?: string | null;
+  shareId?: string | null;
+  auditTrail?: SignatureAuditEvent[];
   fileDeleted?: boolean;
   fileDeletedAt?: string;
   creator?: { id: string; username?: string; email: string };
@@ -47,6 +64,72 @@ export interface SignatureRecipient {
   signedDocumentHash?: string;
   isCurrentUser?: boolean;
   wrappedE2EKey?: string;
+  encryptedKeyEnvelope?: string;
+  hasKeyEnvelope?: boolean;
+}
+
+export interface SignatureAuditEvent {
+  id: string;
+  createdAt: string;
+  eventType: string;
+  actor: string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  metadata?: string | null;
+  eventHash?: string | null;
+  reason?: string;
+}
+
+export interface SignatureFieldValue {
+  id: string;
+  value: string;
+  fieldId: string;
+  recipientId: string;
+  recipient: { name: string; email: string };
+}
+
+/** What the creator reads to finalize an end-to-end encrypted document. */
+export interface SigningFinalizationData {
+  documentId: string;
+  fileName: string;
+  addApprovalField: boolean;
+  addApprovalMention: boolean;
+  addInitials: boolean;
+  initialsPlacement: string;
+  initialsIncludeSignaturePage: boolean;
+  signaturePage: number | null;
+  watermarkPage: number | null;
+  pageRotations: { page: number; rotation: number }[] | null;
+  signatureLevel: string;
+  /** Language of the marks drawn on the PDF: fr | en. */
+  language?: string;
+  signers: {
+    id: string;
+    name: string;
+    email: string;
+    signedAt: string;
+    signatureData: string | null;
+    signatureType: string | null;
+    order: number;
+    userId: string | null;
+    signingIntentHash: string | null;
+    signedDocumentHash: string | null;
+    webauthnTransactionManifest: string | null;
+  }[];
+  fields: {
+    id: string;
+    type: string;
+    page: number;
+    posX: number;
+    posY: number;
+    width: number;
+    height: number;
+    rotation: number;
+    label: string | null;
+    required: boolean;
+    assignedRecipientId: string | null;
+    fieldValues: SignatureFieldValue[];
+  }[];
 }
 
 export interface SigningPageData {
@@ -58,6 +141,8 @@ export interface SigningPageData {
     signatureLevel: string;
     addApprovalField?: boolean;
     isE2EEncrypted?: boolean;
+    /** Language of the request: fr | en. */
+    language?: string;
     /** Identity of an end-to-end encrypted source, never its share. */
     fileId?: string | null;
     pageRotations?: { page: number; rotation: number }[] | null;
@@ -73,6 +158,8 @@ export interface SigningPageData {
     identityVerificationMethod: string;
     identityVerifiedAt?: string;
     hasWrappedE2EKey?: boolean;
+    /** Signed-in viewers only: the request is bound to their account. */
+    assignedToViewer?: boolean;
   };
   fields: {
     id: string;
@@ -116,6 +203,7 @@ export interface CreateSignatureRequestPayload {
   watermarkPage?: number;
   pageRotations?: { page: number; rotation: number }[];
   isE2EEncrypted?: boolean;
+  language?: "fr" | "en";
   sendE2EKeyByEmail?: boolean;
   e2eKey?: string;
   recipients: {
@@ -125,6 +213,8 @@ export interface CreateSignatureRequestPayload {
     order?: number;
     signingToken?: string;
     teamInviteNotification?: string;
+    encryptedKeyEnvelope?: string;
+    keyEnvelopeUserId?: string;
     teamProgressNotification?: string;
     teamCompletionNotification?: string;
   }[];
@@ -152,8 +242,12 @@ const createRequest = async (
   const { notificationCreatorId, notificationE2EKey, ...request } = data;
   if (request.isE2EEncrypted && !request.id)
     request.id = contentV2FileId(crypto.randomUUID());
-  const prepared = await prepareTeamSigningNotifications(
+  const keyedRequest = await prepareRecipientKeyEnvelopes(
     request,
+    notificationE2EKey,
+  );
+  const prepared = await prepareTeamSigningNotifications(
+    keyedRequest,
     notificationCreatorId,
     notificationE2EKey,
   );
@@ -164,6 +258,114 @@ const createRequest = async (
   return document;
 };
 
+type EncryptionTarget = { email: string; userId: string; recipientId?: string };
+
+async function prepareRecipientKeyEnvelopes(
+  request: Omit<CreateSignatureRequestPayload, "notificationCreatorId">,
+  key?: string,
+) {
+  if (
+    !request.isE2EEncrypted ||
+    !key ||
+    !request.recipients.some(
+      (recipient) => (recipient.role ?? "SIGNER") === "SIGNER",
+    )
+  )
+    return request;
+  if (!(await isX25519Supported())) return request;
+  if (!request.id)
+    throw new ContentIntegrityError("Missing signing document identity");
+  const emails = request.recipients
+    .filter((recipient) => (recipient.role ?? "SIGNER") === "SIGNER")
+    .map((recipient) => recipient.email);
+  const targets: EncryptionTarget[] = (
+    await api.post("signing/recipients/encryption-targets", { emails })
+  ).data;
+  const publicKeys = await batchGetPublicKeys([
+    ...new Set(targets.map((target) => target.userId)),
+  ]);
+  const recipients = await Promise.all(
+    request.recipients.map(async (recipient) => {
+      if ((recipient.role ?? "SIGNER") !== "SIGNER") return recipient;
+      const target = targets.find(
+        (target) =>
+          target.email.toLowerCase() === recipient.email.trim().toLowerCase(),
+      );
+      const publicKey = publicKeys.find(
+        (entry) => entry.userId === target?.userId,
+      );
+      if (!target || !publicKey?.x25519) return recipient;
+      return {
+        ...recipient,
+        keyEnvelopeUserId: target.userId,
+        encryptedKeyEnvelope: await sealSigningKey(
+          key,
+          {
+            documentId: request.id!,
+            fileId: request.fileId,
+            recipientUserId: target.userId,
+          },
+          publicKey,
+        ),
+      };
+    }),
+  );
+  return { ...request, recipients };
+}
+
+async function ensureRecipientKeyEnvelopes(
+  document: SignatureRequest,
+  key: string,
+) {
+  if (
+    !document.isRequester ||
+    !document.isE2EEncrypted ||
+    !document.fileId ||
+    !(await isX25519Supported())
+  )
+    return { stored: 0 };
+  const targets: EncryptionTarget[] = (
+    await api.post(
+      `signing/documents/${apiPathSegment(document.id)}/encryption-targets`,
+      {},
+    )
+  ).data;
+  const publicKeys = await batchGetPublicKeys([
+    ...new Set(targets.map((target) => target.userId)),
+  ]);
+  const recipients: {
+    recipientId: string;
+    userId: string;
+    encryptedKeyEnvelope: string;
+  }[] = [];
+  for (const target of targets) {
+    const publicKey = publicKeys.find(
+      (entry) => entry.userId === target.userId,
+    );
+    if (!target.recipientId || !publicKey?.x25519) continue;
+    recipients.push({
+      recipientId: target.recipientId,
+      userId: target.userId,
+      encryptedKeyEnvelope: await sealSigningKey(
+        key,
+        {
+          documentId: document.id,
+          fileId: document.fileId,
+          recipientUserId: target.userId,
+        },
+        publicKey,
+      ),
+    });
+  }
+  if (!recipients.length) return { stored: 0 };
+  return (
+    await api.post<{ stored: number }>(
+      `signing/documents/${apiPathSegment(document.id)}/key-envelopes`,
+      { recipients },
+    )
+  ).data;
+}
+
 /** Build recipient-specific PQ-hybrid notification actions in the browser. */
 const prepareTeamSigningNotifications = async (
   request: Omit<CreateSignatureRequestPayload, "notificationCreatorId">,
@@ -172,6 +374,9 @@ const prepareTeamSigningNotifications = async (
 ): Promise<Omit<CreateSignatureRequestPayload, "notificationCreatorId">> => {
   if (!request.teamId || !creatorUserId || !globalThis.crypto?.randomUUID)
     return request;
+  // The in-app notification is optional: without X25519 (older WebViews and
+  // browsers) the request is still created and the e-mails still go out.
+  if (!(await isX25519Supported())) return request;
 
   const documentId = request.id ?? crypto.randomUUID();
   const team = await teamService.getTeam(request.teamId);
@@ -317,11 +522,13 @@ const downloadOwnForensicRecord = async (id: string): Promise<Blob> => {
   return response.data;
 };
 
-const getAuditTrail = async (id: string): Promise<any> => {
+const getAuditTrail = async (id: string): Promise<SignatureAuditEvent[]> => {
   return (await api.get(`signing/documents/${apiPathSegment(id)}/audit`)).data;
 };
 
-const getSignaturesForFinalization = async (id: string): Promise<any> => {
+const getSignaturesForFinalization = async (
+  id: string,
+): Promise<SigningFinalizationData> => {
   return (await api.get(`signing/documents/${apiPathSegment(id)}/signatures`))
     .data;
 };
@@ -371,7 +578,7 @@ const finalizeE2E = async (
   encryptedPdfBuffer: ArrayBuffer,
   finalDocumentHash: string,
   sourceDocumentHash: string,
-): Promise<any> => {
+): Promise<unknown> => {
   const bytes = new Uint8Array(encryptedPdfBuffer);
   let binary = "";
   for (let i = 0; i < bytes.length; i++) {
@@ -447,6 +654,21 @@ const finishPasskeyRegistration = async (
       { challengeId, response },
     )
   ).data as { verified: boolean };
+
+const sendPasskeyEnrollmentCode = async (recipientId: string) =>
+  (
+    await api.post(
+      `signing/passkey-enrollment/${apiPathSegment(recipientId)}/code`,
+    )
+  ).data as { sent: boolean; expiresInSeconds: number };
+
+const confirmPasskeyEnrollment = async (recipientId: string, code: string) =>
+  (
+    await api.post(
+      `signing/passkey-enrollment/${apiPathSegment(recipientId)}/confirm`,
+      { code },
+    )
+  ).data as { expiresAt: string; confirmation?: string };
 
 const beginPasskeyAction = async (
   token: string,
@@ -602,6 +824,7 @@ const adminResetSigningPasskeys = async (userId: string) => {
 
 const signingService = {
   createRequest,
+  ensureRecipientKeyEnvelopes,
   getMyDocuments,
   getReceivedDocuments,
   getTeamDocuments,
@@ -625,6 +848,8 @@ const signingService = {
   storeRecipientE2EKey,
   beginPasskeyRegistration,
   finishPasskeyRegistration,
+  sendPasskeyEnrollmentCode,
+  confirmPasskeyEnrollment,
   beginPasskeyAction,
   signDocument,
   rejectDocument,

@@ -20,13 +20,15 @@ export const getExpirationPreview = (
     : form.values.expiration_num + form.values.expiration_unit;
   if (value === "never") return messages.neverExpires;
 
-  const expirationDate = dayjs()
+  // Match the server duration, then render in the creator's device timezone.
+  const expirationDate = dayjs
+    .utc()
     .add(parseInt(value.split("-")[0]), value.split("-")[1] as ManipulateType)
     .toDate();
 
   return messages.expiresOn.replace(
     "{expiration}",
-    dayjs(expirationDate).format("LLL"),
+    `${dayjs(expirationDate).format("LLL")} (UTC${dayjs(expirationDate).format("Z")})`,
   );
 };
 

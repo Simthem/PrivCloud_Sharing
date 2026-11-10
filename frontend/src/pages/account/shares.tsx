@@ -29,7 +29,7 @@ import {
   TbSignature,
   TbTrash,
 } from "react-icons/tb";
-import { FormattedMessage } from "react-intl";
+import { FormattedMessage, useIntl } from "react-intl";
 import { useEffect, useState } from "react";
 import Meta from "../../components/Meta";
 import RequestSignatureModal from "../../components/signing/RequestSignatureModal";
@@ -46,18 +46,21 @@ import { FileMetaData } from "../../types/File.type";
 import { copyToClipboard } from "../../utils/clipboard.util";
 import toast from "../../utils/toast.util";
 import { buildKeyFragment } from "../../utils/crypto.util";
+import { defaultShareTitle } from "../../utils/shareTitle.util";
 import useOwnerShareKeys from "../../hooks/useOwnerShareKeys.hook";
 import {
   decryptShareFileNames,
   isFileMetaShare,
   openShareInfo,
   ShareInfo,
+  signatureFileOf,
 } from "../../utils/fileMetadata.util";
 
 const MyShares = () => {
   const modals = useModals();
   const config = useConfig();
   const t = useTranslate();
+  const intl = useIntl();
   const queryClient = useQueryClient();
   const isMobile = useMediaQuery("(max-width: 680px)");
   const { user } = useUser();
@@ -98,18 +101,40 @@ const MyShares = () => {
   }, [shares, ownerShareKey]);
   const shareInfoOf = (share: MyShare): ShareInfo =>
     share.encryptedInfo
-      ? (shareInfos[share.id] ?? {})
+      ? ownerShareKey(share)
+        ? (shareInfos[share.id] ?? {})
+        : {}
       : { name: share.name, description: share.description };
-  // A blank name falls back to the share id, and the full value stays
-  // readable on hover whatever the column width.
-  const shareDisplayName = (share: MyShare) =>
-    shareInfoOf(share).name?.trim() || share.id;
-
   // FILE_META_V1: file names are opened with the share key before the PDF
   // filter of the signature button, the server only knows placeholders.
   const [fileNames, setFileNames] = useState<Record<string, FileMetaData[]>>(
     {},
   );
+  const shareDisplayName = (share: MyShare) => {
+    const named = shareInfoOf(share).name?.trim();
+    if (named) return named;
+    const openedFiles = ownerShareKey(share) ? fileNames[share.id] : undefined;
+    const title = defaultShareTitle(
+      isFileMetaShare(share) ? openedFiles : share.files,
+      !!openedFiles,
+    );
+    if (!title) {
+      return intl.formatMessage({
+        id: "share.title.untitled",
+        defaultMessage: "Untitled share",
+      });
+    }
+    return title.others
+      ? intl.formatMessage(
+          {
+            id: "share.title.withOthers",
+            defaultMessage:
+              "{name} (+{count, plural, one {# file} other {# files}})",
+          },
+          { name: title.name, count: title.others },
+        )
+      : title.name;
+  };
   useEffect(() => {
     const encrypted = (shares ?? []).filter(
       (share) => isFileMetaShare(share) && !!ownerShareKey(share),
@@ -138,11 +163,7 @@ const MyShares = () => {
   const signablePdfFiles = (share: MyShare) =>
     ((fileNames[share.id] ?? share.files ?? []) as FileMetaData[])
       .filter((f) => !f.metadataUnreadable && /\.pdf$/i.test(f.name || ""))
-      .map((f) => ({
-        id: f.id,
-        name: f.name || f.id,
-        encryptedName: f.metadataScheme != null,
-      }));
+      .map(signatureFileOf);
 
   const deleteShareMutation = useMutation({
     mutationFn: (shareId: string) => shareService.remove(shareId, true),
@@ -323,6 +344,17 @@ const MyShares = () => {
                           {shareDisplayName(share)}
                         </Text>
                       </Link>
+                      {shareDisplayName(share) !== share.id && (
+                        <Text
+                          size="xs"
+                          c="dimmed"
+                          truncate="end"
+                          title={share.id}
+                          style={{ overflowWrap: "anywhere" }}
+                        >
+                          {share.id}
+                        </Text>
+                      )}
                       {shareInfoOf(share).description && (
                         <Text
                           size="xs"
@@ -372,7 +404,7 @@ const MyShares = () => {
                       showShareInformationsModal(
                         modals,
                         share,
-                        parseInt(config.get("share.maxSize")),
+                        config.getNumber("share.maxSize"),
                         ownerShareKey(share),
                       )
                     }
@@ -386,7 +418,7 @@ const MyShares = () => {
                     onClick={async () => {
                       const sk = ownerShareKey(share);
                       const kf = sk ? buildKeyFragment(sk) : "";
-                      const link = `${config.get("general.appUrl")}/s/${share.id}${kf}`;
+                      const link = `${config.getString("general.appUrl")}/s/${share.id}${kf}`;
                       const ok = await copyToClipboard(link);
                       if (ok) toast.success(t("common.notify.copied-link"));
                       else showShareLinkModal(modals, share.id, kf);
@@ -403,7 +435,7 @@ const MyShares = () => {
                       const kf = sk ? buildKeyFragment(sk) : "";
                       showQrCodeModal(
                         modals,
-                        `${config.get("general.appUrl")}/s/${share.id}${kf}`,
+                        `${config.getString("general.appUrl")}/s/${share.id}${kf}`,
                       );
                     }}
                   >
@@ -555,7 +587,7 @@ const MyShares = () => {
                               {shareInfoOf(share).description}
                             </Text>
                           )}
-                          {shareInfoOf(share).name?.trim() && (
+                          {shareDisplayName(share) !== share.id && (
                             <Text
                               size="xs"
                               c="dimmed"
@@ -617,7 +649,7 @@ const MyShares = () => {
                               showShareInformationsModal(
                                 modals,
                                 share,
-                                parseInt(config.get("share.maxSize")),
+                                config.getNumber("share.maxSize"),
                                 ownerShareKey(share),
                               );
                             }}
@@ -633,7 +665,7 @@ const MyShares = () => {
                               const keyFragment = storedKey
                                 ? buildKeyFragment(storedKey)
                                 : "";
-                              const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
+                              const link = `${config.getString("general.appUrl")}/s/${share.id}${keyFragment}`;
                               const ok = await copyToClipboard(link);
                               if (ok) {
                                 toast.success(t("common.notify.copied-link"));
@@ -657,7 +689,7 @@ const MyShares = () => {
                               const keyFragment = storedKey
                                 ? buildKeyFragment(storedKey)
                                 : "";
-                              const link = `${config.get("general.appUrl")}/s/${share.id}${keyFragment}`;
+                              const link = `${config.getString("general.appUrl")}/s/${share.id}${keyFragment}`;
                               showQrCodeModal(modals, link);
                             }}
                           >

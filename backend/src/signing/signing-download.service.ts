@@ -5,11 +5,13 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { findByToken } from "../config/account-secrets";
 import { PrismaService } from "src/prisma/prisma.service";
 import { appendSignatureAuditEvent } from "./signing-audit.util";
 import { toVisibleAuditEvent } from "./signing-exposure.util";
 import { FileService } from "src/file/file.service";
 import { holdsSigningEmailSession } from "./signing-email-session.util";
+import { signedFileName, signingLanguage } from "./signing-language";
 
 @Injectable()
 export class SigningDownloadService {
@@ -58,7 +60,10 @@ export class SigningDownloadService {
     }
 
     const buffer = await this.fileService.getFileByKey(doc.signedFileKey);
-    const fileName = doc.fileName.replace(".pdf", "_signé.pdf");
+    const fileName = signedFileName(
+      doc.fileName,
+      signingLanguage(doc.language),
+    );
 
     await this.createAuditEvent(documentId, "DOWNLOADED", userId);
 
@@ -120,10 +125,12 @@ export class SigningDownloadService {
     buffer: Buffer;
     fileName: string;
   }> {
-    const recipient = await this.prisma.signatureRecipient.findUnique({
-      where: { signingToken },
-      include: { document: true },
-    });
+    const recipient = await findByToken("signing", signingToken, (stored) =>
+      this.prisma.signatureRecipient.findUnique({
+        where: { signingToken: stored },
+        include: { document: true },
+      }),
+    );
 
     if (!recipient || !recipient.document) {
       throw new NotFoundException("Invalid or expired signing link");
@@ -179,10 +186,12 @@ export class SigningDownloadService {
     buffer: Buffer;
     fileName: string;
   }> {
-    const recipient = await this.prisma.signatureRecipient.findUnique({
-      where: { signingToken },
-      include: { document: true },
-    });
+    const recipient = await findByToken("signing", signingToken, (stored) =>
+      this.prisma.signatureRecipient.findUnique({
+        where: { signingToken: stored },
+        include: { document: true },
+      }),
+    );
 
     if (!recipient || !recipient.document) {
       throw new NotFoundException("Invalid signing link");
@@ -209,7 +218,10 @@ export class SigningDownloadService {
     const buffer = await this.fileService.getFileByKey(
       recipient.document.signedFileKey,
     );
-    const fileName = recipient.document.fileName.replace(".pdf", "_signé.pdf");
+    const fileName = signedFileName(
+      recipient.document.fileName,
+      signingLanguage(recipient.document.language),
+    );
 
     await this.createAuditEvent(
       recipient.documentId,

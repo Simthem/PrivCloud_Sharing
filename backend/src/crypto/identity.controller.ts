@@ -13,6 +13,8 @@ import { GetUser } from "src/auth/decorator/getUser.decorator";
 import { User } from "@prisma/client";
 import { CryptoIdentityService } from "./identity.service";
 import {
+  PublicKeysBatchDTO,
+  RewrapIdentityKeysDTO,
   RegisterIdentityKeyDTO,
   RotateIdentityKeyDTO,
   RegisterPQKeyDTO,
@@ -62,14 +64,28 @@ export class CryptoIdentityController {
   @Post("keys/batch")
   @UseGuards(JwtGuard)
   @Throttle({ default: { ttl: minutes(1), limit: 30 } })
-  async getPublicKeysForUsers(@Body() body: { userIds: string[] }) {
-    return this.identityService.getPublicKeysForUsers(body.userIds);
+  async getPublicKeysForUsers(@Body() dto: PublicKeysBatchDTO) {
+    return this.identityService.getPublicKeysForUsers(dto.userIds);
   }
 
   /**
    * Rotate an identity key. Deactivates the old one, registers the new one.
    * Old grants remain decryptable with the old key (kept in history).
    */
+  @Put("pq-keys/rotate")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { ttl: hours(1), limit: 5 } })
+  async rotatePQKey(@GetUser() user: User, @Body() dto: RegisterPQKeyDTO) {
+    return this.identityService.rotatePQKey(user.id, dto);
+  }
+
+  @Put("keys/rewrap")
+  @UseGuards(JwtGuard)
+  @Throttle({ default: { ttl: hours(1), limit: 10 } })
+  async rewrapKeys(@GetUser() user: User, @Body() dto: RewrapIdentityKeysDTO) {
+    await this.identityService.rewrapKeys(user.id, dto);
+  }
+
   @Put("keys/rotate")
   @UseGuards(JwtGuard)
   @Throttle({ default: { ttl: hours(1), limit: 5 } })

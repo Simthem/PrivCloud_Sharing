@@ -13,6 +13,7 @@ testCase(
 
     const result = await deliverSigningCompletionEmails({
       fileName: "contrat.pdf",
+      language: "fr",
       documentUrl: "https://example.test/signing/doc-1",
       creator: { email: "owner@example.test", username: "Owner" },
       recipients: [

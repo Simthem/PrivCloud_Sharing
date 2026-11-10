@@ -30,6 +30,7 @@ import {
   encryptFileMetadata,
   encryptedFilePlaceholderName,
 } from "./fileMetadata.util";
+import type { ThrownError } from "../types/thrownError.type";
 
 export { computeAdaptiveChunkSize } from "./uploadPerformance.util";
 
@@ -467,14 +468,14 @@ function runWorkerBatch(
     const onAbort = () => {
       worker.postMessage({ type: "abort" });
       cleanup();
-      const err: any = new Error("Upload cancelled");
+      const err: Error & ThrownError = new Error("Upload cancelled");
       err.cancelled = true;
       reject(err);
     };
 
     if (signal?.aborted) {
       worker.terminate();
-      const err: any = new Error("Upload cancelled");
+      const err: Error & ThrownError = new Error("Upload cancelled");
       err.cancelled = true;
       reject(err);
       return;
@@ -502,7 +503,7 @@ function runWorkerBatch(
         case "error":
           cleanup();
           {
-            const err: any = new Error(msg.message);
+            const err: Error & ThrownError = new Error(msg.message);
             err.status = msg.status;
             err.data = msg.data;
             reject(err);
@@ -512,7 +513,7 @@ function runWorkerBatch(
         case "size-limit-exceeded":
           cleanup();
           {
-            const err: any = new Error(msg.message);
+            const err: Error & ThrownError = new Error(msg.message);
             err.status = 403;
             err.sizeLimit = true;
             reject(err);
@@ -611,9 +612,11 @@ function runWorkerBatch(
           void flowCoordinator
             .acquireDirect(
               Array.isArray(msg.candidates)
-                ? msg.candidates.map((candidate: any) => ({
-                    origin: String(candidate?.origin || ""),
-                  }))
+                ? msg.candidates.map(
+                    (candidate: { origin?: unknown } | null) => ({
+                      origin: String(candidate?.origin || ""),
+                    }),
+                  )
                 : [],
             )
             .then((grant) => {
@@ -900,7 +903,8 @@ export async function uploadFileViaWorker(
       contentScheme,
       contentNonce,
     );
-  } catch (error: any) {
+  } catch (caughtValue) {
+    const error = caughtValue as ThrownError;
     if (error?.cancelled) forgetStableMultipartFileId(file, shareId);
     // The server already requires v2: the next attempt starts again in v2
     // under a new id, without the v1 session.

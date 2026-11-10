@@ -1,3 +1,4 @@
+import { isEmail } from "class-validator";
 import { InternalServerErrorException, Logger } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { createHttpsProxyAgent } from "../../utils/https-proxy-agent.util";
@@ -21,7 +22,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
   private jwk: OidcJwkCache;
   private jwksAgent: ReturnType<typeof createHttpsProxyAgent> | undefined;
   private remoteJwks: ReturnType<typeof jose.createRemoteJWKSet> | undefined;
-  private logger: Logger = new Logger(
+  protected logger: Logger = new Logger(
     Object.getPrototypeOf(this).constructor.name,
   );
 
@@ -97,7 +98,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
 
     const body = new URLSearchParams({
       client_id: this.config.getOAuth(this.name, "clientId"),
-      client_secret: this.config.getOAuth(this.name, "clientSecret"),
+      ...(await this.getClientCredentials(endpoint)),
       grant_type: "authorization_code",
       code: query.code,
       redirect_uri: redirectUri,
@@ -123,7 +124,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
       !token.id_token
     ) {
       this.logger.error(
-        `Token exchange failed for provider ${this.name} (HTTP ${res.status})`,
+        `Token exchange failed for provider ${this.name} (HTTP ${res.status}${describeTokenError(token)})`,
       );
       throw new ErrorPageException("invalid_token");
     }
@@ -218,10 +219,10 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
 
     return {
       provider: this.name as OAuthSignInDto["provider"],
-      // An address the provider has not verified proves nothing: it must
-      // neither create an account nor be matched to an existing one.
-      email:
-        idTokenData.email_verified === true ? idTokenData.email : undefined,
+      email: this.hasVerifiedEmail(idTokenData) ? idTokenData.email : undefined,
+      unverifiedEmail: this.hasVerifiedEmail(idTokenData)
+        ? undefined
+        : this.unverifiedEmail(idTokenData),
       providerId: idTokenData.sub,
       providerUsername: username,
       ...(isAdmin !== undefined && { isAdmin }),
@@ -234,8 +235,25 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
 
   protected abstract getDiscoveryUri(): string;
 
+  protected async getClientCredentials(
+    _tokenEndpoint: string,
+  ): Promise<Record<string, string>> {
+    return { client_secret: this.config.getOAuth(this.name, "clientSecret") };
+  }
+
+  protected hasVerifiedEmail(idToken: OidcIdToken): boolean {
+    return idToken.email_verified === true;
+  }
+
+  protected unverifiedEmail(idToken: OidcIdToken): string | undefined {
+    return typeof idToken.email === "string" && isEmail(idToken.email)
+      ? idToken.email.toLowerCase()
+      : undefined;
+  }
+
   protected getExpectedIssuers(
     configuration: OidcConfiguration,
+    _idToken: OidcIdToken,
   ): string | string[] {
     return configuration.issuer;
   }
@@ -312,11 +330,23 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
       const clientId = this.config.getOAuth(this.name, "clientId");
 
       const { payload } = await jose.jwtVerify(idToken, jwks, {
-        issuer: this.getExpectedIssuers(configuration),
         audience: clientId,
       });
+      const claims = payload as unknown as OidcIdToken;
 
-      return payload as unknown as OidcIdToken;
+      if (
+        ![this.getExpectedIssuers(configuration, claims)]
+          .flat()
+          .includes(claims.iss)
+      ) {
+        throw new jose.errors.JWTClaimValidationFailed(
+          'unexpected "iss" claim value',
+          "iss",
+          "check_failed",
+        );
+      }
+
+      return claims;
     } catch (error) {
       // Never log the token, claims, raw error message or a proxy URL.
       let reason = "key_retrieval_failed";
@@ -366,6 +396,20 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
       throw new ErrorPageException("invalid_token");
     }
   }
+}
+
+function describeTokenError(token: unknown): string {
+  const { error, error_codes: codes } = token as {
+    error?: unknown;
+    error_codes?: unknown;
+  };
+  const code = Array.isArray(codes) ? codes[0] : undefined;
+  return [
+    typeof error === "string" && /^[a-z_]{1,64}$/.test(error)
+      ? `, ${error}`
+      : "",
+    Number.isInteger(code) ? `, code ${code}` : "",
+  ].join("");
 }
 
 export interface OidcCache<T> {
@@ -421,4 +465,7 @@ export interface OidcIdToken {
   nonce: string;
   // Sent when the request asked for max_age.
   auth_time?: number;
+  // Microsoft Entra only: the tenant, and whether its email domain owner is verified.
+  tid?: string;
+  xms_edov?: boolean | string | number;
 }

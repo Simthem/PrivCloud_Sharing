@@ -1,10 +1,11 @@
 import User from "./user.type";
+import type { FileMetaData } from "./File.type";
 
 export type Share = {
   uploadPending?: boolean;
   id: string;
   name?: string;
-  files: any;
+  files: FileMetaData[];
   creator?: User;
   description?: string;
   expiration: Date;
@@ -23,6 +24,8 @@ export type Share = {
   reverseShare?: { id: string; creatorId: string } | null;
   teamFolderId?: string | null;
   teamId?: string | null;
+  /** Signed-in viewer only: the share, or its reverse share, is theirs. */
+  ownedByViewer?: boolean;
 };
 
 export type ReverseShare = {
@@ -122,7 +125,7 @@ export type AdminShare = {
   size: number;
   fileCount: number;
   isE2EEncrypted: boolean;
-  status: "READY" | "UNFINISHED" | "INACTIVE" | "UPLOADING";
+  status: "READY" | "UNFINISHED" | "INACTIVE" | "UPLOADING" | "EXPIRED";
 };
 
 export type MyReverseShare = {

@@ -5,6 +5,11 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import {
+  findByToken,
+  sealToken,
+  tokenCandidates,
+} from "../config/account-secrets";
 import { randomBytes } from "crypto";
 import { PrismaService } from "src/prisma/prisma.service";
 import {
@@ -64,7 +69,7 @@ export class EnrollmentTokenService {
 
     const enrollmentToken = await this.prisma.enrollmentToken.create({
       data: {
-        token,
+        token: sealToken("enrollment", token),
         purpose: dto.purpose,
         metadata: dto.metadata,
         creatorId,
@@ -81,7 +86,7 @@ export class EnrollmentTokenService {
 
     return {
       id: enrollmentToken.id,
-      token: enrollmentToken.token,
+      token,
       purpose: enrollmentToken.purpose,
       expiresAt: enrollmentToken.expiresAt,
     };
@@ -103,7 +108,7 @@ export class EnrollmentTokenService {
     // concurrent requests both read PENDING then both mark as USED.
     const result = await this.prisma.enrollmentToken.updateMany({
       where: {
-        token: dto.token,
+        token: { in: tokenCandidates("enrollment", dto.token) },
         status: "PENDING",
         expiresAt: { gt: new Date() },
       },
@@ -116,9 +121,11 @@ export class EnrollmentTokenService {
 
     if (result.count === 0) {
       // Determine the reason for failure
-      const enrollment = await this.prisma.enrollmentToken.findUnique({
-        where: { token: dto.token },
-      });
+      const enrollment = await findByToken("enrollment", dto.token, (stored) =>
+        this.prisma.enrollmentToken.findUnique({
+          where: { token: stored },
+        }),
+      );
 
       if (!enrollment) {
         throw new NotFoundException("Invalid enrollment token");
@@ -137,9 +144,11 @@ export class EnrollmentTokenService {
     }
 
     // Re-fetch with full data for the post-consumption logic
-    const enrollment = await this.prisma.enrollmentToken.findUnique({
-      where: { token: dto.token },
-    });
+    const enrollment = await findByToken("enrollment", dto.token, (stored) =>
+      this.prisma.enrollmentToken.findUnique({
+        where: { token: stored },
+      }),
+    );
 
     this.logger.log(
       `Enrollment token consumed: ${enrollment.purpose} by user ${userId}`,

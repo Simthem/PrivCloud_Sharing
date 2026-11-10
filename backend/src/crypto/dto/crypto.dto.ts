@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   IsString,
   IsIn,
   IsInt,
@@ -171,4 +172,38 @@ export class RegisterPQKeyDTO {
   @IsString()
   @MaxLength(8192) // ML-KEM private keys are ~2400 bytes
   encryptedPrivateKey: string;
+}
+
+export class PublicKeysBatchDTO {
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  userIds: string[];
+}
+
+class RewrappedPrivateKeyDTO {
+  @IsString()
+  @MaxLength(64)
+  id: string;
+
+  @IsString()
+  @MaxLength(8192)
+  @Matches(/^[A-Za-z0-9_-]+$/, {
+    message: "encryptedPrivateKey must be base64url",
+  })
+  encryptedPrivateKey: string;
+}
+
+export class RewrapIdentityKeysDTO {
+  @IsArray()
+  @ArrayMaxSize(4)
+  @ValidateNested({ each: true })
+  @Type(() => RewrappedPrivateKeyDTO)
+  keys: RewrappedPrivateKeyDTO[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => RewrappedPrivateKeyDTO)
+  pqKey?: RewrappedPrivateKeyDTO;
 }

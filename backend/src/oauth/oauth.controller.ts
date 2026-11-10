@@ -1,4 +1,6 @@
+import { ConfirmOAuthLinkDTO } from "./dto/confirmOAuthLink.dto";
 import {
+  Body,
   Controller,
   Get,
   Inject,
@@ -90,34 +92,37 @@ export class OAuthController {
     const state = nanoid(16);
     const isSecure = this.config.get("general.secureCookies");
 
-    // A linked provider signs in for good and confirms an administrator's
-    // sensitive operations. Linking one to an administrator, asked for from
-    // the account page, is confirmed here, where the step-up cookie is sent:
-    // the provider's return to the callback is cross-site, so the callback
-    // gets its own single-use grant. A sign-in asks for nothing, even in a
-    // browser signed in as an administrator.
-    const signedIn =
-      link === "1" ? await this.authService.getIdOfCurrentUser(request) : null;
-    const admin = signedIn
-      ? await this.oauthService.findAdministrator(signedIn)
-      : null;
-    if (admin) {
+    // The provider's return carries no session cookie: a link request is
+    // checked here and the callback gets a single-use grant.
+    if (link === "1") {
+      const userId = await this.authService.getIdOfCurrentUser(request);
+      if (!userId) throw new ErrorPageException("reauth_expired", "/account");
       const scope = `oauth.link:${provider}`;
-      try {
-        await this.stepUp.consume(request, admin, scope);
-      } catch {
-        throw new ErrorPageException("step_up_required", "/account");
+      const admin = await this.oauthService.findAdministrator(userId);
+      if (admin) {
+        try {
+          await this.stepUp.consume(request, admin, scope);
+        } catch {
+          throw new ErrorPageException("step_up_required", "/account");
+        }
       }
-      response.cookie(
-        `oauth_${provider}_link`,
-        await this.stepUp.handOver(admin, scope, OAUTH_LINK_TTL_MS),
-        {
-          sameSite: "lax",
-          secure: isSecure,
-          httpOnly: true,
-          maxAge: OAUTH_LINK_TTL_MS,
-        },
+      const grant = await this.stepUp.handOver(
+        userId,
+        scope,
+        OAUTH_LINK_TTL_MS,
       );
+      response.cookie(`oauth_${provider}_link`, grant, {
+        sameSite: "lax",
+        secure: isSecure,
+        httpOnly: true,
+        maxAge: OAUTH_LINK_TTL_MS,
+      });
+    } else if (request.cookies?.[`oauth_${provider}_link`] !== undefined) {
+      response.clearCookie(`oauth_${provider}_link`, {
+        sameSite: "lax",
+        secure: isSecure,
+        httpOnly: true,
+      });
     }
     const { url, nonce } =
       await this.providers[provider].getAuthEndpoint(state);
@@ -270,28 +275,20 @@ export class OAuthController {
         return;
       }
 
-      const id = await this.authService.getIdOfCurrentUser(request);
-
-      if (id) {
-        const admin = await this.oauthService.findAdministrator(id);
-        if (
-          admin &&
-          !(await this.stepUp.spend(
-            admin.id,
-            `oauth.link:${provider}`,
-            linkGrant,
-          ))
-        ) {
-          this.logger.warn(
-            `Refused to link ${provider} to administrator ${admin.id} without a confirmation`,
-          );
-          throw new ErrorPageException("step_up_required", "/account");
+      if (linkGrant !== undefined) {
+        const userId = await this.stepUp.redeem(
+          `oauth.link:${provider}`,
+          linkGrant,
+        );
+        if (!userId) {
+          throw new ErrorPageException("reauth_expired", "/account");
         }
         await this.oauthService.link(
-          id,
+          userId,
           provider,
           user.providerId,
           user.providerUsername,
+          user.email,
         );
         response.redirect(this.config.get("general.appUrl") + "/account");
       } else {
@@ -401,6 +398,12 @@ export class OAuthController {
     );
   }
 
+  @Post("link/confirm")
+  @Throttle({ default: { limit: 10, ttl: minutes(10) } })
+  async confirmLink(@Body() dto: ConfirmOAuthLinkDTO) {
+    await this.oauthService.confirmMailedLink(dto.token);
+  }
+
   @Post("unlink/:provider")
   @UseGuards(JwtGuard, ProviderGuard)
   @UseFilters(ErrorPageExceptionFilter)
@@ -408,11 +411,6 @@ export class OAuthController {
     @GetUser() user: User,
     @Param("provider", SafeIdPipe) provider: string,
   ) {
-    // No filesystem path is built from `provider`: the service resolves the
-    // OAuthUser row with prisma.oAuthUser.findFirst() and deletes it by primary
-    // key. `provider` is constrained twice before reaching here - ProviderGuard
-    // accepts only registered provider names, and SafeIdPipe rejects `/`, `\`,
-    // `..` and NUL. The route stays /oauth/unlink/:provider for API stability.
     return this.oauthService.disconnectProvider(user, provider);
   }
 }

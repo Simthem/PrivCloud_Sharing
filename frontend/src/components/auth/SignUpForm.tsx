@@ -19,15 +19,19 @@ import AltchaCaptcha from "../captcha/AltchaCaptcha";
 import type { AltchaWidgetHandle } from "../captcha/AltchaWidget";
 import { useAltchaSettings } from "../../hooks/altcha.hook";
 import useConfig from "../../hooks/config.hook";
+import useOAuthProviders from "../../hooks/oauthProviders.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import useUser from "../../hooks/user.hook";
 import authService from "../../services/auth.service";
+import OAuthProviders from "./OAuthProviders";
 import {
   rememberEmailVerificationEmail,
+  rememberVerificationReturn,
   takeInvitedSignUpEmail,
 } from "../../utils/emailVerification.util";
 import {
   buildSignInRedirectPath,
+  rememberPostAuthRedirectTarget,
   safeRedirectPath,
 } from "../../utils/authRedirect.util";
 import { getUserUniqueConflictField } from "../../utils/userConflict.util";
@@ -44,6 +48,9 @@ const SignUpForm = () => {
   const [captchaToken, setCaptchaToken] = useState<string | undefined>();
   const captchaRef = useRef<AltchaWidgetHandle>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const oauthProviders = useOAuthProviders(
+    config.getBoolean("oauth.allowRegistration"),
+  );
   // Set by an invitation page: return there once the account exists.
   const redirectPath =
     typeof router.query.redirect === "string"
@@ -87,6 +94,13 @@ const SignUpForm = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!returnPath) return;
+    rememberPostAuthRedirectTarget(`${returnPath}${window.location.hash}`, {
+      preserveExistingFragmentForSamePath: true,
+    });
+  }, [returnPath]);
+
   const resolveCaptchaToken = async () => {
     if (!captchaEnabled) return undefined;
     if (captchaToken) return captchaToken;
@@ -111,6 +125,7 @@ const SignUpForm = () => {
       .signUp(email.trim(), username.trim(), password, captchaPayload)
       .then(async () => {
         rememberEmailVerificationEmail(email);
+        if (returnPath) rememberVerificationReturn(returnPath);
         await refreshUser({ refresh: false });
         await router.replace(
           returnPath
@@ -142,7 +157,7 @@ const SignUpForm = () => {
       <Title order={1} ta="center" fw={900} fz={{ base: 26, sm: 30 }}>
         <FormattedMessage id="signup.title" />
       </Title>
-      {config.get("share.allowRegistration") && (
+      {config.getBoolean("share.allowRegistration") && (
         <Text c="dimmed" size="sm" ta="center" mt={5}>
           <FormattedMessage id="signup.description" />{" "}
           <Anchor
@@ -202,6 +217,7 @@ const SignUpForm = () => {
             </Group>
           )}
         </form>
+        <OAuthProviders providers={oauthProviders} />
       </Paper>
     </Container>
   );

@@ -92,6 +92,7 @@ import {
   canUnwrapWithMasterKey,
   isStaleTeamKeyError,
 } from "../../../utils/crypto.util";
+import { rememberPostAuthRedirectTarget } from "../../../utils/authRedirect.util";
 import {
   reencryptTeam,
   TeamReencryptProgress,
@@ -110,6 +111,11 @@ import {
 import { openActivityNames } from "../../../utils/teamActivityNames.util";
 import searchStyles from "./TeamSearchPanel.module.css";
 import { contentPolicy } from "../../../utils/contentPolicy.util";
+import type { ThrownError } from "../../../types/thrownError.type";
+import {
+  signedPdfName,
+  signingLanguage,
+} from "../../../utils/signingLanguage.util";
 
 const signatureStatusTranslationKeys: Record<string, string> = {
   PENDING: "team.dashboard.signatures.status.pending",
@@ -194,6 +200,23 @@ const TeamDashboard = () => {
   const [rotating, setRotating] = useState(false);
   const [rotateAbort, setRotateAbort] = useState<AbortController | null>(null);
   const [cancellingRotation, setCancellingRotation] = useState(false);
+  const [keyLinkPending, setKeyLinkPending] = useState(false);
+  const [revokeInvitationTarget, setRevokeInvitationTarget] = useState<{
+    id: string;
+    email: string;
+  } | null>(null);
+  const [keyCaptureAttempt, setKeyCaptureAttempt] = useState(0);
+
+  useEffect(() => {
+    const retryKeyCapture = () =>
+      setKeyCaptureAttempt((attempt) => attempt + 1);
+    window.addEventListener("e2e-key-stored", retryKeyCapture);
+    window.addEventListener("hashchange", retryKeyCapture);
+    return () => {
+      window.removeEventListener("e2e-key-stored", retryKeyCapture);
+      window.removeEventListener("hashchange", retryKeyCapture);
+    };
+  }, []);
 
   // On mount: check if user has wrappedTeamKey; also auto-capture if #teamKey= in URL
   useEffect(() => {
@@ -204,6 +227,7 @@ const TeamDashboard = () => {
         const userKeyB64 = getUserKey();
         // 1. Check if #teamKey= is in URL (key received from admin)
         const fragmentTeamKey = extractTeamKeyFromHash();
+        if (!cancelled) setKeyLinkPending(!!fragmentTeamKey && !userKeyB64);
         if (fragmentTeamKey && userKeyB64) {
           const fragmentVersion = Number.parseInt(
             new URLSearchParams(window.location.hash.slice(1)).get("version") ||
@@ -245,14 +269,18 @@ const TeamDashboard = () => {
           setTeamKeyStale(stale);
         }
       } catch {
-        if (!cancelled) setMyWrappedTeamKey(null);
+        if (cancelled) return;
+        setMyWrappedTeamKey(null);
+        if (extractTeamKeyFromHash()) {
+          toast.error(t("team.dashboard.e2e.keyLink.error"));
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teamIdStr, user.user]);
+  }, [teamIdStr, user.user, keyCaptureAttempt]);
 
   // Initialize K_team for a team that has none (OWNER action)
   const handleInitE2E = async () => {
@@ -279,9 +307,9 @@ const TeamDashboard = () => {
       // Automatically generate sharing links for all existing members who don't have the key
       const teamKeyB64 = await exportKeyToBase64(teamKey);
       const otherMembers = (team?.members ?? []).filter(
-        (m: any) => !m.hasTeamKey && m.user?.id !== user.user?.id,
+        (m) => !m.hasTeamKey && m.user?.id !== user.user?.id,
       );
-      const links = otherMembers.map((m: any) => ({
+      const links = otherMembers.map((m) => ({
         memberId: m.id,
         name:
           m.user?.username || m.user?.email || t("team.dashboard.roles.member"),
@@ -316,7 +344,10 @@ const TeamDashboard = () => {
   // Generate a secure key-sharing link for a specific member
   const handleShareKeyToMember = async (memberId: string) => {
     const userKeyB64 = getUserKey();
-    if (!userKeyB64 || !myWrappedTeamKey) return;
+    if (!userKeyB64 || !myWrappedTeamKey) {
+      toast.error(t("team.dashboard.e2e.keyUnavailable"));
+      return;
+    }
     try {
       const masterKey = await importKeyFromBase64(userKeyB64);
       const teamKey = await unwrapReverseShareKey(myWrappedTeamKey, masterKey);
@@ -384,9 +415,7 @@ const TeamDashboard = () => {
           !activeRotation.canResume ||
           !activeRotation.pendingWrappedTeamKey
         ) {
-          throw new Error(
-            "Cette rotation doit être reprise par son initiateur",
-          );
+          throw new Error(t("team.dashboard.e2e.rotateResumeError"));
         }
         newTeamKey = await unwrapReverseShareKey(
           activeRotation.pendingWrappedTeamKey,
@@ -462,9 +491,9 @@ const TeamDashboard = () => {
 
       // Phase 3: generate distribution links for all OTHER active members
       const otherMembers = (team?.members ?? []).filter(
-        (m: any) => m.isActive && m.user?.id !== user.user?.id,
+        (m) => m.isActive && m.user?.id !== user.user?.id,
       );
-      const links = otherMembers.map((m: any) => ({
+      const links = otherMembers.map((m) => ({
         memberId: m.id,
         name:
           m.user?.username || m.user?.email || t("team.dashboard.roles.member"),
@@ -493,7 +522,8 @@ const TeamDashboard = () => {
       queryClient.invalidateQueries({
         queryKey: ["team.keyRotation", teamIdStr],
       });
-    } catch (e: any) {
+    } catch (caughtValue) {
+      const e = caughtValue as ThrownError;
       if (e?.message?.includes("annulé")) {
         toast.error(t("team.dashboard.e2e.rotateCancelled"));
       } else if (isStaleTeamKeyError(e)) {
@@ -528,6 +558,9 @@ const TeamDashboard = () => {
     staleTime: 30_000,
     refetchInterval: initLinksOpened ? 10_000 : false,
   });
+  const maxFolders =
+    team?.maxFolders ||
+    parseInt(process.env.NEXT_PUBLIC_TEAM_MAX_FOLDERS || "10");
 
   const { data: keyRotationStatus } = useQuery({
     queryKey: ["team.keyRotation", teamIdStr],
@@ -540,7 +573,7 @@ const TeamDashboard = () => {
   // Current user role in this team
   const myMember = useMemo(() => {
     if (!team?.members || !user.user) return null;
-    return team.members.find((m: any) => m.user?.id === user.user!.id) ?? null;
+    return team.members.find((m) => m.user?.id === user.user!.id) ?? null;
   }, [team, user.user]);
   const myRole = myMember?.role ?? null;
   const isTeamAdmin = myRole === "OWNER" || myRole === "ADMIN";
@@ -550,7 +583,7 @@ const TeamDashboard = () => {
   const anotherMemberHoldsKey = useMemo(
     () =>
       (team?.members ?? []).some(
-        (member: any) =>
+        (member) =>
           member.isActive &&
           member.user?.id !== user.user?.id &&
           member.keyStatus === "CURRENT",
@@ -651,9 +684,9 @@ const TeamDashboard = () => {
 
   // Split active vs deleted team signatures
   const activeTeamSignatures =
-    teamSignatures?.filter((d) => !(d as any).fileDeleted) ?? [];
+    teamSignatures?.filter((d) => !d.fileDeleted) ?? [];
   const deletedTeamSignatures =
-    teamSignatures?.filter((d) => (d as any).fileDeleted) ?? [];
+    teamSignatures?.filter((d) => d.fileDeleted) ?? [];
 
   // Mutations
   const inviteMutation = useMutation({
@@ -694,10 +727,36 @@ const TeamDashboard = () => {
 
       closeInvite();
       queryClient.invalidateQueries({ queryKey: ["team", teamIdStr] });
+      queryClient.invalidateQueries({
+        queryKey: ["team.invitations", teamIdStr],
+      });
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(
         err?.response?.data?.message || t("team.dashboard.invite.error"),
+      ),
+  });
+
+  const { data: pendingInvitations = [] } = useQuery({
+    queryKey: ["team.invitations", teamIdStr],
+    queryFn: () => teamService.getPendingInvitations(teamIdStr),
+    enabled: !!teamIdStr && isTeamAdmin,
+  });
+
+  const revokeInvitationMutation = useMutation({
+    mutationFn: (invitationId: string) =>
+      teamService.revokeInvitation(teamIdStr, invitationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["team.invitations", teamIdStr],
+      });
+      toast.success(t("team.dashboard.invitations.revoked"));
+      setRevokeInvitationTarget(null);
+    },
+    onError: (err: ThrownError) =>
+      toast.error(
+        err?.response?.data?.message ||
+          t("team.dashboard.invitations.revokeError"),
       ),
   });
 
@@ -718,7 +777,7 @@ const TeamDashboard = () => {
       queryClient.invalidateQueries({ queryKey: ["team", teamIdStr] });
       toast.success(t("team.dashboard.members.roleUpdated"));
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(
         err?.response?.data?.message ||
           t("team.dashboard.members.roleChangeError"),
@@ -737,7 +796,7 @@ const TeamDashboard = () => {
       queryClient.invalidateQueries({ queryKey: ["team", teamIdStr] });
       toast.success(t("team.dashboard.members.permissionsUpdated"));
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(
         err?.response?.data?.message ||
           t("team.dashboard.members.permissionsError"),
@@ -776,7 +835,7 @@ const TeamDashboard = () => {
       setDeleteFolderTarget(null);
       setDeleteFolderConfirm("");
     },
-    onError: (err: any) =>
+    onError: (err: ThrownError) =>
       toast.error(
         err?.response?.data?.message || t("team.dashboard.folders.deleteError"),
       ),
@@ -945,6 +1004,37 @@ const TeamDashboard = () => {
                 </Group>
               </Alert>
             )}
+          {keyLinkPending && (
+            <Alert
+              icon={<TbLock size={18} />}
+              color="orange"
+              mb="md"
+              title={t("team.dashboard.e2e.keyLink.title")}
+            >
+              {t(
+                user.user?.hasEncryptionKey
+                  ? "team.dashboard.e2e.keyLink.loadKey"
+                  : "team.dashboard.e2e.keyLink.createKey",
+              )}
+              {!user.user?.hasEncryptionKey && (
+                <Button
+                  display="block"
+                  mt="sm"
+                  size="xs"
+                  variant="light"
+                  color="orange"
+                  onClick={() => {
+                    rememberPostAuthRedirectTarget(
+                      `/team/${teamIdStr}${window.location.hash}`,
+                    );
+                    void router.push("/account#e2e-encryption-settings");
+                  }}
+                >
+                  {t("team.invite.e2e-setup-button")}
+                </Button>
+              )}
+            </Alert>
+          )}
           {myWrappedTeamKey === undefined ? null : myWrappedTeamKey &&
             teamKeyStale ? (
             <Alert
@@ -996,7 +1086,9 @@ const TeamDashboard = () => {
                 </Button>
               )}
             </Alert>
-          ) : myWrappedTeamKey === null && !isTeamAdmin ? (
+          ) : myWrappedTeamKey === null &&
+            keyLinkPending ? null : myWrappedTeamKey === null &&
+            !isTeamAdmin ? (
             <Alert
               icon={<TbLock size={18} />}
               color="blue"
@@ -1576,6 +1668,43 @@ const TeamDashboard = () => {
                 </Table>
               </Paper>
             )}
+            {isTeamAdmin && pendingInvitations.length > 0 && (
+              <Paper withBorder p="md" mt="md">
+                <Text fw={600} size="sm" mb="xs">
+                  {t("team.dashboard.invitations.title")}
+                </Text>
+                <Stack gap="xs">
+                  {pendingInvitations.map((invitation) => (
+                    <Group
+                      key={invitation.id}
+                      justify="space-between"
+                      wrap="nowrap"
+                    >
+                      <Box style={{ minWidth: 0 }}>
+                        <Text size="sm" truncate>
+                          {invitation.email}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          {t("team.dashboard.invitations.expires", {
+                            date: new Date(
+                              invitation.expiresAt,
+                            ).toLocaleDateString(router.locale),
+                          })}
+                        </Text>
+                      </Box>
+                      <Button
+                        size="xs"
+                        variant="subtle"
+                        color="red"
+                        onClick={() => setRevokeInvitationTarget(invitation)}
+                      >
+                        {t("team.dashboard.invitations.revoke")}
+                      </Button>
+                    </Group>
+                  ))}
+                </Stack>
+              </Paper>
+            )}
           </Tabs.Panel>
 
           {/* Folders tab */}
@@ -1584,7 +1713,7 @@ const TeamDashboard = () => {
               <Text size="sm" c="dimmed">
                 {t("team.dashboard.folders.count", {
                   n: folders?.length || 0,
-                  max: process.env.NEXT_PUBLIC_TEAM_MAX_FOLDERS || 10,
+                  max: maxFolders,
                 })}
               </Text>
               {isTeamAdmin && (
@@ -1592,10 +1721,7 @@ const TeamDashboard = () => {
                   size="compact-sm"
                   leftSection={<TbFolderPlus size={14} />}
                   onClick={openFolder}
-                  disabled={
-                    (folders?.length || 0) >=
-                    parseInt(process.env.NEXT_PUBLIC_TEAM_MAX_FOLDERS || "10")
-                  }
+                  disabled={(folders?.length || 0) >= maxFolders}
                 >
                   {t("team.dashboard.buttons.newFolder")}
                 </Button>
@@ -1996,7 +2122,7 @@ const TeamDashboard = () => {
               ) : isMobile ? (
                 <Stack gap="sm">
                   {activeTeamSignatures.map((doc) => {
-                    const creator = (doc as any).creator;
+                    const creator = doc.creator;
                     const sigStatusColors: Record<string, string> = {
                       PENDING: "yellow",
                       PARTIAL: "blue",
@@ -2054,7 +2180,7 @@ const TeamDashboard = () => {
                                 doc.title ||
                                 t("team.dashboard.signatures.untitled")}
                             </Text>
-                            {(doc as any).fileDeleted && (
+                            {doc.fileDeleted && (
                               <Tooltip
                                 label={t(
                                   "team.dashboard.signatures.fileDeletedTooltip",
@@ -2108,40 +2234,40 @@ const TeamDashboard = () => {
                             { timeZone: "Europe/Paris" },
                           )}
                         </Text>
-                        {doc.status === "COMPLETED" &&
-                          !(doc as any).fileDeleted && (
-                            <Group mt="xs" onClick={(e) => e.stopPropagation()}>
-                              <Button
-                                size="compact-xs"
-                                variant="light"
-                                color="green"
-                                onClick={async () => {
-                                  if ((doc as any).isE2EEncrypted) {
-                                    router.push(`/signing/${doc.id}`);
-                                    return;
-                                  }
-                                  try {
-                                    const blob =
-                                      await signingService.downloadSigned(
-                                        doc.id,
-                                      );
-                                    await saveBlobToDevice(
-                                      blob,
-                                      `${doc.title || doc.fileName || "document"}_signe.pdf`,
-                                    );
-                                  } catch {
-                                    toast.error(
-                                      t(
-                                        "team.dashboard.signatures.downloadError",
-                                      ),
-                                    );
-                                  }
-                                }}
-                              >
-                                {t("team.dashboard.signatures.downloadBtn")}
-                              </Button>
-                            </Group>
-                          )}
+                        {doc.status === "COMPLETED" && !doc.fileDeleted && (
+                          <Group mt="xs" onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              size="compact-xs"
+                              variant="light"
+                              color="green"
+                              onClick={async () => {
+                                if (doc.isE2EEncrypted) {
+                                  router.push(`/signing/${doc.id}`);
+                                  return;
+                                }
+                                try {
+                                  const blob =
+                                    await signingService.downloadSigned(doc.id);
+                                  await saveBlobToDevice(
+                                    blob,
+                                    signedPdfName(
+                                      doc.title || doc.fileName,
+                                      signingLanguage(doc.language),
+                                    ),
+                                  );
+                                } catch {
+                                  toast.error(
+                                    t(
+                                      "team.dashboard.signatures.downloadError",
+                                    ),
+                                  );
+                                }
+                              }}
+                            >
+                              {t("team.dashboard.signatures.downloadBtn")}
+                            </Button>
+                          </Group>
+                        )}
                       </Card>
                     );
                   })}
@@ -2177,7 +2303,7 @@ const TeamDashboard = () => {
                     </Table.Thead>
                     <Table.Tbody>
                       {activeTeamSignatures.map((doc) => {
-                        const creator = (doc as any).creator;
+                        const creator = doc.creator;
                         const sigStatusColors: Record<string, string> = {
                           PENDING: "yellow",
                           PARTIAL: "blue",
@@ -2229,7 +2355,7 @@ const TeamDashboard = () => {
                                     doc.title ||
                                     t("team.dashboard.signatures.untitled")}
                                 </Text>
-                                {(doc as any).fileDeleted && (
+                                {doc.fileDeleted && (
                                   <Tooltip
                                     label={t(
                                       "team.dashboard.signatures.fileDeletedTooltip",
@@ -2315,7 +2441,7 @@ const TeamDashboard = () => {
                                   </ActionIcon>
                                 </Tooltip>
                                 {doc.status === "COMPLETED" &&
-                                  !(doc as any).fileDeleted && (
+                                  !doc.fileDeleted && (
                                     <Tooltip
                                       label={t(
                                         "team.dashboard.signatures.downloadSignedPdf",
@@ -2326,7 +2452,7 @@ const TeamDashboard = () => {
                                         color="green"
                                         size="sm"
                                         onClick={async () => {
-                                          if ((doc as any).isE2EEncrypted) {
+                                          if (doc.isE2EEncrypted) {
                                             router.push(`/signing/${doc.id}`);
                                             return;
                                           }
@@ -2337,7 +2463,10 @@ const TeamDashboard = () => {
                                               );
                                             await saveBlobToDevice(
                                               blob,
-                                              `${doc.title || doc.fileName || "document"}_signe.pdf`,
+                                              signedPdfName(
+                                                doc.title || doc.fileName,
+                                                signingLanguage(doc.language),
+                                              ),
                                             );
                                           } catch {
                                             toast.error(
@@ -2377,7 +2506,7 @@ const TeamDashboard = () => {
                   {isMobile ? (
                     <Stack gap="sm">
                       {deletedTeamSignatures.map((doc) => {
-                        const creator = (doc as any).creator;
+                        const creator = doc.creator;
                         const signers = doc.recipients
                           ?.filter((r) => r.role === "SIGNER")
                           .map((r) => r.name)
@@ -2418,7 +2547,7 @@ const TeamDashboard = () => {
                                   t("team.dashboard.signatures.untitled")}
                               </Text>
                             </Group>
-                            {(doc as any).message && (
+                            {doc.message && (
                               <Text
                                 size="xs"
                                 c="dimmed"
@@ -2427,7 +2556,7 @@ const TeamDashboard = () => {
                                 mb={4}
                                 style={{ overflowWrap: "anywhere" }}
                               >
-                                {(doc as any).message}
+                                {doc.message}
                               </Text>
                             )}
                             <Group justify="space-between" mb={4}>
@@ -2497,7 +2626,7 @@ const TeamDashboard = () => {
                         </Table.Thead>
                         <Table.Tbody>
                           {deletedTeamSignatures.map((doc) => {
-                            const creator = (doc as any).creator;
+                            const creator = doc.creator;
                             const signers = doc.recipients
                               ?.filter((r) => r.role === "SIGNER")
                               .map((r) => r.name)
@@ -2534,7 +2663,7 @@ const TeamDashboard = () => {
                                           )}
                                       </Text>
                                     </Group>
-                                    {(doc as any).message && (
+                                    {doc.message && (
                                       <Text
                                         size="xs"
                                         c="dimmed"
@@ -2543,7 +2672,7 @@ const TeamDashboard = () => {
                                         ml={20}
                                         style={{ overflowWrap: "anywhere" }}
                                       >
-                                        {(doc as any).message}
+                                        {doc.message}
                                       </Text>
                                     )}
                                   </Stack>
@@ -2970,6 +3099,38 @@ const TeamDashboard = () => {
             </Group>
           </Stack>
         )}
+      </Modal>
+
+      <Modal
+        opened={!!revokeInvitationTarget}
+        onClose={() => setRevokeInvitationTarget(null)}
+        title={t("team.dashboard.invitations.confirmTitle")}
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            {t("team.dashboard.invitations.confirmBody", {
+              email: revokeInvitationTarget?.email ?? "",
+            })}
+          </Text>
+          <Group justify="flex-end">
+            <Button
+              variant="default"
+              onClick={() => setRevokeInvitationTarget(null)}
+            >
+              {t("common.button.cancel")}
+            </Button>
+            <Button
+              color="red"
+              loading={revokeInvitationMutation.isPending}
+              onClick={() =>
+                revokeInvitationTarget &&
+                revokeInvitationMutation.mutate(revokeInvitationTarget.id)
+              }
+            >
+              {t("team.dashboard.invitations.revoke")}
+            </Button>
+          </Group>
+        </Stack>
       </Modal>
 
       {/* Modal: secure invitation link with team key */}
@@ -3526,6 +3687,7 @@ const TeamSearchPanel = ({
 // ============================================================================
 
 const TeamSharesPanel = ({ teamId }: { teamId: string }) => {
+  const t = useTranslate();
   const router = useRouter();
   const isMobile = useMediaQuery("(max-width: 680px)");
   const [receivedPage, setReceivedPage] = useState(1);
@@ -3627,11 +3789,11 @@ const TeamSharesPanel = ({ teamId }: { teamId: string }) => {
           <Table striped highlightOnHover>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Fichier</Table.Th>
-                <Table.Th>Dossier</Table.Th>
-                <Table.Th>Partagé par</Table.Th>
-                <Table.Th>Date</Table.Th>
-                <Table.Th>Accès</Table.Th>
+                <Table.Th>{t("team.dashboard.shares.col.file")}</Table.Th>
+                <Table.Th>{t("team.dashboard.shares.col.folder")}</Table.Th>
+                <Table.Th>{t("team.dashboard.shares.col.sharedBy")}</Table.Th>
+                <Table.Th>{t("team.dashboard.shares.col.date")}</Table.Th>
+                <Table.Th>{t("team.dashboard.shares.col.access")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -3668,7 +3830,7 @@ const TeamSharesPanel = ({ teamId }: { teamId: string }) => {
                   </Table.Td>
                   <Table.Td>
                     {share.fileInfo?.folderId && (
-                      <Tooltip label="Ouvrir le fichier">
+                      <Tooltip label={t("team.dashboard.shares.openFile")}>
                         <ActionIcon
                           variant="subtle"
                           size="sm"
@@ -3766,11 +3928,11 @@ const TeamSharesPanel = ({ teamId }: { teamId: string }) => {
           <Table striped highlightOnHover>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Fichier</Table.Th>
-                <Table.Th>Dossier</Table.Th>
-                <Table.Th>Partagé avec</Table.Th>
-                <Table.Th>Date</Table.Th>
-                <Table.Th>Accès</Table.Th>
+                <Table.Th>{t("team.dashboard.shares.col.file")}</Table.Th>
+                <Table.Th>{t("team.dashboard.shares.col.folder")}</Table.Th>
+                <Table.Th>{t("team.dashboard.shares.col.sharedWith")}</Table.Th>
+                <Table.Th>{t("team.dashboard.shares.col.date")}</Table.Th>
+                <Table.Th>{t("team.dashboard.shares.col.access")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -3804,7 +3966,7 @@ const TeamSharesPanel = ({ teamId }: { teamId: string }) => {
                   </Table.Td>
                   <Table.Td>
                     {share.fileInfo?.folderId && (
-                      <Tooltip label="Ouvrir le fichier">
+                      <Tooltip label={t("team.dashboard.shares.openFile")}>
                         <ActionIcon
                           variant="subtle"
                           size="sm"

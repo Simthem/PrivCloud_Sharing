@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "src/prisma/prisma.service";
 import {
+  RewrapIdentityKeysDTO,
   RegisterIdentityKeyDTO,
   RotateIdentityKeyDTO,
   RegisterPQKeyDTO,
@@ -203,6 +204,57 @@ export class CryptoIdentityService {
       publicKey: key.publicKey,
       version: key.version,
     };
+  }
+
+  async rotatePQKey(userId: string, dto: RegisterPQKeyDTO) {
+    const existing = await this.prisma.userPQKey.findFirst({
+      where: { userId, isActive: true },
+    });
+    if (!existing) {
+      throw new NotFoundException("No active PQ key to rotate.");
+    }
+    const [, key] = await this.prisma.$transaction([
+      this.prisma.userPQKey.update({
+        where: { id: existing.id },
+        data: { isActive: false },
+      }),
+      this.prisma.userPQKey.create({
+        data: {
+          userId,
+          variant: dto.variant || existing.variant,
+          publicKey: dto.publicKey,
+          encryptedPrivateKey: dto.encryptedPrivateKey,
+          version: existing.version + 1,
+          isActive: true,
+        },
+      }),
+    ]);
+    return {
+      id: key.id,
+      variant: key.variant,
+      publicKey: key.publicKey,
+      version: key.version,
+    };
+  }
+
+  /** Same keys, wrapped again after the owner changed their E2E key. */
+  async rewrapKeys(userId: string, dto: RewrapIdentityKeysDTO) {
+    await this.prisma.$transaction([
+      ...dto.keys.map((key) =>
+        this.prisma.userIdentityKey.updateMany({
+          where: { id: key.id, userId, isActive: true },
+          data: { encryptedPrivateKey: key.encryptedPrivateKey },
+        }),
+      ),
+      ...(dto.pqKey
+        ? [
+            this.prisma.userPQKey.updateMany({
+              where: { id: dto.pqKey.id, userId, isActive: true },
+              data: { encryptedPrivateKey: dto.pqKey.encryptedPrivateKey },
+            }),
+          ]
+        : []),
+    ]);
   }
 
   /**

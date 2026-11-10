@@ -6,16 +6,25 @@ import {
   buildSignInRedirectPath,
   finalizePostAuthRedirectPath,
   getRememberedPostAuthRedirectPath,
+  isBrowserLanguageRoutePath,
   isEmailVerificationRoutePath,
   isProtectedTeamContextPath,
   isSessionScopedRoutePath,
   isTeamInvitationRoutePath,
+  markOAuthSignIn,
   isTeamRoutePath,
   isTeamScopedUploadPath,
+  prefersEnglish,
   rememberPostAuthRedirectTarget,
   safeRedirectPath,
   shouldRequireClassicUploadAuthentication,
+  takeOAuthSignInMark,
 } from "../src/utils/authRedirect.util.ts";
+import {
+  rememberVerificationReturn,
+  takeVerificationReturn,
+} from "../src/utils/emailVerification.util.ts";
+import { resolvePostAuthRedirectPath } from "../src/utils/router.util.ts";
 import { refreshAfterPossibleCookieRotation } from "../src/utils/authRefresh.util.ts";
 
 test("retries only a 401 and never consumes SafeLine or transient failures", async () => {
@@ -262,5 +271,98 @@ test("gates only session-scoped routes behind the client-side session probe", ()
     "",
   ]) {
     assert.equal(isSessionScopedRoutePath(pathname), false, String(pathname));
+  }
+});
+test("application pages follow the browser language, SEO pages do not", () => {
+  for (const path of [
+    "/auth/signIn",
+    "/team/invite/token",
+    "/external/invite/token",
+    "/account",
+    "/s/share-id",
+    "/sign/token",
+  ]) {
+    assert.equal(isBrowserLanguageRoutePath(path), true, path);
+  }
+  for (const path of ["/", "/blog", "/blog/article", "/pricing", undefined]) {
+    assert.equal(isBrowserLanguageRoutePath(path), false, String(path));
+  }
+});
+
+test("the first language of the browser decides between French and English", () => {
+  assert.equal(prefersEnglish("en-US,en;q=0.9,fr;q=0.8"), true);
+  assert.equal(prefersEnglish("de-DE,de;q=0.9"), true);
+  assert.equal(prefersEnglish("fr-FR,fr;q=0.9,en;q=0.8"), false);
+  assert.equal(prefersEnglish("*"), false);
+  assert.equal(prefersEnglish(""), false);
+  assert.equal(prefersEnglish(null), false);
+});
+
+function memoryStorage() {
+  const values = new Map();
+  return {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: (key) => values.delete(key),
+  };
+}
+
+test("a provider sign-in mark is read once", () => {
+  const previous = globalThis.window;
+  globalThis.window = { sessionStorage: memoryStorage() };
+  try {
+    assert.equal(takeOAuthSignInMark(), false);
+    markOAuthSignIn();
+    assert.equal(takeOAuthSignInMark(), true);
+    assert.equal(takeOAuthSignInMark(), false);
+  } finally {
+    globalThis.window = previous;
+  }
+});
+
+test("the verification return is single-use and limited to invitations", () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", {
+    value: memoryStorage(),
+    configurable: true,
+  });
+  try {
+    rememberVerificationReturn("/team/invite/token");
+    assert.equal(takeVerificationReturn(), "/team/invite/token");
+    assert.equal(takeVerificationReturn(), null);
+
+    rememberVerificationReturn("/account");
+    assert.equal(takeVerificationReturn(), null);
+
+    rememberVerificationReturn("https://evil.test/team/invite/token");
+    assert.equal(takeVerificationReturn(), null);
+
+    localStorage.setItem(
+      "privcloud_email_verification_return",
+      JSON.stringify({ path: "/team/invite/token", expiresAt: Date.now() - 1 }),
+    );
+    assert.equal(takeVerificationReturn(), null);
+  } finally {
+    delete globalThis.localStorage;
+    if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+  }
+});
+
+test("every landing check gets the same remembered target", async () => {
+  const previous = globalThis.window;
+  globalThis.window = { sessionStorage: memoryStorage() };
+  try {
+    rememberPostAuthRedirectTarget("/team/invite/token");
+    const results = await Promise.all([
+      resolvePostAuthRedirectPath(undefined, null),
+      resolvePostAuthRedirectPath(undefined, null),
+    ]);
+    assert.deepEqual(results, ["/team/invite/token", "/team/invite/token"]);
+    assert.equal(
+      await resolvePostAuthRedirectPath(undefined, null),
+      "/team/invite/token",
+    );
+  } finally {
+    globalThis.window = previous;
   }
 });

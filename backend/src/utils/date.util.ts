@@ -3,10 +3,16 @@ import moment from "moment";
 export const NEVER_EXPIRES_DATE = new Date(0);
 export const NEVER_EXPIRES_CUTOFF_DATE = new Date("1970-01-02T00:00:00.000Z");
 
+export function isNeverExpiresDate(date?: Date | null): boolean {
+  return !!date && date.getTime() < NEVER_EXPIRES_CUTOFF_DATE.getTime();
+}
+
 export function parseRelativeDateToAbsolute(relativeDate: string) {
   if (relativeDate == "never") return NEVER_EXPIRES_DATE;
 
-  return moment()
+  // Durations use UTC calendar arithmetic, independent of the server timezone.
+  return moment
+    .utc()
     .add(
       relativeDate.split("-")[0],
       relativeDate.split("-")[1] as moment.unitOfTime.DurationConstructor,

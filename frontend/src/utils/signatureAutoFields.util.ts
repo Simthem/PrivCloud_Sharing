@@ -1,5 +1,8 @@
 import {
   PDF_POINTS_PER_MILLIMETER,
+  DEFAULT_SIGNATURE_FIELD_MM,
+  getPlacementInMillimeters,
+  type PdfPageLayout,
   type PdfFieldMillimeters,
 } from "./pdfPlacement.util";
 import {
@@ -57,4 +60,24 @@ export function buildAutoSignatureFields(
       heightMm: round(heightMm),
     };
   });
+}
+
+/** Keep an automatic field on the chosen page, using that page's dimensions. */
+export function resolveAutoSignaturePlacement(
+  detected: (PdfFieldMillimeters & { page: number }) | null,
+  selectedPage: number | undefined,
+  layout: PdfPageLayout,
+): (PdfFieldMillimeters & { page: number }) | null {
+  const page = selectedPage ?? detected?.page;
+  if (page === undefined) return null;
+  if (detected?.page === page) return detected;
+  return {
+    page,
+    ...getPlacementInMillimeters("bottom-right", layout, {
+      widthMm: DEFAULT_SIGNATURE_FIELD_MM.width,
+      heightMm: DEFAULT_SIGNATURE_FIELD_MM.height,
+    }),
+    widthMm: DEFAULT_SIGNATURE_FIELD_MM.width,
+    heightMm: DEFAULT_SIGNATURE_FIELD_MM.height,
+  };
 }

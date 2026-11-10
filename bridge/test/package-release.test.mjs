@@ -44,6 +44,7 @@ test("the Companion release script generates a versioned verified package", asyn
     "package/install/install-linux-dev.sh",
     "package/native-messaging/chrome/fr.privcloud.companion.json.template",
     "package/README.md",
+    "package/LICENSE",
   ]) {
     assert.match(tar, new RegExp(entry.replaceAll(".", "\\.")));
   }

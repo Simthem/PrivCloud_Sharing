@@ -21,6 +21,7 @@ import {
 import toast from "../../utils/toast.util";
 import { useIntl } from "react-intl";
 import { contentPolicy } from "../../utils/contentPolicy.util";
+import type { ThrownError } from "../../types/thrownError.type";
 
 interface CreateTeamModalProps {
   opened: boolean;
@@ -82,7 +83,7 @@ const CreateTeamModal = ({
       onClose();
       router.push(`/team/${team.id}`);
     },
-    onError: (err: any) => {
+    onError: (err: ThrownError) => {
       const msg =
         err?.response?.data?.message ||
         intl.formatMessage({ id: "team.create.error.generic" });
@@ -127,7 +128,9 @@ const CreateTeamModal = ({
             description={intl.formatMessage({
               id: "team.create.modal.name-hint",
             })}
-            placeholder="Mon Équipe @Work"
+            placeholder={intl.formatMessage({
+              id: "team.create.modal.name-placeholder",
+            })}
             required
             {...form.getInputProps("name")}
           />

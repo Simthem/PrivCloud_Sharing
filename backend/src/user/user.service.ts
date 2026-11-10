@@ -35,7 +35,15 @@ export class UserSevice {
   ) {}
 
   async list() {
-    return await this.prisma.user.findMany();
+    return await this.prisma.user.findMany({
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      include: {
+        teamMemberships: {
+          where: { isActive: true },
+          select: { id: true, role: true, team: { select: { name: true } } },
+        },
+      },
+    });
   }
 
   /**

@@ -1,4 +1,6 @@
 import { Prisma } from "@prisma/client";
+import { randomUUID } from "crypto";
+import { findByToken, openToken, sealToken } from "../config/account-secrets";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { ConfigService } from "src/config/config.service";
 import { FileService } from "src/file/file.service";
@@ -49,6 +51,7 @@ export class ReverseShareService {
 
     const reverseShare = await this.prisma.reverseShare.create({
       data: {
+        token: sealToken("reverseShare", randomUUID()),
         name: data.name,
         shareExpiration: expirationDate,
         remainingUses: data.maxUseCount,
@@ -62,17 +65,27 @@ export class ReverseShareService {
       },
     });
 
-    return reverseShare.token;
+    return openToken("reverseShare", reverseShare.token);
   }
 
   async getByToken(reverseShareToken?: string) {
     if (!reverseShareToken) return null;
 
-    const reverseShare = await this.prisma.reverseShare.findUnique({
-      where: { token: reverseShareToken },
-    });
+    const reverseShare = await findByToken(
+      "reverseShare",
+      reverseShareToken,
+      (stored) =>
+        this.prisma.reverseShare.findUnique({
+          where: { token: stored },
+        }),
+    );
 
-    return reverseShare;
+    return (
+      reverseShare && {
+        ...reverseShare,
+        token: openToken("reverseShare", reverseShare.token),
+      }
+    );
   }
   /** Identity used by the rollout flags of the reverse share's owner. */
   async getCreatorIdentity(creatorId: string) {
@@ -97,13 +110,14 @@ export class ReverseShareService {
       include: {
         shares: {
           where: { uploadLocked: true },
-          include: { creator: true, security: true },
+          include: { creator: true, security: true, files: true },
         },
       },
     });
 
     return reverseShares.map((reverseShare) => ({
       ...reverseShare,
+      token: openToken("reverseShare", reverseShare.token),
       shares: reverseShare.shares.map((share) => ({
         ...share,
         security: {
@@ -115,9 +129,14 @@ export class ReverseShareService {
   }
 
   async isValid(reverseShareToken: string) {
-    const reverseShare = await this.prisma.reverseShare.findUnique({
-      where: { token: reverseShareToken },
-    });
+    const reverseShare = await findByToken(
+      "reverseShare",
+      reverseShareToken,
+      (stored) =>
+        this.prisma.reverseShare.findUnique({
+          where: { token: stored },
+        }),
+    );
 
     if (!reverseShare) return false;
 

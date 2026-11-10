@@ -14,13 +14,15 @@
 #
 # An existing Root CA (root-ca.key + root-ca.pem in <output_dir>/ca) is
 # reused, so the Signing CA and the seal certificate can be renewed without
-# changing the trust anchor that verifiers already hold.
+# changing the trust anchor that verifiers already hold. The Signing CA is
+# reused too while it outlives the new seal certificate. CA_DIR points to
+# another directory when the keys are kept offline.
 
 set -euo pipefail
 
 CERT_DIR="${1:-./data/signing}"
 CERT_PASSWORD="${2:-}"
-CA_DIR="$CERT_DIR/ca"
+CA_DIR="${CA_DIR:-$CERT_DIR/ca}"
 ROOT_DAYS=7300
 SIGNING_CA_DAYS=3650
 LEAF_DAYS=1825
@@ -72,16 +74,22 @@ else
     -out "$CA_DIR/root-ca.pem"
 fi
 
-echo "==> Generating the PrivCloud Signing CA (${SIGNING_CA_DAYS} days)..."
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 \
-  -aes-256-cbc -pass env:CA_KEY_PASSWORD -out "$CA_DIR/signing-ca.key"
-openssl req -new -key "$CA_DIR/signing-ca.key" -passin env:CA_KEY_PASSWORD \
-  -subj "/CN=PrivCloud Signing CA/O=PrivCloud/C=FR" -out "$WORK_DIR/signing-ca.csr"
-openssl x509 -req -in "$WORK_DIR/signing-ca.csr" \
-  -CA "$CA_DIR/root-ca.pem" -CAkey "$CA_DIR/root-ca.key" \
-  -passin env:CA_KEY_PASSWORD -set_serial "0x$(openssl rand -hex 16)" \
-  -days "$SIGNING_CA_DAYS" -sha256 -extfile "$WORK_DIR/signing-ca.ext" \
-  -out "$CA_DIR/signing-ca.pem"
+if [ -f "$CA_DIR/signing-ca.key" ] && [ -f "$CA_DIR/signing-ca.pem" ] &&
+  openssl x509 -in "$CA_DIR/signing-ca.pem" -noout \
+    -checkend "$((LEAF_DAYS * 86400))" >/dev/null; then
+  echo "==> Reusing the existing PrivCloud Signing CA"
+else
+  echo "==> Generating the PrivCloud Signing CA (${SIGNING_CA_DAYS} days)..."
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 \
+    -aes-256-cbc -pass env:CA_KEY_PASSWORD -out "$CA_DIR/signing-ca.key"
+  openssl req -new -key "$CA_DIR/signing-ca.key" -passin env:CA_KEY_PASSWORD \
+    -subj "/CN=PrivCloud Signing CA/O=PrivCloud/C=FR" -out "$WORK_DIR/signing-ca.csr"
+  openssl x509 -req -in "$WORK_DIR/signing-ca.csr" \
+    -CA "$CA_DIR/root-ca.pem" -CAkey "$CA_DIR/root-ca.key" \
+    -passin env:CA_KEY_PASSWORD -set_serial "0x$(openssl rand -hex 16)" \
+    -days "$SIGNING_CA_DAYS" -sha256 -extfile "$WORK_DIR/signing-ca.ext" \
+    -out "$CA_DIR/signing-ca.pem"
+fi
 
 echo "==> Generating the PrivCloud Sharing PDF Signing certificate (${LEAF_DAYS} days)..."
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 \

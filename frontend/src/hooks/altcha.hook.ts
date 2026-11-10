@@ -12,18 +12,18 @@ export const useAltchaSettings = () => {
   const options = useMemo<AltchaWidgetOptions>(
     () =>
       normalizeAltchaWidgetOptions({
-        auto: config.get("altcha.auto"),
-        codeChallengeDisplay: config.get("altcha.codeChallengeDisplay"),
-        display: config.get("altcha.display"),
-        language: config.get("altcha.language"),
-        theme: config.get("altcha.theme"),
-        type: config.get("altcha.type"),
+        auto: config.getString("altcha.auto"),
+        codeChallengeDisplay: config.getString("altcha.codeChallengeDisplay"),
+        display: config.getString("altcha.display"),
+        language: config.getString("altcha.language"),
+        theme: config.getString("altcha.theme"),
+        type: config.getString("altcha.type"),
       }),
     [config],
   );
 
   return {
-    enabled: Boolean(config.get("altcha.enabled")),
+    enabled: Boolean(config.getBoolean("altcha.enabled")),
     options,
     shouldWaitForToken: shouldWaitForAltchaToken(options),
   };

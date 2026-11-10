@@ -13,6 +13,10 @@ import qrcode from "qrcode-svg";
 import { ConfigService } from "src/config/config.service";
 import { PrismaService } from "src/prisma/prisma.service";
 import { assertEmailVerificationAccess } from "src/emailVerification/emailVerification.util";
+import {
+  openAccountSecret,
+  sealAccountSecret,
+} from "../config/account-secrets";
 import { AuthService } from "./auth.service";
 import { AuthSignInTotpDTO } from "./dto/authSignInTotp.dto";
 
@@ -154,7 +158,7 @@ export class AuthTotpService {
     // Try TOTP first (6-digit codes)
     if (/^\d{6}$/.test(code)) {
       const result = await verify({
-        secret: totpSecret,
+        secret: openAccountSecret(userId, "totpSecret", totpSecret),
         token: code,
         guardrails: this.legacyGuardrails,
       });
@@ -286,7 +290,7 @@ export class AuthTotpService {
       where: { id: user.id },
       data: {
         totpEnabled: true,
-        totpSecret: secret,
+        totpSecret: sealAccountSecret(user.id, "totpSecret", secret),
       },
     });
 
@@ -312,7 +316,7 @@ export class AuthTotpService {
 
     const { totpSecret } = await this.prisma.user.findUnique({
       where: { id: user.id },
-      select: { totpSecret: true },
+      select: { id: true, totpSecret: true },
     });
 
     if (!totpSecret) {
@@ -322,7 +326,7 @@ export class AuthTotpService {
     if (
       !(
         await verify({
-          secret: totpSecret,
+          secret: openAccountSecret(user.id, "totpSecret", totpSecret),
           token: code,
           guardrails: this.legacyGuardrails,
         })
@@ -354,7 +358,7 @@ export class AuthTotpService {
 
     const { totpSecret } = await this.prisma.user.findUnique({
       where: { id: user.id },
-      select: { totpSecret: true },
+      select: { id: true, totpSecret: true },
     });
 
     if (!totpSecret) {
@@ -403,7 +407,7 @@ export class AuthTotpService {
     if (user.totpVerified) {
       const stored = await this.prisma.user.findUnique({
         where: { id: user.id },
-        select: { totpSecret: true },
+        select: { id: true, totpSecret: true },
       });
       if (
         !code ||
@@ -433,7 +437,12 @@ export class AuthTotpService {
   async adminDisableTotp(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { totpEnabled: true, totpVerified: true, totpSecret: true },
+      select: {
+        id: true,
+        totpEnabled: true,
+        totpVerified: true,
+        totpSecret: true,
+      },
     });
 
     if (!user) {

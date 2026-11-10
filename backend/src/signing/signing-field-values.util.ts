@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { SigningLanguage, signingDay } from "./signing-language";
 
 export type FillableSignatureField = {
   id: string;
@@ -21,6 +22,7 @@ export function collectRecipientFieldValues(
   recipientId: string,
   fields: FillableSignatureField[],
   submittedValues: Array<{ fieldId: string; value: string }>,
+  language: SigningLanguage,
 ) {
   const fillableFields = fields.filter(
     (field) =>
@@ -46,12 +48,7 @@ export function collectRecipientFieldValues(
 
     let value = submittedByField.get(field.id) || "";
     if (field.type === "DATE" && !value) {
-      value = new Date().toLocaleDateString("fr-FR", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-        timeZone: "Europe/Paris",
-      });
+      value = signingDay(new Date(), language);
     }
 
     if (field.required && !value) {

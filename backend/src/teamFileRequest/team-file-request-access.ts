@@ -16,6 +16,19 @@ export function canWriteRequestFolder(
   );
 }
 
+/** Whoever can read a folder can ask for files in it: uploaders need write. */
+export function canReadRequestFolder(
+  member: { id: string; role: string; isActive: boolean } | undefined,
+  rules: Array<{ memberId: string; permission: string }>,
+): boolean {
+  if (!member?.isActive) return false;
+  if (["OWNER", "ADMIN"].includes(member.role)) return true;
+  const rule = rules.find((candidate) => candidate.memberId === member.id);
+  return rule
+    ? !["NONE", "DENY"].includes(rule.permission)
+    : rules.length === 0;
+}
+
 /** Use the share creation or completion transaction. The SQLite writer lock prevents
  * the request from closing while a submission is being completed. */
 export async function assertFileRequestUpload(
@@ -52,17 +65,13 @@ export async function assertFileRequestUpload(
   ) {
     throw new ForbiddenException("This file request is no longer available");
   }
-  for (const actorId of [userId, request.creatorId]) {
-    if (
-      !canWriteRequestFolder(
-        folder.team.members.find((m) => m.userId === actorId),
-        folder.accessRules,
-      )
-    ) {
-      throw new ForbiddenException(
-        "Write access to the destination is required",
-      );
-    }
+  const member = (id: string) =>
+    folder.team.members.find((m) => m.userId === id);
+  if (
+    !canWriteRequestFolder(member(userId), folder.accessRules) ||
+    !canReadRequestFolder(member(request.creatorId), folder.accessRules)
+  ) {
+    throw new ForbiddenException("Write access to the destination is required");
   }
   return request;
 }

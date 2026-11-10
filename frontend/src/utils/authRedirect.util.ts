@@ -3,6 +3,7 @@ const LOCAL_URL_BASE = "https://privcloud.invalid";
 const UNSAFE_PATH_CHARACTERS = /[\u0000-\u001f\u007f\\]/;
 const POST_AUTH_TARGET_STORAGE_KEY = "privcloud.postAuthTarget";
 const POST_AUTH_TARGET_TTL_MS = 15 * 60 * 1000;
+const OAUTH_SIGN_IN_STORAGE_KEY = "privcloud.oauthSignIn";
 const TEAM_KEY_FRAGMENT =
   /^#teamKey=[A-Za-z0-9_-]{16,4096}(?:&version=[1-9][0-9]{0,9})?$/;
 const SIGNING_KEY_FRAGMENT = /^#key=[A-Za-z0-9_-]{16,4096}$/;
@@ -111,6 +112,24 @@ export function isInvitationRoutePath(pathname?: string | null): boolean {
     isTeamInvitationRoutePath(pathname) ||
     Boolean(pathname?.startsWith("/external/invite/"))
   );
+}
+
+/** App pages, unlike the French SEO pages, follow the browser language. */
+export function isBrowserLanguageRoutePath(pathname?: string | null): boolean {
+  if (!pathname) return false;
+  return (
+    isProtectedApplicationRoutePath(pathname) ||
+    isInvitationRoutePath(pathname) ||
+    ["/auth", "/s", "/share", "/sign"].some((prefix) =>
+      pathname.startsWith(`${prefix}/`),
+    )
+  );
+}
+
+export function prefersEnglish(acceptLanguage?: string | null): boolean {
+  const language = acceptLanguage?.split(",")[0].split(";")[0].trim();
+  if (!language || language === "*") return false;
+  return !language.toLowerCase().startsWith("fr");
 }
 
 export function isTeamScopedUploadPath(path?: string | null): boolean {
@@ -238,6 +257,25 @@ export function rememberPostAuthRedirectTarget(
   }
 }
 
+/** The provider's return lands on the app root: flag it for the next page. */
+export function markOAuthSignIn(): void {
+  try {
+    window.sessionStorage.setItem(OAUTH_SIGN_IN_STORAGE_KEY, "1");
+  } catch {
+    // Storage can be unavailable: the user lands on the default page.
+  }
+}
+
+export function takeOAuthSignInMark(): boolean {
+  try {
+    const marked = window.sessionStorage.getItem(OAUTH_SIGN_IN_STORAGE_KEY);
+    window.sessionStorage.removeItem(OAUTH_SIGN_IN_STORAGE_KEY);
+    return marked === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function getRememberedPostAuthRedirectPath(): string | null {
   return readStoredPostAuthTarget()?.path ?? null;
 }
@@ -254,4 +292,26 @@ export function finalizePostAuthRedirectPath(path: string): string {
     // Best effort. The TTL and exact-path check prevent unsafe reuse.
   }
   return `${pathWithoutFragment}${stored.fragment ?? ""}`;
+}
+
+const PROTECTED_APPLICATION_ROUTE_PREFIXES = [
+  "/account",
+  "/admin",
+  "/team",
+  "/external",
+  "/signing",
+  "/notifications",
+  "/health",
+];
+
+export function isProtectedApplicationRoutePath(
+  pathname?: string | null,
+): boolean {
+  if (!pathname) return false;
+  // An invitation link must reach its page: it tells a signed-out visitor
+  // whether to sign in or to create the account the invitation is for.
+  if (isInvitationRoutePath(pathname)) return false;
+  return PROTECTED_APPLICATION_ROUTE_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
 }

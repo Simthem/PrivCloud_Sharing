@@ -32,6 +32,7 @@ import {
 import { useRouter } from "next/router";
 import { useIntl } from "react-intl";
 import Meta from "../../components/Meta";
+import SigningActionButton from "../../components/signing/SigningActionButton";
 import signingService, {
   SignatureRequest,
 } from "../../services/signing.service";
@@ -39,6 +40,10 @@ import toast from "../../utils/toast.util";
 import useUser from "../../hooks/user.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import { saveBlobToDevice } from "../../utils/saveBlob.util";
+import {
+  signedPdfName,
+  signingLanguage,
+} from "../../utils/signingLanguage.util";
 
 const statusColors: Record<string, string> = {
   PENDING: "yellow",
@@ -76,28 +81,26 @@ const SigningIndexPage = () => {
   }, [user]);
 
   const { data: documents, isLoading } = useQuery({
-    queryKey: ["signing.documents"],
+    queryKey: ["signing.documents", user?.id],
     queryFn: () => signingService.getMyDocuments(),
     enabled: !!user,
   });
 
   const { data: receivedDocs, isLoading: isLoadingReceived } = useQuery({
-    queryKey: ["signing.received"],
+    queryKey: ["signing.received", user?.id],
     queryFn: () => signingService.getReceivedDocuments(),
     enabled: !!user,
   });
 
   // Split active vs deleted documents
-  const activeDocuments =
-    documents?.filter((d) => !(d as any).fileDeleted) ?? [];
-  const activeReceivedDocs =
-    receivedDocs?.filter((d) => !(d as any).fileDeleted) ?? [];
+  const activeDocuments = documents?.filter((d) => !d.fileDeleted) ?? [];
+  const activeReceivedDocs = receivedDocs?.filter((d) => !d.fileDeleted) ?? [];
   const deletedDocuments = [
     ...(documents
-      ?.filter((d) => (d as any).fileDeleted)
+      ?.filter((d) => d.fileDeleted)
       .map((d) => ({ ...d, _source: "mine" as const })) ?? []),
     ...(receivedDocs
-      ?.filter((d) => (d as any).fileDeleted)
+      ?.filter((d) => d.fileDeleted)
       .map((d) => ({ ...d, _source: "received" as const })) ?? []),
   ];
 
@@ -125,7 +128,7 @@ const SigningIndexPage = () => {
       const blob = await signingService.downloadSigned(doc.id);
       await saveBlobToDevice(
         blob,
-        `${doc.title || doc.fileName || "document"}_signe.pdf`,
+        signedPdfName(doc.title || doc.fileName, signingLanguage(doc.language)),
       );
     } catch {
       toast.error(t("signing.toast.download-error"));
@@ -242,10 +245,16 @@ const SigningIndexPage = () => {
                       size="xs"
                     >
                       {doc.signatureLevel === "REINFORCED"
-                        ? "Renforcé"
-                        : "Standard"}
+                        ? intl.formatMessage({
+                            id: "signing.level.reinforced",
+                            defaultMessage: "Reinforced",
+                          })
+                        : intl.formatMessage({
+                            id: "signing.level.standard",
+                            defaultMessage: "Standard",
+                          })}
                     </Badge>
-                    {(doc as any).fileDeleted && (
+                    {doc.fileDeleted && (
                       <Tooltip label={t("signing.file-deleted")}>
                         <Badge
                           color="red"
@@ -292,17 +301,16 @@ const SigningIndexPage = () => {
                     ))}
                   </Stack>
                   <Group gap={4} mt="xs" onClick={(e) => e.stopPropagation()}>
-                    {doc.status === "COMPLETED" &&
-                      !(doc as any).fileDeleted && (
-                        <Button
-                          size="compact-xs"
-                          variant="light"
-                          color="green"
-                          onClick={() => handleDownload(doc)}
-                        >
-                          {t("signing.actions.download")}
-                        </Button>
-                      )}
+                    {doc.status === "COMPLETED" && !doc.fileDeleted && (
+                      <Button
+                        size="compact-xs"
+                        variant="light"
+                        color="green"
+                        onClick={() => handleDownload(doc)}
+                      >
+                        {t("signing.actions.download")}
+                      </Button>
+                    )}
                     {(doc.status === "PENDING" || doc.status === "PARTIAL") && (
                       <Button
                         size="compact-xs"
@@ -351,7 +359,7 @@ const SigningIndexPage = () => {
                           <Text fw={500} truncate style={{ flex: 1 }}>
                             {doc.fileName || doc.title || t("signing.no-title")}
                           </Text>
-                          {(doc as any).fileDeleted && (
+                          {doc.fileDeleted && (
                             <Tooltip label={t("signing.file-deleted")}>
                               <Badge
                                 color="red"
@@ -376,8 +384,14 @@ const SigningIndexPage = () => {
                           size="sm"
                         >
                           {doc.signatureLevel === "REINFORCED"
-                            ? "Renforcé"
-                            : "Standard"}
+                            ? intl.formatMessage({
+                                id: "signing.level.reinforced",
+                                defaultMessage: "Reinforced",
+                              })
+                            : intl.formatMessage({
+                                id: "signing.level.standard",
+                                defaultMessage: "Standard",
+                              })}
                         </Badge>
                       </Table.Td>
                       <Table.Td>
@@ -464,7 +478,7 @@ const SigningIndexPage = () => {
                             </Menu.Target>
                             <Menu.Dropdown>
                               {doc.status === "COMPLETED" &&
-                                !(doc as any).fileDeleted && (
+                                !doc.fileDeleted && (
                                   <Menu.Item
                                     leftSection={<TbDownload size={14} />}
                                     onClick={() => handleDownload(doc)}
@@ -539,12 +553,9 @@ const SigningIndexPage = () => {
           (isMobile ? (
             <Stack gap="sm">
               {activeReceivedDocs.map((doc) => {
-                const creator = (doc as any).creator;
+                const creator = doc.creator;
                 const myRecipient = doc.recipients?.find(
-                  (r) =>
-                    r.status === "SIGNED" ||
-                    r.status === "PENDING" ||
-                    r.status === "VIEWED",
+                  (r) => r.isCurrentUser,
                 );
                 return (
                   <Card
@@ -593,6 +604,14 @@ const SigningIndexPage = () => {
                     <Text size="xs" c="dimmed">
                       {formatDate(doc.createdAt)}
                     </Text>
+                    {doc.signingAction && (
+                      <Group
+                        mt="xs"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <SigningActionButton action={doc.signingAction} />
+                      </Group>
+                    )}
                     {doc.status === "COMPLETED" && (
                       <Group mt="xs" onClick={(e) => e.stopPropagation()}>
                         <Button
@@ -627,19 +646,16 @@ const SigningIndexPage = () => {
                     <Table.Th style={{ width: 100 }}>
                       {t("signing.date")}
                     </Table.Th>
-                    <Table.Th style={{ width: 80 }}>
+                    <Table.Th style={{ width: 110 }}>
                       {t("signing.actions")}
                     </Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
                   {activeReceivedDocs.map((doc) => {
-                    const creator = (doc as any).creator;
+                    const creator = doc.creator;
                     const myRecipient = doc.recipients?.find(
-                      (r) =>
-                        r.status === "SIGNED" ||
-                        r.status === "PENDING" ||
-                        r.status === "VIEWED",
+                      (r) => r.isCurrentUser,
                     );
                     return (
                       <Table.Tr
@@ -681,6 +697,10 @@ const SigningIndexPage = () => {
                             wrap="nowrap"
                             onClick={(e) => e.stopPropagation()}
                           >
+                            <SigningActionButton
+                              action={doc.signingAction}
+                              compact
+                            />
                             <Tooltip label={t("signing.actions.view")}>
                               <ActionIcon
                                 variant="light"

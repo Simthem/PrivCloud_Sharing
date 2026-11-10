@@ -22,6 +22,8 @@ import {
   getUserKey,
   wrapReverseShareKey,
 } from "../../../utils/crypto.util";
+import type { ThrownError } from "../../../types/thrownError.type";
+import { rememberPostAuthRedirectTarget } from "../../../utils/authRedirect.util";
 
 const AcceptInvitePage = () => {
   const router = useRouter();
@@ -151,13 +153,24 @@ const AcceptInvitePage = () => {
 
             {acceptMutation.isError && (
               <Alert color="red" w="100%">
-                {(acceptMutation.error as any)?.response?.data?.message ||
-                  intl.formatMessage({ id: "team.invite.error-generic" })}
+                {(acceptMutation.error as ThrownError | null)?.response?.data
+                  ?.error === "invitation_email_mismatch"
+                  ? intl.formatMessage({
+                      id: "team.invite.error-email-mismatch",
+                    })
+                  : (acceptMutation.error as ThrownError | null)?.response?.data
+                      ?.message ||
+                    intl.formatMessage({ id: "team.invite.error-generic" })}
               </Alert>
             )}
 
             {needsKeyGeneration && (
-              <Alert color="orange" icon={<TbLock size={20} />} w="100%">
+              <Alert
+                color="orange"
+                icon={<TbLock size={20} />}
+                w="100%"
+                ta="left"
+              >
                 <Text size="sm" fw={500} mb={4}>
                   {intl.formatMessage({ id: "team.invite.e2e-required-title" })}
                 </Text>
@@ -171,11 +184,12 @@ const AcceptInvitePage = () => {
                   color="orange"
                   size="xs"
                   mt="sm"
-                  onClick={() =>
-                    router.push(
-                      `/account#e2e?redirect=/team/invite/${tokenStr}`,
-                    )
-                  }
+                  onClick={() => {
+                    rememberPostAuthRedirectTarget(
+                      `/team/invite/${tokenStr}${window.location.hash}`,
+                    );
+                    void router.push("/account#e2e-encryption-settings");
+                  }}
                 >
                   {intl.formatMessage({ id: "team.invite.e2e-setup-button" })}
                 </Button>

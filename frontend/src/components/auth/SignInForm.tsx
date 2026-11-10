@@ -6,87 +6,49 @@ import {
   Loader,
   Paper,
   PasswordInput,
-  Stack,
   Text,
   TextInput,
   Title,
 } from "@mantine/core";
-import { createStyles } from "@mantine/emotion";
 import { useForm, yupResolver } from "@mantine/form";
 import { showNotification } from "@mantine/notifications";
 import { browserSupportsWebAuthn } from "@simplewebauthn/browser";
 import passkeyService from "../../services/passkey.service";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useRef, useState } from "react";
 import { TbFingerprint, TbInfoCircle } from "react-icons/tb";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
-import AltchaCaptcha from "../captcha/AltchaCaptcha";
 import type { AltchaWidgetHandle } from "../captcha/AltchaWidget";
 import { useAltchaSettings } from "../../hooks/altcha.hook";
 import useConfig from "../../hooks/config.hook";
 import useUser from "../../hooks/user.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import authService from "../../services/auth.service";
-import {
-  getOAuthIcon,
-  getOAuthUrl,
-  getOAuthColor,
-} from "../../utils/oauth.util";
+import OAuthProviders from "./OAuthProviders";
 import { resolvePostAuthRedirectPath } from "../../utils/router.util";
+import { markOAuthSignIn } from "../../utils/authRedirect.util";
 import toast from "../../utils/toast.util";
 import {
   isEmailVerificationRequiredError,
   rememberEmailVerificationEmail,
 } from "../../utils/emailVerification.util";
 
-const useStyles = createStyles((theme) => ({
-  signInWith: {
-    fontWeight: 500,
-    "&:before": {
-      content: "''",
-      flex: 1,
-      display: "block",
-    },
-    "&:after": {
-      content: "''",
-      flex: 1,
-      display: "block",
-    },
-  },
-  or: {
-    "&:before": {
-      content: "''",
-      flex: 1,
-      display: "block",
-      borderTopWidth: 1,
-      borderTopStyle: "solid",
-      borderColor:
-        theme.other.colorScheme === "dark"
-          ? theme.colors.dark[3]
-          : theme.colors.gray[4],
-    },
-    "&:after": {
-      content: "''",
-      flex: 1,
-      display: "block",
-      borderTopWidth: 1,
-      borderTopStyle: "solid",
-      borderColor:
-        theme.other.colorScheme === "dark"
-          ? theme.colors.dark[3]
-          : theme.colors.gray[4],
-    },
-  },
-}));
+const AltchaCaptcha = dynamic(() => import("../captcha/AltchaCaptcha"), {
+  ssr: false,
+});
+
+const getOAuthUrl = (appUrl: string, provider: string) => {
+  return `${appUrl}/api/oauth/auth/${provider}`;
+};
 
 const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
   const config = useConfig();
   const router = useRouter();
   const t = useTranslate();
   const { refreshUser } = useUser();
-  const { classes } = useStyles();
   const altcha = useAltchaSettings();
 
   const [oauthProviders, setOauthProviders] = useState<string[] | null>(null);
@@ -220,7 +182,7 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
         setOauthProviders(providers.data);
         if (
           providers.data.length === 1 &&
-          config.get("oauth.disablePassword")
+          config.getBoolean("oauth.disablePassword")
         ) {
           setIsRedirectingToOauthProvider(true);
           router.push(getOAuthUrl(window.location.origin, providers.data[0]));
@@ -249,7 +211,48 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
     }
   };
 
-  if (!oauthProviders) return null;
+  useEffect(() => {
+    const loadProviders = () => {
+      authService
+        .getAvailableOAuth()
+        .then((providers) => {
+          setOauthProviders(providers.data);
+          if (
+            providers.data.length === 1 &&
+            config.getBoolean("oauth.disablePassword")
+          ) {
+            setIsRedirectingToOauthProvider(true);
+            markOAuthSignIn();
+            router.push(getOAuthUrl(window.location.origin, providers.data[0]));
+          }
+        })
+        .catch(() => setOauthProviders([]));
+    };
+
+    if ("requestIdleCallback" in window) {
+      const idleId = window.requestIdleCallback(loadProviders, {
+        timeout: 1500,
+      });
+      return () => window.cancelIdleCallback(idleId);
+    }
+
+    const timeout = globalThis.setTimeout(loadProviders, 300);
+    return () => globalThis.clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const oauthDisabledPassword = config.getBoolean("oauth.disablePassword");
+
+  if (oauthDisabledPassword && !oauthProviders) {
+    return (
+      <Group align="center" justify="center">
+        <Loader size="sm" />
+        <Text ta="center">
+          <FormattedMessage id="common.text.redirecting" />
+        </Text>
+      </Group>
+    );
+  }
 
   if (isRedirectingToOauthProvider)
     return (
@@ -267,7 +270,7 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
       <Title order={1} ta="center" fw={900} fz={{ base: 26, sm: 30 }}>
         <FormattedMessage id="signin.title" />
       </Title>
-      {config.get("share.allowRegistration") && (
+      {config.getBoolean("share.allowRegistration") && (
         <Text c="dimmed" size="sm" ta="center" mt={5}>
           <FormattedMessage id="signin.description" />{" "}
           <Anchor component={Link} href={"signUp"} size="sm">
@@ -276,7 +279,7 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
         </Text>
       )}
       <Paper withBorder shadow="md" p={30} mt={30} radius="md">
-        {config.get("oauth.disablePassword") || (
+        {config.getBoolean("oauth.disablePassword") || (
           <form
             onSubmit={form.onSubmit(async (values) => {
               const token = await resolveCaptchaToken();
@@ -296,7 +299,7 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
               mt="md"
               {...form.getInputProps("password")}
             />
-            {config.get("smtp.enabled") && (
+            {config.getBoolean("smtp.enabled") && (
               <Group justify="right" mt="xs">
                 <Anchor component={Link} href="/auth/resetPassword" size="xs">
                   <FormattedMessage id="resetPassword.title" />
@@ -343,34 +346,11 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
             {t("signin.button.passkey")}
           </Button>
         )}
-        {oauthProviders.length > 0 && (
-          <Stack mt={config.get("oauth.disablePassword") ? undefined : "xl"}>
-            {config.get("oauth.disablePassword") ? (
-              <Group align="center" className={classes.signInWith}>
-                <Text>{t("signIn.oauth.signInWith")}</Text>
-              </Group>
-            ) : (
-              <Group align="center" className={classes.or}>
-                <Text>{t("signIn.oauth.or")}</Text>
-              </Group>
-            )}
-            <Group justify="center">
-              {oauthProviders.map((provider) => (
-                <Button
-                  key={provider}
-                  component="a"
-                  title={t(`signIn.oauth.${provider}`)}
-                  href={getOAuthUrl(window.location.origin, provider)}
-                  variant="outline"
-                  color={getOAuthColor(provider)}
-                  fullWidth
-                >
-                  {getOAuthIcon(provider)}
-                  {"\u2002" + t(`signIn.oauth.${provider}`)}
-                </Button>
-              ))}
-            </Group>
-          </Stack>
+        {oauthProviders && (
+          <OAuthProviders
+            providers={oauthProviders}
+            onlyMethod={oauthDisabledPassword}
+          />
         )}
       </Paper>
     </Container>

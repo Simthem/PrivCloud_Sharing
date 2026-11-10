@@ -114,13 +114,20 @@ export default function ProgressivePdfPreview({
         Math.sqrt(4_000_000 / (base.width * base.height)),
       );
       const viewport = pdfPage.getViewport({ scale });
-      canvas.current.width = Math.ceil(viewport.width);
-      canvas.current.height = Math.ceil(viewport.height);
-      const context = canvas.current.getContext("2d");
+      // The previous page stays on screen until the next one is drawn.
+      const frame = window.document.createElement("canvas");
+      frame.width = Math.ceil(viewport.width);
+      frame.height = Math.ceil(viewport.height);
+      const context = frame.getContext("2d");
       if (!context) throw new Error("PDF canvas unavailable");
       render = pdfPage.render({ canvasContext: context, viewport });
       await render.promise;
       pdfPage.cleanup();
+      const target = canvas.current;
+      if (cancelled || !target) return;
+      target.width = frame.width;
+      target.height = frame.height;
+      target.getContext("2d")?.drawImage(frame, 0, 0);
     })()
       .catch(() => {
         if (!cancelled) onError();
@@ -173,19 +180,21 @@ export default function ProgressivePdfPreview({
         </Button>
       </Group>
       <ZoomablePreview key={fileId} onZoomChange={setZoom}>
-        {busy && (
-          <Center mih={80}>
-            <Loader />
-          </Center>
-        )}
-        <canvas
-          ref={canvas}
-          style={{
-            width: "100%",
-            height: "auto",
-            display: "block",
-          }}
-        />
+        <div style={{ position: "relative", minHeight: 80 }}>
+          <canvas
+            ref={canvas}
+            style={{
+              width: "100%",
+              height: "auto",
+              display: "block",
+            }}
+          />
+          {busy && (
+            <Center style={{ position: "absolute", inset: 0 }}>
+              <Loader />
+            </Center>
+          )}
+        </div>
       </ZoomablePreview>
     </Stack>
   );

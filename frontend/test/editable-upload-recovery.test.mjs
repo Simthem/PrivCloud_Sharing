@@ -94,7 +94,12 @@ function fixture({ savedFiles = [], uploadPending = true } = {}) {
     },
     Dropzone: defaultExport("Dropzone"),
     FileList: defaultExport("FileList"),
-    "config.hook": defaultExport(() => ({ get: () => "1000000" })),
+    "config.hook": defaultExport(() => ({
+      get: () => "1000000",
+      getNumber: () => 1000000,
+      getString: () => "1000000",
+      getBoolean: () => true,
+    })),
     "useTranslate.hook": defaultExport(() => (id) => id),
     "user.hook": defaultExport(() => ({ user: { id: "owner" } })),
     "useWakeLock.hook": defaultExport(() => ({

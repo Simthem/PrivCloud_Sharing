@@ -564,6 +564,9 @@ testCase(
     const activeMemberIds = new Set(["member-a", "member-b", "member-c"]);
     const service = new SigningService(
       {
+        user: {
+          findMany: async () => [{ id: "member-b", email: "b@example.test" }],
+        },
         teamMember: {
           findMany: async ({
             where,
@@ -582,6 +585,12 @@ testCase(
       {} as never,
       {} as never,
       {
+        notifySignatureInvitation: async (params: { userId: string }) => {
+          notifications.push({ ...params, type: "SIGNATURE_REQUESTED" });
+        },
+        notifySignatureCompletion: async (params: { userId: string }) => {
+          notifications.push({ ...params, type: "SIGNATURE_COMPLETED" });
+        },
         notify: async (params: { userId: string; type: string }) => {
           notifications.push(params);
         },
@@ -601,6 +610,7 @@ testCase(
       [
         {
           id: "recipient-b",
+          email: "b@example.test",
           userId: "member-b",
           teamInviteNotification: "encrypted-b",
         },
@@ -693,8 +703,12 @@ testCase(
       path.resolve("src/signing/pdf-signing.service.ts"),
       "utf8",
     );
+    const dossierSource = fs.readFileSync(
+      path.resolve("src/signing/signing-dossier-text.ts"),
+      "utf8",
+    );
     const signingServiceSource = fs.readFileSync(
-      path.resolve("src/signing/signing.service.ts"),
+      path.resolve("src/signing/signing-language.ts"),
       "utf8",
     );
     const signingPageSource = fs.readFileSync(
@@ -704,18 +718,18 @@ testCase(
 
     assert.match(
       certificateSource,
-      /const levelSpecificLegalText = isReinforced/,
+      /isReinforced \? text\.legalReinforced : text\.legalStandard/,
     );
     assert.match(
-      certificateSource,
+      dossierSource,
       /code à usage unique envoyé à l'adresse e-mail/,
     );
     assert.match(
-      certificateSource,
+      dossierSource,
       /met en œuvre une signature électronique avancée conformément aux/,
     );
     assert.doesNotMatch(
-      certificateSource,
+      dossierSource,
       /Workflow de signature avancée aligné eIDAS/,
     );
     assert.match(

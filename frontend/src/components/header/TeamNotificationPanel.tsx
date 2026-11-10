@@ -1,6 +1,7 @@
 import useTranslate from "../../hooks/useTranslate.hook";
 import { useIntl } from "react-intl";
 import {
+  Anchor,
   ActionIcon,
   Badge,
   Box,
@@ -78,6 +79,7 @@ function formatTimeAgo(dateStr: string): string {
 
 const TeamNotificationPanel = () => {
   const { classes, cx } = useStyles();
+  const t = useTranslate();
   const queryClient = useQueryClient();
   const router = useRouter();
 
@@ -199,6 +201,13 @@ const TeamNotificationPanel = () => {
     }
   }, [notifications, decryptNotifications]);
 
+  // The key is often loaded after the list, right after a provider sign-in.
+  useEffect(() => {
+    const retry = () => decryptNotifications(notifications);
+    window.addEventListener("e2e-key-stored", retry);
+    return () => window.removeEventListener("e2e-key-stored", retry);
+  }, [notifications, decryptNotifications]);
+
   return (
     <Popover
       opened={opened}
@@ -210,7 +219,7 @@ const TeamNotificationPanel = () => {
       withArrow
     >
       <Popover.Target>
-        <Tooltip label="Notifications équipe" withArrow>
+        <Tooltip label={t("team.notifications.title")} withArrow>
           <UnstyledButton
             className={cx(classes.link, classes.withIcon)}
             onClick={() => setOpened((o) => !o)}
@@ -280,6 +289,15 @@ const TeamNotificationPanel = () => {
         </Box>
 
         {/* Scrollable notification list */}
+        {notifications.some((notif) => notif.encryptedMetadata) &&
+          !getUserKey() && (
+            <Text size="xs" c="dimmed" px="md" py="xs">
+              {t("team.notification.keyRequired")}{" "}
+              <Anchor size="xs" href="/account#e2e-encryption-settings">
+                {t("team.notification.keyRequired.action")}
+              </Anchor>
+            </Text>
+          )}
         <ScrollArea.Autosize mah={400}>
           {isLoading ? (
             <Box p="lg" ta="center">
@@ -288,7 +306,7 @@ const TeamNotificationPanel = () => {
           ) : notifications.length === 0 ? (
             <Box p="lg" ta="center">
               <Text size="sm" c="dimmed">
-                Aucune notification
+                {t("team.notification.empty")}
               </Text>
             </Box>
           ) : (
@@ -326,6 +344,9 @@ const GENERIC_NOTIFICATION_TYPES = new Set([
   "KEY_ROTATED",
   "MEMBER_JOINED",
   "MEMBER_LEFT",
+  "SIGNATURE_REQUESTED",
+  "SIGNATURE_SIGNED",
+  "SIGNATURE_COMPLETED",
 ]);
 
 const NotificationItem = ({
@@ -362,15 +383,20 @@ const NotificationItem = ({
               })
             : t("team.fileRequest.notification.submitted");
         case "SIGN":
-          return "Une signature est attendue de votre part";
+          return t("team.notification.signing.SIGN");
         case "TRACK":
-          return "Une signature vient d'être réalisée";
+          return t("team.notification.signing.TRACK");
         case "DOWNLOAD":
-          return "Le document signé est disponible";
+          return t("team.notification.signing.DOWNLOAD");
       }
-      const sender = (decryptedMeta.senderName as string) || "Un membre";
-      const fileName = (decryptedMeta.fileName as string) || "un fichier";
-      return `${sender} a partagé "${fileName}"`;
+      return t("team.notification.shared", {
+        sender:
+          (decryptedMeta.senderName as string) ||
+          t("team.notification.shared.someone"),
+        fileName:
+          (decryptedMeta.fileName as string) ||
+          t("team.notification.shared.aFile"),
+      });
     }
     if (notification.type === "EXTERNAL_ACCESS_ENDED")
       return t("team.notification.generic.EXTERNAL_ACCESS_ENDED");
@@ -397,6 +423,13 @@ const NotificationItem = ({
         return null;
       }
     })();
+
+    if (
+      (notification.type === "SIGNATURE_REQUESTED" ||
+        notification.type === "SIGNATURE_COMPLETED") &&
+      !isEncrypted
+    )
+      return "/signing";
 
     // Signature events have no TeamNotification relation to a document, so
     // their durable navigation target is carried in the metadata.
@@ -483,7 +516,7 @@ const NotificationItem = ({
                 color={isDecrypted ? "teal" : "orange"}
                 leftSection={<TbLock size={10} />}
               >
-                {isDecrypted ? "E2E" : "Chiffré"}
+                {isDecrypted ? "E2E" : t("team.notification.locked")}
               </Badge>
             )}
             {notification.team?.name && (

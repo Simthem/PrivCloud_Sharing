@@ -1,4 +1,5 @@
 import { getAdminUploadStatus } from "./admin-upload-status.util";
+import { openToken, tokenCandidates } from "../config/account-secrets";
 import { TeamShareAccessService } from "./team-share-access.service";
 import { TeamNotificationService } from "src/teamNotification/teamNotification.service";
 import { fileRequestServiceMessage } from "src/teamFileRequest/team-file-request-i18n";
@@ -53,6 +54,7 @@ import { normalizeShareRecipients } from "./share-recipient.util";
 import { wantsFileRequestNotification } from "src/teamFileRequest/team-file-request-notification";
 import { assertFileRequestUpload } from "src/teamFileRequest/team-file-request-access";
 import { touchShareUploadActivity } from "./upload-activity.util";
+import { byName } from "../utils/sort.util";
 import { serializeActivityNames } from "src/team/team-activity-names.util";
 
 @Injectable()
@@ -558,7 +560,7 @@ export class ShareService {
 
       if (reverseShare) {
         await tx.reverseShare.update({
-          where: { token: reverseShareToken },
+          where: { id: reverseShare.id },
           data: {
             shares: {
               connect: { id: createdShare.id },
@@ -705,7 +707,10 @@ export class ShareService {
         share.reverseShare.shareExpiration.getTime() !== 0
       ) {
         const decremented = await tx.reverseShare.updateMany({
-          where: { token: reverseShareToken, remainingUses: { gt: 0 } },
+          where: {
+            token: { in: tokenCandidates("reverseShare", reverseShareToken) },
+            remainingUses: { gt: 0 },
+          },
           data: { remainingUses: { decrement: 1 } },
         });
         if (decremented.count === 0) {
@@ -950,12 +955,6 @@ export class ShareService {
         share: {
           creatorId: userId,
         },
-        email: {
-          contains: query,
-        },
-      },
-      orderBy: {
-        email: "asc",
       },
       select: {
         email: true,
@@ -963,7 +962,10 @@ export class ShareService {
       distinct: Prisma.ShareRecipientScalarFieldEnum.email,
     });
 
-    return recipients.map((recipient) => recipient.email);
+    return recipients
+      .map((recipient) => recipient.email)
+      .filter((email) => !query || email.includes(query))
+      .sort((a, b) => a.localeCompare(b));
   }
 
   /** Discover stored uploads after losing the original browser tab. */
@@ -1099,11 +1101,7 @@ export class ShareService {
     const share = await this.prisma.share.findUnique({
       where: { id },
       include: {
-        files: {
-          orderBy: {
-            name: "asc",
-          },
-        },
+        files: true,
         creator: true,
         security: true,
         reverseShare: true,
@@ -1136,6 +1134,12 @@ export class ShareService {
       // Expose team context so the frontend can resolve K_team instead of K_master
       teamFolderId: share.teamFolderId ?? null,
       teamId: share.teamFolder?.teamId ?? null,
+      // Whether the signed-in viewer owns it, directly or through the reverse
+      // share it came from.
+      ownedByViewer:
+        !!recoveringUserId &&
+        (share.creatorId === recoveringUserId ||
+          share.reverseShare?.creatorId === recoveringUserId),
     };
   }
 
@@ -1147,11 +1151,7 @@ export class ShareService {
     const share = await this.prisma.share.findUnique({
       where: { id },
       include: {
-        files: {
-          orderBy: {
-            name: "asc",
-          },
-        },
+        files: true,
         creator: true,
         security: true,
         reverseShare: true,
@@ -1159,6 +1159,7 @@ export class ShareService {
     });
 
     if (!share) throw new NotFoundException("Share not found");
+    share.files.sort(byName);
 
     if (share.removedReason)
       throw new NotFoundException(share.removedReason, "share_removed");
@@ -1182,7 +1183,6 @@ export class ShareService {
 
     if (!share || !share.uploadLocked)
       throw new NotFoundException("Share not found");
-
     return share;
   }
 
@@ -1305,7 +1305,8 @@ export class ShareService {
       const ownsViaReverseShare =
         !!reverseShareToken &&
         !!share.reverseShare?.token &&
-        reverseShareToken === share.reverseShare.token;
+        reverseShareToken ===
+          openToken("reverseShare", share.reverseShare.token);
       const ownsViaAnonymousSession =
         !!anonymousSessionToken &&
         this.verifyAnonymousSessionToken(share, anonymousSessionToken);
