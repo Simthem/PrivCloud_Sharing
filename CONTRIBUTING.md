@@ -1,7 +1,3 @@
-_Read this in another language: [Spanish](/docs/CONTRIBUTING.es.md), [English](/CONTRIBUTING.md), [Simplified Chinese](/docs/CONTRIBUTING.zh-cn.md)_
-
----
-
 # Contributing
 
 We would love for you to contribute to PrivCloud_Sharing and help make it better! All contributions are welcome, including issues, suggestions, pull requests and more.

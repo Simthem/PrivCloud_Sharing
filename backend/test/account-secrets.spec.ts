@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +12,7 @@ import {
   sealAccountSecret,
   sealToken,
   tokenCandidates,
+  verifiedEmailFold,
 } from "src/config/account-secrets";
 import { isSealedValue } from "src/config/config-encryption";
 import {
@@ -108,6 +109,26 @@ const database = () => ({
   signatureRecipient: empty(),
   reverseShare: empty(),
 });
+
+testCase("address indexes retain their existing unkeyed bytes", () => {
+  const expected = createHash("sha256")
+    .update("verified-email-fold\0contact@example.test", "utf8")
+    .digest("base64url");
+  assert.equal(verifiedEmailFold("Contact@Example.test"), expected);
+});
+
+testCase(
+  "address indexes retain their existing keyed bytes in every storage mode",
+  withKey(undefined, () => {
+    const expected = createHmac("sha256", key)
+      .update("verified-email-fold\0contact@example.test", "utf8")
+      .digest("base64url");
+    for (const mode of ["full", "decrypt", ""]) {
+      process.env.CONFIG_ENCRYPTION_MODE = mode;
+      assert.equal(verifiedEmailFold("Contact@Example.test"), expected);
+    }
+  }),
+);
 
 testCase("without a key secrets stay as they are", async () => {
   assert.equal(

@@ -233,6 +233,59 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
     };
   }
 
+  async recoverVerifiedEmail(
+    idToken: string,
+    subject: string,
+  ): Promise<string | undefined> {
+    try {
+      const verified = await jose.compactVerify(
+        idToken,
+        await this.getRemoteJwks(),
+      );
+      const stored: unknown = JSON.parse(
+        Buffer.from(verified.payload).toString("utf8"),
+      );
+      if (
+        !stored ||
+        typeof stored !== "object" ||
+        Array.isArray(stored) ||
+        !("iat" in stored)
+      ) {
+        return undefined;
+      }
+      const issuedAt = stored.iat;
+      if (
+        typeof issuedAt !== "number" ||
+        !Number.isSafeInteger(issuedAt) ||
+        issuedAt < 0 ||
+        issuedAt > Math.floor(Date.now() / 1000)
+      ) {
+        return undefined;
+      }
+      const notBefore = "nbf" in stored ? stored.nbf : issuedAt;
+      if (
+        typeof notBefore !== "number" ||
+        !Number.isSafeInteger(notBefore) ||
+        notBefore < 0 ||
+        notBefore > Math.floor(Date.now() / 1000)
+      ) {
+        return undefined;
+      }
+      // Only legacy recovery uses an authenticated historical validity date.
+      const claims = await this.verifyIdToken(
+        idToken,
+        new Date(Math.max(issuedAt, notBefore) * 1000),
+      );
+      return claims.sub === subject &&
+        typeof claims.email === "string" &&
+        this.hasVerifiedEmail(claims)
+        ? claims.email.toLowerCase()
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   protected abstract getDiscoveryUri(): string;
 
   protected async getClientCredentials(
@@ -315,22 +368,29 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
     return this.remoteJwks;
   }
 
-  /**
-   * Cryptographically verify the id_token:
-   * - Signature checked against the provider's JWKS
-   * - `iss` must match the provider issuer policy (exact discovery issuer by default)
-   * - `aud` must match our client_id
-   * - `exp` is enforced (token must not be expired)
-   * - Unsafe algorithms (e.g. "none") are rejected by jose
-   */
-  private async verifyIdToken(idToken: string): Promise<OidcIdToken> {
+  // Authentication uses the current time unless legacy recovery supplies a date.
+  private async verifyIdToken(
+    idToken: string,
+    currentDate?: Date,
+  ): Promise<OidcIdToken> {
     try {
       const jwks = await this.getRemoteJwks();
       const configuration = await this.getConfiguration();
       const clientId = this.config.getOAuth(this.name, "clientId");
+      if (typeof clientId !== "string" || !clientId.trim()) {
+        throw new jose.errors.JWTClaimValidationFailed(
+          "Provider audience is not configured",
+          "aud",
+          "missing",
+        );
+      }
 
       const { payload } = await jose.jwtVerify(idToken, jwks, {
         audience: clientId,
+        ...(currentDate && {
+          currentDate,
+          requiredClaims: ["iat", "exp", "sub", "iss"],
+        }),
       });
       const claims = payload as unknown as OidcIdToken;
 

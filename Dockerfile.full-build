@@ -661,6 +661,8 @@ RUN set -eu; \
 # Its time zone rules are tzdata 2026f.
 FROM gcr.io/distroless/base-nossl-debian13:latest@sha256:d710a5c8bfe4cf7e726d7e1afd73e363a9fb02c2a11ad893d2d6185c1b9a89cb AS runner
 
+COPY .docker/vex.json /usr/share/security/privcloud.vex.json
+
 ENV NODE_ENV=docker
 ENV HOME=/home/privcloud-sharing
 

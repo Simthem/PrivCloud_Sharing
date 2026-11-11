@@ -453,65 +453,72 @@ testCase("the boot pass indexes rows an older image wrote", async () => {
   ]);
 });
 
-const idToken = (provider: string, claims: Record<string, unknown>) =>
-  `${provider}:e30.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.sig`;
-
 testCase(
-  "an older link recovers its address from the kept ID token",
+  "saved addresses require provider verification and a matching provider",
   async () => {
-    const entra = { provider: "microsoft", providerUserId: "sub-1" };
+    const link = { provider: "microsoft", providerUserId: "sub-1" };
+    const seen: string[][] = [];
+    const verifier = {
+      recoverVerifiedEmail: async (token: string, subject: string) => {
+        seen.push([token, subject]);
+        return token === "verified-session" && subject === "sub-1"
+          ? "a@entra.example"
+          : undefined;
+      },
+    };
     assert.equal(
-      vouchedEmail(
-        entra,
-        idToken("microsoft", {
-          sub: "sub-1",
-          email: "A@Entra.example",
-          xms_edov: true,
-        }),
-      ),
+      await vouchedEmail(link, "microsoft:verified-session", verifier),
       "a@entra.example",
     );
-    // Sign-in trusts neither an unverified address nor another identity.
     assert.equal(
-      vouchedEmail(
-        entra,
-        idToken("microsoft", { sub: "sub-1", email: "a@e.x" }),
-      ),
+      await vouchedEmail(link, "google:verified-session", verifier),
+      undefined,
+    );
+    assert.equal(await vouchedEmail(link, null, verifier), undefined);
+    assert.equal(
+      await vouchedEmail(link, "microsoft:unverified-session", verifier),
       undefined,
     );
     assert.equal(
-      vouchedEmail(
-        entra,
-        idToken("microsoft", { sub: "sub-2", email: "a@e.x", xms_edov: 1 }),
-      ),
+      await vouchedEmail(link, "microsoft:verified-session", {}),
       undefined,
     );
     assert.equal(
-      vouchedEmail(
-        entra,
-        idToken("google", {
-          sub: "sub-1",
-          email: "a@e.x",
-          email_verified: true,
-        }),
-      ),
+      await vouchedEmail(link, "microsoft:verified-session"),
       undefined,
     );
-    assert.equal(
-      vouchedEmail(
-        { provider: "google", providerUserId: "g" },
-        idToken("google", { sub: "g", email: "a@e.x", email_verified: "true" }),
-      ),
-      undefined,
-    );
-    assert.equal(vouchedEmail(entra, "microsoft:not-a-jwt"), undefined);
+    assert.deepEqual(seen, [
+      ["verified-session", "sub-1"],
+      ["unverified-session", "sub-1"],
+    ]);
+  },
+);
 
+testCase(
+  "the boot pass skips unverifiable sessions before recovering a verified address",
+  async () => {
     const updates: Record<string, unknown>[] = [];
+    const seen: string[][] = [];
     const service = Object.create(OAuthService.prototype) as OAuthService;
     Object.assign(service, {
+      oAuthProviders: {
+        microsoft: {
+          recoverVerifiedEmail: async (token: string, subject: string) => {
+            seen.push([token, subject]);
+            return token === "verified-session" ? "a@entra.example" : undefined;
+          },
+        },
+      },
       prisma: {
         oAuthUser: {
-          findMany: async () => [{ id: "l1", userId: "u1", ...entra }],
+          findMany: async () => [
+            {
+              id: "l1",
+              userId: "u1",
+              provider: "microsoft",
+              providerUserId: "sub-1",
+            },
+          ],
           updateMany: async (args: Record<string, unknown>) => {
             updates.push(args);
             return { count: 1 };
@@ -520,19 +527,18 @@ testCase(
         refreshToken: {
           findMany: async () => [
             { userId: "u1", oauthIDToken: null },
-            {
-              userId: "u1",
-              oauthIDToken: idToken("microsoft", {
-                sub: "sub-1",
-                email: "a@entra.example",
-                xms_edov: "1",
-              }),
-            },
+            { userId: "u1", oauthIDToken: "google:another-provider" },
+            { userId: "u1", oauthIDToken: "microsoft:unverified-session" },
+            { userId: "u1", oauthIDToken: "microsoft:verified-session" },
           ],
         },
       },
     });
     await service.recoverVerifiedEmails();
+    assert.deepEqual(seen, [
+      ["unverified-session", "sub-1"],
+      ["verified-session", "sub-1"],
+    ]);
     assert.deepEqual(updates, [
       {
         where: { id: "l1", verifiedEmail: null },
@@ -542,6 +548,66 @@ testCase(
         },
       },
     ]);
+  },
+);
+
+testCase("verification failures never write a recovered address", async () => {
+  for (const provider of [
+    {},
+    {
+      recoverVerifiedEmail: async () => {
+        throw new Error("fixture verification failed");
+      },
+    },
+  ]) {
+    const service = Object.create(OAuthService.prototype) as OAuthService;
+    Object.assign(service, {
+      oAuthProviders: { google: provider },
+      prisma: {
+        oAuthUser: {
+          findMany: async () => [
+            {
+              id: "l1",
+              userId: "u1",
+              provider: "google",
+              providerUserId: "subject",
+            },
+          ],
+          updateMany: async () => assert.fail("unverified address written"),
+        },
+        refreshToken: {
+          findMany: async () => [
+            { userId: "u1", oauthIDToken: "google:unverified-session" },
+          ],
+        },
+      },
+    });
+    await service.recoverVerifiedEmails();
+  }
+});
+
+testCase(
+  "unavailable provider verification does not delay existing address indexes",
+  async () => {
+    let release = () => {};
+    const verification = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let refreshed = false;
+    const service = Object.create(OAuthService.prototype) as OAuthService;
+    Object.assign(service, {
+      recoverVerifiedEmails: async () => verification,
+      refreshVerifiedEmailFolds: async () => {
+        refreshed = true;
+      },
+    });
+    try {
+      service.onModuleInit();
+      assert.equal(refreshed, true);
+    } finally {
+      release();
+    }
+    await verification;
   },
 );
 

@@ -126,13 +126,14 @@ export function sealAccountSecret(
     : value;
 }
 
-/** Lookup form of an address a linked provider vouches for. */
+/** Equality index for a verified email claim, independent of credentials. */
 export function verifiedEmailFold(email: string) {
   const key = accountKey();
   const input = `verified-email-fold\0${email.toLowerCase()}`;
-  return (key ? createHmac("sha256", key) : createHash("sha256"))
-    .update(input, "utf8")
-    .digest("base64url");
+  if (key) {
+    return createHmac("sha256", key).update(input, "utf8").digest("base64url");
+  }
+  return createHash("sha256").update(input, "utf8").digest("base64url");
 }
 
 export function openAccountSecret(

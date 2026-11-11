@@ -177,11 +177,12 @@ export class OAuthService implements OnModuleInit {
   }
 
   onModuleInit() {
-    void this.recoverVerifiedEmails()
-      .then(() => this.refreshVerifiedEmailFolds())
-      .catch(() =>
-        this.logger.warn("Linked provider addresses could not be indexed"),
-      );
+    void Promise.all([
+      this.recoverVerifiedEmails(),
+      this.refreshVerifiedEmailFolds(),
+    ]).catch(() =>
+      this.logger.warn("Linked provider addresses could not be indexed"),
+    );
   }
 
   /**
@@ -199,9 +200,15 @@ export class OAuthService implements OnModuleInit {
         select: { userId: true, oauthIDToken: true },
         orderBy: { createdAt: "desc" },
       });
-      const email = sessions
-        .map(({ oauthIDToken }) => vouchedEmail(link, oauthIDToken))
-        .find(Boolean);
+      let email: string | undefined;
+      for (const { oauthIDToken } of sessions) {
+        email = await vouchedEmail(
+          link,
+          oauthIDToken,
+          this.oAuthProviders[link.provider],
+        );
+        if (email) break;
+      }
       if (!email) continue;
       await this.prisma.oAuthUser.updateMany({
         where: { id: link.id, verifiedEmail: null },
@@ -456,25 +463,24 @@ export class OAuthService implements OnModuleInit {
   }
 }
 
-/** The address an ID token of this link vouches for, as sign-in trusts it. */
-export function vouchedEmail(
+/** Recover only through the provider's cryptographic verification. */
+export async function vouchedEmail(
   link: { provider: string; providerUserId: string },
   stored: string | null,
-) {
-  if (!stored?.startsWith(`${link.provider}:`)) return undefined;
-  let claims: Record<string, unknown>;
+  provider?: Pick<OAuthProvider<unknown>, "recoverVerifiedEmail">,
+): Promise<string | undefined> {
+  if (
+    !stored?.startsWith(`${link.provider}:`) ||
+    !provider?.recoverVerifiedEmail
+  ) {
+    return undefined;
+  }
   try {
-    const payload = stored.slice(link.provider.length + 1).split(".")[1];
-    claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    return await provider.recoverVerifiedEmail(
+      stored.slice(link.provider.length + 1),
+      link.providerUserId,
+    );
   } catch {
     return undefined;
   }
-  if (claims.sub !== link.providerUserId || typeof claims.email !== "string") {
-    return undefined;
-  }
-  const trusted =
-    link.provider === "microsoft"
-      ? [true, "true", 1, "1"].includes(claims.xms_edov as never)
-      : claims.email_verified === true;
-  return trusted ? claims.email.toLowerCase() : undefined;
 }

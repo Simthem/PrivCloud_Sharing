@@ -81,6 +81,36 @@ testCase(
   },
 );
 
+testCase(
+  "expired Microsoft sessions retain signature, issuer and domain checks",
+  async () => {
+    const now = Math.floor(Date.now() / 1000);
+    for (const claims of [
+      { tid: tenant, xms_edov: true },
+      { tid: tenant, xms_edov: false },
+      { tid: otherTenant, xms_edov: true },
+    ]) {
+      const token = await new SignJWT({
+        sub: "pairwise-subject",
+        email: "User@Example.test",
+        ...claims,
+      })
+        .setProtectedHeader({ alg: "RS256", kid: "fixture" })
+        .setIssuer(issuerOf(tenant))
+        .setAudience(clientId)
+        .setIssuedAt(now - 7200)
+        .setExpirationTime(now - 3600)
+        .sign(keys.privateKey);
+      assert.equal(
+        await provider().recoverVerifiedEmail(token, "pairwise-subject"),
+        claims.tid === tenant && claims.xms_edov
+          ? "user@example.test"
+          : undefined,
+      );
+    }
+  },
+);
+
 testCase("rejects an issuer that does not match the signed tid", async () => {
   await rejected(signIn({ tid: otherTenant, xms_edov: true }));
 });

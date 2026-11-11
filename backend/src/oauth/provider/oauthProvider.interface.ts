@@ -24,6 +24,11 @@ export interface OAuthProvider<T, C = OAuthCallbackDto> {
   getToken(query: C): Promise<OAuthToken<T>>;
 
   getUserInfo(token: OAuthToken<T>, query: C): Promise<OAuthSignInDto>;
+
+  recoverVerifiedEmail?(
+    idToken: string,
+    subject: string,
+  ): Promise<string | undefined>;
 }
 
 export interface OAuthToken<T> {

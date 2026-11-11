@@ -134,12 +134,16 @@ async function main() {
         res.end(css);
         return;
       }
+      if (req.url === "/fixture.json") {
+        res.setHeader("Content-Type", "application/json");
+        res.setHeader("Cache-Control", "no-store");
+        res.end(JSON.stringify(fixture));
+        return;
+      }
       if (req.url === "/account") {
         res.setHeader("Content-Type", "text/html");
         res.end(
-          '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"></head><body style="margin:0;background:#141517"><div id="root"></div><script>window.__pushFixture=' +
-            JSON.stringify(fixture).replace(/</g, "\\u003c") +
-            '</script><script src="/bundle.js"></script></body></html>',
+          '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"></head><body style="margin:0;background:#141517"><div id="root"></div><script src="/bundle.js"></script></body></html>',
         );
         return;
       }
@@ -263,16 +267,46 @@ async function main() {
       );
     return result.result.value;
   };
+  const callPageFunction = async (functionDeclaration, values = []) => {
+    const global = await call(
+      "Runtime.evaluate",
+      { expression: "globalThis" },
+      sid,
+    );
+    const result = await call(
+      "Runtime.callFunctionOn",
+      {
+        objectId: global.result.objectId,
+        functionDeclaration,
+        arguments: values.map((value) => ({ value })),
+        returnByValue: true,
+        awaitPromise: true,
+      },
+      sid,
+    );
+    if (result.exceptionDetails)
+      throw new Error(
+        result.exceptionDetails.exception?.description ||
+          result.exceptionDetails.text,
+      );
+    return result.result.value;
+  };
   const wait = async (expression) => {
     for (let n = 0; n < 120; n++) {
-      if (await evaluate(expression)) return;
+      if (
+        await (typeof expression === "function"
+          ? expression()
+          : evaluate(expression))
+      )
+        return;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     throw new Error("Browser condition timed out: " + expression);
   };
   const click = async (selector) => {
-    const point = await evaluate(
-      `(()=>{const item=document.querySelector(${JSON.stringify(selector)});if(!item)return null;const rect=item.getBoundingClientRect();return {x:rect.x+rect.width/2,y:rect.y+rect.height/2};})()`,
+    const point = await callPageFunction(
+      "function(selector) { const item = document.querySelector(selector); if (!item) return null; const rect = item.getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }; }",
+      [selector],
     );
     assert.ok(point, selector);
     await call(
@@ -287,7 +321,10 @@ async function main() {
     );
   };
   const visible = (selector) =>
-    `(()=>{const item=document.querySelector(${JSON.stringify(selector)});return !!item && item.getBoundingClientRect().height>0 && getComputedStyle(item).visibility!=='hidden';})()`;
+    callPageFunction(
+      "function(selector) { const item = document.querySelector(selector); return !!item && item.getBoundingClientRect().height > 0 && getComputedStyle(item).visibility !== 'hidden'; }",
+      [selector],
+    );
   const capture = async (name) => {
     const image = await call(
       "Page.captureScreenshot",
@@ -309,7 +346,8 @@ async function main() {
       subscribed: false,
       user: {
         id: "subscriber",
-        username: "fixture",
+        username:
+          "fixture</script><script>globalThis.fixtureInjected=true</script>\u2028\u2029",
         signaturePushEligible: true,
         signaturePushEnabled: false,
         hasTeamMembership: false,
@@ -326,6 +364,21 @@ async function main() {
     await wait(
       'document.querySelector("[data-testid=account-push-settings] button") !== null',
     );
+    const hostileId =
+      'selector");globalThis.selectorInjected=true;//</script>\u2028\u2029';
+    const hostileSelector = await callPageFunction(
+      "function(id) { const button = document.createElement('button'); button.id = id; button.style.cssText = 'position:fixed;left:0;top:0;width:20px;height:20px;z-index:9999'; button.addEventListener('click', () => { globalThis.selectorClicked = true; }); document.body.append(button); return '#' + CSS.escape(id); }",
+      [hostileId],
+    );
+    assert.equal(await visible(hostileSelector), true);
+    await click(hostileSelector);
+    assert.equal(await evaluate("globalThis.selectorClicked"), true);
+    assert.equal(await evaluate("globalThis.selectorInjected"), undefined);
+    assert.equal(await evaluate("globalThis.fixtureInjected"), undefined);
+    await callPageFunction(
+      "function(selector) { document.querySelector(selector).remove(); delete globalThis.selectorClicked; }",
+      [hostileSelector],
+    );
     assert.equal(
       await evaluate('document.querySelectorAll(".mantine-Paper-root").length'),
       1,
@@ -340,12 +393,12 @@ async function main() {
     );
 
     assert.equal(
-      await evaluate(visible("[data-testid=signature-push-preference]")),
+      await visible("[data-testid=signature-push-preference]"),
       false,
     );
     await capture("account-notifications-" + width + "-disabled");
     await click("[data-testid=account-push-settings] button");
-    await wait(visible("[data-testid=signature-push-preference]"));
+    await wait(() => visible("[data-testid=signature-push-preference]"));
     await wait(
       'document.querySelector("[data-testid=account-push-settings] button").getAttribute("aria-expanded")==="true"',
     );

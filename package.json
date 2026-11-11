@@ -3,6 +3,7 @@
   "license": "AGPL-3.0-only",
   "version": "1.26.7",
   "scripts": {
+    "security:scout": "docker scout cves --exit-code --only-vex-affected --vex-location .docker/vex.json --vex-author='PrivCloud Security Team'",
     "format": "cd frontend && npm run format && cd ../backend && npm run format",
     "lint": "cd frontend && npm run lint && cd ../backend && npm run lint",
     "test:unit": "cd backend && npm run test:unit",

@@ -54,6 +54,20 @@
 
 ### Security
 
+- Scope the fflate scanner exception to locally patched 0.8.3, expiring on
+  25 November 2026. Mirror it in the root and frontend Snyk policies, record
+  the allocation guard in OpenVEX and test the exception and release wiring.
+  Add a Scout command that loads this VEX and fails on remaining findings.
+  Embed the VEX document in both final Docker images for Scout discovery.
+- Pass browser-test selectors as DevTools function arguments instead of
+  interpolating them into JavaScript. Load notification fixtures as JSON and
+  cover script delimiters, quotes and Unicode separators in browser checks.
+- Verify stored provider ID-token signatures before recovering linked addresses.
+  Recheck issuer, audience, subject and verified-email policy at an authenticated
+  historical validity date, without weakening expiry checks for sign-in.
+  Skip unverifiable tokens without a decode-only fallback and retain existing
+  keyed and unkeyed address indexes. Refresh existing indexes independently of
+  remote verification so provider availability cannot delay local startup work.
 - Refresh affected dependency pins, including undici 7.30.2.
 - Apply an explicit administrator-role removal from a linked identity provider
   at the next sign-in. An absent role claim leaves local rights unchanged.

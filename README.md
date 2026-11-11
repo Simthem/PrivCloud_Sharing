@@ -1,6 +1,35 @@
-# PrivCloud Sharing
+<h1 align="center">PrivCloud Sharing</h1>
 
-[![](https://img.shields.io/badge/sponsor-30363D?style=for-the-badge&logo=GitHub-Sponsors&logoColor=white)](https://github.com/sponsors/Simthem)
+<div align="center">
+
+[![Release][release-badge]][releases] &ensp; [![Release Gate][gate-badge]][gate] &ensp; [![Docker Pulls][docker-badge]][docker] &ensp; [![License][license-badge]][license]
+
+</div>
+
+<p align="center">
+  <a href="https://share.privcloud.fr/">
+    <img src="https://img.shields.io/badge/Hosted%20SaaS-Try%20PrivCloud-0d9488?style=flat&amp;labelColor=30363d&amp;logo=googlechrome&amp;logoColor=white" alt="Try PrivCloud">
+  </a>
+  &ensp;
+  <a href="https://github.com/sponsors/Simthem">
+    <img src="https://img.shields.io/badge/sponsor-GitHub-db2777?style=flat&amp;logo=githubsponsors&amp;logoColor=white&amp;labelColor=30363d" alt="Sponsor PrivCloud Sharing">
+  </a>
+</p>
+
+[release-badge]: https://img.shields.io/github/v/release/Simthem/PrivCloud_Sharing?sort=semver&style=flat&logo=github&logoColor=white&label=release&labelColor=30363d&color=3b82f6
+[gate-badge]: https://img.shields.io/github/actions/workflow/status/Simthem/PrivCloud_Sharing/open-source-release-gate.yml?branch=main&style=flat&logo=githubactions&logoColor=white&label=release%20gate&labelColor=30363d
+[docker-badge]: https://img.shields.io/docker/pulls/simthem/privcloud-sharing?style=flat&logo=docker&logoColor=white&label=docker%20pulls&labelColor=30363d&color=0284c7
+[license-badge]: https://img.shields.io/badge/license-AGPL--3.0--only-64748b?style=flat&labelColor=30363d
+[sponsor-badge]: https://img.shields.io/badge/sponsor-GitHub-db2777?style=flat&logo=githubsponsors&logoColor=white&labelColor=30363d
+
+[releases]: https://github.com/Simthem/PrivCloud_Sharing/releases/latest
+[gate]: https://github.com/Simthem/PrivCloud_Sharing/actions/workflows/open-source-release-gate.yml
+[docker]: https://hub.docker.com/r/simthem/privcloud-sharing
+[license]: ./LICENSE
+[website]: https://share.privcloud.fr/
+[sponsor]: https://github.com/sponsors/Simthem
+
+---
 
 PrivCloud Sharing is a self-hosted, end-to-end encrypted file sharing platform
 for private uploads, reverse shares, team workspaces, WebDAV imports and
@@ -8,6 +37,9 @@ eIDAS-oriented PDF signing.
 
 This public edition is designed for open-source self-hosting. Collaboration
 limits are controlled by instance configuration, not by hard-coded tiers.
+
+**Want to use PrivCloud without self-hosting?**
+Try the [official hosted service](https://share.privcloud.fr/).
 
 ## What Is Included
 

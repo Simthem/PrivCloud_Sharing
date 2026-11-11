@@ -8,6 +8,17 @@
 version: v1.25.0
 
 ignore:
+  # Local allocation guard, reviewed until the next upstream release.
+  SNYK-JS-FFLATE-22392372:
+    - "* > fflate@0.8.3":
+        reason: >
+          This repository patches fflate 0.8.3 before use. Whole-archive ZIP
+          extraction checks entry, total-size and worker limits before allocation.
+          Source fingerprints and frontend/test/fflate-security.test.mjs verify
+          all six entry points. Builds fail if the guard is missing or altered.
+          This exception covers the local patch, not the upstream npm artifact.
+        expires: "2026-11-25T00:00:00.000Z"
+
   # chi has no fixed release. Caddy links only the chi router through
   # smallstep/certificates and the Docker build fails if RedirectSlashes is
   # ever linked into the binary.

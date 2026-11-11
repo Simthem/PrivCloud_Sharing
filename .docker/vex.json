@@ -3,8 +3,8 @@
   "@id": "https://github.com/Simthem/PrivCloud_Sharing/vex/2026-07-21",
   "author": "simthem <privcloud-sharing maintainer>",
   "role": "maintainer",
-  "timestamp": "2026-11-09T18:30:00Z",
-  "version": 8,
+  "timestamp": "2026-11-11T00:00:00+01:00",
+  "version": 9,
   "tooling": "manual review",
   "statements": [
     {
@@ -225,6 +225,21 @@
       "status": "not_affected",
       "justification": "vulnerable_code_not_in_execute_path",
       "impact_statement": "libstdc++.so.6 exports std::from_chars, but none of the ELF files in the linux/amd64 image imports it. Node 24.22.2 and the native addons never reach the library implementation."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-122146",
+        "@id": "https://security.snyk.io/vuln/SNYK-JS-FFLATE-22392372",
+        "description": "fflate ZIP extraction allocation from untrusted size declarations"
+      },
+      "products": [
+        {
+          "@id": "pkg:npm/fflate@0.8.3"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "inline_mitigations_already_exist",
+      "impact_statement": "Only the fflate 0.8.3 copies patched by this repository are covered. scripts/patch-fflate.cjs verifies upstream source fingerprints and inserts a ZIP preflight before unzipSync and unzip allocate output or launch workers. The guard bounds each entry to 32 MiB, total extraction and input to 64 MiB, entry count to 1024 and asynchronous workers to four. All six distributed entry points are verified at installation and before frontend compilation, including cached Docker builders. frontend/test/fflate-security.test.mjs checks malicious size declarations without allocating them, normal ZIPs and streamed downloads. This does not assert that the upstream npm artifact is fixed. Reassess by 2026-11-25 and whenever the dependency version, guard, build hooks or extraction paths change."
     }
   ]
 }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   readFileSync,
+  existsSync,
   mkdtempSync,
   mkdirSync,
   cpSync,
@@ -372,5 +373,109 @@ test("both Docker paths copy and recheck the guard in dependency and cached-buil
       .split("FROM base AS frontend-builder")[1]
       .split(/\nFROM /)[0];
     assert.match(builder, /RUN node \/opt\/app\/scripts\/patch-fflate\.cjs/);
+  }
+});
+
+test("scanner exceptions cover only the reviewed fflate version and expire together", () => {
+  const issue = "SNYK-JS-FFLATE-22392372";
+  const policies = ["../.snyk", ".snyk"].map((name) =>
+    require("yaml").parse(readFileSync(path.join(root, name), "utf8")),
+  );
+  const rules = policies.map((policy) => policy.ignore[issue]);
+  assert.deepEqual(rules[0], rules[1]);
+  assert.equal(rules[0].length, 1);
+  assert.deepEqual(Object.keys(rules[0][0]), ["* > fflate@0.8.3"]);
+  const rule = rules[0][0]["* > fflate@0.8.3"];
+  assert.match(rule.expires, /^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/);
+  assert.ok(Number.isFinite(Date.parse(rule.expires)));
+  assert.match(rule.reason, /all six entry points/);
+  assert.match(rule.reason, /not the upstream npm artifact/);
+});
+
+test("runtime images carry the version-scoped VEX with the local mitigation", () => {
+  const dockerRoot = path.join(root, "../.docker");
+  const vexName = existsSync(path.join(dockerRoot, "privcloud.vex.json"))
+    ? "privcloud.vex.json"
+    : "vex.json";
+  const document = JSON.parse(
+    readFileSync(path.join(dockerRoot, vexName), "utf8"),
+  );
+  assert.equal(document["@context"], "https://openvex.dev/ns/v0.2.0");
+  const statements = document.statements.filter(
+    (item) => item.vulnerability.name === "CVE-2026-122146",
+  );
+  assert.equal(statements.length, 1);
+  const statement = statements[0];
+  const scout = JSON.parse(
+    readFileSync(path.join(root, "../package.json"), "utf8"),
+  ).scripts["security:scout"];
+  assert.ok(scout.includes(`--vex-location .docker/${vexName}`));
+  assert.ok(scout.includes("--vex-author='PrivCloud Security Team'"));
+  assert.ok(scout.includes("--only-vex-affected"));
+  assert.ok(scout.includes("--exit-code"));
+  assert.deepEqual(statement.products, [{ "@id": "pkg:npm/fflate@0.8.3" }]);
+  assert.equal(statement.status, "not_affected");
+  assert.equal(statement.justification, "inline_mitigations_already_exist");
+  assert.match(
+    statement.impact_statement,
+    /Only the fflate 0\.8\.3 copies patched by this repository/,
+  );
+  assert.match(statement.impact_statement, /32 MiB/);
+  assert.match(statement.impact_statement, /64 MiB/);
+  assert.match(statement.impact_statement, /upstream npm artifact is fixed/);
+  const policy = require("yaml").parse(
+    readFileSync(path.join(root, ".snyk"), "utf8"),
+  );
+  const expiry = policy.ignore["SNYK-JS-FFLATE-22392372"][0][
+    "* > fflate@0.8.3"
+  ].expires.slice(0, 10);
+  assert.ok(statement.impact_statement.includes(`Reassess by ${expiry}`));
+  for (const name of ["Dockerfile", "Dockerfile.full-build"]) {
+    const runtime = readFileSync(path.join(root, "..", name), "utf8").split(
+      " AS runner\n",
+    )[1];
+    assert.ok(
+      runtime.includes(
+        `COPY .docker/${vexName} /usr/share/security/privcloud.vex.json`,
+      ),
+    );
+  }
+});
+
+test("the release scanner policy stays behind frontend guard regressions", () => {
+  const jobPath = path.join(root, "../ci/gitlab/security.yml");
+  const manifest = JSON.parse(
+    readFileSync(path.join(root, "package.json"), "utf8"),
+  );
+  if (existsSync(jobPath)) {
+    const jobs = require("yaml").parse(readFileSync(jobPath, "utf8"));
+    assert.ok(
+      jobs.snyk.needs.some(
+        (job) => job.job === "frontend:build" && !job.optional,
+      ),
+    );
+    const builds = require("yaml").parse(
+      readFileSync(path.join(root, "../ci/gitlab/build.yml"), "utf8"),
+    );
+    assert.ok(builds["frontend:build"].script.includes("npm test"));
+    assert.equal(manifest.scripts.test, "npm run test:unit");
+    assert.ok(manifest.scripts["test:unit"].includes("test/*.test.mjs"));
+  } else {
+    const workflow = require("yaml").parse(
+      readFileSync(
+        path.join(root, "../.github/workflows/open-source-release-gate.yml"),
+        "utf8",
+      ),
+    );
+    assert.ok(
+      workflow.jobs["release-gate"].steps.some(
+        (step) => step.run === "npm run test:release",
+      ),
+    );
+    const scripts = JSON.parse(
+      readFileSync(path.join(root, "../package.json"), "utf8"),
+    ).scripts;
+    assert.ok(scripts["test:release"].includes("npm run test:frontend"));
+    assert.ok(scripts["test:frontend"].includes("frontend/test/*.test.mjs"));
   }
 });
