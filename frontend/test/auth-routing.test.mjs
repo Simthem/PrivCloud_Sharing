@@ -7,6 +7,9 @@ import {
   finalizePostAuthRedirectPath,
   getRememberedPostAuthRedirectPath,
   isBrowserLanguageRoutePath,
+  isChosenLanguage,
+  languageParameter,
+  redirectLocale,
   isEmailVerificationRoutePath,
   isProtectedTeamContextPath,
   isSessionScopedRoutePath,
@@ -25,6 +28,7 @@ import {
   takeVerificationReturn,
 } from "../src/utils/emailVerification.util.ts";
 import { resolvePostAuthRedirectPath } from "../src/utils/router.util.ts";
+import i18nUtil from "../src/utils/i18n.util.ts";
 import { refreshAfterPossibleCookieRotation } from "../src/utils/authRefresh.util.ts";
 
 test("retries only a 401 and never consumes SafeLine or transient failures", async () => {
@@ -296,6 +300,119 @@ test("the first language of the browser decides between French and English", () 
   assert.equal(prefersEnglish("*"), false);
   assert.equal(prefersEnglish(""), false);
   assert.equal(prefersEnglish(null), false);
+});
+
+const ENGLISH_BROWSER = "en-GB,en;q=0.9";
+const FRENCH_BROWSER = "fr-FR,fr;q=0.9,en;q=0.8";
+const route = (overrides) =>
+  redirectLocale({
+    locale: "fr",
+    pathname: "/share/share-id",
+    chosen: false,
+    acceptLanguage: ENGLISH_BROWSER,
+    ...overrides,
+  });
+
+test("a language written on a first visit is not a choice", () => {
+  assert.equal(isChosenLanguage("fr-FR"), false);
+  assert.equal(isChosenLanguage("en-US", undefined), false);
+  assert.equal(isChosenLanguage("fr-FR", "1"), true);
+  assert.equal(isChosenLanguage("de-DE"), true);
+  assert.equal(isChosenLanguage(undefined, "1"), false);
+  assert.equal(isChosenLanguage("", "1"), false);
+});
+
+test("a recipient left with a French cookie follows an English browser", () => {
+  assert.equal(route({ cookie: "fr-FR" }), "en");
+  assert.equal(route({ cookie: undefined }), "en");
+  assert.equal(route({ cookie: "fr-FR", locale: "en" }), undefined);
+  assert.equal(
+    route({ cookie: "en-US", acceptLanguage: FRENCH_BROWSER }),
+    undefined,
+  );
+  assert.equal(route({ cookie: "fr-FR", pathname: "/sign/token" }), "en");
+});
+
+test("a language picked in the account wins over the browser", () => {
+  assert.equal(route({ cookie: "fr-FR", chosen: true }), undefined);
+  assert.equal(route({ cookie: "fr-FR", chosen: true, locale: "en" }), "fr");
+  assert.equal(
+    route({ cookie: "en-US", chosen: true, acceptLanguage: FRENCH_BROWSER }),
+    "en",
+  );
+  assert.equal(route({ cookie: "de-DE", chosen: true }), undefined);
+});
+
+test("a link can ask for its language, whatever the recipient has", () => {
+  for (const visitor of [
+    { cookie: "fr-FR", chosen: true },
+    { cookie: "fr-FR" },
+    { acceptLanguage: FRENCH_BROWSER },
+  ]) {
+    assert.equal(route({ parameter: "en", ...visitor }), "en");
+    assert.equal(route({ parameter: "en-US", ...visitor }), "en");
+    assert.equal(
+      route({ parameter: "en", locale: "en", ...visitor }),
+      undefined,
+    );
+  }
+  assert.equal(route({ parameter: "fr", locale: "en" }), "fr");
+  assert.equal(route({ parameter: "fr" }), undefined);
+  assert.equal(route({ parameter: "de" }), undefined);
+  assert.equal(
+    route({ parameter: "de", cookie: "en-US", chosen: true }),
+    undefined,
+  );
+});
+
+test("a malformed language parameter is ignored", () => {
+  for (const value of [
+    "english",
+    "e",
+    "en_US",
+    "../en",
+    "en%0d",
+    "",
+    null,
+    ["en"],
+    5,
+  ]) {
+    assert.equal(languageParameter(value), undefined, String(value));
+  }
+  assert.equal(languageParameter("en"), "en");
+  assert.equal(languageParameter("pt-BR"), "pt-BR");
+  assert.equal(
+    route({ parameter: "english", cookie: "fr-FR", chosen: true }),
+    undefined,
+  );
+  assert.equal(route({ parameter: "//evil.test" }), "en");
+});
+
+test("SEO pages keep the URL language, then the last visit", () => {
+  const seo = (overrides) => route({ pathname: "/blog/article", ...overrides });
+  assert.equal(seo({}), undefined);
+  assert.equal(seo({ cookie: "en-US" }), "en");
+  assert.equal(seo({ cookie: "fr-FR", locale: "en" }), "fr");
+  assert.equal(seo({ cookie: "de-DE" }), undefined);
+  assert.equal(seo({ parameter: "en", cookie: "fr-FR" }), "en");
+});
+
+test("a page is rendered in the link, cookie or URL language, in that order", () => {
+  const page = i18nUtil.pageLanguage;
+  assert.equal(page({ locale: "fr" }), "fr-FR");
+  assert.equal(page({ locale: "en" }), "en-US");
+  assert.equal(page({ locale: "en", cookie: "fr-FR" }), "en-US");
+  assert.equal(page({ locale: "fr", cookie: "en-US" }), "fr-FR");
+  assert.equal(page({ locale: "en", cookie: "de-DE" }), "de-DE");
+  assert.equal(page({ locale: "fr", parameter: "en" }), "en-US");
+  assert.equal(page({ locale: "fr", parameter: "EN-us" }), "en-US");
+  assert.equal(page({ locale: "fr", parameter: "nl" }), "nl-BE");
+  assert.equal(
+    page({ locale: "fr", parameter: "de", cookie: "it-IT" }),
+    "de-DE",
+  );
+  assert.equal(page({ locale: "en", parameter: "xx" }), "en-US");
+  assert.equal(page({ locale: "en", parameter: ["fr"] }), "en-US");
 });
 
 function memoryStorage() {

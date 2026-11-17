@@ -25,11 +25,12 @@ ARG NODE_BUILDER_SHA256=ff330fc2af5c8645603dcb2c7d4be23cb6c6580253a7c9ebcd9c85f6
 # + CVE-2026-39825 (MEDIUM), CVE-2026-39826 (MEDIUM) -- tous fixés en 1.26.3.
 # + CVE-2026-39822 et CVE-2026-42505 -- corrigés par Go 1.26.5.
 # + CVE-2026-111943 (HIGH, crypto/x509), corrigé par Go 1.26.10.
+# + CVE-2026-97054 (net/http, MaxBytesReader), corrigé par Go 1.26.11.
 # Caddy 2.11.3 requis pour fixer CVE-2026-30851 (HIGH), CVE-2026-30852 (MEDIUM),
 # CVE-2026-45135 (HIGH - FastCGI splitPos), CVE-2026-45692 (MEDIUM - Admin /config bypass),
 # GHSA-gx7w-56w6-g48x (MEDIUM - PKI path matching bypass).
 # GHSA-wwhq-w58m-w29c (MEDIUM - CVE-2026-30852 fix bypass) - status: affected, no fix yet.
-FROM golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS caddy-builder
+FROM golang:1.26.11-alpine@sha256:ecb67f987aa1a57794c91d19ade7ae0209f2f0f5496aaef9e6ae85ddf92d02ab AS caddy-builder
 ENV GOTOOLCHAIN=local
 RUN apk upgrade --no-cache && apk add --no-cache curl git
 WORKDIR /caddy
@@ -84,6 +85,7 @@ RUN test "$(grep -Fc '[]interpreter.Interpretable{reqAttr}' modules/caddyhttp/ce
 # CVE-2026-114437, CVE-2026-118681 : github.com/go-chi/chi/v5 middleware trust/origin validation issues < 5.5.0.
 # CVE-2026-122132 : no fixed chi release yet. RedirectSlashes is not linked and the build fails if it ever is.
 # SNYK-GOLANG-GOOPENTELEMETRYIO* (HIGH x4) : go.opentelemetry.io/otel < 1.43.0
+# CVE-2026-128085 (MEDIUM) : go.opentelemetry.io/otel{/sdk,/sdk/log,/trace} < 1.47.0 (attribute truncation bypass)
 # SNYK-GOLANG-GITHUBCOMYUINGOLDMARKRENDERERHTML-15838406 (MEDIUM) : goldmark XSS < 1.7.17
 # SNYK-GOLANG-GOLANGORGXCRYPTOSSH* (HIGH x5 + MEDIUM x7) : golang.org/x/crypto/ssh{,/agent} < 0.52.0
 # GO-2026-5932 : golang.org/x/crypto/openpgp, fixed after v0.58.0 by commit 2f1f834330b2 (no tag yet).
@@ -112,16 +114,17 @@ RUN go get golang.org/x/net@v0.62.0 \
     && go get github.com/go-jose/go-jose/v3@v3.0.5 \
     && go get github.com/go-jose/go-jose/v4@v4.1.6 \
     && go get github.com/jackc/pgx/v5@v5.9.2 \
-    && go get go.opentelemetry.io/otel@v1.45.0 \
-    && go get go.opentelemetry.io/otel/sdk@v1.45.0 \
-    && go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc@v1.45.0 \
-    && go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.45.0 \
-    && go get go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp@v1.45.0 \
-    && go get go.opentelemetry.io/otel/log@v0.21.0 \
-    && go get go.opentelemetry.io/otel/sdk/log@v0.21.0 \
-    && go get go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc@v0.21.0 \
-    && go get go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.21.0 \
-    && go get go.opentelemetry.io/otel/exporters/stdout/stdoutlog@v0.21.0 \
+    && go get go.opentelemetry.io/otel@v1.47.0 \
+    && go get go.opentelemetry.io/otel/sdk@v1.47.0 \
+    && go get go.opentelemetry.io/otel/trace@v1.47.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc@v1.47.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.47.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp@v1.47.0 \
+    && go get go.opentelemetry.io/otel/log@v1.47.0 \
+    && go get go.opentelemetry.io/otel/sdk/log@v1.47.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc@v0.23.0 \
+    && go get go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.23.0 \
+    && go get go.opentelemetry.io/otel/exporters/stdout/stdoutlog@v0.23.0 \
     && go get github.com/quic-go/quic-go/http3@v0.59.1 \
     && go get github.com/go-chi/chi/v5@v5.5.0 \
     && go get golang.org/x/sys@v0.49.0 \
@@ -141,12 +144,12 @@ RUN go get golang.org/x/net@v0.62.0 \
         -replace=golang.org/x/crypto=golang.org/x/crypto@v0.58.1-0.20261009181718-2f1f834330b2 \
         -replace=golang.org/x/sys=golang.org/x/sys@v0.49.0 \
         -replace=github.com/go-chi/chi/v5=github.com/go-chi/chi/v5@v5.5.0 \
-        -replace=go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptrace-grpc=go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptrace-grpc@v1.45.0 \
-        -replace=go.opentelemetry.io/otel/log=go.opentelemetry.io/otel/log@v0.21.0 \
-        -replace=go.opentelemetry.io/otel/sdk/log=go.opentelemetry.io/otel/sdk/log@v0.21.0 \
-        -replace=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc@v0.21.0 \
-        -replace=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.21.0 \
-        -replace=go.opentelemetry.io/otel/exporters/stdout/stdoutlog=go.opentelemetry.io/otel/exporters/stdout/stdoutlog@v0.21.0 \
+        -replace=go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptrace-grpc=go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptrace-grpc@v1.47.0 \
+        -replace=go.opentelemetry.io/otel/log=go.opentelemetry.io/otel/log@v1.47.0 \
+        -replace=go.opentelemetry.io/otel/sdk/log=go.opentelemetry.io/otel/sdk/log@v1.47.0 \
+        -replace=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc@v0.23.0 \
+        -replace=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.23.0 \
+        -replace=go.opentelemetry.io/otel/exporters/stdout/stdoutlog=go.opentelemetry.io/otel/exporters/stdout/stdoutlog@v0.23.0 \
     && go mod tidy \
     && go mod edit -require=github.com/go-chi/chi/v5@v5.5.0 \
     && go get google.golang.org/grpc@v1.83.2 \
@@ -166,13 +169,14 @@ RUN go get golang.org/x/net@v0.62.0 \
     && test "$(go list -m -f '{{.Version}}' github.com/klauspost/compress)" = "v1.20.3" \
     && test "$(go list -m -f '{{.Version}}' github.com/go-jose/go-jose/v4)" = "v4.1.6" \
     && test "$(go list -m -f '{{.Version}}' github.com/grpc-ecosystem/grpc-gateway/v2)" = "v2.30.0" \
-    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel)" = "v1.45.0" \
-    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/sdk)" = "v1.45.0" \
-    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/sdk/log)" = "v0.21.0" \
-    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/log)" = "v0.21.0" \
-    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc)" = "v0.21.0" \
-    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp)" = "v0.21.0" \
-    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/exporters/stdout/stdoutlog)" = "v0.21.0" \
+    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel)" = "v1.47.0" \
+    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/sdk)" = "v1.47.0" \
+    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/trace)" = "v1.47.0" \
+    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/sdk/log)" = "v1.47.0" \
+    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/log)" = "v1.47.0" \
+    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc)" = "v0.23.0" \
+    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp)" = "v0.23.0" \
+    && test "$(go list -m -f '{{.Version}}' go.opentelemetry.io/otel/exporters/stdout/stdoutlog)" = "v0.23.0" \
     && ! go list -deps ./cmd/caddy | grep -qx 'golang.org/x/crypto/openpgp'
 # go-jose v3 has no fixed release. Build against v3.0.5 with the upstream v4
 # fixes backported (.docker/patches), through a local replace so the binary
@@ -206,7 +210,7 @@ RUN GRPC_GATEWAY_MUX="$(go env GOMODCACHE)/github.com/grpc-ecosystem/grpc-gatewa
 
 # Compiler Caddy (binaire statique, stripped, sans symboles de debug)
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/caddy \
-    && go version -m /usr/bin/caddy | head -n 1 | grep -F 'go1.26.10' \
+    && go version -m /usr/bin/caddy | head -n 1 | grep -F 'go1.26.11' \
     && go version -m /usr/bin/caddy | grep -Eq '=>[[:space:]]+golang[.]org/x/net[[:space:]]+v0[.]62[.]0' \
     && go version -m /usr/bin/caddy | grep -Eq \
         'dep[[:space:]]+google[.]golang[.]org/grpc[[:space:]]+v1[.]83[.]2' \
@@ -226,12 +230,12 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/bin/caddy ./cmd/ca
 # ---------------------------
 # This static helper prepares mounted directories, drops from root to PUID:PGID
 # and execs Node without requiring a shell, passwd database, PAM or gosu.
-FROM golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS runtime-init-builder
+FROM golang:1.26.11-alpine@sha256:ecb67f987aa1a57794c91d19ade7ae0209f2f0f5496aaef9e6ae85ddf92d02ab AS runtime-init-builder
 ENV GOTOOLCHAIN=local
 WORKDIR /src
 COPY scripts/docker/runtime-init.go .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /runtime-init ./runtime-init.go \
-    && go version -m /runtime-init | head -n 1 | grep -F 'go1.26.10'
+    && go version -m /runtime-init | head -n 1 | grep -F 'go1.26.11'
 
 # ---------------------------
 # Stage 0c: Reuse the verified OpenSSL 3.5.9 LTS release

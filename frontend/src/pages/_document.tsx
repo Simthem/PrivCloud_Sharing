@@ -20,6 +20,7 @@ import {
   shouldEmbedCspMeta,
 } from "../utils/csp.util";
 import { createEmotionCache } from "../utils/emotionCache";
+import i18nUtil from "../utils/i18n.util";
 import { __ssrI18nMessages } from "./_app";
 
 type PrivCloudDocumentProps = {
@@ -68,7 +69,7 @@ export default class _Document extends Document {
         : element,
     );
 
-    // Extract resolved language from cookie (set by _app SSR) or Accept-Language
+    // Same language as the one _app rendered the page in.
     let lang = "fr";
     // Extract resolved color scheme from cookie -- mirrors _app.getInitialProps
     // so the SSR HTML carries data-mantine-color-scheme without requiring the
@@ -78,12 +79,13 @@ export default class _Document extends Document {
     let colorScheme: "dark" | "light" = "dark";
     if (ctx.req) {
       const cookieHeader = ctx.req.headers.cookie ?? "";
-      const langMatch = cookieHeader.match(/language=([^;]+)/);
-      if (langMatch) {
-        lang = langMatch[1].split("-")[0];
-      } else {
-        lang = ctx.locale ?? "fr";
-      }
+      lang = i18nUtil
+        .pageLanguage({
+          parameter: ctx.query.lang,
+          cookie: cookieHeader.match(/(?:^|;\s*)language=([^;]+)/)?.[1],
+          locale: ctx.locale,
+        })
+        .split("-")[0];
       const csMatch = cookieHeader.match(/mantine-color-scheme=([^;]+)/);
       if (csMatch) {
         const v = decodeURIComponent(csMatch[1]);

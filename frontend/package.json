@@ -1,7 +1,7 @@
 {
   "name": "privcloud-sharing-frontend",
   "license": "AGPL-3.0-only",
-  "version": "1.26.7",
+  "version": "1.26.8",
   "scripts": {
     "postinstall": "node ../scripts/patch-fflate.cjs",
     "dev": "node ../scripts/patch-fflate.cjs && node scripts/copy-pdf-worker.mjs && next dev --webpack",
@@ -47,7 +47,7 @@
     "mantine-form-yup-resolver": "^2.0.0",
     "markdown-to-jsx": "^7.5.0",
     "mime-types": "^2.1.35",
-    "next": "16.4.1",
+    "next": "16.4.5",
     "next-http-proxy-middleware": "^1.2.6",
     "p-limit": "^6.1.0",
     "pdf-lib": "^1.17.1",
@@ -72,7 +72,7 @@
     "qrcode-generator": "2.0.4"
   },
   "devDependencies": {
-    "@next/eslint-plugin-next": "16.4.1",
+    "@next/eslint-plugin-next": "16.4.5",
     "@tanstack/react-query-devtools": "^5.83.0",
     "@types/mime-types": "^2.1.4",
     "@types/node": "^25.8.0",
@@ -99,7 +99,7 @@
     "minimatch": "11.0.3",
     "picomatch": ">=4.0.4",
     "axios": "1.20.0",
-    "next": "16.4.1",
+    "next": "16.4.5",
     "sharp": "$sharp",
     "nanoid": "5.1.16",
     "dompurify": "3.4.17",

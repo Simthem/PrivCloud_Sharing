@@ -15,13 +15,14 @@ type User = {
   createdAt?: string;
   emailVerificationRequired: boolean;
   emailVerified: boolean;
+  emailVerificationInvited?: boolean;
   emailVerificationBlockedAt: string | null;
   emailVerificationDeletionAt: string | null;
   /** When the address was proven, and how: EMAIL_LINK or ADMINISTRATOR. */
   emailVerifiedAt?: string | null;
   emailVerificationSource?: string | null;
   /** Teams this account has joined, on the administrators' list only. */
-  teams?: { name: string; role: string }[];
+  teams?: { id?: string; name: string; role: string }[];
   hasTeamMembership?: boolean;
   hasExternalAccess?: boolean;
   teamId?: string | null;

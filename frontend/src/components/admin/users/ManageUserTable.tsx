@@ -32,6 +32,7 @@ import {
   UserSort,
   UserSortField,
 } from "../../../utils/userSort.util";
+import { groupUsersByTeam, UserRow } from "../../../utils/userTeamGroups.util";
 import SortableHeader from "../SortableHeader";
 import showUpdateUserModal from "./showUpdateUserModal";
 
@@ -48,11 +49,13 @@ const SORT_COLUMNS: {
 
 const ManageUserTable = ({
   users: unsortedUsers,
+  groupByTeam,
   getUsers,
   deleteUser,
   isLoading,
 }: {
   users: User[];
+  groupByTeam: boolean;
   getUsers: () => void;
   deleteUser: (_user: User) => void;
   isLoading: boolean;
@@ -66,6 +69,31 @@ const ManageUserTable = ({
     () => sortUsers(unsortedUsers, sort),
     [unsortedUsers, sort],
   );
+  const rows = useMemo<UserRow[]>(
+    () =>
+      groupByTeam
+        ? groupUsersByTeam(users)
+        : users.map((user) => ({ key: user.id, user, indented: false })),
+    [users, groupByTeam],
+  );
+
+  const groupHeading = (heading: string | null, count: number) => (
+    <Group gap={6} wrap="nowrap">
+      {heading !== null && <TbUsersGroup size={14} style={{ flexShrink: 0 }} />}
+      <Text size="sm" fw={600} truncate="end">
+        {heading ?? intl.formatMessage({ id: "admin.users.group.no-team" })}
+      </Text>
+      <Text size="xs" c="dimmed">
+        {count}
+      </Text>
+    </Group>
+  );
+  const roleLabel = (role?: string) =>
+    role && (
+      <Text size="xs" c="dimmed">
+        {intl.formatMessage({ id: `team.role.${role.toLowerCase()}` })}
+      </Text>
+    );
 
   const handleSort = (field: UserSortField) => {
     setSort((current) => ({
@@ -159,6 +187,84 @@ const ManageUserTable = ({
       </Tooltip>
     );
 
+  const userCard = ({
+    key,
+    user,
+    role,
+    indented,
+  }: Exclude<UserRow, { heading: unknown }>) => (
+    <Card
+      key={key}
+      withBorder
+      padding="sm"
+      radius="md"
+      ml={indented ? "lg" : 0}
+    >
+      <Group justify="space-between" wrap="nowrap" align="flex-start">
+        <Box style={{ minWidth: 0, flex: 1 }}>
+          <Group gap={6} wrap="nowrap" mb={2}>
+            <Text size="sm" fw={600} truncate="end">
+              {user.username}
+            </Text>
+            {accountBadges(user)}
+            {roleLabel(role)}
+            {user.isAdmin && (
+              <Badge
+                size="xs"
+                color="red"
+                variant="light"
+                style={{ flexShrink: 0 }}
+              >
+                Admin
+              </Badge>
+            )}
+          </Group>
+          <Text size="xs" c="dimmed" truncate="end">
+            {user.email}
+          </Text>
+          {teamLine(user)}
+          <Group gap="xs" wrap="wrap" mt={6}>
+            <Badge color={accessColor()} variant="light" size="sm">
+              Full access
+            </Badge>
+            <Text size="xs" c="dimmed">
+              {fmtDate(user.createdAt)}
+            </Text>
+          </Group>
+        </Box>
+        <Group gap="sm" wrap="nowrap">
+          {!user.isLdap && (
+            <ActionIcon
+              variant="light"
+              color="blue"
+              size={28}
+              aria-label={editLabel(user)}
+              onClick={() =>
+                showUpdateUserModal(
+                  modals,
+                  user,
+                  getUsers,
+                  user.id === currentUser?.id,
+                )
+              }
+            >
+              <TbEdit />
+            </ActionIcon>
+          )}
+          <ActionIcon
+            variant="light"
+            color="red"
+            size={28}
+            aria-label={deleteLabel(user)}
+            onClick={() => deleteUser(user)}
+          >
+            <TbTrash />
+          </ActionIcon>
+        </Group>
+      </Group>
+    </Card>
+  );
+
   if (isMobile) {
     return (
       <Stack gap="sm">
@@ -198,71 +304,15 @@ const ManageUserTable = ({
                 <Skeleton height={10} width="60%" />
               </Card>
             ))
-          : users.map((user) => (
-              <Card key={user.id} withBorder padding="sm" radius="md">
-                <Group justify="space-between" wrap="nowrap" align="flex-start">
-                  <Box style={{ minWidth: 0, flex: 1 }}>
-                    <Group gap={6} wrap="nowrap" mb={2}>
-                      <Text size="sm" fw={600} truncate="end">
-                        {user.username}
-                      </Text>
-                      {accountBadges(user)}
-                      {user.isAdmin && (
-                        <Badge
-                          size="xs"
-                          color="red"
-                          variant="light"
-                          style={{ flexShrink: 0 }}
-                        >
-                          Admin
-                        </Badge>
-                      )}
-                    </Group>
-                    <Text size="xs" c="dimmed" truncate="end">
-                      {user.email}
-                    </Text>
-                    {teamLine(user)}
-                    <Group gap="xs" wrap="wrap" mt={6}>
-                      <Badge color={accessColor()} variant="light" size="sm">
-                        Full access
-                      </Badge>
-                      <Text size="xs" c="dimmed">
-                        {fmtDate(user.createdAt)}
-                      </Text>
-                    </Group>
-                  </Box>
-                  <Group gap="sm" wrap="nowrap">
-                    {!user.isLdap && (
-                      <ActionIcon
-                        variant="light"
-                        color="blue"
-                        size={28}
-                        aria-label={editLabel(user)}
-                        onClick={() =>
-                          showUpdateUserModal(
-                            modals,
-                            user,
-                            getUsers,
-                            user.id === currentUser?.id,
-                          )
-                        }
-                      >
-                        <TbEdit />
-                      </ActionIcon>
-                    )}
-                    <ActionIcon
-                      variant="light"
-                      color="red"
-                      size={28}
-                      aria-label={deleteLabel(user)}
-                      onClick={() => deleteUser(user)}
-                    >
-                      <TbTrash />
-                    </ActionIcon>
-                  </Group>
-                </Group>
-              </Card>
-            ))}
+          : rows.map((row) =>
+              "user" in row ? (
+                userCard(row)
+              ) : (
+                <Box key={row.key} mt="xs">
+                  {groupHeading(row.heading, row.count)}
+                </Box>
+              ),
+            )}
       </Stack>
     );
   }
@@ -313,73 +363,94 @@ const ManageUserTable = ({
         <Table.Tbody>
           {isLoading
             ? skeletonRows
-            : users.map((user) => (
-                <Table.Tr key={user.id}>
-                  <Table.Td
-                    style={{ whiteSpace: "nowrap", overflowWrap: "normal" }}
-                  >
-                    {user.username}
-                    {(user.isLdap ||
-                      user.totpVerified ||
-                      emailVerified(user)) && (
-                      <Group gap={4} wrap="nowrap" mt={2}>
-                        {accountBadges(user)}
-                      </Group>
-                    )}
-                  </Table.Td>
-                  <Table.Td style={{ maxWidth: 0, width: "100%" }}>
-                    <Tooltip label={user.email} openDelay={300} withArrow>
-                      <Text size="sm" truncate="end">
-                        {user.email}
+            : rows.map((row) => {
+                if (!("user" in row)) {
+                  return (
+                    <Table.Tr key={row.key}>
+                      <Table.Td colSpan={SORT_COLUMNS.length + 1}>
+                        {groupHeading(row.heading, row.count)}
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                }
+                const { key, user, role, indented } = row;
+                return (
+                  <Table.Tr key={key}>
+                    <Table.Td
+                      style={{
+                        whiteSpace: "nowrap",
+                        overflowWrap: "normal",
+                        paddingLeft: indented ? 28 : undefined,
+                      }}
+                    >
+                      {user.username}
+                      {roleLabel(role)}
+                      {(user.isLdap ||
+                        user.totpVerified ||
+                        emailVerified(user)) && (
+                        <Group gap={4} wrap="nowrap" mt={2}>
+                          {accountBadges(user)}
+                        </Group>
+                      )}
+                    </Table.Td>
+                    <Table.Td style={{ maxWidth: 0, width: "100%" }}>
+                      <Tooltip label={user.email} openDelay={300} withArrow>
+                        <Text size="sm" truncate="end">
+                          {user.email}
+                        </Text>
+                      </Tooltip>
+                      {teamLine(user)}
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm" style={{ whiteSpace: "nowrap" }}>
+                        {fmtDate(user.createdAt)}
                       </Text>
-                    </Tooltip>
-                    {teamLine(user)}
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="sm" style={{ whiteSpace: "nowrap" }}>
-                      {fmtDate(user.createdAt)}
-                    </Text>
-                  </Table.Td>
-                  <Table.Td>{user.isAdmin && <TbCheck />}</Table.Td>
-                  <Table.Td style={{ whiteSpace: "nowrap" }}>
-                    {/* One row, never wrapped: a wrapped delete button would
-                        sit next to the following user's edit button. */}
-                    <Group justify="flex-end" gap="md" wrap="nowrap">
-                      {user.isLdap ? null : (
-                        <Tooltip label={editLabel(user)} withArrow>
+                    </Table.Td>
+                    <Table.Td>{user.isAdmin && <TbCheck />}</Table.Td>
+                    <Table.Td style={{ whiteSpace: "nowrap" }}>
+                      {/* One row, never wrapped: a wrapped delete button would
+                          sit next to the following user's edit button. */}
+                      <Group justify="flex-end" gap="md" wrap="nowrap">
+                        {user.isLdap ? null : (
+                          <Tooltip label={editLabel(user)} withArrow>
+                            <ActionIcon
+                              variant="light"
+                              color="blue"
+                              size={28}
+                              aria-label={editLabel(user)}
+                              onClick={() =>
+                                showUpdateUserModal(
+                                  modals,
+                                  user,
+                                  getUsers,
+                                  user.id === currentUser?.id,
+                                )
+                              }
+                            >
+                              <TbEdit />
+                            </ActionIcon>
+                          </Tooltip>
+                        )}
+                        <Tooltip
+                          label={deleteLabel(user)}
+                          withArrow
+                          color="red"
+                        >
                           <ActionIcon
                             variant="light"
-                            color="blue"
+                            color="red"
                             size={28}
-                            aria-label={editLabel(user)}
-                            onClick={() =>
-                              showUpdateUserModal(
-                                modals,
-                                user,
-                                getUsers,
-                                user.id === currentUser?.id,
-                              )
-                            }
+                            aria-label={deleteLabel(user)}
+                            onClick={() => deleteUser(user)}
                           >
-                            <TbEdit />
+                            <TbTrash />
                           </ActionIcon>
                         </Tooltip>
-                      )}
-                      <Tooltip label={deleteLabel(user)} withArrow color="red">
-                        <ActionIcon
-                          variant="light"
-                          color="red"
-                          size={28}
-                          aria-label={deleteLabel(user)}
-                          onClick={() => deleteUser(user)}
-                        >
-                          <TbTrash />
-                        </ActionIcon>
-                      </Tooltip>
-                    </Group>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
+                );
+              })}
         </Table.Tbody>
       </Table>
     </Box>

@@ -1,7 +1,7 @@
 {
   "name": "@privcloud/bridge",
   "license": "AGPL-3.0-only",
-  "version": "1.26.7",
+  "version": "1.26.8",
   "type": "module",
   "bin": {
     "privcloud-bridge": "./src/privcloud-bridge.mjs"

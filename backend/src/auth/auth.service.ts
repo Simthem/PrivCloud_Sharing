@@ -142,6 +142,14 @@ export class AuthService {
               createdUser,
             );
           }
+          // The insert trigger gives every new account a deadline. An address a
+          // provider could not prove is never mailed, so it must not get one.
+          if (withoutVerificationDeadline) {
+            return transaction.user.update({
+              where: { id: createdUser.id },
+              data: { emailVerificationRequiredAt: null },
+            });
+          }
           return createdUser;
         });
       } finally {

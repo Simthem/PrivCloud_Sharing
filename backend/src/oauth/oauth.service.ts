@@ -18,6 +18,7 @@ import {
 import { OAuthUser, User } from "@prisma/client";
 import { nanoid } from "nanoid";
 import { AuthService } from "../auth/auth.service";
+import { EmailVerificationService } from "../emailVerification/emailVerification.service";
 import { ConfigService } from "../config/config.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { OAuthSignInDto } from "./dto/oauthSignIn.dto";
@@ -37,6 +38,7 @@ export class OAuthService implements OnModuleInit {
     private oAuthProviders: Record<string, OAuthProvider<unknown>>,
     private jwtService: JwtService,
     private email: EmailService,
+    private emailVerification: EmailVerificationService,
   ) {}
   private readonly logger = new Logger(OAuthService.name);
 
@@ -446,6 +448,14 @@ export class OAuthService implements OnModuleInit {
         userId: result.user.id,
       },
     });
+
+    if (!user.email) {
+      await this.emailVerification
+        .inviteWithoutDeadline(result.user.id)
+        .catch(() =>
+          this.logger.warn("Could not send a verification link at sign-up"),
+        );
+    }
 
     return result;
   }

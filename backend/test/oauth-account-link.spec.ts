@@ -17,7 +17,12 @@ const provider = {
 };
 
 function service(account: Record<string, unknown> | null, smtp = true) {
-  const calls = { links: 0, mails: [] as string[], signUps: [] as unknown[] };
+  const calls = {
+    links: 0,
+    mails: [] as string[],
+    signUps: [] as unknown[],
+    invitations: [] as string[],
+  };
   const config = {
     get: (key: string) =>
       ({
@@ -63,6 +68,11 @@ function service(account: Record<string, unknown> | null, smtp = true) {
     {} as never,
     new JwtService({}),
     email as never,
+    {
+      inviteWithoutDeadline: async (id: string) => {
+        calls.invitations.push(id);
+      },
+    } as never,
   );
   return { oauth, calls };
 }
@@ -137,6 +147,17 @@ testCase(
     assert.equal(calls.signUps.length, 1);
     assert.equal((calls.signUps[0] as unknown[])[3], false);
     assert.equal((calls.signUps[0] as unknown[])[4], true);
+    assert.deepEqual(calls.invitations, ["created"]);
+  },
+);
+
+testCase(
+  "signing in to an existing account sends no verification link",
+  async () => {
+    const { oauth, calls } = service(account());
+    await oauth.signIn({ ...provider, email: ADDRESS }, "ip");
+    assert.equal(calls.signUps.length, 0);
+    assert.deepEqual(calls.invitations, []);
   },
 );
 
@@ -196,6 +217,7 @@ testCase(
         [],
         {} as never,
         new JwtService({}),
+        {} as never,
         {} as never,
       );
       const result = await oauth.signIn(

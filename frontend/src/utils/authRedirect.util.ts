@@ -126,6 +126,53 @@ export function isBrowserLanguageRoutePath(pathname?: string | null): boolean {
   );
 }
 
+export const LANGUAGE_CHOICE_COOKIE = "language_chosen";
+
+/** The `lang` parameter of a link, when it has the shape of a language code. */
+export function languageParameter(value: unknown): string | undefined {
+  if (typeof value !== "string") return;
+  return /^[a-z]{2}(-[a-z]{2})?$/i.test(value) ? value : undefined;
+}
+
+const urlLocale = (language: string): "fr" | "en" | undefined =>
+  /^fr(-|$)/i.test(language)
+    ? "fr"
+    : /^en(-|$)/i.test(language)
+      ? "en"
+      : undefined;
+
+/** French and English are written on any first visit, only the picker's mark makes them a choice. */
+export function isChosenLanguage(
+  language?: string | null,
+  mark?: string | null,
+): boolean {
+  if (!language) return false;
+  return mark === "1" || !urlLocale(language);
+}
+
+/** URL locale to redirect to: link parameter, chosen language, browser, then last visit. */
+export function redirectLocale(request: {
+  locale?: string;
+  pathname: string;
+  parameter?: string | null;
+  cookie?: string | null;
+  chosen: boolean;
+  acceptLanguage?: string | null;
+}): "fr" | "en" | undefined {
+  const { locale, pathname, cookie } = request;
+  const other = (wanted?: "fr" | "en") =>
+    wanted && wanted !== locale ? wanted : undefined;
+  const parameter = languageParameter(request.parameter);
+  if (parameter) return other(urlLocale(parameter));
+  if (cookie && request.chosen) return other(urlLocale(cookie));
+  if (isBrowserLanguageRoutePath(pathname)) {
+    return locale === "fr" && prefersEnglish(request.acceptLanguage)
+      ? "en"
+      : undefined;
+  }
+  return cookie ? other(urlLocale(cookie)) : undefined;
+}
+
 export function prefersEnglish(acceptLanguage?: string | null): boolean {
   const language = acceptLanguage?.split(",")[0].split(";")[0].trim();
   if (!language || language === "*") return false;

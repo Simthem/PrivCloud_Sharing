@@ -65,6 +65,8 @@ import { resolvePostAuthRedirectPath } from "../utils/router.util";
 import {
   AUTH_SESSION_EXPIRED_EVENT,
   shouldRedirectAuthenticatedEntryPath,
+  isChosenLanguage,
+  LANGUAGE_CHOICE_COOKIE,
 } from "../utils/authRedirect.util";
 import { shouldPromptForE2EKey } from "../utils/e2ePromptPolicy.util";
 import userPreferences from "../utils/userPreferences.util";
@@ -571,10 +573,15 @@ function App({
 
   useEffect(() => {
     if (!pageProps.language) return;
-    const cookieLanguage = getCookie("language");
-    if (pageProps.language != cookieLanguage) {
+    const cookieLanguage = getCookie("language")?.toString();
+    if (
+      pageProps.language != cookieLanguage &&
+      !isChosenLanguage(
+        cookieLanguage,
+        getCookie(LANGUAGE_CHOICE_COOKIE)?.toString(),
+      )
+    ) {
       i18nUtil.setLanguageCookie(pageProps.language);
-      if (cookieLanguage) location.reload();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -831,9 +838,11 @@ App.getInitialProps = async ({ ctx }: { ctx: GetServerSidePropsContext }) => {
 
     pageProps.route = ctx.req.url;
 
-    // URL locale from Next.js i18n routing ('fr' or 'en')
-    pageProps.language =
-      ctx.req.cookies["language"] ?? (ctx.locale === "en" ? "en-US" : "fr-FR");
+    pageProps.language = i18nUtil.pageLanguage({
+      parameter: ctx.query.lang,
+      cookie: ctx.req.cookies["language"],
+      locale: ctx.locale,
+    });
 
     // Load i18n messages for SSR rendering but do NOT include them in
     // pageProps (which is serialized into __NEXT_DATA__, adding ~120 kB

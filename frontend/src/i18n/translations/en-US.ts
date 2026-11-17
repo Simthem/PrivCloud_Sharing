@@ -3656,6 +3656,8 @@ export default {
   "step-up.email.wrong": "Invalid or expired code.",
   "step-up.email.wait": "Wait a minute before asking for a new code.",
   "step-up.email.send-error": "The code could not be sent. Try again.",
+  "admin.users.group-by-team": "Group by team",
+  "admin.users.group.no-team": "No team",
   "admin.users.sort.label": "Sort by",
   "admin.users.sort.ascending": "Ascending order",
   "admin.users.sort.descending": "Descending order",

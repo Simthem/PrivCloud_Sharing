@@ -73,6 +73,10 @@ export class UserDTO {
   @Expose()
   emailVerified: boolean;
 
+  // A link was sent, but nothing happens to the account without it.
+  @Expose()
+  emailVerificationInvited: boolean;
+
   @Expose()
   emailVerificationBlockedAt: Date | null;
 
@@ -87,7 +91,7 @@ export class UserDTO {
   @Expose()
   emailVerificationSource: string | null;
 
-  teams?: { name: string; role: string }[];
+  teams?: { id: string; name: string; role: string }[];
 
   from(partial: Partial<UserDTO>) {
     const result = plainToClass(UserDTO, partial, {
@@ -107,6 +111,14 @@ export class UserDTO {
     );
     result.emailVerificationRequired = verification.required;
     result.emailVerified = verification.verified;
+    const account = partial as {
+      emailVerifiedAt?: Date | null;
+      teamVerificationMailedAt?: Date | null;
+    };
+    result.emailVerificationInvited =
+      !verification.required &&
+      !account.emailVerifiedAt &&
+      !!account.teamVerificationMailedAt;
     result.emailVerificationBlockedAt = verification.blockedAt;
     result.emailVerificationDeletionAt = verification.deletionAt;
     return result;

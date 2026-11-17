@@ -12,6 +12,8 @@ function collectSpecs(directory: string): string[] {
 
 const specs = [
   "test/oauth-account-link.spec.ts",
+  "test/provider-signup-deadline.spec.ts",
+  "test/team-member-verification.spec.ts",
   "test/share-expiration.spec.ts",
   "test/admin-user-list.spec.ts",
   "test/signing-language.spec.ts",

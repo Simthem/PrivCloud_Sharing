@@ -2,8 +2,10 @@ import {
   BadRequestException,
   Injectable,
   Logger,
+  OnApplicationBootstrap,
   ServiceUnavailableException,
 } from "@nestjs/common";
+import { Cron } from "@nestjs/schedule";
 import * as crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { ConfigService } from "src/config/config.service";
@@ -39,7 +41,7 @@ const MAX_LIVE_TOKENS_PER_USER = 3;
 const MAX_TRACKED_RESEND_ADDRESSES = 5000;
 
 @Injectable()
-export class EmailVerificationService {
+export class EmailVerificationService implements OnApplicationBootstrap {
   private readonly logger = new Logger(EmailVerificationService.name);
   private readonly resendCooldownMs = 60 * 1000;
   // Keyed by a digest of the address so no plaintext e-mail is held in memory.
@@ -88,9 +90,10 @@ export class EmailVerificationService {
       "emailVerificationToken" | "emailOutbox"
     >,
     user: VerificationUser,
+    withoutDeadline = false,
   ): Promise<void> {
     if (
-      !user.emailVerificationRequiredAt ||
+      (!user.emailVerificationRequiredAt && !withoutDeadline) ||
       user.emailVerifiedAt ||
       user.emailVerificationDeletionStartedAt
     ) {
@@ -196,7 +199,10 @@ export class EmailVerificationService {
     const user = await this.prisma.user.findFirst({
       where: {
         email,
-        emailVerificationRequiredAt: { not: null },
+        OR: [
+          { emailVerificationRequiredAt: { not: null } },
+          { teamVerificationMailedAt: { not: null } },
+        ],
         emailVerifiedAt: null,
         emailVerificationDeletionStartedAt: null,
       },
@@ -223,12 +229,103 @@ export class EmailVerificationService {
     }
 
     try {
-      await this.issueAndSend(user);
+      await this.prisma.$transaction((tx) =>
+        this.issueInTransaction(tx, user, !user.emailVerificationRequiredAt),
+      );
+      await this.emailOutbox.deliverPending();
     } catch {
       this.logger.warn("Could not resend an email-verification message");
     }
 
     return outcome;
+  }
+
+  onApplicationBootstrap(): void {
+    void this.mailTeamMembers().catch(() =>
+      this.logger.warn("Team member verification mailing stopped early"),
+    );
+  }
+
+  /**
+   * Team members and provider accounts with an unproven address are never
+   * blocked for it. Each one still receives one link, unless a valid one is
+   * already in the inbox.
+   */
+  @Cron("17 * * * *")
+  async mailTeamMembers(): Promise<number> {
+    if (!this.isDeliveryAvailable()) return 0;
+    const members = await this.prisma.user.findMany({
+      where: {
+        emailVerifiedAt: null,
+        emailVerificationDeletionStartedAt: null,
+        teamVerificationMailedAt: null,
+        OR: [
+          { teamMemberships: { some: { isActive: true } } },
+          {
+            emailVerificationRequiredAt: null,
+            password: null,
+            oAuthUsers: { some: {} },
+          },
+        ],
+      },
+      select: {
+        id: true,
+        email: true,
+        emailVerificationRequiredAt: true,
+        emailVerifiedAt: true,
+        emailVerificationDeletionStartedAt: true,
+        emailVerificationTokens: {
+          where: { expiresAt: { gt: new Date() } },
+          select: { tokenHash: true },
+          take: 1,
+        },
+      },
+      take: 200,
+    });
+    let mailed = 0;
+    for (const { emailVerificationTokens, ...member } of members) {
+      if (await this.invite(member, emailVerificationTokens.length > 0)) {
+        mailed += 1;
+      }
+    }
+    if (mailed) {
+      await this.emailOutbox.deliverPending();
+      this.logger.log(`Verification links sent to team members: ${mailed}`);
+    }
+    return mailed;
+  }
+
+  // Claimed first: another replica running the same hour skips it.
+  private async invite(
+    member: VerificationUser,
+    hasLiveLink = false,
+  ): Promise<boolean> {
+    const claimed = await this.prisma.user.updateMany({
+      where: { id: member.id, teamVerificationMailedAt: null },
+      data: { teamVerificationMailedAt: new Date() },
+    });
+    if (claimed.count !== 1 || hasLiveLink) return false;
+    await this.prisma.$transaction((tx) =>
+      this.issueInTransaction(tx, member, true),
+    );
+    return true;
+  }
+
+  /** A new provider account with an unproven address gets its link at once. */
+  async inviteWithoutDeadline(userId: string): Promise<void> {
+    if (!this.isDeliveryAvailable()) return;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        emailVerificationRequiredAt: true,
+        emailVerifiedAt: true,
+        emailVerificationDeletionStartedAt: true,
+      },
+    });
+    if (!user || user.emailVerifiedAt) return;
+    if (await this.invite(user)) await this.emailOutbox.deliverPending();
   }
 
   async verify(rawToken: string) {
@@ -243,7 +340,6 @@ export class EmailVerificationService {
       !token ||
       token.expiresAt <= now ||
       token.email !== token.user.email ||
-      !token.user.emailVerificationRequiredAt ||
       token.user.emailVerifiedAt ||
       token.user.emailVerificationDeletionStartedAt
     ) {
@@ -261,7 +357,6 @@ export class EmailVerificationService {
         where: {
           id: token.userId,
           email: token.email,
-          emailVerificationRequiredAt: { not: null },
           emailVerifiedAt: null,
           emailVerificationDeletionStartedAt: null,
         },

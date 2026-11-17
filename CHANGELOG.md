@@ -1,3 +1,50 @@
+## [1.26.8](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.7...v1.26.8) (2026-11-17)
+
+### Features
+
+- The administration user list can group accounts by team, with each
+  member's role. Accounts without a team are listed last.
+
+### Bug Fixes
+
+- A team member is never blocked or deleted for an unverified address.
+  Members not yet verified lose their deadline (additive migration, plus a
+  trigger for any account that joins a team later) and each one receives a
+  verification link once, unless a valid one is already in the inbox. The
+  link can be requested again and still marks the address as verified.
+- An account created through a sign-in provider that could not prove the
+  address no longer receives a deadline from the insert trigger. It gets a
+  verification link at sign-up and a banner without deadline. A migration
+  gives the accounts already affected their exemption back.
+- Share, signature and invitation links open in the browser language even
+  after an earlier visit, and a link can force its language with `?lang=`.
+  A language picked in the account still wins over the browser.
+
+### Security
+
+- Rebuild Caddy against OpenTelemetry-Go 1.47.0 to fix CVE-2026-128085, a
+  denial of service through an attribute truncation bypass in
+  `go.opentelemetry.io/otel/sdk`, `otel/sdk/log` and `otel/trace`. The
+  related `otel/log` module moves to 1.47.0 and the OTLP and stdout log
+  exporters to 0.23.0. The image build fails if any of these versions drifts.
+- Rebuild Caddy and runtime-init with digest-pinned Go 1.26.11 to fix
+  CVE-2026-97054 in net/http (MaxBytesReader on HTTP/1 servers).
+- Raise nodemailer to 10.4.1 and Next.js to 16.4.5, with
+  `@next/eslint-plugin-next` at the same version.
+
+### Build
+
+- `Dockerfile.full-build` checks the replaced `golang.org/x/net` and
+  `golang.org/x/text` versions like `Dockerfile` does. It still expected
+  x/text 0.41.0 after the move to 0.43.0 and stopped the build.
+
+### Migrations
+
+- `20261112180000_provider_accounts_without_deadline` and
+  `20261112190000_team_member_verification` (new nullable column
+  `User.teamVerificationMailedAt` and two triggers). Their data updates only
+  remove verification deadlines.
+
 ## [1.26.7](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.6...v1.26.7) (2026-11-09)
 
 ### License

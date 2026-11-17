@@ -6,9 +6,46 @@ import { rememberEmailVerificationEmail } from "../../utils/emailVerification.ut
 
 const EmailVerificationNotice = ({ user }: { user: CurrentUser }) => {
   const { locale } = useIntl();
+  const french = locale.startsWith("fr");
+  const verifyButton = (
+    <Button
+      component={Link}
+      href="/auth/verify-email"
+      size="xs"
+      variant="light"
+      onClick={() => rememberEmailVerificationEmail(user.email)}
+    >
+      {french ? "Vérifier maintenant" : "Verify now"}
+    </Button>
+  );
+
+  if (user.emailVerificationInvited) {
+    return (
+      <Container size="lg" mt="md">
+        <Alert
+          color="blue"
+          title={
+            french ? "Confirmez votre adresse e-mail" : "Confirm your email"
+          }
+        >
+          <Group justify="space-between" align="center">
+            <Text size="sm">
+              {french
+                ? "Un lien de confirmation a été envoyé à " +
+                  user.email +
+                  ". Votre accès reste entier en attendant."
+                : "A confirmation link was sent to " +
+                  user.email +
+                  ". Your access stays complete in the meantime."}
+            </Text>
+            {verifyButton}
+          </Group>
+        </Alert>
+      </Container>
+    );
+  }
   if (!user.emailVerificationRequired || user.emailVerified) return null;
 
-  const french = locale.startsWith("fr");
   const blockedAt = user.emailVerificationBlockedAt
     ? new Intl.DateTimeFormat(locale, {
         dateStyle: "medium",
@@ -46,15 +83,7 @@ const EmailVerificationNotice = ({ user }: { user: CurrentUser }) => {
                 deletionAt +
                 "."}
           </Text>
-          <Button
-            component={Link}
-            href="/auth/verify-email"
-            size="xs"
-            variant="light"
-            onClick={() => rememberEmailVerificationEmail(user.email)}
-          >
-            {french ? "Vérifier maintenant" : "Verify now"}
-          </Button>
+          {verifyButton}
         </Group>
       </Alert>
     </Container>

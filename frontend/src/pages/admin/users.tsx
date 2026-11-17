@@ -3,6 +3,7 @@ import {
   Button,
   Group,
   Space,
+  Switch,
   Text,
   TextInput,
   Title,
@@ -24,6 +25,7 @@ const Users = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [groupByTeam, setGroupByTeam] = useState(false);
 
   const config = useConfig();
   const modals = useModals();
@@ -116,15 +118,22 @@ const Users = () => {
         </Button>
       </Group>
 
-      <TextInput
-        mb="md"
-        value={search}
-        onChange={(event) => setSearch(event.currentTarget.value)}
-        leftSection={<TbSearch size={18} />}
-        placeholder={t("admin.users.search.placeholder")}
-        aria-label={t("admin.users.search.placeholder")}
-        maw={480}
-      />
+      <Group mb="md" gap="md">
+        <TextInput
+          value={search}
+          onChange={(event) => setSearch(event.currentTarget.value)}
+          leftSection={<TbSearch size={18} />}
+          placeholder={t("admin.users.search.placeholder")}
+          aria-label={t("admin.users.search.placeholder")}
+          maw={480}
+          style={{ flex: 1 }}
+        />
+        <Switch
+          checked={groupByTeam}
+          onChange={(event) => setGroupByTeam(event.currentTarget.checked)}
+          label={t("admin.users.group-by-team")}
+        />
+      </Group>
       {search.trim() && !isLoading && (
         <Text size="sm" c="dimmed" mb="sm">
           <FormattedMessage
@@ -136,6 +145,7 @@ const Users = () => {
 
       <ManageUserTable
         users={filteredUsers}
+        groupByTeam={groupByTeam}
         getUsers={getUsers}
         deleteUser={deleteUser}
         isLoading={isLoading}

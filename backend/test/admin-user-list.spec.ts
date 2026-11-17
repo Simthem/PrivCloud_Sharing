@@ -18,8 +18,8 @@ testCase("each account lists the teams it has joined", async () => {
     userService: {
       list: async () => [
         account("member", [
-          { id: "m-1", role: "OWNER", team: { name: "Alpha" } },
-          { id: "m-2", role: "MEMBER", team: { name: "Beta" } },
+          { id: "m-1", role: "OWNER", team: { id: "t-a", name: "Alpha" } },
+          { id: "m-2", role: "MEMBER", team: { id: "t-b", name: "Beta" } },
         ]),
         account("solo", []),
       ],
@@ -29,8 +29,8 @@ testCase("each account lists the teams it has joined", async () => {
 
   const [member, solo] = await controller.list();
   assert.deepEqual(member.teams, [
-    { name: "Alpha", role: "OWNER" },
-    { name: "Beta", role: "MEMBER" },
+    { id: "t-a", name: "Alpha", role: "OWNER" },
+    { id: "t-b", name: "Beta", role: "MEMBER" },
   ]);
   assert.deepEqual(solo.teams, []);
 });

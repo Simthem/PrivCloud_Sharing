@@ -2,11 +2,12 @@ import { jwtDecode } from "jwt-decode";
 import { NextRequest, NextResponse } from "next/server";
 import {
   buildSignInRedirectPath,
-  isBrowserLanguageRoutePath,
   isEmailVerificationRoutePath,
   isProtectedTeamContextPath,
   isTeamInvitationRoutePath,
-  prefersEnglish,
+  isChosenLanguage,
+  LANGUAGE_CHOICE_COOKIE,
+  redirectLocale,
 } from "./utils/authRedirect.util";
 
 // This middleware redirects based on different conditions:
@@ -14,8 +15,16 @@ import {
 // - Setup status
 // - Admin privileges
 
+// Paths with a dot are static files, except the tokens of these pages (v2.<id>).
 export const config = {
-  matcher: "/((?!api|static|.*\\..*|_next).*)",
+  matcher: [
+    "/((?!api|static|.*\\..*|_next).*)",
+    "/share/:path*",
+    "/s/:path*",
+    "/sign/:path*",
+    "/team/invite/:path*",
+    "/external/invite/:path*",
+  ],
 };
 
 const CONFIG_CACHE_TTL = 60_000; // 1 minute
@@ -92,25 +101,20 @@ export async function proxy(request: NextRequest) {
   // First-time visitors (no cookie) and non-fr/en users stay on the
   // requested URL locale - only explicit fr/en cookie triggers a redirect.
   const cookieLang = request.cookies.get("language")?.value;
-  if (cookieLang) {
-    const urlLocale = request.nextUrl.locale;
-    if (cookieLang.startsWith("en") && urlLocale !== "en") {
-      const url = request.nextUrl.clone();
-      url.locale = "en";
-      return NextResponse.redirect(url);
-    }
-    if (cookieLang.startsWith("fr") && urlLocale !== "fr") {
-      const url = request.nextUrl.clone();
-      url.locale = "fr";
-      return NextResponse.redirect(url);
-    }
-  } else if (
-    request.nextUrl.locale === "fr" &&
-    isBrowserLanguageRoutePath(route) &&
-    prefersEnglish(request.headers.get("accept-language"))
-  ) {
+  const locale = redirectLocale({
+    locale: request.nextUrl.locale,
+    pathname: route,
+    parameter: request.nextUrl.searchParams.get("lang"),
+    cookie: cookieLang,
+    chosen: isChosenLanguage(
+      cookieLang,
+      request.cookies.get(LANGUAGE_CHOICE_COOKIE)?.value,
+    ),
+    acceptLanguage: request.headers.get("accept-language"),
+  });
+  if (locale) {
     const url = request.nextUrl.clone();
-    url.locale = "en";
+    url.locale = locale;
     return NextResponse.redirect(url);
   }
 

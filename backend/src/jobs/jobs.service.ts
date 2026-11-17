@@ -491,6 +491,8 @@ export class JobsService {
         where: {
           emailVerificationRequiredAt: { lte: deletionCutoff },
           emailVerifiedAt: null,
+          // A team member is never deleted for an unverified address.
+          teamMemberships: { none: { isActive: true } },
           OR: [
             { emailVerificationDeletionStartedAt: null },
             {
@@ -511,6 +513,7 @@ export class JobsService {
             id: candidate.id,
             emailVerificationRequiredAt: { lte: deletionCutoff },
             emailVerifiedAt: null,
+            teamMemberships: { none: { isActive: true } },
             ...(candidate.emailVerificationDeletionStartedAt
               ? {
                   emailVerificationDeletionStartedAt:

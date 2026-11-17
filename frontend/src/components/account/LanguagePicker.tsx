@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import { useState } from "react";
 import useTranslate from "../../hooks/useTranslate.hook";
 import { LOCALES } from "../../i18n/locales";
+import { LANGUAGE_CHOICE_COOKIE } from "../../utils/authRedirect.util";
 
 const LanguagePicker = () => {
   const t = useTranslate();
@@ -22,12 +23,14 @@ const LanguagePicker = () => {
       description={t("account.card.language.description")}
       onChange={(value) => {
         setSelectedLanguage(value ?? "en");
-        setCookie("language", value, {
-          sameSite: "lax",
+        const options = {
+          sameSite: "lax" as const,
           expires: new Date(
             new Date().setFullYear(new Date().getFullYear() + 1),
           ),
-        });
+        };
+        setCookie("language", value, options);
+        setCookie(LANGUAGE_CHOICE_COOKIE, "1", options);
         // Switch URL locale for SEO languages (fr/en), reload for others
         const targetLocale = value?.startsWith("en") ? "en" : "fr";
         if (targetLocale !== router.locale) {

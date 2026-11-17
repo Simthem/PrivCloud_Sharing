@@ -40,7 +40,11 @@ export class UserSevice {
       include: {
         teamMemberships: {
           where: { isActive: true },
-          select: { id: true, role: true, team: { select: { name: true } } },
+          select: {
+            id: true,
+            role: true,
+            team: { select: { id: true, name: true } },
+          },
         },
       },
     });

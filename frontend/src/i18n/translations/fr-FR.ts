@@ -3628,6 +3628,8 @@ export default {
   "step-up.email.wait":
     "Patientez une minute avant de demander un nouveau code.",
   "step-up.email.send-error": "Le code n'a pas pu être envoyé. Réessayez.",
+  "admin.users.group-by-team": "Regrouper par équipe",
+  "admin.users.group.no-team": "Sans équipe",
   "admin.users.sort.label": "Trier par",
   "admin.users.sort.ascending": "Ordre croissant",
   "admin.users.sort.descending": "Ordre décroissant",

@@ -226,7 +226,7 @@ export class UserController {
       const dto = new UserDTO().from(user);
       dto.createdAt = user.createdAt;
       dto.teams = user.teamMemberships
-        .map(({ role, team }) => ({ name: team.name, role }))
+        .map(({ role, team }) => ({ id: team.id, name: team.name, role }))
         .sort(byName);
       return dto;
     });

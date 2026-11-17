@@ -40,6 +40,8 @@ model User {
   // backfill it: only accounts created after the feature deployment opt in.
   emailVerificationRequiredAt        DateTime?
   emailVerifiedAt                    DateTime?
+  // Verification link sent once to a team member, who is never blocked for it
+  teamVerificationMailedAt           DateTime?
   // How the address was proven: EMAIL_LINK or ADMINISTRATOR. NULL for an
   // automatic exemption (no SMTP, bootstrap), which proves nothing and is not
   // accepted as an identity proof by the reinforced signature.
