@@ -56,7 +56,7 @@ export default {
     "Vous pouvez aussi confirmer votre identité en vous reconnectant avec le compte que vous y avez lié, sans saisir votre mot de passe.",
   "account.card.security.totp.oauth.confirm": "Confirmer avec {provider}",
   "account.card.security.totp.oauth.none":
-    "Votre compte n'a ni mot de passe ni compte externe lié. Liez un compte ou définissez un mot de passe pour gérer la double authentification.",
+    "Votre compte n'a ni mot de passe ni compte Google ou OpenID lié. Définissez un mot de passe avec « Mot de passe oublié » pour gérer la double authentification.",
   "account.card.security.totp.oauth.disableDescription":
     "Identité confirmée. Saisissez un code de votre application ou un code de secours pour désactiver la double authentification.",
   "webdav.error.unsafeTree":
@@ -460,7 +460,7 @@ export default {
 
   "upload.pending.title": "Envois non finalisés",
   "upload.pending.body":
-    "Certains envois ne sont pas finalisés. Vous pouvez consulter et télécharger les fichiers déjà enregistrés.",
+    "Certains envois ne sont pas finalisés. Vous pouvez consulter et télécharger les fichiers déjà enregistrés. Sans reprise, un envoi est supprimé avec ses fichiers 7 jours après sa dernière activité.",
   "upload.pending.summary":
     "{date} : {count, plural, one {# fichier enregistré} other {# fichiers enregistrés}} ({size})",
   "upload.pending.open": "Ouvrir les fichiers enregistrés",
@@ -1161,6 +1161,8 @@ export default {
   "step-up.title": "Confirmez votre identité",
   "step-up.description.admin":
     "Cette opération modifie des droits d'administrateur, les identifiants d'un autre compte ou les réglages de connexion. Confirmez votre propre identité d'administrateur. L'utilisateur concerné n'a rien à fournir, et la confirmation ne vaut que pour cette opération.",
+  "step-up.description.oauth-link":
+    "Ce compte lié permettra de vous connecter sans mot de passe. Confirmez d'abord votre identité. La confirmation ne vaut que pour cette liaison.",
   "step-up.password": "Votre mot de passe",
   "step-up.description.signing-passkey":
     "Cette passkey signera des documents en votre nom et permettra de vous connecter. Confirmez d'abord votre identité, comme pour ajouter une passkey depuis les paramètres de votre compte.",
@@ -1528,6 +1530,9 @@ export default {
   "fileTree.items": "{count, plural, one {# élément} other {# éléments}}",
   "share.button.clear-selection": "Désélectionner",
   "share.download.cancel": "Annuler le téléchargement",
+  "download.error.failed": "Le téléchargement a échoué. Réessayez.",
+  "download.error.too-large":
+    "Fichier trop volumineux pour être déchiffré dans ce navigateur. Rechargez la page puis réessayez, ou utilisez Chrome, Edge ou Firefox.",
   "share.notify.download-all-preparing":
     "Le partage est en préparation. Réessayez dans quelques minutes.",
   "share.modal.file-link": "Lien du fichier",
@@ -1739,6 +1744,9 @@ export default {
   "admin.config.general.secure-cookies": "Cookies sécurisés",
   "admin.config.general.secure-cookies.description":
     "Définir ou non le marquage sécurisé sur les cookies. Si activé, le site ne fonctionnera pas lorsqu'il est accédé via HTTP.",
+  "admin.config.general.disable-indexing": "Désactiver le référencement",
+  "admin.config.general.disable-indexing.description":
+    "Applique la directive noindex à tout le site, y compris aux pages publiques et aux documents.",
   "admin.config.general.show-home-page": "Afficher la page d'accueil",
   "admin.config.general.show-home-page.description":
     "Afficher ou non la page d'accueil",
@@ -2363,12 +2371,16 @@ export default {
   // SafeLine WAF 468 challenge notifications
   "safeline.notify.title": "Vérification de sécurité requise",
   "safeline.notify.message":
-    "Le cookie WAF a expiré. Cliquez sur {link} pour résoudre le challenge. L'upload reprendra automatiquement.",
+    "Votre session de sécurité a expiré et doit être revalidée. Cliquez sur {link} pour le faire, le transfert reprendra automatiquement.",
+  "safeline.notify.message-popup-blocked":
+    "Votre navigateur a bloqué la fenêtre de vérification de sécurité, car elle s'est ouverte pendant que l'onglet PrivCloud était en arrière-plan. Cliquez sur {link} pour l'ouvrir, le transfert reprendra automatiquement. Pour ne plus être interrompu, autorisez les fenêtres pop-up et les redirections pour {host} : cliquez sur l'icône de fenêtre bloquée dans la barre d'adresse (ou sur le bandeau d'avertissement), puis choisissez de toujours les autoriser.",
   "safeline.notify.link": "Résoudre maintenant",
-  "safeline.os-notify.title": "PrivCloud -- Vérification requise",
+  "safeline.os-notify.title": "PrivCloud : vérification de sécurité requise",
   "safeline.os-notify.body":
-    "Le WAF nécessite une vérification. Revenez sur l'onglet PrivCloud et cliquez le lien.",
-  "safeline.title-flash": "\u26a0\ufe0f Vérification WAF requise !",
+    "Votre transfert attend une vérification de sécurité. Revenez sur l'onglet PrivCloud et cliquez sur « Résoudre maintenant ».",
+  "safeline.os-notify.body-popup-blocked":
+    "Votre navigateur a bloqué la fenêtre de vérification. Revenez sur l'onglet PrivCloud, cliquez sur « Résoudre maintenant », puis autorisez les pop-ups et redirections pour ce site.",
+  "safeline.title-flash": "\u26a0\ufe0f Vérification de sécurité requise",
   "safeline.download.failed":
     "Challenge SafeLine non résolu après {retries} tentatives",
 
@@ -3340,6 +3352,7 @@ export default {
   "team.dashboard.rotation.inProgress": "Rotation de clé en cours",
   "team.dashboard.rotation.progress": "{done} fichier(s) traité(s) sur {total}",
   "team.dashboard.rotation.resume": "Reprendre",
+  "team.dashboard.rotation.cancelOrphaned": "Annuler cette rotation",
   "team.dashboard.rotation.memberUnavailable":
     "Les partages E2E sont temporairement indisponibles jusqu'à la fin de la rotation.",
   "team.dashboard.rotation.due": "Rotation de clé requise",

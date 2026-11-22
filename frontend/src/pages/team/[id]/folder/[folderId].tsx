@@ -65,11 +65,15 @@ import ExternalPreviewShareModal, {
   type ExternalShareFile,
 } from "../../../../components/team/external/ExternalPreviewShareModal";
 import useOpenedShares from "../../../../hooks/useOpenedShares.hook";
+import useFileDownloads from "../../../../hooks/useFileDownloads.hook";
+import DownloadProgressIndicator from "../../../../components/share/DownloadProgressIndicator";
 import {
   openFileName,
   signatureFileOf,
 } from "../../../../utils/fileMetadata.util";
-import teamService from "../../../../services/team.service";
+import teamService, {
+  type TeamFolder,
+} from "../../../../services/team.service";
 import shareService from "../../../../services/share.service";
 import showFilePreviewModal from "../../../../components/share/modals/showFilePreviewModal";
 import useConfig from "../../../../hooks/config.hook";
@@ -173,6 +177,7 @@ const TeamFolderPage = () => {
 
   // E2E: resolved team key for preview/download
   const [teamKeyB64, setTeamKeyB64] = useState<string | null>(null);
+  const downloads = useFileDownloads(teamKeyB64);
 
   // Sorting & filtering state
   const [sortField, setSortField] = useState<
@@ -377,6 +382,27 @@ const TeamFolderPage = () => {
     );
   };
 
+  // Update the folder card as soon as a deletion succeeds, then still
+  // invalidate it to reconcile with the server. This avoids briefly showing
+  // a stale number while returning from a folder to the dashboard.
+  const adjustFolderShareCount = (delta: number) => {
+    queryClient.setQueryData<TeamFolder[]>(
+      ["team.folders", teamIdStr],
+      (folders) =>
+        folders?.map((folder) =>
+          folder.id !== folderIdStr
+            ? folder
+            : {
+                ...folder,
+                _count: {
+                  shares: Math.max(0, (folder._count?.shares || 0) + delta),
+                  children: folder._count?.children || 0,
+                },
+              },
+        ),
+    );
+  };
+
   const addAccessMutation = useMutation({
     mutationFn: (data: {
       memberId: string;
@@ -418,7 +444,9 @@ const TeamFolderPage = () => {
   const deleteFileMutation = useMutation({
     mutationFn: ({ shareId, fileId }: { shareId: string; fileId: string }) =>
       shareService.removeFile(shareId, fileId),
-    onSuccess: () => {
+    onSuccess: (_result, { shareId }) => {
+      const share = data?.shares.find((item) => item.id === shareId);
+      if (share?.files.length === 1) adjustFolderShareCount(-1);
       toast.success(t("team.folder.toast.fileDeleted"));
       invalidateFolderContentQueries();
     },
@@ -431,6 +459,7 @@ const TeamFolderPage = () => {
   const deleteShareMutation = useMutation({
     mutationFn: (shareId: string) => shareService.remove(shareId, true),
     onSuccess: () => {
+      adjustFolderShareCount(-1);
       toast.success(t("team.folder.toast.shareDeleted"));
       invalidateFolderContentQueries();
     },
@@ -1055,24 +1084,25 @@ const TeamFolderPage = () => {
                             <TbEye size={16} />
                           </ActionIcon>
                         )}
-                        <ActionIcon
-                          variant="light"
-                          size={32}
-                          color="blue"
-                          disabled={!fp.canDownload}
-                          onClick={() =>
-                            teamKeyB64
-                              ? shareService.downloadFileE2E(
-                                  file.shareId,
-                                  file.id,
-                                  file.name,
-                                  teamKeyB64,
-                                )
-                              : shareService.downloadFile(file.shareId, file.id)
-                          }
-                        >
-                          <TbDownload size={16} />
-                        </ActionIcon>
+                        {file.id in downloads.progress ? (
+                          <DownloadProgressIndicator
+                            progress={downloads.progress[file.id]}
+                            onCancel={() => downloads.cancel(file.id)}
+                          />
+                        ) : (
+                          <ActionIcon
+                            variant="light"
+                            size={32}
+                            color="blue"
+                            disabled={
+                              !fp.canDownload ||
+                              (file.isE2EEncrypted && !teamKeyB64)
+                            }
+                            onClick={() => downloads.start(file)}
+                          >
+                            <TbDownload size={16} />
+                          </ActionIcon>
+                        )}
                         {isPdf && (
                           <ActionIcon
                             variant="light"
@@ -1447,33 +1477,31 @@ const TeamFolderPage = () => {
                                 </ActionIcon>
                               </Tooltip>
                             )}
-                            <Tooltip
-                              label={intl.formatMessage({
-                                id: "team.folder.action.download",
-                              })}
-                            >
-                              <ActionIcon
-                                variant="light"
-                                size={30}
-                                color="blue"
-                                disabled={!fp.canDownload}
-                                onClick={() =>
-                                  teamKeyB64
-                                    ? shareService.downloadFileE2E(
-                                        file.shareId,
-                                        file.id,
-                                        file.name,
-                                        teamKeyB64,
-                                      )
-                                    : shareService.downloadFile(
-                                        file.shareId,
-                                        file.id,
-                                      )
-                                }
+                            {file.id in downloads.progress ? (
+                              <DownloadProgressIndicator
+                                progress={downloads.progress[file.id]}
+                                onCancel={() => downloads.cancel(file.id)}
+                              />
+                            ) : (
+                              <Tooltip
+                                label={intl.formatMessage({
+                                  id: "team.folder.action.download",
+                                })}
                               >
-                                <TbDownload size={16} />
-                              </ActionIcon>
-                            </Tooltip>
+                                <ActionIcon
+                                  variant="light"
+                                  size={30}
+                                  color="blue"
+                                  disabled={
+                                    !fp.canDownload ||
+                                    (file.isE2EEncrypted && !teamKeyB64)
+                                  }
+                                  onClick={() => downloads.start(file)}
+                                >
+                                  <TbDownload size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                            )}
                             {isPdf && (
                               <Tooltip
                                 label={intl.formatMessage({

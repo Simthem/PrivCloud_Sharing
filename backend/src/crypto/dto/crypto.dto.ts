@@ -139,6 +139,7 @@ export class CreateEnrollmentTokenDTO {
 
   @IsOptional()
   @IsJSON()
+  @MaxLength(4096)
   metadata?: string;
 
   // Expiry in hours (default: 48h)

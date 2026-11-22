@@ -29,6 +29,11 @@ export const configVariables = {
       defaultValue: "true",
       secret: false,
     },
+    disableIndexing: {
+      type: "boolean",
+      defaultValue: "false",
+      secret: false,
+    },
     metaDescriptionEn: {
       type: "string",
       defaultValue:

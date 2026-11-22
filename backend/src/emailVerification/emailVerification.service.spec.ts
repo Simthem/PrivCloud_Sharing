@@ -12,6 +12,7 @@ void (async () => {
   let storedTokens: { tokenHash: string; expiresAt: Date; createdAt: Date }[] =
     [];
   let lookedUpUser: unknown;
+  let newestToken: { createdAt: Date } | null = null;
   const deliveries: string[] = [];
   let queuedMessage:
     | { recipient: string; subject: string; text: string }
@@ -20,6 +21,7 @@ void (async () => {
   const prisma = {
     emailVerificationToken: {
       findMany: async () => storedTokens,
+      findFirst: async () => newestToken,
       deleteMany: async ({
         where,
       }: {
@@ -36,6 +38,8 @@ void (async () => {
     user: {
       findFirst: async () => lookedUpUser,
     },
+    $queryRaw: async () => [],
+    $executeRaw: async () => 0,
     $transaction: async (operation: (client: unknown) => Promise<unknown>) =>
       operation(prisma),
   };
@@ -139,7 +143,7 @@ void (async () => {
   // A real account gets the same shape, and a second attempt is refused rather
   // than silently acknowledged: the caller now knows nothing was sent.
   const deliveriesBefore = deliveries.length;
-  lookedUpUser = { ...unverifiedUser, emailVerificationTokens: [] };
+  lookedUpUser = unverifiedUser;
   const accountFirst = await service.resend("new@example.test");
   const accountSecond = await service.resend("new@example.test");
 
@@ -149,10 +153,7 @@ void (async () => {
 
   // Backstop for the replica that did not serve the previous request and for
   // the link issued at sign-up seconds earlier.
-  lookedUpUser = {
-    ...unverifiedUser,
-    emailVerificationTokens: [{ createdAt: new Date() }],
-  };
+  newestToken = { createdAt: new Date() };
   const justIssued = await service.resend("fresh@example.test");
   assert.equal(justIssued.accepted, true);
   assert.equal(deliveries.length, deliveriesBefore + 1);

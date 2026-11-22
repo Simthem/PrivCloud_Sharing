@@ -18,23 +18,28 @@ const member = {
 
 function recordingPrisma() {
   const calls: { call: string; args: unknown }[] = [];
-  const prisma = new Proxy(
+  const prisma: object = new Proxy(
     {},
     {
       get: (_target, model: string) =>
-        new Proxy(
-          {},
-          {
-            get: (_model, method: string) => async (args: unknown) => {
-              calls.push({ call: `${model}.${method}`, args });
-              if (method === "findMany") return [];
-              if (method.startsWith("find")) {
-                return model === "teamMember" ? member : { id: "row" };
-              }
-              return { count: 0 };
-            },
-          },
-        ),
+        model === "$transaction"
+          ? async (work: unknown) =>
+              typeof work === "function"
+                ? work(prisma)
+                : Promise.all(work as never)
+          : new Proxy(
+              {},
+              {
+                get: (_model, method: string) => async (args: unknown) => {
+                  calls.push({ call: `${model}.${method}`, args });
+                  if (method === "findMany") return [];
+                  if (method.startsWith("find")) {
+                    return model === "teamMember" ? member : { id: "row" };
+                  }
+                  return { count: 0 };
+                },
+              },
+            ),
     },
   );
   return { calls, prisma };

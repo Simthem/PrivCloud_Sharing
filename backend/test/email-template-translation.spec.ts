@@ -33,7 +33,7 @@ async function run() {
     assert.deepEqual(sent, [
       {
         subject: "Réinitialisation",
-        text: "Lien : https://example.test/auth/resetPassword/token",
+        text: "Lien : https://example.test/auth/resetPassword/link#token",
       },
     ]);
   }
@@ -52,8 +52,8 @@ async function run() {
       {
         subject: "Réinitialisation / Password reset",
         text:
-          "Lien : https://example.test/auth/resetPassword/token\n\n---\n\n" +
-          "Link: https://example.test/auth/resetPassword/token",
+          "Lien : https://example.test/auth/resetPassword/link#token\n\n---\n\n" +
+          "Link: https://example.test/auth/resetPassword/link#token",
       },
     ]);
   }

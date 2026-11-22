@@ -147,7 +147,9 @@ const TeamDashboard = () => {
   const teamIdStr = Array.isArray(teamId) ? teamId[0] : teamId || "";
   const rawTab = Array.isArray(queryTab) ? queryTab[0] : queryTab;
   const user = useUser();
-  const isMobile = useMediaQuery("(max-width: 680px)");
+  const isMobile = useMediaQuery("(max-width: 680px)", undefined, {
+    getInitialValueInEffect: false,
+  });
   const tabsViewport = useRef<HTMLDivElement>(null);
 
   // Authentication is the only global gate in the public OSS edition.
@@ -954,6 +956,27 @@ const TeamDashboard = () => {
                     {t("team.dashboard.rotation.resume")}
                   </Button>
                 )}
+                {!keyRotationStatus.activeRotation.canResume &&
+                  keyRotationStatus.activeRotation.canCancel && (
+                    <Button
+                      size="compact-sm"
+                      color="red"
+                      variant="light"
+                      onClick={() => {
+                        const rotation = keyRotationStatus.activeRotation!;
+                        void teamService
+                          .cancelKeyRotation(teamIdStr, rotation.id)
+                          .then(() =>
+                            queryClient.invalidateQueries({
+                              queryKey: ["team.keyRotation", teamIdStr],
+                            }),
+                          )
+                          .catch(toast.axiosError);
+                      }}
+                    >
+                      {t("team.dashboard.rotation.cancelOrphaned")}
+                    </Button>
+                  )}
               </Group>
             </Alert>
           )}
@@ -1035,8 +1058,15 @@ const TeamDashboard = () => {
               )}
             </Alert>
           )}
-          {myWrappedTeamKey === undefined ? null : myWrappedTeamKey &&
-            teamKeyStale ? (
+          {myWrappedTeamKey === undefined ? (
+            // Holds the room of the usual banner while the key is checked.
+            <div aria-hidden style={{ visibility: "hidden" }}>
+              <TeamEncryptionStatus
+                canRotate={isTeamAdmin}
+                onRotate={openRotate}
+              />
+            </div>
+          ) : myWrappedTeamKey && teamKeyStale ? (
             <Alert
               icon={<TbLock size={18} />}
               color="red"
@@ -3174,7 +3204,9 @@ const TeamSearchPanel = ({
   const router = useRouter();
   const t = useTranslate();
   const intl = useIntl();
-  const isMobile = useMediaQuery("(max-width: 680px)");
+  const isMobile = useMediaQuery("(max-width: 680px)", undefined, {
+    getInitialValueInEffect: false,
+  });
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<TeamSearchKind | "ALL">("ALL");
   const [folderId, setFolderId] = useState<string | null>(null);
@@ -3689,7 +3721,9 @@ const TeamSearchPanel = ({
 const TeamSharesPanel = ({ teamId }: { teamId: string }) => {
   const t = useTranslate();
   const router = useRouter();
-  const isMobile = useMediaQuery("(max-width: 680px)");
+  const isMobile = useMediaQuery("(max-width: 680px)", undefined, {
+    getInitialValueInEffect: false,
+  });
   const [receivedPage, setReceivedPage] = useState(1);
   const [sentPage, setSentPage] = useState(1);
 

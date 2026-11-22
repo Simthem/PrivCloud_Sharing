@@ -55,7 +55,7 @@ export default {
     "You can also confirm your identity by signing in again with the account linked to it, without typing your password.",
   "account.card.security.totp.oauth.confirm": "Confirm with {provider}",
   "account.card.security.totp.oauth.none":
-    "Your account has neither a password nor a linked external account. Link an account or set a password to manage two-factor authentication.",
+    "Your account has neither a password nor a linked Google or OpenID account. Set a password with \"Forgot password\" to manage two-factor authentication.",
   "account.card.security.totp.oauth.disableDescription":
     "Identity confirmed. Enter a code from your app or a backup code to turn two-factor authentication off.",
   "webdav.error.unsafeTree":
@@ -449,7 +449,7 @@ export default {
 
   "upload.pending.title": "Unfinished uploads",
   "upload.pending.body":
-    "Some uploads have not been finalized. You can view and download the files already saved.",
+    "Some uploads have not been finalized. You can view and download the files already saved. Without a resume, an upload and its files are deleted 7 days after its last activity.",
   "upload.pending.summary":
     "{date}: {count, plural, one {# saved file} other {# saved files}} ({size})",
   "upload.pending.open": "Open saved files",
@@ -1166,6 +1166,8 @@ export default {
   "step-up.title": "Confirm your identity",
   "step-up.description.admin":
     "This operation changes administrator rights, someone else's credentials or the sign-in settings. Confirm your own administrator identity. The affected user has nothing to provide, and the confirmation is valid for this operation only.",
+  "step-up.description.oauth-link":
+    "This linked account will sign you in without a password. Confirm your identity first. The confirmation is valid for this link only.",
   "step-up.password": "Your password",
   "step-up.description.signing-passkey":
     "This passkey will sign documents in your name and sign you in. Confirm your identity first, as when adding a passkey from your account settings.",
@@ -1542,6 +1544,9 @@ export default {
   "fileTree.items": "{count, plural, one {# item} other {# items}}",
   "share.button.clear-selection": "Clear selection",
   "share.download.cancel": "Cancel download",
+  "download.error.failed": "The download failed. Please try again.",
+  "download.error.too-large":
+    "This file is too large to be decrypted in this browser. Reload the page and try again, or use Chrome, Edge or Firefox.",
   "share.notify.download-all-preparing":
     "The share is being prepared. Please try again in a few minutes.",
 
@@ -1755,6 +1760,9 @@ export default {
   "admin.config.general.secure-cookies": "Secure cookies",
   "admin.config.general.secure-cookies.description":
     "Whether to set the secure flag on cookies. If enabled, the site will not function when accessed over HTTP.",
+  "admin.config.general.disable-indexing": "Disable search indexing",
+  "admin.config.general.disable-indexing.description":
+    "Applies noindex across the site, including public pages and documents.",
   "admin.config.general.show-home-page": "Show home page",
   "admin.config.general.show-home-page.description":
     "Whether to show the home page",
@@ -2433,12 +2441,16 @@ export default {
   // SafeLine WAF 468 challenge notifications
   "safeline.notify.title": "Security verification required",
   "safeline.notify.message":
-    "The WAF cookie has expired. Click {link} to solve the challenge. The upload will resume automatically.",
+    "Your security session has expired and must be confirmed again. Click {link} to do it, the transfer will resume automatically.",
+  "safeline.notify.message-popup-blocked":
+    "Your browser blocked the security check window because it opened while the PrivCloud tab was in the background. Click {link} to open it, the transfer will resume automatically. To avoid this step, allow pop-ups and redirects for {host}: click the blocked pop-up icon in the address bar (or the warning bar), then choose to always allow them.",
   "safeline.notify.link": "Resolve now",
-  "safeline.os-notify.title": "PrivCloud -- Verification required",
+  "safeline.os-notify.title": "PrivCloud: security check required",
   "safeline.os-notify.body":
-    "The WAF requires a verification. Return to the PrivCloud tab and click the link.",
-  "safeline.title-flash": "\u26a0\ufe0f WAF verification required!",
+    "Your transfer is waiting for a security check. Go back to the PrivCloud tab and click \"Resolve now\".",
+  "safeline.os-notify.body-popup-blocked":
+    "Your browser blocked the security check window. Go back to the PrivCloud tab, click \"Resolve now\", then allow pop-ups and redirects for this site.",
+  "safeline.title-flash": "\u26a0\ufe0f Security check required",
   "safeline.download.failed":
     "SafeLine challenge not resolved after {retries} retries",
 
@@ -3376,6 +3388,7 @@ export default {
   "team.dashboard.rotation.inProgress": "Key rotation in progress",
   "team.dashboard.rotation.progress": "{done} of {total} file(s) processed",
   "team.dashboard.rotation.resume": "Resume",
+  "team.dashboard.rotation.cancelOrphaned": "Cancel this rotation",
   "team.dashboard.rotation.memberUnavailable":
     "E2E shares are temporarily unavailable until the rotation is complete.",
   "team.dashboard.rotation.due": "Key rotation required",

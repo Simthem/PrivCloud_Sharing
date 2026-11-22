@@ -43,9 +43,14 @@ type CleanupOptions = {
   raced?: boolean;
   multipart?: boolean;
   active?: boolean;
+  idleDays?: number;
 };
 type CleanupClaim = {
-  where: { files?: unknown };
+  where: {
+    files?: unknown;
+    hasBeenCompleted?: boolean;
+    uploadLastActivityAt?: { lt: Date };
+  };
   data: { uploadCleanupStartedAt?: Date | null };
 };
 type CleanupDouble = Pick<JobsService, "deleteUnfinishedShares"> & {
@@ -87,7 +92,7 @@ type S3Double = Pick<
   getS3Instance: () => { send: (command: S3Command) => Promise<unknown> };
 };
 const discard = (service: RemovalDouble, confirmed = false, admin = false) =>
-  service.remove("share-1", admin, undefined, undefined, confirmed);
+  service.remove("share-1", admin, undefined, confirmed);
 
 function removalFixture(options: RemovalOptions = {}) {
   const share = {
@@ -222,6 +227,9 @@ async function cleanupFixture(options: CleanupOptions = {}) {
           creatorId: options.creatorId ?? null,
           storageProvider: "S3",
           hasBeenCompleted: false,
+          uploadLastActivityAt: new Date(
+            Date.now() - (options.idleDays ?? 1 / 24) * 24 * 60 * 60 * 1000,
+          ),
           _count: { files: options.files || 0 },
         },
       ],
@@ -244,7 +252,10 @@ async function cleanupFixture(options: CleanupOptions = {}) {
       return !!options.stored || (!!options.raced && probes > 1);
     },
     hasPendingMultipartUpload: async () => !!options.multipart,
-    getRecentUploadActivity: async () => (options.active ? new Date() : null),
+    getRecentUploadActivity: async () => {
+      if (options.probeFails) throw new Error("storage unavailable");
+      return options.active ? new Date() : null;
+    },
     deleteAllFiles: async () => {
       storageDeletes++;
     },
@@ -304,6 +315,42 @@ testCase(
     const result = await cleanupFixture();
     assert.equal(result.storageDeletes, 1);
     assert.equal(result.recordDeletes, 1);
+  },
+);
+testCase(
+  "an upload left unfinished for seven days is purged with its files",
+  async () => {
+    const result = await cleanupFixture({
+      creatorId: "owner",
+      files: 167,
+      stored: true,
+      multipart: true,
+      idleDays: 8,
+    });
+    assert.equal(result.storageDeletes, 1);
+    assert.equal(result.recordDeletes, 1);
+    const claim = result.updates[0].where;
+    assert.equal(claim.files, undefined);
+    assert.equal(claim.hasBeenCompleted, false);
+    assert.ok(
+      claim.uploadLastActivityAt!.lt.getTime() <=
+        Date.now() - 7 * 24 * 60 * 60 * 1000 + 1000,
+    );
+  },
+);
+testCase(
+  "an unfinished upload with files stays resumable for seven days",
+  async () => {
+    for (const options of [
+      { files: 8, idleDays: 6 },
+      { creatorId: "owner", idleDays: 6 },
+      { files: 8, idleDays: 8, active: true },
+      { files: 8, idleDays: 8, probeFails: true },
+    ]) {
+      const result = await cleanupFixture(options);
+      assert.equal(result.storageDeletes, 0);
+      assert.equal(result.recordDeletes, 0);
+    }
   },
 );
 testCase(

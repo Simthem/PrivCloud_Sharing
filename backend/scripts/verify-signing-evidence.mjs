@@ -659,6 +659,8 @@ function reportTimestamp(label, structure) {
   const token = structure.timestampToken;
   const info = timestampInfo(token);
   if (!info.algorithm) fail(`${label}: unsupported timestamp hash algorithm`);
+  // The certificate that actually signed the token, as OpenSSL found it.
+  let signerDer = null;
   withTempDir((dir) => {
     writeFileSync(join(dir, "token.der"), token);
     const result = spawnSync(
@@ -671,6 +673,8 @@ function reportTimestamp(label, structure) {
         "DER",
         "-in",
         join(dir, "token.der"),
+        "-signer",
+        join(dir, "signer.pem"),
         "-out",
         "/dev/null",
       ],
@@ -678,6 +682,10 @@ function reportTimestamp(label, structure) {
     );
     if (result.status !== 0)
       fail(`${label}: RFC 3161 token signature is invalid`);
+    const signers = pemCertificates(join(dir, "signer.pem"));
+    if (signers.length !== 1)
+      fail(`${label}: RFC 3161 token must have exactly one signer`);
+    signerDer = signers[0];
   });
   note(section, "RFC3161 token", "VALID (TSA signature)");
   const expected = createHash(info.algorithm)
@@ -728,12 +736,14 @@ function reportTimestamp(label, structure) {
 
   const certificates = info.certificates.map(certificateDetails);
   const signer = certificates.find((certificate) =>
-    /Time Stamping/i.test(certificate.eku),
+    certificate.der.equals(signerDer),
   );
   if (!signer) {
     note(section, "TSA signer", "certificate not included in the token");
     return;
   }
+  if (!/Time Stamping/i.test(signer.eku))
+    fail(`${label}: the TSA signing certificate is not for timestamping`);
   note(section, "TSA signer", signer.subject);
   note(section, "TSA certificate", `SHA-256 ${signer.fingerprint}`);
   if (!signer.ekuCritical)
@@ -747,18 +757,35 @@ function reportTimestamp(label, structure) {
   // Trust anchors: the one given with --tsa-ca, or else the certificates the
   // Trusted List publishes for its services, which is how eIDAS designates the
   // anchors of a qualified TSA.
-  const fromTrustedList = !tsaCaFile && Boolean(trustedListFile);
+  // A Trusted List only designates anchors once its own signer is
+  // authorized by the EU list, and only for services that were qualified
+  // time stamp services, granted, when the token was made.
+  const listServices =
+    !tsaCaFile && trustedListFile ? trustedList() : [];
+  const fromTrustedList = listServices.length > 0 && trustedListAnchored;
   const anchorDers = tsaCaFile
     ? pemCertificates(tsaCaFile)
     : fromTrustedList
-      ? trustedList().flatMap((service) => service.certificates)
+      ? listServices
+          .filter((service) => {
+            const status = service.history
+              .filter((entry) => entry.start <= info.time)
+              .pop();
+            return (
+              uriTail(status?.type) === "QTST" &&
+              uriTail(status?.status) === "granted"
+            );
+          })
+          .flatMap((service) => service.certificates)
       : [];
   let anchor = null;
   if (anchorDers.length === 0) {
     note(
       section,
       "TSA intermediate chain",
-      "NOT CHECKED (use --trusted-list or --tsa-ca)",
+      listServices.length > 0 && !trustedListAnchored
+        ? "NOT CHECKED (Trusted List not anchored, add --lotl)"
+        : "NOT CHECKED (use --trusted-list with --lotl, or --tsa-ca)",
     );
   } else {
     withTempDir((dir) => {
@@ -990,10 +1017,12 @@ function verifyPdfSeal(pdf, caFile) {
     start2 + length2 !== pdf.length
   )
     fail("PDF PAdES seal: invalid or incomplete ByteRange");
+  // The only unsigned bytes are the seal itself: nothing else may hide there.
   const gap = pdf.subarray(length1, start2).toString("latin1");
-  const contents = gap.match(/<([0-9A-Fa-f\s]+)>/);
-  if (!contents) fail("PDF PAdES seal: Contents is missing");
-  const hexCms = contents[1].replace(/\s/g, "");
+  const contents = gap.match(/^<([0-9A-Fa-f]+)>$/);
+  if (!contents)
+    fail("PDF PAdES seal: the unsigned range is not exactly the Contents");
+  const hexCms = contents[1];
   if (hexCms.length % 2 !== 0) fail("PDF PAdES seal: malformed Contents");
   const cms = exactDerObject(Buffer.from(hexCms, "hex"), "PDF PAdES seal");
   const signedBytes = Buffer.concat([
@@ -1499,7 +1528,7 @@ async function main() {
   );
   if (payload.document.encryptedEndToEnd) {
     console.log(
-      "Note: end-to-end encrypted request, the pages were rendered in the requester's browser. The approved content is the embedded source checked above against every signed manifest.",
+      "Note: end-to-end encrypted request, the pages were rendered in the requester's browser and the final hash was declared by it, the platform never saw the content. The approved content is the embedded source checked above against every signed manifest.",
     );
   }
   console.log(

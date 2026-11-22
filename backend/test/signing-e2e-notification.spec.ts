@@ -58,6 +58,10 @@ testCase(
     );
     const service = new SigningE2EService(
       {
+        $executeRaw: async () => 0,
+        $transaction(work: (client: unknown) => unknown) {
+          return work(this);
+        },
         signatureDocument: {
           findFirst: async () => ({
             id: "document-1",
@@ -72,6 +76,7 @@ testCase(
           update: async ({ data }: { data: { status: string } }) => {
             completed = data.status === "COMPLETED";
           },
+          findUnique: async () => ({ status: "AWAITING_FINALIZATION" }),
         },
         signatureAuditEvent: {
           findFirst: async () => ({ id: "pades-event" }),

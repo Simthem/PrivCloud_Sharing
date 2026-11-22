@@ -1,3 +1,4 @@
+import { Text } from "@mantine/core";
 import { useModals } from "@mantine/modals";
 import { FileMetaData } from "../../../types/File.type";
 import FilePreview from "../FilePreview";
@@ -12,8 +13,23 @@ const showFilePreviewModal = (
   const mimeType = resolveFileMimeType(file.name);
   return modals.openModal({
     size: "min(1120px, 94vw)",
-    title: file.name,
-    styles: { body: { maxHeight: "calc(85vh - 80px)", overflow: "auto" } },
+    title: (
+      <Text inherit truncate="end" title={file.name}>
+        {file.name}
+      </Text>
+    ),
+    // Viewers shrink to fit so the dialog itself does not scroll.
+    styles: {
+      content: { display: "flex", flexDirection: "column" },
+      title: { minWidth: 0 },
+      body: {
+        display: "flex",
+        flexDirection: "column",
+        flex: "1 1 auto",
+        minHeight: 0,
+        overflowY: "auto",
+      },
+    },
     children: (
       <FilePreview
         shareId={shareId}

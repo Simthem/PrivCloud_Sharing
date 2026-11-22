@@ -9,11 +9,7 @@ import {
   type UploadResumeEntry,
 } from "../../utils/uploadResume.util";
 import { startUploadSessionMaintenance } from "../../utils/uploadSessionMaintenance.util";
-import {
-  isUploadActive,
-  setUploadActive,
-  completeSafeLineChallenge,
-} from "../../services/api.service";
+import { isUploadActive, setUploadActive } from "../../services/api.service";
 import { finalizeUpload } from "../../utils/uploadCompletion.util";
 import useConfirmLeave from "../../hooks/confirm-leave.hook";
 import { Alert, Button, Group, Text } from "@mantine/core";
@@ -432,7 +428,6 @@ const EditableUpload = ({
       maintenanceRef.current = startUploadSessionMaintenance({
         isActive: isUploadActive,
         heartbeat: () => shareService.keepUploadAlive(shareId),
-        resolveChallenge: completeSafeLineChallenge,
       });
 
       const hasFailed = !(await uploadFiles(

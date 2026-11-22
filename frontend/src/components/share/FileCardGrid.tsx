@@ -22,6 +22,7 @@ import {
   TbFolder,
 } from "react-icons/tb";
 import mime from "mime-types";
+import useFileDownloads from "../../hooks/useFileDownloads.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import shareService from "../../services/share.service";
 import { FileMetaData } from "../../types/File.type";
@@ -33,6 +34,7 @@ import {
   hasNestedFilePaths,
   type FileTreeNode,
 } from "../../utils/fileTree.util";
+import DownloadProgressIndicator from "./DownloadProgressIndicator";
 import showFilePreviewModal from "./modals/showFilePreviewModal";
 
 const FileCardGrid = ({
@@ -48,6 +50,7 @@ const FileCardGrid = ({
 }) => {
   const modals = useModals();
   const t = useTranslate();
+  const downloads = useFileDownloads(e2eKey ?? null);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
     new Set(),
   );
@@ -149,24 +152,28 @@ const FileCardGrid = ({
               <TbEye size={16} />
             </ActionIcon>
           )}
-          <ActionIcon
-            size={28}
-            variant="light"
-            onClick={async () => {
-              if (share.isE2EEncrypted && e2eKey) {
-                await shareService.downloadFileE2E(
-                  share.id,
-                  file.id,
-                  file.name,
-                  e2eKey,
-                );
-              } else {
-                await shareService.downloadFile(share.id, file.id);
+          {file.id in downloads.progress ? (
+            <DownloadProgressIndicator
+              progress={downloads.progress[file.id]}
+              onCancel={() => downloads.cancel(file.id)}
+            />
+          ) : (
+            <ActionIcon
+              size={28}
+              variant="light"
+              disabled={share.isE2EEncrypted && !e2eKey}
+              onClick={() =>
+                downloads.start({
+                  id: file.id,
+                  shareId: share.id,
+                  name: file.name,
+                  isE2EEncrypted: share.isE2EEncrypted,
+                })
               }
-            }}
-          >
-            <TbDownload size={16} />
-          </ActionIcon>
+            >
+              <TbDownload size={16} />
+            </ActionIcon>
+          )}
         </Group>
       </Card>
     );

@@ -5,6 +5,7 @@ import {
   OnModuleInit,
   Optional,
 } from "@nestjs/common";
+import { publicUrl } from "./public-url.util";
 import { PrismaService } from "src/prisma/prisma.service";
 import * as crypto from "crypto";
 import * as fs from "fs";
@@ -149,7 +150,7 @@ export class PdfSigningService implements OnModuleInit {
 
     if (this.tsaUrls.length > 0) {
       this.logger.log(
-        `TSA configured: ${this.tsaUrls[0]}` +
+        `TSA configured: ${publicUrl(this.tsaUrls[0])}` +
           (this.tsaUrls.length > 1
             ? ` (+${this.tsaUrls.length - 1} fallback)`
             : "") +
@@ -356,20 +357,8 @@ export class PdfSigningService implements OnModuleInit {
     // This means the PDF contains <\x00\x00\x00...\x00> (NULL bytes, NOT ASCII '0' chars).
     const pdfStr = pdfWithPlaceholder.toString("latin1");
 
-    // Find the large null-byte block between angle brackets (the signature placeholder).
-    // \x00 matches the NULL byte that @signpdf/placeholder-pdf-lib writes.
-    const placeholderMatch = pdfStr.match(/<(\x00{1000,})>/);
-    if (!placeholderMatch) {
-      throw new Error(
-        "Cannot find signature hex placeholder in PDF. " +
-          "Ensure pdflibAddPlaceholder was called with signatureLength >= 500.",
-      );
-    }
-
-    // Position of '<' in the PDF
-    const angleBracketOpen = pdfStr.indexOf(placeholderMatch[0]);
-    // The full match includes '<...>', so '>' is at angleBracketOpen + fullMatch.length - 1
-    const angleBracketClose = angleBracketOpen + placeholderMatch[0].length - 1;
+    const { contentsOpen: angleBracketOpen, contentsClose: angleBracketClose } =
+      findSignaturePlaceholder(pdfStr);
     // The writeable slot is everything between < and > (null bytes we'll overwrite with hex)
     const slotLength = angleBracketClose - angleBracketOpen - 1;
 
@@ -385,15 +374,12 @@ export class PdfSigningService implements OnModuleInit {
     ];
 
     // --- Step 3: Fill in /ByteRange placeholder with actual values ---
-    // Find the ByteRange placeholder pattern (asterisks or any placeholder)
-    const byteRangePlaceholder = pdfStr.match(/\/ByteRange\s*\[([^\]]+)\]/);
-    if (!byteRangePlaceholder) {
-      throw new Error("Cannot find /ByteRange placeholder in PDF");
-    }
-
-    const byteRangeFullMatch = byteRangePlaceholder[0]; // e.g. "/ByteRange [0 /********** /********** /**********]"
-    const byteRangeInnerContent = byteRangePlaceholder[1]; // content between [ and ]
-    const byteRangeStart = pdfStr.indexOf(byteRangeFullMatch);
+    const { byteRangeStart, byteRangeMatch: byteRangeFullMatch } =
+      findSignaturePlaceholder(pdfStr);
+    const byteRangeInnerContent = byteRangeFullMatch.slice(
+      byteRangeFullMatch.indexOf("[") + 1,
+      byteRangeFullMatch.lastIndexOf("]"),
+    );
 
     // Build replacement string: actual values, space-padded to exact same byte length
     const byteRangeValues = byteRange.join(" ");
@@ -597,13 +583,7 @@ export class PdfSigningService implements OnModuleInit {
     // 1. Find the hex-encoded signature in the PDF
     // The signature is between angle brackets: /Contents <HEX...>
     const pdfStr = signedPdf.toString("latin1");
-    const contentsMatch = pdfStr.match(/\/Contents\s*<([0-9a-fA-F]+)>/);
-    if (!contentsMatch) {
-      throw new Error("Cannot find /Contents hex string in signed PDF");
-    }
-
-    const hexSignature = contentsMatch[1];
-    const contentsStart = pdfStr.indexOf("<" + hexSignature + ">") + 1;
+    const { contentsStart, hexSignature } = findAppliedSignature(pdfStr);
     const _contentsEnd = contentsStart + hexSignature.length;
 
     // 2. Decode hex -> DER and use the outer ASN.1 length to separate the
@@ -783,10 +763,12 @@ export class PdfSigningService implements OnModuleInit {
     const latest = await this.prisma?.trustedListCheck.findFirst({
       orderBy: { checkedAt: "desc" },
     });
+    // A list past its announced next update no longer vouches for anything.
     if (
       !latest ||
       latest.result !== "OK" ||
-      Date.now() - latest.checkedAt.getTime() > maxAgeDays * 86_400_000
+      Date.now() - latest.checkedAt.getTime() > maxAgeDays * 86_400_000 ||
+      (latest.nextUpdate && latest.nextUpdate.getTime() <= Date.now())
     ) {
       throw new Error(
         "The qualified status of the TSA is not confirmed by a recent Trusted List check",
@@ -810,7 +792,7 @@ export class PdfSigningService implements OnModuleInit {
       scope: timestampContext.scope,
       documentId: timestampContext.documentId ?? null,
       webauthnCredentialId: timestampContext.webauthnCredentialId ?? null,
-      tsaUrl: accepted.tsaUrl,
+      tsaUrl: publicUrl(accepted.tsaUrl),
       requestBase64: request.toString("base64"),
       responseBase64: accepted.response.toString("base64"),
     };
@@ -1103,7 +1085,17 @@ export class PdfSigningService implements OnModuleInit {
     certificates: ParsedCertificate[],
     generatedAt: Date,
   ): void {
-    if (this.tsaTrustedCertFingerprints.size === 0) return;
+    // A timestamp proves nothing without a pinned authority. Test benches
+    // may opt out explicitly.
+    if (this.tsaTrustedCertFingerprints.size === 0) {
+      if (
+        process.env.SIGNING_TSA_ALLOW_UNPINNED?.trim().toLowerCase() === "true"
+      )
+        return;
+      throw new Error(
+        "No trusted TSA certificate is configured (SIGNING_TSA_TRUSTED_CERT_SHA256)",
+      );
+    }
 
     let current = signerCertificate;
     const visited = new Set<string>();
@@ -1596,8 +1588,12 @@ export class PdfSigningService implements OnModuleInit {
       ? Math.max(sigPageIdx, wmPageIdx)
       : sigPageIdx;
 
-    // Add blank pages if needed
-    while (pages.length <= maxPageIdx) {
+    // One blank page may follow the document, for a signature placed after
+    // its last page. Anything further is refused, not padded.
+    if (maxPageIdx > pages.length) {
+      throw new Error("The signature page is beyond the end of the document");
+    }
+    if (maxPageIdx === pages.length) {
       pdfDoc.addPage();
       pages = pdfDoc.getPages();
     }
@@ -1864,7 +1860,10 @@ export class PdfSigningService implements OnModuleInit {
 
     let pages = pdfDoc.getPages();
     const maxPage = Math.max(1, ...fields.map((field) => field.page || 1));
-    while (pages.length < maxPage) {
+    if (maxPage > pages.length + 1) {
+      throw new Error("A field is placed beyond the end of the document");
+    }
+    if (maxPage > pages.length) {
       pdfDoc.addPage();
       pages = pdfDoc.getPages();
     }
@@ -2189,4 +2188,57 @@ export class PdfSigningService implements OnModuleInit {
 
     return Buffer.from(await pdfDoc.save());
   }
+}
+
+const PLACEHOLDER_BYTE_RANGE =
+  /\/ByteRange\s*\[\s*0\s+\/\*+\s+\/\*+\s+\/\*+\s*\]/g;
+const PLACEHOLDER_CONTENTS = /\/Contents\s*(<\x00{1000,}>)/g;
+const APPLIED_BYTE_RANGE = /\/ByteRange\s*\[\s*0\s+(\d+)\s+(\d+)\s+(\d+)\s*\]/g;
+// Both entries belong to the one signature dictionary this service adds.
+const PLACEHOLDER_MAX_DISTANCE = 16_384;
+
+/**
+ * The signature slot this service added, never a look-alike in the source:
+ * a PDF with a second one is refused rather than signed in the wrong place.
+ */
+export function findSignaturePlaceholder(pdf: string) {
+  const ranges = [...pdf.matchAll(PLACEHOLDER_BYTE_RANGE)];
+  const contents = [...pdf.matchAll(PLACEHOLDER_CONTENTS)];
+  if (ranges.length !== 1 || contents.length !== 1) {
+    throw new Error("Expected exactly one signature placeholder in the PDF");
+  }
+  const byteRangeStart = ranges[0].index!;
+  const contentsOpen = contents[0].index! + contents[0][0].indexOf("<");
+  if (Math.abs(contentsOpen - byteRangeStart) > PLACEHOLDER_MAX_DISTANCE) {
+    throw new Error("The signature placeholder entries are not together");
+  }
+  return {
+    byteRangeStart,
+    byteRangeMatch: ranges[0][0],
+    contentsOpen,
+    contentsClose: contentsOpen + contents[0][1].length - 1,
+  };
+}
+
+/** The signature whose byte range covers the file up to its very end. */
+export function findAppliedSignature(pdf: string) {
+  const applied = [...pdf.matchAll(APPLIED_BYTE_RANGE)].filter((match) => {
+    const [open, after, rest] = [match[1], match[2], match[3]].map(Number);
+    return (
+      after + rest === pdf.length &&
+      open < after &&
+      pdf[open] === "<" &&
+      pdf[after - 1] === ">"
+    );
+  });
+  if (applied.length !== 1) {
+    throw new Error("Cannot find the signature applied to this PDF");
+  }
+  const open = Number(applied[0][1]);
+  const after = Number(applied[0][2]);
+  const hexSignature = pdf.slice(open + 1, after - 1);
+  if (!/^[0-9a-fA-F]+$/.test(hexSignature)) {
+    throw new Error("The applied signature is not hexadecimal");
+  }
+  return { contentsStart: open + 1, hexSignature };
 }

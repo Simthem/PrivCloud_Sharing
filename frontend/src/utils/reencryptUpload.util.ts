@@ -1,4 +1,5 @@
 import { isTrustedWorkerResultEvent } from "./reencryptWorkerMessage.util";
+import { claimTransferWorkerScope } from "./transferWorker.util";
 
 interface ReencryptUploadRequest {
   shareId: string;
@@ -96,6 +97,17 @@ const getWorker = (): Worker => {
 
 /** Upload one encrypted transport chunk outside the renderer isolate. */
 export const uploadReencryptChunkInWorker = (
+  request: ReencryptUploadRequest,
+  chunk: ArrayBuffer,
+  signal?: AbortSignal,
+): Promise<void> => {
+  signal?.throwIfAborted();
+  return claimTransferWorkerScope("/reencrypt-worker.js").then(() =>
+    sendReencryptChunk(request, chunk, signal),
+  );
+};
+
+const sendReencryptChunk = (
   request: ReencryptUploadRequest,
   chunk: ArrayBuffer,
   signal?: AbortSignal,

@@ -17,6 +17,8 @@ import {
   ConsumeEnrollmentTokenDTO,
 } from "./dto/crypto.dto";
 
+const MAX_PENDING_TOKENS = 100;
+
 @Injectable()
 export class EnrollmentTokenService {
   private readonly logger = new Logger(EnrollmentTokenService.name);
@@ -56,6 +58,15 @@ export class EnrollmentTokenService {
           "Only team owner/admin can create TEAM_JOIN enrollment tokens",
         );
       }
+    }
+
+    const pending = await this.prisma.enrollmentToken.count({
+      where: { creatorId, status: "PENDING", expiresAt: { gt: new Date() } },
+    });
+    if (pending >= MAX_PENDING_TOKENS) {
+      throw new BadRequestException(
+        "Too many enrollment links are waiting. Revoke some first.",
+      );
     }
 
     // Generate high-entropy URL-safe token (32 bytes = 256 bits)

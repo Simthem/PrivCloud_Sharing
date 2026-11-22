@@ -777,6 +777,11 @@ testCase(
   async () => {
     let member: object | null = null;
     const grants = new AccessGrantService({
+      $queryRaw: async () => [],
+      $executeRaw: async () => 0,
+      $transaction(callback: (client: unknown) => unknown) {
+        return callback(this);
+      },
       userIdentityKey: { findFirst: async () => ({ id: "key" }) },
       file: {
         findUnique: async () => ({ share: { teamFolder: { teamId: TEAM } } }),

@@ -6,6 +6,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  PayloadTooLargeException,
   UnsupportedMediaTypeException,
 } from "@nestjs/common";
 import { LocalFileService } from "./local.service";
@@ -47,6 +48,13 @@ type MultipartPartAuthorizationRequest = {
   partIndex: number;
   contentLength: number;
 };
+
+// Documents read whole into memory (signing, evidence). Large shares are
+// streamed elsewhere and never come through here.
+const BUFFERED_FILE_MAX_BYTES = (() => {
+  const value = Number(process.env.BUFFERED_FILE_MAX_BYTES);
+  return Number.isSafeInteger(value) && value > 0 ? value : 256 * 1024 * 1024;
+})();
 
 @Injectable()
 export class FileService {
@@ -300,6 +308,7 @@ export class FileService {
         encryptionChunkSize: true,
         share: {
           select: {
+            expiration: true,
             teamFolderId: true,
             isE2EEncrypted: true,
           },
@@ -346,6 +355,7 @@ export class FileService {
       isE2E ? fileId : metadata.name,
       isE2E || forceDownload,
       isE2E ? "application/octet-stream" : contentType,
+      metadata.share.expiration,
     );
     const configuredDirectDownloadPartBytes = directPolicy.partBytes;
     const directDownloadMaxBufferBytes = directPolicy.maxBufferBytes;
@@ -975,8 +985,18 @@ export class FileService {
   }
 
   async getZip(shareId: string): Promise<Readable> {
-    const storageService = await this.getShareStorageService(shareId);
-    return await storageService.getZip(shareId);
+    const share = await this.prisma.share.findUnique({
+      where: { id: shareId },
+      select: { storageProvider: true, isZipReady: true },
+    });
+    if (!share) throw new NotFoundException("Share not found");
+    const storage = this.getStorageService(share.storageProvider);
+    // S3 builds the archive from the current files. A stored one, being
+    // written or left from before the share was reopened, may not match them.
+    if (storage instanceof LocalFileService && !share.isZipReady) {
+      throw new NotFoundException("Archive not ready");
+    }
+    return await storage.getZip(shareId);
   }
 
   private async getShareStorageService(
@@ -1000,11 +1020,22 @@ export class FileService {
     }
   }
 
+  /** Reads a whole stream into memory, never more than the cap. */
   private async streamToUint8Array(stream: Readable): Promise<Uint8Array> {
     const chunks: Buffer[] = [];
+    let size = 0;
 
     return new Promise((resolve, reject) => {
-      stream.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      stream.on("data", (chunk) => {
+        const buffer = Buffer.from(chunk);
+        size += buffer.length;
+        if (size > BUFFERED_FILE_MAX_BYTES) {
+          stream.destroy();
+          reject(new PayloadTooLargeException("This document is too large"));
+          return;
+        }
+        chunks.push(buffer);
+      });
       stream.on("end", () => resolve(new Uint8Array(Buffer.concat(chunks))));
       stream.on("error", reject);
     });
@@ -1042,6 +1073,9 @@ export class FileService {
     const fs = await import("fs/promises");
     const dataDir = DATA_DIRECTORY;
     const filePath = resolveStoragePath(dataDir, safeKey);
+    if ((await fs.stat(filePath)).size > BUFFERED_FILE_MAX_BYTES) {
+      throw new PayloadTooLargeException("This document is too large");
+    }
     return fs.readFile(filePath);
   }
 

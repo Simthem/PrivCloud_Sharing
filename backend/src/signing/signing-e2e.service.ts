@@ -1,4 +1,5 @@
 import { assertSigningResultContent } from "src/file/content-scheme.util";
+import { takeWriteLock } from "src/prisma/write-lock.util";
 import {
   BadRequestException,
   ConflictException,
@@ -21,6 +22,8 @@ import {
   buildSignerContribution,
   reconcileSignerContribution,
 } from "./signing-evidence.util";
+
+const MAX_DIGEST_SEALS = 3;
 
 @Injectable()
 export class SigningE2EService {
@@ -131,6 +134,16 @@ export class SigningE2EService {
       throw new BadRequestException("Not all signers have signed yet");
     }
     await this.assertContributionsMatchSignedManifests(doc, sourceDocumentHash);
+    // The platform cannot see an encrypted document: it seals the digest it
+    // is given, a few times for retries, never on demand.
+    const sealed = await this.prisma.signatureAuditEvent.count({
+      where: { documentId, eventType: "PADES_DIGEST_SIGNED" },
+    });
+    if (sealed >= MAX_DIGEST_SEALS) {
+      throw new ConflictException(
+        "This document was already sealed. Contact the administrator",
+      );
+    }
 
     const cms = await this.pdfSigningService.signDigest(digest, {
       scope: "pdf-seal",
@@ -195,33 +208,27 @@ export class SigningE2EService {
       );
     }
 
-    // Store the re-encrypted signed PDF
-    const signedKey = `signed/${documentId}/${doc.fileName}`;
-    await this.fileService.storeFileByKey(signedKey, encryptedPdfBuffer);
-
-    await this.createAuditEvent(
-      documentId,
-      "FINAL_E2E_CONTAINER_STORED",
-      "client-e2e",
-      undefined,
-      undefined,
-      JSON.stringify({
-        sha256: crypto
-          .createHash("sha256")
-          .update(encryptedPdfBuffer)
-          .digest("hex"),
-      }),
+    // One finalization at a time: the stored file, its evidence and the
+    // status always describe the same document.
+    await this.prisma.$transaction(
+      async (tx) => {
+        await takeWriteLock(tx);
+        const current = await tx.signatureDocument.findUnique({
+          where: { id: documentId },
+          select: { status: true },
+        });
+        if (current?.status !== "AWAITING_FINALIZATION") {
+          throw new ConflictException("This document is already finalized");
+        }
+        await this.finalizeLocked(
+          documentId,
+          doc.fileName,
+          encryptedPdfBuffer,
+          finalDocumentHash,
+        );
+      },
+      { timeout: 120_000 },
     );
-    await this.signingEvidenceService.createFinalEvidence(
-      documentId,
-      encryptedPdfBuffer,
-      finalDocumentHash,
-    );
-
-    await this.prisma.signatureDocument.update({
-      where: { id: documentId },
-      data: { status: "COMPLETED", signedFileKey: signedKey },
-    });
 
     await this.createAuditEvent(documentId, "COMPLETED", "client-e2e");
 
@@ -301,6 +308,38 @@ export class SigningE2EService {
 
     this.logger.log(`Document ${documentId} finalized (E2E client-side)`);
     return { status: "COMPLETED" };
+  }
+
+  private async finalizeLocked(
+    documentId: string,
+    fileName: string,
+    encryptedPdfBuffer: Buffer,
+    finalDocumentHash: string,
+  ) {
+    const signedKey = `signed/${documentId}/${fileName}`;
+    await this.fileService.storeFileByKey(signedKey, encryptedPdfBuffer);
+    await this.createAuditEvent(
+      documentId,
+      "FINAL_E2E_CONTAINER_STORED",
+      "client-e2e",
+      undefined,
+      undefined,
+      JSON.stringify({
+        sha256: crypto
+          .createHash("sha256")
+          .update(encryptedPdfBuffer)
+          .digest("hex"),
+      }),
+    );
+    await this.signingEvidenceService.createFinalEvidence(
+      documentId,
+      encryptedPdfBuffer,
+      finalDocumentHash,
+    );
+    await this.prisma.signatureDocument.update({
+      where: { id: documentId },
+      data: { status: "COMPLETED", signedFileKey: signedKey },
+    });
   }
 
   /**

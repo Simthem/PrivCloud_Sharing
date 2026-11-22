@@ -18,6 +18,26 @@ import { createTestCredentials } from "./test-credentials";
 
 const fixtureCredentials = createTestCredentials();
 
+// The link is issued after the answer: wait for it before looking at mails.
+async function requestReset(auth: AuthService, email: string) {
+  const service = auth as unknown as {
+    issueResetPassword: (...args: unknown[]) => Promise<unknown>;
+  };
+  const original = service.issueResetPassword;
+  const issued: Promise<unknown>[] = [];
+  service.issueResetPassword = (...args) => {
+    const pending = original.apply(auth, args);
+    issued.push(pending);
+    return pending;
+  };
+  try {
+    await auth.requestResetPassword(email);
+    await Promise.allSettled(issued);
+  } finally {
+    service.issueResetPassword = original;
+  }
+}
+
 async function main() {
   const directory = await mkdtemp(join(tmpdir(), "privcloud-email-change-"));
   const database = `file:${join(directory, "account.db")}`;
@@ -192,7 +212,7 @@ async function main() {
       });
       assert.match(stored.oldTokenHash, /^[a-f0-9]{64}$/);
       assert.notEqual(stored.oldTokenHash, f.old());
-      await f.auth.requestResetPassword(f.next);
+      await requestReset(f.auth, f.next);
       assert.equal(f.recovery.length, 0);
       const first = order === "old" ? f.old() : f.verify();
       const second = order === "old" ? f.verify() : f.old();
@@ -210,9 +230,9 @@ async function main() {
         0,
       );
       await assert.rejects(f.change.cancel(f.cancel()));
-      await f.auth.requestResetPassword(f.email);
+      await requestReset(f.auth, f.email);
       assert.equal(f.recovery.length, 0);
-      await f.auth.requestResetPassword(f.next);
+      await requestReset(f.auth, f.next);
       assert.equal(f.recovery.length, 1);
       assert.equal(f.recovery[0].recipient, f.next);
       await f.auth.resetPassword(
@@ -314,7 +334,7 @@ async function main() {
         const f = await account();
         await f.start();
         await f.change.confirm(f.old());
-        await f.auth.requestResetPassword(f.email);
+        await requestReset(f.auth, f.email);
         const reset = f.recovery[0].token;
         const action = (db: PrismaClient) =>
           kind === "cancel"
@@ -361,7 +381,7 @@ async function main() {
       await f.start();
       await f.change.confirm(f.old());
       const request = (db: PrismaClient) =>
-        clone(f.auth, db).requestResetPassword(f.email);
+        requestReset(clone(f.auth, db), f.email);
       const confirm = (db: PrismaClient) =>
         clone(f.change, db).confirm(f.verify());
       const results = await serializePair(
@@ -410,7 +430,7 @@ async function main() {
     {
       const f = await account();
       await f.start();
-      await f.auth.requestResetPassword(f.email);
+      await requestReset(f.auth, f.email);
       const users = Object.create(UserSevice.prototype) as UserSevice;
       Object.assign(users, {
         prisma,
@@ -521,7 +541,7 @@ async function main() {
         ).length,
         8,
       );
-      await f.auth.requestResetPassword(f.email);
+      await requestReset(f.auth, f.email);
       await f.auth.resetPassword(
         f.recovery[f.recovery.length - 1].token,
         fixtureCredentials.resetPassword,

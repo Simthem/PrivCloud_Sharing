@@ -1,3 +1,6 @@
+import { verifiedEmailFold } from "src/config/account-secrets";
+import type { PrismaService } from "src/prisma/prisma.service";
+
 export type SigningIdentityAccount = {
   emailVerifiedAt: Date | null;
   emailVerificationSource: string | null;
@@ -46,4 +49,48 @@ export function resolveSigningIdentityProof(
     };
   }
   return null;
+}
+
+type ProofClient = {
+  user: Pick<PrismaService["user"], "findUnique">;
+  oAuthUser: Pick<PrismaService["oAuthUser"], "findMany">;
+};
+
+/**
+ * The address of an account when it proved it owns it: mailed link,
+ * administrator, directory or a provider vouching for it. An address set
+ * verified automatically (no SMTP, bootstrap) proves nothing.
+ */
+export async function provenAccountEmail(
+  prisma: ProofClient,
+  userId: string,
+): Promise<string | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      email: true,
+      emailVerifiedAt: true,
+      emailVerificationSource: true,
+      ldapDN: true,
+    },
+  });
+  if (!user?.email) return null;
+  if (
+    user.ldapDN ||
+    (user.emailVerifiedAt &&
+      ["EMAIL_LINK", "ADMINISTRATOR"].includes(
+        user.emailVerificationSource ?? "",
+      ))
+  ) {
+    return user.email;
+  }
+  const links = await prisma.oAuthUser.findMany({
+    where: { userId, verifiedEmailFold: verifiedEmailFold(user.email) },
+    select: { userId: true, verifiedEmail: true },
+  });
+  return links.some(
+    (link) => link.verifiedEmail?.toLowerCase() === user.email.toLowerCase(),
+  )
+    ? user.email
+    : null;
 }

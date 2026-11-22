@@ -22,6 +22,8 @@ import {
 } from "./probe/probe-validation.util";
 import { AbortedRequestFilter } from "./aborted-request.filter";
 import { trustProxySetting } from "./utils/trust-proxy.util";
+import { sizedJsonParser } from "./utils/json-body-limit.util";
+import { ConfigService } from "./config/config.service";
 import {
   DATA_DIRECTORY,
   LOG_LEVEL_AVAILABLE,
@@ -175,6 +177,14 @@ async function bootstrap() {
   // Timestamp the streaming upload as soon as its headers reach Express.
   // S3FileService later reports requestToS3Ms, which includes parsers, guards,
   // authorization, share validation, DB work, multipart init and semaphore wait.
+  const config = app.get(ConfigService);
+  app.use(async (_req: Request, res: Response, next: NextFunction) => {
+    if (await config.isSiteIndexingDisabled()) {
+      res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
+    }
+    next();
+  });
+
   app.use((req: Request, _res: Response, next: NextFunction) => {
     if (
       req.method === "POST" &&
@@ -248,11 +258,16 @@ async function bootstrap() {
     next();
   });
 
-  // Register body parsers via NestJS's useBodyParser() so the rawBody
-  // wrapper preserves raw-body access for endpoints that validate signed data.
-  // SECURITY: Limit JSON/urlencoded to 10MB to mitigate DoS via large payloads.
-  // No legitimate JSON payload should exceed this.
-  app.useBodyParser("json", { limit: "10mb" });
+  // Request bodies are read before any guard runs: an anonymous caller only
+  // gets a small JSON budget.
+  app.use(
+    sizedJsonParser({
+      secret: () => config.get("internal.jwtSecret"),
+      sessionLimit: "10mb",
+      visitorLimit: "1mb",
+      largePrefixes: ["/api/signing/"],
+    }),
+  );
   app.useBodyParser("urlencoded", { limit: "2mb", extended: true });
 
   // Adaptive chunk sizing: the frontend sends chunks based on measured

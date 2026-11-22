@@ -1,4 +1,6 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
+import { PrismaService } from "src/prisma/prisma.service";
 import { randomUUID, createHmac } from "crypto";
 import {
   createChallenge,
@@ -28,10 +30,12 @@ type SupportedAlgorithm = (typeof SUPPORTED_ALGORITHMS)[number];
 @Injectable()
 export class AltchaService {
   private readonly logger = new Logger(AltchaService.name);
-  private readonly usedChallenges = new Map<string, number>();
   private readonly hmacKeySecretCache = new Map<string, string>();
 
-  constructor(private config: ConfigService) {}
+  constructor(
+    private config: ConfigService,
+    private prisma: PrismaService,
+  ) {}
 
   async createChallenge(): Promise<Challenge> {
     const algorithm = this.getAlgorithm();
@@ -81,15 +85,6 @@ export class AltchaService {
         ? expiresAt
         : Math.floor(Date.now() / 1000) + DEFAULT_EXPIRES_IN_SECONDS;
 
-    this.cleanupUsedChallenges();
-
-    if (this.usedChallenges.has(challengeId)) {
-      this.logger.warn(`ALTCHA replay attempt rejected: ${challengeId}`);
-      throw new BadRequestException("Captcha verification failed");
-    }
-
-    this.usedChallenges.set(challengeId, storeExpiresAt);
-
     try {
       const verification = await verifySolution({
         challenge: parsedPayload.challenge,
@@ -102,7 +97,6 @@ export class AltchaService {
       });
 
       if (!verification.verified) {
-        this.usedChallenges.delete(challengeId);
         this.logger.warn(
           `ALTCHA verification failed: expired=${verification.expired}, invalidSignature=${verification.invalidSignature}, invalidSolution=${verification.invalidSolution}`,
         );
@@ -114,9 +108,31 @@ export class AltchaService {
       );
     } catch (error) {
       if (error instanceof BadRequestException) throw error;
-      this.usedChallenges.delete(challengeId);
       this.logger.warn("ALTCHA verification error");
       throw new BadRequestException("Captcha verification failed");
+    }
+
+    await this.spendChallenge(challengeId, storeExpiresAt);
+  }
+
+  /** Once per challenge, whichever backend instance receives it. */
+  private async spendChallenge(challengeId: string, expiresAt: number) {
+    await this.prisma.altchaUse.deleteMany({
+      where: { expiresAt: { lt: new Date() } },
+    });
+    try {
+      await this.prisma.altchaUse.create({
+        data: { challengeId, expiresAt: new Date(expiresAt * 1000) },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        this.logger.warn(`ALTCHA replay attempt rejected: ${challengeId}`);
+        throw new BadRequestException("Captcha verification failed");
+      }
+      throw error;
     }
   }
 
@@ -167,16 +183,6 @@ export class AltchaService {
     return typeof challengeId === "string"
       ? challengeId
       : payload.challenge.parameters.nonce;
-  }
-
-  private cleanupUsedChallenges() {
-    const now = Math.floor(Date.now() / 1000);
-
-    for (const [challengeId, expiresAt] of this.usedChallenges.entries()) {
-      if (expiresAt <= now) {
-        this.usedChallenges.delete(challengeId);
-      }
-    }
   }
 
   private getAlgorithm(): SupportedAlgorithm {

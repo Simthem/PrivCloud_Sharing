@@ -1,4 +1,5 @@
 import { accountEmailExists } from "src/user/account-email.util";
+import { takeWriteLock } from "src/prisma/write-lock.util";
 import {
   coveredRotationMetadata,
   readRotationMetadataUpdates,
@@ -28,7 +29,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma, Team, TeamFolder, TeamMember, User } from "@prisma/client";
-import * as argon from "argon2";
+import { ABANDONED_UPLOAD_TIMEOUT_MS } from "src/share/upload-activity.util";
 import { FILE_META_V1 } from "src/file/file-metadata-scheme";
 import { PrismaService } from "src/prisma/prisma.service";
 import { EmailOutboxService } from "src/email/email-outbox.service";
@@ -191,6 +192,11 @@ type SerializableFolder = Pick<
   | "createdAt"
   | "updatedAt"
 > & { _count?: unknown };
+
+const ABANDONED_ROTATION_MS = 7 * 24 * 60 * 60 * 1000;
+// The search index covers the most recent items, never a whole archive.
+const SEARCH_INDEX_SHARES = 1000;
+const SEARCH_INDEX_FILES_PER_SHARE = 200;
 
 @Injectable()
 export class TeamService {
@@ -1360,83 +1366,6 @@ export class TeamService {
     return results;
   }
 
-  /**
-   * Rotate the team's E2E key: set caller's new wrappedTeamKey and invalidate
-   * all other active members' copies. They will need to receive a new distribution link.
-   * Only OWNER and ADMIN (who have a current key) can rotate.
-   */
-  async rotateTeamKey(
-    teamId: string,
-    userId: string,
-    newWrappedTeamKey: string,
-  ) {
-    this.validateWrappedTeamKey(newWrappedTeamKey, "newWrappedTeamKey");
-    await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
-
-    const callerMember = await this.prisma.teamMember.findUnique({
-      where: { userId_teamId: { userId, teamId } },
-    });
-    if (!callerMember || !callerMember.isActive) {
-      throw new ForbiddenException("Not an active team member");
-    }
-    if (!callerMember.wrappedTeamKey) {
-      throw new ForbiddenException(
-        "You do not hold the current team key and cannot rotate it. Have another admin re-share it to you first.",
-      );
-    }
-
-    const team = await this.prisma.team.findUnique({ where: { id: teamId } });
-    if (!team) throw new NotFoundException("Team not found");
-    // This one-shot rotation re-encrypts nothing: refuse it as soon as any
-    // ciphertext under K_team exists, or it would become unreadable.
-    const metadata = await this.getTeamRotationMetadata(teamId, userId);
-    if (
-      metadata.shares.length ||
-      metadata.requests.length ||
-      metadata.profile.length ||
-      metadata.auditKey.length ||
-      metadata.activity.length
-    )
-      throw new ConflictException(
-        "Encrypted team metadata requires the resumable key rotation workflow",
-      );
-    const nextVersion = team.keyVersion + 1;
-
-    // Legacy one-shot rotation endpoint. New clients use the resumable workflow.
-    await this.prisma.$transaction([
-      this.prisma.teamMember.updateMany({
-        where: { teamId, userId: { not: userId }, isActive: true },
-        data: { wrappedTeamKey: null },
-      }),
-      this.prisma.teamMember.update({
-        where: { id: callerMember.id },
-        data: {
-          wrappedTeamKey: newWrappedTeamKey,
-          teamKeyVersion: nextVersion,
-          teamKeyUpdatedAt: new Date(),
-        },
-      }),
-      this.prisma.team.update({
-        where: { id: teamId },
-        data: {
-          keyVersion: nextVersion,
-          keyRotatedAt: new Date(),
-          lastKeyRotationReminderAt: null,
-        },
-      }),
-    ]);
-
-    const actor = await this.prisma.user.findUnique({ where: { id: userId } });
-    this.logger.warn(
-      `KEY_ROTATED: Team ${teamId} E2E key rotated by user ${userId}`,
-    );
-    void this.logAccess(teamId, "KEY_ROTATED", actor?.email || userId, {
-      actorName: actor?.username,
-    });
-
-    return { success: true };
-  }
-
   async getKeyRotationStatus(teamId: string, userId: string) {
     const member = await this.assertTeamMembership(teamId, userId);
     const team = await this.prisma.team.findUnique({
@@ -1459,6 +1388,12 @@ export class TeamService {
       nextDueAt.getTime() - team.keyRotationReminderDays * 86_400_000,
     );
     const active = team.keyRotations[0] || null;
+    const canCancel =
+      !!active &&
+      ["OWNER", "ADMIN"].includes(member.role) &&
+      (active.startedById === userId
+        ? active.processedFiles === 0
+        : await this.isRotationOrphaned(teamId, active));
 
     return {
       policy: {
@@ -1494,6 +1429,7 @@ export class TeamService {
             pendingWrappedTeamKey:
               active.startedById === userId ? active.initiatorWrappedKey : null,
             canResume: active.startedById === userId,
+            canCancel,
           }
         : null,
     };
@@ -1526,6 +1462,28 @@ export class TeamService {
     });
     if (active) {
       throw new ConflictException("A Team key rotation is already in progress");
+    }
+    // An upload in progress, or a published share reopened to add files,
+    // would finish under the previous key.
+    const uploading = await this.prisma.share.count({
+      where: {
+        teamFolder: { teamId },
+        isE2EEncrypted: true,
+        uploadLocked: false,
+        OR: [
+          { hasBeenCompleted: true },
+          {
+            uploadLastActivityAt: {
+              gt: new Date(Date.now() - ABANDONED_UPLOAD_TIMEOUT_MS),
+            },
+          },
+        ],
+      },
+    });
+    if (uploading > 0) {
+      throw new ConflictException(
+        "Encrypted uploads are in progress in the team folders. Rotate the key once they are finished.",
+      );
     }
 
     const shares = await this.prisma.share.findMany({
@@ -2076,9 +2034,12 @@ export class TeamService {
     });
     if (!rotation) throw new NotFoundException("Key rotation not found");
     if (rotation.startedById !== userId) {
-      throw new ForbiddenException("Only the rotation initiator can cancel it");
-    }
-    if (rotation.processedFiles > 0) {
+      if (!(await this.isRotationOrphaned(teamId, rotation))) {
+        throw new ForbiddenException(
+          "Only the rotation initiator can cancel it",
+        );
+      }
+    } else if (rotation.processedFiles > 0) {
       throw new ConflictException(
         "A rotation that already changed files must be resumed, not cancelled",
       );
@@ -2088,6 +2049,26 @@ export class TeamService {
       data: { status: "CANCELLED", completedAt: new Date() },
     });
     return { cancelled: true };
+  }
+
+  /**
+   * Another administrator may clear a rotation its initiator can no longer
+   * finish, or one left untouched, so rotations are never blocked for good.
+   */
+  private async isRotationOrphaned(
+    teamId: string,
+    rotation: { startedById: string; processedFiles: number; updatedAt: Date },
+  ) {
+    const initiator = await this.prisma.teamMember.findUnique({
+      where: { userId_teamId: { userId: rotation.startedById, teamId } },
+      select: { isActive: true, role: true },
+    });
+    return (
+      !initiator?.isActive ||
+      !["OWNER", "ADMIN"].includes(initiator.role) ||
+      (rotation.processedFiles === 0 &&
+        Date.now() - rotation.updatedAt.getTime() > ABANDONED_ROTATION_MS)
+    );
   }
 
   async sendKeyRotationReminders(now = new Date()) {
@@ -2196,7 +2177,7 @@ Sign in with an owner or admin account holding the current Team key to start the
       where: { id: memberId },
       data: { isActive: false },
     });
-    await this.prisma.teamFolderAccess.deleteMany({ where: { memberId } });
+    await this.dropMemberOverrides(memberId);
 
     // SECURITY: Revoke all active E2EE access grants for team files in this team
     // so the removed member can no longer decrypt files after removal.
@@ -2268,6 +2249,7 @@ Sign in with an owner or admin account holding the current Team key to start the
       where: { id: member.id },
       data: { isActive: false },
     });
+    await this.dropMemberOverrides(member.id);
 
     // SECURITY: Revoke all active E2EE access grants for team files in this team
     // so the leaving member can no longer decrypt files after departure.
@@ -3256,24 +3238,7 @@ Sign in with an owner or admin account holding the current Team key to start the
       );
     }
 
-    // 1. Delete all physical files from shares linked to this folder
-    const shares = await this.prisma.share.findMany({
-      where: { teamFolderId: folderId },
-      select: { id: true },
-    });
-    for (const share of shares) {
-      await this.fileService.deleteAllFiles(share.id);
-    }
-
-    // 2. Delete share records linked to this folder
-    await this.prisma.share.deleteMany({
-      where: { teamFolderId: folderId },
-    });
-
-    // 3. Log activity BEFORE deleting the folder so the folderId FK is
-    //    still valid and existing logs referencing this folder keep their
-    //    folderId intact (onDelete: SetNull only fires for the folder row
-    //    itself, not for already-written logs pointing to it).
+    // Logged while the folder row still exists, so the entry keeps its folder.
     const deleterUser = await this.prisma.user.findUnique({
       where: { id: userId },
     });
@@ -3290,17 +3255,63 @@ Sign in with an owner or admin account holding the current Team key to start the
       },
     );
 
-    // 4. Delete the folder (cascade removes children, access rules, etc.
-    //    TeamAccessLog.folderId is set to null via onDelete: SetNull so
-    //    all historical activity logs are preserved.)
-    await this.prisma.teamFolder.delete({ where: { id: folderId } });
+    const purged = await this.purgeFolderTree(teamId, folderId);
 
     this.logger.warn(
       `FOLDER_DELETED: Folder ${folderId} permanently deleted from team ${teamId} by user ${userId}. ` +
-        `${shares.length} shares and all associated files purged.`,
+        `${purged} shares and all associated files purged.`,
     );
 
     return { deleted: true };
+  }
+
+  // A member who comes back starts from the folder defaults, not from rights
+  // granted or refused before leaving.
+  private async dropMemberOverrides(memberId: string) {
+    await this.prisma.$transaction([
+      this.prisma.teamFolderAccess.deleteMany({ where: { memberId } }),
+      this.prisma.fileAccess.deleteMany({ where: { memberId } }),
+    ]);
+  }
+
+  /**
+   * Deletes a folder, its subfolders and every share filed in them. A share
+   * left behind would lose the team's access rules and stay reachable by its
+   * link alone. Each level is locked before the next one is read, so a share
+   * or subfolder created meanwhile waits, then fails on the missing folder.
+   */
+  private async purgeFolderTree(teamId: string, folderId: string) {
+    const shares = await this.prisma.$transaction(async (tx) => {
+      const tree: string[] = [];
+      for (let level = [folderId]; level.length > 0; ) {
+        await takeWriteLock(tx);
+        tree.push(...level);
+        level = (
+          await tx.teamFolder.findMany({
+            where: { teamId, parentId: { in: level } },
+            select: { id: true },
+          })
+        ).map(({ id }) => id);
+      }
+      const filed = await tx.share.findMany({
+        where: { teamFolderId: { in: tree } },
+        select: { id: true, storageProvider: true },
+      });
+      // Deleting the files starts the retention of their signed evidence.
+      await tx.share.deleteMany({
+        where: { id: { in: filed.map(({ id }) => id) } },
+      });
+      await tx.teamFolder.delete({ where: { id: folderId } });
+      return filed;
+    });
+    for (const share of shares) {
+      await this.fileService
+        .deleteAllFiles(share.id, share.storageProvider)
+        .catch(() =>
+          this.logger.error("Stored files of a deleted folder share remain"),
+        );
+    }
+    return shares.length;
   }
 
   // =========================================================================
@@ -3365,9 +3376,11 @@ Sign in with an owner or admin account holding the current Team key to start the
                   metadataScheme: true,
                   encryptedMetadata: true,
                 },
+                take: SEARCH_INDEX_FILES_PER_SHARE,
               },
             },
             orderBy: { createdAt: "desc" },
+            take: SEARCH_INDEX_SHARES,
           });
 
     const allFileIds = shares.flatMap((share) =>
@@ -3402,6 +3415,7 @@ Sign in with an owner or admin account holding the current Team key to start the
               creator: { select: { username: true, email: true } },
             },
             orderBy: { createdAt: "desc" },
+            take: SEARCH_INDEX_SHARES,
           })
         : Promise.resolve([]),
       canViewActivity
@@ -3490,7 +3504,14 @@ Sign in with an owner or admin account holding the current Team key to start the
   }
 
   async getMetrics(teamId: string, userId: string) {
-    await this.assertTeamMembership(teamId, userId);
+    const member = await this.assertTeamMembership(teamId, userId);
+    // Activity figures follow the same permission as the activity log.
+    const canViewActivity =
+      member.role === "OWNER" ||
+      member.role === "ADMIN" ||
+      member.canViewActivity;
+    const activityOf = <T>(query: () => Promise<T>, none: T) =>
+      canViewActivity ? query() : Promise.resolve(none);
 
     const team = await this.prisma.team.findUnique({
       where: { id: teamId },
@@ -3529,18 +3550,26 @@ Sign in with an owner or admin account holding the current Team key to start the
 
     // Recent access logs (last 30 days)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const recentLogs = await this.prisma.teamAccessLog.count({
-      where: { teamId, createdAt: { gte: thirtyDaysAgo } },
-    });
+    const recentLogs = await activityOf(
+      () =>
+        this.prisma.teamAccessLog.count({
+          where: { teamId, createdAt: { gte: thirtyDaysAgo } },
+        }),
+      0,
+    );
 
     // Downloads this month
-    const downloads = await this.prisma.teamAccessLog.count({
-      where: {
-        teamId,
-        action: "DOWNLOAD",
-        createdAt: { gte: thirtyDaysAgo },
-      },
-    });
+    const downloads = await activityOf(
+      () =>
+        this.prisma.teamAccessLog.count({
+          where: {
+            teamId,
+            action: "DOWNLOAD",
+            createdAt: { gte: thirtyDaysAgo },
+          },
+        }),
+      0,
+    );
 
     // Uploads this month (count actual completed shares created in team folders).
     // uploadLocked=true ensures only finalised uploads are counted.
@@ -3556,32 +3585,44 @@ Sign in with an owner or admin account holding the current Team key to start the
         : 0;
 
     // Signature requests this month
-    const signatures = await this.prisma.signatureDocument.count({
-      where: {
-        teamId,
-        createdAt: { gte: thirtyDaysAgo },
-      },
-    });
+    const signatures = await activityOf(
+      () =>
+        this.prisma.signatureDocument.count({
+          where: {
+            teamId,
+            createdAt: { gte: thirtyDaysAgo },
+          },
+        }),
+      0,
+    );
 
     // Top downloaders (last 30 days)
-    const topDownloaders = await this.prisma.teamAccessLog.groupBy({
-      by: ["actorEmail"],
-      where: {
-        teamId,
-        action: "DOWNLOAD",
-        createdAt: { gte: thirtyDaysAgo },
-      },
-      _count: { id: true },
-      orderBy: { _count: { id: "desc" } },
-      take: 10,
-    });
+    const topDownloaders = await activityOf(
+      () =>
+        this.prisma.teamAccessLog.groupBy({
+          by: ["actorEmail"],
+          where: {
+            teamId,
+            action: "DOWNLOAD",
+            createdAt: { gte: thirtyDaysAgo },
+          },
+          _count: { id: true },
+          orderBy: { _count: { id: "desc" } },
+          take: 10,
+        }),
+      [],
+    );
 
     // Activity by day (last 30 days)
-    const dailyActivity = await this.prisma.teamAccessLog.groupBy({
-      by: ["action"],
-      where: { teamId, createdAt: { gte: thirtyDaysAgo } },
-      _count: { id: true },
-    });
+    const dailyActivity = await activityOf(
+      () =>
+        this.prisma.teamAccessLog.groupBy({
+          by: ["action"],
+          where: { teamId, createdAt: { gte: thirtyDaysAgo } },
+          _count: { id: true },
+        }),
+      [],
+    );
 
     const storageLimit = this.getTeamStorageLimit(team);
 
@@ -3781,70 +3822,12 @@ Sign in with an owner or admin account holding the current Team key to start the
 
   async createGuestLink(
     teamId: string,
-    folderId: string,
-    dto: CreateGuestLinkDTO,
+    _folderId: string,
+    _dto: CreateGuestLinkDTO,
     userId: string,
   ) {
     await this.assertTeamRole(teamId, userId, ["OWNER", "ADMIN"]);
-
-    const folder = await this.prisma.teamFolder.findFirst({
-      where: { id: folderId, teamId },
-    });
-    if (!folder) throw new NotFoundException("Folder not found");
-
-    const member = await this.prisma.teamMember.findUnique({
-      where: { userId_teamId: { userId, teamId } },
-    });
-
-    const link = await this.prisma.teamGuestLink.create({
-      data: {
-        token: sealToken("guestLink", randomUUID()),
-        label: dto.label || null,
-        permission: dto.permission || "READ",
-        passwordHash: dto.password
-          ? await this.hashPassword(dto.password)
-          : null,
-        maxDownloads: dto.maxDownloads || null,
-        expiresAt: dto.expiresInHours
-          ? new Date(Date.now() + dto.expiresInHours * 3600000)
-          : null,
-        folderId,
-        teamId,
-        createdById: member!.id,
-      },
-    });
-
-    // Log activity
-    const creatorUser = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
-    void this.logAccess(
-      teamId,
-      "GUEST_LINK_CREATE",
-      creatorUser?.email || "unknown",
-      {
-        actorName: creatorUser?.username,
-        fileName: folder.name,
-        folderId,
-        targetType: "GUEST_LINK",
-        targetId: link.id,
-        metadata: {
-          permission: link.permission,
-          expiresAt: link.expiresAt?.toISOString() || null,
-          maxDownloads: link.maxDownloads,
-        },
-      },
-    );
-
-    const guestToken = openToken("guestLink", link.token);
-    return {
-      id: link.id,
-      token: guestToken,
-      url: `/team/guest/${guestToken}`,
-      permission: link.permission,
-      expiresAt: link.expiresAt,
-      maxDownloads: link.maxDownloads,
-    };
+    throw new ConflictException("Folder guest links are unavailable.");
   }
 
   async getGuestLinks(teamId: string, folderId: string, userId: string) {
@@ -3908,10 +3891,6 @@ Sign in with an owner or admin account holding the current Team key to start the
     );
 
     return { revoked: true };
-  }
-
-  private async hashPassword(password: string): Promise<string> {
-    return argon.hash(password);
   }
 
   private validateWrappedTeamKey(value: string, fieldName: string): void {
@@ -4262,7 +4241,7 @@ Sign in with an owner or admin account holding the current Team key to start the
       where: { id: memberId },
       data: { isActive: false },
     });
-    await this.prisma.teamFolderAccess.deleteMany({ where: { memberId } });
+    await this.dropMemberOverrides(memberId);
 
     // SECURITY: Revoke all active E2EE access grants for this member's team files
     const teamFiles = await this.prisma.teamFile.findMany({
@@ -4360,13 +4339,13 @@ Sign in with an owner or admin account holding the current Team key to start the
       `ADMIN_DELETE_FOLDER: Folder ${folderId} deleted from team ${teamId}`,
     );
 
-    void this.logAccess(teamId, "FOLDER_DELETE", "admin", {
+    await this.logAccess(teamId, "FOLDER_DELETE", "admin", {
       actorName: "Platform admin",
       folderId,
       fileName: folder.name,
     });
 
-    await this.prisma.teamFolder.delete({ where: { id: folderId } });
+    await this.purgeFolderTree(teamId, folderId);
     return { deleted: true, folderId };
   }
 

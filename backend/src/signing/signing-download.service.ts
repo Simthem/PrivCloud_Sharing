@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { provenAccountEmail } from "./signing-identity.util";
 import { findByToken } from "../config/account-secrets";
 import { PrismaService } from "src/prisma/prisma.service";
 import { appendSignatureAuditEvent } from "./signing-audit.util";
@@ -223,10 +224,13 @@ export class SigningDownloadService {
       signingLanguage(recipient.document.language),
     );
 
+    // Anyone holding the link can download: only the assigned account,
+    // signed in, is recorded as the recipient.
+    const asRecipient = !!userId && userId === recipient.userId;
     await this.createAuditEvent(
       recipient.documentId,
       "DOWNLOADED",
-      userId || recipient.email,
+      asRecipient ? userId : `signing-link:${recipient.email}`,
     );
 
     // Log team activity
@@ -239,8 +243,10 @@ export class SigningDownloadService {
           data: {
             teamId: recipient.document.teamId,
             action: "DOWNLOAD",
-            actorEmail: recipient.email,
-            actorName: recipient.name || undefined,
+            actorEmail: asRecipient ? recipient.email : "anonymous",
+            actorName: asRecipient
+              ? recipient.name || undefined
+              : `${recipient.email} (lien de signature)`,
             fileName: fileName,
           },
         })
@@ -255,14 +261,8 @@ export class SigningDownloadService {
    * request, reaches the document through that address.
    */
   private async recipientEmailMatch(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true, emailVerifiedAt: true },
-    });
-    // Only an address the account proved it owns.
-    return user?.email && user.emailVerifiedAt
-      ? [{ recipients: { some: { email: user.email, userId: null } } }]
-      : [];
+    const email = await provenAccountEmail(this.prisma, userId);
+    return email ? [{ recipients: { some: { email, userId: null } } }] : [];
   }
 
   /**

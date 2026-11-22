@@ -1,3 +1,8 @@
+import type { SiteConfigRow as ConfigRow } from "./utils/siteIndexing.server";
+import {
+  readSiteConfig,
+  siteIndexingResponse,
+} from "./utils/siteIndexing.server";
 import { jwtDecode } from "jwt-decode";
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -15,30 +20,22 @@ import {
 // - Setup status
 // - Admin privileges
 
-// Paths with a dot are static files, except the tokens of these pages (v2.<id>).
 export const config = {
-  matcher: [
-    "/((?!api|static|.*\\..*|_next).*)",
-    "/share/:path*",
-    "/s/:path*",
-    "/sign/:path*",
-    "/team/invite/:path*",
-    "/external/invite/:path*",
-  ],
+  matcher: ["/", "/((?!api(?:/|$)|_next/static/).*)"],
 };
-
-const CONFIG_CACHE_TTL = 60_000; // 1 minute
-type ConfigRow = {
-  key: string;
-  value?: string | null;
-  defaultValue?: string | null;
-  type?: string;
-};
-
-let cachedConfig: ConfigRow[] | null = null;
-let cachedAt = 0;
 
 export async function proxy(request: NextRequest) {
+  const { rows, blockIndexing } = await readSiteConfig();
+  const path = request.nextUrl.pathname;
+  // Locale roots and files are matched for indexing only.
+  const isPage =
+    (path !== "/" && !/^\/(?:api|static|_next)|\./.test(path)) ||
+    /^\/(?:share|s|sign|team\/invite|external\/invite)(?:\/|$)/.test(path);
+  const response = isPage ? await routePage(request, rows) : undefined;
+  return blockIndexing ? siteIndexingResponse(request, response) : response;
+}
+
+async function routePage(request: NextRequest, configData: ConfigRow[]) {
   const routes = {
     unauthenticated: new Routes(["/auth/*", "/"]),
     public: new Routes([
@@ -57,23 +54,6 @@ export async function proxy(request: NextRequest) {
     disabled: new Routes([]),
   };
 
-  // Get config from backend (cached for 1 minute to avoid per-request overhead)
-  const apiUrl = process.env.API_URL || "http://127.0.0.1:8080";
-  let configData;
-  if (cachedConfig && Date.now() - cachedAt < CONFIG_CACHE_TTL) {
-    configData = cachedConfig;
-  } else {
-    try {
-      configData = await (await fetch(`${apiUrl}/api/configs`)).json();
-      cachedConfig = configData;
-      cachedAt = Date.now();
-    } catch {
-      configData = cachedConfig || [];
-    }
-  }
-
-  // Inline config parser - avoids importing api.service.ts (uses BroadcastChannel)
-  // which is incompatible with the Edge Runtime.
   const getConfig = <T = string>(key: string): T | null => {
     if (!configData) return null;
     const cfg = (configData as ConfigRow[]).find((v) => v.key === key);

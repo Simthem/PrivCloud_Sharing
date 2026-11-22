@@ -1,4 +1,5 @@
 import { Alert, Button, Group, Stack, Text } from "@mantine/core";
+import { useLocalStorage } from "@mantine/hooks";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
@@ -26,7 +27,16 @@ export default function PendingUploads({
   });
   const isListed = (upload: { teamFolderId?: string | null }) =>
     !teamFolderId || upload.teamFolderId === teamFolderId;
-  const uploads = (data ?? []).filter(isListed);
+  const [dismissed, setDismissed] = useLocalStorage<string[]>({
+    key: "pendingUploads.dismissed",
+    defaultValue: [],
+  });
+  const uploads = (data ?? []).filter(
+    (upload) =>
+      isListed(upload) &&
+      upload.fileCount > 0 &&
+      !dismissed.includes(upload.id),
+  );
 
   // A native upload keeps running after its page is left and finishes without
   // anyone on the upload page to refresh the caches. Its share then drops out
@@ -39,15 +49,28 @@ export default function PendingUploads({
     const ids = new Set(data.filter(isListed).map((upload) => upload.id));
     const previous = listedIds.current;
     listedIds.current = ids;
+    const pending = new Set(data.map((upload) => upload.id));
+    if (dismissed.some((id) => !pending.has(id))) {
+      setDismissed(dismissed.filter((id) => pending.has(id)));
+    }
     if (previous && [...previous].some((id) => !ids.has(id))) {
       onSettledRef.current?.();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- isListed only reads teamFolderId
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs on fresh data only
   }, [data, teamFolderId]);
 
   if (uploads.length === 0) return null;
   return (
-    <Alert title={t("upload.pending.title")} color="orange" mb="lg">
+    <Alert
+      title={t("upload.pending.title")}
+      color="orange"
+      mb="lg"
+      withCloseButton
+      closeButtonLabel={t("common.button.close")}
+      onClose={() =>
+        setDismissed([...dismissed, ...uploads.map((upload) => upload.id)])
+      }
+    >
       <Text size="sm" mb="sm">
         {t("upload.pending.body")}
       </Text>

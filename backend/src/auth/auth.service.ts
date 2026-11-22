@@ -10,6 +10,7 @@ import {
   Logger,
   UnauthorizedException,
 } from "@nestjs/common";
+import { revokeConfirmations } from "./sessionRevocation.util";
 import { JwtService } from "@nestjs/jwt";
 import { User, Prisma } from "@prisma/client";
 import * as argon from "argon2";
@@ -48,6 +49,7 @@ import {
 // A failed sign-in retries its compare-and-set write this many times before
 // falling back to a plain increment.
 const LOGIN_FAILURE_WRITE_ATTEMPTS = 8;
+const RESET_LINK_COOLDOWN_MS = 10 * 60 * 1000;
 
 /** A failure counted ahead of its check, and what it found and changed. */
 type LoginReservation = LoginFailureState & {
@@ -486,20 +488,16 @@ export class AuthService {
     if (this.config.get("oauth.disablePassword"))
       throw new ForbiddenException("Password sign in is disabled");
 
-    const user = await this.prisma.user.findFirst({
-      where: { email },
-      include: { resetPasswordToken: true },
-    });
+    const user = await this.prisma.user.findFirst({ where: { email } });
+    // Directory accounts get nothing either. The answer leaves before any
+    // mail work, so its timing tells nothing about the address.
+    if (!user || user.ldapDN) return;
+    void this.issueResetPassword(user, email).catch(() =>
+      this.logger.warn("Could not issue a password-reset link"),
+    );
+  }
 
-    if (!user) return;
-
-    if (user.ldapDN) {
-      // Keep the public response indistinguishable from an unknown address.
-      // Revealing that an account exists (and is LDAP-managed) would turn the
-      // reset endpoint into an account-enumeration oracle.
-      return;
-    }
-
+  private async issueResetPassword(user: User, email: string) {
     const rawToken = crypto.randomBytes(32).toString("base64url");
     const tokenHash = crypto
       .createHash("sha256")
@@ -509,6 +507,15 @@ export class AuthService {
       await tx.$executeRaw`UPDATE "User" SET "id" = "id" WHERE "id" = ${user.id}`;
       const current = await tx.user.findUnique({ where: { id: user.id } });
       if (!current || current.email !== email || current.ldapDN) return false;
+      // Anyone can ask for a link: a recent one is not replaced.
+      const recent = await tx.resetPasswordToken.findFirst({
+        where: {
+          userId: user.id,
+          createdAt: { gt: new Date(Date.now() - RESET_LINK_COOLDOWN_MS) },
+          expiresAt: { gt: new Date() },
+        },
+      });
+      if (recent) return false;
       await tx.resetPasswordToken.deleteMany({ where: { userId: user.id } });
       await tx.resetPasswordToken.create({
         data: {
@@ -536,16 +543,10 @@ export class AuthService {
       throw new ForbiddenException("Password sign in is disabled");
 
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-    const resetToken =
-      (await this.prisma.resetPasswordToken.findUnique({
-        where: { token: tokenHash },
-        include: { user: true },
-      })) ??
-      // One-hour compatibility window for links created before hashed storage.
-      (await this.prisma.resetPasswordToken.findUnique({
-        where: { token },
-        include: { user: true },
-      }));
+    const resetToken = await this.prisma.resetPasswordToken.findUnique({
+      where: { token: tokenHash },
+      include: { user: true },
+    });
 
     if (!resetToken) throw new BadRequestException("Token invalid or expired");
 
@@ -588,6 +589,7 @@ export class AuthService {
       await tx.loginToken.deleteMany({
         where: { userId: resetToken.user.id },
       });
+      await revokeConfirmations(tx, resetToken.user.id);
     });
   }
 
@@ -625,6 +627,8 @@ export class AuthService {
       await tx.refreshToken.deleteMany({
         where: { userId: user.id },
       });
+      await tx.loginToken.deleteMany({ where: { userId: user.id } });
+      await revokeConfirmations(tx, user.id);
     });
   }
 
@@ -689,6 +693,7 @@ export class AuthService {
         return null;
       });
     const oauthIDToken = signedOut?.oauthIDToken;
+    if (signedOut) await revokeConfirmations(this.prisma, signedOut.userId);
     await this.prisma.refreshToken
       .delete({ where: { id: refreshTokenId } })
       .catch((e) => {
@@ -757,11 +762,7 @@ export class AuthService {
       where: { expiresAt: { lt: now } },
     });
 
-    const metadata = await this.findRefreshToken(
-      this.prisma,
-      refreshToken,
-      hashedToken,
-    );
+    const metadata = await this.findRefreshToken(this.prisma, hashedToken);
     if (!metadata || metadata.expiresAt <= now) {
       throw new UnauthorizedException();
     }
@@ -783,11 +784,7 @@ export class AuthService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const current = await this.findRefreshToken(
-          tx,
-          refreshToken,
-          hashedToken,
-        );
+        const current = await this.findRefreshToken(tx, hashedToken);
         if (!current || current.expiresAt <= new Date()) {
           throw new UnauthorizedException();
         }
@@ -852,21 +849,15 @@ export class AuthService {
     }
   }
 
+  // Only the HMAC is stored, so the stored value never works as a token.
   private async findRefreshToken(
     client: Pick<Prisma.TransactionClient, "refreshToken">,
-    rawToken: string,
     hashedToken: string,
   ) {
-    return (
-      (await client.refreshToken.findUnique({
-        where: { token: hashedToken },
-        include: { user: true },
-      })) ??
-      (await client.refreshToken.findUnique({
-        where: { token: rawToken },
-        include: { user: true },
-      }))
-    );
+    return client.refreshToken.findUnique({
+      where: { token: hashedToken },
+      include: { user: true },
+    });
   }
 
   private readRefreshReplay(
@@ -902,8 +893,6 @@ export class AuthService {
     idToken?: string,
   ) {
     const sessionDuration = this.config.get("general.sessionDuration");
-    // SECURITY: Generate a cryptographically random token and store only
-    // its HMAC-SHA256 hash in the DB. If the DB leaks, tokens are unusable.
     const rawToken = crypto.randomBytes(32).toString("hex");
     const hashedToken = this.hashRefreshToken(rawToken);
 

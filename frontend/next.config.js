@@ -89,7 +89,7 @@ module.exports = {
         ],
       },
       {
-        source: "/:worker(sw|preview-sw).js",
+        source: "/:worker(sw|preview-sw|download-sw|transfer-sw).js",
         headers: [
           { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
         ],

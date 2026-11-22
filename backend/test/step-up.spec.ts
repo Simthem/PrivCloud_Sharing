@@ -722,13 +722,29 @@ testCase(
     );
     assert.equal(links.length, 1);
 
-    // Any account links without a session reaching the callback.
-    await oauth.auth(
-      "google",
-      { cookies: { access_token: "user-2" }, headers: {} } as never,
-      response as never,
-      "1",
+    // Any account confirms its identity first, then links without a session
+    // reaching the callback.
+    const member = { id: "user-2", isAdmin: false } as never;
+    const memberSession = async () =>
+      ({
+        cookies: {
+          access_token: "user-2",
+          step_up: (
+            await grants.service.issue(member, "oauth.link:google", "password")
+          ).value,
+        },
+        headers: {},
+      }) as never;
+    await assert.rejects(
+      oauth.auth(
+        "google",
+        { cookies: { access_token: "user-2" }, headers: {} } as never,
+        response as never,
+        "1",
+      ),
+      refused,
     );
+    await oauth.auth("google", await memberSession(), response as never, "1");
     await oauth.callback(
       "google",
       {} as never,
@@ -745,12 +761,7 @@ testCase(
     );
 
     // An abandoned link request does not catch a later sign-in.
-    await oauth.auth(
-      "google",
-      { cookies: { access_token: "user-2" }, headers: {} } as never,
-      response as never,
-      "1",
-    );
+    await oauth.auth("google", await memberSession(), response as never, "1");
     await oauth.auth(
       "google",
       fromProvider({ oauth_google_link: cookies.oauth_google_link }),

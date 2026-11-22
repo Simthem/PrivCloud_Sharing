@@ -52,7 +52,7 @@ export class LdapService {
     const searchBase = this.serviceConfig.get("ldap.searchBase");
     const searchQuery = this.serviceConfig
       .get("ldap.searchQuery")
-      .replaceAll("%username%", username);
+      .replaceAll("%username%", escapeLdapFilterValue(username));
 
     const ldapClient = await this.createLdapConnection();
     try {
@@ -93,4 +93,12 @@ export class LdapService {
       return null;
     }
   }
+}
+
+/** RFC 4515: a value can never close or extend the filter around it. */
+export function escapeLdapFilterValue(value: string) {
+  return value.replace(
+    /[\\*()\0]/g,
+    (character) => `\\${character.charCodeAt(0).toString(16).padStart(2, "0")}`,
+  );
 }

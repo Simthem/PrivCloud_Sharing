@@ -25,9 +25,14 @@ import {
 } from "../utils/filePreview.util";
 import {
   createDownloadProgressReporter,
+  DOWNLOAD_DISK_BATCH_SIZE,
   MAX_IN_MEMORY_DOWNLOAD_SIZE,
   writeDownloadChunksToDisk,
 } from "../utils/downloadStream.util";
+import {
+  openServiceWorkerDownload,
+  SERVICE_WORKER_PIECE_BYTES,
+} from "../utils/serviceWorkerDownload.util";
 import { createResumableDownloadBody as createResumableResponseBody } from "../utils/downloadResume.util";
 import {
   createParallelDirectDownloadBody,
@@ -653,12 +658,71 @@ const createResumableDownloadBody = (
     signal,
   );
 
+type SaveTarget = {
+  batchSize: number;
+  setSize(_size: number | null): void;
+  write(_data: Uint8Array<ArrayBuffer>): Promise<void>;
+  close(): Promise<void>;
+  /** Also deletes the empty file left by the save picker. */
+  abort(): Promise<void>;
+};
+
+/**
+ * A browser download fed by the service worker, so it shows in the browser
+ * downloads, or else a file chosen with the save picker. Null when neither is
+ * available. Must run in the click handler, before any other await.
+ */
+const openSaveTarget = async (
+  suggestedName: string,
+): Promise<SaveTarget | "cancelled" | null> => {
+  const sink = await openServiceWorkerDownload(suggestedName);
+  if (sink) return { ...sink, batchSize: SERVICE_WORKER_PIECE_BYTES };
+  if (typeof window === "undefined" || !("showSaveFilePicker" in window))
+    return null;
+  let fileHandle: FileSystemFileHandle | null = null;
+  try {
+    fileHandle = await window.showSaveFilePicker!({ suggestedName });
+    const handle = fileHandle;
+    const writable = await handle.createWritable();
+    return {
+      batchSize: DOWNLOAD_DISK_BATCH_SIZE,
+      setSize: () => undefined,
+      write: (data) => writable.write(data),
+      close: () => writable.close(),
+      abort: async () => {
+        await writable.abort().catch(() => undefined);
+        await handle.remove?.().catch(() => undefined);
+      },
+    };
+  } catch (caughtValue) {
+    if ((caughtValue as ThrownError).name === "AbortError") return "cancelled";
+    // A picker can exist and still be unavailable (policy, iframe, bug).
+    await fileHandle?.remove?.().catch(() => undefined);
+    return null;
+  }
+};
+
+/** Stops the download already opened when the work before the copy fails. */
+const abortOnError = async <T>(
+  target: SaveTarget | null,
+  work: () => Promise<T>,
+): Promise<T> => {
+  try {
+    return await work();
+  } catch (error) {
+    await target?.abort();
+    throw error;
+  }
+};
+
 /**
  * Télécharge un fichier chiffré E2E en streaming, le déchiffre chunk par
  * chunk côté client, puis écrit sur disque progressivement.
  *
- * - Chrome/Edge : File System Access API (showSaveFilePicker) -> écriture
- *   directe sur disque, mémoire bornée aux records crypto + 32 MiB.
+ * - Service worker : téléchargement classique du navigateur, visible dans
+ *   ses téléchargements, mémoire bornée aux records crypto + 1 MiB.
+ * - Chrome/Edge sans service worker : File System Access API
+ *   (showSaveFilePicker), mémoire bornée aux records crypto + 32 MiB.
  * - Firefox/Safari : accumulation des chunks déchiffrés en Blob parts
  *   uniquement pour les fichiers assez petits pour rester sûrs en mémoire.
  */
@@ -681,41 +745,24 @@ const downloadFileE2E = async (
   // The save picker then hides most of this startup latency.
   const fetchPromise = fetchStreaming(downloadUrl, signal);
 
-  // Try File System Access API -- must be called in user gesture context
-  // (before any async network operation that would expire the gesture).
-  let writable: FileSystemWritableFileStream | null = null;
-  let fileHandle: FileSystemFileHandle | null = null;
-  if (typeof window !== "undefined" && "showSaveFilePicker" in window) {
+  const target = await openSaveTarget(fileName);
+  if (target === "cancelled") {
     try {
-      fileHandle = await window.showSaveFilePicker!({
-        suggestedName: fileName,
-      });
-      writable = await fileHandle!.createWritable();
-    } catch (caughtValue) {
-      const e = caughtValue as ThrownError;
-      if (e.name === "AbortError") {
-        try {
-          (await fetchPromise).body?.cancel();
-        } catch {
-          /* ignored */
-        }
-        return;
-      }
-      writable = null;
-      fileHandle = null;
+      (await fetchPromise).body?.cancel();
+    } catch {
+      /* ignored */
     }
+    return;
   }
 
-  const [response, key, legacyChunkSize] = await Promise.all([
-    fetchPromise,
-    keyPromise,
-    chunkSizePromise,
-  ]);
+  const [response, key, legacyChunkSize] = await abortOnError(target, () =>
+    Promise.all([fetchPromise, keyPromise, chunkSizePromise]),
+  );
   const resumable = createResumableDownloadBody(downloadUrl, response, signal);
   const totalSize = resumable.totalSize;
   const cryptoRecord = getEncryptionRecordConfig(response, legacyChunkSize);
 
-  if (!writable && totalSize > MAX_IN_MEMORY_DOWNLOAD_SIZE) {
+  if (!target && totalSize > MAX_IN_MEMORY_DOWNLOAD_SIZE) {
     await resumable.stream.cancel();
     const error = new Error("Direct disk access is required for this download");
     error.name = "LargeDownloadRequiresDiskAccessError";
@@ -740,7 +787,7 @@ const downloadFileE2E = async (
     );
   }
 
-  if (writable) {
+  if (target) {
     // Batch the small crypto records into stable sequential disk writes.
     try {
       await writeDownloadChunksToDisk(
@@ -753,25 +800,14 @@ const downloadFileE2E = async (
           undefined,
           { fileId, shareId },
         ),
-        writable,
+        target,
         signal,
+        target.batchSize,
       );
-      await writable.close();
+      await target.close();
       progress.complete(totalSize);
     } catch (e) {
-      try {
-        await writable.abort();
-      } catch {
-        /* ignored */
-      }
-      // Supprime le fichier 0-octet stub créé par le picker
-      if (fileHandle && fileHandle.remove) {
-        try {
-          await fileHandle.remove();
-        } catch {
-          /* ignored */
-        }
-      }
+      await target.abort();
       throw e;
     }
   } else {
@@ -917,7 +953,8 @@ const removeFile = async (shareId: string, fileId: string) => {
  * Download a non-encrypted file with progress tracking and cancellation.
  * Uses fetch + ReadableStream when the browser can stream directly to disk.
  *
- * Chrome/Edge: File System Access API -> batched disk writes, bounded memory.
+ * Service worker: a regular browser download, listed in its downloads.
+ * Otherwise Chrome/Edge: File System Access API, batched disk writes.
  * Other browsers: native navigation download, so the browser owns buffering
  * and large files are never accumulated in the page's JavaScript heap.
  */
@@ -928,50 +965,21 @@ const downloadFileWithProgress = async (
   onProgress?: (_downloadedBytes: number, _totalBytes: number) => void,
   signal?: AbortSignal,
 ) => {
-  const canStreamToDisk =
-    typeof window !== "undefined" && "showSaveFilePicker" in window;
-  if (!canStreamToDisk) {
+  const target = await openSaveTarget(fileName);
+  if (target === "cancelled") return;
+  if (!target) {
+    // The browser downloads the file itself.
     await downloadFile(shareId, fileId);
     return;
   }
 
-  // Start the request in parallel with the picker to hide initial network RTT.
   const downloadUrl = `/api/shares/${apiPathSegment(shareId)}/files/${apiPathSegment(fileId)}`;
-  const fetchPromise = fetchStreaming(downloadUrl, signal);
-
-  // FSAA must be called in user gesture context (before async network ops)
-  let writable: FileSystemWritableFileStream | null = null;
-  let fileHandle: FileSystemFileHandle | null = null;
-  try {
-    fileHandle = await window.showSaveFilePicker!({
-      suggestedName: fileName,
-    });
-    writable = await fileHandle!.createWritable();
-  } catch (caughtValue) {
-    const e = caughtValue as ThrownError;
-    try {
-      (await fetchPromise).body?.cancel();
-    } catch {
-      /* ignored */
-    }
-    if (e.name === "AbortError") return;
-
-    // A picker implementation can exist but still be unavailable (policy,
-    // iframe, browser bug). Fall back to the browser's native download path.
-    if (fileHandle && fileHandle.remove) {
-      try {
-        await fileHandle.remove();
-      } catch {
-        /* ignored */
-      }
-    }
-    await downloadFile(shareId, fileId);
-    return;
-  }
-
-  const response = await fetchPromise;
+  const response = await abortOnError(target, () =>
+    fetchStreaming(downloadUrl, signal),
+  );
   const resumable = createResumableDownloadBody(downloadUrl, response, signal);
   const totalSize = resumable.totalSize;
+  target.setSize(totalSize > 0 ? totalSize : null);
   const reader = resumable.stream.getReader();
   let downloaded = 0;
   const progress = createDownloadProgressReporter(onProgress, totalSize);
@@ -988,24 +996,17 @@ const downloadFileWithProgress = async (
       }
     }
 
-    await writeDownloadChunksToDisk(responseChunks(), writable, signal);
-    await writable.close();
+    await writeDownloadChunksToDisk(
+      responseChunks(),
+      target,
+      signal,
+      target.batchSize,
+    );
+    await target.close();
     progress.complete(downloaded);
   } catch (caughtValue) {
     const e = caughtValue as ThrownError;
-    try {
-      await writable.abort();
-    } catch {
-      /* ignored */
-    }
-    // Supprime le fichier 0-octet stub créé par le picker
-    if (fileHandle && fileHandle.remove) {
-      try {
-        await fileHandle.remove();
-      } catch {
-        /* ignored */
-      }
-    }
+    await target.abort();
     try {
       reader.cancel();
     } catch {
@@ -1044,33 +1045,20 @@ const downloadAllAsZipE2E = async (
         )
       : Promise.resolve(null);
 
-  // Try FSAA for streaming zip to disk
-  let writable: FileSystemWritableFileStream | null = null;
-  let fileHandle: FileSystemFileHandle | null = null;
-  if (typeof window !== "undefined" && "showSaveFilePicker" in window) {
+  const target = await openSaveTarget(`${shareId}.zip`);
+  if (target === "cancelled") {
+    // Annulation utilisateur : libérer la requête en vol
     try {
-      fileHandle = await window.showSaveFilePicker!({
-        suggestedName: `${shareId}.zip`,
-      });
-      writable = await fileHandle!.createWritable();
-    } catch (caughtValue) {
-      const e = caughtValue as ThrownError;
-      if (e.name === "AbortError") {
-        // Annulation utilisateur : libérer la requête en vol
-        try {
-          (await firstFetchPromise)?.body?.cancel();
-        } catch {
-          /* ignored */
-        }
-        return;
-      }
-      writable = null;
-      fileHandle = null;
+      (await firstFetchPromise)?.body?.cancel();
+    } catch {
+      /* ignored */
     }
+    return;
   }
 
-  const key = await keyPromise;
-  const chunkSize = await chunkSizePromise;
+  const [key, chunkSize] = await abortOnError(target, () =>
+    Promise.all([keyPromise, chunkSizePromise]),
+  );
 
   // Total octets pour jauge byte-level (taille ciphertext)
   const totalBytes = files.reduce(
@@ -1080,7 +1068,7 @@ const downloadAllAsZipE2E = async (
   let downloadedBytes = 0;
   const progress = createDownloadProgressReporter(onProgress, totalBytes);
 
-  // Chain of write promises for async zip.ondata -> writable
+  // Chain of write promises for async zip.ondata -> target
   let writeChain = Promise.resolve();
   const blobParts: BlobPart[] = [];
 
@@ -1088,8 +1076,8 @@ const downloadAllAsZipE2E = async (
   zip.ondata = (_err, data, _final) => {
     // fflate may reuse internal buffers -- always copy
     const copy = new Uint8Array(data);
-    if (writable) {
-      writeChain = writeChain.then(() => writable!.write(copy));
+    if (target) {
+      writeChain = writeChain.then(() => target.write(copy));
     } else {
       blobParts.push(copy);
     }
@@ -1140,29 +1128,16 @@ const downloadAllAsZipE2E = async (
 
     zip.end();
 
-    if (writable) {
+    if (target) {
       await writeChain;
-      await writable.close();
+      await target.close();
     } else {
       const blob = new Blob(blobParts, { type: "application/zip" });
       downloadDecryptedBlob(blob, `${shareId}.zip`);
     }
     progress.complete(downloadedBytes);
   } catch (e) {
-    if (writable) {
-      try {
-        await writable.abort();
-      } catch {
-        /* ignored */
-      }
-    }
-    if (fileHandle && fileHandle.remove) {
-      try {
-        await fileHandle.remove();
-      } catch {
-        /* ignored */
-      }
-    }
+    if (target) await target.abort();
     throw e;
   }
 };
@@ -1438,71 +1413,33 @@ const reportCryptoEvent = async (event: {
  * Télécharge le ZIP global préparé par le serveur (non-E2E) en streaming
  * avec progression en octets et annulation via AbortSignal.
  *
- * Sans File System Access API, délègue le téléchargement au navigateur pour
- * ne jamais accumuler un ZIP potentiellement énorme dans le heap JavaScript.
+ * Sans service worker ni File System Access API, délègue le téléchargement au
+ * navigateur pour ne jamais accumuler un ZIP énorme dans le heap JavaScript.
  */
 const downloadAllAsZip = async (
   shareId: string,
   onProgress?: (_downloadedBytes: number, _totalBytes: number) => void,
   signal?: AbortSignal,
 ) => {
-  const canStreamToDisk =
-    typeof window !== "undefined" && "showSaveFilePicker" in window;
-  if (!canStreamToDisk) {
-    window.location.assign(
-      new URL(
-        `/api/shares/${apiPathSegment(shareId)}/files/zip`,
-        window.location.origin,
-      ).toString(),
-    );
+  const zipUrl = `/api/shares/${apiPathSegment(shareId)}/files/zip`;
+  const target = await openSaveTarget(`${shareId}.zip`);
+  if (target === "cancelled") return;
+  if (!target) {
+    // The browser downloads the archive itself.
+    window.location.assign(new URL(zipUrl, window.location.origin).toString());
     return;
   }
 
-  // Démarre la requête EN PARALLÈLE du file picker pour masquer la
-  // latence réseau initiale (TCP/TLS + premier roundtrip).
-  const fetchPromise = fetchStreaming(
-    `/api/shares/${apiPathSegment(shareId)}/files/zip`,
-    signal,
-  );
-
-  let writable: FileSystemWritableFileStream | null = null;
-  let fileHandle: FileSystemFileHandle | null = null;
-  try {
-    fileHandle = await window.showSaveFilePicker!({
-      suggestedName: `${shareId}.zip`,
-    });
-    writable = await fileHandle!.createWritable();
-  } catch (caughtValue) {
-    const e = caughtValue as ThrownError;
-    try {
-      (await fetchPromise).body?.cancel();
-    } catch {
-      /* ignored */
-    }
-    if (e.name === "AbortError") return;
-
-    if (fileHandle && fileHandle.remove) {
-      try {
-        await fileHandle.remove();
-      } catch {
-        /* ignored */
-      }
-    }
-    window.location.assign(
-      new URL(
-        `/api/shares/${apiPathSegment(shareId)}/files/zip`,
-        window.location.origin,
-      ).toString(),
-    );
-    return;
-  }
-
-  const response = await fetchPromise;
+  const response = await abortOnError(target, async () => {
+    const zipResponse = await fetchStreaming(zipUrl, signal);
+    if (!zipResponse.body) throw new Error("Response has no body");
+    return zipResponse;
+  });
   const totalSize = parseInt(response.headers.get("Content-Length") || "0");
+  if (!response.headers.has("Content-Encoding"))
+    target.setSize(totalSize > 0 ? totalSize : null);
 
-  if (!response.body) throw new Error("Response has no body");
-
-  const reader = response.body.getReader();
+  const reader = response.body!.getReader();
   let downloaded = 0;
   const progress = createDownloadProgressReporter(onProgress, totalSize);
 
@@ -1518,23 +1455,17 @@ const downloadAllAsZip = async (
       }
     }
 
-    await writeDownloadChunksToDisk(responseChunks(), writable, signal);
-    await writable.close();
+    await writeDownloadChunksToDisk(
+      responseChunks(),
+      target,
+      signal,
+      target.batchSize,
+    );
+    await target.close();
     progress.complete(downloaded);
   } catch (caughtValue) {
     const e = caughtValue as ThrownError;
-    try {
-      await writable.abort();
-    } catch {
-      /* ignored */
-    }
-    if (fileHandle && fileHandle.remove) {
-      try {
-        await fileHandle.remove();
-      } catch {
-        /* ignored */
-      }
-    }
+    await target.abort();
     try {
       reader.cancel();
     } catch {
@@ -1564,27 +1495,14 @@ const downloadSelectedAsZip = async (
         )
       : Promise.resolve(null);
 
-  let writable: FileSystemWritableFileStream | null = null;
-  let fileHandle: FileSystemFileHandle | null = null;
-  if (typeof window !== "undefined" && "showSaveFilePicker" in window) {
+  const target = await openSaveTarget(`${shareId}-selection.zip`);
+  if (target === "cancelled") {
     try {
-      fileHandle = await window.showSaveFilePicker!({
-        suggestedName: `${shareId}-selection.zip`,
-      });
-      writable = await fileHandle!.createWritable();
-    } catch (caughtValue) {
-      const e = caughtValue as ThrownError;
-      if (e.name === "AbortError") {
-        try {
-          (await firstFetchPromise)?.body?.cancel();
-        } catch {
-          /* ignored */
-        }
-        return;
-      }
-      writable = null;
-      fileHandle = null;
+      (await firstFetchPromise)?.body?.cancel();
+    } catch {
+      /* ignored */
     }
+    return;
   }
 
   const totalBytes = files.reduce(
@@ -1600,8 +1518,8 @@ const downloadSelectedAsZip = async (
   const zip = new Zip();
   zip.ondata = (_err, data, _final) => {
     const copy = new Uint8Array(data);
-    if (writable) {
-      writeChain = writeChain.then(() => writable!.write(copy));
+    if (target) {
+      writeChain = writeChain.then(() => target.write(copy));
     } else {
       blobParts.push(copy);
     }
@@ -1637,9 +1555,9 @@ const downloadSelectedAsZip = async (
 
     zip.end();
 
-    if (writable) {
+    if (target) {
       await writeChain;
-      await writable.close();
+      await target.close();
     } else {
       const blob = new Blob(blobParts, { type: "application/zip" });
       downloadDecryptedBlob(blob, `${shareId}-selection.zip`);
@@ -1647,20 +1565,7 @@ const downloadSelectedAsZip = async (
     progress.complete(downloadedBytes);
   } catch (caughtValue) {
     const e = caughtValue as ThrownError;
-    if (writable) {
-      try {
-        await writable.abort();
-      } catch {
-        /* ignored */
-      }
-    }
-    if (fileHandle && fileHandle.remove) {
-      try {
-        await fileHandle.remove();
-      } catch {
-        /* ignored */
-      }
-    }
+    if (target) await target.abort();
     throw e;
   }
 };
@@ -1685,31 +1590,19 @@ const downloadSelectedAsZipE2E = async (
         )
       : Promise.resolve(null);
 
-  let writable: FileSystemWritableFileStream | null = null;
-  let fileHandle: FileSystemFileHandle | null = null;
-  if (typeof window !== "undefined" && "showSaveFilePicker" in window) {
+  const target = await openSaveTarget(`${shareId}-selection.zip`);
+  if (target === "cancelled") {
     try {
-      fileHandle = await window.showSaveFilePicker!({
-        suggestedName: `${shareId}-selection.zip`,
-      });
-      writable = await fileHandle!.createWritable();
-    } catch (caughtValue) {
-      const e = caughtValue as ThrownError;
-      if (e.name === "AbortError") {
-        try {
-          (await firstFetchPromise)?.body?.cancel();
-        } catch {
-          /* ignored */
-        }
-        return;
-      }
-      writable = null;
-      fileHandle = null;
+      (await firstFetchPromise)?.body?.cancel();
+    } catch {
+      /* ignored */
     }
+    return;
   }
 
-  const key = await keyPromise;
-  const chunkSize = await chunkSizePromise;
+  const [key, chunkSize] = await abortOnError(target, () =>
+    Promise.all([keyPromise, chunkSizePromise]),
+  );
 
   const totalBytes = files.reduce(
     (s, f) => s + (f.size ? parseInt(f.size) : 0),
@@ -1724,8 +1617,8 @@ const downloadSelectedAsZipE2E = async (
   const zip = new Zip();
   zip.ondata = (_err, data, _final) => {
     const copy = new Uint8Array(data);
-    if (writable) {
-      writeChain = writeChain.then(() => writable!.write(copy));
+    if (target) {
+      writeChain = writeChain.then(() => target.write(copy));
     } else {
       blobParts.push(copy);
     }
@@ -1774,29 +1667,16 @@ const downloadSelectedAsZipE2E = async (
 
     zip.end();
 
-    if (writable) {
+    if (target) {
       await writeChain;
-      await writable.close();
+      await target.close();
     } else {
       const blob = new Blob(blobParts, { type: "application/zip" });
       downloadDecryptedBlob(blob, `${shareId}-selection.zip`);
     }
     progress.complete(downloadedBytes);
   } catch (e) {
-    if (writable) {
-      try {
-        await writable.abort();
-      } catch {
-        /* ignored */
-      }
-    }
-    if (fileHandle && fileHandle.remove) {
-      try {
-        await fileHandle.remove();
-      } catch {
-        /* ignored */
-      }
-    }
+    if (target) await target.abort();
     throw e;
   }
 };

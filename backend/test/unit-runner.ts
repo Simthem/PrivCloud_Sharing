@@ -35,6 +35,8 @@ const specs = [
   "test/pending-upload-access.spec.ts",
   "test/share-completion-recovery.spec.ts",
   "test/upload-preservation.spec.ts",
+  "test/json-body-limit.spec.ts",
+  "test/pdf-signature-slot.spec.ts",
   "test/upload-resend-idempotency.spec.ts",
   "test/owner-single-part-upload.spec.ts",
   "test/signing-request-validation.spec.ts",

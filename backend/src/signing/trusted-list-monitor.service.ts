@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
+import { publicUrl } from "./public-url.util";
 import * as crypto from "crypto";
 import { downloadTrustedList } from "./trusted-list-download.util";
 import { ConfigService } from "src/config/config.service";
@@ -80,7 +81,7 @@ export class TrustedListMonitorService implements OnApplicationBootstrap {
     const checkedAt = new Date();
     const lines = [
       `Date: ${checkedAt.toISOString()}`,
-      `Trusted List: ${listUrl}`,
+      `Trusted List: ${publicUrl(listUrl)}`,
       `Pinned TSA certificates: ${pinnedTsaFingerprints().join(", ") || "none"}`,
     ];
     let result: "OK" | "ALERT" | "ERROR";
@@ -131,7 +132,7 @@ export class TrustedListMonitorService implements OnApplicationBootstrap {
     const record = await this.prisma.trustedListCheck.create({
       data: {
         checkedAt,
-        listUrl,
+        listUrl: publicUrl(listUrl),
         listSha256,
         sequenceNumber,
         nextUpdate,

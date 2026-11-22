@@ -243,11 +243,12 @@ export class TeamShareAccessService {
     }
 
     if (share.files.length > 0) {
+      // A file rule below WRITE, READ included, keeps its share out of reach.
       const deniedFileCount = await this.prisma.fileAccess.count({
         where: {
           memberId: membership.id,
           fileId: { in: share.files.map((file) => file.id) },
-          permission: { in: DENY_PERMISSIONS },
+          permission: { notIn: MANAGE_PERMISSIONS },
         },
       });
 

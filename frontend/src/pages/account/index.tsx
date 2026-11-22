@@ -967,7 +967,7 @@ const Account = () => {
         code: yup
           .string()
           .min(6, t("common.error.too-short", { length: 6 }))
-          .max(8)
+          .max(10)
           .required(t("common.error.field-required")),
       }),
     ),
@@ -980,7 +980,7 @@ const Account = () => {
   // scoped to the auth routes.
   const linkedProviders = Object.keys(oauthStatus ?? {});
   // Only providers that state when the user really signed in (OIDC
-  // auth_time) can confirm a first password. Microsoft omits it by default.
+  // auth_time) can confirm a change. Microsoft omits it by default.
   const freshSignInProviders = linkedProviders.filter((provider) =>
     ["google", "oidc"].includes(provider),
   );
@@ -1015,9 +1015,9 @@ const Account = () => {
     } catch {
       // Without a fresh session the link route sends the user back here.
     }
-    // A linked provider signs in to an administrator's account for good: the
-    // server asks to confirm it.
-    if (user?.isAdmin && !(await requestStepUp(`oauth.link:${provider}`))) {
+    // A linked provider signs in to the account for good: the server asks to
+    // confirm it.
+    if (!(await requestStepUp(`oauth.link:${provider}`))) {
       return;
     }
     window.location.assign(href);
@@ -1076,7 +1076,7 @@ const Account = () => {
         {t(description)}
       </Text>
       <Group justify="right">
-        {linkedProviders.map((provider) => (
+        {freshSignInProviders.map((provider) => (
           <Button
             key={provider}
             variant="light"
@@ -1092,14 +1092,14 @@ const Account = () => {
   );
 
   const totpReauthChoice =
-    linkedProviders.length > 0 ? (
+    freshSignInProviders.length > 0 ? (
       totpReauthButtons("account.card.security.totp.oauth.description")
     ) : (
       <Alert color="orange">{t("account.card.security.totp.oauth.none")}</Alert>
     );
 
   // Shown under the password forms when a provider is linked.
-  const totpReauthAlternative = linkedProviders.length > 0 && (
+  const totpReauthAlternative = freshSignInProviders.length > 0 && (
     <>
       <Divider label={t("common.text.or")} labelPosition="center" my="md" />
       {totpReauthButtons("account.card.security.totp.oauth.alternative")}
@@ -1391,7 +1391,7 @@ const Account = () => {
                     description={t(
                       "account.card.security.totp.oauth.disableDescription",
                     )}
-                    placeholder="123456 / A1B2C3D4"
+                    placeholder="123456 / K7M2Q9R4TX"
                     value={disableTotpCode}
                     onChange={(event) =>
                       setDisableTotpCode(event.currentTarget.value)
@@ -1449,7 +1449,7 @@ const Account = () => {
                       <TextInput
                         variant="filled"
                         label={t("account.modal.totp.codeOrBackup")}
-                        placeholder="123456 / A1B2C3D4"
+                        placeholder="123456 / K7M2Q9R4TX"
                         {...disableTotpForm.getInputProps("code")}
                       />
 
@@ -1502,7 +1502,7 @@ const Account = () => {
         </Paper>
         <E2EEncryptionSection refreshUser={refreshUser} />
         <PasskeysSection
-          linkedProviders={linkedProviders}
+          linkedProviders={freshSignInProviders}
           reauthReturned={passkeyReauthReturned}
           onReauth={(provider) => {
             rememberPasskeyReauthIntent();

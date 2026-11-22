@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   ExecutionContext,
   ForbiddenException,
@@ -107,6 +108,67 @@ testCase(
           guard.canActivate(context({ reverse_share_token: "valid" })),
           (error: HttpException) => error.getStatus() === 403,
         );
+      },
+    );
+  },
+);
+
+testCase(
+  "an anonymous upload belongs to its own session, never to the shared reverse link",
+  async () => {
+    const session = "session-secret";
+    const sessionHash = createHash("sha256").update(session).digest("hex");
+    const open = new Date(Date.now() + 86_400_000);
+    const guardFor = (share: Record<string, unknown>) =>
+      new ShareOwnerGuard(
+        config,
+        {
+          share: {
+            findUnique: async () => ({
+              creatorId: null,
+              teamFolderId: null,
+              uploadLocked: false,
+              anonymousSessionToken: sessionHash,
+              reverseShare: { token: "link", shareExpiration: open },
+              ...share,
+            }),
+          },
+        } as unknown as PrismaService,
+        {} as TeamShareAccessService,
+      );
+    await withJwt(
+      async () => {
+        throw new UnauthorizedException();
+      },
+      async () => {
+        assert.equal(
+          await guardFor({}).canActivate(
+            context({ reverse_share_token: "link" }),
+          ),
+          false,
+        );
+        assert.equal(
+          await guardFor({}).canActivate(
+            context({ anonymous_share_share_session: session }),
+          ),
+          true,
+        );
+        for (const closed of [
+          { uploadLocked: true },
+          {
+            reverseShare: {
+              token: "link",
+              shareExpiration: new Date(Date.now() - 1000),
+            },
+          },
+        ]) {
+          assert.equal(
+            await guardFor(closed).canActivate(
+              context({ anonymous_share_share_session: session }),
+            ),
+            false,
+          );
+        }
       },
     );
   },

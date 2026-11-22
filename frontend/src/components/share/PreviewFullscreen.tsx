@@ -117,6 +117,10 @@ export default function PreviewFullscreen({
       zIndex: overlay ? "10000" : "",
       width: "100%",
       height: fullscreen ? "100%" : "auto",
+      display: "flex",
+      flexDirection: "column",
+      flex: overlay ? "" : "1 1 auto",
+      minHeight: "0",
       background: "#000",
       padding: overlay
         ? "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)"
@@ -150,7 +154,15 @@ export default function PreviewFullscreen({
   };
   return (
     <>
-      <div ref={placeholder} />
+      <div
+        ref={placeholder}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          flex: "1 1 auto",
+          minHeight: 0,
+        }}
+      />
       {host &&
         createPortal(
           children({

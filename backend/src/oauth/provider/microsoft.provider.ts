@@ -108,6 +108,8 @@ export class MicrosoftProvider extends GenericOidcProvider {
       : issuer;
   }
 
+  protected readonly vouchesMailbox = false;
+
   // Entra never sends email_verified, and a tenant admin can set any email.
   protected hasVerifiedEmail(idToken: OidcIdToken): boolean {
     const verified = [true, "true", 1, "1"].includes(idToken.xms_edov);

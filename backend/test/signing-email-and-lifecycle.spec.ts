@@ -37,6 +37,7 @@ type FakeRecipient = {
 
 type RecipientWhere = {
   id?: string;
+  otpFailures?: number;
   otpVerified?: boolean;
   otpHash?: string | null;
   OR?: Array<{ otpSentAt?: null | { lt: Date } }>;
@@ -72,6 +73,12 @@ const createOtpHarness = () => {
   const matchesWhere = (where: RecipientWhere) => {
     if (where.id && where.id !== recipient.id) return false;
     if (
+      typeof where.otpFailures === "number" &&
+      where.otpFailures !== recipient.otpFailures
+    ) {
+      return false;
+    }
+    if (
       typeof where.otpVerified === "boolean" &&
       where.otpVerified !== recipient.otpVerified
     ) {
@@ -98,7 +105,9 @@ const createOtpHarness = () => {
     return true;
   };
 
+  const codesSent = { today: 0 };
   const prisma = {
+    signatureAuditEvent: { count: async () => codesSent.today },
     signatureRecipient: {
       findUnique: async () => recipient,
       updateMany: async ({
@@ -139,7 +148,7 @@ const createOtpHarness = () => {
   // The audit chain is covered elsewhere. Here it records nothing.
   Object.assign(service, { createAuditEvent: async () => undefined });
 
-  return { recipient, sentEmails, service };
+  return { recipient, sentEmails, service, codesSent };
 };
 
 testCase(
@@ -335,6 +344,29 @@ testCase("an expired signing session is refused", async () => {
     (await service.getSigningPage("token-1", session)).recipient.emailVerified,
     false,
   );
+});
+
+testCase("wrong codes pause the link for an hour, never for good", async () => {
+  const { recipient, service } = createOtpHarness();
+  recipient.otpFailures = 15;
+  recipient.otpSentAt = new Date(Date.now() - 10 * 60 * 1000);
+  await assert.rejects(
+    () => service.sendSigningEmailOtp("token-1"),
+    /Try again in an hour/,
+  );
+  recipient.otpSentAt = new Date(Date.now() - 61 * 60 * 1000);
+  await service.sendSigningEmailOtp("token-1");
+  assert.equal(recipient.otpFailures, 0);
+});
+
+testCase("a link gets a bounded number of codes a day", async () => {
+  const { service, codesSent, sentEmails } = createOtpHarness();
+  codesSent.today = 10;
+  await assert.rejects(
+    () => service.sendSigningEmailOtp("token-1"),
+    /Too many verification codes/,
+  );
+  assert.equal(sentEmails.length, 0);
 });
 
 testCase("refuses a second OTP during the per-recipient cooldown", async () => {

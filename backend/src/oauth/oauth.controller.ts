@@ -97,14 +97,12 @@ export class OAuthController {
     if (link === "1") {
       const userId = await this.authService.getIdOfCurrentUser(request);
       if (!userId) throw new ErrorPageException("reauth_expired", "/account");
+      // A linked provider signs in for good: a stolen session is not enough.
       const scope = `oauth.link:${provider}`;
-      const admin = await this.oauthService.findAdministrator(userId);
-      if (admin) {
-        try {
-          await this.stepUp.consume(request, admin, scope);
-        } catch {
-          throw new ErrorPageException("step_up_required", "/account");
-        }
+      try {
+        await this.stepUp.consume(request, { id: userId }, scope);
+      } catch {
+        throw new ErrorPageException("step_up_required", "/account");
       }
       const grant = await this.stepUp.handOver(
         userId,
@@ -307,7 +305,7 @@ export class OAuthController {
         } else {
           response.redirect(
             this.config.get("general.appUrl") +
-              `/auth/totp/${token.loginToken}`,
+              `/auth/totp/link#${token.loginToken}`,
           );
         }
       }
@@ -356,15 +354,10 @@ export class OAuthController {
         `provider_${provider}`,
       ]);
     }
-    // A first password, a new email or an administrator's operation outlives
-    // every session: only a provider that states when the user actually
-    // signed in (OIDC auth_time) may confirm one.
-    if (
-      (purpose === "PASSWORD" ||
-        purpose === "EMAIL" ||
-        purpose === "STEP_UP") &&
-      identity.authTime === undefined
-    ) {
+    // Only a provider that states when the user actually signed in (OIDC
+    // auth_time) may confirm a change: another one may reuse a session left
+    // open in the browser.
+    if (identity.authTime === undefined) {
       throw new ErrorPageException("reauth_unsupported", "/account", [
         `provider_${provider}`,
       ]);

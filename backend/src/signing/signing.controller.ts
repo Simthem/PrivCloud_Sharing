@@ -107,7 +107,8 @@ export class SigningController {
   @Post("recipients/encryption-targets")
   @UseGuards(JwtGuard)
   @Header("Cache-Control", "private, no-store")
-  @Throttle({ default: { limit: 30, ttl: minutes(1) } })
+  // Account identifiers by address: asked when a request is sent, not typed.
+  @Throttle({ default: { limit: 10, ttl: minutes(1) } })
   async getRecipientEncryptionTargets(
     @Body() dto: CheckReinforcedEligibilityDTO,
     @GetUser() user: User,

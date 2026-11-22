@@ -16,6 +16,7 @@ import { useState } from "react";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
 import useTranslate from "../../hooks/useTranslate.hook";
+import useUrlSecret from "../../hooks/urlSecret.hook";
 import useUser from "../../hooks/user.hook";
 import authService from "../../services/auth.service";
 import { resolvePostAuthRedirectPath } from "../../utils/router.util";
@@ -24,6 +25,7 @@ import toast from "../../utils/toast.util";
 function TotpForm({ redirectPath }: { redirectPath: string }) {
   const t = useTranslate();
   const router = useRouter();
+  const loginToken = useUrlSecret("loginToken");
   const { refreshUser } = useUser();
 
   const [loading, setLoading] = useState(false);
@@ -56,10 +58,7 @@ function TotpForm({ redirectPath }: { redirectPath: string }) {
     if (loading) return;
     setLoading(true);
     try {
-      await authService.signInTotp(
-        form.values.code,
-        router.query.loginToken as string,
-      );
+      await authService.signInTotp(form.values.code, loginToken ?? "");
       const user = await refreshUser({ refresh: false });
       const target = await resolvePostAuthRedirectPath(redirectPath, user);
       await router.replace(target);
@@ -101,7 +100,7 @@ function TotpForm({ redirectPath }: { redirectPath: string }) {
               {useBackupCode ? (
                 <TextInput
                   label={t("totp.backup.label")}
-                  placeholder="A1B2C3D4"
+                  placeholder="K7M2Q9R4TX"
                   autoFocus
                   style={{ width: "100%" }}
                   {...form.getInputProps("code")}

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
+  isSafeLinePopupBlocked,
   validateSafeLineSession,
   probeSafeLineSession,
   resolveChallengeViaPopup,
@@ -377,6 +379,7 @@ test("a blocked manual popup keeps verification pending and permits another clic
     const open = f.win.open;
     f.win.open = () => null;
     await assert.rejects(resolveChallengeViaPopup(), /popup-blocked/);
+    assert.equal(isSafeLinePopupBlocked(), true);
     navigator.userActivation.isActive = true;
     await assert.rejects(completeSafeLineChallenge(), /popup-blocked/);
     assert.equal(await validateSafeLineSession(), false);
@@ -388,6 +391,7 @@ test("a blocked manual popup keeps verification pending and permits another clic
     await f.poll();
     await waiting;
     assert.equal(f.intervals.size, 0);
+    assert.equal(isSafeLinePopupBlocked(), false);
   } finally {
     f.restore();
   }
@@ -402,9 +406,31 @@ test("verified background renewal clears an obsolete popup requirement", async (
     f.win.open = open;
     f.setValid(true);
     assert.equal(await validateSafeLineSession(), true);
+    assert.equal(isSafeLinePopupBlocked(), false);
     await prepareSafeLineRetry();
     assert.equal(f.counts().opened, 0);
   } finally {
     f.restore();
+  }
+});
+
+test("challenge notifications explain blocked pop-ups", () => {
+  const source = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
+  assert.match(
+    source("../src/utils/safeline-notify.util.ts"),
+    /isSafeLinePopupBlocked\(\)\s*\?\s*"safeline\.os-notify\.body-popup-blocked"/,
+  );
+  for (const locale of ["en-US", "fr-FR"]) {
+    const messages = source(`../src/i18n/translations/${locale}.ts`);
+    for (const key of [
+      "safeline.notify.message-popup-blocked",
+      "safeline.os-notify.body-popup-blocked",
+    ]) {
+      assert.ok(messages.includes(`"${key}":`), `${locale} ${key}`);
+    }
+    assert.match(
+      messages,
+      /"safeline.notify.message-popup-blocked":\s*"[^"]*\{link\}[^"]*\{host\}/,
+    );
   }
 });

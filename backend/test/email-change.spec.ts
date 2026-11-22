@@ -226,12 +226,20 @@ function administeredAccount() {
     emailVerificationToken: table("verification"),
     refreshToken: table("session"),
     loginToken: table("sign-in"),
+    stepUpGrant: table("confirmation"),
+    evidenceVaultSession: table("vault"),
+    oAuthReauthToken: table("reauth"),
   };
   const service = Object.create(UserSevice.prototype) as UserSevice;
   Object.assign(service, {
     prisma: {
       user: { ...tx.user, findUnique: async () => ({ ...user }) },
-      $transaction: async (work: (client: typeof tx) => unknown) => work(tx),
+      $transaction: async (work: (client: unknown) => unknown) =>
+        work({
+          ...tx,
+          $executeRaw: async () => 0,
+          user: { ...tx.user, count: async () => 1 },
+        }),
     },
     emailVerificationService: {
       isDeliveryAvailable: () => true,
@@ -325,7 +333,14 @@ testCase(
       { password: fixtureCredentials.updatedPassword },
       "admin",
     );
-    assert.deepEqual(password.purged, ["reset:u", "session:u", "sign-in:u"]);
+    assert.deepEqual(password.purged, [
+      "reset:u",
+      "session:u",
+      "sign-in:u",
+      "confirmation:u",
+      "vault:u",
+      "reauth:u",
+    ]);
     assert.deepEqual(password.logs, [
       "Administrator admin changed the password of user u",
     ]);

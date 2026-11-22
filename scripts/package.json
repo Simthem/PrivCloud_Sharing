@@ -1,7 +1,7 @@
 {
   "name": "scripts",
   "license": "AGPL-3.0-only",
-  "version": "1.26.8",
+  "version": "1.26.10",
   "scripts": {
     "generate-example-config": "ts-node generate-example-config.ts"
   },
@@ -15,7 +15,7 @@
   },
   "overrides": {
     "diff": "^5.2.0",
-    "picomatch": ">=4.0.4",
-    "undici": "7.29.0"
+    "picomatch": "4.0.7",
+    "undici": "7.30.2"
   }
 }

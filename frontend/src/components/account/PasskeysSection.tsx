@@ -301,7 +301,7 @@ const PasskeysSection = ({
               {needsCode && (
                 <TextInput
                   label={t("account.modal.totp.codeOrBackup")}
-                  placeholder="123456 / A1B2C3D4"
+                  placeholder="123456 / K7M2Q9R4TX"
                   value={code}
                   onChange={(event) => setCode(event.currentTarget.value)}
                   autoComplete="one-time-code"

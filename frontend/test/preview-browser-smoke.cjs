@@ -497,6 +497,7 @@ window.previewOffice=async()=>{const zip=await openPreviewZip(await window.sourc
       const files = {
         "/sw.js": path.join(root, "public/sw.js"),
         "/preview-sw.js": path.join(root, "public/preview-sw.js"),
+        "/download-sw.js": path.join(root, "public/download-sw.js"),
         "/fflate.js": path.join(root, "node_modules/fflate/esm/browser.js"),
         "/pdf.mjs": path.join(root, "node_modules/pdfjs-dist/build/pdf.mjs"),
         "/pdf.worker.min.mjs": path.join(

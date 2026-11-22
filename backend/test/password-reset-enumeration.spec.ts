@@ -31,6 +31,7 @@ async function run() {
       $transaction: async (fn: (client: unknown) => Promise<unknown>) =>
         fn((service as unknown as { prisma: unknown }).prisma),
       resetPasswordToken: {
+        findFirst: async () => null,
         delete: async () => writes.push("delete"),
         deleteMany: async () => ({ count: 0 }),
         create: async ({ data }: { data: { token: string } }) => {
@@ -55,6 +56,9 @@ async function run() {
 
   assert.deepEqual(writes, []);
   await service.requestResetPassword("local@example.com");
+  // The link is issued after the answer, so its timing reveals nothing.
+  assert.deepEqual(writes, []);
+  await new Promise((resolve) => setTimeout(resolve, 10));
   assert.deepEqual(writes, ["create", "email", "warn"]);
   assert.equal(deliveredToken.length, 43);
   assert.equal(

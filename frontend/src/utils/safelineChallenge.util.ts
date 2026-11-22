@@ -190,6 +190,11 @@ function resolveChallengeFromUserGesture(): Promise<void> {
   return userChallengeInFlight;
 }
 
+/** The browser refused the verification window opened without a click. */
+export function isSafeLinePopupBlocked(): boolean {
+  return popupNeedsUserGesture;
+}
+
 /** Call directly from retry buttons, before any network or wake-lock await. */
 export function prepareSafeLineRetry(): Promise<void> {
   return popupNeedsUserGesture

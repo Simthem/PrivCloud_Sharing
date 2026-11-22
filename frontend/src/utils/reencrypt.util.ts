@@ -837,7 +837,6 @@ export interface TeamReencryptResult {
  * Re-encrypt all files in a team after a key rotation.
  * Downloads each E2E-encrypted file, decrypts with oldKey, re-encrypts with newKey,
  * and uploads via the reencrypt endpoint.
- * Call teamService.rotateTeamKey() AFTER this succeeds.
  */
 export async function reencryptTeam(
   teamId: string,

@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { publicUrl } from "./public-url.util";
 import { SignatureRecipient } from "@prisma/client";
 import { PrismaService } from "src/prisma/prisma.service";
 import { FileService } from "src/file/file.service";
@@ -78,7 +79,7 @@ export class SigningEvidenceService {
     const tsaTrustedListCheck = tsaCheck
       ? {
           checkedAt: tsaCheck.checkedAt.toISOString(),
-          listUrl: tsaCheck.listUrl,
+          listUrl: publicUrl(tsaCheck.listUrl),
           listSha256: tsaCheck.listSha256,
           sequenceNumber: tsaCheck.sequenceNumber,
           result: tsaCheck.result,
@@ -414,7 +415,7 @@ export class SigningEvidenceService {
     return exchanges.map((exchange) => ({
       scope: exchange.scope,
       messageImprint: exchange.messageImprint,
-      tsaUrl: exchange.tsaUrl,
+      tsaUrl: publicUrl(exchange.tsaUrl),
       requestBase64: exchange.requestBase64,
       responseBase64: exchange.responseBase64,
     }));

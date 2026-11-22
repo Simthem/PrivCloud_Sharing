@@ -77,10 +77,15 @@ export class StepUpService {
 
   /**
    * Any signed-in user may confirm the enrolment of a signing passkey on a
-   * request assigned to them. Every other operation is an administrator's.
+   * request assigned to them, or a new provider linked to their account.
+   * Every other operation is an administrator's.
    */
   assertMayConfirm(user: User, scope: string) {
-    if (!user.isAdmin && !scope.startsWith("signing.passkey.enroll:")) {
+    if (
+      !user.isAdmin &&
+      !scope.startsWith("signing.passkey.enroll:") &&
+      !scope.startsWith("oauth.link:")
+    ) {
       throw new ForbiddenException("Unknown operation");
     }
   }
@@ -98,7 +103,7 @@ export class StepUpService {
    * refuses with the scope the client has to confirm. Two requests racing on
    * one confirmation cannot both spend it.
    */
-  async consume(request: Request, user: User, scope: string) {
+  async consume(request: Request, user: Pick<User, "id">, scope: string) {
     const value: unknown = request.cookies?.[STEP_UP_COOKIE];
     if (await this.spend(user.id, scope, value)) return;
     throw new ForbiddenException({

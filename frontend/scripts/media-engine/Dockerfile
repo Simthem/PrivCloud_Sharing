@@ -17,7 +17,7 @@ RUN echo "3b640c356d74724a99230b077ef442d8c995a37c03e0729d6d2a9be0f3a41fd3  /sou
     && cp /sources/ffmpeg.tar.xz build/ffmpeg-9.0.tar.xz \
     && cp /sources/emfiberthreads.tar.gz build/emfiberthreads-1.3.tar.gz \
     && touch node_modules/.bin/terser \
-    && cd configs && node mkconfig.js privcloud "$(cat /sources/variant.json)"
+    && cd /libav.js/configs && node mkconfig.js privcloud "$(cat /sources/variant.json)"
 RUN make MINIFIER=cat \
     dist/libav-6.10.9.0-privcloud.mjs \
     dist/libav-6.10.9.0-privcloud.wasm.mjs \

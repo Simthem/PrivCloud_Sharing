@@ -16,6 +16,7 @@ import {
   refreshTokenOnce,
 } from "../services/api.service";
 import { notifySafeLineChallenge } from "./safeline-notify.util";
+import { isSafeLinePopupBlocked } from "./safelineChallenge.util";
 import { translateOutsideContext } from "../hooks/useTranslate.hook";
 import {
   ADAPTIVE_MAX_CHUNK,
@@ -26,6 +27,7 @@ import {
 } from "./uploadPerformance.util";
 import { notifyAuthSessionExpired } from "./authRedirect.util";
 import { acquireUploadFlowCoordinator } from "./uploadBatchCoordinator.util";
+import { claimTransferWorkerScope } from "./transferWorker.util";
 import {
   encryptFileMetadata,
   encryptedFilePlaceholderName,
@@ -388,12 +390,20 @@ export async function getAdaptiveChunkSize(
 // Crypto is record-based, so WebCrypto allocations remain small even when
 // the transport chunk sent to S3 is large.
 
+function runWorkerBatch(
+  ...args: Parameters<typeof startWorkerBatch>
+): ReturnType<typeof startWorkerBatch> {
+  return claimTransferWorkerScope("/upload-worker.js").then(() =>
+    startWorkerBatch(...args),
+  );
+}
+
 /**
  * Run the upload [startChunk, endChunk) in a single persistent Worker.
- * The Worker is never recycled mid-upload; GC safety relies on the natural
+ * The Worker is never recycled mid-upload. GC safety relies on the natural
  * yield provided by network I/O awaits (several seconds per large chunk).
  */
-function runWorkerBatch(
+function startWorkerBatch(
   file: File | Blob,
   shareId: string,
   chunkSize: number,
@@ -584,7 +594,12 @@ function runWorkerBatch(
             message: createElement(
               "span",
               null,
-              t("safeline.notify.message", { link: retryBtn }),
+              isSafeLinePopupBlocked()
+                ? t("safeline.notify.message-popup-blocked", {
+                    link: retryBtn,
+                    host: window.location.host,
+                  })
+                : t("safeline.notify.message", { link: retryBtn }),
             ),
             color: "orange",
             autoClose: false,

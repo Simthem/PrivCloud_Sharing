@@ -1584,12 +1584,20 @@ export class S3FileService {
     fileName: string,
     forceDownload: boolean,
     contentType: string,
+    shareExpiration?: Date,
   ): Promise<{
     url: string;
     candidates: BrowserDirectTransferCandidate[];
     expiresInSeconds: number;
   }> {
     const policy = this.getBrowserDirectDownloadPolicy();
+    // A signed URL never outlives the share it was issued for.
+    const shareSeconds =
+      shareExpiration && shareExpiration.getTime() !== 0
+        ? Math.floor((shareExpiration.getTime() - Date.now()) / 1000)
+        : Infinity;
+    if (shareSeconds <= 0) throw new NotFoundException("Share not found");
+    const expiresInSeconds = Math.min(policy.expiresInSeconds, shareSeconds);
     if (!policy.enabled) {
       throw new HttpException(
         "Direct browser download is unavailable",
@@ -1603,7 +1611,7 @@ export class S3FileService {
     const candidates = await this.createBrowserDirectCandidates(
       fileId,
       1,
-      policy.expiresInSeconds,
+      expiresInSeconds,
       () =>
         new GetObjectCommand({
           Bucket: this.config.get("s3.bucketName"),
@@ -1618,12 +1626,12 @@ export class S3FileService {
     );
     this.logger.debug(
       `Direct GetObject authorized: dataPlane=${S3_DATA_PLANE_REVISION} ` +
-        `fileId=${fileId} ttlSeconds=${policy.expiresInSeconds}`,
+        `fileId=${fileId} ttlSeconds=${expiresInSeconds}`,
     );
     return {
       url: candidates[0].url,
       candidates,
-      expiresInSeconds: policy.expiresInSeconds,
+      expiresInSeconds,
     };
   }
 

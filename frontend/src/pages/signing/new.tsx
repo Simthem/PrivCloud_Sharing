@@ -51,6 +51,7 @@ import {
 } from "react-icons/tb";
 import Meta from "../../components/Meta";
 import useUser from "../../hooks/user.hook";
+import useConfig from "../../hooks/config.hook";
 import useTranslate from "../../hooks/useTranslate.hook";
 import useReinforcedEligibility from "../../hooks/useReinforcedEligibility.hook";
 import signingService, {
@@ -137,8 +138,10 @@ const FALLBACK_PDF_PAGE: PdfPageLayout = {
 const NewSigningRequestPage = () => {
   const router = useRouter();
   const { user } = useUser();
+  const config = useConfig();
   const t = useTranslate();
   const intl = useIntl();
+  const keyEmailAllowed = config.getBoolean("email.enableE2EKeyEmailSharing");
 
   const [createdRecipients, setCreatedRecipients] = useState<
     SignatureRecipient[] | null
@@ -725,7 +728,10 @@ const NewSigningRequestPage = () => {
       (f) => f.shareId === shareId && f.fileId === fileId,
     );
     const shouldEmailE2EKey = Boolean(
-      fileEntry?.isE2EEncrypted && teamKeyB64 && values.sendE2EKeyByEmail,
+      fileEntry?.isE2EEncrypted &&
+      teamKeyB64 &&
+      keyEmailAllowed &&
+      values.sendE2EKeyByEmail,
     );
 
     const signerRecipients = values.recipients.filter(
@@ -1199,7 +1205,7 @@ const NewSigningRequestPage = () => {
                       />
                     </SimpleGrid>
                   )}
-                  {teamKeyB64 && (
+                  {teamKeyB64 && keyEmailAllowed && (
                     <Checkbox
                       label={t("signing.option.e2e-key-email")}
                       description={t("signing.option.e2e-key-email.desc")}

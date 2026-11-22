@@ -284,7 +284,7 @@ testCase(
   async () => {
     const service = new ShareService(
       { share: { findUnique: async () => null } } as never,
-      {} as never,
+      { get: () => false } as never,
       {} as never,
       {} as never,
       {} as never,

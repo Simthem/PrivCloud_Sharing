@@ -391,7 +391,7 @@ export default function OfficePreview({
       </Center>
     );
   return (
-    <Stack gap="sm">
+    <Stack gap="sm" style={{ flex: "1 1 auto", minHeight: 0 }}>
       <Group justify="space-between" align="end" wrap="wrap">
         {document.kind === "workbook" && (
           <Select

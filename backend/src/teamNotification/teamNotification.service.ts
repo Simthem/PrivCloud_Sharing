@@ -245,17 +245,24 @@ export class TeamNotificationService {
         ? {
             folderAccess: {
               where: { folderId: opts.folderId },
-              select: { id: true },
+              select: { permission: true },
             },
           }
         : undefined,
     });
+    // A folder with rules is open to the members they allow, one without
+    // rules to everyone, as in the folder listing.
+    const restricted =
+      !!opts?.folderId &&
+      (await this.prisma.teamFolderAccess.count({
+        where: { folderId: opts.folderId },
+      })) > 0;
 
-    // Filter by folder access: skip members without access (unless OWNER/ADMIN)
     const eligibleMembers = members.filter((m) => {
       if (!opts?.folderId) return true;
       if (m.role === "OWNER" || m.role === "ADMIN") return true;
-      return "folderAccess" in m && m.folderAccess.length > 0;
+      const rule = "folderAccess" in m ? m.folderAccess[0] : undefined;
+      return rule ? !["NONE", "DENY"].includes(rule.permission) : !restricted;
     });
 
     if (eligibleMembers.length === 0) return [];

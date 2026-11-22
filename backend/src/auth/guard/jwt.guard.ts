@@ -1,21 +1,34 @@
-import { ExecutionContext, Injectable } from "@nestjs/common";
+import {
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
 import { ConfigService } from "src/config/config.service";
 
+/**
+ * Requires a signed-in user. Routes open to anonymous visitors handle the
+ * missing user themselves, never through this guard.
+ */
 @Injectable()
 export class JwtGuard extends AuthGuard("jwt") {
-  constructor(private config: ConfigService) {
+  constructor(protected config: ConfigService) {
     super();
   }
-  /**
-   * If the user is not authenticated and allowUnauthenticatedShares is true, return true
-   * Otherwise, return false
-   */
+
+  handleRequest<TUser>(_err: unknown, user: TUser | false): TUser | null {
+    return user || null;
+  }
+
   async canActivate(context: ExecutionContext): Promise<boolean> {
     try {
-      return (await super.canActivate(context)) as boolean;
+      await super.canActivate(context);
     } catch {
-      return this.config.get("share.allowUnauthenticatedShares");
+      // The strategy failed: no token, or an invalid one.
     }
+    if (!context.switchToHttp().getRequest().user) {
+      throw new UnauthorizedException();
+    }
+    return true;
   }
 }

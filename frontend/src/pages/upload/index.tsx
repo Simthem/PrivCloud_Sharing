@@ -70,11 +70,7 @@ import userService from "../../services/user.service";
 import teamFileRequestService from "../../services/teamFileRequest.service";
 import { canUploadToFileRequest } from "../../utils/teamFileRequest.util";
 import teamService from "../../services/team.service";
-import {
-  setUploadActive,
-  isUploadActive,
-  completeSafeLineChallenge,
-} from "../../services/api.service";
+import { setUploadActive, isUploadActive } from "../../services/api.service";
 import { useRouter } from "next/router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -850,7 +846,6 @@ const Upload = ({
     keepaliveRef.current = startUploadSessionMaintenance({
       isActive: isUploadActive,
       heartbeat: () => shareService.keepUploadAlive(createdShare.id),
-      resolveChallenge: completeSafeLineChallenge,
     });
 
     // --- Upload via dedicated Web Worker ---
@@ -1311,6 +1306,22 @@ const Upload = ({
           queryClient.invalidateQueries({
             queryKey: ["share.pastRecipients"],
           });
+          // Returning from a team-folder upload must not reuse the cached
+          // folder card: its share counter has just changed.
+          const uploadedTeamId =
+            targetFolderInfo?.teamId ||
+            writableFolders?.find(
+              (folder) => folder.folder.id === share.teamFolderId,
+            )?.teamId;
+          if (uploadedTeamId) {
+            queryClient.invalidateQueries({
+              queryKey: ["team.folders", uploadedTeamId],
+            });
+            queryClient.invalidateQueries({
+              queryKey: ["team.metrics", uploadedTeamId],
+            });
+          }
+          queryClient.invalidateQueries({ queryKey: ["myWritableFolders"] });
           setFiles([]);
           completingShareRef.current = null;
           e2eKeyEncoded = null;

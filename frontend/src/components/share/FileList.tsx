@@ -32,6 +32,7 @@ import DownloadProgressIndicator from "./DownloadProgressIndicator";
 import { Share } from "../../types/share.type";
 import { byteToHumanSizeString } from "../../utils/fileSize.util";
 import { copyToClipboard } from "../../utils/clipboard.util";
+import { downloadErrorKey } from "../../utils/downloadError.util";
 import toast from "../../utils/toast.util";
 import TableSortIcon, { TableSort } from "../core/SortIcon";
 import showFilePreviewModal from "./modals/showFilePreviewModal";
@@ -134,18 +135,9 @@ const FileList = ({
 
     const selectedFiles = files.filter((f) => selectedIds.has(f.id));
 
+    // One file keeps its progress, error message and report.
     if (selectedFiles.length === 1) {
-      const file = selectedFiles[0];
-      if (share.isE2EEncrypted && e2eKey) {
-        await shareService.downloadFileE2E(
-          share.id,
-          file.id,
-          file.name,
-          e2eKey,
-        );
-      } else {
-        await shareService.downloadFile(share.id, file.id);
-      }
+      await startDownload(selectedFiles[0]);
       return;
     }
 
@@ -176,9 +168,8 @@ const FileList = ({
       }
     } catch (caughtValue) {
       const e = caughtValue as ThrownError;
-      if (e?.name !== "AbortError") {
-        toast.error(t("common.error"));
-      }
+      const message = downloadErrorKey(e);
+      if (message) toast.error(t(message));
       if (share.isE2EEncrypted) {
         reportE2EDownloadFailure(e, share.cryptoScheme);
       }
@@ -235,9 +226,8 @@ const FileList = ({
       }
     } catch (caughtValue) {
       const e = caughtValue as ThrownError;
-      if (e.name !== "AbortError") {
-        toast.error(t("common.error"));
-      }
+      const message = downloadErrorKey(e);
+      if (message) toast.error(t(message));
       if (share.isE2EEncrypted) {
         reportE2EDownloadFailure(e, share.cryptoScheme);
       }

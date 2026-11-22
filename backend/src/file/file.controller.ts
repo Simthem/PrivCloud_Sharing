@@ -172,6 +172,8 @@ export function parseSingleByteRange(
   return { start, end: Math.min(requestedEnd, fileSize - 1) };
 }
 
+const DIRECT_DOWNLOAD_RECORD_WINDOW_MS = 10 * 60 * 1000;
+
 @Controller("shares/:shareId/files")
 export class FileController {
   private readonly logger = new Logger(FileController.name);
@@ -1014,10 +1016,13 @@ export class FileController {
       "Cache-Control": "private, no-cache, no-store, must-revalidate",
       Pragma: "no-cache",
     });
+    // A signed URL may be asked for again without any byte being fetched:
+    // one record per visitor and file in a short window.
     if (
       authorization.direct &&
       authorization.forceDownload &&
-      authorizedShare
+      authorizedShare &&
+      this.firstAuthorization(req, shareId, fileId)
     ) {
       this.recordFileDownload(
         req,
@@ -1028,6 +1033,25 @@ export class FileController {
       );
     }
     return authorization;
+  }
+
+  private readonly recentAuthorizations = new Map<string, number>();
+
+  private firstAuthorization(req: Request, shareId: string, fileId: string) {
+    const now = Date.now();
+    for (const [key, at] of this.recentAuthorizations) {
+      if (now - at < DIRECT_DOWNLOAD_RECORD_WINDOW_MS) break;
+      this.recentAuthorizations.delete(key);
+    }
+    const visitor = (req as unknown as { user?: User }).user?.id ?? req.ip;
+    const key = `${visitor}:${shareId}:${fileId}`;
+    if (this.recentAuthorizations.has(key)) return false;
+    if (this.recentAuthorizations.size >= 10_000) {
+      const oldest = this.recentAuthorizations.keys().next().value;
+      if (oldest !== undefined) this.recentAuthorizations.delete(oldest);
+    }
+    this.recentAuthorizations.set(key, now);
+    return true;
   }
 
   private recordFileDownload(

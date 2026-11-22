@@ -389,6 +389,9 @@ export function releaseStyleSandbox() {
 }
 
 async function dataUrlOf(url: string): Promise<string | null> {
+  // Pages render from the decrypted file only: an address a document names
+  // elsewhere is never fetched.
+  if (!/^(blob|data):/i.test(url)) return null;
   try {
     const blob = await (await fetch(url)).blob();
     return await new Promise<string>((resolve, reject) => {

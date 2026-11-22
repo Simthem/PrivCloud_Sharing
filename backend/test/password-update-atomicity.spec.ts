@@ -26,6 +26,10 @@ testCase(
                 operations.push("sessions");
               },
             },
+            loginToken: { deleteMany: async () => ({ count: 0 }) },
+            stepUpGrant: { deleteMany: async () => ({ count: 0 }) },
+            evidenceVaultSession: { deleteMany: async () => ({ count: 0 }) },
+            oAuthReauthToken: { deleteMany: async () => ({ count: 0 }) },
           });
         },
       },

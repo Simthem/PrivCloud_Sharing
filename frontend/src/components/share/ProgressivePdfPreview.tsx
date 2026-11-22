@@ -141,7 +141,7 @@ export default function ProgressivePdfPreview({
     };
   }, [document, page, onError, zoom]);
   return (
-    <Stack>
+    <Stack style={{ flex: "1 1 auto", minHeight: 0 }}>
       <Group justify="center">
         <Button
           variant="default"

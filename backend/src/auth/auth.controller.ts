@@ -206,7 +206,6 @@ export class AuthController {
   @UseGuards(AltchaGuard)
   @HttpCode(202)
   async requestResetPassword(@Body() dto: ResetPasswordRequestDTO) {
-    // SECURITY: Email moved from URL param to body to avoid logging in access logs
     await this.authService.requestResetPassword(dto.email);
   }
 
@@ -466,6 +465,12 @@ export class AuthController {
       if (dto.passkey) {
         await this.passkeys.verifyStepUp(user, dto.scope, dto.passkey);
         method = "passkey";
+        // A linked sign-in made for this confirmation is not left for another.
+        await this.authTotpService.discardReauthProof(
+          user,
+          request.cookies?.[OAUTH_REAUTH_COOKIE],
+        );
+        this.clearReauthProof(response);
       } else {
         method = await this.authTotpService.confirmSecondFactorChange(
           user,

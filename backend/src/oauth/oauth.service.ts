@@ -24,8 +24,11 @@ import { PrismaService } from "../prisma/prisma.service";
 import { OAuthSignInDto } from "./dto/oauthSignIn.dto";
 import { ErrorPageException } from "./exceptions/errorPage.exception";
 import { OAuthProvider } from "./provider/oauthProvider.interface";
+import { StepUpService } from "../auth/stepUp.service";
 
 const OAUTH_LINK_AUDIENCE = "oauth-link";
+const MAILED_LINK_TTL_MS = 30 * 60 * 1000;
+const mailedLinkScope = (provider: string) => `oauth.mail:${provider}`;
 
 @Injectable()
 export class OAuthService implements OnModuleInit {
@@ -39,6 +42,7 @@ export class OAuthService implements OnModuleInit {
     private jwtService: JwtService,
     private email: EmailService,
     private emailVerification: EmailVerificationService,
+    private stepUp: StepUpService,
   ) {}
   private readonly logger = new Logger(OAuthService.name);
 
@@ -273,11 +277,21 @@ export class OAuthService implements OnModuleInit {
       },
     });
     if (oauthUser) {
-      await this.prisma.oAuthUser.delete({
-        where: {
-          id: oauthUser.id,
-        },
-      });
+      // Proofs and mailed confirmations issued for this provider die with it.
+      await this.prisma.$transaction([
+        this.prisma.oAuthUser.delete({ where: { id: oauthUser.id } }),
+        this.prisma.oAuthReauthToken.deleteMany({
+          where: { userId: user.id, provider },
+        }),
+        this.prisma.stepUpGrant.deleteMany({
+          where: {
+            userId: user.id,
+            scope: {
+              in: [mailedLinkScope(provider), `oauth.link:${provider}`],
+            },
+          },
+        }),
+      ]);
     } else {
       throw new ErrorPageException("not_linked", "/", [provider]);
     }
@@ -333,9 +347,11 @@ export class OAuthService implements OnModuleInit {
 
   /**
    * Joins a provider identity to the account holding its address: at once
-   * when the provider vouches for an address the account has proven, after a
-   * mailed confirmation otherwise. Administrators and 2FA accounts keep their
-   * own confirmation from the account page.
+   * when the provider vouches for the mailbox the account currently proves,
+   * after a confirmation mailed to that address otherwise. An address only
+   * known from another link may no longer belong to the account holder.
+   * Administrators and 2FA accounts keep their own confirmation from the
+   * account page.
    */
   private async linkToExistingAccount(
     { account, throughLink }: { account: User; throughLink: boolean },
@@ -346,7 +362,12 @@ export class OAuthService implements OnModuleInit {
     ]);
     if (account.isAdmin || account.totpVerified) throw refused;
 
-    if (user.email && (throughLink || account.emailVerifiedAt)) {
+    if (
+      user.email &&
+      !user.emailDomainOnly &&
+      !throughLink &&
+      account.emailVerifiedAt
+    ) {
       await this.link(
         account.id,
         user.provider,
@@ -366,16 +387,22 @@ export class OAuthService implements OnModuleInit {
   }
 
   private async mailLinkConfirmation(account: User, user: OAuthSignInDto) {
+    const grant = await this.stepUp.handOver(
+      account.id,
+      mailedLinkScope(user.provider),
+      MAILED_LINK_TTL_MS,
+    );
     const token = this.jwtService.sign(
       {
         sub: account.id,
         provider: user.provider,
         providerUserId: user.providerId.toString(),
         providerUsername: user.providerUsername,
+        grant,
       },
       {
         audience: OAUTH_LINK_AUDIENCE,
-        expiresIn: "30m",
+        expiresIn: MAILED_LINK_TTL_MS / 1000,
         secret: this.config.get("internal.jwtSecret"),
       },
     );
@@ -388,17 +415,27 @@ export class OAuthService implements OnModuleInit {
       provider: string;
       providerUserId: string;
       providerUsername: string;
+      grant?: string;
     };
+    const invalid = new BadRequestException(
+      "This confirmation link is not valid",
+    );
     try {
       claims = this.jwtService.verify(token, {
         audience: OAUTH_LINK_AUDIENCE,
         secret: this.config.get("internal.jwtSecret"),
       });
     } catch {
-      throw new BadRequestException("This confirmation link is not valid");
+      throw invalid;
     }
     if (await this.isLinked(claims.sub, claims.provider, claims.providerUserId))
       return;
+    // Single use, and void once the provider is unlinked.
+    const owner = await this.stepUp.redeem(
+      mailedLinkScope(claims.provider),
+      claims.grant,
+    );
+    if (owner !== claims.sub) throw invalid;
     await this.link(
       claims.sub,
       claims.provider,
@@ -429,7 +466,9 @@ export class OAuthService implements OnModuleInit {
         password: null,
       },
       ip,
-      user.isAdmin,
+      // Only a role the provider grants makes an administrator, never being
+      // the first account of a fresh instance.
+      user.isAdmin ?? false,
       Boolean(user.email),
       !user.email,
     );

@@ -61,7 +61,14 @@ export default function ZoomablePreview({
       defaultMessage,
     });
   return (
-    <div>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        flex: "1 1 auto",
+        minHeight: 0,
+      }}
+    >
       <Group gap="xs" justify="center" mb="xs" wrap="nowrap">
         <Button
           variant="default"
@@ -99,6 +106,8 @@ export default function ZoomablePreview({
         aria-label={label("viewport", "Document: pinch to zoom, drag to move")}
         style={{
           maxHeight: "65vh",
+          flex: "1 1 auto",
+          minHeight: 0,
           overflow: "auto",
           touchAction: "none",
           overscrollBehavior: "contain",

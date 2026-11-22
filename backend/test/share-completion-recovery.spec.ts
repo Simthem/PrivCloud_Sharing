@@ -10,6 +10,7 @@ const { testCase, run } = createUnitTestRunner("persisted upload completion");
 function fixture(smtpEnabled: boolean, recipients: { email: string }[] = []) {
   let emails = 0;
   let remainingUses = 1;
+  const spentLinks: unknown[] = [];
   const share = {
     id: "share-1",
     creatorId: "owner-1",
@@ -65,7 +66,8 @@ function fixture(smtpEnabled: boolean, recipients: { email: string }[] = []) {
     share: shareStore,
     shareQuotaEvent: { updateMany: async () => ({ count: 1 }) },
     reverseShare: {
-      updateMany: async () => {
+      updateMany: async ({ where }: { where: { id?: string } }) => {
+        spentLinks.push(where.id);
         if (remainingUses <= 0) return { count: 0 };
         remainingUses--;
         return { count: 1 };
@@ -116,6 +118,7 @@ function fixture(smtpEnabled: boolean, recipients: { email: string }[] = []) {
     get emails() {
       return emails;
     },
+    spentLinks,
     get remainingUses() {
       return remainingUses;
     },
@@ -251,6 +254,33 @@ testCase(
     assert.equal(upload.share.hasBeenCompleted, false);
     assert.equal(upload.remainingUses, 0);
     assert.equal(upload.emails, 0);
+  },
+);
+
+testCase(
+  "a reverse link use is spent on the share's own link, and only once",
+  async () => {
+    const upload = fixture(false);
+    upload.remainingUses = 2;
+    Object.assign(upload.share, {
+      reverseShare: {
+        id: "reverse-1",
+        creatorId: "reverse-owner",
+        creator: { email: "owner@example.test" },
+        shareExpiration: new Date(Date.now() + 86_400_000),
+        sendEmailNotification: false,
+      },
+    });
+    await upload.service.complete(upload.share.id, "another-link-token");
+    assert.deepEqual(upload.spentLinks, ["reverse-1"]);
+    assert.equal(upload.remainingUses, 1);
+
+    // Reopened and finished again: no second use.
+    await upload.service.revertComplete(upload.share.id);
+    await upload.service.complete(upload.share.id, "another-link-token");
+    assert.equal(upload.share.uploadLocked, true);
+    assert.equal(upload.remainingUses, 1);
+    assert.deepEqual(upload.spentLinks, ["reverse-1"]);
   },
 );
 

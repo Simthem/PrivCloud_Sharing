@@ -44,7 +44,11 @@ export class ShareSecurityGuard extends JwtGuard {
     if (!share) throw new NotFoundException("Share not found");
 
     // Run the JWTGuard to set the user
-    await super.canActivate(context);
+    try {
+      await super.canActivate(context);
+    } catch {
+      // Not signed in: the share decides below whether a visitor may see it.
+    }
     const user = request.user as User;
     if (share.uploadLocked === false && share.creatorId !== user?.id) {
       throw new NotFoundException("Share not found");

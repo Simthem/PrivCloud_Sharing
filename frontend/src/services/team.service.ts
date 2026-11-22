@@ -319,15 +319,6 @@ const getTeamShares = async (teamId: string): Promise<TeamShare[]> => {
   return (await api.get(`teams/${apiPathSegment(teamId)}/shares`)).data;
 };
 
-const rotateTeamKey = async (
-  teamId: string,
-  newWrappedTeamKey: string,
-): Promise<void> => {
-  await api.post(`teams/${apiPathSegment(teamId)}/rotate-team-key`, {
-    newWrappedTeamKey,
-  });
-};
-
 export interface TeamKeyRotationStatus {
   policy: {
     intervalDays: number;
@@ -355,6 +346,7 @@ export interface TeamKeyRotationStatus {
     createdAt: string;
     pendingWrappedTeamKey: string | null;
     canResume: boolean;
+    canCancel?: boolean;
   };
 }
 
@@ -873,7 +865,6 @@ const teamService = {
   getAccessLogs,
   getMyWritableFolders,
   getTeamShares,
-  rotateTeamKey,
   getKeyRotationStatus,
   startKeyRotation,
   updateKeyRotationProgress,

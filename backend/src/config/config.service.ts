@@ -81,12 +81,16 @@ export class ConfigService extends EventEmitter {
   yamlConfig?: YamlConfig;
   logger = new Logger(ConfigService.name);
   private encryptionKey = loadConfigKey();
+  private indexingPolicy?: { expiresAt: number; value: Promise<boolean> };
 
   constructor(
     @Inject("CONFIG_VARIABLES") private configVariables: Config[],
     private prisma: PrismaService,
   ) {
     super();
+    this.on("update", (key: string) => {
+      if (key === "general.disableIndexing") this.indexingPolicy = undefined;
+    });
   }
 
   // Initialize gets called by the ConfigModule
@@ -115,6 +119,13 @@ export class ConfigService extends EventEmitter {
           const category = this.yamlConfig[configVariable.category];
           if (!category) continue;
           configVariable.value = category[configVariable.name];
+          if (
+            configVariable.category === "general" &&
+            configVariable.name === "disableIndexing" &&
+            configVariable.value != null
+          ) {
+            configVariable.value = String(configVariable.value);
+          }
           this.emit("update", configVariable.name, configVariable.value);
         }
       }
@@ -127,24 +138,25 @@ export class ConfigService extends EventEmitter {
   }
 
   private async migrateInitUser(): Promise<void> {
-    if (!this.yamlConfig.initUser.enabled) return;
+    if (!this.yamlConfig.initUser?.enabled) return;
 
-    const userCount = await this.prisma.user.count({
-      where: { isAdmin: true },
-    });
-    if (userCount >= 1) {
-      this.logger.log(
-        "Skip initial user creation. Admin user is already existent.",
-      );
+    // Only a fresh installation gets this account: an administrator deleted
+    // later never comes back with the password kept in the file.
+    if ((await this.prisma.user.count()) > 0) {
+      this.logger.log("Skip initial user creation. Accounts already exist.");
       return;
     }
+    const ldapDN = this.yamlConfig.initUser.ldapDN?.trim() || null;
     await this.prisma.user.create({
       data: {
         email: this.yamlConfig.initUser.email,
         username: this.yamlConfig.initUser.username,
-        password: this.yamlConfig.initUser.password
-          ? await argon.hash(this.yamlConfig.initUser.password)
-          : null,
+        // A directory account signs in through the directory only.
+        password:
+          this.yamlConfig.initUser.password && !ldapDN
+            ? await argon.hash(this.yamlConfig.initUser.password)
+            : null,
+        ldapDN,
         isAdmin: this.yamlConfig.initUser.isAdmin,
         // Bootstrap identities are provisioned by the operator, not through
         // public registration. Mark them verified explicitly so the insert
@@ -187,7 +199,24 @@ export class ConfigService extends EventEmitter {
   }
 
   async getByCategory(category: string) {
-    const configVariables = this.configVariables
+    const indexing =
+      category === "general" && this.isEditAllowed()
+        ? await this.prisma.config.findUnique({
+            where: {
+              name_category: { category: "general", name: "disableIndexing" },
+            },
+          })
+        : null;
+    const rows = indexing
+      ? [
+          ...this.configVariables.filter(
+            (row) =>
+              row.category !== "general" || row.name !== "disableIndexing",
+          ),
+          indexing,
+        ]
+      : this.configVariables;
+    const configVariables = rows
       .map((row) => withContentV2Default(row))
       .filter((c) => !c.locked && category == c.category)
       .sort((c1, c2) => c1.order - c2.order);
@@ -205,15 +234,31 @@ export class ConfigService extends EventEmitter {
   async list() {
     const rows = this.isEditAllowed()
       ? await this.prisma.config.findMany({
-          where: { category: "share", name: { in: CONTENT_V2_SETTING_NAMES } },
+          where: {
+            OR: [
+              { category: "share", name: { in: CONTENT_V2_SETTING_NAMES } },
+              { category: "general", name: "disableIndexing" },
+            ],
+          },
         })
       : [];
     const fresh = openRows(rows, this.encryptionKey);
     const byKey = new Map(
       fresh.map((row) => [`${row.category}.${row.name}`, row]),
     );
-    const configVariables = this.configVariables
-      .map((row) => byKey.get(`${row.category}.${row.name}`) ?? row)
+    const knownKeys = new Set(
+      this.configVariables.map((row) => `${row.category}.${row.name}`),
+    );
+    const configVariables = [
+      ...this.configVariables.map(
+        (row) => byKey.get(`${row.category}.${row.name}`) ?? row,
+      ),
+      ...fresh.filter(
+        (row) =>
+          row.category === "general" &&
+          !knownKeys.has(`${row.category}.${row.name}`),
+      ),
+    ]
       .map((row) => withContentV2Default(row))
       .filter((c) => !c.secret);
 
@@ -224,6 +269,49 @@ export class ConfigService extends EventEmitter {
         value: variable.value ?? variable.defaultValue,
       };
     });
+  }
+
+  isSiteIndexingDisabled(): Promise<boolean> {
+    const now = Date.now();
+    if (!this.indexingPolicy || this.indexingPolicy.expiresAt <= now) {
+      this.indexingPolicy = {
+        expiresAt: now + 5_000,
+        value: this.readSiteIndexingPolicy(),
+      };
+    }
+    return this.indexingPolicy.value;
+  }
+
+  private async readSiteIndexingPolicy(): Promise<boolean> {
+    if (!this.isEditAllowed()) {
+      const row = this.configVariables.find(
+        ({ category, name }) =>
+          category === "general" && name === "disableIndexing",
+      );
+      return String(row?.value ?? row?.defaultValue) === "true";
+    }
+
+    // Bound the lookup independently of the database connection pool.
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        this.prisma.config
+          .findUnique({
+            where: {
+              name_category: { category: "general", name: "disableIndexing" },
+            },
+            select: { value: true, defaultValue: true },
+          })
+          .then((row) => (row?.value ?? row?.defaultValue) === "true"),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(true), 1_000);
+        }),
+      ]);
+    } catch {
+      return true;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** Whether new E2E uploads must be E2EE content v2. */

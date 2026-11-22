@@ -12,7 +12,9 @@ export default function TeamDashboardMetrics({
 }) {
   const t = useTranslate();
   const intl = useIntl();
-  const isMobile = useMediaQuery("(max-width: 680px)");
+  const isMobile = useMediaQuery("(max-width: 680px)", undefined, {
+    getInitialValueInEffect: false,
+  });
   const formatBytes = (bytes: number) => {
     const unit =
       bytes >= 1_000_000_000

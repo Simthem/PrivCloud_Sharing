@@ -85,6 +85,7 @@ function notificationService() {
           { userId: "member-1", role: "ADMIN", pushNotifMode: "EVERY_FILE" },
         ],
       },
+      teamFolderAccess: { count: async () => 0 },
     } as never,
     {
       sendToUser: async (_userId: string, payload: never) => {
@@ -185,6 +186,11 @@ testCase("audit emails and download alerts name nobody", () => {
 function grantService(pqKey: boolean) {
   const writes: Record<string, unknown>[] = [];
   const service = new AccessGrantService({
+    $queryRaw: async () => [],
+    $executeRaw: async () => 0,
+    $transaction(callback: (client: unknown) => unknown) {
+      return callback(this);
+    },
     userIdentityKey: { findFirst: async () => ({ id: "x25519-key" }) },
     userPQKey: { findFirst: async () => (pqKey ? { id: "pq-key" } : null) },
     file: { findUnique: async () => ({ share: { teamFolder: null } }) },
@@ -513,7 +519,7 @@ testCase(
       "S3",
       false,
     );
-    assert.deepEqual(signed[0].slice(2), [
+    assert.deepEqual(signed[0].slice(2, 5), [
       FILE_ID,
       true,
       "application/octet-stream",
@@ -529,7 +535,7 @@ testCase(
       "S3",
       false,
     );
-    assert.deepEqual(signed[1].slice(2), [
+    assert.deepEqual(signed[1].slice(2, 5), [
       "secret-plan.pdf",
       false,
       "application/pdf",

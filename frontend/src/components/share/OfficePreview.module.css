@@ -1,6 +1,7 @@
 .viewport {
   max-height: 65vh;
   min-height: 200px;
+  flex: 1 1 auto;
   overflow: auto;
   padding: 16px;
   border-radius: 8px;

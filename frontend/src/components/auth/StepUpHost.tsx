@@ -221,7 +221,9 @@ const StepUpHost = () => {
           {t(
             pending?.scope.startsWith("signing.passkey.enroll:")
               ? "step-up.description.signing-passkey"
-              : "step-up.description.admin",
+              : pending?.scope.startsWith("oauth.link:")
+                ? "step-up.description.oauth-link"
+                : "step-up.description.admin",
           )}
         </Text>
         {methods && !usable && (
@@ -251,7 +253,7 @@ const StepUpHost = () => {
             {needsCode && (
               <TextInput
                 label={t("account.modal.totp.codeOrBackup")}
-                placeholder="123456 / A1B2C3D4"
+                placeholder="123456 / K7M2Q9R4TX"
                 value={code}
                 onChange={(event) => setCode(event.currentTarget.value)}
                 autoComplete="one-time-code"

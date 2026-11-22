@@ -1,4 +1,5 @@
 import { assertSigningKeyEnvelope } from "./signing-key-envelope.util";
+import { takeWriteLock } from "src/prisma/write-lock.util";
 import { RecipientKeyEnvelopesDTO } from "./dto/recipient-key-envelopes.dto";
 import { loadConfigKey } from "src/config/config-encryption";
 import { emailFold } from "src/prisma/sealed-columns";
@@ -37,7 +38,10 @@ import {
   User,
 } from "@prisma/client";
 import { deliverSigningCompletionEmails } from "./signing-mail.util";
-import { resolveSigningIdentityProof } from "./signing-identity.util";
+import {
+  provenAccountEmail,
+  resolveSigningIdentityProof,
+} from "./signing-identity.util";
 import { appendSignatureAuditEvent } from "./signing-audit.util";
 import { applyPdfPageRotations, PdfPageRotation } from "./pdf-rotation.util";
 import { TeamNotificationService } from "src/teamNotification/teamNotification.service";
@@ -87,9 +91,11 @@ type RecipientAccount = Prisma.UserGetPayload<{
 
 const SIGNING_EMAIL_OTP_TTL_MS = 10 * 60 * 1000;
 const SIGNING_EMAIL_OTP_RESEND_DELAY_MS = 60 * 1000;
+const SIGNING_EMAIL_OTP_LOCK_MS = 60 * 60 * 1000;
+const SIGNING_EMAIL_OTP_DAILY_CODES = 10;
 const SIGNING_EMAIL_OTP_MAX_FAILURES = 5;
-// Failures accumulate across codes: requesting a new code must not reset the
-// guessing budget of someone who only holds a leaked signing link.
+// Failures accumulate across codes, so a new code never resets the guessing
+// budget of someone holding a leaked link. Only the hour-long pause does.
 const SIGNING_EMAIL_OTP_MAX_TOTAL_FAILURES = 15;
 
 /** What the signing emails read from the document and its recipient. */
@@ -151,6 +157,14 @@ export class SigningService {
    * Sends email notifications to all recipients.
    */
   async createSignatureRequest(dto: CreateSignatureRequestDTO, user: User) {
+    // The administrator decides whether a key may travel by email at all.
+    if (
+      dto.sendE2EKeyByEmail &&
+      dto.e2eKey &&
+      !this.configService.get("email.enableE2EKeyEmailSharing")
+    ) {
+      throw new ForbiddenException("Keys may not be sent by email");
+    }
     // The standard level proves mailbox control with an e-mailed code. Without
     // SMTP no recipient could ever sign, so the request is refused upfront.
     if (
@@ -191,28 +205,30 @@ export class SigningService {
         );
       }
 
-      // SECURITY: Only OWNER/ADMIN or members with explicit canRequestSignature
-      // permission on the EXACT folder containing this share are allowed.
-      // Also accept per-file FileAccess overrides (canRequestSignature).
+      // OWNER/ADMIN, or a member allowed to request signatures on this folder
+      // or on this very file.
       if (membership.role !== "OWNER" && membership.role !== "ADMIN") {
-        const folderAccess = await this.prisma.teamFolderAccess.findFirst({
-          where: {
-            memberId: membership.id,
-            folderId: share.teamFolderId,
-            canRequestSignature: true,
-          },
-        });
-        // Also check per-file override (FileAccess overrides folder-level rules)
-        const fileAccess = dto.fileId
-          ? await this.prisma.fileAccess.findFirst({
+        // A rule on the file replaces the folder's, a refusal included.
+        const fileRule = dto.fileId
+          ? await this.prisma.fileAccess.findUnique({
               where: {
-                memberId: membership.id,
-                fileId: dto.fileId,
-                canRequestSignature: true,
+                memberId_fileId: {
+                  memberId: membership.id,
+                  fileId: dto.fileId,
+                },
               },
             })
           : null;
-        if (!folderAccess && !fileAccess) {
+        const rule =
+          fileRule ??
+          (await this.prisma.teamFolderAccess.findFirst({
+            where: { memberId: membership.id, folderId: share.teamFolderId },
+          }));
+        if (
+          !rule ||
+          ["NONE", "DENY"].includes(rule.permission) ||
+          !rule.canRequestSignature
+        ) {
           throw new ForbiddenException(
             "You do not have permission to request signatures in this folder",
           );
@@ -661,12 +677,14 @@ export class SigningService {
   async getReceivedDocuments(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException("User not found");
+    // A request addressed by email reaches only an account that proved it.
+    const email = await provenAccountEmail(this.prisma, userId);
 
     const docs = await this.prisma.signatureDocument.findMany({
       where: {
         OR: [
           { recipients: { some: { userId } } },
-          { recipients: { some: { email: user.email } } },
+          ...(email ? [{ recipients: { some: { email, userId: null } } }] : []),
         ],
         creatorId: { not: userId }, // Exclude docs the user created (those are in getMyDocuments)
       },
@@ -698,11 +716,7 @@ export class SigningService {
       orderBy: { createdAt: "desc" },
     });
 
-    const viewer = {
-      userId,
-      email: user.emailVerifiedAt ? user.email : null,
-      isRequester: false,
-    };
+    const viewer = { userId, email, isRequester: false };
     return docs.map((document) => ({
       ...this.exposeSourceState(document),
       isRequester: false,
@@ -800,11 +814,9 @@ export class SigningService {
    * Get a specific signature document with full details.
    */
   async getDocument(documentId: string, userId: string) {
-    // Resolve user email for recipient lookup (recipients may not have userId set)
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true, emailVerifiedAt: true },
-    });
+    // Recipients invited by address, before any account was linked, are
+    // recognised through an address the account proved.
+    const email = await provenAccountEmail(this.prisma, userId);
 
     const doc = await this.prisma.signatureDocument.findFirst({
       where: {
@@ -812,9 +824,7 @@ export class SigningService {
         OR: [
           { creatorId: userId },
           { recipients: { some: { userId } } },
-          ...(user?.email
-            ? [{ recipients: { some: { email: user.email } } }]
-            : []),
+          ...(email ? [{ recipients: { some: { email, userId: null } } }] : []),
           // Team members (OWNER/ADMIN or canViewSignatures) can access team documents
           {
             teamId: { not: null },
@@ -856,12 +866,7 @@ export class SigningService {
     // Only expose shareId to the document creator (needed for E2E key resolution)
     const safeShareId = doc.creatorId === userId ? doc.shareId : null;
 
-    const viewer = {
-      userId,
-      // A recipient is only recognised by address once the account proved it.
-      email: user?.emailVerifiedAt ? user.email : null,
-      isRequester: doc.creatorId === userId,
-    };
+    const viewer = { userId, email, isRequester: doc.creatorId === userId };
     return {
       ...this.exposeSourceState(doc),
       isRequester: viewer.isRequester,
@@ -941,15 +946,18 @@ export class SigningService {
 
     // Record view event (only if not already signed)
     if (!alreadySigned && recipient.status === "PENDING") {
-      await this.prisma.signatureRecipient.update({
-        where: { id: recipient.id },
+      // Only a pending recipient becomes VIEWED: a signature or refusal
+      // landing meanwhile stays final.
+      const viewed = await this.prisma.signatureRecipient.updateMany({
+        where: { id: recipient.id, status: "PENDING" },
         data: { status: "VIEWED" },
       });
-      await this.createAuditEvent(
-        recipient.documentId,
-        "VIEWED",
-        recipient.email,
-      );
+      if (viewed.count === 1)
+        await this.createAuditEvent(
+          recipient.documentId,
+          "VIEWED",
+          recipient.email,
+        );
     }
 
     return {
@@ -1051,9 +1059,30 @@ export class SigningService {
       return { verified: true, sent: false };
     }
 
-    if (recipient.otpFailures >= SIGNING_EMAIL_OTP_MAX_TOTAL_FAILURES) {
+    const now = new Date();
+    // Too many wrong codes pause the link for a while, never for good:
+    // anyone holding it could otherwise lock its recipient out.
+    const locked =
+      recipient.otpFailures >= SIGNING_EMAIL_OTP_MAX_TOTAL_FAILURES &&
+      !!recipient.otpSentAt &&
+      now.getTime() - recipient.otpSentAt.getTime() < SIGNING_EMAIL_OTP_LOCK_MS;
+    if (locked) {
       throw new ForbiddenException(
-        "Too many invalid codes for this link; ask the sender for a new invitation",
+        "Too many invalid codes for this link. Try again in an hour",
+      );
+    }
+    // And the mailbox receives a bounded number of codes.
+    const sentToday = await this.prisma.signatureAuditEvent.count({
+      where: {
+        documentId: recipient.documentId,
+        eventType: "EMAIL_OTP_SENT",
+        actor: recipient.email,
+        createdAt: { gt: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
+      },
+    });
+    if (sentToday >= SIGNING_EMAIL_OTP_DAILY_CODES) {
+      throw new BadRequestException(
+        "Too many verification codes were requested today for this link",
       );
     }
     if (!this.configService.get("smtp.enabled")) {
@@ -1062,7 +1091,6 @@ export class SigningService {
       );
     }
 
-    const now = new Date();
     if (
       recipient.otpSentAt &&
       now.getTime() - recipient.otpSentAt.getTime() <
@@ -1076,10 +1104,12 @@ export class SigningService {
     const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
     const otpHash = this.hashSigningEmailOtp(recipient.id, code);
 
+    const lockEnded =
+      recipient.otpFailures >= SIGNING_EMAIL_OTP_MAX_TOTAL_FAILURES;
     const claimed = await this.prisma.signatureRecipient.updateMany({
       where: {
         id: recipient.id,
-        otpFailures: { lt: SIGNING_EMAIL_OTP_MAX_TOTAL_FAILURES },
+        otpFailures: recipient.otpFailures,
         OR: [
           { otpSentAt: null },
           {
@@ -1092,6 +1122,7 @@ export class SigningService {
       data: {
         otpHash,
         otpSentAt: now,
+        ...(lockEnded ? { otpFailures: 0 } : {}),
       },
     });
     if (claimed.count !== 1) {
@@ -1451,6 +1482,10 @@ export class SigningService {
       );
     }
 
+    if (recipient.role !== "SIGNER") {
+      throw new ForbiddenException("Only a signer can sign this document");
+    }
+
     this.assertStandardEmailVerified(recipient, emailSession);
 
     // Check signing order
@@ -1505,6 +1540,7 @@ export class SigningService {
       evidence,
     );
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.assertStillOpen(tx, recipient.documentId);
       const result = await tx.signatureRecipient.updateMany({
         where: { id: recipient.id, status: { in: ["PENDING", "VIEWED"] } },
         data: {
@@ -1828,6 +1864,24 @@ export class SigningService {
   /**
    * Notify the document creator that a specific signer has signed.
    */
+  /** Locks the request and checks it still accepts a signer's action. */
+  private async assertStillOpen(
+    tx: Prisma.TransactionClient,
+    documentId: string,
+  ) {
+    await takeWriteLock(tx);
+    const current = await tx.signatureDocument.findUnique({
+      where: { id: documentId },
+      select: { status: true, expiresAt: true },
+    });
+    if (
+      current?.status !== "PENDING" ||
+      (current.expiresAt && current.expiresAt <= new Date())
+    ) {
+      throw new ForbiddenException("This signing request is no longer open");
+    }
+  }
+
   private async notifyCreatorOfSignature(
     document: {
       id: string;
@@ -1908,6 +1962,10 @@ export class SigningService {
       );
     }
 
+    if (recipient.role !== "SIGNER") {
+      throw new ForbiddenException("Only a signer can reject this document");
+    }
+
     this.assertStandardEmailVerified(recipient, emailSession);
 
     const evidence =
@@ -1925,29 +1983,31 @@ export class SigningService {
       { ipAddress, userAgent },
       evidence,
     );
-    // Use conditional update to prevent race conditions
-    const updated = await this.prisma.signatureRecipient.updateMany({
-      where: { id: recipient.id, status: { in: ["PENDING", "VIEWED"] } },
-      data: {
-        status: "REJECTED",
-        rejectionReason: dto.reason,
-        signingIp: ipAddress,
-        signingUserAgent: userAgent,
-        ...evidence,
-        ...forensic,
-      },
+    // A signer's refusal ends the request, in the same transaction.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.assertStillOpen(tx, recipient.documentId);
+      const result = await tx.signatureRecipient.updateMany({
+        where: { id: recipient.id, status: { in: ["PENDING", "VIEWED"] } },
+        data: {
+          status: "REJECTED",
+          rejectionReason: dto.reason,
+          signingIp: ipAddress,
+          signingUserAgent: userAgent,
+          ...evidence,
+          ...forensic,
+        },
+      });
+      if (result.count > 0) {
+        await tx.signatureDocument.updateMany({
+          where: { id: recipient.documentId, status: "PENDING" },
+          data: { status: "CANCELLED" },
+        });
+      }
+      return result;
     });
 
     if (updated.count === 0) {
       throw new ForbiddenException("Document state changed concurrently");
-    }
-
-    // Mark document as cancelled if a required signer rejects
-    if (recipient.role === "SIGNER") {
-      await this.prisma.signatureDocument.updateMany({
-        where: { id: recipient.documentId, status: "PENDING" },
-        data: { status: "CANCELLED" },
-      });
     }
 
     await this.createAuditEvent(
@@ -2049,14 +2109,20 @@ export class SigningService {
     });
 
     if (!doc) throw new NotFoundException("Document not found");
-    if (doc.status === "COMPLETED") {
-      throw new BadRequestException("Cannot cancel a completed document");
-    }
-
-    await this.prisma.signatureDocument.update({
-      where: { id: documentId },
-      data: { status: "CANCELLED" },
+    // Locked like a signature, so neither can overtake the other.
+    const cancelled = await this.prisma.$transaction(async (tx) => {
+      await takeWriteLock(tx);
+      return tx.signatureDocument.updateMany({
+        where: {
+          id: documentId,
+          status: { in: ["PENDING", "PARTIAL", "AWAITING_FINALIZATION"] },
+        },
+        data: { status: "CANCELLED" },
+      });
     });
+    if (cancelled.count === 0) {
+      throw new BadRequestException("This document can no longer be cancelled");
+    }
 
     await this.createAuditEvent(documentId, "CANCELLED", "system");
 

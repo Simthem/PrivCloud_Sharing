@@ -16,9 +16,16 @@ const provider = {
   providerUsername: "person",
 };
 
-function service(account: Record<string, unknown> | null, smtp = true) {
+function service(
+  account: Record<string, unknown> | null,
+  smtp = true,
+  links: Record<string, unknown>[] = [],
+) {
+  const grants = new Map<string, { userId: string; scope: string }>();
   const calls = {
     links: 0,
+    grants,
+    tokens: [] as string[],
     mails: [] as string[],
     signUps: [] as unknown[],
     invitations: [] as string[],
@@ -36,7 +43,7 @@ function service(account: Record<string, unknown> | null, smtp = true) {
     $queryRaw: async () => (account ? [{ id: account.id }] : []),
     oAuthUser: {
       findFirst: async () => null,
-      findMany: async () => [],
+      findMany: async () => links,
       count: async () => 0,
       create: async () => {
         calls.links += 1;
@@ -56,8 +63,13 @@ function service(account: Record<string, unknown> | null, smtp = true) {
     },
   };
   const email = {
-    sendOAuthLinkEmail: async (to: string) => {
+    sendOAuthLinkEmail: async (
+      to: string,
+      _provider: string,
+      token: string,
+    ) => {
       calls.mails.push(to);
+      calls.tokens.push(token);
     },
   };
   const oauth = new OAuthService(
@@ -71,6 +83,19 @@ function service(account: Record<string, unknown> | null, smtp = true) {
     {
       inviteWithoutDeadline: async (id: string) => {
         calls.invitations.push(id);
+      },
+    } as never,
+    {
+      handOver: async (userId: string, scope: string) => {
+        const value = randomUUID();
+        grants.set(value, { userId, scope });
+        return value;
+      },
+      redeem: async (scope: string, value: string) => {
+        const grant = grants.get(value);
+        if (!grant || grant.scope !== scope) return null;
+        grants.delete(value);
+        return grant.userId;
       },
     } as never,
   );
@@ -123,6 +148,34 @@ testCase("an unproven match waits for the mailed confirmation", async () => {
 });
 
 testCase(
+  "an address vouched for by its domain only or known from another link waits for the mailed confirmation",
+  async () => {
+    for (const [existing, user, links] of [
+      [account(), { email: ADDRESS, emailDomainOnly: true }, []],
+      [
+        null,
+        { email: ADDRESS },
+        [
+          {
+            userId: "existing",
+            verifiedEmail: ADDRESS,
+            user: account({ email: `renamed@${DOMAIN}` }),
+          },
+        ],
+      ],
+    ] as const) {
+      const { oauth, calls } = service(existing, true, [...links]);
+      assert.match(
+        await errorOf(oauth.signIn({ ...provider, ...user }, "ip")),
+        /link_email_sent/,
+      );
+      assert.equal(calls.links, 0);
+      assert.equal(calls.mails.length, 1);
+    }
+  },
+);
+
+testCase(
   "administrators and 2FA accounts are never linked this way",
   async () => {
     for (const extra of [{ isAdmin: true }, { totpVerified: true }]) {
@@ -161,23 +214,42 @@ testCase(
   },
 );
 
-testCase("only a token issued for linking confirms a link", async () => {
-  const { oauth, calls } = service(null);
+testCase("only a token issued for linking confirms a link, once", async () => {
+  const { oauth, calls } = service(account({ emailVerifiedAt: null }));
   const jwt = new JwtService({});
-  const claims = {
-    sub: "existing",
-    provider: "microsoft",
-    providerUserId: "subject",
-    providerUsername: "person",
-  };
+  await errorOf(oauth.signIn({ ...provider, email: ADDRESS }, "ip"));
+  const [mailed] = calls.tokens;
+  const {
+    exp: _exp,
+    iat: _iat,
+    aud: _aud,
+    ...payload
+  } = jwt.decode(mailed) as Record<string, unknown>;
   await assert.rejects(
-    oauth.confirmMailedLink(jwt.sign(claims, { secret: SECRET })),
+    oauth.confirmMailedLink(jwt.sign(payload, { secret: SECRET })),
   );
-  await oauth.confirmMailedLink(
-    jwt.sign(claims, { secret: SECRET, audience: "oauth-link" }),
+  const { grant: _grant, ...withoutGrant } = payload;
+  await assert.rejects(
+    oauth.confirmMailedLink(
+      jwt.sign(withoutGrant, { secret: SECRET, audience: "oauth-link" }),
+    ),
   );
+  await oauth.confirmMailedLink(mailed);
+  assert.equal(calls.links, 1);
+  await assert.rejects(oauth.confirmMailedLink(mailed));
   assert.equal(calls.links, 1);
 });
+
+testCase(
+  "a mailed confirmation is void once its grant is revoked",
+  async () => {
+    const { oauth, calls } = service(account({ emailVerifiedAt: null }));
+    await errorOf(oauth.signIn({ ...provider, email: ADDRESS }, "ip"));
+    calls.grants.clear();
+    await assert.rejects(oauth.confirmMailedLink(calls.tokens[0]));
+    assert.equal(calls.links, 0);
+  },
+);
 
 testCase(
   "provider role claims grant and remove administrator rights without changing absent claims",
@@ -217,6 +289,7 @@ testCase(
         [],
         {} as never,
         new JwtService({}),
+        {} as never,
         {} as never,
         {} as never,
       );

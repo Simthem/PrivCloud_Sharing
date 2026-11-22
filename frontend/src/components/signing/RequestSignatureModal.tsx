@@ -1,5 +1,6 @@
 import { isValidSigningRecipientEmail } from "../../utils/signingEmail.util";
 import { useEffect, useState } from "react";
+import useConfig from "../../hooks/config.hook";
 import {
   ActionIcon,
   Alert,
@@ -134,9 +135,11 @@ export default function RequestSignatureModal({
   teamId,
 }: Props) {
   const { user } = useUser();
+  const config = useConfig();
   const intl = useIntl();
   const t = (id: string, defaultMessage?: string) =>
     intl.formatMessage({ id, defaultMessage });
+  const keyEmailAllowed = config.getBoolean("email.enableE2EKeyEmailSharing");
 
   const form = useForm({
     initialValues: {
@@ -544,7 +547,7 @@ export default function RequestSignatureModal({
     }));
 
     const shouldEmailE2EKey = Boolean(
-      encryptionKey && values.sendE2EKeyByEmail,
+      encryptionKey && keyEmailAllowed && values.sendE2EKeyByEmail,
     );
 
     createMutation.mutate({
@@ -960,7 +963,7 @@ export default function RequestSignatureModal({
                     />
                   </SimpleGrid>
                 )}
-                {encryptionKey && (
+                {encryptionKey && keyEmailAllowed && (
                   <>
                     <Divider my="xs" />
                     <Checkbox

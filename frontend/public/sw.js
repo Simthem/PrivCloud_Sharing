@@ -1,10 +1,17 @@
 // PrivCloud_Sharing Service Worker
 // Handles push notifications, notification clicks, and PWA installability.
 //
-// Preview-only fetch interception; all API and upload requests bypass it.
-importScripts("/preview-sw.js");
+// Only preview and download requests are answered here. Every other request,
+// uploads included, still passes through this worker on its way out.
+self.addEventListener("fetch", function (event) {
+  // Chrome never frees the body copy it hands to this worker.
+  var body = event.request.body;
+  if (body) body.cancel().catch(function () {});
+});
 
-var CACHE_NAME = "privcloud-v14";
+importScripts("/preview-sw.js");
+importScripts("/download-sw.js");
+
 var DEFAULT_NOTIFICATION_ICON = "/img/icons/icon-512x512.png";
 var DEFAULT_NOTIFICATION_BADGE = "/img/icons/icon-96x96.png";
 
@@ -14,7 +21,7 @@ function sameOriginAsset(value, fallback) {
     var url = new URL(value, self.location.origin);
     if (url.origin !== self.location.origin) return fallback;
     return url.pathname + url.search;
-  } catch (e) {
+  } catch {
     return fallback;
   }
 }
@@ -24,7 +31,7 @@ function sameOriginPath(value) {
     var url = new URL(value || "/", self.location.origin);
     if (url.origin !== self.location.origin) return "/";
     return url.pathname + url.search + url.hash;
-  } catch (e) {
+  } catch {
     return "/";
   }
 }
@@ -34,7 +41,7 @@ function sameOriginUrl(value) {
     var url = new URL(value || "/", self.location.origin);
     if (url.origin !== self.location.origin) return self.location.origin + "/";
     return url.href;
-  } catch (e) {
+  } catch {
     return self.location.origin + "/";
   }
 }
@@ -42,28 +49,31 @@ function sameOriginUrl(value) {
 function clientUrlMatches(clientUrl, targetUrl) {
   try {
     return new URL(clientUrl).href === targetUrl;
-  } catch (e) {
+  } catch {
     return false;
   }
 }
 
 // -- Install: activate immediately --
-self.addEventListener("install", function (event) {
+self.addEventListener("install", function () {
   self.skipWaiting();
 });
 
 // -- Activate: delete old caches and claim clients --
 self.addEventListener("activate", function (event) {
   event.waitUntil(
-    caches.keys().then(function (names) {
-      return Promise.all(
-        names.map(function (name) {
-          return caches.delete(name);
-        })
-      );
-    }).then(function () {
-      return self.clients.claim();
-    })
+    caches
+      .keys()
+      .then(function (names) {
+        return Promise.all(
+          names.map(function (name) {
+            return caches.delete(name);
+          }),
+        );
+      })
+      .then(function () {
+        return self.clients.claim();
+      }),
   );
 });
 
@@ -73,7 +83,7 @@ self.addEventListener("push", function (event) {
   var payload;
   try {
     payload = event.data.json();
-  } catch (e) {
+  } catch {
     payload = { title: "PrivCloud", body: event.data.text() };
   }
   var title = payload.title || "PrivCloud";
@@ -92,19 +102,26 @@ self.addEventListener("push", function (event) {
 // -- Notification click: open the app at the relevant page --
 self.addEventListener("notificationclick", function (event) {
   event.notification.close();
-  var url = sameOriginUrl(event.notification.data && event.notification.data.url);
+  var url = sameOriginUrl(
+    event.notification.data && event.notification.data.url,
+  );
   event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (clientList) {
-      for (var i = 0; i < clientList.length; i++) {
-        if (clientUrlMatches(clientList[i].url, url) && "focus" in clientList[i]) {
-          return clientList[i].focus();
+    clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then(function (clientList) {
+        for (var i = 0; i < clientList.length; i++) {
+          if (
+            clientUrlMatches(clientList[i].url, url) &&
+            "focus" in clientList[i]
+          ) {
+            return clientList[i].focus();
+          }
         }
-      }
-      if (clients.openWindow) {
-        return clients.openWindow(url).then(function (client) {
-          return client && "focus" in client ? client.focus() : client;
-        });
-      }
-    })
+        if (clients.openWindow) {
+          return clients.openWindow(url).then(function (client) {
+            return client && "focus" in client ? client.focus() : client;
+          });
+        }
+      }),
   );
 });

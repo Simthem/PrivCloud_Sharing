@@ -6,6 +6,8 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { takeWriteLock } from "src/prisma/write-lock.util";
+import { revokeSessions } from "src/auth/sessionRevocation.util";
 import { Prisma } from "@prisma/client";
 import * as argon from "argon2";
 import * as crypto from "crypto";
@@ -198,6 +200,9 @@ export class UserSevice {
         : {};
 
       const updated = await this.prisma.$transaction(async (tx) => {
+        if (current?.isAdmin && user.isAdmin === false) {
+          await this.assertAnotherAdministrator(tx, id);
+        }
         const updated = await tx.user.update({
           where: { id },
           data: {
@@ -225,10 +230,7 @@ export class UserSevice {
           await tx.emailChangeRequest.deleteMany({ where: { userId: id } });
           await tx.emailVerificationToken.deleteMany({ where: { userId: id } });
         }
-        if (hash) {
-          await tx.refreshToken.deleteMany({ where: { userId: id } });
-          await tx.loginToken.deleteMany({ where: { userId: id } });
-        }
+        if (hash) await revokeSessions(tx, id);
         return updated;
       });
       if (administratorId && (addressChanged || hash)) {
@@ -269,21 +271,34 @@ export class UserSevice {
     });
     if (!user) throw new BadRequestException("User not found");
 
-    if (user.isAdmin) {
-      const userCount = await this.prisma.user.count({
-        where: { isAdmin: true },
-      });
-
-      if (userCount === 1) {
-        throw new BadRequestException("Cannot delete the last admin user");
-      }
-    }
+    const deleted = await this.prisma.$transaction(async (tx) => {
+      if (user.isAdmin) await this.assertAnotherAdministrator(tx, id);
+      return tx.user.delete({ where: { id } });
+    });
 
     await Promise.all(
-      user.shares.map((share) => this.fileService.deleteAllFiles(share.id)),
+      user.shares.map((share) =>
+        this.fileService.deleteAllFiles(share.id, share.storageProvider),
+      ),
     );
+    return deleted;
+  }
 
-    return await this.prisma.user.delete({ where: { id } });
+  /**
+   * Taking rights away from an administrator, or deleting one, always leaves
+   * another. The lock serialises such changes across every replica.
+   */
+  private async assertAnotherAdministrator(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ) {
+    await takeWriteLock(tx);
+    const others = await tx.user.count({
+      where: { isAdmin: true, id: { not: userId } },
+    });
+    if (others === 0) {
+      throw new BadRequestException("Cannot remove the last administrator");
+    }
   }
 
   // ─── E2E Encryption Key Management ──────────────────────────────

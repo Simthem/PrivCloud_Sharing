@@ -172,16 +172,24 @@ export class TeamController {
 
   @Delete("admin/:teamId")
   @UseGuards(JwtGuard, AdministratorGuard)
-  adminDeleteTeam(@Param("teamId") teamId: string, @GetUser() user: User) {
+  async adminDeleteTeam(
+    @Param("teamId") teamId: string,
+    @GetUser() user: User,
+    @Req() request: Request,
+  ) {
+    await this.stepUp.consume(request, user, `team.delete:${teamId}`);
     return this.teamService.adminDeleteTeam(teamId, user);
   }
 
   @Delete("admin/:teamId/members/:memberId")
   @UseGuards(JwtGuard, AdministratorGuard)
-  adminRemoveMember(
+  async adminRemoveMember(
     @Param("teamId") teamId: string,
     @Param("memberId") memberId: string,
+    @GetUser() admin: User,
+    @Req() request: Request,
   ) {
+    await this.stepUp.consume(request, admin, `team.member.remove:${memberId}`);
     return this.teamService.adminRemoveMember(teamId, memberId);
   }
 
@@ -203,10 +211,13 @@ export class TeamController {
 
   @Delete("admin/:teamId/folders/:folderId")
   @UseGuards(JwtGuard, AdministratorGuard)
-  adminDeleteFolder(
+  async adminDeleteFolder(
     @Param("teamId") teamId: string,
     @Param("folderId") folderId: string,
+    @GetUser() admin: User,
+    @Req() request: Request,
   ) {
+    await this.stepUp.consume(request, admin, `team.folder.delete:${folderId}`);
     return this.teamService.adminDeleteFolder(teamId, folderId);
   }
 
@@ -221,10 +232,13 @@ export class TeamController {
 
   @Delete("admin/:teamId/files/:fileId")
   @UseGuards(JwtGuard, AdministratorGuard)
-  adminDeleteFile(
+  async adminDeleteFile(
     @Param("teamId") teamId: string,
     @Param("fileId") fileId: string,
+    @GetUser() admin: User,
+    @Req() request: Request,
   ) {
+    await this.stepUp.consume(request, admin, `team.file.delete:${fileId}`);
     return this.teamService.adminDeleteFile(teamId, fileId);
   }
 
@@ -350,21 +364,6 @@ export class TeamController {
   @UseGuards(JwtGuard)
   getTeamShares(@Param("teamId") teamId: string, @GetUser() user: User) {
     return this.teamService.getTeamShares(teamId, user.id);
-  }
-
-  @Post(":teamId/rotate-team-key")
-  @UseGuards(JwtGuard)
-  @Throttle({ default: { limit: 5, ttl: 3600 } })
-  rotateTeamKey(
-    @Param("teamId") teamId: string,
-    @Body() body: { newWrappedTeamKey: string },
-    @GetUser() user: User,
-  ) {
-    return this.teamService.rotateTeamKey(
-      teamId,
-      user.id,
-      body.newWrappedTeamKey,
-    );
   }
 
   @Get(":teamId/key-rotation")
@@ -761,6 +760,7 @@ export class TeamController {
   }
 
   @Get(":teamId/search-index")
+  @Throttle({ default: { limit: 20, ttl: minutes(1) } })
   @UseGuards(JwtGuard)
   getSearchIndex(@Param("teamId") teamId: string, @GetUser() user: User) {
     return this.teamService.getClientSearchIndex(teamId, user.id);

@@ -143,8 +143,10 @@ export class EmailService {
         text,
         messageId: options.messageId,
       })
-      .catch(() => {
-        this.logger.error("Email delivery failed");
+      .catch((error: { code?: string; responseCode?: number }) => {
+        this.logger.error(
+          `Email delivery failed: ${error?.code ?? "unknown"} ${error?.responseCode ?? ""}`.trim(),
+        );
         throw new InternalServerErrorException("Failed to send email");
       });
   }
@@ -243,7 +245,7 @@ export class EmailService {
   async sendResetPasswordEmail(recipientEmail: string, token: string) {
     const resetPasswordUrl = `${this.config.get(
       "general.appUrl",
-    )}/auth/resetPassword/${token}`;
+    )}/auth/resetPassword/link#${token}`;
 
     await this.sendMail(
       recipientEmail,
@@ -311,8 +313,10 @@ export class EmailService {
               : "Test email (general account)",
           text: "This is a test email",
         })
-        .catch(() => {
-          this.logger.error("Test email delivery failed");
+        .catch((error: { code?: string; responseCode?: number }) => {
+          this.logger.error(
+            `Test email delivery failed: ${error?.code ?? "unknown"} ${error?.responseCode ?? ""}`.trim(),
+          );
           throw new InternalServerErrorException("Failed to send test email");
         });
     }

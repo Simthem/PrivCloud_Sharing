@@ -26,6 +26,8 @@ function fixture(teamFolderId) {
   let effectIndex = 0;
   let pending;
   let settled = 0;
+  let dismissed = [];
+  let element = null;
   const jsx = (type, props) => ({ type, props });
   const defaultExport = (value) => ({ __esModule: true, default: value });
   const modules = {
@@ -48,6 +50,14 @@ function fixture(teamFolderId) {
       Stack: "Stack",
       Text: "Text",
     },
+    "@mantine/hooks": {
+      useLocalStorage: () => [
+        dismissed,
+        (value) => {
+          dismissed = value;
+        },
+      ],
+    },
     "@tanstack/react-query": { useQuery: () => ({ data: pending }) },
     "next/link": defaultExport("Link"),
     "useTranslate.hook": defaultExport(() => (id) => id),
@@ -69,7 +79,17 @@ function fixture(teamFolderId) {
     render(uploads) {
       pending = uploads;
       refIndex = effectIndex = 0;
-      exports.default({ teamFolderId, onSettled: () => settled++ });
+      element = exports.default({
+        teamFolderId,
+        onSettled: () => settled++,
+      });
+      return element;
+    },
+    close() {
+      element.props.onClose();
+    },
+    get dismissed() {
+      return dismissed;
     },
     get settled() {
       return settled;
@@ -77,11 +97,11 @@ function fixture(teamFolderId) {
   };
 }
 
-const upload = (id, teamFolderId) => ({
+const upload = (id, teamFolderId, fileCount = 1) => ({
   id,
   teamFolderId,
   createdAt: "2026-10-14T12:00:00.000Z",
-  fileCount: 1,
+  fileCount,
   size: 1,
   canResume: true,
 });
@@ -110,4 +130,27 @@ test("the first listing after mount is a baseline, not a settlement", () => {
   view.render([]);
   view.render([upload("native", "folder-a")]);
   assert.equal(view.settled, 0);
+});
+
+test("uploads without any saved file are not listed", () => {
+  const view = fixture();
+  assert.equal(view.render([upload("empty", "folder-a", 0)]), null);
+  assert.notEqual(
+    view.render([upload("empty", "folder-a", 0), upload("saved", "folder-a")]),
+    null,
+  );
+});
+
+test("a closed notice comes back only for a new upload", () => {
+  const view = fixture();
+  view.render([upload("first", "folder-a")]);
+  view.close();
+  assert.deepEqual([...view.dismissed], ["first"]);
+  assert.equal(view.render([upload("first", "folder-a")]), null);
+  assert.notEqual(
+    view.render([upload("first", "folder-a"), upload("second", "folder-a")]),
+    null,
+  );
+  view.render([upload("second", "folder-a")]);
+  assert.deepEqual([...view.dismissed], []);
 });

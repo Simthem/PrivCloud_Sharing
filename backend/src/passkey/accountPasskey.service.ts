@@ -625,7 +625,7 @@ export class AccountPasskeyService {
 
   // Evidence vault of the platform administrators, with a separate purpose.
   /** A random challenge: the vault opens for a fresh, verified presence. */
-  beginVault(user: User) {
+  async beginVault(user: User) {
     return this.beginOwnAssertion(
       user,
       "VAULT",
@@ -634,6 +634,7 @@ export class AccountPasskeyService {
         code: "vault_passkey_required",
       },
       {},
+      await this.accountCredentials(user.id),
     );
   }
 
@@ -644,7 +645,7 @@ export class AccountPasskeyService {
       "VAULT",
     );
     const response = dto.response as unknown as AuthenticationResponseJSON;
-    const credential = (await this.credentials(user.id)).find(
+    const credential = (await this.accountCredentials(user.id)).find(
       (stored) => stored.credentialId === response?.id,
     );
     if (

@@ -1,4 +1,7 @@
-import { writeShareTokenCookie } from "./share-token-cookie.util";
+import {
+  readShareVisitToken,
+  writeShareTokenCookie,
+} from "./share-token-cookie.util";
 import {
   Body,
   Controller,
@@ -313,7 +316,6 @@ export class ShareController {
     await this.shareService.remove(
       id,
       false,
-      request.cookies?.reverse_share_token,
       request.cookies?.[anonymousCookieName],
       discardUploadedFiles === "true",
     );
@@ -363,6 +365,7 @@ export class ShareController {
       id,
       body.password,
       (request.user as User | undefined)?.id,
+      readShareVisitToken(request, id),
     );
 
     writeShareTokenCookie(

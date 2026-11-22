@@ -304,7 +304,10 @@ export class UserController {
   async adminMarkEmailVerified(
     @Param("id") id: string,
     @GetUser() admin: User,
+    @Req() request: Request,
   ) {
+    // Reinforced signatures trust this mark: a session alone cannot set it.
+    await this.stepUp.consume(request, admin, `user.email.verify:${id}`);
     const user = await this.userService.adminMarkEmailVerified(id);
     this.logger.warn(
       `Administrator ${admin.id} marked the e-mail address of user ${id} as verified`,

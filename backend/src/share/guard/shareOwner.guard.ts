@@ -4,7 +4,6 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { openToken } from "../../config/account-secrets";
 import { User } from "@prisma/client";
 import { Request } from "express";
 import * as crypto from "crypto";
@@ -13,6 +12,7 @@ import { PrismaService } from "src/prisma/prisma.service";
 import { TeamShareAccessService } from "src/share/team-share-access.service";
 import { anonymousShareSessionCookieName } from "src/share/anonymous-share-session.util";
 import { JwtGuard } from "../../auth/guard/jwt.guard";
+import { isShareExpired } from "../share-expiration.util";
 
 @Injectable()
 export class ShareOwnerGuard extends JwtGuard {
@@ -51,21 +51,18 @@ export class ShareOwnerGuard extends JwtGuard {
     }
     const user = request.user as User | undefined;
 
-    // If it's an anonymous share, require the reverse_share_token cookie
-    // to prove session ownership (prevents anyone from modifying anonymous shares)
+    // An anonymous share belongs to the browser session that created it. The
+    // link of a reverse share is shared by every uploader, so it proves
+    // nothing, and an upload through it stops being the uploader's once it is
+    // finished or the link has expired.
     if (!share.creatorId) {
-      if (share.reverseShare) {
-        const { reverse_share_token } = request.cookies || {};
-        if (
-          reverse_share_token &&
-          openToken("reverseShare", share.reverseShare.token) ===
-            reverse_share_token
-        ) {
-          return true;
-        }
+      if (
+        share.reverseShare &&
+        (share.uploadLocked ||
+          isShareExpired(share.reverseShare.shareExpiration))
+      ) {
+        return false;
       }
-      // SECURITY: Anonymous shares without a valid reverse-share token require
-      // a share-scoped session cookie whose SHA-256 hash matches the stored token.
       const anonymousSession =
         request.cookies?.[anonymousShareSessionCookieName(shareId)];
       if (anonymousSession && share.anonymousSessionToken) {

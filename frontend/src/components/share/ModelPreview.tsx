@@ -187,7 +187,12 @@ export default function ModelPreview({
       ref={container}
       pos="relative"
       h="min(70vh, 640px)"
-      style={{ touchAction: "none", cursor: "grab" }}
+      style={{
+        touchAction: "none",
+        cursor: "grab",
+        flex: "1 1 auto",
+        minHeight: 200,
+      }}
     >
       {loading && (
         <Center pos="absolute" inset={0}>

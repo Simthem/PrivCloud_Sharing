@@ -25,10 +25,9 @@
 	reverse_proxy /api/* http://127.0.0.1:{$BACKEND_PORT:8080} {
 		lb_try_duration 5s
 		lb_try_interval 250ms
-		# Trust only loopback + RFC-1918 private ranges (Docker bridge/overlay
-		# networks and the upstream Nginx reverse proxy on the host).
-		# NEVER use 0.0.0.0/0 - it lets any client spoof X-Forwarded-For.
-		trusted_proxies 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+		# Addresses of the proxies in front, TRUSTED_PROXY_RANGES narrows them to
+		# the real ones. Any other private host could otherwise claim a client IP.
+		trusted_proxies {$TRUSTED_PROXY_RANGES:127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}
 		transport http {
 			response_header_timeout 600s
 			read_buffer 1mb
@@ -41,7 +40,7 @@
 
 	# Reverse proxy for all other requests
 	reverse_proxy /* http://127.0.0.1:{$PORT:3333} {
-		trusted_proxies 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+		trusted_proxies {$TRUSTED_PROXY_RANGES:127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}
 		header_up -Via
 		header_down -Via
 	}

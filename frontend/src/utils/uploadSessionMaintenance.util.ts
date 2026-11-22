@@ -1,13 +1,14 @@
 import { scheduleUploadInterval } from "./uploadClock.util";
 import {
   probeSafeLineSession,
+  resolveChallengeViaIframe,
   type SafeLineSessionStatus,
 } from "./safelineChallenge.util";
 
 type MaintenanceOptions = {
   isActive: () => boolean;
   heartbeat: () => Promise<unknown>;
-  resolveChallenge: () => Promise<void>;
+  resolveChallenge?: () => Promise<unknown>;
   probeSession?: () => Promise<SafeLineSessionStatus>;
 };
 
@@ -15,8 +16,9 @@ type MaintenanceOptions = {
 export function startUploadSessionMaintenance({
   isActive,
   heartbeat,
-  resolveChallenge,
-  probeSession = () => probeSafeLineSession(true),
+  // Uploads only need the API, and nothing opens a window the user did not ask for.
+  resolveChallenge = () => resolveChallengeViaIframe(),
+  probeSession = () => probeSafeLineSession(),
 }: MaintenanceOptions): () => void {
   let stopped = false;
   let checking = false;

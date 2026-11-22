@@ -1,11 +1,11 @@
 import { getAdminUploadStatus } from "./admin-upload-status.util";
-import { openToken, tokenCandidates } from "../config/account-secrets";
 import { TeamShareAccessService } from "./team-share-access.service";
 import { TeamNotificationService } from "src/teamNotification/teamNotification.service";
 import { fileRequestServiceMessage } from "src/teamFileRequest/team-file-request-i18n";
 import {
   BadRequestException,
   ConflictException,
+  ServiceUnavailableException,
   ForbiddenException,
   InternalServerErrorException,
   Injectable,
@@ -56,6 +56,8 @@ import { assertFileRequestUpload } from "src/teamFileRequest/team-file-request-a
 import { touchShareUploadActivity } from "./upload-activity.util";
 import { byName } from "../utils/sort.util";
 import { serializeActivityNames } from "src/team/team-activity-names.util";
+
+const MIN_OPEN_SHARE_ID_LENGTH = 8;
 
 @Injectable()
 export class ShareService {
@@ -295,6 +297,7 @@ export class ShareService {
     reverseShareToken?: string,
     clientContentScheme?: 2,
   ) {
+    this.assertUploadsOpen(user);
     if (share.id.startsWith("v2.") && !share.isE2EEncrypted) {
       throw new BadRequestException(
         "A v2 share identifier requires end-to-end encryption",
@@ -322,6 +325,18 @@ export class ShareService {
     const hasSecurity =
       !!share.security && Object.keys(share.security).length > 0;
     const hasPassword = !!share.security?.password;
+
+    // Without a password the link alone opens a public share: it must not be
+    // short enough to guess.
+    if (
+      !hasPassword &&
+      !share.teamFolderId &&
+      share.id.replace(/^v2\./, "").length < MIN_OPEN_SHARE_ID_LENGTH
+    ) {
+      throw new BadRequestException(
+        `A share without password needs a link of at least ${MIN_OPEN_SHARE_ID_LENGTH} characters`,
+      );
+    }
 
     if (!hasSecurity) {
       share.security = undefined;
@@ -608,9 +623,13 @@ export class ShareService {
     const archive = createZipArchive({
       zlib: { level: this.config.get("share.zipCompressionLevel") },
     });
-    const writeStream = fs.createWriteStream(
-      path.join(sharePath, "archive.zip"),
-    );
+    // Written aside and renamed once complete: a reader never gets half of it.
+    const partialPath = path.join(sharePath, "archive.zip.partial");
+    const writeStream = fs.createWriteStream(partialPath);
+    const written = new Promise<void>((resolve, reject) => {
+      writeStream.on("close", resolve);
+      writeStream.on("error", reject);
+    });
 
     for (const file of files) {
       const filePath = path.resolve(sharePath, file.id);
@@ -634,6 +653,8 @@ export class ShareService {
 
     archive.pipe(writeStream);
     await archive.finalize();
+    await written;
+    await fs.promises.rename(partialPath, path.join(sharePath, "archive.zip"));
     this.logger.debug("Created share archive");
   }
 
@@ -681,6 +702,38 @@ export class ShareService {
         "You need at least on file in your share to complete it.",
       );
     }
+    // Files of a team folder upload are encrypted under the key of the time.
+    // A rotation since then would publish them unreadable.
+    const folder =
+      share.isE2EEncrypted && share.teamFolderId
+        ? await this.prisma.teamFolder.findUnique({
+            where: { id: share.teamFolderId },
+            select: { teamId: true },
+          })
+        : null;
+    if (folder) {
+      const team = await this.prisma.team.findUnique({
+        where: { id: folder.teamId },
+        select: {
+          keyRotatedAt: true,
+          keyRotations: {
+            where: { status: { in: ["PREPARING", "REENCRYPTING", "PAUSED"] } },
+            select: { id: true },
+            take: 1,
+          },
+        },
+      });
+      if (
+        team?.keyRotations.length ||
+        (!share.hasBeenCompleted &&
+          team?.keyRotatedAt &&
+          share.createdAt < team.keyRotatedAt)
+      ) {
+        throw new ConflictException(
+          "The team key changed during this upload. Start it again.",
+        );
+      }
+    }
 
     // Claim completion before email, push and archive side effects. The
     // compare-and-set makes concurrent browser effects idempotent.
@@ -704,13 +757,11 @@ export class ShareService {
 
       if (
         share.reverseShare &&
+        !share.hasBeenCompleted &&
         share.reverseShare.shareExpiration.getTime() !== 0
       ) {
         const decremented = await tx.reverseShare.updateMany({
-          where: {
-            token: { in: tokenCandidates("reverseShare", reverseShareToken) },
-            remainingUses: { gt: 0 },
-          },
+          where: { id: share.reverseShare.id, remainingUses: { gt: 0 } },
           data: { remainingUses: { decrement: 1 } },
         });
         if (decremented.count === 0) {
@@ -897,6 +948,12 @@ export class ShareService {
 
   async revertComplete(id: string) {
     this.logger.debug("Reverting share completion");
+    const sharePath = path.resolve(SHARE_DIRECTORY, id);
+    if (sharePath.startsWith(path.resolve(SHARE_DIRECTORY) + path.sep)) {
+      await fs.promises.rm(path.join(sharePath, "archive.zip"), {
+        force: true,
+      });
+    }
     return this.prisma.share.update({
       where: { id },
       data: {
@@ -1278,7 +1335,6 @@ export class ShareService {
   async remove(
     shareId: string,
     isDeleterAdmin = false,
-    reverseShareToken?: string,
     anonymousSessionToken?: string,
     discardUploadedFiles = false,
   ) {
@@ -1287,10 +1343,7 @@ export class ShareService {
     );
     const share = await this.prisma.share.findUnique({
       where: { id: shareId },
-      include: {
-        reverseShare: { select: { token: true } },
-        _count: { select: { files: true } },
-      },
+      include: { _count: { select: { files: true } } },
     });
 
     if (!share) {
@@ -1298,25 +1351,18 @@ export class ShareService {
       throw new NotFoundException("Share not found");
     }
 
-    // Defense in depth for anonymous cancellations. ShareOwnerGuard performs
-    // the first authorization check; the service independently verifies that
-    // the supplied proof belongs to this exact share.
-    if (!share.creatorId && !isDeleterAdmin) {
-      const ownsViaReverseShare =
-        !!reverseShareToken &&
-        !!share.reverseShare?.token &&
-        reverseShareToken ===
-          openToken("reverseShare", share.reverseShare.token);
-      const ownsViaAnonymousSession =
+    // ShareOwnerGuard checks first. The anonymous session must also belong to
+    // this very share.
+    if (
+      !share.creatorId &&
+      !isDeleterAdmin &&
+      !(
         !!anonymousSessionToken &&
-        this.verifyAnonymousSessionToken(share, anonymousSessionToken);
-
-      if (!ownsViaReverseShare && !ownsViaAnonymousSession) {
-        this.logger.warn(
-          `Forbidden remove for anonymous share: share=redacted`,
-        );
-        throw new ForbiddenException("Anonymous share ownership not proven");
-      }
+        this.verifyAnonymousSessionToken(share, anonymousSessionToken)
+      )
+    ) {
+      this.logger.warn(`Forbidden remove for anonymous share: share=redacted`);
+      throw new ForbiddenException("Anonymous share ownership not proven");
     }
 
     // Older clients may publish a partial share at byte progress 100%, then
@@ -1376,6 +1422,25 @@ export class ShareService {
     );
   }
 
+  /**
+   * Maintenance closes uploads to everyone but administrators and the listed
+   * addresses. The upload page says so, this enforces it for any client.
+   */
+  private assertUploadsOpen(user?: User) {
+    if (!this.configService.get("general.maintenanceMode") || user?.isAdmin)
+      return;
+    const allowed = (
+      this.configService.get("general.maintenanceAllowedEmails") || ""
+    )
+      .split(/[\n,]+/)
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean);
+    if (user?.email && allowed.includes(user.email.toLowerCase())) return;
+    throw new ServiceUnavailableException(
+      "Uploads are paused during maintenance",
+    );
+  }
+
   async isShareCompleted(id: string) {
     return (await this.prisma.share.findUnique({ where: { id } })).uploadLocked;
   }
@@ -1422,13 +1487,22 @@ export class ShareService {
     await this.increaseViewCount(share);
   }
 
-  async getShareToken(shareId: string, password: string, visitorId?: string) {
+  async getShareToken(
+    shareId: string,
+    password: string,
+    visitorId?: string,
+    heldToken?: string,
+  ) {
     const share = await this.prisma.share.findFirst({
       where: { id: shareId },
       include: {
         security: true,
       },
     });
+    // Nobody but its creator visits a share still being uploaded.
+    if (!share || (!share.uploadLocked && share.creatorId !== visitorId)) {
+      throw new NotFoundException("Share not found");
+    }
 
     if (share?.security?.password) {
       if (!password) {
@@ -1447,6 +1521,10 @@ export class ShareService {
       }
     }
 
+    // A visitor asking again keeps the visit already counted.
+    if (heldToken && (await this.verifyShareToken(shareId, heldToken))) {
+      return heldToken;
+    }
     await this.countVisit(share, visitorId);
 
     const token = await this.generateShareToken(shareId);

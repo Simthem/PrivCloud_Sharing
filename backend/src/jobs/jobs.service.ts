@@ -13,6 +13,7 @@ import { TeamExternalService } from "src/teamExternal/team-external.service";
 import {
   ABANDONED_UPLOAD_CLEANUP_CRON,
   getAbandonedUploadCutoff,
+  getAbandonedUploadRetentionCutoff,
 } from "src/share/upload-activity.util";
 import { NEVER_EXPIRES_CUTOFF_DATE } from "src/utils/date.util";
 import { appendSignatureAuditEvent } from "src/signing/signing-audit.util";
@@ -139,6 +140,7 @@ export class JobsService {
   async deleteUnfinishedShares() {
     await this.runExclusive("deleteUnfinishedShares", async () => {
       const inactivityCutoff = getAbandonedUploadCutoff();
+      const retentionCutoff = getAbandonedUploadRetentionCutoff();
       const unfinishedShares = await this.prisma.share.findMany({
         where: {
           uploadLastActivityAt: { lt: inactivityCutoff },
@@ -169,32 +171,32 @@ export class JobsService {
           continue;
         }
 
-        // Preserve files even when the browser never acknowledged completion.
-        if ((unfinishedShare._count?.files || 0) > 0) continue;
-        // A WAF challenge can stop the first init before any part exists. An
-        // authenticated owner's S3 share must remain discoverable for retry.
-        if (
-          unfinishedShare.creatorId &&
-          unfinishedShare.storageProvider === "S3"
-        )
-          continue;
+        // Committed files and an owner's S3 reservation stay resumable for
+        // the retention period, then the upload counts as abandoned.
+        const expired = unfinishedShare.uploadLastActivityAt < retentionCutoff;
+        if (!expired) {
+          if ((unfinishedShare._count?.files || 0) > 0) continue;
+          if (
+            unfinishedShare.creatorId &&
+            unfinishedShare.storageProvider === "S3"
+          )
+            continue;
+        }
 
         // Protect transfers still handled by an older pre-heartbeat process.
         // S3 multipart timestamps and local file mtimes remain authoritative
         // even when the old backend cannot update the Share row.
         try {
           if (
-            await this.fileService.hasPendingMultipartUpload(
+            !expired &&
+            ((await this.fileService.hasPendingMultipartUpload(
               unfinishedShare.id,
               unfinishedShare.storageProvider,
-            )
-          )
-            continue;
-          if (
-            await this.fileService.hasCompletedUploadData(
-              unfinishedShare.id,
-              unfinishedShare.storageProvider,
-            )
+            )) ||
+              (await this.fileService.hasCompletedUploadData(
+                unfinishedShare.id,
+                unfinishedShare.storageProvider,
+              )))
           )
             continue;
           const storageActivity =
@@ -230,8 +232,15 @@ export class JobsService {
             id: unfinishedShare.id,
             uploadLocked: false,
             uploadCleanupStartedAt: null,
-            uploadLastActivityAt: { lt: inactivityCutoff },
-            files: { none: {} },
+            ...(expired
+              ? {
+                  hasBeenCompleted: false,
+                  uploadLastActivityAt: { lt: retentionCutoff },
+                }
+              : {
+                  uploadLastActivityAt: { lt: inactivityCutoff },
+                  files: { none: {} },
+                }),
           },
           data: { uploadCleanupStartedAt: cleanupStartedAt },
         });
@@ -241,10 +250,11 @@ export class JobsService {
         // the DB record survives and we can retry next cycle.
         try {
           if (
-            await this.fileService.hasPendingMultipartUpload(
+            !expired &&
+            (await this.fileService.hasPendingMultipartUpload(
               unfinishedShare.id,
               unfinishedShare.storageProvider,
-            )
+            ))
           ) {
             await this.prisma.share.updateMany({
               where: {
@@ -258,10 +268,11 @@ export class JobsService {
           // Recheck S3 after the database claim. Completion can have raced the
           // first probe, or succeeded before its database response was lost.
           if (
-            await this.fileService.hasCompletedUploadData(
+            !expired &&
+            (await this.fileService.hasCompletedUploadData(
               unfinishedShare.id,
               unfinishedShare.storageProvider,
-            )
+            ))
           ) {
             await this.prisma.share.updateMany({
               where: {

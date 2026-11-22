@@ -44,6 +44,8 @@ const ADMIN_ROLES = ["OWNER", "ADMIN"];
 // whether a preview exists, belongs to someone else, expired or was revoked.
 const notFound = () => new NotFoundException("Preview not found");
 
+const PAGE_VIEW_JOURNAL_WINDOW_MS = 10 * 60 * 1000;
+
 @Injectable()
 export class TeamExternalService {
   private readonly logger = new Logger(TeamExternalService.name);
@@ -792,14 +794,17 @@ export class TeamExternalService {
     ) {
       throw notFound();
     }
-    await this.audit.appendEvent({
-      teamId: preview.teamId,
-      kind: "PAGE",
-      actorEmail: user.email,
-      previewId: preview.id,
-      seatId: preview.seatId,
-      pageIndex: index,
-    });
+    // Every view is journaled, a page read again within minutes only once.
+    if (this.firstPageView(user.id, preview.id, index)) {
+      await this.audit.appendEvent({
+        teamId: preview.teamId,
+        kind: "PAGE",
+        actorEmail: user.email,
+        previewId: preview.id,
+        seatId: preview.seatId,
+        pageIndex: index,
+      });
+    }
     const bytes = await this.fileService.getFileByKey(
       externalPreviewPageKey(preview.id, index),
     );
@@ -834,6 +839,24 @@ export class TeamExternalService {
     });
     if (!stillAllowed) throw notFound();
     return bytes;
+  }
+
+  private readonly recentPageViews = new Map<string, number>();
+
+  private firstPageView(userId: string, previewId: string, index: number) {
+    const now = Date.now();
+    for (const [key, at] of this.recentPageViews) {
+      if (now - at < PAGE_VIEW_JOURNAL_WINDOW_MS) break;
+      this.recentPageViews.delete(key);
+    }
+    const key = `${userId}:${previewId}:${index}`;
+    if (this.recentPageViews.has(key)) return false;
+    if (this.recentPageViews.size >= 50_000) {
+      const oldest = this.recentPageViews.keys().next().value;
+      if (oldest !== undefined) this.recentPageViews.delete(oldest);
+    }
+    this.recentPageViews.set(key, now);
+    return true;
   }
 
   // ===========================================================================

@@ -3,10 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import { FormattedMessage } from "react-intl";
 import useTranslate from "../../hooks/useTranslate.hook";
 import shareService from "../../services/share.service";
+import { downloadErrorKey } from "../../utils/downloadError.util";
 import toast from "../../utils/toast.util";
 import { FileMetaData } from "../../types/File.type";
 import DownloadProgressIndicator from "./DownloadProgressIndicator";
-import type { ThrownError } from "../../types/thrownError.type";
 
 const DownloadAllButton = ({
   shareId,
@@ -41,11 +41,9 @@ const DownloadAllButton = ({
         },
         controller.signal,
       );
-    } catch (caughtValue) {
-      const e = caughtValue as ThrownError;
-      if (e.name !== "AbortError") {
-        toast.error(t("common.error"));
-      }
+    } catch (error) {
+      const message = downloadErrorKey(error);
+      if (message) toast.error(t(message));
     } finally {
       abortRef.current = null;
       setIsLoading(false);
@@ -66,11 +64,9 @@ const DownloadAllButton = ({
         },
         controller.signal,
       );
-    } catch (caughtValue) {
-      const e = caughtValue as ThrownError;
-      if (e.name !== "AbortError") {
-        toast.error(t("common.error"));
-      }
+    } catch (error) {
+      const message = downloadErrorKey(error);
+      if (message) toast.error(t(message));
     } finally {
       abortRef.current = null;
       setIsLoading(false);

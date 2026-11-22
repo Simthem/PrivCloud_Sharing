@@ -5,6 +5,7 @@ import {
   OnApplicationBootstrap,
   ServiceUnavailableException,
 } from "@nestjs/common";
+import { takeWriteLock } from "src/prisma/write-lock.util";
 import { Cron } from "@nestjs/schedule";
 import * as crypto from "crypto";
 import { Prisma } from "@prisma/client";
@@ -206,33 +207,36 @@ export class EmailVerificationService implements OnApplicationBootstrap {
         emailVerifiedAt: null,
         emailVerificationDeletionStartedAt: null,
       },
-      include: {
-        emailVerificationTokens: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-        },
-      },
     });
 
     // Keep the public response indistinguishable for unknown, legacy, verified
     // and throttled addresses to limit account enumeration and email bombing.
     if (!user) return outcome;
 
-    const newest = user.emailVerificationTokens[0];
-    if (
-      newest &&
-      Date.now() - newest.createdAt.getTime() < this.resendCooldownMs
-    ) {
-      // Backstop for the replicas that did not serve the previous request and
-      // for the link issued at sign-up moments earlier.
-      return outcome;
-    }
-
     try {
-      await this.prisma.$transaction((tx) =>
-        this.issueInTransaction(tx, user, !user.emailVerificationRequiredAt),
-      );
-      await this.emailOutbox.deliverPending();
+      // The cooldown in memory is per replica: the account row, locked,
+      // decides for all of them, and for the link issued at sign-up.
+      const issued = await this.prisma.$transaction(async (tx) => {
+        await takeWriteLock(tx);
+        const newest = await tx.emailVerificationToken.findFirst({
+          where: { userId: user.id },
+          orderBy: { createdAt: "desc" },
+          select: { createdAt: true },
+        });
+        if (
+          newest &&
+          Date.now() - newest.createdAt.getTime() < this.resendCooldownMs
+        ) {
+          return false;
+        }
+        await this.issueInTransaction(
+          tx,
+          user,
+          !user.emailVerificationRequiredAt,
+        );
+        return true;
+      });
+      if (issued) await this.emailOutbox.deliverPending();
     } catch {
       this.logger.warn("Could not resend an email-verification message");
     }

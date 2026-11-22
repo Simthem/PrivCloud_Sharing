@@ -94,6 +94,10 @@ function authService(options: { ldap?: boolean } = {}) {
               writes.push("sessions");
             },
           },
+          loginToken: { deleteMany: async () => ({ count: 0 }) },
+          stepUpGrant: { deleteMany: async () => ({ count: 0 }) },
+          evidenceVaultSession: { deleteMany: async () => ({ count: 0 }) },
+          oAuthReauthToken: { deleteMany: async () => ({ count: 0 }) },
         }),
     },
   });
@@ -327,7 +331,7 @@ testCase(
 );
 
 testCase(
-  "a provider that does not date the sign-in cannot confirm a password",
+  "a provider that does not date the sign-in cannot confirm any change",
   async () => {
     const { oauth, store, cookies, response } = controller();
     const intent = await store.service.startIntent(
@@ -345,18 +349,18 @@ testCase(
       (error: { key?: string }) => error.key === "reauth_unsupported",
     );
     assert.equal(cookies.reauth_confirmation, undefined);
-    // A 2FA confirmation keeps working with such a provider.
+    // Nor a 2FA change: the provider may reuse a session left open.
     const twoFactor = await store.service.startIntent("user-1", "github");
-    await oauth.completeReauth(
-      "github",
-      twoFactor,
-      { providerId: "github-1" },
-      response,
+    await assert.rejects(
+      oauth.completeReauth(
+        "github",
+        twoFactor,
+        { providerId: "github-1" },
+        response,
+      ),
+      (error: { key?: string }) => error.key === "reauth_unsupported",
     );
-    assert.equal(
-      await store.service.hasProof(cookies.reauth_confirmation.value, "user-1"),
-      true,
-    );
+    assert.equal(cookies.reauth_confirmation, undefined);
   },
 );
 

@@ -152,8 +152,10 @@ function serviceHarness() {
         findUnique: async () => ({
           email: viewer.email,
           emailVerifiedAt: new Date(),
+          emailVerificationSource: "EMAIL_LINK",
         }),
       },
+      oAuthUser: { findMany: async () => [] },
       signatureDocument: {
         findMany: async () => [doc],
         findFirst: async ({ where }: Prisma.SignatureDocumentFindFirstArgs) =>

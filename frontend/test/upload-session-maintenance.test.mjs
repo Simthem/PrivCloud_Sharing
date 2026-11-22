@@ -142,3 +142,56 @@ test("network outages never trigger challenges and overlapping checks are serial
     f.restore();
   }
 });
+test("by default only the API is probed and no window ever opens", async (t) => {
+  const f = fixture();
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const fetchDescriptor = Object.getOwnPropertyDescriptor(globalThis, "fetch");
+  const urls = [],
+    frames = [];
+  let opened = 0,
+    challenged = false,
+    stop;
+  f.window.open = () => {
+    opened++;
+    return null;
+  };
+  f.window.location = { origin: "https://app.example" };
+  f.document.createElement = () => ({
+    style: {},
+    setAttribute() {},
+    remove() {},
+  });
+  f.document.body = { appendChild: (frame) => frames.push(frame) };
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    return challenged
+      ? new Response("<!doctype html>", {
+          status: 468,
+          headers: { "content-type": "text/html" },
+        })
+      : Response.json({});
+  };
+  try {
+    stop = startUploadSessionMaintenance({
+      isActive: () => true,
+      heartbeat: async () => {},
+    });
+    await tick();
+    challenged = true;
+    for (const fn of f.intervals.values()) fn();
+    await tick();
+    await tick();
+    assert.ok(urls.length >= 2);
+    assert.ok(urls.every((url) => url.startsWith("/api/configs?")));
+    assert.equal(frames.length, 1);
+    assert.equal(opened, 0);
+    t.mock.timers.tick(45_000);
+    await tick();
+    assert.equal(opened, 0);
+  } finally {
+    stop?.();
+    if (fetchDescriptor)
+      Object.defineProperty(globalThis, "fetch", fetchDescriptor);
+    f.restore();
+  }
+});

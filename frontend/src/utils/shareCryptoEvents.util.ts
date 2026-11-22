@@ -10,6 +10,8 @@ export type ShareCryptoEvent =
   | "unwrap_error"
   | "decrypt_error"
   | "download_error"
+  | "download_too_large"
+  | "integrity_error"
   | "rewrap_ok"
   | "rewrap_error";
 
@@ -34,7 +36,10 @@ export function reportShareCryptoEvent(
     .catch(() => undefined);
 }
 
-/** Count a failed E2E download as a decryption or a transfer failure. */
+/**
+ * Count a failed E2E download as a decryption, an integrity, a size or a
+ * transfer failure.
+ */
 export function reportE2EDownloadFailure(
   error: unknown,
   scheme: number | null | undefined,
@@ -47,7 +52,11 @@ export function reportE2EDownloadFailure(
   reportShareCryptoEvent(
     name === "OperationError" || /decrypt/i.test(message ?? "")
       ? "decrypt_error"
-      : "download_error",
+      : name === "ContentIntegrityError"
+        ? "integrity_error"
+        : name === "LargeDownloadRequiresDiskAccessError"
+          ? "download_too_large"
+          : "download_error",
     scheme,
   );
 }

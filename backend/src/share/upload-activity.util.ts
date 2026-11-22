@@ -4,6 +4,8 @@ import type { PrismaService } from "src/prisma/prisma.service";
 export const UPLOAD_ACTIVITY_TOUCH_INTERVAL_MS = 60 * 1000;
 export const ABANDONED_UPLOAD_TIMEOUT_MS = 45 * 60 * 1000;
 export const ABANDONED_UPLOAD_CLEANUP_CRON = "*/5 * * * *";
+// An upload never finalized keeps its files this long after its last activity.
+export const ABANDONED_UPLOAD_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 type UploadActivityShare = {
   id: string;
@@ -14,6 +16,9 @@ type UploadActivityShare = {
 
 export const getAbandonedUploadCutoff = (now = new Date()) =>
   new Date(now.getTime() - ABANDONED_UPLOAD_TIMEOUT_MS);
+
+export const getAbandonedUploadRetentionCutoff = (now = new Date()) =>
+  new Date(now.getTime() - ABANDONED_UPLOAD_RETENTION_MS);
 
 /**
  * Persist upload activity at most once a minute. The caller has already

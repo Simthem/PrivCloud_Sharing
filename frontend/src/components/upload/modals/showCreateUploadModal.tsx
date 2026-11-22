@@ -90,15 +90,20 @@ const showCreateUploadModal = (
   });
 };
 
+// The server refuses a shorter link on a share without password.
+const MIN_OPEN_SHARE_ID_LENGTH = 8;
+
 const generateShareId = (length: number = 16) => {
   const chars =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const target = Math.max(length, MIN_OPEN_SHARE_ID_LENGTH);
   let result = "";
-  const randomArray = new Uint8Array(length >= 3 ? length : 3);
-  crypto.getRandomValues(randomArray);
-  randomArray.forEach((number) => {
-    result += chars[number % chars.length];
-  });
+  while (result.length < target) {
+    for (const byte of crypto.getRandomValues(new Uint8Array(target))) {
+      // 248 is the largest multiple of 62 below 256: no modulo bias.
+      if (byte < 248 && result.length < target) result += chars[byte % 62];
+    }
+  }
   return result;
 };
 
@@ -200,6 +205,15 @@ const CreateUploadModalBody = ({
       .max(50, t("common.error.too-long", { length: 50 }))
       .matches(new RegExp("^[a-zA-Z0-9_-]*$"), {
         message: t("upload.modal.link.error.invalid"),
+      })
+      .when(["password", "teamFolderId"], {
+        is: (password?: string, teamFolderId?: string) =>
+          !password && !teamFolderId,
+        then: (schema) =>
+          schema.min(
+            MIN_OPEN_SHARE_ID_LENGTH,
+            t("common.error.too-short", { length: MIN_OPEN_SHARE_ID_LENGTH }),
+          ),
       }),
     name: yup
       .string()

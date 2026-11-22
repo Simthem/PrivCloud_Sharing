@@ -220,6 +220,7 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
     return {
       provider: this.name as OAuthSignInDto["provider"],
       email: this.hasVerifiedEmail(idTokenData) ? idTokenData.email : undefined,
+      ...(!this.vouchesMailbox && { emailDomainOnly: true }),
       unverifiedEmail: this.hasVerifiedEmail(idTokenData)
         ? undefined
         : this.unverifiedEmail(idTokenData),
@@ -298,6 +299,9 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
     return idToken.email_verified === true;
   }
 
+  // False when the provider vouches for the domain, not for the mailbox.
+  protected readonly vouchesMailbox: boolean = true;
+
   protected unverifiedEmail(idToken: OidcIdToken): string | undefined {
     return typeof idToken.email === "string" && isEmail(idToken.email)
       ? idToken.email.toLowerCase()
@@ -312,22 +316,33 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
   }
 
   private async fetchConfiguration(): Promise<void> {
-    const res = await fetch(this.discoveryUri, {
+    const res = await fetch(requireSecureUrl(this.discoveryUri), {
       signal: AbortSignal.timeout(15_000),
+      redirect: "error",
     });
+    if (!res.ok) {
+      throw new Error(`OIDC discovery failed (HTTP ${res.status})`);
+    }
+    const data = (await res.json()) as OidcConfiguration;
+    for (const url of [
+      data.issuer,
+      data.authorization_endpoint,
+      data.token_endpoint,
+      data.jwks_uri,
+    ]) {
+      requireSecureUrl(url);
+    }
     const expires = res.headers.has("expires")
       ? new Date(res.headers.get("expires")).getTime()
       : Date.now() + 1000 * 60 * 60 * 24;
-    this.configuration = {
-      expires,
-      data: (await res.json()) as OidcConfiguration,
-    };
+    this.configuration = { expires, data };
   }
 
   private async fetchJwk(): Promise<void> {
     const configuration = await this.getConfiguration();
-    const res = await fetch(configuration.jwks_uri, {
+    const res = await fetch(requireSecureUrl(configuration.jwks_uri), {
       signal: AbortSignal.timeout(15_000),
+      redirect: "error",
     });
     const expires = res.headers.has("expires")
       ? new Date(res.headers.get("expires")).getTime()
@@ -456,6 +471,25 @@ export abstract class GenericOidcProvider implements OAuthProvider<OidcToken> {
       throw new ErrorPageException("invalid_token");
     }
   }
+}
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** Provider metadata travels over HTTPS, plain HTTP only on this machine. */
+export function requireSecureUrl(value: unknown): string {
+  let url: URL;
+  try {
+    url = new URL(String(value));
+  } catch {
+    throw new Error("OIDC metadata holds an invalid URL");
+  }
+  if (
+    url.protocol !== "https:" &&
+    !(url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname))
+  ) {
+    throw new Error("OIDC metadata must use HTTPS");
+  }
+  return url.toString();
 }
 
 function describeTokenError(token: unknown): string {

@@ -31,6 +31,7 @@ import OAuthProviders from "./OAuthProviders";
 import { resolvePostAuthRedirectPath } from "../../utils/router.util";
 import { markOAuthSignIn } from "../../utils/authRedirect.util";
 import toast from "../../utils/toast.util";
+import { SECRET_IN_FRAGMENT } from "../../hooks/urlSecret.hook";
 import {
   isEmailVerificationRequiredError,
   rememberEmailVerificationEmail,
@@ -143,9 +144,9 @@ const SignInForm = ({ redirectPath }: { redirectPath?: string }) => {
             message: t("signIn.notify.totp-required.description"),
           });
           router.push(
-            `/auth/totp/${
-              response.data["loginToken"]
-            }?redirect=${encodeURIComponent(redirectPath ?? "")}`,
+            `/auth/totp/${SECRET_IN_FRAGMENT}?redirect=${encodeURIComponent(
+              redirectPath ?? "",
+            )}#${encodeURIComponent(response.data["loginToken"])}`,
           );
         } else {
           const user = await refreshUser({ refresh: false });

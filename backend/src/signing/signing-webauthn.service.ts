@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { revokeSessions } from "src/auth/sessionRevocation.util";
 import { findByToken, openAccountSecret } from "../config/account-secrets";
 import {
   AuthenticationResponseJSON,
@@ -117,6 +118,8 @@ export function buildSigningIntentHash(input: {
     }),
   );
 }
+
+const OPEN_CEREMONIES = 3;
 
 @Injectable()
 export class SigningWebAuthnService {
@@ -766,15 +769,33 @@ export class SigningWebAuthnService {
     return challenge;
   }
 
+  /**
+   * Spent and expired challenges are deleted, a missing one being refused
+   * like a spent one. A few stay open together, so whoever else holds the
+   * link cannot end the signer's ceremony by starting another.
+   */
   private async expirePreviousChallenges(
     userId: string,
     recipientId: string,
     purpose: string,
   ) {
-    await this.prisma.signingWebAuthnChallenge.updateMany({
-      where: { userId, recipientId, purpose, consumedAt: null },
-      data: { consumedAt: new Date() },
+    await this.prisma.signingWebAuthnChallenge.deleteMany({
+      where: {
+        userId,
+        OR: [{ consumedAt: { not: null } }, { expiresAt: { lt: new Date() } }],
+      },
     });
+    const open = await this.prisma.signingWebAuthnChallenge.findMany({
+      where: { userId, recipientId, purpose, consumedAt: null },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    const surplus = open.slice(OPEN_CEREMONIES - 1).map(({ id }) => id);
+    if (surplus.length) {
+      await this.prisma.signingWebAuthnChallenge.deleteMany({
+        where: { id: { in: surplus } },
+      });
+    }
   }
 
   /** E2E signers must all commit to the same decrypted source bytes. */
@@ -844,10 +865,15 @@ export class SigningWebAuthnService {
    * signature. Passkeys added from the account go too: they sign in.
    */
   async resetPasskeys(userId: string, administratorEmail: string) {
-    const { count } = await this.prisma.signingPasskey.deleteMany({
-      where: { userId },
+    // Sessions opened with a removed passkey end with it.
+    const count = await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.signingPasskey.deleteMany({
+        where: { userId },
+      });
+      await tx.accountPasskey.deleteMany({ where: { userId } });
+      await revokeSessions(tx, userId);
+      return count;
     });
-    await this.prisma.accountPasskey.deleteMany({ where: { userId } });
     this.logger.warn(
       `Administrator ${administratorEmail} removed the ${count} signing passkey(s) of user ${userId}`,
     );

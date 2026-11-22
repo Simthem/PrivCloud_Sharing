@@ -313,7 +313,7 @@ const FilePreview = ({
     );
 
   return (
-    <Stack>
+    <Stack style={{ flex: "1 1 auto", minHeight: 0 }}>
       <FilePreviewContext.Provider
         value={{
           shareId,
@@ -413,6 +413,13 @@ const FileTypeDetector = () => {
     </Center>
   );
 };
+
+const PREVIEW_SCROLL_ROOT = {
+  maxHeight: "70vh",
+  overflow: "auto",
+  flex: "1 1 auto",
+  minHeight: 0,
+} as const;
 
 const FileDecider = () => {
   const { mimeType, fileName } = React.useContext(FilePreviewContext);
@@ -659,7 +666,7 @@ const TextPreview = () => {
 
   if (isPlainText) {
     return (
-      <ScrollArea styles={{ root: { maxHeight: "70vh", overflow: "auto" } }}>
+      <ScrollArea styles={{ root: PREVIEW_SCROLL_ROOT }}>
         <pre
           style={{
             backgroundColor:
@@ -684,7 +691,7 @@ const TextPreview = () => {
   }
 
   return (
-    <ScrollArea styles={{ root: { maxHeight: "70vh", overflow: "auto" } }}>
+    <ScrollArea styles={{ root: PREVIEW_SCROLL_ROOT }}>
       <Markdown options={options}>{text}</Markdown>
     </ScrollArea>
   );
@@ -740,7 +747,7 @@ const CodePreview = () => {
     );
 
   return (
-    <ScrollArea styles={{ root: { maxHeight: "70vh", overflow: "auto" } }}>
+    <ScrollArea styles={{ root: PREVIEW_SCROLL_ROOT }}>
       <SourceCodePreview
         text={text}
         partial={partial}

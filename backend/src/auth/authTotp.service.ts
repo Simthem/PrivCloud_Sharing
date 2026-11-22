@@ -4,6 +4,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
+import { revokeSessions } from "./sessionRevocation.util";
 import { User } from "@prisma/client";
 import { generateSecret, verify, generateURI } from "otplib";
 import { createGuardrails } from "@otplib/core";
@@ -24,6 +25,9 @@ import { OAuthReauthPurpose, OAuthReauthService } from "./oauthReauth.service";
 export type TotpStepUp = { password?: string; reauthProof?: string };
 
 const BACKUP_CODE_COUNT = 10;
+// No 0/O, 1/I/L or U: 30 symbols, 10 characters, about 49 bits per code.
+const BACKUP_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ23456789";
+const BACKUP_CODE_LENGTH = 10;
 
 @Injectable()
 export class AuthTotpService {
@@ -94,15 +98,22 @@ export class AuthTotpService {
     }
   }
 
+  /** Spends an unused proof, whatever confirmed the operation instead. */
+  async discardReauthProof(user: User, proof: unknown) {
+    await this.oauthReauth.consumeProof(proof, user.id, "STEP_UP");
+  }
+
   // -- Backup code helpers ----------------------------------------
 
   private generateBackupCodes(): string[] {
     const codes: string[] = [];
     for (let i = 0; i < BACKUP_CODE_COUNT; i++) {
-      // 8-char alphanumeric uppercase, e.g. "A1B2C3D4"
-      codes.push(
-        crypto.randomBytes(5).toString("hex").toUpperCase().slice(0, 8),
-      );
+      let code = "";
+      while (code.length < BACKUP_CODE_LENGTH) {
+        code +=
+          BACKUP_CODE_ALPHABET[crypto.randomInt(BACKUP_CODE_ALPHABET.length)];
+      }
+      codes.push(code);
     }
     return codes;
   }
@@ -165,7 +176,7 @@ export class AuthTotpService {
       if (result.valid) return true;
     }
 
-    // Try backup code (8-char alphanumeric)
+    // Otherwise a backup code
     return this.tryBackupCode(userId, code);
   }
 
@@ -183,16 +194,10 @@ export class AuthTotpService {
       .createHash("sha256")
       .update(dto.loginToken)
       .digest("hex");
-    const token =
-      (await this.prisma.loginToken.findFirst({
-        where: { token: tokenHash },
-        include: { user: true },
-      })) ??
-      // Five-minute compatibility window for tokens minted before hashing.
-      (await this.prisma.loginToken.findFirst({
-        where: { token: dto.loginToken },
-        include: { user: true },
-      }));
+    const token = await this.prisma.loginToken.findFirst({
+      where: { token: tokenHash },
+      include: { user: true },
+    });
 
     if (!token || token.used)
       throw new UnauthorizedException("Invalid login token");
@@ -455,18 +460,19 @@ export class AuthTotpService {
       throw new BadRequestException("TOTP is not enabled for this user");
     }
 
-    await this.prisma.$transaction([
-      this.prisma.totpBackupCode.deleteMany({ where: { userId } }),
-      this.prisma.loginToken.deleteMany({ where: { userId } }),
-      this.prisma.user.update({
+    // A reset recovers the account: sessions opened before it end with it.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.totpBackupCode.deleteMany({ where: { userId } });
+      await revokeSessions(tx, userId);
+      await tx.user.update({
         where: { id: userId },
         data: {
           totpVerified: false,
           totpEnabled: false,
           totpSecret: null,
         },
-      }),
-    ]);
+      });
+    });
 
     return true;
   }

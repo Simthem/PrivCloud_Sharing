@@ -19,7 +19,8 @@ export class CreateShareGuard extends JwtGuard {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     try {
-      if (await super.canActivate(context)) return true;
+      await super.canActivate(context);
+      return true;
     } catch (error) {
       if (!(error instanceof UnauthorizedException)) throw error;
     }
@@ -28,6 +29,7 @@ export class CreateShareGuard extends JwtGuard {
     const reverseShareTokenId = request.cookies.reverse_share_token;
 
     if (!reverseShareTokenId) {
+      if (this.config.get("share.allowUnauthenticatedShares")) return true;
       // The browser removes expired access cookies. A refresh cookie can
       // still renew the account, so missing authentication must return 401.
       throw new UnauthorizedException();

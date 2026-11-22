@@ -284,7 +284,7 @@ testCase(
       );
       assert.deepEqual(fixture.redirects, [
         totp
-          ? "https://app.invalid/auth/totp/second-factor"
+          ? "https://app.invalid/auth/totp/link#second-factor"
           : "https://app.invalid",
       ]);
       assert.deepEqual(fixture.handovers, totp ? [] : ["cookies"]);

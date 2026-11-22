@@ -128,6 +128,8 @@ export const SHARE_CRYPTO_EVENTS = [
   "unwrap_error",
   "decrypt_error",
   "download_error",
+  "download_too_large",
+  "integrity_error",
   "rewrap_ok",
   "rewrap_error",
 ] as const;

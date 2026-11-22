@@ -159,23 +159,44 @@ testCase("the lookup form ignores case and changes with the key", () => {
 });
 
 testCase(
-  "received documents also list requests bound to the account",
+  "received documents list requests addressed by email only to an account that proved it",
   async () => {
-    let where: { OR?: unknown[] } | undefined;
-    const service = signingService({
-      user: { findUnique: async () => account("u1", "own@example.test") },
-      signatureDocument: {
-        findMany: async (args: { where: { OR?: unknown[] } }) => {
-          where = args.where;
-          return [];
+    const received = async (owner: Account) => {
+      let where: { OR?: unknown[] } | undefined;
+      const service = signingService({
+        user: { findUnique: async () => owner },
+        oAuthUser: { findMany: async () => [] },
+        signatureDocument: {
+          findMany: async (args: { where: { OR?: unknown[] } }) => {
+            where = args.where;
+            return [];
+          },
         },
-      },
-    });
-    await service.getReceivedDocuments("u1");
-    assert.deepEqual(where?.OR, [
-      { recipients: { some: { userId: "u1" } } },
-      { recipients: { some: { email: "own@example.test" } } },
-    ]);
+      });
+      await service.getReceivedDocuments("u1");
+      return where?.OR;
+    };
+    // Set verified without proof, as without SMTP: the account alone.
+    assert.deepEqual(
+      await received({
+        ...account("u1", "own@example.test"),
+        emailVerifiedAt: new Date(),
+      }),
+      [{ recipients: { some: { userId: "u1" } } }],
+    );
+    assert.deepEqual(
+      await received({
+        ...account("u1", "own@example.test"),
+        emailVerifiedAt: new Date(),
+        emailVerificationSource: "EMAIL_LINK",
+      }),
+      [
+        { recipients: { some: { userId: "u1" } } },
+        {
+          recipients: { some: { email: "own@example.test", userId: null } },
+        },
+      ],
+    );
   },
 );
 

@@ -19,6 +19,8 @@ const Meta = ({
   noIndex?: boolean;
 }) => {
   const config = useConfig();
+  const blockIndexing =
+    noIndex || config.get("general.disableIndexing") === true;
   const { asPath, locale: urlLocale } = useRouter();
   const { locale } = useIntl();
 
@@ -45,10 +47,10 @@ const Meta = ({
       <title>{metaTitle}</title>
       <meta
         name="robots"
-        content={noIndex ? "noindex, nofollow" : "index, follow"}
+        content={blockIndexing ? "noindex, nofollow" : "index, follow"}
       />
       <link rel="canonical" href={canonical} />
-      {!noIndex && (
+      {!blockIndexing && (
         <>
           <link rel="alternate" hrefLang="fr" href={frUrl} />
           <link rel="alternate" hrefLang="en" href={enUrl} />

@@ -75,6 +75,27 @@ func TestCopyMissingConcurrent(t *testing.T) {
 	}
 }
 
+func TestCopyMissingRefusesVolumeLinks(t *testing.T) {
+	source := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(source, "nested"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "nested", "asset.txt"), []byte("asset"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	destination := t.TempDir()
+	elsewhere := t.TempDir()
+	if err := os.Symlink(elsewhere, filepath.Join(destination, "nested")); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyMissing(source, destination); err == nil {
+		t.Fatal("a linked volume directory was followed")
+	}
+	if entries, _ := os.ReadDir(elsewhere); len(entries) != 0 {
+		t.Fatalf("wrote %d entries through the link", len(entries))
+	}
+}
+
 func TestEnsureTreeOwnershipSkipsOwnedPrivateChildren(t *testing.T) {
 	root := t.TempDir()
 	privateDirectory := filepath.Join(root, "locks")

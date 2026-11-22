@@ -4,6 +4,7 @@
 // and the AudioContext beep is audible regardless of focus.
 
 import { translateOutsideContext } from "../hooks/useTranslate.hook";
+import { isSafeLinePopupBlocked } from "./safelineChallenge.util";
 
 let _permissionGranted = false;
 
@@ -105,7 +106,11 @@ export function notifySafeLineChallenge(): void {
     const t = translateOutsideContext();
     try {
       const n = new Notification(t("safeline.os-notify.title"), {
-        body: t("safeline.os-notify.body"),
+        body: t(
+          isSafeLinePopupBlocked()
+            ? "safeline.os-notify.body-popup-blocked"
+            : "safeline.os-notify.body",
+        ),
         icon: "/img/logo.png",
         requireInteraction: true,
         tag: "safeline-468", // replaces previous instance

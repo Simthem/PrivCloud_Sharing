@@ -48,7 +48,16 @@ const reactSecurityPlugin = {
 
 export default [
   {
-    ignores: ["**/*.d.ts", ".next/**", "node_modules/**", "test/fixtures/**"],
+    ignores: [
+      "**/*.d.ts",
+      ".next/**",
+      "node_modules/**",
+      "test/fixtures/**",
+      "public/forensic/opencv-csp.js",
+      "public/image-decoders/libheif.js",
+      "public/image-decoders/pako_inflate.min.js",
+      "public/image-decoders/UTIF.js",
+    ],
   },
   {
     files: ["**/*.{ts,tsx,js,jsx}"],

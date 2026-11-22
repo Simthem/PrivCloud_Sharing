@@ -27,6 +27,9 @@ import { createUnitTestRunner } from "./unit-test";
 
 const { testCase, run } = createUnitTestRunner("RFC 3161 PDF timestamping");
 
+// These tokens come from test authorities nobody pins.
+process.env.SIGNING_TSA_ALLOW_UNPINNED = "true";
+
 const createCertificate = (
   commonName: string,
   timeStamping = false,
@@ -196,6 +199,23 @@ testCase(
     );
   },
 );
+
+testCase("an unpinned TSA is refused unless a bench opts out", () => {
+  const service = new PdfSigningService();
+  const tsa = createCertificate("PrivCloud test TSA", true);
+  const imprint = crypto.randomBytes(32);
+  const nonce = Buffer.from("0102030405060708", "hex");
+  const response = createTimestampResponse(imprint, nonce, tsa);
+  delete process.env.SIGNING_TSA_ALLOW_UNPINNED;
+  try {
+    assert.throws(
+      () => service["validateTimestampResponse"](response, imprint, nonce),
+      /No trusted TSA certificate is configured/,
+    );
+  } finally {
+    process.env.SIGNING_TSA_ALLOW_UNPINNED = "true";
+  }
+});
 
 testCase(
   "rejects a token whose signing certificate is not reserved for timestamping",

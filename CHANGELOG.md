@@ -1,3 +1,138 @@
+## [1.26.10](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.8...v1.26.10) (2026-11-22)
+
+### Features
+
+- Add **Disable search indexing** under Administration > Configuration >
+  General. The switch defaults to off. When enabled, it applies `noindex`
+  across the site, including public files, and hides the sitemap.
+- Downloads decrypted in the page (E2E files, ZIP archives, and plain files
+  streamed with progress) are served by the service worker as regular
+  browser downloads, with their progress and cancel button in the browser.
+  The file is pulled from the page one piece at a time, the key never leaves
+  the page and nothing is stored. The save picker remains the fallback when
+  no service worker controls the page.
+- The unfinished uploads notice can be closed. It comes back only for a new
+  unfinished upload, and uploads that saved no file are no longer listed.
+
+### Security
+
+- OAuth: an identity joins an existing account at once only when its
+  provider vouches for the mailbox the account currently proves. An address
+  known from another link, or only vouched for by its domain (Entra), goes
+  through a confirmation mailed to the account, single use and void once the
+  provider is unlinked. OIDC discovery and the endpoints it names must use
+  HTTPS. Linking a provider asks every user to confirm their identity first,
+  and only providers that date the sign-in (Google, OpenID) confirm a change.
+  An OAuth sign-up never makes the first account an administrator.
+- Sessions: refresh, reset and sign-in tokens are only accepted in their
+  hashed form. Signing out, a new password, an administrator 2FA or passkey
+  reset end identity confirmations and evidence vault unlocks too. Backup
+  codes carry about 49 bits. Reset and sign-in challenge links carry their
+  secret in the URL fragment, a recent reset link is never replaced and the
+  request answers before any mail work. Routes that require an account no
+  longer let unauthenticated requests through when anonymous shares are
+  allowed (`share.allowUnauthenticatedShares`).
+- Bootstrap: the initial account is only created on an empty database and
+  honours `initUser.ldapDN`.
+- Administration: deleting a team, a member, a folder or a file, and marking
+  an address verified, ask for a step-up. The last administrator can neither
+  be deleted nor demoted, even concurrently.
+- Teams: deleting a folder purges its subfolders and every share filed in
+  them, under lock. Members who leave lose their folder and file rules.
+  Metrics follow the activity permission, the search index is bounded, an
+  orphaned key rotation can be cancelled by another administrator, a
+  rotation waits for uploads in progress, an upload started under an older
+  team key cannot be published, and the legacy one-shot rotation endpoint is
+  gone. Notifications follow folder access. Folder guest links can no longer
+  be created: the instance has no page to open them. Existing links can
+  still be listed and revoked.
+- Shares: a share without password needs a link of at least 8 characters.
+  An anonymous upload belongs to its own browser session, never to the
+  shared reverse link, and a reverse share use is spent once, on its own
+  link. Visit tokens are reused, unfinished shares are only visited by their
+  creator, signed URLs never outlive their share, stored ZIP archives are
+  only served once rebuilt, and uploads pause during maintenance for every
+  client.
+- E2E grants: one active grant per recipient and resource, replaced only by
+  its grantor or a manager, file rules apply to grantors and the history
+  hides names of files no longer readable.
+- Signing: requests addressed by email reach only accounts that proved the
+  address. Only signers sign or reject, state is checked under the write
+  lock, a terminal status never reverts to VIEWED, file rules apply to
+  signature requests and the key-by-email policy applies to them. Email
+  codes pause a link for an hour instead of locking it for good, ten codes a
+  day at most. The platform seals an E2E document at most three times,
+  finalization is serialized, the signature slot must be unique, an unpinned
+  TSA or an expired Trusted List is refused, and URLs of the TSA and the
+  Trusted List never show their credentials. Passkey challenges are pruned,
+  recipient evidence (signature data, forensic record, passkey manifest and
+  identity snapshot) is sealed at rest, and encryption targets by address
+  are limited to 10 requests a minute.
+- Offline verifier: the unsigned range must be the seal alone, the TSA
+  certificate must be the token signer, and a Trusted List only designates
+  anchors when anchored, for qualified services granted at that time.
+- Platform: anonymous JSON bodies are limited to 1 MB, ALTCHA solutions are
+  spent once, the evidence vault only takes account passkeys, documents read
+  into memory are capped (`BUFFERED_FILE_MAX_BYTES`), `TRUSTED_PROXY_RANGES`
+  narrows the proxies Caddy trusts, the image init refuses links in the
+  volume, and LDAP values are escaped.
+- Dependencies: @nestjs/common and @nestjs/core 11.2.3, @nestjs/throttler
+  6.8.0 (IPv6 /64 rate limits), altcha-lib 2.4.0, picomatch 4.0.7,
+  @noble/post-quantum 0.7.1 and isomorphic-dompurify 3.19.0 in the web app,
+  undici 7.30.2 in the build scripts.
+
+### Bug Fixes
+
+- Very large uploads no longer freeze. Once the service worker had a fetch
+  handler for previews, every request of the page and of its workers went
+  through it, and the browser kept a copy of each uploaded part. Chrome grew
+  by the size sent until the page stopped for about a minute at a time,
+  swapped to disk and slowed down for the rest of the upload. The upload and
+  key rotation workers now run under `transfer-sw.js`, a service worker
+  without fetch handler registered for their own URL, so their requests go
+  straight to the network in every browser. `sw.js` also releases the body
+  of any request it still receives.
+- An upload no longer opens the WAF verification window by itself. Its
+  keep-alive checks the API alone and renews a verification in a hidden
+  frame, never in a window. When the browser blocks the verification window
+  opened from a background tab, the notice and the system notification say
+  so and explain how to allow pop-ups for the site.
+- A file downloaded from a team folder or from the share card view now shows
+  a progress bar with a cancel button, errors are reported, and an E2E file
+  waits for the team key instead of saving encrypted bytes.
+- An E2E file over 512 MiB in a browser without the save picker (Firefox,
+  Safari, mobile browsers) failed on every click with a bare "Error". The
+  service worker download now streams it, waiting for the worker on a first
+  visit, and the remaining cases say why and which browser to use. A single
+  selected file no longer fails silently, and the client reports
+  `download_too_large` and `integrity_error` apart from `download_error`.
+- An upload never finalized is deleted with its files 7 days after its last
+  activity. It used to stay until the share expired, counted in the owner's
+  storage while only visible in the unfinished uploads notice, which now
+  states the delay.
+- The file preview dialog no longer scrolls as a whole. Viewers shrink to
+  fit the dialog, so only the previewed file scrolls.
+- Team folder cards show the right number of shares right after an upload or
+  a deletion, and the team metrics no longer jump on phones.
+- An account without password nor Google or OpenID link is told to set a
+  password through "Forgot password" to manage two-factor authentication.
+- Fix the `libav.js` configuration path in the media engine build.
+
+### Operations
+
+- Migrations `20261120120000_drop_inactive_member_overrides` (removes file
+  and folder rules left by members who already left) and
+  `20261120130000_altcha_use` (spent ALTCHA solutions) run on start.
+- The TSA must be pinned. `SIGNING_TSA_ALLOW_UNPINNED` restores the former
+  behaviour for test benches only.
+- Reset and sign-in challenge links now use `/link#secret`. Links already
+  mailed in the old form still open.
+- Pages open during the upgrade must be reloaded once so that uploads use
+  the new service workers.
+- Every GitHub Actions checkout sets `persist-credentials: false`.
+- The email change integration tests wait for the reset link, which is now
+  issued after the answer.
+
 ## [1.26.8](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.7...v1.26.8) (2026-11-17)
 
 ### Features

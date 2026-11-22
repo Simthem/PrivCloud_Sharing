@@ -14,6 +14,7 @@ import { useRouter } from "next/router";
 import { FormattedMessage } from "react-intl";
 import * as yup from "yup";
 import useTranslate from "../../../hooks/useTranslate.hook";
+import useUrlSecret from "../../../hooks/urlSecret.hook";
 import authService from "../../../services/auth.service";
 import toast from "../../../utils/toast.util";
 import Meta from "../../../components/Meta";
@@ -45,7 +46,7 @@ const ResetPassword = () => {
     ),
   });
 
-  const resetPasswordToken = router.query.resetPasswordToken as string;
+  const resetPasswordToken = useUrlSecret("resetPasswordToken");
 
   return (
     <>
@@ -62,7 +63,7 @@ const ResetPassword = () => {
           <form
             onSubmit={form.onSubmit((values) => {
               authService
-                .resetPassword(resetPasswordToken, values.password)
+                .resetPassword(resetPasswordToken ?? "", values.password)
                 .then(() => {
                   toast.success(t("resetPassword.notify.passwordReset"));
 

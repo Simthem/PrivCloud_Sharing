@@ -53,7 +53,16 @@ func copyMissing(source, destination string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(destination, 0755); err != nil {
+	// Runs as root on a volume the application can write: a link planted
+	// there must never redirect a copy.
+	if existing, err := os.Lstat(destination); err == nil {
+		if existing.Mode()&os.ModeSymlink != 0 || !existing.IsDir() {
+			return fmt.Errorf("refusing volume entry %s", destination)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Mkdir(destination, 0755); err != nil && !errors.Is(err, os.ErrExist) {
 		return err
 	}
 

@@ -1,10 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { takeWriteLock } from "src/prisma/write-lock.util";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "src/prisma/prisma.service";
 import {
@@ -70,8 +72,22 @@ export class AccessGrantService {
     await this.validateGrantorAccess(grantorId, dto);
     await this.assertRecipientIsNotExternalContractor(dto);
 
-    // Check for duplicate active grant
-    const existingGrant = await this.prisma.accessGrant.findFirst({
+    // One active grant per recipient and resource, even for concurrent calls:
+    // revoking it must revoke the access.
+    return this.prisma.$transaction(async (tx) => {
+      await takeWriteLock(tx);
+      return this.storeGrant(tx, grantorId, dto, algorithm, kemCiphertext);
+    });
+  }
+
+  private async storeGrant(
+    tx: Prisma.TransactionClient,
+    grantorId: string,
+    dto: CreateAccessGrantDTO,
+    algorithm: string,
+    kemCiphertext: string | null,
+  ) {
+    const existingGrant = await tx.accessGrant.findFirst({
       where: {
         userId: dto.recipientUserId,
         fileId: dto.fileId || undefined,
@@ -82,8 +98,17 @@ export class AccessGrantService {
     });
 
     if (existingGrant) {
-      // Update existing grant (re-encryption scenario)
-      const updated = await this.prisma.accessGrant.update({
+      // Re-encryption by whoever granted it or manages the resource. Anyone
+      // else could replace a working key with a useless one.
+      if (
+        existingGrant.grantorId !== grantorId &&
+        !(await this.managesResource(grantorId, dto))
+      ) {
+        throw new ConflictException(
+          "This user already has access to this resource",
+        );
+      }
+      const updated = await tx.accessGrant.update({
         where: { id: existingGrant.id },
         data: {
           encryptedFileKey: dto.encryptedFileKey,
@@ -105,8 +130,7 @@ export class AccessGrantService {
       };
     }
 
-    // Create new grant
-    const grant = await this.prisma.accessGrant.create({
+    const grant = await tx.accessGrant.create({
       data: {
         encryptedFileKey: dto.encryptedFileKey,
         ephemeralPublicKey: dto.ephemeralPublicKey,
@@ -730,19 +754,28 @@ export class AccessGrantService {
       return null;
     };
 
+    // Names stay hidden for files the user can no longer open.
+    const visible = async (
+      g: (typeof received)[number] | (typeof sent)[number],
+    ) => ((await this.canReadGrant(userId, g)) ? normalizeGrant(g) : null);
+
     return {
-      received: received.map((g) => ({
-        id: g.id,
-        createdAt: g.createdAt,
-        grantor: userMap[g.grantorId] || { username: "Inconnu", email: "" },
-        fileInfo: normalizeGrant(g),
-      })),
-      sent: sent.map((g) => ({
-        id: g.id,
-        createdAt: g.createdAt,
-        recipient: userMap[g.userId] || { username: "Inconnu", email: "" },
-        fileInfo: normalizeGrant(g),
-      })),
+      received: await Promise.all(
+        received.map(async (g) => ({
+          id: g.id,
+          createdAt: g.createdAt,
+          grantor: userMap[g.grantorId] || { username: "Inconnu", email: "" },
+          fileInfo: await visible(g),
+        })),
+      ),
+      sent: await Promise.all(
+        sent.map(async (g) => ({
+          id: g.id,
+          createdAt: g.createdAt,
+          recipient: userMap[g.userId] || { username: "Inconnu", email: "" },
+          fileInfo: await visible(g),
+        })),
+      ),
       pagination: {
         received: {
           page: receivedPage,
@@ -784,22 +817,28 @@ export class AccessGrantService {
           if (!membership) {
             throw new ForbiddenException("You are not a member of this team");
           }
-          // OWNER/ADMIN have implicit full access
+          // OWNER/ADMIN have implicit full access. A rule on the file itself
+          // takes precedence over the folder's.
           if (!["OWNER", "ADMIN"].includes(membership.role)) {
-            const folderAccess = await this.prisma.teamFolderAccess.findFirst({
+            const fileRule = await this.prisma.fileAccess.findUnique({
               where: {
-                memberId: membership.id,
-                folderId: file.share.teamFolderId,
-                permission: { in: ["WRITE", "ADMIN"] },
+                memberId_fileId: { memberId: membership.id, fileId: file.id },
               },
             });
-            if (!folderAccess) {
+            const rule =
+              fileRule ??
+              (await this.prisma.teamFolderAccess.findFirst({
+                where: {
+                  memberId: membership.id,
+                  folderId: file.share.teamFolderId,
+                },
+              }));
+            if (!rule || !["WRITE", "ADMIN"].includes(rule.permission)) {
               throw new ForbiddenException(
                 "You need WRITE access to the folder to grant file access",
               );
             }
-            // Check canShareE2E permission
-            if (!folderAccess.canShareE2E) {
+            if (!rule.canShareE2E) {
               throw new ForbiddenException(
                 "You do not have permission to share files with E2E encryption in this folder",
               );
@@ -901,6 +940,50 @@ export class AccessGrantService {
     }
   }
 
+  /** Team owners and administrators, or the creator of a personal share. */
+  private async managesResource(userId: string, dto: CreateAccessGrantDTO) {
+    let teamId: string | undefined;
+    let creatorId: string | null | undefined;
+    if (dto.teamFileId) {
+      teamId = (
+        await this.prisma.teamFile.findUnique({
+          where: { id: dto.teamFileId },
+          select: { folder: { select: { teamId: true } } },
+        })
+      )?.folder.teamId;
+    } else {
+      const share = dto.fileId
+        ? (
+            await this.prisma.file.findUnique({
+              where: { id: dto.fileId },
+              select: {
+                share: {
+                  select: {
+                    creatorId: true,
+                    teamFolder: { select: { teamId: true } },
+                  },
+                },
+              },
+            })
+          )?.share
+        : await this.prisma.share.findUnique({
+            where: { id: dto.shareId },
+            select: {
+              creatorId: true,
+              teamFolder: { select: { teamId: true } },
+            },
+          });
+      teamId = share?.teamFolder?.teamId;
+      creatorId = share?.creatorId;
+    }
+    if (!teamId) return !!creatorId && creatorId === userId;
+    const membership = await this.prisma.teamMember.findFirst({
+      where: { userId, teamId, isActive: true },
+      select: { role: true },
+    });
+    return !!membership && ["OWNER", "ADMIN"].includes(membership.role);
+  }
+
   private async canReadGrant(
     userId: string,
     grant: {
@@ -992,7 +1075,10 @@ export class AccessGrantService {
       },
     });
 
-    if (explicitFileAccess?.permission === "DENY") {
+    if (
+      explicitFileAccess &&
+      ["DENY", "NONE"].includes(explicitFileAccess.permission)
+    ) {
       throw new ForbiddenException("You no longer have access to this file");
     }
     if (
