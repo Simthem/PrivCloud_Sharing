@@ -700,6 +700,7 @@ export class ShareService {
       this.logger.warn("Attempt to complete a share without files");
       throw new BadRequestException(
         "You need at least on file in your share to complete it.",
+        "share_without_files",
       );
     }
     // Files of a team folder upload are encrypted under the key of the time.

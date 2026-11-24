@@ -139,4 +139,43 @@ testCase(
   },
 );
 
+testCase(
+  "a share without any stored file is refused with its own code",
+  async () => {
+    let claimed = false;
+    const share = {
+      id: "empty-share",
+      uploadLocked: false,
+      uploadLastActivityAt: new Date(),
+      uploadCleanupStartedAt: null,
+      isE2EEncrypted: true,
+      files: [],
+      recipients: [],
+      reverseShare: null,
+      teamFolder: null,
+    };
+    const service = Object.create(ShareService.prototype) as ShareService;
+    Object.assign(service, {
+      prisma: {
+        share: { findUnique: async () => share },
+        $transaction: async () => {
+          claimed = true;
+        },
+      },
+      logger: { debug() {}, warn() {} },
+    });
+    service.isShareCompleted = async () => false;
+
+    await assert.rejects(service.complete(share.id), (error: unknown) => {
+      assert.ok(error instanceof BadRequestException);
+      assert.equal(
+        (error.getResponse() as { error?: string }).error,
+        "share_without_files",
+      );
+      return true;
+    });
+    assert.equal(claimed, false);
+  },
+);
+
 void run();

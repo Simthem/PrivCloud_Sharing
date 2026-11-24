@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   hasSettledUpload,
   finalizeUpload,
+  isEmptyShareCompletion,
 } from "../src/utils/uploadCompletion.util.ts";
 
 test("byte progress never finalizes while workers or retries remain active", () => {
@@ -179,4 +180,26 @@ test("authorization and quota failures cannot be turned into successful finaliza
       (error) => error === failure,
     );
   }
+});
+
+test("only the empty share refusal means that no file reached the server", () => {
+  const refusal = (status, data) => ({ response: { status, data } });
+  assert.equal(
+    isEmptyShareCompletion(
+      refusal(400, { error: "share_without_files", statusCode: 400 }),
+    ),
+    true,
+  );
+  assert.equal(
+    isEmptyShareCompletion(
+      refusal(400, { message: "Share already completed" }),
+    ),
+    false,
+  );
+  assert.equal(
+    isEmptyShareCompletion(refusal(409, { error: "share_without_files" })),
+    false,
+  );
+  assert.equal(isEmptyShareCompletion(new Error("network")), false);
+  assert.equal(isEmptyShareCompletion(undefined), false);
 });

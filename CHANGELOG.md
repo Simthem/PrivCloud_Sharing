@@ -1,3 +1,44 @@
+## [1.26.11](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.10...v1.26.11) (2026-11-24)
+
+### Security
+
+- The runtime image moves to the distroless Debian 13 digest with libc6
+  2.41-12+deb13u5, and the Debian build stages to the matching
+  `debian:trixie-slim` digest. This fixes 14 glibc CVEs, among them
+  CVE-2026-86805 (privilege escalation through a race condition) and
+  CVE-2026-5435 (out-of-bounds write in TSIG record processing). The VEX
+  follows the new release, also names the `libc6` package that Trivy
+  reports, and covers the six glibc CVEs Debian has not fixed yet: no
+  binary in the image imports the wide scanf, glob or regex functions, and
+  no input reaches the CP949, ISO-2022-CN-EXT or IBM1390 converters.
+- The C++ runtime libraries (libstdc++, libgcc) move to gcc-16 16.2.0-5,
+  which fixes CVE-2026-114690 and CVE-2026-114691. Debian has no fixed
+  release for CVE-2026-125709: the VEX records that nothing in the image
+  writes through a C++ file stream at runtime, the only path to that flaw.
+- Code previews no longer register the livescript, scilab and stan grammars,
+  and highlight bash, C#, Perl and the grammars embedding them (shell
+  sessions, Dockerfile, Mojolicious) only up to 8 KiB. No highlight.js
+  release fixes SNYK-JS-HIGHLIGHTJS-22744612, and these grammars backtrack
+  quadratically on long runs. Larger files stay readable as plain text.
+- Dependencies: highlight.js 11.12.0 (ReDoS in code previews) in the web
+  app.
+
+### Bug Fixes
+
+- PDF previews load the legacy build of pdf.js 4.10.38 and its worker. The
+  default build calls `Promise.withResolvers`, missing before Chrome 119 and
+  Safari 17.4, so older Android WebViews and iOS versions showed no PDF at
+  all.
+- An upload whose files all failed no longer ends on "You need at least on
+  file in your share to complete it". The server refuses that completion
+  with the `share_without_files` code, and the page then deletes the empty
+  share and keeps the files listed for another attempt, under the errors
+  already shown for each file.
+- When the Companion or the browser extension is too old for a share, the
+  message also asks to restart the browser. The extension keeps its native
+  connection open, so an updated Companion only starts with a new browser
+  or extension session.
+
 ## [1.26.10](https://github.com/Simthem/PrivCloud_Sharing/compare/v1.26.8...v1.26.10) (2026-11-22)
 
 ### Features

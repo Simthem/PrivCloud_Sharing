@@ -14,3 +14,13 @@ ignore:
           This exception covers the local patch, not the upstream npm artifact.
         expires: "2026-11-25T00:00:00.000Z"
 
+  SNYK-JS-HIGHLIGHTJS-22744612:
+    - "* > highlight.js@11.12.0":
+        reason: >
+          No highlight.js release fixes this ReDoS. Code previews highlight in a
+          worker stopped after 3 seconds. The livescript, scilab and stan
+          grammars are not registered, and bash, C#, Perl and the grammars
+          embedding them are highlighted only up to 8 KiB (about 200 ms worst
+          case). frontend/test/code-preview.test.mjs verifies both limits.
+        expires: "2026-12-24T00:00:00.000Z"
+

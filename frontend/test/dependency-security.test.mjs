@@ -24,11 +24,12 @@ function assertFixedVersion(actual, minimum) {
   );
 }
 
-test("the frontend locks fixed Next.js, Axios, DOMPurify, follow-redirects and Undici versions", () => {
+test("the frontend locks fixed Next.js, Axios, DOMPurify, follow-redirects, highlight.js and Undici versions", () => {
   for (const [name, minimum] of [
     ["next", "16.4.5"],
     ["axios", "1.20.0"],
     ["dompurify", "3.4.17"],
+    ["highlight.js", "11.12.0"],
     ["follow-redirects", "1.16.2"],
     ["undici", "7.30.1"],
   ]) {

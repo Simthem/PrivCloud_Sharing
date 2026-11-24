@@ -1,5 +1,6 @@
 export const CODE_HIGHLIGHT_MAX_CHARS = 128 * 1024;
 export const CODE_HIGHLIGHT_MAX_TOKENS = 12_000;
+export const CODE_HIGHLIGHT_BACKTRACKING_MAX_CHARS = 8 * 1024;
 export type CodeToken = { text: string; classes: string[] };
 export type CodeHighlight = { tokens: CodeToken[]; limited: boolean };
 

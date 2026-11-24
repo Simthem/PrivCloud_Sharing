@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const source = resolve(
   frontendRoot,
-  "node_modules/pdfjs-dist/build/pdf.worker.min.mjs",
+  "node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs",
 );
 const destination = resolve(frontendRoot, "public/pdf.worker.min.mjs");
 

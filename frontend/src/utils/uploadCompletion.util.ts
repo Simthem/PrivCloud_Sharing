@@ -13,6 +13,16 @@ export function hasSettledUpload(
   );
 }
 
+/** The server holds no file of this upload, so there is nothing to finalize. */
+export function isEmptyShareCompletion(error: unknown): boolean {
+  const response = (
+    error as { response?: { status?: number; data?: { error?: unknown } } }
+  )?.response;
+  return (
+    response?.status === 400 && response.data?.error === "share_without_files"
+  );
+}
+
 /** Recover the saved share if only its final HTTP acknowledgement was lost. */
 export async function finalizeUpload<T>(
   complete: () => Promise<T>,

@@ -20,6 +20,11 @@ module.exports = {
       config.cache.version =
         (config.cache.version || "") + ":fflate-bounds:" + digest;
     }
+    // Older WebViews and Safari before 17.4 lack Promise.withResolvers.
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      "pdfjs-dist$": "pdfjs-dist/legacy/build/pdf.mjs",
+    };
     return config;
   },
   output: "standalone",

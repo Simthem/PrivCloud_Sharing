@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { parseCodeHighlight } from "../src/utils/codeHighlightParser.util.ts";
 import {
+  CODE_HIGHLIGHT_BACKTRACKING_MAX_CHARS,
   CODE_HIGHLIGHT_MAX_CHARS,
   isCodeHighlight,
   resolveCodeLanguage,
@@ -109,6 +110,26 @@ test("HTML remains text and worker output cannot inject tags, attributes or CSS"
     { tokens: [{ text: {}, classes: [] }], limited: false },
   ])
     assert.equal(isCodeHighlight(malicious), false);
+});
+
+test("backtracking grammars are dropped or limited to short sources", () => {
+  for (const language of ["livescript", "scilab", "stan"])
+    assert.throws(() => parseCodeHighlight("x", language), /unknown language/);
+  for (const language of [
+    "bash",
+    "shell",
+    "dockerfile",
+    "csharp",
+    "perl",
+    "mojolicious",
+  ]) {
+    const size = CODE_HIGHLIGHT_BACKTRACKING_MAX_CHARS;
+    assert.ok(parseCodeHighlight("a".repeat(size), language).tokens.length);
+    assert.throws(
+      () => parseCodeHighlight("a".repeat(size + 1), language),
+      /budget/,
+    );
+  }
 });
 
 test("large or highly fragmented code has bounded parse and rendering budgets", () => {

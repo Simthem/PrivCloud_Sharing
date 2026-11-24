@@ -1,7 +1,7 @@
 {
   "name": "pingvindocs",
   "license": "AGPL-3.0-only",
-  "version": "1.26.10",
+  "version": "1.26.11",
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",

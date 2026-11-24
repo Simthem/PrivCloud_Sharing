@@ -2,7 +2,10 @@ import { contentV2ShareId } from "../../utils/shareContentContext.util";
 import { synchronizeCompletedUpload } from "../../utils/uploadStateCache.util";
 import { prepareSafeLineRetry } from "../../utils/safelineChallenge.util";
 import { startUploadSessionMaintenance } from "../../utils/uploadSessionMaintenance.util";
-import { hasSettledUpload } from "../../utils/uploadCompletion.util";
+import {
+  hasSettledUpload,
+  isEmptyShareCompletion,
+} from "../../utils/uploadCompletion.util";
 import {
   Button,
   Group,
@@ -1329,6 +1332,22 @@ const Upload = ({
         })
         .catch((error) => {
           completingShareRef.current = null;
+          if (isEmptyShareCompletion(error)) {
+            // Every file failed and their errors are already shown. Drop the
+            // empty share and keep the files listed for another attempt.
+            setUploadWorkersFinished(false);
+            keepaliveRef.current?.();
+            keepaliveRef.current = null;
+            wakeLock.release();
+            setisUploading(false);
+            setUploadActive(false);
+            webLockReleaseRef.current?.();
+            webLockReleaseRef.current = null;
+            e2eKeyEncoded = null;
+            shouldShareE2EKeyViaEmail = false;
+            shareService.remove(completingShareId, true).catch(() => undefined);
+            return;
+          }
           // Retain the WAF/session guard and keepalive while the saved share
           // is still pending. A failed finalization is not an ended upload.
           wakeLock.release();

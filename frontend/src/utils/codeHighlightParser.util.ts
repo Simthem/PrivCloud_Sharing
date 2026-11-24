@@ -1,6 +1,7 @@
 import { all, createLowlight } from "lowlight";
 import type { RootContent } from "hast";
 import {
+  CODE_HIGHLIGHT_BACKTRACKING_MAX_CHARS,
   CODE_HIGHLIGHT_MAX_CHARS,
   CODE_HIGHLIGHT_MAX_TOKENS,
   isCodeTokenClass,
@@ -8,7 +9,32 @@ import {
   type CodeToken,
 } from "./codePreview.util";
 
-const highlighter = createLowlight(all);
+// These grammars backtrack quadratically on long runs, directly or as a sub-language.
+const BACKTRACKING_LANGUAGES = new Set([
+  "bash",
+  "sh",
+  "zsh",
+  "shell",
+  "console",
+  "shellsession",
+  "dockerfile",
+  "docker",
+  "csharp",
+  "cs",
+  "c#",
+  "perl",
+  "pl",
+  "pm",
+  "mojolicious",
+]);
+
+const highlighter = createLowlight(
+  Object.fromEntries(
+    Object.entries(all).filter(
+      ([name]) => !["livescript", "scilab", "stan"].includes(name),
+    ),
+  ),
+);
 
 /** Return text tokens rather than HTML. Never interpret uploaded markup. */
 export function parseCodeHighlight(
@@ -17,6 +43,8 @@ export function parseCodeHighlight(
 ): CodeHighlight {
   if (
     text.length > CODE_HIGHLIGHT_MAX_CHARS ||
+    (BACKTRACKING_LANGUAGES.has(language.toLowerCase()) &&
+      text.length > CODE_HIGHLIGHT_BACKTRACKING_MAX_CHARS) ||
     !highlighter.registered(language)
   )
     throw new Error(

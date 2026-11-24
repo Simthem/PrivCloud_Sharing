@@ -1437,7 +1437,7 @@ export default {
   "bridge.pair.confirm": "Valider",
   "bridge.toast.paired": "PrivCloud Companion activé",
   "bridge.error.updateRequired":
-    "Mettez à jour le Companion et l'extension depuis la page Intégrations, puis rechargez PrivCloud pour utiliser leur connexion native.",
+    "Mettez à jour le Companion et l'extension depuis la page Intégrations, puis redémarrez le navigateur : il garde l'ancien Companion ouvert jusque-là.",
   "bridge.error.openSourceUpdateRequired":
     "Cette ancienne version du Companion n'est pas compatible avec l'édition open source. Réinstallez le Companion depuis la page Intégrations puis redémarrez-le.",
   "bridge.error.companionRequired":

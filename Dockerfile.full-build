@@ -232,7 +232,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /runtime-init ./runtime
 # OpenSSL 3.6 is end-of-life. Use the maintained 3.5 LTS security release.
 # Verify the official release archive before executing any source from it.
 # ABI-compatible: libssl.so.3 / libcrypto.so.3 soname unchanged across 3.x.
-FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS openssl-source-builder
+FROM debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0 AS openssl-source-builder
 ARG BUILD_JOBS=4
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
@@ -268,7 +268,7 @@ RUN apt-get update && \
     apt-get purge -y --auto-remove build-essential curl perl && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache
 
-FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS openssl-builder
+FROM debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0 AS openssl-builder
 # Refresh all installed Debian packages, including perl-base, glibc, gzip,
 # util-linux and liblzma. Keep compiler dependencies in the source stage only.
 RUN apt-get update && \
@@ -286,7 +286,7 @@ RUN OPENSSL_VERSION="$(LD_LIBRARY_PATH=/usr/local/openssl/lib /usr/local/openssl
 # ---------------------------
 # Build Node against the same reviewed OpenSSL release used by the final image.
 # Dynamic linkage keeps the Node cache and its shared libraries consistent.
-FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS node-source-builder
+FROM debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0 AS node-source-builder
 ARG BUILD_JOBS=4
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
@@ -326,7 +326,7 @@ RUN apt-get update && \
     apt-get purge -y --auto-remove build-essential curl python3 python3-setuptools && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache
 
-FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS node-builder
+FROM debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0 AS node-builder
 # Refresh the exported OS independently of the source compilation layer.
 RUN apt-get update && \
     apt-get upgrade -y && \
@@ -591,29 +591,30 @@ COPY ./reverse-proxy /opt/app/reverse-proxy
 # ---------------------------
 # Stage 5b: C++ runtime libraries with the fixed libstdc++
 # ---------------------------
-# CVE-2026-95619 / CVE-2026-102010: Debian fixes these libstdc++ flaws in
-# gcc-16 16.2.0-4 and not for trixie (no-dsa). Node and its native addons
+# CVE-2026-95619 / CVE-2026-102010 (fixed in 16.2.0-4) and CVE-2026-114690 /
+# CVE-2026-114691 (fixed in 16.2.0-5): Debian fixes these libstdc++ flaws in
+# gcc-16 and not for trixie (no-dsa). Node and its native addons
 # (sharp, argon2) load libstdc++.so.6 and libgcc_s.so.1, whose ABI newer
 # releases keep, and these two only need glibc 2.38, below the runtime's 2.41.
 # The packages come from snapshot.debian.org and are checked by SHA-512. The
 # build fails if either library asks for a newer glibc than the runtime has.
 FROM base AS cxx-runtime
 ARG TARGETARCH
-ARG CXX_RUNTIME_URL=https://snapshot.debian.org/archive/debian/20261025T024052Z/pool/main/g/gcc-16
+ARG CXX_RUNTIME_URL=https://snapshot.debian.org/archive/debian/20261121T023257Z/pool/main/g/gcc-16
 RUN set -eu; \
     arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
     case "$arch" in \
         amd64) triplet=x86_64-linux-gnu; \
-            stdcxx=b6adccd4a3a451da2f4b81b41e199e40819d6d6084bea860f1dcf286657e9ccaad98ffbf05bee48392061c0fe142d294d58ac9730317ae6d9287b46bf02828d5; \
-            gcc_s=a2ca20f047696078c258a6af27424a9e35f5f7f1bb50ca54ff53ec5e2868476c61e83f0d012fc0c0a9921734b5fe9583a9834e9e4db07a82cc57e94ef1b574e4 ;; \
+            stdcxx=ea57fcd57772f96f52e40bb776cbbf25d15bea660ebfd70cbc383d264a4f90e5ef1b6ce7f6dfda709cb74974ae28c4f892cecf1c3c53da864c3f206b596e2ffb; \
+            gcc_s=bfb8e4c12c0d113d6b7d18bb095bc2b075d07c7ddcaaedf025291d4a0ef07eaafa7b508dbd3805d6825d09621f0d7b9aca4d60a7c414fa392373779fb7eebfa2 ;; \
         arm64) triplet=aarch64-linux-gnu; \
-            stdcxx=8b077af748dd2ccc64cf92f531133f206dc0d6be0a782214265fd08cd7f178c24be2f9aafb1caad1cc2f2c9a351ef8d3074002d3bca6d4a81df3614e26eacc63; \
-            gcc_s=c0e1e03c0e555a9bf02dadc87018925c4624a3008651e2fdc14eb2a70f6030280b811b4e7b989cc697c510d8b6b0723df59d3378295c8da79525d7de23217377 ;; \
+            stdcxx=8ba16187db4efb4c8395046e0ec8d595ef66eb874a844614a69b15c6605738caaed9dc1982c4af0d8bd9e1d67b5de6507e342c69a7c4e9d03e7e8a1343db6f3a; \
+            gcc_s=fd60e9791fe31bcf2178f04cb05cfb45617b6df3dfe51adda6da4291573c5ffdec39db6551f9ff70626e7af54c16458cf513bfb508d145f442e97683cb773f2b ;; \
         *) echo "No pinned C++ runtime for $arch" >&2; exit 1 ;; \
     esac; \
     cd /tmp; \
-    curl -fsSL "$CXX_RUNTIME_URL/libstdc++6_16.2.0-4_${arch}.deb" -o libstdc++6.deb; \
-    curl -fsSL "$CXX_RUNTIME_URL/libgcc-s1_16.2.0-4_${arch}.deb" -o libgcc-s1.deb; \
+    curl -fsSL "$CXX_RUNTIME_URL/libstdc++6_16.2.0-5_${arch}.deb" -o libstdc++6.deb; \
+    curl -fsSL "$CXX_RUNTIME_URL/libgcc-s1_16.2.0-5_${arch}.deb" -o libgcc-s1.deb; \
     printf '%s  %s\n' "$stdcxx" libstdc++6.deb "$gcc_s" libgcc-s1.deb | sha512sum -c -; \
     dpkg-deb -x libstdc++6.deb cxx; \
     dpkg-deb -x libgcc-s1.deb cxx; \
@@ -628,7 +629,7 @@ RUN set -eu; \
 # ---------------------------
 # Stage 6: Assemble the C++ runtime required by Node and native addons
 # ---------------------------
-FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS runtime-layout
+FROM debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0 AS runtime-layout
 COPY --from=cxx-runtime /cxx/ /incoming-cxx/
 # The multiarch triplet depends on the target platform (x86_64-linux-gnu on
 # amd64, aarch64-linux-gnu on arm64), so it is derived at build time instead of
@@ -660,11 +661,12 @@ RUN set -eu; \
 # ---------------------------
 # Stage 7: Shell-less distroless runtime
 # ---------------------------
-# CVE-2026-5450 / CVE-2026-5928: this digest contains Debian's
-# libc6 2.41-12+deb13u4 security update.
+# This digest contains Debian's libc6 2.41-12+deb13u5 security update
+# (CVE-2026-5450 and CVE-2026-5928 since deb13u4, CVE-2026-86805 and 13
+# other glibc fixes since deb13u5).
 # DSA-6572-1: it also contains ca-certificates 20250419+deb13u1.
 # Its time zone rules are tzdata 2026f.
-FROM gcr.io/distroless/base-nossl-debian13:latest@sha256:d710a5c8bfe4cf7e726d7e1afd73e363a9fb02c2a11ad893d2d6185c1b9a89cb AS runner
+FROM gcr.io/distroless/base-nossl-debian13:latest@sha256:f21fdfe4ede467d9ea8a6caaec1f8381ea4502243a3e8bb1c43df80c6fbaaeae AS runner
 
 COPY .docker/vex.json /usr/share/security/privcloud.vex.json
 
